@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import stationMark from '../assets/attack-wave.png';
+import { BeatWave, type BeatWaveBeat } from './BeatWave.tsx';
 
 /** One revolution every six seconds - the pace the old CSS keyframes set. */
 const FULL_DEG_PER_SEC = 360 / 6;
@@ -26,11 +27,17 @@ const FULL_DEG_PER_SEC = 360 / 6;
 export function SpinningDisc({
   art,
   spinning,
+  beat = null,
   spinUpMs = 380,
   spinDownMs = 320,
 }: {
   art: string | null;
   spinning: boolean;
+  /**
+   * The player's live beat. Only worn when there is no album art - the disc
+   * then shows the station mark, and the mark's wave moves with the music.
+   */
+  beat?: BeatWaveBeat | null;
   /** How long the platter takes from standstill to full turn. 0 is a snap. */
   spinUpMs?: number;
   /** How long the brake takes to hold it still. 0 is a snap. */
@@ -83,7 +90,11 @@ export function SpinningDisc({
   return (
     <div className="spinningDisc" aria-hidden="true">
       <div ref={faceRef} className="spinningDisc__face">
-        <img className="spinningDisc__art" src={art ?? stationMark} alt="" />
+        {art ? (
+          <img className="spinningDisc__art" src={art} alt="" />
+        ) : (
+          <BeatWave className="spinningDisc__art" beat={beat} />
+        )}
       </div>
       {/* Everything the light does sits outside the turning face - the
           spectral hairlines and the glint on the hub plastic are reflections,

@@ -119,7 +119,12 @@ export async function pickMusicDir(current?: string | null): Promise<string | nu
 
 /** A single playable track, assembled from a file and its embedded tags. */
 export interface Track {
-  /** The absolute file path, which doubles as the stable row id. */
+  /**
+   * The stable row id. For a local file that is its absolute path; for a track
+   * on a server it is an `afm://<id>` URI. Everything downstream treats it as
+   * an opaque key, which is what lets one library type serve both - only
+   * `loadAudioUrl` has to know the difference.
+   */
   path: string;
   title: string;
   artist: string;
@@ -128,12 +133,25 @@ export interface Track {
   duration: number | null;
   /** When the file landed in the library, epoch milliseconds. */
   addedAt: number;
-  /** An object URL for the embedded cover art, or null when there is none. */
+  /**
+   * The cover art: an object URL for a local file, an HTTP URL for a remote
+   * one, or null when there is none.
+   */
   artwork: string | null;
   /** Genres from the tags, comma-joined, or '' when none. */
   genre: string;
   /** Embedded lyrics as plain text, or '' when the file carries none. */
   lyrics: string;
+  /**
+   * The stream's own qualities, where they are known. Optional because the
+   * local scanner has always managed without them; the server sends them for
+   * every track, which is what the lossless badge reads.
+   */
+  lossless?: boolean;
+  codec?: string;
+  sampleRate?: number | null;
+  bitDepth?: number | null;
+  sizeBytes?: number;
 }
 
 // The file extensions treated as audio when walking the library folder.
@@ -319,6 +337,13 @@ export async function saveIndexCache(dir: string, tracks: Track[]): Promise<void
  * The asset scope in tauri.conf.json must cover the file (the audio + home trees).
  */
 export async function loadAudioUrl(path: string): Promise<string | null> {
+  // A server track resolves to an ordinary HTTPS URL, which the element plays
+  // exactly the way it plays the asset protocol - and, being CORS-clean, reads
+  // through the analyser the same way too. The whole remote-library feature
+  // lands on this one branch.
+  const remote = resolveRemoteAudioUrl(path);
+  if (remote) return remote;
+
   if (!isTauri()) return null;
   try {
     const { convertFileSrc } = await import('@tauri-apps/api/core');
@@ -326,4 +351,28 @@ export async function loadAudioUrl(path: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * How `loadAudioUrl` reaches the signed-in server without every caller having
+ * to thread a session through.
+ *
+ * A module-level hook rather than a parameter, deliberately: the alternative
+ * was changing `loadAudioUrl`'s signature and, with it, the Player's load
+ * effect - the most delicate code in the app, and the thing this design set out
+ * not to touch. There is at most one server connected at a time, so a single
+ * slot is an honest model of the state rather than a shortcut around it. The
+ * session provider owns the slot and clears it on sign-out.
+ */
+type RemoteResolver = (path: string) => string | null;
+
+let remoteResolver: RemoteResolver | null = null;
+
+export function setRemoteAudioResolver(resolver: RemoteResolver | null): void {
+  remoteResolver = resolver;
+}
+
+function resolveRemoteAudioUrl(path: string): string | null {
+  if (!path.startsWith('afm://')) return null;
+  return remoteResolver?.(path) ?? null;
 }

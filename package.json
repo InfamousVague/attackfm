@@ -10,7 +10,15 @@
     "typecheck": "tsc --noEmit",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "ios:dev": "node scripts/ios-clean.mjs && tauri ios dev",
+    "ios:build": "node scripts/ios-clean.mjs && tauri ios build",
+    "ios:build:sim": "node scripts/ios-clean.mjs && tauri ios build --debug --target aarch64-sim",
+    "android:dev": "tauri android dev",
+    "android:build": "tauri android build",
+    "server": "cargo run --manifest-path server/Cargo.toml",
+    "redeploy": "node scripts/redeploy.mjs",
+    "redeploy:setup": "node scripts/redeploy.mjs setup"
   },
   "dependencies": {
     "@glacier/icons": "file:./vendor/@glacier/icons",

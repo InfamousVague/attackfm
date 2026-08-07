@@ -20,6 +20,7 @@ import {
   type MusicImportJob,
 } from './musicImport.ts';
 import { DownloadsContext, type DownloadsContextValue } from './downloadsContext.ts';
+import { settlePendingSyncs } from './spotifyAccount.ts';
 
 /**
  * Owns the music-import queue: seeds from the backend, subscribes to live queue
@@ -46,6 +47,9 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     const isFresh = done.some((id) => !doneIds.current.has(id));
     doneIds.current = new Set(done);
     if (isFresh) void rescanRef.current();
+    // Spotify sync marks ride download completion, not enqueue - a failed
+    // download must stay offered. Cheap when nothing is pending.
+    void settlePendingSyncs(next);
   }, []);
 
   useEffect(() => {

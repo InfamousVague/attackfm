@@ -1,7 +1,30 @@
 // Add your own #[tauri::command] functions here and register them in the
 // invoke_handler below.
+//
+// Three of the four modules here are desktop-only, and gated as such rather
+// than left to fail at runtime on a phone:
+//
+// - `dock_wave` paints a Dock tile. Phones have no Dock.
+// - `music` drives the SpotiFLAC downloader as a child process. iOS and Android
+//   both forbid an app spawning executables outright, so the code could not
+//   work there even if it compiled.
+// - `spotify` completes an OAuth flow by opening a browser and catching a
+//   loopback redirect, which is a desktop shape.
+//
+// What is left - the window itself, the filesystem plugin, the dialog plugin -
+// is what a phone build actually needs, and the streaming server covers the
+// rest: on mobile the library comes over HTTP rather than off a disk.
 
+#[cfg(desktop)]
+mod dock_wave;
+#[cfg(desktop)]
 mod music;
+#[cfg(desktop)]
+mod spotify;
+
+// The one piece of native code a phone build DOES need: without it iOS stops
+// the audio the moment the screen locks.
+mod ios_audio;
 
 /// Holds the window square while it is resized.
 ///
@@ -34,7 +57,7 @@ fn square_aspect(window: &tauri::WebviewWindow) {
 /// the window following whichever edge is being dragged. The guard is what ends
 /// it - the size this sets comes back as another resize event, and a square one
 /// asks for nothing further.
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(desktop, not(target_os = "macos")))]
 fn square_aspect(window: &tauri::WebviewWindow) {
     let win = window.clone();
     window.on_window_event(move |event| {
@@ -49,16 +72,48 @@ fn square_aspect(window: &tauri::WebviewWindow) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_decorum::init())
+        .plugin(tauri_plugin_fs::init());
+
+    // decorum positions the native macOS traffic lights. There are none to
+    // position on a phone, and the plugin is not built for those targets.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_decorum::init());
+
+    builder
         .setup(|app| {
-            use tauri::Manager;
-            let main = app.get_webview_window("main").expect("main window");
-            // Spin up the music-import download queue (SpotiFLAC-backed).
-            music::init(&app.handle());
+            // Before anything else on iOS: the audio session has to be claimed
+            // at launch, not at the first play, or the first play is what
+            // discovers it was never claimed.
+            ios_audio::configure_session();
+
+            #[cfg(desktop)]
+            {
+                use tauri::Manager;
+                // On a phone this is where setup ends: there is no window to
+                // shape and no download queue to run.
+                let Some(main) = app.get_webview_window("main") else {
+                    return Ok(());
+                };
+                desktop_setup(app, &main);
+            }
+            let _ = app;
+            Ok(())
+        })
+        .invoke_handler(invoke_handler())
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+
+/// Everything that only means something in front of a real window.
+#[cfg(desktop)]
+fn desktop_setup(app: &tauri::App, main: &tauri::WebviewWindow) {
+    {
+        // Spin up the music-import download queue (SpotiFLAC-backed).
+        music::init(&app.handle());
+        spotify::init(&app.handle());
             // Center the native macOS traffic lights in the taller custom title
             // bar. decorum's `y` is the extra title-bar height reserved BELOW the
             // buttons (container height = button_height + y), and the buttons
@@ -77,24 +132,42 @@ pub fn run() {
                     }
                 });
             }
-            square_aspect(&main);
-            Ok(())
-        })
-        .invoke_handler(tauri::generate_handler![
-            music::music_import_enqueue,
-            music::music_imports_list,
-            music::music_import_remove,
-            music::music_import_cancel,
-            music::music_imports_clear,
-            music::music_import_retry,
-            music::music_spotiflac_status,
-            music::music_spotiflac_install,
-            music::music_import_get_settings,
-            music::music_import_set_settings,
-            music::music_import_set_paused,
-            music::music_import_paused,
-            music::music_album_art,
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+            square_aspect(main);
+    }
+}
+
+/// The commands the frontend may call.
+///
+/// Two lists rather than one, because the desktop-only modules do not exist in
+/// a phone build - naming them there would not compile. A mobile frontend
+/// therefore reaches nothing it should not, and the plugin that would have
+/// called them is switched off in the registry anyway.
+#[cfg(desktop)]
+fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+        music::music_import_enqueue,
+        music::music_imports_list,
+        music::music_import_remove,
+        music::music_import_cancel,
+        music::music_imports_clear,
+        music::music_import_retry,
+        music::music_spotiflac_status,
+        music::music_spotiflac_install,
+        music::music_import_get_settings,
+        music::music_import_set_settings,
+        music::music_import_set_paused,
+        music::music_import_paused,
+        music::music_album_art,
+        dock_wave::dock_wave_still,
+        spotify::spotify_status,
+        spotify::spotify_connect,
+        spotify::spotify_disconnect,
+        spotify::spotify_library,
+        spotify::spotify_mark_synced,
+    ]
+}
+
+#[cfg(mobile)]
+fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![]
 }

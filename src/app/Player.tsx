@@ -3,6 +3,7 @@ import {
   AudioEqualizer,
   ContextMenu,
   IconButton,
+  Lyrics,
   MenuItem,
   PlayerBar,
   Popover,
@@ -12,16 +13,18 @@ import {
   volumeAmplitude,
 } from '@glacier/react';
 import type { AnalyserMeter, LoudnessMeter, PlayerRepeat } from '@glacier/react';
-import { AudioLines, Check, Disc3, Image as ImageIcon } from '@glacier/icons';
+import { AudioLines, Check, Disc3, Image as ImageIcon, Mic } from '@glacier/icons';
 import { PluginSlot } from '../plugins/runtime.tsx';
 import { SpinningDisc } from './SpinningDisc.tsx';
+import { fetchLyrics, type TrackLyrics } from './lyrics.ts';
 import { useLibrary } from './library.tsx';
 import { useEqualizer } from './equalizer.tsx';
 import { usePlayback } from './playback.tsx';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { VolumeControl, VOLUME_UNITY } from './VolumeControl.tsx';
 import { loadAudioUrl, type Track } from './tauri.ts';
-import stationMark from '../assets/attack-wave.png';
+import { BeatWave } from './BeatWave.tsx';
+import { initDockWave } from './dockWave.ts';
 
 /**
  * Kevin MacLeod - 'Funky Chunk' (incompetech.com), CC BY 3.0, streamed from
@@ -32,6 +35,23 @@ const TRACK_URL =
 
 /** The track's cover, when the feed carries one. The stand-in does not. */
 const TRACK_ART: string | null = null;
+
+/**
+ * The demo stream as a Track, for surfaces that want one while nothing from
+ * the library is loaded - the lyrics lookup asks by title and artist, and the
+ * strip is honestly playing this, not nothing.
+ */
+const DEMO_TRACK: Track = {
+  path: TRACK_URL,
+  title: 'Funky Chunk',
+  artist: 'Kevin MacLeod',
+  album: '',
+  duration: null,
+  addedAt: 0,
+  artwork: null,
+  genre: '',
+  lyrics: '',
+};
 
 /** Where the fader starts. The element opens at full, so it is told this too. */
 const INITIAL_VOLUME = 70;
@@ -89,6 +109,54 @@ function readArtView(): ArtView {
   } catch {
     return 'cd';
   }
+}
+
+/**
+ * The mic popover's inside: the track's lyrics, fetched when the panel first
+ * opens (the popover mounts its panel per open, so the effect is the lazy
+ * trigger) and cached across opens by the lyrics module. Synced lines light
+ * with playback and seek on press; plain-only lyrics read as static text -
+ * no position, so nothing lights, and no handler, so nothing pretends to be
+ * a button; and the waits and the misses are the same surface, empty, saying
+ * which of the two it is.
+ */
+function LyricsPanel({
+  track,
+  position,
+  onSeek,
+}: {
+  track: Track;
+  position: number;
+  onSeek: (time: number) => void;
+}) {
+  const [lyrics, setLyrics] = useState<TrackLyrics | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchLyrics(track).then((found) => {
+      if (!cancelled) setLyrics(found);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [track]);
+
+  if (lyrics === null) return <Lyrics lines={[]} emptyLabel="Searching for lyrics…" aria-label="Lyrics" />;
+  if (lyrics.synced) {
+    return (
+      <Lyrics
+        lines={lyrics.synced}
+        position={position}
+        onLineSelect={(line) => onSeek(line.time)}
+        aria-label="Lyrics"
+      />
+    );
+  }
+  if (lyrics.plain) {
+    return (
+      <Lyrics lines={lyrics.plain.map((text) => ({ time: 0, text }))} aria-label="Lyrics" />
+    );
+  }
+  return <Lyrics lines={[]} aria-label="Lyrics" />;
 }
 
 /**
@@ -271,6 +339,13 @@ export function Player({
   // is left alone and its time updates are ignored, so the thumb tracks the
   // pointer smoothly instead of fighting playback and repeated file seeks.
   const scrubbing = useRef(false);
+  // True while a seek is muted-through: a media element does not jump clean -
+  // it keeps sounding its already-decoded audio for a beat after currentTime
+  // is written, then goes quiet while it decodes at the target. Silencing the
+  // graph for exactly that stretch turns "a weird bit of the old spot, a gap,
+  // then the new spot" into "silence, then the new spot" - the shape of an
+  // instrument that heard you. Cleared by the element's own seeked event.
+  const seekMuted = useRef(false);
 
   // `at` is where a hit lands on the bar, so ripples leave the playhead rather
   // than a fixed point.
@@ -280,6 +355,31 @@ export function Player({
   // "nothing coming out" still reads as "nothing moving".
   const audible = playing && !muted && volume > 0;
   const beat = useBeat({ meter, active: audible, at: progress });
+
+  // The dock icon: the brand mark, drawn and shipped once at boot. A dev
+  // binary has no bundle icon of its own, so without this the Dock shows the
+  // generic executable tile.
+  useEffect(() => {
+    void initDockWave();
+  }, []);
+  // Coming back to the window wakes the audio graph. The play press already
+  // resumes a parked context, but audio that was ALREADY playing gets no
+  // press when the OS interrupts the output behind an occluded window - so
+  // the return itself is the gesture: refocus and becoming visible both
+  // nudge the context, and a running one ignores it for free.
+  useEffect(() => {
+    const wake = () => {
+      if (document.visibilityState !== 'visible') return;
+      void analyserRef.current?.resume?.();
+    };
+    window.addEventListener('focus', wake);
+    document.addEventListener('visibilitychange', wake);
+    return () => {
+      window.removeEventListener('focus', wake);
+      document.removeEventListener('visibilitychange', wake);
+    };
+  }, []);
+
   // The waveform the bar fills in as the track plays, sampled from the same
   // meter the beat reads. Without it the bar has a beat to pulse but no levels
   // to animate to.
@@ -287,11 +387,14 @@ export function Player({
 
   // The header moves to the same reading the bar does. Published rather than
   // lifted: the audio graph hangs off this component's element and should stay
-  // here, and everything upstream wants is the number coming out of it.
+  // here, and everything upstream wants is the number coming out of it. The
+  // track and the coarse position ride along for the hero's lyric words -
+  // whole seconds, so the header re-renders by the line, not by the frame.
   const { publish } = useNowPlayingMotion();
+  const coarsePosition = Math.floor(position);
   useEffect(() => {
-    publish({ meter, audible });
-  }, [publish, meter, audible]);
+    publish({ meter, audible, track: track ?? DEMO_TRACK, position: coarsePosition });
+  }, [publish, meter, audible, track, coarsePosition]);
 
   // Push EQ edits onto the live filters as they happen.
   useEffect(() => {
@@ -416,17 +519,31 @@ export function Player({
         pendingPlay.current = false;
         setPlaying(false);
       };
+      // The other end of a muted-through seek: the element has landed and is
+      // sounding the new position, so the graph fades back up - short, on the
+      // audio clock, out of the silence the press bought. A brake in flight
+      // keeps its fall (the flag just clears), and a paused element leaves
+      // the gain for its next start to set, as every start does.
+      const onSeeked = () => {
+        if (!isActive() || !seekMuted.current) return;
+        seekMuted.current = false;
+        if (!audio.paused && !windingDown.current) {
+          analyserRef.current?.rampVolume(currentAmplitude(), 0.05);
+        }
+      };
       audio.addEventListener('timeupdate', onTime);
       audio.addEventListener('loadedmetadata', onMeta);
       audio.addEventListener('ended', onEnded);
       audio.addEventListener('canplay', onCanPlay);
       audio.addEventListener('error', onError);
+      audio.addEventListener('seeked', onSeeked);
       return () => {
         audio.removeEventListener('timeupdate', onTime);
         audio.removeEventListener('loadedmetadata', onMeta);
         audio.removeEventListener('ended', onEnded);
         audio.removeEventListener('canplay', onCanPlay);
         audio.removeEventListener('error', onError);
+        audio.removeEventListener('seeked', onSeeked);
       };
     });
     return () => cleanups.forEach((cleanup) => cleanup());
@@ -683,11 +800,10 @@ export function Player({
   };
 
   /** Back to the top of the current track, keeping the playing state as is. */
-  const rewind = () => {
-    setPosition(0);
-    const audio = activeAudio();
-    if (audio) audio.currentTime = 0;
-  };
+  // The top is just a seek with a fixed destination, and it wants everything
+  // a seek gets: the deck flush, the crossfade abort, the mute through the
+  // element's jump. One path, one set of manners.
+  const rewind = () => commitSeek(0);
 
   /**
    * The top of the current track, playing - for repeat-one and a one-track
@@ -1039,8 +1155,33 @@ export function Player({
     // A seek re-earns the whole track - dragging back out of the fade window
     // must not leave a half-blended next track playing underneath it.
     abortCrossfade();
+    // The deck's backlog is dropped WITH the jump, and before it: the line
+    // holds the last beat of pre-seek signal, and left alone it would play
+    // that first and then run behind the bar by its length - music trailing
+    // the position it claims. A flush is a discontinuity, but so is the seek
+    // itself, and one cut is what the ear was just promised.
+    analyserRef.current?.resetSpeed(1);
     const audio = activeAudio();
-    if (audio) audio.currentTime = to;
+    if (!audio) return;
+    // Muted through the element's own seek (see seekMuted): the graph goes
+    // silent BEFORE currentTime is written, so the stale decoded tail the
+    // element sounds while it works is never heard, and the seeked event
+    // fades the new position in. Only a playing, un-braking seek needs it -
+    // paused seeks are silent already, and a brake owns its own fall.
+    if (analyserRef.current && !windingDown.current && !audio.paused) {
+      seekMuted.current = true;
+      analyserRef.current.setVolume(0);
+      // If seeked never lands (a source mid-error), the mute must not stick.
+      window.setTimeout(() => {
+        if (!seekMuted.current) return;
+        seekMuted.current = false;
+        const active = activeAudio();
+        if (active && !active.paused && !windingDown.current) {
+          analyserRef.current?.rampVolume(currentAmplitude(), 0.05);
+        }
+      }, 1200);
+    }
+    audio.currentTime = to;
   };
 
   // The fader no longer touches the element: it rides the gain after the
@@ -1115,6 +1256,7 @@ export function Player({
               <SpinningDisc
                 art={artwork}
                 spinning={audible}
+                beat={beat}
                 // The platter and the sound share a motor: the disc brakes and
                 // catches up over the same stretch the audio does, whichever
                 // stop the pause style buys - the turntable's ramp, the fade's
@@ -1134,8 +1276,10 @@ export function Player({
                       : 0
                 }
               />
+            ) : artwork ? (
+              <img className="artViewCover" src={artwork} alt="" />
             ) : (
-              <img className="artViewCover" src={artwork ?? stationMark} alt="" />
+              <BeatWave className="artViewCover" beat={beat} />
             )}
           </ContextMenu>
         }
@@ -1156,6 +1300,36 @@ export function Player({
         onRepeatChange={setRepeat}
         favorite={favorite}
         onFavoriteChange={() => track && toggleFavorite(track.path)}
+        // The mic sits just right of the heart, in the strip's leading rail:
+        // the heart is how you feel about the song, the mic is the song's own
+        // words. Synced lines light with playback and a press seeks to that
+        // line - the seek goes through commitSeek, the same path the bar's
+        // own scrubber lands on.
+        leading={
+          <Popover
+            placement="top"
+            aria-label="Lyrics"
+            className="lyricsPopoverPanel"
+            trigger={
+              <IconButton variant="ghost" size="sm" aria-label="Lyrics" skeleton={listLoading}>
+                <Mic size={16} />
+              </IconButton>
+            }
+          >
+            <div className="lyricsPopover">
+              {/* Keyed by the track, so a change of song while the popover is
+                  open tears the panel down whole: no window where the old
+                  song's lines sit clickable over the new song's audio, and no
+                  scroll position inherited from a sheet that no longer exists. */}
+              <LyricsPanel
+                key={(track ?? DEMO_TRACK).path}
+                track={track ?? DEMO_TRACK}
+                position={position}
+                onSeek={commitSeek}
+              />
+            </div>
+          </Popover>
+        }
         levels={levels}
         beat={beat}
         // The equalizer and the custom volume fader share the trailing rail; the

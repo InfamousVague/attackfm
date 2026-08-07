@@ -1,0 +1,57 @@
+# AttackFM music server - systemd unit.
+#
+# Install:
+#   install -d -o attackfm -g attackfm /opt/attackfm/{bin,data,music}
+#   cp attackfm.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now attackfm
+#
+# The whole configuration is the Environment lines below; there is no config
+# file to keep in sync with them.
+
+[Unit]
+Description=AttackFM music server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Loopback only: Caddy terminates TLS and is the only thing that may reach this.
+Environment=AFM_BIND=127.0.0.1
+# 8788, one above prettycardboard's 8787, so the two can share a box.
+Environment=AFM_PORT=8788
+Environment=AFM_DATA_DIR=/opt/attackfm/data
+# The library. Point this at a mounted volume when the box's own disk runs out -
+# it is the only thing that has to move, and nothing else in the unit changes.
+Environment=AFM_MUSIC_DIR=/opt/attackfm/music
+Environment=AFM_SERVER_NAME=AttackFM
+# A ceiling on the library in gigabytes, refused at upload rather than
+# discovered when the disk fills and takes the database with it. 0 = no ceiling.
+Environment=AFM_QUOTA_GB=25
+# How often to re-walk the music folder. An unchanged library costs a directory
+# walk and no tag reads, so this is cheap even on one core.
+Environment=AFM_SCAN_MINUTES=15
+
+WorkingDirectory=/opt/attackfm
+ExecStart=/opt/attackfm/bin/attackfm-server
+User=attackfm
+Group=attackfm
+Restart=on-failure
+RestartSec=2
+
+# The server reads music and writes its own data; nothing else on the box is
+# any of its business.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/attackfm/data /opt/attackfm/music
+# Transcoding shells out to ffmpeg; without this the sandbox refuses the fork.
+# Harmless when ffmpeg is not installed - the endpoint reports itself
+# unavailable and nothing tries.
+PrivateDevices=true
+
+# One core and 1.6 GB of RAM is the box this was written for: keep the server
+# from being the thing that OOMs it.
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

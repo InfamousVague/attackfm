@@ -9,6 +9,18 @@ import {
   saveIndexCache,
   type Track,
 } from './tauri.ts';
+import {
+  fetchRemoteFavorites,
+  loadCachedIndex,
+  requestScan,
+  setRemoteFavorite,
+  syncLibrary,
+  toTrack,
+  trackIdFromPath,
+  type RemoteTrack,
+  type ServerSession,
+} from './server.ts';
+import { useServerSession } from './serverSession.tsx';
 
 const STORAGE_KEY = 'attackfm-music-dir';
 const FAVORITES_KEY = 'attackfm-favorites';
@@ -16,7 +28,12 @@ const FAVORITES_KEY = 'attackfm-favorites';
 // Shown in the browser, where there is no filesystem to name a real default in.
 const DISPLAY_FALLBACK = '~/Music/AttackFM';
 
+/** Which library the app is showing. */
+export type LibrarySource = 'local' | 'server';
+
 interface LibraryContextValue {
+  /** Which library is in effect - a folder on this machine, or a server. */
+  source: LibrarySource;
   /** Where music is stored. The resolved default until the user picks another. */
   musicDir: string;
   /** True while the default is still being resolved from the OS. */
@@ -45,6 +62,8 @@ interface LibraryContextValue {
   indexTotal: number;
   /** Re-walks the current folder and rebuilds the track list. */
   rescan: () => Promise<void>;
+  /** The last sync or scan failure, for the settings pane to show. Null when well. */
+  error: string | null;
 }
 
 const LibraryContext = createContext<LibraryContextValue | null>(null);
@@ -74,12 +93,32 @@ function readFavorites(): string[] {
 }
 
 /**
+ * The library, from whichever source is in effect.
+ *
+ * The two sources are separate components rather than branches inside one, so
+ * that switching between them remounts everything below - which is what should
+ * happen. A queue, a playing track and a scroll position all belong to the
+ * library they came from, and carrying them across a source change would leave
+ * the app holding rows that no longer resolve.
+ */
+export function LibraryProvider({ children }: { children: ReactNode }) {
+  const { session } = useServerSession();
+  return session ? (
+    <RemoteLibrary key={session.url} session={session}>
+      {children}
+    </RemoteLibrary>
+  ) : (
+    <LocalLibrary>{children}</LocalLibrary>
+  );
+}
+
+/**
  * Owns the music-storage location. It starts from a stored choice if there is
  * one, otherwise the OS default (an AttackFM folder under ~/Music), which it
  * creates on first run. A chosen folder persists to localStorage; resetting
  * clears it and falls back to the default again.
  */
-export function LibraryProvider({ children }: { children: ReactNode }) {
+function LocalLibrary({ children }: { children: ReactNode }) {
   const [custom, setCustom] = useState<string | null>(readStored);
   const [fallback, setFallback] = useState<string | null>(null);
   const [tracks, setTracks] = useState<Track[]>([]);
@@ -190,6 +229,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     const byPath = new Map(tracks.map((t) => [t.path, t] as const));
     const favoriteTracks = favorites.map((p) => byPath.get(p)).filter((t): t is Track => t !== undefined);
     return {
+      source: 'local',
       musicDir,
       loading: resolving,
       isDefault: custom === null,
@@ -207,6 +247,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       indexed,
       indexTotal,
       rescan: () => index(musicDir),
+      error: null,
       choose: async () => {
         const picked = await pickMusicDir(musicDir);
         if (!picked) return;
@@ -226,9 +267,148 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;
 }
 
+/**
+ * The library as it lives on a server.
+ *
+ * The shape it exposes is deliberately identical to the local one, so no
+ * consumer - the table, the search, the showcase, the player - can tell which
+ * it is looking at. What differs is only how the list is obtained: a delta sync
+ * against a revision the client remembers, seeded from a cached index so a
+ * relaunch renders before the network answers.
+ */
+function RemoteLibrary({ session, children }: { session: ServerSession; children: ReactNode }) {
+  // Seeded synchronously from the cache, so the first paint already has rows.
+  const [remote, setRemote] = useState<RemoteTrack[]>(() => loadCachedIndex(session.url).tracks);
+  const [syncing, setSyncing] = useState(true);
+  const [synced, setSynced] = useState(0);
+  const [favorites, setFavorites] = useState<number[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const passToken = useRef(0);
+
+  const sync = useCallback(
+    async (options: { silent?: boolean } = {}) => {
+      const pass = (passToken.current += 1);
+      const alive = () => pass === passToken.current;
+      // A silent pass is the background heartbeat: it folds new rows in
+      // without raising the syncing strip, so the pill only shows for syncs
+      // somebody asked for (launch, rescan) rather than flashing every half
+      // minute over a settled library.
+      if (!options.silent) {
+        setSyncing(true);
+        setError(null);
+      }
+      try {
+        const tracks = await syncLibrary(session, {
+          onProgress: (count) => {
+            if (alive()) setSynced(count);
+          },
+        });
+        if (!alive()) return;
+        setRemote(tracks);
+      } catch (err) {
+        if (!alive()) return;
+        if (options.silent) return;
+        // The cached rows stay on screen: a library you cannot reach right now is
+        // better company than an empty one, and the error says why it is stale.
+        setError(err instanceof Error ? err.message : 'Could not reach the server');
+      } finally {
+        if (alive() && !options.silent) setSyncing(false);
+      }
+    },
+    [session],
+  );
+
+  useEffect(() => {
+    void sync();
+  }, [sync]);
+
+  // The heartbeat that keeps every signed-in device converging on the same
+  // library without anyone pressing rescan: a delta poll, so a settled library
+  // costs one tiny request and an upload landing anywhere shows up everywhere
+  // within the half minute.
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void sync({ silent: true });
+    }, 30_000);
+    return () => window.clearInterval(interval);
+  }, [sync]);
+
+  // Favourites live on the server, so they follow the account between devices.
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      try {
+        const ids = await fetchRemoteFavorites(session);
+        if (live) setFavorites(ids);
+      } catch {
+        // Not fatal: the library still plays, hearts just show empty until the
+        // next successful fetch.
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [session]);
+
+  const tracks = useMemo(
+    // Newest first, matching the order the table opens on for a local library.
+    () => remote.map((r) => toTrack(session, r)).sort((a, b) => b.addedAt - a.addedAt),
+    [remote, session],
+  );
+
+  const value = useMemo<LibraryContextValue>(() => {
+    const favoriteSet = new Set(favorites);
+    const byId = new Map(tracks.map((t) => [trackIdFromPath(t.path), t] as const));
+    const favoriteTracks = favorites
+      .map((id) => byId.get(id))
+      .filter((t): t is Track => t !== undefined);
+
+    return {
+      source: 'server',
+      // What the settings pane names as the library's location.
+      musicDir: session.url,
+      loading: false,
+      isDefault: false,
+      tracks,
+      favoriteTracks,
+      isFavorite: (path: string) => {
+        const id = trackIdFromPath(path);
+        return id !== null && favoriteSet.has(id);
+      },
+      toggleFavorite: (path: string) => {
+        const id = trackIdFromPath(path);
+        if (id === null) return;
+        const nowFavorite = !favoriteSet.has(id);
+        // Optimistic: the heart answers the press at once, and a server that
+        // refuses puts it back.
+        setFavorites((prev) => (nowFavorite ? [id, ...prev.filter((f) => f !== id)] : prev.filter((f) => f !== id)));
+        void setRemoteFavorite(session, id, nowFavorite).catch(() => {
+          setFavorites((prev) => (nowFavorite ? prev.filter((f) => f !== id) : [id, ...prev]));
+        });
+      },
+      scanning: syncing && tracks.length === 0,
+      indexing: syncing,
+      indexed: synced,
+      indexTotal: Math.max(synced, tracks.length),
+      // A rescan on a server means two things: ask the box to re-walk its own
+      // folder, then pull whatever that turned up.
+      rescan: async () => {
+        await requestScan(session).catch(() => {});
+        await sync();
+      },
+      error,
+      // A server library has no folder to pick, and nothing to reset to.
+      choose: async () => {},
+      reset: async () => {},
+    };
+  }, [session, tracks, favorites, syncing, synced, sync, error]);
+
+  return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;
+}
+
 export function useLibrary(): LibraryContextValue {
   const value = useContext(LibraryContext);
   if (!value) throw new Error('useLibrary must be used within a LibraryProvider');
   return value;
 }
-

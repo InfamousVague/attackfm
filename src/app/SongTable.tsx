@@ -2,6 +2,8 @@ import { DataGrid, type DataGridColumn, type DataGridRow, type DataGridSort } fr
 import { Clock } from '@glacier/icons';
 import { useMemo, useState } from 'react';
 import { useLibrary } from './library.tsx';
+import { hasLocalLibrary } from './platform.ts';
+import { useNarrowViewport } from './useNarrowViewport.ts';
 import type { Track } from './tauri.ts';
 import placeholderArt from '../assets/attack-wave.png';
 
@@ -26,6 +28,11 @@ function gridCompare(a: string | number, b: string | number): number {
   if (typeof a === 'number' && typeof b === 'number') return a - b;
   return String(a).localeCompare(String(b));
 }
+
+// The columns that come off on a narrow screen, in the order they would be
+// missed least: an album name the title cell half-implies, and a date that is
+// already the sort.
+const NARROW_HIDDEN = new Set(['album', 'addedAt']);
 
 // The columns mirror the classic library table: an index, the title block with
 // artwork and artist, album, when it was added, and the running time.
@@ -102,10 +109,17 @@ export function SongTable({
   // order is.
   const [sort, setSort] = useState<DataGridSort | null>(DEFAULT_SORT);
 
+  // A phone has room for the song and its length, and nothing else. Album and
+  // the date added are dropped rather than squeezed - the title cell already
+  // carries the artist, and five columns at 390px overlap their own headers
+  // instead of narrowing. The sort they provided stays reachable: the table
+  // still opens newest-first, and search covers finding an album by name.
+  const narrow = useNarrowViewport();
+
   // The artist is a link into its own page; its click must not also open the row.
   const columns = useMemo<DataGridColumn[]>(
     () =>
-      COLUMNS.map((col) =>
+      COLUMNS.filter((col) => !narrow || !NARROW_HIDDEN.has(col.key)).map((col) =>
         col.key === 'title'
           ? {
               ...col,
@@ -134,7 +148,7 @@ export function SongTable({
             }
           : col,
       ),
-    [onOpenArtist],
+    [onOpenArtist, narrow],
   );
 
   const rows: DataGridRow[] = tracks.map((track) => ({
@@ -176,7 +190,16 @@ export function SongTable({
       stickyHeader
       maxHeight="100%"
       loading={library.scanning && rows.length === 0}
-      emptyState="No music found in your library folder yet."
+      // The empty state has to name the thing to do next, and that differs by
+      // where the music was meant to come from: a phone has no folder to fill,
+      // so telling it one is empty would be a dead end.
+      emptyState={
+        library.source === 'server'
+          ? library.error ?? 'Nothing on the server yet — upload some music from the desktop app.'
+          : hasLocalLibrary
+            ? 'No music found in your library folder yet.'
+            : 'Connect to your music server in Settings to start listening.'
+      }
       // The row id is the track's path; hand the matching track up to play it,
       // with the displayed order alongside as the queue it plays through.
       onRowActivate={(id) => {

@@ -14,28 +14,52 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# protocol-asset is what lets a local file play through `convertFileSrc` on the
+# desktop. Leave it on for every target: the mobile builds simply never call it
+# (their library arrives over HTTP), and the `tauri` CLI rewrites this line from
+# the config it reads, so a mobile config that switched the protocol off would
+# strip the feature here and break desktop playback.
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
 # The folder picker and the filesystem access behind the music-library setting.
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
-# Positions the native macOS traffic-light buttons so they sit centered in the
-# taller custom title bar (and re-applies the inset on resize). No-op elsewhere.
-tauri-plugin-decorum = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Async runtime for the music-import download queue (subprocess + progress).
 tokio = { version = "1", features = ["full"] }
 # Scrapes public Spotify embed pages for import cover art / titles / totals.
-reqwest = "0.12"
+# json feature: the Spotify account layer reads the Web API as JSON.
+reqwest = { version = "0.12", features = ["json"] }
+# The Spotify account login (spotify.rs): PKCE hashing, URL-safe encoding,
+# and the random verifier/state.
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.8"
+
+# Desktop-only crates. A phone has no traffic lights to position, and decorum
+# does not build for iOS or Android - so it is named per-target rather than
+# left in the shared list where a mobile build would trip over it.
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+# Positions the native macOS traffic-light buttons so they sit centered in the
+# taller custom title bar (and re-applies the inset on resize). No-op elsewhere.
+tauri-plugin-decorum = "1"
 
 # AppKit, for the one thing the Tauri window API has no word for: holding the
 # window square as it is dragged. Already in the tree behind tauri/wry, so this
 # only names what is being used.
+# The Objective-C runtime, for claiming the AVAudioSession so playback survives
+# the screen locking. Three message sends into a framework already loaded in
+# the process - no AVFAudio bindings crate needed.
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", features = ["NSResponder", "NSWindow"] }
-objc2-foundation = { version = "0.3", features = ["NSGeometry"] }
+# NSApplication + NSImage carry the beat-driven dock icon (dock_wave.rs).
+objc2-app-kit = { version = "0.3", features = ["NSResponder", "NSWindow", "NSApplication", "NSImage"] }
+objc2-foundation = { version = "0.3", features = ["NSGeometry", "NSData"] }
 
 [features]
 # Kept in sync with tauri.conf.json > app > security > csp.

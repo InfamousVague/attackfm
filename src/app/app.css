@@ -22,6 +22,21 @@ body {
 /* The shell owns the viewport and never adds a window scrollbar. */
 #root {
   height: 100vh;
+  /* Phones move their browser chrome as you scroll, so `vh` is the height the
+     viewport WILL be, not the one it is - which leaves the player bar parked
+     under the address bar for the first scroll. `dvh` is the live figure.
+     Declared second so it simply wins where it is understood. */
+  height: 100dvh;
+}
+
+/* Nothing here should rubber-band or double-tap-zoom: this is an app, and a
+   drag on the seek bar or the volume fader is a control gesture, not a scroll. */
+@supports (-webkit-touch-callout: none) {
+  html,
+  body {
+    overscroll-behavior: none;
+    -webkit-text-size-adjust: 100%;
+  }
 }
 
 /*
@@ -35,11 +50,79 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background: var(--glacier-bg);
   color: var(--glacier-text);
   /* Roughly the floating player's height; the list clears its last rows by it. */
   --app-player-height: 5.75rem;
+  /* The notch, the rounded corners and the home indicator, as four numbers the
+     chrome below can spend. Zero everywhere that has no such thing, so the
+     desktop layout is untouched by their existence. */
+  --app-safe-top: env(safe-area-inset-top, 0px);
+  --app-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --app-safe-left: env(safe-area-inset-left, 0px);
+  --app-safe-right: env(safe-area-inset-right, 0px);
+}
+
+/*
+ * The header for every surface with no window to decorate - the phone builds
+ * and the browser. It carries the same cluster the desktop title bar does
+ * (search, plugin actions, settings), minus everything that is about a window:
+ * no drag region, no traffic-light gutter, no wordmark competing for width.
+ */
+.mobileHeader {
+  flex: none;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+  padding-inline: var(--glacier-space-3);
+  padding-block: var(--glacier-space-2);
+  /* Clears the notch on a phone; adds nothing anywhere else. */
+  padding-block-start: calc(var(--glacier-space-2) + var(--app-safe-top));
+  padding-inline-start: calc(var(--glacier-space-3) + var(--app-safe-left));
+  padding-inline-end: calc(var(--glacier-space-3) + var(--app-safe-right));
+}
+
+/*
+ * The wordmark ships as white artwork, which is right against the desktop
+ * title bar and invisible against a light theme's background - as the first
+ * iOS build showed, on a phone defaulting to light. There is no dark version of
+ * the asset, so the light themes flip the one there is.
+ *
+ * `data-theme` is absent under the system preset and set to `light`/`dark`
+ * otherwise (see appearance.tsx), so both cases have to be covered: the media
+ * query catches a system-following app on a light phone, and the attribute
+ * rules override it in either direction when a theme is pinned.
+ */
+.mobileHeader__logo {
+  block-size: 1.125rem;
+  inline-size: auto;
+  opacity: 0.9;
+  /* Decorative: the list below already says what app this is. */
+  pointer-events: none;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .mobileHeader__logo {
+    filter: invert(1);
+  }
+}
+
+:root[data-theme='light'] .mobileHeader__logo {
+  filter: invert(1);
+}
+
+:root[data-theme='dark'] .mobileHeader__logo {
+  filter: none;
+}
+
+.mobileHeader__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
 }
 
 /* The now-playing cover, blurred into a hero wash behind the top of the window.
@@ -176,12 +259,321 @@ body {
   opacity: calc(var(--np-pulse) * 0.28);
 }
 
+/* The song's words, breathing through the wash. A layer over the glow and
+   under nothing - the whole backdrop already sits behind the content - that
+   simply steps aside (with a long fade) while nothing is audible, so a pause
+   lets the air clear rather than freezing words mid-thought. */
+/* The stage the ways lay out on, and the guarantee that they stay on it.
+   Deliberately NOT the whole backdrop: the hero is 22rem tall but its mask
+   fades to nothing well before the bottom, so type set in the lower third
+   was drawn into a band that cannot be seen. The stage is the part that
+   reads, held off the leading edge where the page title and playlist tiles
+   live.
+
+   Two things make the containment a guarantee rather than an intention:
+   `overflow: hidden`, so nothing a way lays out can ever paint past these
+   edges; and `container-type: size`, which lets every way size its type in
+   `cqh` - a share of the stage's own height - so the words scale WITH the
+   box instead of being fixed rems hoping to fit inside it. */
+.npWords {
+  position: absolute;
+  /* The band that actually reads: clear of the window's top edge, and well
+     above where the hero's mask has faded to nothing (which is also clear of
+     the song table's first row). Sitting a little lower than dead-centre of
+     that range, because the eye reads the hero's upper half as the title's.
+
+     The trailing inset is the stage's own padding, and it lives HERE rather
+     than as `padding` because every way positions absolutely - and an
+     absolutely positioned child lays out against the padding box, so padding
+     on this element would be padding the ways simply ignore. */
+  inset-block: 12% 30%;
+  /* The trailing inset is the PAGE's gutter, not a number of its own: the
+     heading above and the song table below both hold `space-4` off the
+     window, so the words' right edge lands on the same line they do. */
+  inset-inline: 34% var(--glacier-space-4);
+  overflow: hidden;
+  container-type: size;
+  transition: opacity 1.4s var(--glacier-ease-out);
+}
+
+.npWords[data-quiet] {
+  opacity: 0;
+}
+
+/* One word: lowercase, letterspaced, faint, and blended into the art rather
+   than printed on it - overlay lets the cover's own light decide how much of
+   each word survives, which is what keeps it texture instead of caption. The
+   life is one animation per word: rise in, hold, breathe out; delay and
+   duration arrive inline, cut to the line's own length. */
+.npWord {
+  position: absolute;
+  white-space: nowrap;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  color: #fff;
+  opacity: 0;
+  rotate: var(--hw-rot, 0deg);
+  /* Screen, not overlay: the wash is dark, and overlay keeps dark things
+     dark - the words were painted and invisible. Screen lets a faint white
+     breathe over the art like light through it. The container's own 0.4
+     opacity and its bottom mask then take their share, which is why the
+     peaks upstream look bold for something called subtle. */
+  mix-blend-mode: screen;
+  /* a breath out of focus, so a word reads as remembered rather than shown */
+  filter: blur(0.5px);
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+  will-change: opacity, translate, scale;
+  pointer-events: none;
+}
+
+/*
+ * The five ways (see WORD_WAYS in NowPlayingBackdrop) - compositions, not
+ * costumes: each lays the line out differently. What they share is the
+ * contract: everything a way draws is at opacity 0 by the line's own end
+ * (each scatter word by its own animation; every other way by its keyed
+ * container running npLineLife at the line's length), so a line change can
+ * simply swap children with nothing left mid-air.
+ */
+
+/* The shared container life: in fast, hold, gone by the line's end. */
+@keyframes npLineLife {
+  0% {
+    opacity: 0;
+  }
+
+  6% {
+    opacity: 1;
+  }
+
+  84% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+/* SCATTER - words surface each in a seeded place of their own, rise, and
+   dissolve. The founding way; the others argue with it. */
+.npWords[data-way='scatter'] .npWord {
+  animation-name: npWordBreathe;
+}
+
+@keyframes npWordBreathe {
+  0% {
+    opacity: 0;
+    translate: 0 0.5rem;
+    scale: 0.97;
+  }
+
+  22% {
+    opacity: var(--hw-peak, 0.18);
+  }
+
+  68% {
+    opacity: var(--hw-peak, 0.18);
+  }
+
+  100% {
+    opacity: 0;
+    translate: 0 -0.6rem;
+    scale: 1.03;
+  }
+}
+
+/* TYPEWRITER - the line types itself out at an anchor, character by
+   character behind a cursor. Mono, naturally: the one way that admits text
+   is typed. The line's overall weight rides the container life; each char
+   simply switches on at its moment. */
+.npTypeLine {
+  position: absolute;
+  /* The corner a margin note belongs in - the stage's bottom-right. The
+     stage carries the padding off the window and already ends above the
+     mask's fade, so this sits in type that can be read rather than in the
+     ghost band. */
+  inset-inline-end: 0;
+  inset-block-end: 0;
+  max-inline-size: 100%;
+  text-align: end;
+  font-family: var(--glacier-font-mono);
+  /* Three bounds, smallest wins: a ceiling in rem so it never shouts, the
+     stage's height so a short band cannot be overrun, and the width the
+     line's own character count allows (handed in per line) so a long line
+     sets smaller instead of stopping. The outer `max` is the floor that
+     keeps a container reporting no size yet - a mount, a collapsed pane -
+     from resolving the whole thing to zero and rendering nothing. */
+  /* The floor is small on purpose: a generous one would override the fit on
+     a short stage and push the line past its end. */
+  font-size: max(0.6rem, min(1.6rem, 15cqh, var(--hw-type-size, 1.6rem)));
+  max-block-size: 100%;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: #fff;
+  opacity: 1;
+  mix-blend-mode: screen;
+  /* duration arrives inline, cut to the line's length */
+  animation: npLineLife linear both;
+}
+
+.npTypeChar {
+  opacity: 0;
+  animation: npTypeChar 1ms steps(1) both;
+}
+
+@keyframes npTypeChar {
+  to {
+    opacity: 1;
+  }
+}
+
+.npTypeCursor {
+  display: inline-block;
+  inline-size: 0.55em;
+  block-size: 1.05em;
+  margin-inline-start: 0.1em;
+  vertical-align: text-bottom;
+  background: #fff;
+  animation: npCursorBlink 1.1s steps(1) infinite;
+}
+
+@keyframes npCursorBlink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* POSTER - the page the song keeps: every line's words stay, packing the
+   rows tighter until the box is full, and only a page turn clears it (the
+   container remounts per page, taking this entrance again). Rows clip
+   rather than wrap, so the type can butt against the edges the way a
+   poster's does. The one way with no line-length fade: its exit is the
+   page turn. */
+.npPoster {
+  position: absolute;
+  /* Flush to the stage, which already carries the padding off the window. */
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  /* Rows sit from the top and space out only as far as they have - a page
+     with two rows filled should not stretch them to the floor as if it held
+     four. `space-between` did exactly that, which is what pushed early rows
+     past the stage's bottom edge. */
+  justify-content: flex-start;
+  gap: 0.08em;
+  text-transform: uppercase;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: #fff;
+  mix-blend-mode: screen;
+  animation: npPosterPage 0.6s var(--glacier-ease-out) both;
+}
+
+@keyframes npPosterPage {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* Rows fill from the right, the direction the whole stage reads in, and clip
+   rather than wrap so type can butt against the edge the way a poster's does. */
+.npPosterRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 0.35em;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.npPosterWord {
+  opacity: 0;
+  animation: npPosterPop 0.5s var(--glacier-ease-out) both;
+}
+
+@keyframes npPosterPop {
+  from {
+    opacity: 0;
+    scale: 0.92;
+  }
+
+  to {
+    opacity: var(--hw-peak, 0.24);
+    scale: 1;
+  }
+}
+
+/* STACK - the words drop one under another into a column of tall capitals,
+   each landing with a little overshoot. Ranged right with the rest of the
+   stage, so the column's hard edge is the one nearest the window's.
+
+   The column owns the full stage and centres in it, so however many words a
+   line brings, the block sits in the middle of the band rather than growing
+   off one end. Sizes come in cqh from the renderer, cut so the tallest
+   possible column still fits. */
+.npStack {
+  position: absolute;
+  /* Flush to the stage, which already carries the padding off the window. */
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 0.08em;
+  text-transform: uppercase;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: #fff;
+  mix-blend-mode: screen;
+  animation: npLineLife linear both;
+}
+
+
+.npStackWord {
+  opacity: 0;
+  /* a long word clips at the column's width rather than pushing past it */
+  max-inline-size: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  animation: npStackDrop 0.45s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+
+@keyframes npStackDrop {
+  from {
+    opacity: 0;
+    translate: 0 -0.7em;
+  }
+
+  70% {
+    translate: 0 0.06em;
+  }
+
+  to {
+    opacity: var(--hw-peak, 0.24);
+    translate: 0 0;
+  }
+}
+
 /* Asked for stillness, the wash is what it always was: the drift stops, and the
    backdrop leaves the reading at rest, so every mood resolves to the base zoom
-   and the glow to nothing. */
+   and the glow to nothing. The words are not stilled but gone - they are
+   nothing but motion (the component skips them too; this is the belt). */
 @media (prefers-reduced-motion: reduce) {
   .npDrift {
     animation: none;
+  }
+
+  .npWords {
+    display: none;
   }
 }
 
@@ -410,6 +802,46 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-3);
+}
+
+/* The "I don't have a server yet" panel: a short explainer and the one command
+   that stands one up. */
+.serverSetup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-4);
+  border: 1px solid var(--glacier-border);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface);
+}
+
+/* The install command and its copy button. The command wraps rather than
+   scrolling sideways - it is meant to be read and, on a phone, copied, and a
+   line that runs off the edge is neither. */
+.serverSetupCommand {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  flex-wrap: wrap;
+}
+
+.serverSetupCommand code {
+  flex: 1 1 16rem;
+  min-inline-size: 0;
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border-radius: var(--glacier-radius-sm);
+  background: var(--glacier-bg);
+  border: 1px solid var(--glacier-border);
+  font-family: var(--glacier-font-mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--glacier-text);
+  /* A shell command has no spaces to break at in the useful places, so it is
+     allowed to break anywhere rather than forcing the panel wider than the
+     settings modal. */
+  overflow-wrap: anywhere;
+  user-select: all;
 }
 
 /* A slider and its reading on one line: the slider takes the room, the value
@@ -644,6 +1076,19 @@ body {
   text-align: center;
 }
 
+/* The lyrics popover: a tall reading pane rather than the panel's default
+   squat proportions. The wrapper owns the height - the kit Lyrics fills
+   whatever box it is given and scrolls inside it. */
+.lyricsPopoverPanel {
+  padding: 0;
+}
+
+.lyricsPopover {
+  inline-size: 19rem;
+  max-inline-size: 100%;
+  block-size: min(20rem, 55vh);
+}
+
 .eqPopover {
   inline-size: 26rem;
   max-inline-size: 100%;
@@ -775,24 +1220,10 @@ body {
   background-color: var(--glacier-surface);
 }
 
-/* The sorted header in the app's own pink. The kit colours it with accent-text
-   - the accent lightened until small text passes contrast - which reads as a
-   different pink from the solid the rest of the strip wears. Here the header
-   is the one accent on a near-black screen, so it takes the solid itself:
-   hover, active label, and the arrow, so all three stages match. (The solid
-   sits near 3.7:1 on this background - shy of AA for text this size; the
-   lighter kit default is the accessible choice if that ever matters more.)
-   The icon rule matches the kit's hashed class by its stable stem. */
-.songTable thead th[class*='sortable']:hover,
-.songTable thead th[aria-sort='ascending'],
-.songTable thead th[aria-sort='descending'] {
-  color: var(--glacier-accent-solid);
-}
-
-.songTable thead th [class*='sortIcon'][data-direction='asc'],
-.songTable thead th [class*='sortIcon'][data-direction='desc'] {
-  color: var(--glacier-accent-solid);
-}
+/* The sorted header keeps the kit's own accent-text - the accent lightened
+   until small text passes contrast (the solid sits near 3.7:1 here, shy of
+   AA for text this size). An app override to the solid pink lived here once;
+   the lighter hue is both the kit default and the accessible choice. */
 
 /* The plugin marketplace: listings on a shelf rather than switches in a list.
    Cards flow into as many columns as the pane affords and stay equal-height
@@ -1055,6 +1486,11 @@ body {
   flex: none;
   padding: var(--glacier-space-2);
   padding-block-start: 0;
+  /* Lifts the plate clear of the home indicator, which otherwise sits over the
+     transport controls on a modern iPhone. */
+  padding-block-end: calc(var(--glacier-space-2) + var(--app-safe-bottom));
+  padding-inline-start: calc(var(--glacier-space-2) + var(--app-safe-left));
+  padding-inline-end: calc(var(--glacier-space-2) + var(--app-safe-right));
 }
 
 /* Pull the strip's own inline padding in from the kit's default so the cover and
@@ -1130,9 +1566,33 @@ body {
   }
 }
 
+/* The server-sync variant: a delta sync's total is unknown until it is over,
+   so the fill sweeps instead of pretending to a percent. The track already
+   clips, so the runner can slide clean off both ends. */
+.indexingBar__fill--sweep {
+  inline-size: 45%;
+  animation: indexingSweep 1.2s var(--glacier-ease-in-out, ease-in-out) infinite;
+}
+
+@keyframes indexingSweep {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(240%);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .indexingBar__dot {
     animation: none;
+  }
+
+  /* Still moving would defeat the setting; a full quiet bar reads as "busy"
+     the same way the dot does. */
+  .indexingBar__fill--sweep {
+    animation: none;
+    inline-size: 100%;
   }
 }
 
@@ -1369,4 +1829,52 @@ body {
 
 .dlTrack--error .dlTrack__icon {
   color: var(--glacier-danger-text, var(--glacier-text-muted));
+}
+
+/* The Spotify tab's account and library rows: art, name over detail, and the
+   sync affordance at the end. The art square doubles as its own placeholder -
+   an empty span keeps the grid when a playlist carries no image. */
+.spotifyAccountRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+}
+
+.spotifyLists {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  max-block-size: 24rem;
+  overflow-y: auto;
+  padding-inline-end: var(--glacier-space-2);
+}
+
+.spotifyRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface-sunken);
+}
+
+.spotifyRowArt {
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  flex: none;
+  border-radius: var(--glacier-radius-sm);
+  object-fit: cover;
+  background: var(--glacier-surface);
+}
+
+.spotifyRowCopy {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.spotifyRowName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

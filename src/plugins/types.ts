@@ -110,6 +110,14 @@ export interface Plugin {
   /** Short labels the card wears as tags, e.g. 'Importer'. */
   tags?: readonly string[];
   /**
+   * True for a plugin that cannot work off a desktop - one that shells out to
+   * a subprocess, walks the machine's own filesystem, or wants a browser
+   * redirect back. It is left out of the registry entirely on a phone rather
+   * than listed and switched off: a marketplace card offering something the
+   * platform cannot do is worse than no card.
+   */
+  desktopOnly?: boolean;
+  /**
    * The detail dialog's prose - a paragraph or two, where description is one
    * line. Falls back to description when absent.
    */

@@ -1,0 +1,14 @@
+{
+  "$schema": "./gen/schemas/mobile-schema.json",
+  "app": {
+    "windows": [
+      {
+        "title": "AttackFM",
+        "label": "main"
+      }
+    ]
+  },
+  "bundle": {
+    "externalBin": []
+  }
+}

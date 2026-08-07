@@ -1,5 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement } from 'react';
+import type { LyricLine } from '@glacier/react';
+import { fetchLyrics } from './lyrics.ts';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
+import { usePlayback } from './playback.tsx';
+import { usePrefersReducedMotion } from './useReducedMotion.ts';
+import type { Track } from './tauri.ts';
 
 /**
  * How fast the follower falls once the music does. Attack is instant - a hit
@@ -104,18 +109,368 @@ function lookFor(seed: string): { mood: Mood; vars: CSSProperties } {
   };
 }
 
-function usePrefersReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(
-    () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
+/**
+ * A ceiling on words per line, high enough that no real lyric reaches it -
+ * a line IS shown whole, the type shrinking to fit rather than the words
+ * being dropped. This only guards against a malformed sheet handing over a
+ * paragraph as one line.
+ */
+const WORDS_PER_LINE = 16;
+
+/**
+ * The share of its slot a stacked word actually takes. A font's ink is
+ * taller than its em box - ascenders and descenders both overshoot - so a
+ * column sized to exactly fill the band still clips at the ends. This is the
+ * margin that makes "it fits" true of the glyphs, not just the boxes.
+ */
+const STACK_FILL = 0.82;
+
+/**
+ * Roughly how wide a capital is, as a share of the font size, in the stack's
+ * heavy uppercase. Used to cap a long word by the stage's WIDTH as well as
+ * its height: whichever bound bites first is the one that sizes the word, so
+ * nothing runs off the side either.
+ */
+const CAP_ASPECT = 0.62;
+
+/**
+ * The four ways a line can take the air - COMPOSITIONS, not costumes: each
+ * lays the text out differently, not merely animates the same scatter.
+ *
+ * Which one is used is the listener's, in Playback settings: a way by name,
+ * `random` for a fresh draw on every skip (one spin per mount, and the
+ * backdrop remounts per track), or `off` for a hero with no words at all.
+ *
+ * - `scatter`    words surface each in a place of their own and dissolve
+ * - `typewriter` the line types itself out in the bottom-right corner,
+ *                cursor and all
+ * - `poster`     every line's words STAY, packing the header tighter -
+ *                large against small - until the page is full, then it
+ *                turns and the fill begins again
+ * - `stack`      the words drop into a hard left column of tall capitals,
+ *                one under another
+ */
+const WORD_WAYS = ['scatter', 'typewriter', 'poster', 'stack'] as const;
+type WordWay = (typeof WORD_WAYS)[number];
+
+/** Trailing and leading punctuation, shed so a word floats as a word. */
+const TRIM = /^["'“”‘’(\[]+|["'“”‘’)\],.!?;:]+$/g;
+
+/** A line's text as the words the ways render, trimmed and capped. */
+function wordsOf(text: string): string[] {
+  return text
+    .split(/\s+/)
+    .map((word) => word.replace(TRIM, ''))
+    .filter(Boolean)
+    .slice(0, WORDS_PER_LINE);
+}
+
+/** Scatter: each word surfaces in a seeded place of its own and dissolves. */
+function ScatterLine({ path, active, words, life }: LineProps) {
+  return (
+    <>
+      {words.map((word, index) => {
+        const random = seeded(`${path}#${active}#${index}#${word}`);
+        const count = words.length;
+        const delay = (index / count) * life * 0.5;
+        // Across the stage, which is already the right-hand band; the tail
+        // margin keeps a long word from running off the window's edge.
+        const x = 4 + random() * 52;
+        const y = 6 + (index / Math.max(1, count - 1)) * 64 + random() * 14;
+        const rotate = (random() - 0.5) * 14;
+        // A share of the stage's height, so words scale with the band rather
+        // than overflowing a short one. Long words shrink toward the whisper
+        // end so nothing shouts.
+        const size = (11 + random() * 11) * Math.min(1.15, Math.max(0.55, 6 / word.length));
+        const peak = 0.45 + random() * 0.28;
+        return (
+          <span
+            key={`${active}-${index}`}
+            className="npWord"
+            style={
+              {
+                left: `${x.toFixed(1)}%`,
+                top: `${y.toFixed(1)}%`,
+                fontSize: `${size.toFixed(2)}cqh`,
+                animationDelay: `${delay.toFixed(2)}s`,
+                animationDuration: `${(life - delay).toFixed(2)}s`,
+                '--hw-rot': `${rotate.toFixed(1)}deg`,
+                '--hw-peak': peak.toFixed(2),
+              } as CSSProperties
+            }
+          >
+            {word}
+          </span>
+        );
+      })}
+    </>
   );
+}
+
+/**
+ * Typewriter: the whole line types itself out in the bottom-right corner,
+ * character by character behind a blinking cursor - a margin note being
+ * kept while the song plays.
+ */
+function TypewriterLine({ active, words, life }: LineProps) {
+  // The whole line, never a slice: a long one sets smaller (the size cap
+  // below scales with the character count) rather than stopping mid-word.
+  const text = words.join(' ');
+  const chars = [...text];
+  // The whole line is typed by 45% of its life, evenly, but never slower
+  // than a human hand or the short lines dawdle.
+  const step = Math.min(0.07, (life * 0.45) / Math.max(1, chars.length));
+  return (
+    <div
+      key={active}
+      className="npTypeLine"
+      style={
+        {
+          animationDuration: `${life.toFixed(2)}s`,
+          // Mono, so width is simply the character count: this is the size at
+          // which the line fills about two wrapped rows of the stage. The CSS
+          // caps it against the stage's height as well.
+          '--hw-type-size': `${(320 / Math.max(12, chars.length)).toFixed(2)}cqw`,
+        } as CSSProperties
+      }
+    >
+      {chars.map((char, index) => (
+        <span
+          key={index}
+          className="npTypeChar"
+          style={{ animationDelay: `${(index * step).toFixed(3)}s` }}
+        >
+          {char}
+        </span>
+      ))}
+      <span className="npTypeCursor" />
+    </div>
+  );
+}
+
+/**
+ * How many rows the poster sets, and the character budget each row holds.
+ * The budget approximates what a banner-wide row of mixed type actually
+ * fits (~60 characters at these sizes): too small and the page turns every
+ * other line, and the poster never reads as filling.
+ */
+const POSTER_ROWS = 4;
+const POSTER_ROW_BUDGET = 60;
+
+interface PosterCell {
+  word: string;
+  line: number;
+  size: number;
+  weight: number;
+  peak: number;
+}
+
+/**
+ * Poster: the one way that KEEPS what the song has said. Every line's words
+ * are added to the page, large against small, packing the rows tighter -
+ * and only when a word no longer fits anywhere does the page turn and the
+ * fill begin again from that line.
+ *
+ * Derived, not accumulated in state: the whole page is recomputed from the
+ * line history on every render, walking from the top and turning pages
+ * wherever they would have turned. Re-renders redraw the identical page,
+ * and a seek lands on exactly the page that moment would always have shown.
+ */
+function PosterLine({ path, active, lines, life }: LineProps) {
+  let pageStart = 0;
+  let rows: PosterCell[][] = Array.from({ length: POSTER_ROWS }, () => []);
+  let budgets = Array.from({ length: POSTER_ROWS }, () => POSTER_ROW_BUDGET);
+
+  const freshPage = () => {
+    rows = Array.from({ length: POSTER_ROWS }, () => []);
+    budgets = Array.from({ length: POSTER_ROWS }, () => POSTER_ROW_BUDGET);
+  };
+  const place = (cell: PosterCell): boolean => {
+    const cost = Math.max(3, cell.word.length) * (cell.size > 14 ? 1.5 : 1);
+    for (let row = 0; row < POSTER_ROWS; row += 1) {
+      if (budgets[row]! >= cost && rows[row]!.length < 10) {
+        rows[row]!.push(cell);
+        budgets[row]! -= cost;
+        return true;
+      }
+    }
+    return false;
+  };
+
+  for (let index = 0; index <= active; index += 1) {
+    const lineWords = wordsOf(lines[index]!.text);
+    for (const [wordIndex, word] of lineWords.entries()) {
+      const random = seeded(`${path}#${index}#${wordIndex}#${word}`);
+      const cell: PosterCell = {
+        word,
+        line: index,
+        // A share of the stage's height, so four rows of these always fit
+        // the band: the tallest cell is a fifth of it.
+        size: 8 + random() * 12,
+        weight: [550, 700, 800][Math.floor(random() * 3)]!,
+        peak: 0.4 + random() * 0.26,
+      };
+      if (!place(cell)) {
+        // The page is full: turn it, and this word opens the next one.
+        pageStart = index;
+        freshPage();
+        place(cell);
+      }
+    }
+  }
+
+  return (
+    <div key={`page-${pageStart}`} className="npPoster">
+      {rows.map((cells, rowIndex) => (
+        <div key={rowIndex} className="npPosterRow">
+          {cells.map((cell, cellIndex) => {
+            const random = seeded(`${path}#pop#${cell.line}#${cellIndex}`);
+            return (
+              <span
+                // Keyed by line and slot: cells from earlier lines keep their
+                // DOM (and their finished pop) as later lines join the page.
+                key={`${cell.line}-${cellIndex}`}
+                className="npPosterWord"
+                style={
+                  {
+                    fontSize: `${cell.size.toFixed(2)}cqh`,
+                    fontWeight: cell.weight,
+                    // Only the newest line's words are still arriving; the
+                    // rest sit as they landed.
+                    animationDelay:
+                      cell.line === active ? `${(random() * life * 0.4).toFixed(2)}s` : '0s',
+                    '--hw-peak': cell.peak.toFixed(2),
+                  } as CSSProperties
+                }
+              >
+                {cell.word}
+              </span>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Stack: the words drop one under another into a column of tall capitals.
+ *
+ * Sized in `cqh` - a share of the stage's own height - and divided so the
+ * whole column always fits: five words get a fifth of the band each, three
+ * get a third, and the line-height allowance is taken off the top. A column
+ * that cannot overflow needs no clamping after the fact.
+ */
+function StackLine({ path, active, words, life }: LineProps) {
+  const random = seeded(`${path}#${active}#stack`);
+  // Every word of the line, however many: the column divides the band by the
+  // word count, so a long line simply sets smaller. Nothing is dropped.
+  const share = (100 / words.length) * STACK_FILL;
+  return (
+    <div
+      key={active}
+      className="npStack"
+      style={{ animationDuration: `${life.toFixed(2)}s` } as CSSProperties}
+    >
+      {words.map((word, index) => (
+        <span
+          key={index}
+          className="npStackWord"
+          style={
+            {
+              // Whichever bound bites first: the word's share of the height,
+              // or the width a word of this length can have and still fit.
+              // The floor guards against a container reporting no size yet
+              // resolving this to literal zero - and is deliberately tiny,
+              // because a generous one would OVERRIDE the fit on a short
+              // stage and push the column past its end (which is how the
+              // last word of a long line used to disappear).
+              fontSize: `max(0.4rem, min(${(share * (0.82 + random() * 0.18)).toFixed(
+                2,
+              )}cqh, ${(96 / (word.length * CAP_ASPECT)).toFixed(2)}cqw))`,
+              animationDelay: `${((index / words.length) * life * 0.35).toFixed(2)}s`,
+              '--hw-peak': (0.5 + random() * 0.28).toFixed(2),
+            } as CSSProperties
+          }
+        >
+          {word}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+interface LineProps {
+  path: string;
+  active: number;
+  /** The active line's words, trimmed and capped. */
+  words: string[];
+  /** The full synced sheet, for the ways that read history (the poster). */
+  lines: LyricLine[];
+  life: number;
+}
+
+const WAY_RENDERERS: Record<WordWay, (props: LineProps) => ReactElement> = {
+  scatter: (p) => <ScatterLine {...p} />,
+  typewriter: (p) => <TypewriterLine {...p} />,
+  poster: (p) => <PosterLine {...p} />,
+  stack: (p) => <StackLine {...p} />,
+};
+
+/**
+ * The song's own words, rendered over the wash while it plays, in whichever
+ * of the five ways this skip drew.
+ *
+ * Pure decoration, and deliberately less than legible: low opacity, blended
+ * into the art, gone before the next line takes over. Layouts are seeded off
+ * the track and line, so re-renders (the position ticks every second) redraw
+ * everything exactly where it already stands; and every way's container (or
+ * each scatter word) animates to nothing by the line's own end, so the
+ * handoff between lines needs no choreography.
+ *
+ * Synced lyrics only: without times there is nothing to spell along to.
+ */
+function HeroWords({
+  track,
+  position,
+  audible,
+  way,
+}: {
+  track: Track;
+  position: number;
+  audible: boolean;
+  way: WordWay;
+}) {
+  const [lines, setLines] = useState<LyricLine[] | null>(null);
   useEffect(() => {
-    const query = window.matchMedia?.('(prefers-reduced-motion: reduce)');
-    if (!query) return;
-    const onChange = () => setReduced(query.matches);
-    query.addEventListener('change', onChange);
-    return () => query.removeEventListener('change', onChange);
-  }, []);
-  return reduced;
+    let cancelled = false;
+    setLines(null);
+    void fetchLyrics(track).then((found) => {
+      if (!cancelled) setLines(found.synced);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [track]);
+
+  const active = useMemo(() => {
+    if (!lines) return -1;
+    return lines.reduce((found, line, index) => (line.time <= position ? index : found), -1);
+  }, [lines, position]);
+
+  if (!lines || active < 0) return null;
+  const line = lines[active]!;
+  const next = lines[active + 1];
+  // How long this line has the air: until the next one, within reason.
+  const life = Math.min(7, Math.max(2.5, next ? next.time - line.time : 5));
+  const words = wordsOf(line.text);
+  if (words.length === 0) return null;
+
+  return (
+    <div className="npWords" data-way={way} data-quiet={!audible || undefined}>
+      {WAY_RENDERERS[way]({ path: track.path, active, words, lines, life })}
+    </div>
+  );
 }
 
 /**
@@ -129,12 +484,25 @@ function usePrefersReducedMotion(): boolean {
  * spends differently depending on the mood the track drew.
  */
 export function NowPlayingBackdrop({ artwork, seed }: { artwork: string; seed: string }) {
-  const { meter, audible } = useNowPlayingMotion();
+  const { meter, audible, track, position } = useNowPlayingMotion();
   // The reading lands on the container rather than on the art, so every layer
   // under it - art, the soft copy, the glow - reads the same number.
   const stageRef = useRef<HTMLDivElement>(null);
   const reduced = usePrefersReducedMotion();
   const { mood, vars } = useMemo(() => lookFor(seed), [seed]);
+  // The way is the listener's, from Playback settings. Under `random` it is a
+  // fresh draw per mount - and the backdrop mounts per track, so every skip
+  // respins it; Math.random, not the seeded rng, on purpose: the moods belong
+  // to the song, the way it speaks belongs to the moment. The draw is made
+  // whatever the setting says, so switching to random and back mid-song does
+  // not respin what is already on screen.
+  const { lyricWay } = usePlayback();
+  const drawnWay = useMemo<WordWay>(
+    () => WORD_WAYS[Math.floor(Math.random() * WORD_WAYS.length)]!,
+    [],
+  );
+  const wordWay: WordWay | null =
+    lyricWay === 'off' ? null : lyricWay === 'random' ? drawnWay : lyricWay;
 
   useEffect(() => {
     const node = stageRef.current;
@@ -189,6 +557,12 @@ export function NowPlayingBackdrop({ artwork, seed }: { artwork: string; seed: s
         {mood === 'focus' && <div className="npArt npArtSoft" style={cover} />}
       </div>
       <div className="npGlow" />
+      {/* The words ride inside the masked box, so they share its fade toward
+          the list and can never stray over legible content. Motion-reduced
+          windows skip them whole: they are nothing BUT motion. */}
+      {track && wordWay && !reduced && (
+        <HeroWords track={track} position={position} audible={audible} way={wordWay} />
+      )}
     </div>
   );
 }

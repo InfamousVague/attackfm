@@ -1,0 +1,397 @@
+//! The JSON surface: accounts, the library delta, favourites, playlists, and
+//! resume positions.
+//!
+//! Everything here is small and cacheable. The bytes that matter - audio and
+//! cover art - are `stream.rs`'s business and never travel through a JSON
+//! response.
+
+use crate::auth;
+use crate::scan;
+use crate::upload::human_bytes;
+use crate::AppState;
+use axum::extract::{Path, Query, State};
+use axum::http::{HeaderMap, StatusCode};
+use axum::Json;
+use serde::Deserialize;
+use serde_json::json;
+use std::collections::HashMap;
+use std::sync::Arc;
+
+type ApiError = (StatusCode, String);
+type ApiResult = Result<Json<serde_json::Value>, ApiError>;
+
+fn bad(status: StatusCode, message: &str) -> ApiError {
+    (status, message.to_string())
+}
+
+// --- the handshake --------------------------------------------------------
+
+/// `GET /api/server` - the only endpoint that answers without a token.
+///
+/// It is how a client decides what screen to show before it has credentials:
+/// an empty server needs its first account made, a set-up one needs a sign-in,
+/// and a server without ffmpeg should not be offering a quality slider.
+pub async fn server_info(State(state): State<Arc<AppState>>) -> ApiResult {
+    Ok(Json(json!({
+        "name": state.server_name,
+        "version": env!("CARGO_PKG_VERSION"),
+        "api": 1,
+        // No users yet: whoever registers first becomes the admin.
+        "needsSetup": state.db.user_count() == 0,
+        "transcode": state.ffmpeg,
+        "tracks": state.db.track_count(),
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct Credentials {
+    pub username: String,
+    pub password: String,
+}
+
+/// `POST /api/auth/register`
+///
+/// Open only until the first account exists; after that it is an admin's call
+/// who else gets in. A personal music server that stayed open to registration
+/// would be a public music server by the end of the week.
+pub async fn register(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<Credentials>,
+) -> ApiResult {
+    let first = state.db.user_count() == 0;
+    if !first {
+        auth::require_admin(&state.db, &headers)
+            .map_err(|_| bad(StatusCode::FORBIDDEN, "only an admin can add accounts"))?;
+    }
+
+    let username = body.username.trim().to_string();
+    if username.len() < 2 || username.len() > 40 {
+        return Err(bad(StatusCode::BAD_REQUEST, "username must be 2-40 characters"));
+    }
+    if body.password.len() < 8 {
+        return Err(bad(StatusCode::BAD_REQUEST, "password must be at least 8 characters"));
+    }
+    if state.db.user_by_name(&username).is_some() {
+        return Err(bad(StatusCode::CONFLICT, "that name is taken"));
+    }
+
+    let hash = auth::hash_password(&body.password)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let id = state
+        .db
+        .create_user(&username, &hash, first)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(json!({ "id": id, "username": username, "isAdmin": first })))
+}
+
+/// `POST /api/auth/login` - a session token plus the stream token that lets a
+/// media element fetch bytes.
+pub async fn login(State(state): State<Arc<AppState>>, Json(body): Json<Credentials>) -> ApiResult {
+    let user = state
+        .db
+        .user_by_name(body.username.trim())
+        .filter(|u| auth::verify_password(&body.password, &u.pass_hash))
+        // One message for both halves: saying which of the two was wrong tells
+        // an attacker which usernames exist.
+        .ok_or_else(|| bad(StatusCode::UNAUTHORIZED, "wrong name or password"))?;
+
+    let token = auth::random_token();
+    state
+        .db
+        .create_token(&token, user.id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let stream_token = auth::mint_stream_token(&state.stream_secret, user.id, user.stream_epoch);
+
+    Ok(Json(json!({
+        "token": token,
+        "streamToken": stream_token,
+        "streamTokenExpires": auth::STREAM_TOKEN_TTL_SECS,
+        "user": { "id": user.id, "username": user.username, "isAdmin": user.is_admin },
+    })))
+}
+
+/// `POST /api/auth/logout` - drops this device's session only.
+pub async fn logout(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
+    if let Some(token) = auth::bearer(&headers) {
+        let _ = state.db.delete_token(&token);
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// `GET /api/me` - who is calling, and a freshly minted stream token.
+///
+/// The client calls this when a stream URL starts coming back 401, which is how
+/// an expired stream token renews itself without a re-login.
+pub async fn me(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let user = state
+        .db
+        .user_by_id(caller.id)
+        .ok_or_else(|| bad(StatusCode::UNAUTHORIZED, "account is gone"))?;
+    let stream_token = auth::mint_stream_token(&state.stream_secret, user.id, user.stream_epoch);
+    Ok(Json(json!({
+        "id": user.id,
+        "username": user.username,
+        "isAdmin": user.is_admin,
+        "streamToken": stream_token,
+        "streamTokenExpires": auth::STREAM_TOKEN_TTL_SECS,
+    })))
+}
+
+// --- the library ----------------------------------------------------------
+
+/// `GET /api/library?since=&limit=` - everything that changed above `since`.
+///
+/// Delta sync rather than a full index: a phone that has been away for a day
+/// downloads the four tracks that arrived, not the ten thousand it already
+/// has. `rev` in the reply is what to pass as `since` next time, and `more`
+/// says whether the page hit its limit and should be asked for again.
+pub async fn library(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(params): Query<HashMap<String, String>>,
+) -> ApiResult {
+    auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+
+    let since: i64 = params.get("since").and_then(|s| s.parse().ok()).unwrap_or(0);
+    let limit: i64 = params
+        .get("limit")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(5000)
+        .clamp(1, 20_000);
+
+    let (tracks, removed) = state.db.tracks_since(since, limit);
+    let page_rev = tracks
+        .iter()
+        .map(|t| t.rev)
+        .chain(removed.iter().map(|_| since))
+        .max()
+        .unwrap_or(since);
+    let more = (tracks.len() as i64 + removed.len() as i64) >= limit;
+
+    Ok(Json(json!({
+        // The whole-library revision, so a client that has drained every page
+        // knows what it is caught up to.
+        "rev": if more { page_rev } else { state.db.current_rev() },
+        "more": more,
+        "tracks": tracks,
+        "removed": removed,
+    })))
+}
+
+/// `GET /api/scan` - how the indexer is doing.
+pub async fn scan_status(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
+    auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let used = state.db.total_bytes();
+    let mut status = state.progress.snapshot();
+    if let Some(obj) = status.as_object_mut() {
+        obj.insert("tracks".into(), json!(state.db.track_count()));
+        obj.insert("bytes".into(), json!(used));
+        obj.insert("bytesLabel".into(), json!(human_bytes(used)));
+        obj.insert("quota".into(), json!(state.library_quota_bytes));
+        obj.insert("rev".into(), json!(state.db.current_rev()));
+    }
+    Ok(Json(status))
+}
+
+/// `POST /api/scan` - re-walk the music root now.
+pub async fn scan_now(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
+    auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    scan::spawn_scan(
+        state.db.clone(),
+        state.music_root.clone(),
+        state.art_dir.clone(),
+        state.progress.clone(),
+    );
+    Ok(Json(json!({ "started": true })))
+}
+
+// --- favourites -----------------------------------------------------------
+
+pub async fn favorites(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    Ok(Json(json!({ "tracks": state.db.favorites(caller.id) })))
+}
+
+#[derive(Deserialize)]
+pub struct FavoriteBody {
+    pub favorite: bool,
+}
+
+pub async fn set_favorite(
+    State(state): State<Arc<AppState>>,
+    Path(track_id): Path<i64>,
+    headers: HeaderMap,
+    Json(body): Json<FavoriteBody>,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    state
+        .db
+        .set_favorite(caller.id, track_id, body.favorite)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+// --- playlists ------------------------------------------------------------
+
+pub async fn playlists(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let lists: Vec<_> = state
+        .db
+        .playlists(caller.id)
+        .into_iter()
+        .map(|(id, name, updated, tracks)| {
+            json!({ "id": id, "name": name, "updatedAt": updated, "tracks": tracks })
+        })
+        .collect();
+    Ok(Json(json!({ "playlists": lists })))
+}
+
+#[derive(Deserialize)]
+pub struct PlaylistBody {
+    pub name: Option<String>,
+    pub tracks: Option<Vec<i64>>,
+}
+
+pub async fn create_playlist(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<PlaylistBody>,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let name = body.name.unwrap_or_default().trim().to_string();
+    if name.is_empty() {
+        return Err(bad(StatusCode::BAD_REQUEST, "a playlist needs a name"));
+    }
+    let id = state
+        .db
+        .create_playlist(caller.id, &name)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if let Some(tracks) = body.tracks {
+        let _ = state.db.set_playlist_tracks(id, &tracks);
+    }
+    Ok(Json(json!({ "id": id, "name": name })))
+}
+
+/// Refuses any playlist the caller does not own. Ownership is checked on every
+/// edit rather than trusted from the list response - two accounts on one server
+/// should not be able to reach into each other's playlists by guessing an id.
+fn owned_playlist(state: &AppState, caller_id: i64, playlist_id: i64) -> Result<(), ApiError> {
+    match state.db.playlist_owner(playlist_id) {
+        Some(owner) if owner == caller_id => Ok(()),
+        // Same answer either way, so a probe cannot enumerate what exists.
+        _ => Err(bad(StatusCode::NOT_FOUND, "no such playlist")),
+    }
+}
+
+pub async fn update_playlist(
+    State(state): State<Arc<AppState>>,
+    Path(playlist_id): Path<i64>,
+    headers: HeaderMap,
+    Json(body): Json<PlaylistBody>,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    owned_playlist(&state, caller.id, playlist_id)?;
+    if let Some(name) = body.name.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
+        let _ = state.db.rename_playlist(playlist_id, name);
+    }
+    if let Some(tracks) = body.tracks {
+        state
+            .db
+            .set_playlist_tracks(playlist_id, &tracks)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
+pub async fn delete_playlist(
+    State(state): State<Arc<AppState>>,
+    Path(playlist_id): Path<i64>,
+    headers: HeaderMap,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    owned_playlist(&state, caller.id, playlist_id)?;
+    let _ = state.db.delete_playlist(playlist_id);
+    Ok(Json(json!({ "ok": true })))
+}
+
+// --- resume positions -----------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct PlayStateBody {
+    #[serde(rename = "trackId")]
+    pub track_id: i64,
+    #[serde(rename = "positionMs")]
+    pub position_ms: i64,
+}
+
+pub async fn set_play_state(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<PlayStateBody>,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    state
+        .db
+        .set_play_state(caller.id, body.track_id, body.position_ms.max(0))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+pub async fn play_states(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let states: Vec<_> = state
+        .db
+        .play_states(caller.id, 100)
+        .into_iter()
+        .map(|(track_id, position_ms, updated)| {
+            json!({ "trackId": track_id, "positionMs": position_ms, "updatedAt": updated })
+        })
+        .collect();
+    Ok(Json(json!({ "states": states })))
+}
+
+// --- accounts (admin) -----------------------------------------------------
+
+pub async fn list_users(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
+    auth::require_admin(&state.db, &headers).map_err(|s| (s, "admins only".into()))?;
+    let users: Vec<_> = state
+        .db
+        .list_users()
+        .into_iter()
+        .map(|(id, username, is_admin)| json!({ "id": id, "username": username, "isAdmin": is_admin }))
+        .collect();
+    Ok(Json(json!({ "users": users })))
+}
+
+pub async fn delete_user(
+    State(state): State<Arc<AppState>>,
+    Path(user_id): Path<i64>,
+    headers: HeaderMap,
+) -> ApiResult {
+    let caller = auth::require_admin(&state.db, &headers).map_err(|s| (s, "admins only".into()))?;
+    if caller.id == user_id {
+        return Err(bad(StatusCode::BAD_REQUEST, "an admin cannot delete themselves"));
+    }
+    state
+        .db
+        .delete_user(user_id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// `POST /api/users/:id/revoke` - kills every stream token that account holds.
+pub async fn revoke_streams(
+    State(state): State<Arc<AppState>>,
+    Path(user_id): Path<i64>,
+    headers: HeaderMap,
+) -> ApiResult {
+    auth::require_admin(&state.db, &headers).map_err(|s| (s, "admins only".into()))?;
+    state
+        .db
+        .bump_stream_epoch(user_id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(json!({ "ok": true })))
+}

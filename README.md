@@ -15,6 +15,76 @@ window title bar, the settings, the modal, and the toast system are all worked
 examples composed from Glacier components. The kit is vendored under
 `vendor/@glacier/*`, so the app installs and runs with no extra setup.
 
+## Your music, on your phone
+
+The library can come from two places: a folder on this machine, or a server you
+run. Everyone runs their own — the library is your own files on your own
+machine, not a service anyone else is on.
+
+`server/` is that server: a single Rust binary that indexes a music folder and
+streams the original files over HTTP byte ranges, so a phone plays the same FLAC
+the desktop does, bit for bit. On the machine that will hold the music:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/InfamousVague/attackfm/main/server/install.sh | sudo sh
+```
+
+The installer asks where the music lives and whether you have a domain, sets up
+systemd and (with a domain) Caddy with automatic HTTPS, and prints the address
+to enter under **Settings → Server**. The app carries the same instructions
+behind "I don't have a server yet" on that pane. See
+[server/README.md](server/README.md) for the details.
+
+```sh
+npm run server         # or just run it locally: 127.0.0.1:8788
+```
+
+The design goal was that the player should not learn anything. It already plays
+whatever URL it is handed through an `<audio>` element, and it already reads
+levels off a CORS-clean remote source — so a remote track is just a track whose
+`path` is an `afm://<id>` URI, and the only function that had to change is the
+one that turns a path into something playable. Favourites, the queue, search,
+the visualiser, the equaliser and the crossfade all work on a server library
+without knowing one exists.
+
+## Phone (iOS and Android)
+
+```sh
+npm run ios:dev          # or: npm run android:dev
+npm run ios:build        # signed build for a real device
+npm run ios:build:sim    # simulator build
+```
+
+Use the npm scripts rather than `tauri ios build` directly. They clear the
+copied artifacts first, because Tauri finishes an iOS build by `rename()`-ing
+the app into `gen/apple/build/<target>/`, and on macOS that fails with
+`ENOTEMPTY` when the previous build's output is still there — so the first build
+works and every one after it dies with "failed to rename app … Directory not
+empty", several lines below a cheerful `** BUILD SUCCEEDED **`. Only the copied
+bundles are cleared; the compiled objects live in DerivedData and are untouched.
+
+The phone builds are the listening end of the system: there is no music folder
+on a phone worth walking, so the library comes from the server. Three things
+differ from the desktop build, all of them handled:
+
+- **Window chrome.** `isDesktopApp` (in `src/app/platform.ts`) is what the
+  chrome keys on now, not `isTauri()` — a phone build is inside Tauri but has no
+  window to decorate. It gets a plain header carrying the same search and
+  settings controls, and the browser gets it too.
+- **Background audio.** iOS suspends audio at the lock screen unless the app
+  both declares `UIBackgroundModes: [audio]` (`src-tauri/Info.ios.plist`) and
+  claims the `playback` audio session (`src-tauri/src/ios_audio.rs`). Both are
+  required; either alone does nothing.
+- **What cannot run there.** The music importer drives a Python downloader as a
+  child process, which mobile sandboxes forbid outright, so it is left out of
+  the registry on phones rather than shipped as a card that cannot work.
+
+One gotcha worth knowing: `tauri ios init` regenerates
+`src-tauri/gen/apple/project.yml` and resets the iOS deployment target to 14.0,
+which Xcode 26+ refuses to build. Re-apply the 15.0 in that file and run
+`xcodegen generate` in `gen/apple` — neither `ios init` nor `ios build` re-runs
+xcodegen for you.
+
 ## Desktop (Tauri)
 
 When you scaffolded with the Tauri backend, `src-tauri/` holds a Tauri v2 Rust

@@ -1,0 +1,117 @@
+# HAND-EDITED: `deploymentTarget` here, and DEVELOPMENT_TEAM / CODE_SIGN_STYLE
+# further down. Neither is read from tauri.conf.json, though both are set there
+# too so a fixed CLI starts honouring them on its own.
+#
+# `tauri ios init` writes this file from its own template. It leaves an existing
+# one alone, but a delete-and-reinit resets both edits - so re-apply them, and
+# then run `xcodegen generate` in this directory, because neither `ios init` nor
+# `ios build` re-runs xcodegen for you; the .xcodeproj keeps whatever it was
+# last generated with.
+#
+# Tauri's template hardcodes 14.0 and does NOT read
+# `bundle.iOS.minimumSystemVersion` from tauri.conf.json when generating this
+# file (it is set there too, so a fixed CLI starts working on its own). Xcode
+# 26+ refuses 14.0 outright - "the range of supported deployment target versions
+# is 15.0 to 27.0.x" - and the build fails before compiling anything.
+#
+# Everything else this app needs from the Info.plist - UIBackgroundModes for
+# background audio, the local-network permission - comes from
+# `src-tauri/Info.ios.plist`, which the CLI merges at build time. That file
+# survives a re-init; this one does not.
+name: app
+options:
+  bundleIdPrefix: com.mattssoftware.attackfm
+  deploymentTarget:
+    iOS: 15.0
+fileGroups: [../../src]
+configs:
+  debug: debug
+  release: release
+settingGroups:
+  app:
+    base:
+      PRODUCT_NAME: AttackFM
+      PRODUCT_BUNDLE_IDENTIFIER: com.mattssoftware.attackfm
+targetTemplates:
+  app:
+    type: application
+    sources:
+      - path: Sources
+    scheme:
+      environmentVariables:
+        RUST_BACKTRACE: full
+        RUST_LOG: info
+    settings:
+      groups: [app]
+targets:
+  app_iOS:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      - path: Assets.xcassets
+      - path: Externals
+      - path: app_iOS
+      - path: assets
+        buildPhase: resources
+        type: folder
+      - path: LaunchScreen.storyboard
+    info:
+      path: app_iOS/Info.plist
+      properties:
+        LSRequiresIPhoneOS: true
+        UILaunchStoryboardName: LaunchScreen
+        UIRequiredDeviceCapabilities: [arm64, metal]
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        CFBundleShortVersionString: 0.1.0
+        CFBundleVersion: "0.1.0"
+    entitlements:
+      path: app_iOS/app_iOS.entitlements
+    scheme:
+      environmentVariables:
+        RUST_BACKTRACE: full
+        RUST_LOG: info
+    settings:
+      base:
+        # Signing, for building onto a real iPhone (the simulator needs none).
+        # Same team PrettyCardboard signs with. Automatic style lets Xcode mint
+        # and refresh the provisioning profile itself, which is what keeps a
+        # device build working without a profile checked into the repo.
+        #
+        # Hand-added: the CLI does not propagate bundle.iOS.developmentTeam
+        # from tauri.conf.json into this file, where it is set as well.
+        DEVELOPMENT_TEAM: F6ZAL7ANAD
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_BITCODE: false
+        ARCHS: [arm64]
+        VALID_ARCHS: arm64 
+        LIBRARY_SEARCH_PATHS[arch=x86_64]: $(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)
+        LIBRARY_SEARCH_PATHS[arch=arm64]: $(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)
+        ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: true
+        EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64
+      groups: [app]
+    dependencies:
+      - framework: libapp.a
+        embed: false
+      - sdk: CoreGraphics.framework
+      - sdk: Metal.framework
+      - sdk: MetalKit.framework
+      - sdk: QuartzCore.framework
+      - sdk: Security.framework
+      - sdk: UIKit.framework
+      - sdk: WebKit.framework
+    preBuildScripts:
+      - script: npm run -- tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths "${FRAMEWORK_SEARCH_PATHS:?}" --header-search-paths "${HEADER_SEARCH_PATHS:?}" --gcc-preprocessor-definitions "${GCC_PREPROCESSOR_DEFINITIONS:-}" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}
+        name: Build Rust Code
+        basedOnDependencyAnalysis: false
+        outputFiles:
+          - $(SRCROOT)/Externals/x86_64/${CONFIGURATION}/libapp.a
+          - $(SRCROOT)/Externals/arm64/${CONFIGURATION}/libapp.a

@@ -3,3 +3,25 @@ node_modules
 .DS_Store
 src-tauri/target
 .snapshots
+
+# Deploy credentials for scripts/redeploy.mjs.
+.env
+
+# The server's own build output and its runtime state - the SQLite index, the
+# extracted cover-art cache, in-flight uploads, and any music kept locally
+# while testing.
+server/target
+server/data
+server/music
+
+# Generated mobile projects. `tauri ios init` / `android init` rebuild these,
+# with one exception noted in src-tauri/gen/apple/project.yml: the iOS
+# deployment target is hand-set there, so that file IS tracked.
+src-tauri/gen/apple/build
+src-tauri/gen/apple/Externals
+src-tauri/gen/apple/app.xcodeproj
+src-tauri/gen/apple/Pods
+src-tauri/gen/apple/Podfile.lock
+src-tauri/gen/android/app/build
+src-tauri/gen/android/build
+src-tauri/gen/android/.gradle

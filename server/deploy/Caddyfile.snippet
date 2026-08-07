@@ -1,0 +1,32 @@
+# AttackFM reverse proxy - paste into the VPS Caddyfile as its own site block
+# and change the hostname. The server binds 127.0.0.1:8788, so Caddy is the only
+# way to reach it.
+#
+# Two things here are not boilerplate, and streaming breaks without them.
+
+music.example.com {
+	# NOT `encode`. Audio files are already compressed - FLAC, AAC, MP3 all are -
+	# so gzipping them buys nothing and costs a core per stream on a box that has
+	# one. Worse, Caddy's encoder drops Content-Length on the responses it
+	# touches, and a media element with no length cannot seek. The JSON API is a
+	# few KB; leaving the whole site uncompressed is the honest trade.
+
+	reverse_proxy 127.0.0.1:8788 {
+		# A big library sync and a long album both outlast the default. Streaming
+		# a two-hour lossless recording is one HTTP response held open for as
+		# long as somebody listens.
+		transport http {
+			read_timeout 6h
+			write_timeout 6h
+		}
+		# Uploads arrive in 1 MB slices, but the buffer default would still hold
+		# each one in memory before passing it on. Stream them instead.
+		flush_interval -1
+	}
+
+	# Uploads: a lossless track is tens of megabytes and the default cap is far
+	# below that.
+	request_body {
+		max_size 2GB
+	}
+}

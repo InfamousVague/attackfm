@@ -6,6 +6,14 @@ const STORAGE_KEY = 'attackfm-playback';
 export type PauseStyle = 'turntable' | 'fade' | 'instant';
 
 /**
+ * How the hero spells the song's words - see WORD_WAYS in NowPlayingBackdrop
+ * for what each one looks like. `off` draws nothing at all; `random` draws a
+ * fresh way on every skip, which is what the hero did before this was a
+ * setting; the rest pin it.
+ */
+export type LyricWay = 'off' | 'random' | 'scatter' | 'typewriter' | 'poster' | 'stack';
+
+/**
  * The sleep timer's target: a clock time (kept with the preset that chose it,
  * so the settings can keep showing which button is lit), the end of the
  * current track, or off.
@@ -24,6 +32,8 @@ export interface PlaybackSettings {
   /** Folds the channels together and plays the same signal to both ears. */
   mono: boolean;
   pauseStyle: PauseStyle;
+  /** How the hero spells the song's words behind the header. */
+  lyricWay: LyricWay;
 }
 
 interface PlaybackContextValue extends PlaybackSettings {
@@ -44,9 +54,18 @@ const DEFAULTS: PlaybackSettings = {
   nightMode: false,
   mono: false,
   pauseStyle: 'turntable',
+  lyricWay: 'stack',
 };
 
 const PAUSE_STYLES: readonly PauseStyle[] = ['turntable', 'fade', 'instant'];
+export const LYRIC_WAYS: readonly LyricWay[] = [
+  'off',
+  'random',
+  'scatter',
+  'typewriter',
+  'poster',
+  'stack',
+];
 
 const PlaybackContext = createContext<PlaybackContextValue | null>(null);
 
@@ -69,6 +88,9 @@ function readStored(): PlaybackSettings {
       pauseStyle: PAUSE_STYLES.includes(parsed.pauseStyle as PauseStyle)
         ? (parsed.pauseStyle as PauseStyle)
         : DEFAULTS.pauseStyle,
+      lyricWay: LYRIC_WAYS.includes(parsed.lyricWay as LyricWay)
+        ? (parsed.lyricWay as LyricWay)
+        : DEFAULTS.lyricWay,
     };
   } catch {
     return DEFAULTS;

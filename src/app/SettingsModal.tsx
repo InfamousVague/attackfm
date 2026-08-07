@@ -8,21 +8,23 @@ import {
   Modal,
   Pill,
   SegmentedControl,
+  Select,
   Slider,
   Switch,
   TabbedModal,
   Text,
 } from '@glacier/react';
 import { accentOptions, accentSteps } from '@glacier/tokens';
-import { Blocks, FolderOpen, Info, Play, Settings, SlidersHorizontal } from '@glacier/icons';
+import { Blocks, Cloud, FolderOpen, Info, Play, Settings, SlidersHorizontal } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import type { Plugin } from '../plugins/types.ts';
 import { BRAND_ACCENTS } from './brandAccents.ts';
 import { useAppearance } from './appearance.tsx';
-import { canPickFolder } from './tauri.ts';
+import { canPickFolder, isTauri } from './tauri.ts';
 import { useLibrary } from './library.tsx';
 import { usePlayback, type SleepTimer } from './playback.tsx';
 import { usePlugins, usePluginSettingsSections } from '../plugins/runtime.tsx';
+import { ServerSettings } from './ServerSettings.tsx';
 import { ThemeSelector } from './ThemeSelector.tsx';
 import { getThemePreset, THEME_PRESETS, type ThemePreference } from './themePresets.ts';
 
@@ -131,7 +133,25 @@ function Appearance() {
  * is built from and played through.
  */
 function General() {
-  const { musicDir, loading, isDefault, choose, reset } = useLibrary();
+  const { source, musicDir, loading, isDefault, choose, reset } = useLibrary();
+
+  // A connected server IS the library, so the folder picker would be pointing
+  // at something nothing is playing from. Say where the music is coming from
+  // instead, and send the user to the pane that can change it.
+  if (source === 'server') {
+    return (
+      <div className="prefsBody">
+        <div className="prefsSection">
+          <Field
+            label="Music library"
+            hint="The library is coming from a server. Change or disconnect it under Server."
+          >
+            <Input readOnly value={musicDir} aria-label="Music library" leadingIcon={<Cloud size={16} />} />
+          </Field>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="prefsBody">
@@ -263,6 +283,27 @@ function PlaybackSettings() {
               { value: 'turntable', label: 'Turntable' },
               { value: 'fade', label: 'Fade' },
               { value: 'instant', label: 'Cut' },
+            ]}
+          />
+        </Field>
+      </div>
+      <div className="prefsSection">
+        <Field
+          label="Lyrics in the header"
+          hint="How the song's words are spelled across the artwork behind the header, when the track has synced lyrics. Random draws a new one each song."
+        >
+          <Select
+            aria-label="Header lyrics"
+            fullWidth
+            value={pb.lyricWay}
+            onValueChange={(next) => pb.update({ lyricWay: next as typeof pb.lyricWay })}
+            options={[
+              { value: 'off', label: 'Off' },
+              { value: 'random', label: 'Random each song' },
+              { value: 'scatter', label: 'Scatter — words drift and dissolve' },
+              { value: 'typewriter', label: 'Typewriter — typed in the corner' },
+              { value: 'poster', label: 'Poster — fills the header, packed' },
+              { value: 'stack', label: 'Stack — a column of capitals' },
             ]}
           />
         </Field>
@@ -555,6 +596,14 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       label: 'Playback',
       icon: <Play size={16} />,
       content: <PlaybackSettings />,
+    },
+    // Where the music comes from, when it does not come from this machine.
+    // Sits next to General for that reason: the two answer the same question.
+    {
+      id: 'server',
+      label: 'Server',
+      icon: <Cloud size={16} />,
+      content: <ServerSettings />,
     },
     // The importer contributes Downloads here, exactly where it has always
     // sat; any plugin's tabs land in this run of the rail.

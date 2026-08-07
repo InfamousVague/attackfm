@@ -1,4 +1,4 @@
-import { Download } from '@glacier/icons';
+import { Download, ListMusic } from '@glacier/icons';
 import { isTauri } from '../../app/tauri.ts';
 import type { PaletteContext, Plugin, PluginCommand } from '../types.ts';
 import { useDownloads } from './downloadsContext.ts';
@@ -6,6 +6,7 @@ import { isMusicImportLink } from './musicImport.ts';
 import { DownloadsProvider } from './DownloadsProvider.tsx';
 import { DownloadsButton } from './DownloadsPopover.tsx';
 import { DownloadsSettings } from './DownloadsSettings.tsx';
+import { SpotifyAccountSettings } from './SpotifyAccountSettings.tsx';
 
 /**
  * The palette's import command: a pasted music-service link becomes a single
@@ -53,6 +54,11 @@ export const spotifyImport: Plugin = {
   author: 'AttackFM',
   version: '1.0.0',
   tags: ['Importer', 'Downloads'],
+  // The SpotiFLAC engine is a Python program run as a child process, and the
+  // Spotify sign-in wants a loopback redirect back into the app. Neither is
+  // available inside a mobile sandbox, so this is left out of a phone build
+  // rather than shipped as a card that cannot do what it says.
+  desktopOnly: true,
   details:
     'Paste a link from Spotify, Apple Music, Tidal, Deezer, YT Music, or Qobuz ' +
     'anywhere in the command palette and this turns it into files in your ' +
@@ -64,6 +70,7 @@ export const spotifyImport: Plugin = {
   slots: { 'titlebar-end': DownloadsButton },
   settingsSections: [
     { id: 'downloads', label: 'Downloads', icon: <Download size={16} />, Content: DownloadsSettings },
+    { id: 'spotify', label: 'Spotify', icon: <ListMusic size={16} />, Content: SpotifyAccountSettings },
   ],
   usePaletteCommands: useImportCommands,
 };

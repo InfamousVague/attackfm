@@ -11,12 +11,13 @@ import { ChevronLeft, ChevronRight, Search, Settings } from '@glacier/icons';
 import { useEffect, useRef, useState } from 'react';
 import { AppearanceProvider } from './appearance.tsx';
 import { LibraryProvider, useLibrary } from './library.tsx';
+import { ServerSessionProvider } from './serverSession.tsx';
 import { EqualizerProvider } from './equalizer.tsx';
 import { PlaybackProvider } from './playback.tsx';
 import { NowPlayingMotionProvider } from './nowPlayingMotion.tsx';
 import { NowPlayingBackdrop } from './NowPlayingBackdrop.tsx';
 import { PluginHookScope, PluginProviders, PluginSlot, PluginsProvider } from '../plugins/runtime.tsx';
-import { isTauri } from './tauri.ts';
+import { isDesktopApp } from './platform.ts';
 import type { Track } from './tauri.ts';
 import { Player } from './Player.tsx';
 import { ArtistPage } from './ArtistPage.tsx';
@@ -28,9 +29,11 @@ import wordmark from '../assets/attack-white.png';
 
 const APP_NAME = 'AttackFM';
 
-// Window chrome only makes sense as a desktop window, so the title bar is off
-// in the browser and on under Tauri.
-const DESKTOP = isTauri();
+// Window chrome only makes sense where there is a window to decorate: a desktop
+// Tauri build. A phone build is inside Tauri too, but has no frame, no traffic
+// lights, and no room for a title bar with a search field in it - so it gets
+// the plain header below instead, as does the browser.
+const DESKTOP = isDesktopApp;
 
 // The palette answers to both chords everywhere; the hint shows the one this
 // machine's users reach for.
@@ -65,13 +68,35 @@ function StartupSeed({
 }
 
 /**
- * A slim strip along the bottom that reports the background indexer's progress,
- * shown only while it is still reading tags. It sits above the floating player
- * and disappears the moment the library is fully indexed.
+ * A slim strip along the bottom that reports background library work, shown
+ * only while it runs. It sits above the floating player and disappears the
+ * moment the library is settled.
+ *
+ * Two wordings for the two sources, one pill. A local scan knows its total up
+ * front (the folder walk came first), so it earns a real percent; a server
+ * sync is a delta whose size is only known when it is over, so it wears the
+ * count it has and an indeterminate sweep instead of a percentage that would
+ * be a guess.
  */
 function IndexingStatus() {
-  const { indexing, indexed, indexTotal } = useLibrary();
-  if (!indexing || indexTotal === 0) return null;
+  const { source, indexing, indexed, indexTotal } = useLibrary();
+  if (!indexing) return null;
+
+  if (source === 'server') {
+    return (
+      <div className="indexingBar" role="status" aria-live="polite">
+        <span className="indexingBar__dot" aria-hidden="true" />
+        <span className="indexingBar__label">
+          {indexed > 0 ? `Syncing · ${indexed.toLocaleString()} songs` : 'Syncing library…'}
+        </span>
+        <span className="indexingBar__track" aria-hidden="true">
+          <span className="indexingBar__fill indexingBar__fill--sweep" />
+        </span>
+      </div>
+    );
+  }
+
+  if (indexTotal === 0) return null;
   const percent = Math.min(100, Math.round((indexed / indexTotal) * 100));
   return (
     <div className="indexingBar" role="status" aria-live="polite">
@@ -159,6 +184,11 @@ export function App() {
                 the app - while the plugins' own providers mount inside it, so
                 a plugin (the importer, say) can read and rescan the library. */}
             <PluginsProvider>
+            {/* Which server (if any) is connected sits above the library,
+                because which library the app is showing is downstream of that
+                answer - and a connect or disconnect should rebuild the list
+                below rather than blend two libraries together. */}
+            <ServerSessionProvider>
             <LibraryProvider>
             <PluginProviders>
             <EqualizerProvider>
@@ -278,6 +308,35 @@ export function App() {
                 }
               />
             )}
+            {!DESKTOP && (
+              // The same cluster the title bar carries, in a plain header, for
+              // every surface that has no window to decorate: the phone builds
+              // and the browser. Without it the settings button - and so the
+              // whole server connection - is unreachable off the desktop, which
+              // is exactly backwards for the platform that needs a server most.
+              <header className="mobileHeader">
+                <img className="mobileHeader__logo" src={wordmark} alt={APP_NAME} />
+                <span className="mobileHeader__actions">
+                  <IconButton
+                    variant="ghost"
+                    size="sm"
+                    aria-label="Search"
+                    onClick={() => setSearchOpen(true)}
+                  >
+                    <Search size={18} />
+                  </IconButton>
+                  <PluginSlot id="titlebar-end" />
+                  <IconButton
+                    variant="ghost"
+                    size="sm"
+                    aria-label="Settings"
+                    onClick={() => setSettingsOpen(true)}
+                  >
+                    <Settings size={18} />
+                  </IconButton>
+                </span>
+              </header>
+            )}
             <main className="appContent">
               {artist ? (
                 <ArtistPage artist={artist} onPlay={playFrom} onOpenArtist={go} />
@@ -318,6 +377,7 @@ export function App() {
             </EqualizerProvider>
             </PluginProviders>
             </LibraryProvider>
+            </ServerSessionProvider>
             </PluginsProvider>
           </AppearanceProvider>
         </ToastProvider>
