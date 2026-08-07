@@ -794,6 +794,125 @@ body {
   color: var(--glacier-accent-solid);
 }
 
+/* The plugin marketplace: listings on a shelf rather than switches in a list.
+   Cards flow into as many columns as the pane affords and stay equal-height
+   within a row, which is what makes a shelf read as one. */
+.pluginMarket {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--glacier-space-4);
+}
+
+/* The card is a doorway with one control standing on it, so it anchors two
+   layers: a stretched, invisible button over everything (the doorway), and
+   the switch lifted above that button so a flip is never a navigation. */
+.pluginCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+.pluginCardOpen {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: var(--glacier-radius-xl);
+}
+
+.pluginCardOpen:focus-visible {
+  outline: 2px solid var(--glacier-focus-ring);
+  outline-offset: 2px;
+}
+
+.pluginCardSwitch {
+  position: relative;
+  z-index: 1;
+}
+
+.pluginCardTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+}
+
+/* The squircle the glyph sits in - the same accent-washed tile language as
+   the playlist shelf above the song table, so a plugin reads as a thing the
+   app carries rather than a settings row. */
+.pluginCardIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  flex: none;
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-solid);
+}
+
+.pluginCardName {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+/* Two lines, then an ellipsis: the card is a shelf label, the dialog is where
+   the prose lives, and a long description must not stretch its whole row. */
+.pluginCardBlurb {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  min-block-size: calc(2 * var(--glacier-leading-sm) * 1em);
+}
+
+.pluginCardTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-1);
+  /* pinned to the card's floor so ragged blurbs cannot stagger the tag rows */
+  margin-block-start: auto;
+}
+
+/* The detail dialog's header: the same squircle beside the name, the byline
+   tucked under it. */
+.pluginDetailTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+.pluginDetailByline {
+  display: block;
+  margin-block-start: var(--glacier-space-1);
+}
+
+.pluginDetail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-4);
+}
+
+.pluginDetailAdds {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.pluginDetailList {
+  margin: 0;
+  padding-inline-start: var(--glacier-space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
 .songTitleCell {
   display: flex;
   align-items: center;

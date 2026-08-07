@@ -28,15 +28,44 @@ async function currentWindow() {
 }
 
 export async function minimizeWindow(): Promise<void> {
-  (await currentWindow())?.minimize();
+  await (await currentWindow())?.minimize().catch(() => {});
 }
 
 export async function toggleMaximizeWindow(): Promise<void> {
-  (await currentWindow())?.toggleMaximize();
+  await (await currentWindow())?.toggleMaximize().catch(() => {});
 }
 
 export async function closeWindow(): Promise<void> {
-  (await currentWindow())?.close();
+  await (await currentWindow())?.close().catch(() => {});
+}
+
+/**
+ * Runs a Tauri event unlisten without ever surfacing an unhandled rejection,
+ * and without leaking the listener it is trying to remove.
+ *
+ * Tauri resolves `listen()` over the IPC response channel while the script
+ * that records the listener in the webview travels a separate eval queue, so
+ * an unlisten issued immediately after `listen()` resolves (a StrictMode
+ * ghost mount, a hot-reload remount) can run before its own registration
+ * exists. The injected unregister script then throws - and, worse, throws
+ * before the backend unlisten runs, leaving a zombie listener behind once the
+ * registration lands. Both unlisten paths are idempotent, so the remedy is a
+ * single retry after the eval queue has drained; only the retry's failure is
+ * swallowed (logged in dev), because at that point the window is going away.
+ */
+export function safeUnlisten(unlisten: () => void | PromiseLike<void>): void {
+  void (async () => {
+    try {
+      await unlisten();
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      try {
+        await unlisten();
+      } catch (err) {
+        if (import.meta.env.DEV) console.warn('[tauri] unlisten failed after retry', err);
+      }
+    }
+  })();
 }
 
 /** The subfolder AttackFM keeps its music in, under the OS audio directory. */

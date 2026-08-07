@@ -49,6 +49,17 @@ export const spotifyImport: Plugin = {
   name: 'Music import',
   description:
     'Downloads pasted Spotify, Apple Music, Tidal, Deezer, YT Music, and Qobuz links into the library.',
+  icon: <Download size={22} />,
+  author: 'AttackFM',
+  version: '1.0.0',
+  tags: ['Importer', 'Downloads'],
+  details:
+    'Paste a link from Spotify, Apple Music, Tidal, Deezer, YT Music, or Qobuz ' +
+    'anywhere in the command palette and this turns it into files in your ' +
+    'library, fetched by the SpotiFLAC engine at the quality you choose in its ' +
+    'Downloads tab. Whole playlists and albums queue track by track, the queue ' +
+    'survives restarts, and everything it saves is tagged and picked up by the ' +
+    'library scan automatically.',
   Provider: DownloadsProvider,
   slots: { 'titlebar-end': DownloadsButton },
   settingsSections: [

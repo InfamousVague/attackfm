@@ -91,10 +91,29 @@ export interface PluginPlaylistTile {
 export interface Plugin {
   /** Stable kebab-case id: registry key, storage key, crash attribution. */
   id: string;
-  /** The name the Plugins settings pane shows beside the switch. */
+  /** The name on the marketplace card and its detail dialog. */
   name: string;
-  /** One sentence under the name, saying what turning it on gets you. */
+  /** One sentence on the card, saying what turning it on gets you. */
   description: string;
+  /**
+   * The listing, beyond the card line. All optional: a plugin without them
+   * still lists, it just wears less. What the plugin ADDS to the app is never
+   * declared here - the detail dialog derives it from the contributions
+   * themselves (slots, sections, tiles, commands), which cannot go stale.
+   */
+  /** The card's glyph, sized for a squircle - an icon, not a wordmark. */
+  icon?: ReactNode;
+  /** Who made it, shown under the name. */
+  author?: string;
+  /** Version string shown beside the author, e.g. '1.2.0'. */
+  version?: string;
+  /** Short labels the card wears as tags, e.g. 'Importer'. */
+  tags?: readonly string[];
+  /**
+   * The detail dialog's prose - a paragraph or two, where description is one
+   * line. Falls back to description when absent.
+   */
+  details?: string;
   /**
    * Mounted around the app content, inside LibraryProvider and the other
    * core providers, so it may call useLibrary. Enabled plugins' providers

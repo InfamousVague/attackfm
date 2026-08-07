@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useLibrary } from '../../app/library.tsx';
-import { isTauri } from '../../app/tauri.ts';
+import { isTauri, safeUnlisten } from '../../app/tauri.ts';
 import {
   cancelMusicImport,
   clearMusicImports,
@@ -59,17 +59,23 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
           applyJobs(initial);
           setPausedState(isPaused);
         }
+        // A cleanup that already ran (a StrictMode ghost mount, a hot-reload
+        // remount) means nobody wants this subscription: bail before listen()
+        // rather than registering a listener only to tear it straight down -
+        // an unlisten issued that fast can outrun its own registration in the
+        // webview and leave a zombie listener behind.
+        if (!alive) return;
         const mod = await import('@tauri-apps/api/event');
         const un = await mod.listen<MusicImportJob[]>('music-imports://state', (e) => applyJobs(e.payload));
         if (alive) unlisten = un;
-        else un();
+        else safeUnlisten(un);
       } catch {
         // No backend (browser) - the queue simply stays empty.
       }
     })();
     return () => {
       alive = false;
-      unlisten?.();
+      if (unlisten) safeUnlisten(unlisten);
     };
   }, [applyJobs]);
 

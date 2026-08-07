@@ -1,9 +1,12 @@
 import {
   Button,
+  Card,
   DensitySelector,
   Field,
   Input,
   Label,
+  Modal,
+  Pill,
   SegmentedControl,
   Slider,
   Switch,
@@ -13,6 +16,7 @@ import {
 import { accentOptions, accentSteps } from '@glacier/tokens';
 import { Blocks, FolderOpen, Info, Play, Settings, SlidersHorizontal } from '@glacier/icons';
 import { useEffect, useState } from 'react';
+import type { Plugin } from '../plugins/types.ts';
 import { BRAND_ACCENTS } from './brandAccents.ts';
 import { useAppearance } from './appearance.tsx';
 import { canPickFolder } from './tauri.ts';
@@ -250,6 +254,9 @@ function PlaybackSettings() {
         <Field label="Pause" hint="What pressing pause sounds like.">
           <SegmentedControl
             aria-label="Pause style"
+            // The section stretches the control to the pane's width already,
+            // so the segments must split that width rather than pack left.
+            fullWidth
             value={pb.pauseStyle}
             onValueChange={(next) => pb.update({ pauseStyle: next as typeof pb.pauseStyle })}
             options={[
@@ -299,6 +306,7 @@ function PlaybackSettings() {
         <Field label="Sleep timer" hint="Fades out and pauses when the time is up. Cleared on relaunch.">
           <SegmentedControl
             aria-label="Sleep timer"
+            fullWidth
             value={sleepValue}
             onValueChange={setSleepChoice}
             options={[
@@ -318,43 +326,203 @@ function PlaybackSettings() {
 }
 
 /**
- * The switchboard: every registered plugin, on or off, with crash notices.
- * Core rather than a contribution, so the toggle UI cannot vanish when the
- * plugin being toggled owns the selected section.
+ * What a plugin adds to the app, read off the plugin object itself rather
+ * than declared in its listing - contributions derived from the contract
+ * cannot drift from what actually mounts.
+ */
+function pluginContributions(p: Plugin): string[] {
+  return [
+    ...(p.slots?.['titlebar-end'] ? ['A title bar button'] : []),
+    ...(p.slots?.['player-trailing'] ? ['A player strip control'] : []),
+    ...(p.settingsSections?.length
+      ? [`A settings tab: ${p.settingsSections.map((s) => s.label).join(', ')}`]
+      : []),
+    ...(p.playlistTiles?.length ? ['Playlist tiles on the home strip'] : []),
+    ...(p.usePaletteCommands ? ['Command palette actions'] : []),
+    ...(p.Provider ? ['A background service while enabled'] : []),
+  ];
+}
+
+/**
+ * One listing on the marketplace shelf. The whole card is a doorway to the
+ * detail dialog - a stretched button behind the content, so the card stays a
+ * plain div and the switch a sibling above it, never a control nested inside
+ * a control - while the switch flips the plugin without opening anything.
+ */
+function PluginCard({
+  plugin,
+  enabled,
+  crashed,
+  onToggle,
+  onOpen,
+}: {
+  plugin: Plugin;
+  enabled: boolean;
+  crashed: boolean;
+  onToggle: (on: boolean) => void;
+  onOpen: () => void;
+}) {
+  return (
+    <Card interactive className="pluginCard">
+      <button
+        type="button"
+        className="pluginCardOpen"
+        aria-label={`About ${plugin.name}`}
+        onClick={onOpen}
+      />
+      <div className="pluginCardTop">
+        <span className="pluginCardIcon" aria-hidden="true">
+          {plugin.icon ?? <Blocks size={22} />}
+        </span>
+        {/* Above the doorway, so a flip is a flip and never a navigation. */}
+        <span className="pluginCardSwitch">
+          <Switch
+            aria-label={`Enable ${plugin.name}`}
+            checked={enabled}
+            onCheckedChange={onToggle}
+          />
+        </span>
+      </div>
+      <div className="pluginCardName">
+        <Text weight="semibold">{plugin.name}</Text>
+        {(plugin.author || plugin.version) && (
+          <Text size="xs" tone="subtle">
+            {[plugin.author, plugin.version].filter(Boolean).join(' · ')}
+          </Text>
+        )}
+      </div>
+      <Text size="sm" tone="muted" className="pluginCardBlurb">
+        {plugin.description}
+      </Text>
+      <div className="pluginCardTags">
+        {crashed && (
+          <Pill size="sm" tone="danger">
+            Crashed
+          </Pill>
+        )}
+        {(plugin.tags ?? []).map((tag) => (
+          <Pill key={tag} size="sm" tone="neutral">
+            {tag}
+          </Pill>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * The marketplace: every registered plugin as a card on a shelf, each opening
+ * a detail dialog that says what it is, what it adds, and holds the switch.
+ * Core rather than a contribution, so the shelf cannot vanish when the plugin
+ * being toggled owns the selected section.
  */
 function PluginsSettings() {
   const { all, isEnabled, setEnabled, failures } = usePlugins();
+  // The id, not the object: a plugin pulled mid-session closes its dialog
+  // instead of showing a ghost of it.
+  const [openId, setOpenId] = useState<string | null>(null);
+  const open = all.find((p) => p.id === openId) ?? null;
+  const openFailure = open ? failures.get(open.id) : undefined;
+  const enabledCount = all.filter((p) => isEnabled(p.id)).length;
+
   return (
     <div className="prefsBody">
-      {all.map((p) => {
-        const failure = failures.get(p.id);
-        return (
-          <div key={p.id} className="prefsSection">
-            <Switch
-              label={p.name}
-              // The switch is the user's setting, not the running state: a
-              // crashed plugin stays checked and says so below, so one flip
-              // OFF turns it off for good rather than retrying it first.
-              // Either flip clears the crash flag, so off-and-on is the retry.
-              checked={isEnabled(p.id)}
-              onCheckedChange={(on) => setEnabled(p.id, on)}
-            />
-            <Text tone="muted" size="sm">
-              {failure !== undefined
-                ? `Crashed this session (${failure}). Switch off and on to try again.`
-                : p.description}
-            </Text>
-          </div>
-        );
-      })}
-      <div className="prefsSection">
-        <Text tone="muted" size="sm">
-          Toggles apply immediately; switching a plugin may briefly restart playback.
-          Work a plugin already handed to the app&rsquo;s engine - queued downloads,
-          say - carries on in the background without its controls until it is
-          switched back on.
-        </Text>
+      <Text size="sm" tone="muted">
+        {all.length === 1 ? '1 plugin' : `${all.length} plugins`} · {enabledCount} enabled.
+        Everything here is built in and runs locally; flip one on to add what it
+        carries, off to put it away.
+      </Text>
+      <div className="pluginMarket">
+        {all.map((p) => (
+          <PluginCard
+            key={p.id}
+            plugin={p}
+            enabled={isEnabled(p.id)}
+            crashed={failures.has(p.id)}
+            // The switch is the user's setting, not the running state: a
+            // crashed plugin stays checked and says so on the card, so one
+            // flip OFF turns it off for good rather than retrying it first.
+            // Either flip clears the crash flag, so off-and-on is the retry.
+            onToggle={(on) => setEnabled(p.id, on)}
+            onOpen={() => setOpenId(p.id)}
+          />
+        ))}
       </div>
+      <Text tone="subtle" size="xs">
+        Toggles apply immediately; switching a plugin may briefly restart playback.
+        Work a plugin already handed to the app&rsquo;s engine - queued downloads,
+        say - carries on in the background without its controls until it is
+        switched back on.
+      </Text>
+
+      {/* The detail dialog, stacked over the settings modal - the kit's layer
+          stack peels Escape one dialog at a time. */}
+      <Modal
+        open={open !== null}
+        onClose={() => setOpenId(null)}
+        size="sm"
+        title={
+          open && (
+            <span className="pluginDetailTitle">
+              <span className="pluginCardIcon" aria-hidden="true">
+                {open.icon ?? <Blocks size={22} />}
+              </span>
+              <span>
+                {open.name}
+                {(open.author || open.version) && (
+                  <Text as="span" size="xs" tone="subtle" className="pluginDetailByline">
+                    {[open.author, open.version].filter(Boolean).join(' · ')}
+                  </Text>
+                )}
+              </span>
+            </span>
+          )
+        }
+        footer={
+          open && (
+            <Button
+              variant={isEnabled(open.id) ? 'ghost' : 'solid'}
+              onClick={() => setEnabled(open.id, !isEnabled(open.id))}
+            >
+              {isEnabled(open.id) ? 'Disable' : 'Enable'}
+            </Button>
+          )
+        }
+      >
+        {open && (
+          <div className="pluginDetail">
+            {openFailure !== undefined && (
+              <Text size="sm" tone="danger">
+                Crashed this session ({openFailure}). Disable and enable to try again.
+              </Text>
+            )}
+            <div className="pluginCardTags">
+              {(open.tags ?? []).map((tag) => (
+                <Pill key={tag} size="sm" tone="neutral">
+                  {tag}
+                </Pill>
+              ))}
+            </div>
+            <Text size="sm">{open.details ?? open.description}</Text>
+            {pluginContributions(open).length > 0 && (
+              <div className="pluginDetailAdds">
+                <Text size="xs" tone="subtle" weight="semibold">
+                  Adds to the app
+                </Text>
+                <ul className="pluginDetailList">
+                  {pluginContributions(open).map((line) => (
+                    <li key={line}>
+                      <Text as="span" size="sm" tone="muted">
+                        {line}
+                      </Text>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
