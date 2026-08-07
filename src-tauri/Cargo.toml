@@ -1,0 +1,42 @@
+[package]
+name = "app"
+version = "0.1.0"
+description = "A Glacier UI desktop app"
+authors = ["you"]
+edition = "2021"
+
+# The library the app binary links against; also what mobile targets build.
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-opener = "2"
+# The folder picker and the filesystem access behind the music-library setting.
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+# Positions the native macOS traffic-light buttons so they sit centered in the
+# taller custom title bar (and re-applies the inset on resize). No-op elsewhere.
+tauri-plugin-decorum = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Async runtime for the music-import download queue (subprocess + progress).
+tokio = { version = "1", features = ["full"] }
+# Scrapes public Spotify embed pages for import cover art / titles / totals.
+reqwest = "0.12"
+
+# AppKit, for the one thing the Tauri window API has no word for: holding the
+# window square as it is dragged. Already in the tree behind tauri/wry, so this
+# only names what is being used.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSResponder", "NSWindow"] }
+objc2-foundation = { version = "0.3", features = ["NSGeometry"] }
+
+[features]
+# Kept in sync with tauri.conf.json > app > security > csp.
+custom-protocol = ["tauri/custom-protocol"]

@@ -1,0 +1,21 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissions the starter window needs: the sample command plus the custom title bar controls.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
+    "opener:default",
+    "dialog:allow-open",
+    "fs:allow-mkdir",
+    "fs:allow-exists",
+    "fs:allow-audio-read-recursive",
+    "fs:allow-audio-write-recursive",
+    "fs:allow-home-read-recursive",
+    "fs:allow-home-write-recursive"
+  ]
+}

@@ -1,0 +1,1253 @@
+/*
+ * App-level layout. Component look comes from Glacier; this file only arranges
+ * the square window shell. Every value is a Glacier token.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  /* The base typeface and text color for any plain content outside a kit
+     component. Components pin their own font, so this is just the backstop. */
+  font-family: var(--glacier-font-sans);
+  color: var(--glacier-text);
+  background: var(--glacier-bg);
+}
+
+/* The shell owns the viewport and never adds a window scrollbar. */
+#root {
+  height: 100vh;
+}
+
+/*
+ * The square desktop window: a vertical stack of the title bar and the content
+ * area that takes the rest of the height.
+ */
+.appWindow {
+  /* Anchors the floating player, which is taken out of flow so the song list
+     runs the full height behind it. */
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--glacier-bg);
+  color: var(--glacier-text);
+  /* Roughly the floating player's height; the list clears its last rows by it. */
+  --app-player-height: 5.75rem;
+}
+
+/* The now-playing cover, blurred into a hero wash behind the top of the window.
+   It sits above the flat window background but below the content, and fades out
+   before the list so rows stay legible.
+
+   The box holds the fade and clips; everything that moves is the layer inside
+   it. `--np-pulse` is the live one - a 0..1 loudness reading the player writes
+   here on every frame, which both children below spend. It rests at 0, so a
+   paused, muted, or silent window is exactly the still wash it was before. */
+.nowPlayingBackdrop {
+  --np-pulse: 0;
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  block-size: 22rem;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  opacity: 0.4;
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), transparent);
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), transparent);
+}
+
+/* The slow travel, on a layer of its own. It has to be separate from the art
+   below it because both want `translate` and `rotate` - the drift over the
+   length of the track, the mood on every hit - and one element has only one of
+   each to give. Stacked, they compose. */
+.npDrift {
+  position: absolute;
+  inset: 0;
+  animation: npDrift var(--np-cycle, 24s) var(--glacier-ease-in-out) var(--np-delay, 0s) infinite
+    alternate;
+}
+
+/* The cover itself, and the layer every mood spends its reading on. Only
+   composited properties are touched per frame - scale, translate, rotate,
+   opacity - never the filter: the blur sits here, on the layer that moves, so
+   the filtered result is rasterized once and the movement is applied to that
+   rather than the blur being re-run down a subtree that changed. */
+.npArt {
+  position: absolute;
+  /* Bled past every edge so neither the drift nor a shove ever pulls the blur's
+     soft edge into view. */
+  inset: -8%;
+  background-size: cover;
+  background-position: center;
+  filter: blur(0.375rem) saturate(1.3);
+  scale: var(--np-zoom, 1.12);
+  will-change: transform, scale, opacity;
+}
+
+/* The track's own path through the box. Both ends are stated so the alternate
+   run travels across the middle rather than out and back from one corner. */
+
+/* The track's own path through the box. Both ends are stated so the alternate
+   run travels across the middle rather than out and back from one corner. */
+@keyframes npDrift {
+  from {
+    translate: calc(var(--np-drift-x, 0rem) * -1) calc(var(--np-drift-y, 0rem) * -1);
+    rotate: calc(var(--np-spin, 0deg) * -1);
+  }
+
+  to {
+    translate: var(--np-drift-x, 0rem) var(--np-drift-y, 0rem);
+    rotate: var(--np-spin, 0deg);
+  }
+}
+
+/*
+ * The moods. Each track draws one and keeps it, so a song moves the way it
+ * always moves - but the next song answers the music somewhere else entirely,
+ * which is the point: a single response, however well timed, is one effect.
+ * Every mood reads the same `--np-pulse`; they differ in what they spend it on.
+ */
+
+/* Swells toward you. The plainest of them, and the reason the others exist. */
+.nowPlayingBackdrop[data-mood='bloom'] .npArt {
+  scale: calc(var(--np-zoom, 1.12) + var(--np-pulse) * 0.03);
+}
+
+/* Shoved along an axis of its own, so the hit reads as a push rather than a
+   swell. The scale barely moves - just enough that the shove has somewhere to
+   come from. */
+.nowPlayingBackdrop[data-mood='sway'] .npArt {
+  translate: calc(var(--np-kick-x, 0rem) * var(--np-pulse))
+    calc(var(--np-kick-y, 0rem) * var(--np-pulse));
+  scale: calc(var(--np-zoom, 1.12) + var(--np-pulse) * 0.008);
+}
+
+/* Rocks about its centre. Small numbers: past a couple of degrees a blurred
+   cover stops reading as a photograph and starts reading as a spinning plate. */
+.nowPlayingBackdrop[data-mood='tilt'] .npArt {
+  rotate: calc(var(--np-kick-rot, 1deg) * var(--np-pulse));
+  scale: calc(var(--np-zoom, 1.12) + var(--np-pulse) * 0.01);
+}
+
+/* Pulls into focus. The soft copy sits over the sharp one and is dissolved by
+   the reading, so a hit resolves the art instead of moving it - the one mood
+   that changes what the cover looks like rather than where it is. Crossfaded
+   rather than animating the blur itself, which would re-filter every frame. */
+.nowPlayingBackdrop[data-mood='focus'] .npArt {
+  scale: calc(var(--np-zoom, 1.12) + var(--np-pulse) * 0.012);
+}
+
+.npArtSoft {
+  filter: blur(1.125rem) saturate(1.5);
+  opacity: calc(1 - var(--np-pulse) * 0.6);
+}
+
+/* Lights from the top. The art holds still and the accent does the work, which
+   suits a track whose cover is already busy. */
+.nowPlayingBackdrop[data-mood='flare'] .npArt {
+  scale: calc(var(--np-zoom, 1.12) + var(--np-pulse) * 0.012);
+}
+
+/* The accent, pooled where the art sits behind the title bar, brought up by the
+   same reading. Opacity only - a second blurred layer swelling in step with the
+   first would cost the frame twice and read as one thing anyway. Every mood
+   carries a little of it, so they stay a family; `flare` is mostly this. */
+.npGlow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    120% 80% at 50% 0%,
+    var(--glacier-accent-solid) 0%,
+    transparent 60%
+  );
+  opacity: calc(var(--np-pulse) * 0.16);
+  mix-blend-mode: screen;
+}
+
+.nowPlayingBackdrop[data-mood='flare'] .npGlow {
+  opacity: calc(var(--np-pulse) * 0.28);
+}
+
+/* Asked for stillness, the wash is what it always was: the drift stops, and the
+   backdrop leaves the reading at rest, so every mood resolves to the base zoom
+   and the glow to nothing. */
+@media (prefers-reduced-motion: reduce) {
+  .npDrift {
+    animation: none;
+  }
+}
+
+.nowPlayingBackdrop[data-still] .npDrift {
+  animation: none;
+}
+
+.appTitleBar {
+  flex: none;
+  /* Above the now-playing backdrop, which the chrome must never sit under. */
+  position: relative;
+  z-index: 1;
+}
+
+/* The right-click wrapper the strip's artwork square hands its size to. It
+   stands between the square and whichever view is worn (disc or flat cover),
+   so it passes the square's height straight through. */
+.artViewTarget {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* The flat view: the cover as the square always used to wear it. Sized here
+   because the menu wrapper now stands between it and the strip's own child
+   sizing. The square's radius and overflow do the cropping. */
+.artViewCover {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* The player strip's artwork square, worn as a CD: the album art printed
+   across the whole disc face with a clear hub and spindle hole punched
+   through it. The square the strip reserves for art gives the disc its size;
+   this only makes it round and makes it turn. */
+.spinningDisc {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.spinningDisc__face {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  /* No drawn border: the spectral hairline at the rim is the edge. The mask
+     stops the print cleanly at the hub - a real disc's label ends there, and
+     inside it there is only clear plastic with the strip's glass showing
+     through. The plastic itself is the hub overlay's to suggest. */
+  -webkit-mask-image: radial-gradient(
+    circle closest-side at 50%,
+    transparent 0 33%,
+    black 36% 100%
+  );
+  mask-image: radial-gradient(
+    circle closest-side at 50%,
+    transparent 0 33%,
+    black 36% 100%
+  );
+  /* The turn itself is written here as an inline transform by SpinningDisc,
+     frame by frame: a platter brakes and catches up rather than toggling, so
+     its angle is velocity's to integrate, not a keyframe's to loop. */
+  will-change: transform;
+}
+
+/* The print: the cover fills the face edge to edge. An img is a replaced
+   element, so it is sized outright rather than left at its intrinsic pixels. */
+.spinningDisc__art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* The diffraction: the full spectrum run three times around the rim, the way
+   a disc's data grooves split the light, with a thinner echo just outside the
+   hub. One conic gradient, carved into the two rings by a radial mask, and
+   screened over the print so it reads as light on the surface rather than
+   paint. It sits outside the turning face and holds still: it is a light
+   effect, and the light does not spin with the disc. */
+.spinningDisc__sheen {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  /* Low-chroma pastels rather than the full rainbow: a disc edge catches
+     light as a silvery shimmer with a hint of spectrum, not a colour wheel. */
+  background: repeating-conic-gradient(
+    from 15deg,
+    oklch(0.86 0.05 25) 0deg,
+    oklch(0.89 0.04 95) 20deg,
+    oklch(0.89 0.05 155) 40deg,
+    oklch(0.87 0.04 215) 60deg,
+    oklch(0.84 0.05 285) 85deg,
+    oklch(0.85 0.05 345) 105deg,
+    oklch(0.86 0.05 385) 120deg
+  );
+  /* One hairline at the rim, stated in pixels against the disc's true edge
+     (closest-side puts 100% exactly there), so the hologram stays a fine
+     line whatever size the strip hands the disc. The hub keeps its own 1px
+     border; a spectral echo on top of it read as one thick outline. */
+  -webkit-mask-image: radial-gradient(
+    circle closest-side at 50%,
+    transparent 0 calc(100% - 2px),
+    black calc(100% - 1.5px) 100%
+  );
+  mask-image: radial-gradient(
+    circle closest-side at 50%,
+    transparent 0 calc(100% - 2px),
+    black calc(100% - 1.5px) 100%
+  );
+  mix-blend-mode: screen;
+  opacity: 0.5;
+}
+
+/* The clear plastic hub: the print is already ghosted out under it by the
+   face's mask, so this only adds what plastic adds - a light ring at its
+   edge and a still, off-centre glint. */
+.spinningDisc__hub {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 34%;
+  height: 34%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  background: radial-gradient(
+    circle at 32% 28%,
+    rgb(255 255 255 / 0.12),
+    rgb(255 255 255 / 0.03) 55%,
+    transparent 72%
+  );
+}
+
+/* The spindle hole, suggested rather than punched: with the hub fully clear
+   there is nothing left to punch through, so a faint ring marks where the
+   plastic ends and the hole begins. */
+.spinningDisc__hub::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 28%;
+  height: 28%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1px solid rgb(255 255 255 / 0.11);
+}
+
+/* Reduced motion is honoured in SpinningDisc itself - the component never
+   starts its frame loop - since the turn is an inline transform now, not an
+   animation a stylesheet could switch off. */
+
+/* The kit's most solid glass rather than its thin default, so the bar reads as
+   dark smoked gray over the album art. Keeps the backdrop blur from data-surface. */
+.appTitleBar[data-surface] {
+  background: var(--glacier-glass-thick);
+}/* Reserved slot left of the wordmark for the back/forward controls. It keeps its
+   width whether the buttons are enabled or not, so the top bar's layout - and
+   the logo's position - is identical on every page. */
+.titleBarNav {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}
+
+/* The wordmark sits in the title bar's start slot, just past the traffic-light
+   gutter. Sized by height so the 5.5:1 artwork keeps its ratio. */
+.titleBarLogo {
+  display: block;
+  block-size: 1.25rem;
+  inline-size: auto;
+  /* Dragging the window must win over the browser's native image drag. */
+  -webkit-user-drag: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* The search field in the title bar's end slot. The slot is sized by its
+   content, so the field is given a width of its own: wide enough for a few
+   words, narrow enough to leave the wordmark its side of the bar. Its own glass
+   would stack a second dark layer over the bar's and read too dark, so the fill
+   and blur are dropped: it shows the bar's glass through it, kept legible as a
+   field by the `glass` prop's border alone. */
+.titleBarSearch {
+  inline-size: 12rem;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Search collapses to its icon once the window is too narrow to carry a field
+   as well as the wordmark and the actions - past that width the field would
+   either squeeze the logo off its side of the bar or shrink to a box too small
+   to read as a field. Nothing is lost with it: it takes no typing (a press
+   opens the palette either way), and the chord it advertises still works from
+   anywhere. Only ever one of the two is in the layout, so search keeps its
+   place in the bar rather than moving when the window is resized. */
+.titleBarSearchButton {
+  display: none;
+}
+
+@media (max-width: 40rem) {
+  .titleBarSearch {
+    display: none;
+  }
+
+  .titleBarSearchButton {
+    display: inline-flex;
+  }
+}
+
+/* Settings sections: a column of labelled controls, straight from the GlacierUI
+   docs' own preferences layout. */
+.prefsBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-6);
+}
+
+.prefsSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+/* A slider and its reading on one line: the slider takes the room, the value
+   holds a fixed box so "Off" becoming "12s" never nudges the thumb. */
+.prefsSliderRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+.prefsSliderRow > :first-child {
+  flex: 1;
+}
+
+.prefsSliderValue {
+  min-inline-size: 3ch;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The buttons under a settings control, laid out in a row. */
+.prefsActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+}
+
+.accentSwatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-3);
+}
+
+.accentSwatch {
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--glacier-radius-full);
+  cursor: pointer;
+  box-shadow: inset 0 var(--glacier-hairline) 0 var(--glacier-glass-highlight);
+  transition: transform var(--glacier-duration-fast) var(--glacier-ease-spring);
+}
+
+.accentSwatch:hover {
+  transform: scale(1.1);
+}
+
+.accentSwatch[data-selected] {
+  box-shadow:
+    0 0 0 2px var(--glacier-surface),
+    0 0 0 4px var(--glacier-focus-ring);
+}
+
+.accentSwatch:focus-visible {
+  outline: 2px solid var(--glacier-focus-ring);
+  outline-offset: 2px;
+}
+
+.appContent {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* Above the backdrop; its own panels are transparent, so the blur shows
+     through behind the showcase while the table's surface hides it lower down. */
+  position: relative;
+  z-index: 1;
+}
+
+/* The playlist strip sits above the library table, sized to its tiles; the
+   table takes the rest and scrolls within its own region. Only the inline inset
+   lives here - the block padding sits on the row inside the scroll viewport, so
+   the hover scale has room instead of being clipped at the viewport edge. */
+.showcaseScroll {
+  flex: none;
+  padding-inline: var(--glacier-space-2);
+}
+
+.libraryBody {
+  flex: 1;
+  min-height: 0;
+}
+
+/* A row of squircle tiles that scrolls sideways when it outgrows the window.
+   The padding insets the tiles from the scroll viewport's clip edges so a
+   hovered squircle can grow without being cropped. */
+.showcaseRow {
+  display: flex;
+  gap: var(--glacier-space-4);
+  align-items: flex-start;
+  padding: var(--glacier-space-2);
+}
+
+/* A tile is a bare button: the squircle does the talking, the caption is a
+   quiet line beneath it - no card frame around either. */
+.playlistTile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  flex: 0 0 auto;
+  width: 5rem;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+/* The squircle: a superellipse-ish tile, icon centred. It grows a touch on
+   hover, the tile's only chrome. */
+.tileSquircle {
+  display: grid;
+  place-items: center;
+  width: 5rem;
+  height: 5rem;
+  border-radius: 34%;
+  overflow: hidden;
+  color: var(--glacier-accent-contrast, #fff);
+  transition: transform var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.playlistTile:hover .tileSquircle {
+  transform: scale(1.06);
+}
+
+.playlistTile:focus-visible {
+  outline: none;
+}
+
+.playlistTile:focus-visible .tileSquircle {
+  outline: 2px solid var(--glacier-focus-ring);
+  outline-offset: 2px;
+}
+
+.tileLiked {
+  background: linear-gradient(135deg, var(--glacier-accent-solid) 0%, var(--glacier-accent-soft) 100%);
+}
+
+/* The 2x2 mosaic of favourite covers, seamless. */
+.tileLikedGrid {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 0;
+}
+
+.tileLikedGrid img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tileRecent {
+  background: linear-gradient(135deg, var(--glacier-surface-raised) 0%, var(--glacier-surface-sunken) 100%);
+  color: var(--glacier-text);
+}
+
+/* The kit's Popover panel caps at 24rem, too narrow for eight EQ bands; widen it
+   here (still clamped to the window) so the curve and bands are not pinched. */
+.eqPopoverPanel {
+  max-inline-size: min(30rem, calc(100vw - 2rem));
+}
+
+/* The volume popover: one fader and its reading, so the panel is only as wide
+   as the rail. The kit's panel floors at 12rem - the width a menu or a form
+   needs - which leaves a single vertical fader stranded in a sheet. */
+.volPanel {
+  min-width: 0;
+  min-inline-size: 0;
+  inline-size: max-content;
+  /* tighter across than down: the panel's width is the reading's, and there is
+     no reason for the sides to hold more air than the pill needs */
+  padding: var(--glacier-space-3) var(--glacier-space-2);
+}
+
+.volBody {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+/* The rail and the unity mark share a box, so the mark is placed against the
+   fader's travel rather than against the panel. The two measurements the mark
+   needs are stated here rather than read off the fader: the kit sets them on
+   the fader itself, where a sibling cannot see them. */
+.volRailWrap {
+  --vol-length: 9rem;
+  --vol-thumb: 0.875rem;
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.volRail {
+  --slider-length: var(--vol-length);
+  --slider-thumb: var(--vol-thumb);
+  --slider-track: 0.3125rem;
+}
+
+/* Unity is 100 of the fader's 150, measured up the travel rather than up the
+   box: the thumb's centre stops half a thumb short at each end, so a line laid
+   at a flat two thirds of the box would sit off the detent it marks. */
+.volUnityTick {
+  position: absolute;
+  bottom: calc(var(--vol-thumb) / 2 + (100% - var(--vol-thumb)) * 0.6667);
+  left: 50%;
+  inline-size: 1.5rem;
+  block-size: var(--glacier-hairline);
+  transform: translateX(-50%);
+  background: var(--glacier-border);
+  pointer-events: none;
+}
+
+/* The reading, in a pill under the rail. Tabular digits and a floor wide enough
+   for the longest reading ("-33.9 dB") keep the pill still while the number
+   moves - the panel is only as wide as its widest child, so a pill that grew
+   with the text would make the whole popover breathe as the fader is dragged. */
+.volReadout {
+  min-inline-size: 3.75rem;
+  padding: 0.125rem var(--glacier-space-1);
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface-sunken);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.eqPopover {
+  inline-size: 26rem;
+  max-inline-size: 100%;
+}
+
+/* The New Playlist tile wears the kit's frosted-glass material: translucent,
+   blurred over whatever sits behind it, with a hairline edge and top highlight. */
+.tileAdd {
+  background: var(--glacier-glass-thin);
+  backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
+  color: var(--glacier-text);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  box-shadow: inset 0 var(--glacier-hairline) 0 var(--glacier-glass-highlight);
+}
+
+.playlistTileName {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+}
+
+/* The playlist modal's track list: a column of clickable rows, art then a
+   title/artist block then the running time. */
+.playlistModalList {
+  display: flex;
+  flex-direction: column;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.playlistModalRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  width: 100%;
+  padding: var(--glacier-space-2);
+  background: none;
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+
+.playlistModalRow:hover {
+  background: var(--glacier-hover);
+}
+
+.playlistModalMeta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.playlistModalTime {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The library table fills the content area edge to edge - no card frame, since
+   it is the screen rather than a panel on it - and its own body scrolls under
+   the sticky header. The bottom pad is the floating player's height, so the
+   last rows can rise clear of it rather than staying trapped underneath. */
+.songTable {
+  height: 100%;
+  border: none;
+  border-radius: 0;
+  /* The one border kept, and it is a mask, not a line: the scroller's top edge
+     lands on a fractional pixel (the fluid hero above it measures in clamp()s),
+     and the compositor anti-aliases the scroll clip there, letting a device
+     pixel of whatever is behind the pane shine through over the sticky header.
+     Nothing inside the scroller can cover that - the clip's edge applies to
+     the header too - but a border is outside the clip, so it owns the seam
+     pixel outright. Painted in the page background, it is invisible as a line. */
+  border-block-start: 1px solid var(--glacier-bg);
+  padding-block-end: var(--app-player-height);
+}
+
+/* The kit sizes the grid table to its content, so it neither fills the pane nor
+   contains long titles; pinning it to the full width lets table-layout:fixed
+   share the leftover space between Title and Album and clip the rest. */
+.songTable > table {
+  width: 100%;
+}
+
+/* The sticky header sits at top:0; sub-pixel scrolling leaves a 1px sliver of the
+   row above it, so pull it up a pixel to swallow that seam. */
+.songTable thead {
+  inset-block-start: -1px;
+}
+
+/* The kit hangs the divider off the sticky header (border-bottom on the header
+   cell); as rows scroll under it, sub-pixel rounding lets a 1px sliver bleed
+   through. Move the divider onto the list - the header edge stays clean and the
+   line scrolls with the rows it separates.
+
+   The shadow is the header's own lid. Every other guard here reasons about
+   where the browser puts an edge - the sticky offset, the scroll clip, the
+   wrap's border - and engines disagree about all of them by a device pixel
+   (the strip is Chromium in the browser and WebKit in the app). A shadow is
+   pinned to the header itself: wherever the cells actually rasterize, it
+   paints two opaque pixels straight up from that, and the header sits above
+   the rows in the stack, so the sliver has nowhere left to shine. */
+.songTable thead th {
+  border-bottom: none;
+  box-shadow: 0 -2px 0 var(--glacier-bg);
+}
+
+.songTable tbody tr:first-child td {
+  border-top: var(--glacier-hairline) solid var(--glacier-border);
+}
+
+/* The table is the screen, not a panel: paint it on the window background rather
+   than the kit's lighter surface (which read as a raised card), and lift a
+   hovered row only to that surface so it is a gentle step, not a bright band. */
+.songTable,
+.songTable > table,
+.songTable thead th {
+  background-color: var(--glacier-bg);
+}
+
+.songTable tbody tr:hover {
+  background-color: var(--glacier-surface);
+}
+
+/* The sorted header in the app's own pink. The kit colours it with accent-text
+   - the accent lightened until small text passes contrast - which reads as a
+   different pink from the solid the rest of the strip wears. Here the header
+   is the one accent on a near-black screen, so it takes the solid itself:
+   hover, active label, and the arrow, so all three stages match. (The solid
+   sits near 3.7:1 on this background - shy of AA for text this size; the
+   lighter kit default is the accessible choice if that ever matters more.)
+   The icon rule matches the kit's hashed class by its stable stem. */
+.songTable thead th[class*='sortable']:hover,
+.songTable thead th[aria-sort='ascending'],
+.songTable thead th[aria-sort='descending'] {
+  color: var(--glacier-accent-solid);
+}
+
+.songTable thead th [class*='sortIcon'][data-direction='asc'],
+.songTable thead th [class*='sortIcon'][data-direction='desc'] {
+  color: var(--glacier-accent-solid);
+}
+
+.songTitleCell {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  min-width: 0;
+}
+
+.songArt {
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  border-radius: var(--glacier-radius-sm);
+  object-fit: cover;
+  background: var(--glacier-surface-sunken);
+}
+
+.songTitleText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.songTitle {
+  color: var(--glacier-text);
+  font-weight: var(--glacier-font-weight-medium);
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.songArtist,
+.songMuted {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-sm);
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The artist reads as a link into its own page: a bare button that underlines
+   on hover, no button chrome. */
+.songArtistLink {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.songArtistLink:hover {
+  color: var(--glacier-text);
+  text-decoration: underline;
+}
+
+/* Shared section strip: a title and stats line above a horizontal row of items,
+   used by both the homepage playlists and an artist's albums so the two pages
+   stand the same height and read the same way. */
+.stripHeader {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding-block-start: var(--glacier-space-2);
+  border-block-end: var(--glacier-hairline, 1px) solid var(--glacier-border);
+}
+
+.stripHeading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  min-width: 0;
+  padding-inline: var(--glacier-space-4);
+}
+
+.stripTitle {
+  color: var(--glacier-text);
+  font-size: var(--glacier-font-size-lg);
+  font-weight: var(--glacier-font-weight-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Takes the full width under the heading so the covers scroll within it. */
+.artistAlbums {
+  min-width: 0;
+  padding-inline: var(--glacier-space-2);
+}
+
+.artistAlbumsRow {
+  display: flex;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2);
+}
+
+.artistAlbum {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  flex: 0 0 auto;
+  width: 5rem;
+}
+
+.artistAlbumCover {
+  width: 5rem;
+  height: 5rem;
+  border-radius: var(--glacier-radius-md);
+  object-fit: cover;
+  background: var(--glacier-surface-sunken);
+}
+
+.artistAlbumName {
+  max-width: 100%;
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.songIndex {
+  color: var(--glacier-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The player floats over the list rather than taking a row of its own, so the
+   list reads as one surface running the full height of the window behind it. It
+   is inset from the window edges so it reads as a raised plate. */
+.appPlayer {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  z-index: 2;
+  flex: none;
+  padding: var(--glacier-space-2);
+  padding-block-start: 0;
+}
+
+/* Pull the strip's own inline padding in from the kit's default so the cover and
+   the output controls sit closer to the plate's edges. */
+.appPlayer [data-position] {
+  padding-inline: var(--glacier-space-2);
+}
+
+/* A small glass pill above the player that reports the background indexer's
+   progress. Present only while it runs, so it never competes with the list once
+   the library is settled. */
+.indexingBar {
+  position: absolute;
+  z-index: 3;
+  /* Sits above the floating player and in from the right edge by the same gap,
+     so it reads as evenly inset from both the player and the window side. */
+  inset-block-end: calc(var(--app-player-height) + var(--glacier-space-2));
+  inset-inline-end: var(--glacier-space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-1) var(--glacier-space-3);
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-glass-regular);
+  border: var(--glacier-hairline, 1px) solid var(--glacier-glass-border);
+  box-shadow:
+    inset 0 var(--glacier-hairline, 1px) 0 var(--glacier-glass-highlight),
+    var(--glacier-shadow-3);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  pointer-events: none;
+}
+
+/* A quietly pulsing accent dot that marks the strip as live work in progress. */
+.indexingBar__dot {
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-solid);
+  animation: indexingPulse 1.4s var(--glacier-ease-in-out, ease-in-out) infinite;
+}
+
+.indexingBar__label {
+  white-space: nowrap;
+}
+
+/* The thin rail the fill runs along, showing how far the pass has to go. */
+.indexingBar__track {
+  inline-size: 4rem;
+  block-size: 0.25rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-glass-border);
+  overflow: hidden;
+}
+
+.indexingBar__fill {
+  display: block;
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--glacier-accent-solid);
+  transition: inline-size var(--glacier-duration-normal) var(--glacier-ease-out);
+}
+
+@keyframes indexingPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .indexingBar__dot {
+    animation: none;
+  }
+}
+
+/* ── Downloads popover ────────────────────────────────────────────────── */
+
+/* The top-bar trigger carries a small count badge in its corner. */
+.dlTrigger {
+  position: relative;
+  overflow: visible;
+}
+
+.dlTrigger__badge {
+  position: absolute;
+  inset-block-start: -0.15rem;
+  inset-inline-end: -0.15rem;
+  pointer-events: none;
+}
+
+/* The popover panel: a column of import cards under the trigger. */
+.dlPanel {
+  inline-size: 22rem;
+  max-inline-size: 90vw;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.dlPanel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+}
+
+.dlPanel__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}
+
+.dlPanel__title {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: var(--glacier-font-weight-semibold);
+  color: var(--glacier-text);
+}
+
+.dlPanel__clear {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.dlPanel__clear:hover {
+  color: var(--glacier-text);
+  text-decoration: underline;
+}
+
+.dlPanel__empty {
+  padding-block: var(--glacier-space-4);
+  text-align: center;
+}
+
+.dlList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-block-size: 24rem;
+  overflow-y: auto;
+}
+
+.dlCard {
+  display: flex;
+  gap: var(--glacier-space-3);
+  align-items: flex-start;
+  padding: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+}
+
+.dlCard:hover {
+  background: var(--glacier-hover);
+}
+
+.dlCard__art {
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  flex: none;
+  border-radius: var(--glacier-radius-sm);
+  object-fit: cover;
+  background: var(--glacier-surface-sunken);
+}
+
+.dlCard__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.dlCard__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+}
+
+.dlCard__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--glacier-font-size-sm);
+  font-weight: var(--glacier-font-weight-medium);
+  color: var(--glacier-text);
+}
+
+.dlCard__state {
+  flex: none;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.dlCard__state--done {
+  color: var(--glacier-success-text, var(--glacier-text-muted));
+}
+
+.dlCard__state--error {
+  color: var(--glacier-danger-text, var(--glacier-text-muted));
+}
+
+.dlCard__state--downloading {
+  color: var(--glacier-accent-text, var(--glacier-accent-solid));
+}
+
+.dlCard__sub,
+.dlCard__track,
+.dlCard__error {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.dlCard__track {
+  color: var(--glacier-text);
+}
+
+.dlCard__error {
+  color: var(--glacier-danger-text, var(--glacier-text-muted));
+  white-space: normal;
+}
+
+.dlCard__bar {
+  margin-block-start: 0.15rem;
+}
+
+.dlCard__actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+/* The per-song sub-list under an album/playlist import. */
+.dlTracks {
+  margin: 0.35rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  max-block-size: 11rem;
+  overflow-y: auto;
+  border-inline-start: var(--glacier-hairline, 1px) solid var(--glacier-border);
+  padding-inline-start: var(--glacier-space-3);
+}
+
+.dlTrack {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  min-width: 0;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.dlTrack__icon {
+  flex: none;
+  inline-size: 0.9rem;
+  block-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--glacier-text-muted);
+}
+
+.dlTrack__dot {
+  inline-size: 0.3rem;
+  block-size: 0.3rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-border-strong, var(--glacier-border));
+}
+
+.dlTrack__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dlTrack--done {
+  color: var(--glacier-text);
+}
+
+.dlTrack--done .dlTrack__icon {
+  color: var(--glacier-success-text, var(--glacier-accent-solid));
+}
+
+.dlTrack--downloading {
+  color: var(--glacier-text);
+}
+
+.dlTrack--downloading .dlTrack__icon {
+  color: var(--glacier-accent-text, var(--glacier-accent-solid));
+}
+
+.dlTrack--error .dlTrack__icon {
+  color: var(--glacier-danger-text, var(--glacier-text-muted));
+}

@@ -1,0 +1,16 @@
+/* Bundled kit fonts.
+ *
+ * Import once at your app root alongside tokens.css. This registers the
+ * @font-face families that the --glacier-font-sans / --glacier-font-mono tokens
+ * select between via the [data-font] and [data-mono] attributes. Variable fonts
+ * are subset by unicode-range, so only the glyphs a page actually renders are
+ * downloaded, and only for the active family.
+ *
+ * Sans: Inter (default), Noto Sans, IBM Plex Sans.
+ * Mono: JetBrains Mono (default), IBM Plex Mono.
+ */
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/noto-sans';
+@import '@fontsource/ibm-plex-sans';
+@import '@fontsource-variable/jetbrains-mono';
+@import '@fontsource/ibm-plex-mono';
