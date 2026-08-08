@@ -231,6 +231,12 @@ pub async fn finish(
     let rel = destination_for(&temp, &original, &ext);
     let dest = state.music_root.join(&rel);
 
+    // Serialize the free-name check, the move, and the index against every
+    // other filer (a concurrent upload, an in-flight import): without it two
+    // could pick the same suffix-free name and one would overwrite the other's
+    // just-moved file. Held only for the move itself, not the whole request.
+    let _filing = state.filing.lock().await;
+
     // A name already taken gets a numeric suffix rather than overwriting: two
     // different rips of the same track are two tracks, and an upload must never
     // silently replace music somebody already has.

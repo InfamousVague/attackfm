@@ -1,5 +1,6 @@
 import { Download, ListMusic } from '@glacier/icons';
 import { isTauri } from '../../app/tauri.ts';
+import { useServerSession } from '../../app/serverSession.tsx';
 import type { PaletteContext, Plugin, PluginCommand } from '../types.ts';
 import { useDownloads } from './downloadsContext.ts';
 import { isMusicImportLink } from './musicImport.ts';
@@ -15,12 +16,14 @@ import { SpotifyAccountSettings } from './SpotifyAccountSettings.tsx';
  * DownloadsProvider in the PluginProviders chain.
  */
 function useImportCommands({ query, close }: PaletteContext): readonly PluginCommand[] {
-  // The hook is called first, unconditionally, so the early returns below can
-  // never change this instance's hook order.
+  // The hooks are called first, unconditionally, so the early returns below
+  // can never change this instance's hook order.
   const { enqueue } = useDownloads();
-  // No engine, no command: offering an import the browser cannot perform
-  // would be a button wired to nothing.
-  if (!isTauri()) return [];
+  const { session } = useServerSession();
+  // No engine, no command. The engine is EITHER local (a desktop with the
+  // subprocess) OR the hub (any device signed into a server). A plain browser
+  // with neither would be a button wired to nothing.
+  if (!isTauri() && !session) return [];
   const link = isMusicImportLink(query) ? query.trim() : null;
   if (!link) return [];
   // A pasted link is an action, not a search: exclusive drops the song rows.
@@ -54,11 +57,13 @@ export const spotifyImport: Plugin = {
   author: 'AttackFM',
   version: '1.0.0',
   tags: ['Importer', 'Downloads'],
-  // The SpotiFLAC engine is a Python program run as a child process, and the
-  // Spotify sign-in wants a loopback redirect back into the app. Neither is
-  // available inside a mobile sandbox, so this is left out of a phone build
-  // rather than shipped as a card that cannot do what it says.
-  desktopOnly: true,
+  // The engine runs where the music lives. On a desktop that is the local
+  // SpotiFLAC subprocess; signed into a server it is the hub, which downloads
+  // and indexes straight into the shared library - so a phone imports too, by
+  // commanding the box rather than running anything itself. serverBacked is
+  // what makes the card appear on a phone once a server is connected and
+  // vanish when it is not; a plain browser with neither engine never sees it.
+  serverBacked: true,
   details:
     'Paste a link from Spotify, Apple Music, Tidal, Deezer, YT Music, or Qobuz ' +
     'anywhere in the command palette and this turns it into files in your ' +

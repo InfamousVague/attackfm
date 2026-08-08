@@ -28,18 +28,25 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const STALL_SECS: u64 = 180;
-const CONCURRENCY: usize = 2;
+// One at a time. Imports are a rare, human-paced action, and serial filing
+// means two jobs can never race on the same tag-derived destination in the
+// shared music library - the concurrency was never worth that risk.
+const CONCURRENCY: usize = 1;
 
 const AUDIO_EXTENSIONS: &[&str] = &[
     "mp3", "m4a", "aac", "flac", "wav", "aiff", "aif", "ogg", "oga", "opus",
 ];
 
-/// Provider priority handed to SpotiFLAC; overridable per deployment.
+/// Provider priority handed to SpotiFLAC; overridable per deployment via
+/// AFM_IMPORT_SERVICES. Deezer leads because it downloads real lossless with
+/// no API key or self-hosted endpoint - Tidal and Qobuz need a configured
+/// hifi-api / local API, and YouTube's public scraper backends come and go.
+/// The rest trail as fallbacks for tracks Deezer does not carry.
 fn services() -> Vec<String> {
     std::env::var("AFM_IMPORT_SERVICES")
         .ok()
         .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| "tidal qobuz youtube".to_string())
+        .unwrap_or_else(|| "deezer tidal qobuz youtube".to_string())
         .split([' ', ','])
         .filter(|s| !s.trim().is_empty())
         .map(|s| s.trim().to_string())
@@ -93,6 +100,11 @@ pub struct ImportManager {
     notify: tokio::sync::Notify,
     staging_root: PathBuf,
     store: PathBuf,
+    /// A writable HOME for the SpotiFLAC child. The service's real home is
+    /// read-only under systemd hardening, and SpotiFLAC caches provider
+    /// sessions under $HOME/.spotiflac - so it gets a home inside the data
+    /// dir, which is writable and persists so those sessions survive restarts.
+    sf_home: PathBuf,
 }
 
 impl ImportManager {
@@ -102,13 +114,22 @@ impl ImportManager {
     pub fn new(data_dir: &Path) -> Arc<Self> {
         let store = data_dir.join("imports.json");
         let staging_root = data_dir.join("imports");
+        let sf_home = data_dir.join("spotiflac-home");
+        let _ = std::fs::create_dir_all(&sf_home);
         let mut jobs: Vec<ImportJob> = std::fs::read_to_string(&store)
             .ok()
             .and_then(|raw| serde_json::from_str(&raw).ok())
             .unwrap_or_default();
         for job in jobs.iter_mut() {
             if job.state == "downloading" {
-                job.state = "queued".to_string();
+                // Interrupted mid-run by a restart. NOT auto-requeued: a crash
+                // after some files were already filed into the library would,
+                // on a blind rerun, download and file them a second time as
+                // suffixed duplicates. The user retries deliberately instead
+                // (and a retry is idempotent - see the tag precheck in
+                // run_job's filing loop).
+                job.state = "error".to_string();
+                job.error = Some("Interrupted by a server restart. Retry to resume.".to_string());
             }
         }
         let manager = Arc::new(ImportManager {
@@ -117,6 +138,7 @@ impl ImportManager {
             notify: tokio::sync::Notify::new(),
             staging_root,
             store,
+            sf_home,
         });
         manager.notify.notify_one();
         manager
@@ -182,11 +204,53 @@ fn default_title(kind: &str) -> String {
     .to_string()
 }
 
+/// The same normalised tag identity the sync precheck uses (api.rs sync_key),
+/// so a track imported here reads as "already present" against one uploaded or
+/// synced from anywhere else.
+fn identity_key(title: &str, artist: &str, album: &str) -> String {
+    let norm = |s: &str| s.trim().to_lowercase();
+    format!("{}\u{1}{}\u{1}{}", norm(title), norm(artist), norm(album))
+}
+
+/// Title / artist / album read from a staged file's own tags, for the filing
+/// precheck. None when the file has no readable primary tag.
+fn read_identity(path: &Path) -> Option<(String, String, String)> {
+    use lofty::file::TaggedFileExt;
+    use lofty::prelude::Accessor;
+    use lofty::probe::Probe;
+    let tagged = Probe::open(path).ok()?.guess_file_type().ok()?.read().ok()?;
+    let tag = tagged.primary_tag().or_else(|| tagged.first_tag())?;
+    Some((
+        tag.title().map(|c| c.to_string()).unwrap_or_default(),
+        tag.artist().map(|c| c.to_string()).unwrap_or_default(),
+        tag.album().map(|c| c.to_string()).unwrap_or_default(),
+    ))
+}
+
 fn is_audio(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
         .map(|e| AUDIO_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
         .unwrap_or(false)
+}
+
+/// Total bytes under a staging dir - EVERY file, partial downloads included -
+/// so the stall watchdog can tell "actively transferring" from "hung".
+fn staging_bytes(dir: &Path) -> u64 {
+    fn walk(dir: &Path) -> u64 {
+        let Ok(entries) = std::fs::read_dir(dir) else { return 0 };
+        let mut total = 0;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                total += walk(&path);
+            } else if let Ok(m) = entry.metadata() {
+                total += m.len();
+            }
+        }
+        total
+    }
+    walk(dir)
 }
 
 fn staged_audio_files(dir: &Path) -> Vec<PathBuf> {
@@ -353,6 +417,11 @@ pub fn spawn_scheduler(state: Arc<AppState>) {
             let slots = Arc::clone(&in_flight);
             tokio::spawn(async move {
                 let manager = Arc::clone(&run_state.imports);
+                // Frees the slot and re-pokes the scheduler no matter how this
+                // task leaves - normal return OR a panic. Without it a single
+                // panicked job would leak a permanent slot and, at
+                // CONCURRENCY=1, wedge the whole queue.
+                let _guard = SlotGuard { slots: Arc::clone(&slots), manager: Arc::clone(&manager) };
                 let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
                 manager.cancels.lock().await.insert(id.clone(), cancel_tx);
                 let result = run_job(&run_state, &id, &url, cancel_rx).await;
@@ -385,11 +454,23 @@ pub fn spawn_scheduler(state: Arc<AppState>) {
                     }
                 }
                 manager.flush().await;
-                slots.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
-                manager.notify.notify_one();
+                // The slot is freed and the scheduler re-poked by _guard's Drop.
             });
         }
     });
+}
+
+/// Frees an in-flight slot and wakes the scheduler when a job task ends -
+/// whether it returned or panicked. See its construction in spawn_scheduler.
+struct SlotGuard {
+    slots: Arc<std::sync::atomic::AtomicUsize>,
+    manager: Arc<ImportManager>,
+}
+impl Drop for SlotGuard {
+    fn drop(&mut self) {
+        self.slots.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+        self.manager.notify.notify_one();
+    }
 }
 
 /// Runs one import in its own staging directory, then files the results into
@@ -421,9 +502,27 @@ async fn run_job(
     args.push("2".to_string());
     args.push("--timeout".to_string());
     args.push("120".to_string());
+    // Reliable lossless comes from a configured provider, not the flaky public
+    // backends: a self-hosted hifi-api for Tidal, a local API for Qobuz. Both
+    // are optional and passed straight through when the operator sets them.
+    if let Ok(api) = std::env::var("AFM_TIDAL_API") {
+        if !api.trim().is_empty() {
+            args.push("--tidal-api".to_string());
+            args.push(api);
+        }
+    }
+    if let Ok(api) = std::env::var("AFM_QOBUZ_API") {
+        if !api.trim().is_empty() {
+            args.push("--qobuz-local-api".to_string());
+            args.push(api);
+        }
+    }
 
     let mut child = tokio::process::Command::new(&program)
         .args(&args)
+        // A writable HOME: the service's own is read-only under hardening, and
+        // SpotiFLAC writes a session cache to $HOME/.spotiflac.
+        .env("HOME", &manager.sf_home)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true)
@@ -455,10 +554,14 @@ async fn run_job(
     }
 
     // Progress: the staging directory is the truth. Poll it, and kill the run
-    // when nothing new lands inside the stall window.
+    // only when it goes truly quiet - measured by BYTES on disk, not finished
+    // files. A single large FLAC (or a slow provider negotiation) can take
+    // minutes before its first file completes; watching the growing partial's
+    // size keeps that from reading as a stall.
     let mut interval = tokio::time::interval(Duration::from_millis(1000));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut last_count = 0u32;
+    let mut last_bytes = 0u64;
     let mut last_progress = std::time::Instant::now();
     let mut cancelled = false;
     let status = loop {
@@ -470,6 +573,12 @@ async fn run_job(
                 break child.wait().await;
             }
             _ = interval.tick() => {
+                let bytes = staging_bytes(&staging);
+                if bytes != last_bytes {
+                    // Any byte movement, partial files included, is progress.
+                    last_bytes = bytes;
+                    last_progress = std::time::Instant::now();
+                }
                 let files = staged_audio_files(&staging);
                 let count = files.len() as u32;
                 if count != last_count {
@@ -502,11 +611,39 @@ async fn run_job(
     }
 
     // File everything that landed into the library, tags deciding placement,
-    // exactly as an upload would land. Indexing bumps the rev per track, so
-    // clients' delta syncs see the album grow.
+    // exactly as an upload would land. Serialized against every other filer
+    // (concurrent uploads, the next import) so no two ever resolve to the same
+    // destination between the free-name check and the rename.
     let staged = staged_audio_files(&staging);
     let mut rels = Vec::new();
+    let _filing = state.filing.lock().await;
+    // The library's current identities, for a tag precheck that makes filing
+    // idempotent: a track already present (this album re-imported, or the same
+    // song from another source) is dropped rather than filed as a suffixed
+    // duplicate. Built once under the lock, so it already reflects everything
+    // an earlier filer just added.
+    let mut have: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for (title, artist, album_artist, album, _dur) in state.db.sync_identities() {
+        have.insert(identity_key(&title, &artist, &album));
+        have.insert(identity_key(&title, &album_artist, &album));
+    }
+    // The running quota headroom, decremented as files land so a big album
+    // cannot push the library past its ceiling one track at a time.
+    let mut used = state.db.total_bytes();
     for path in &staged {
+        let size = std::fs::metadata(path).map(|m| m.len() as i64).unwrap_or(0);
+        if state.library_quota_bytes > 0 && used + size > state.library_quota_bytes {
+            // Out of room. Stop filing; what landed already stays, and the
+            // job reports the shortfall below.
+            break;
+        }
+        if let Some((title, artist, album)) = read_identity(path) {
+            let key = identity_key(&title, &artist, &album);
+            if have.contains(&key) {
+                continue;
+            }
+            have.insert(key);
+        }
         let original = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         let ext = original.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
         let rel = upload::destination_for(path, &original, &ext);
@@ -522,12 +659,14 @@ async fn run_job(
             let _ = std::fs::remove_file(path);
         }
         if scan::scan_one(&state.db, &state.music_root, &state.art_dir, &rel) {
+            used += size;
             rels.push(rel);
         } else {
             // Unindexable never stays - same rule as uploads.
             let _ = std::fs::remove_file(&dest);
         }
     }
+    drop(_filing);
     let _ = std::fs::remove_dir_all(&staging);
 
     if !rels.is_empty() {

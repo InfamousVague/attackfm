@@ -238,15 +238,17 @@ export function App() {
       <HapticsProvider enabled={false}>
         <ToastProvider>
           <AppearanceProvider>
-            {/* Who is running sits above the library - it needs nothing from
-                the app - while the plugins' own providers mount inside it, so
-                a plugin (the importer, say) can read and rescan the library. */}
-            <PluginsProvider>
             {/* Which server (if any) is connected sits above the library,
                 because which library the app is showing is downstream of that
                 answer - and a connect or disconnect should rebuild the list
-                below rather than blend two libraries together. */}
+                below rather than blend two libraries together. It also sits
+                above the plugin registry, which filters server-backed plugins
+                (the importer on a phone) on the live session. */}
             <ServerSessionProvider>
+            {/* Who is running sits above the library while the plugins' own
+                providers mount inside it, so a plugin (the importer, say) can
+                read and rescan the library. */}
+            <PluginsProvider>
             <LibraryProvider>
             {/* The user's own playlists: storage only, so it sits beside the
                 library rather than inside it - the showcase and the song
@@ -465,8 +467,8 @@ export function App() {
             </LibrarySyncProvider>
             </PlaylistsProvider>
             </LibraryProvider>
-            </ServerSessionProvider>
             </PluginsProvider>
+            </ServerSessionProvider>
           </AppearanceProvider>
         </ToastProvider>
       </HapticsProvider>

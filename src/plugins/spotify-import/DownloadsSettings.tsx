@@ -2,6 +2,7 @@ import { Button, Field, Label, MultiSelect, NumberInput, Select, Switch, Text } 
 import { useEffect, useState } from 'react';
 import { canPickFolder } from '../../app/tauri.ts';
 import { useLibrary } from '../../app/library.tsx';
+import { useServerSession } from '../../app/serverSession.tsx';
 import {
   getMusicSettings,
   installSpotiflac,
@@ -44,6 +45,7 @@ const PROVIDER_OPTIONS = [
  */
 export function DownloadsSettings() {
   const { source, musicDir } = useLibrary();
+  const { session } = useServerSession();
   // Same rule as the provider: only a local library's musicDir is a folder.
   const statusDir = source === 'local' ? musicDir : undefined;
   const [settings, setSettings] = useState<MusicSettings | null>(null);
@@ -85,7 +87,16 @@ export function DownloadsSettings() {
   };
 
   if (!canPickFolder) {
-    return <Text tone="muted">Music downloading is available in the desktop app.</Text>;
+    // No local engine here. With a server, imports run on the box - and its
+    // provider and quality settings are the box's own (set on the server),
+    // not this device's. Without one, there is nothing to import with.
+    return (
+      <Text tone="muted">
+        {session
+          ? 'Imports run on your server, which downloads and files them into the shared library. Paste a link in the command palette to import from this device.'
+          : 'Music downloading is available in the desktop app, or on any device connected to a server.'}
+      </Text>
+    );
   }
   if (!settings) {
     return <Text tone="muted">Loading…</Text>;

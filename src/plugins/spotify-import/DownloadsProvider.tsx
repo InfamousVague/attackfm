@@ -9,6 +9,7 @@ import {
 import { useLibrary } from '../../app/library.tsx';
 import { useLibrarySync } from '../../app/librarySync.tsx';
 import { useServerSession } from '../../app/serverSession.tsx';
+import { canRunSubprocesses } from '../../app/platform.ts';
 import { isTauri, safeUnlisten } from '../../app/tauri.ts';
 import {
   cancelMusicImport,
@@ -31,13 +32,18 @@ import { DownloadsContext, type DownloadsContextValue } from './downloadsContext
 import { settlePendingSyncs } from './spotifyAccount.ts';
 
 /**
- * Owns the music-import queue. Two transports behind one context:
+ * Owns the music-import queue. Two transports behind one context, chosen by
+ * where the engine can actually run - NOT merely by whether a server is
+ * connected:
  *
- * - Signed into a server, the queue lives on the HUB: enqueue posts a link,
- *   the box downloads and indexes it, and a poll watches the jobs. This works
- *   on any device - a phone included, which can never run the engine locally.
- * - Otherwise (a desktop with a local library), the queue is the Tauri
- *   backend's, driven over invoke with a live event subscription.
+ * - A desktop (canRunSubprocesses) always uses its LOCAL engine, server or
+ *   not. This is what keeps imports working on a desktop with no server at
+ *   all, and keeps a connected desktop from depending on the box having
+ *   SpotiFLAC installed - the results ride up to a connected server through
+ *   the ordinary folder sync.
+ * - Anywhere else (a phone, a browser) the engine is the HUB: enqueue posts a
+ *   link, the server downloads and indexes it, and a poll watches the jobs.
+ *   This is the only path a phone has, and it needs a connected server.
  *
  * The wire shape is identical, so nothing downstream knows which is in play.
  * Mounted by the plugin runtime inside the LibraryProvider, so switching the
@@ -45,11 +51,10 @@ import { settlePendingSyncs } from './spotifyAccount.ts';
  */
 export function DownloadsProvider({ children }: { children: ReactNode }) {
   const { session } = useServerSession();
-  return session ? (
-    <ServerDownloads key={session.url}>{children}</ServerDownloads>
-  ) : (
-    <LocalDownloads>{children}</LocalDownloads>
-  );
+  // The local engine wins wherever it exists; the server engine is the
+  // fallback for devices that have none of their own.
+  if (canRunSubprocesses) return <LocalDownloads>{children}</LocalDownloads>;
+  return <ServerDownloads key={session?.url ?? 'none'}>{children}</ServerDownloads>;
 }
 
 /**
@@ -118,7 +123,9 @@ function ServerDownloads({ children }: { children: ReactNode }) {
       enqueue: async (url: string) => {
         if (!session) throw new Error('Not connected to a server.');
         const job = await serverEnqueueImport(session, url);
-        setJobs((prev) => [job, ...prev]);
+        // Shown at once for feedback, deduped by id so a poll that already
+        // raced this job in cannot leave two cards sharing a React key.
+        setJobs((prev) => [job, ...prev.filter((j) => j.id !== job.id)]);
         return job;
       },
       remove: (id: string) => {

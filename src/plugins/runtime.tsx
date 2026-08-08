@@ -7,9 +7,10 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { PLUGINS } from './index.ts';
+import { availablePlugins } from './index.ts';
+import { useServerSession } from '../app/serverSession.tsx';
 import { PluginsContext, usePlugins, type PluginsContextValue } from './pluginsContext.ts';
-import type { PaletteContext, PluginCommand, PluginSlotId } from './types.ts';
+import type { PaletteContext, Plugin, PluginCommand, PluginSlotId } from './types.ts';
 
 export { usePlugins } from './pluginsContext.ts';
 
@@ -26,13 +27,18 @@ const STORAGE_KEY = 'attackfm-plugins-disabled';
 // than at the first toggle when duplicate storage keys start colliding. The
 // colon is reserved as the namespace separator in palette command and settings
 // section ids, so an id carrying one would let contributions collide across
-// plugins the namespacing exists to keep apart.
-for (const [index, plugin] of PLUGINS.entries()) {
-  if (PLUGINS.findIndex((p) => p.id === plugin.id) !== index) {
-    throw new Error(`[plugins] duplicate plugin id "${plugin.id}"`);
-  }
-  if (plugin.id.includes(':')) {
-    throw new Error(`[plugins] plugin id "${plugin.id}" may not contain ":"`);
+// plugins the namespacing exists to keep apart. Checked against the full
+// registry (both connection states), so a validation cannot depend on whether
+// a server happens to be connected.
+{
+  const ALL = availablePlugins(true);
+  for (const [index, plugin] of ALL.entries()) {
+    if (ALL.findIndex((p) => p.id === plugin.id) !== index) {
+      throw new Error(`[plugins] duplicate plugin id "${plugin.id}"`);
+    }
+    if (plugin.id.includes(':')) {
+      throw new Error(`[plugins] plugin id "${plugin.id}" may not contain ":"`);
+    }
   }
 }
 
@@ -65,8 +71,13 @@ class PluginCrashError extends Error {
  * and everything below it may ask what is enabled.
  */
 export function PluginsProvider({ children }: { children: ReactNode }) {
+  const { session } = useServerSession();
   const [disabled, setDisabled] = useState<string[]>(readDisabled);
   const [failures, setFailures] = useState<ReadonlyMap<string, string>>(new Map());
+  // Re-derived on connect/disconnect: a server-backed plugin appears once a
+  // hub can run it. Memoised on the boolean, not the session object, so a
+  // token renewal does not churn the list.
+  const plugins = useMemo<readonly Plugin[]>(() => availablePlugins(session !== null), [session !== null]);
 
   const setEnabled = useCallback((id: string, on: boolean) => {
     setDisabled((prev) => {
@@ -98,9 +109,9 @@ export function PluginsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<PluginsContextValue>(() => {
-    const enabled = PLUGINS.filter((p) => !disabled.includes(p.id) && !failures.has(p.id));
+    const enabled = plugins.filter((p) => !disabled.includes(p.id) && !failures.has(p.id));
     return {
-      all: PLUGINS,
+      all: plugins,
       enabled,
       enabledKey: JSON.stringify(enabled.map((p) => p.id)),
       isEnabled: (id) => !disabled.includes(id),
@@ -108,7 +119,7 @@ export function PluginsProvider({ children }: { children: ReactNode }) {
       failures,
       reportCrash,
     };
-  }, [disabled, failures, setEnabled, reportCrash]);
+  }, [plugins, disabled, failures, setEnabled, reportCrash]);
 
   return <PluginsContext.Provider value={value}>{children}</PluginsContext.Provider>;
 }

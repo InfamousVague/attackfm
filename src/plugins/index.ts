@@ -2,6 +2,8 @@ import { canRunSubprocesses } from '../app/platform.ts';
 import type { Plugin } from './types.ts';
 import { spotifyImport } from './spotify-import/index.tsx';
 
+export type { Plugin } from './types.ts';
+
 /**
  * Every plugin the build carries, in the order their contributions render,
  * their providers nest, and their palette commands merge. The array is the
@@ -16,14 +18,22 @@ import { spotifyImport } from './spotify-import/index.tsx';
 const REGISTERED: readonly Plugin[] = [spotifyImport];
 
 /**
- * The list, with anything the platform cannot host dropped.
+ * The plugins this device can host RIGHT NOW, given whether a server is
+ * connected. Session-dependent because a `serverBacked` plugin (the importer
+ * off a desktop) needs the hub to run its engine: present with a server,
+ * absent without one. Called from the runtime with the live session so the
+ * list re-filters on connect and disconnect; every consumer downstream still
+ * sees one already-filtered list and never asks what platform it is on.
  *
- * The filter is here rather than in the runtime so that every consumer -
- * slots, settings tabs, the marketplace, the palette - sees one list and none
- * of them has to ask what platform they are on. On a phone the importer simply
- * does not exist: it drives a Python downloader as a child process, and mobile
- * sandboxes forbid spawning executables at all.
+ * - `desktopOnly` drops on anything but a subprocess-capable desktop.
+ * - `serverBacked` (and not desktopOnly) needs EITHER a local engine
+ *   (desktop) OR a connected server (anywhere) - so the importer reaches a
+ *   phone the moment it signs in.
  */
-export const PLUGINS: readonly Plugin[] = REGISTERED.filter(
-  (plugin) => !plugin.desktopOnly || canRunSubprocesses,
-);
+export function availablePlugins(serverConnected: boolean): readonly Plugin[] {
+  return REGISTERED.filter((plugin) => {
+    if (plugin.desktopOnly) return canRunSubprocesses;
+    if (plugin.serverBacked) return canRunSubprocesses || serverConnected;
+    return true;
+  });
+}

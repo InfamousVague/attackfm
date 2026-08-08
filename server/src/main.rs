@@ -48,6 +48,10 @@ pub struct AppState {
     /// The server-side import queue - links any signed-in device enqueues,
     /// downloaded where the music lives.
     pub imports: Arc<imports::ImportManager>,
+    /// Held across every "find a free name, then move the file in and index
+    /// it" sequence - uploads and imports alike - so two never resolve to the
+    /// same destination in the shared library between the check and the move.
+    pub filing: Arc<tokio::sync::Mutex<()>>,
 }
 
 fn env_or(key: &str, fallback: &str) -> String {
@@ -141,6 +145,7 @@ async fn main() {
         library_quota_bytes: quota_gb.max(0) * 1024 * 1024 * 1024,
         ffmpeg,
         imports: imports::ImportManager::new(&data_dir),
+        filing: Arc::new(tokio::sync::Mutex::new(())),
     });
 
     // Index what is already there before taking requests, in the background so
