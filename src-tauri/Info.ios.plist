@@ -28,14 +28,22 @@
 	     which is why the app ran on a 26.4.1 simulator and died at launch on
 	     27.0 before drawing a frame.
 
-	     Every field is load-bearing, exactly as PrettyCardboard's project.yml
-	     documents the same fix: tao does NOT implement
-	     application:configurationForConnectingSceneSession:, so the delegate
-	     class must be named HERE or UIKit connects the scene with nothing and
-	     segfaults in _connectUISceneFromFBSScene. And tao gates on
-	     SupportsMultipleScenes: when true it defers did_finish_launching to
-	     the first scene setup, which only ever runs inside TaoSceneDelegate
-	     (verified present in tao 0.35.3). The two settings are a pair. -->
+	     SupportsMultipleScenes=true is the load-bearing key: tao 0.35.3 keys
+	     everything scene-shaped off multiple_scenes_enabled() - it registers
+	     application:configurationForConnectingSceneSession: on its app
+	     delegate (so UIKit gets a config naming TaoSceneDelegate from CODE,
+	     and this manifest's UISceneConfigurations block is only the fallback
+	     UIKit would consult without that method) and defers
+	     did_finish_launching to the first scene connect inside
+	     TaoSceneDelegate. Keep the UISceneConfigurations block anyway: it is
+	     the documented fallback, and harmless while the delegate method wins.
+
+	     That delegate method is also why release builds crashed at launch on
+	     iOS 27 devices while debug ran fine: stock tao 0.35.3 returned the
+	     UISceneConfiguration without transferring ownership, so optimized
+	     builds freed it before UIKit read it (SIGSEGV objc_retain in
+	     _connectUISceneFromFBSScene). src-tauri/vendor/tao carries the
+	     one-line 0.36.0 backport; see [patch.crates-io] in Cargo.toml. -->
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -49,6 +57,20 @@
 					<string>Default Configuration</string>
 					<key>UISceneDelegateClassName</key>
 					<string>TaoSceneDelegate</string>
+				</dict>
+			</array>
+			<!-- The CarPlay scene, independent of the phone scene above: UIKit
+			     instantiates AFMCarPlaySceneDelegate (gen/apple/Sources/app/
+			     carplay.m) when a car connects, and tao never hears about it.
+			     Dormant without the carplay-audio entitlement, which simulator
+			     builds carry and device builds gain once Apple grants it. -->
+			<key>CPTemplateApplicationSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key>
+					<string>CarPlay</string>
+					<key>UISceneDelegateClassName</key>
+					<string>AFMCarPlaySceneDelegate</string>
 				</dict>
 			</array>
 		</dict>

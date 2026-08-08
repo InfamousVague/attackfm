@@ -85,6 +85,40 @@ which Xcode 26+ refuses to build. Re-apply the 15.0 in that file and run
 `xcodegen generate` in `gen/apple` — neither `ios init` nor `ios build` re-runs
 xcodegen for you.
 
+## CarPlay
+
+The car gets a native UI — CarPlay renders CPTemplate objects or nothing, so
+there is no webview to bring along. The split:
+
+- **`gen/apple/Sources/app/carplay.m`** is the whole car-facing app: a
+  Liked / Artists / Songs tab bar, the shared Now Playing screen, and the
+  system now-playing + remote-command registration that the lock screen and
+  steering wheel also consume. Hand-written; survives `ios init`, but a
+  delete-and-reinit loses it (it is listed in project.yml's header note).
+- **`src-tauri/src/carplay.rs`** is the seam: two Tauri commands in
+  (`carplay_set_library`, `carplay_now_playing`), two events out
+  (`carplay:play`, `carplay:remote`). No-ops everywhere but iOS.
+- **`src/app/carplay.ts`** is the webview half: the library push after each
+  sync (`library.tsx`), the now-playing pushes and remote-command handling
+  (`Player.tsx`), and queue reconstruction for car taps (`CarPlayBridge` in
+  `App.tsx`). The audio never leaves the webview — the car is a remote
+  control, and skips on the wheel run the exact handlers the player strip's
+  buttons do.
+
+**Entitlement staging.** CarPlay requires `com.apple.developer.carplay-audio`,
+which Apple grants per-app on request (developer.apple.com/carplay). Simulator
+builds carry it today via `app_iOS.simulator.entitlements` (the simulator does
+not check provisioning); device builds deliberately leave it out so signing
+keeps working, which leaves CarPlay dormant on a real phone. Once Apple grants
+it for `com.mattssoftware.attackfm`, move the key into `app_iOS.entitlements`
+and both builds light up — the code paths are identical either way.
+
+Seeing it needs a CarPlay host: a car, Apple's "CarPlay Simulator" from the
+Additional Tools for Xcode download (drives a USB-connected real iPhone, so it
+waits on the entitlement), or Simulator.app's I/O → External Displays → CarPlay
+on an Xcode that ships Simulator.app — the Xcode 27 beta's DeviceHub does not
+offer a CarPlay display.
+
 ## Desktop (Tauri)
 
 When you scaffolded with the Tauri backend, `src-tauri/` holds a Tauri v2 Rust

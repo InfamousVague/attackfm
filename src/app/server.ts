@@ -245,6 +245,7 @@ export function toTrack(session: ServerSession, remote: RemoteTrack): Track {
     artist: remote.artist,
     album: remote.album,
     duration: remote.duration,
+    trackNo: remote.trackNo,
     addedAt: remote.addedAt,
     artwork: remote.artId ? artUrl(session, remote.artId) : null,
     genre: remote.genre,

@@ -33,7 +33,13 @@ import { settlePendingSyncs } from './spotifyAccount.ts';
  * it in place; the context and `useDownloads` hook live in downloadsContext.ts.
  */
 export function DownloadsProvider({ children }: { children: ReactNode }) {
-  const { musicDir, rescan } = useLibrary();
+  const { source, musicDir, rescan } = useLibrary();
+  // Downloads always land in a LOCAL folder. musicDir is one only while the
+  // library source is local - connected to a server it is that server's URL,
+  // and passing it through once minted a literal "https:/host/" directory tree
+  // beside the binary. undefined hands the choice to the backend's fallback
+  // (the OS music folder), which is also where the uploader looks.
+  const downloadDir = source === 'local' ? musicDir : undefined;
   const [jobs, setJobs] = useState<MusicImportJob[]>([]);
   const [paused, setPausedState] = useState(false);
   // Latest values kept in refs so the subscription effect can stay mount-once.
@@ -95,7 +101,7 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
       jobs: ordered,
       active: ordered.filter((j) => j.state === 'queued' || j.state === 'downloading'),
       paused,
-      enqueue: (url: string) => enqueueMusicImport(url, musicDir),
+      enqueue: (url: string) => enqueueMusicImport(url, downloadDir),
       remove: (id: string) => void removeMusicImport(id),
       retry: (id: string) => void retryMusicImport(id),
       cancel: (id: string) => void cancelMusicImport(id),
@@ -105,7 +111,7 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
       },
       clearFinished: () => void clearMusicImports(['done', 'error']),
     };
-  }, [jobs, musicDir, paused]);
+  }, [jobs, downloadDir, paused]);
 
   return <DownloadsContext.Provider value={value}>{children}</DownloadsContext.Provider>;
 }

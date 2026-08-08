@@ -28,3 +28,11 @@ const BUILD_DIR = join(ROOT, 'src-tauri/gen/apple/build');
 for (const stale of ['app_iOS.xcarchive', 'arm64', 'arm64-sim', 'x86_64-sim']) {
   rmSync(join(BUILD_DIR, stale), { recursive: true, force: true });
 }
+
+// Externals/<arch>/<profile>/libapp.a is where the Build Rust Code phase drops
+// the staticlib, and Xcode folder-syncs the whole tree into the bundle. After
+// one debug AND one release build both profiles exist, the sync sees two
+// sources for one libapp.a, and every later build - either configuration -
+// dies with "Multiple commands produce ... libapp.a". Clearing it just costs
+// the re-copy; the build phase recreates the profile it needs.
+rmSync(join(ROOT, 'src-tauri/gen/apple/Externals'), { recursive: true, force: true });

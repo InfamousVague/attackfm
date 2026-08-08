@@ -43,7 +43,9 @@ const PROVIDER_OPTIONS = [
  * the settings modal as the plugin's Downloads tab.
  */
 export function DownloadsSettings() {
-  const { musicDir } = useLibrary();
+  const { source, musicDir } = useLibrary();
+  // Same rule as the provider: only a local library's musicDir is a folder.
+  const statusDir = source === 'local' ? musicDir : undefined;
   const [settings, setSettings] = useState<MusicSettings | null>(null);
   const [status, setStatus] = useState<SpotiFlacStatus | null>(null);
   const [installing, setInstalling] = useState(false);
@@ -53,12 +55,12 @@ export function DownloadsSettings() {
     void (async () => {
       try {
         setSettings(await getMusicSettings());
-        setStatus(await spotiflacStatus(musicDir));
+        setStatus(await spotiflacStatus(statusDir));
       } catch {
         // Backend unavailable - the section shows its desktop-only note.
       }
     })();
-  }, [musicDir]);
+  }, [statusDir]);
 
   // The backend write happens beside the state set, not inside the updater:
   // React is free to run an updater twice (StrictMode does), and a write in
@@ -74,7 +76,7 @@ export function DownloadsSettings() {
     setInstalling(true);
     try {
       await installSpotiflac();
-      setStatus(await spotiflacStatus(musicDir));
+      setStatus(await spotiflacStatus(statusDir));
     } catch {
       // Surfaced via the status line staying "unavailable".
     } finally {

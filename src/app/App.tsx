@@ -18,6 +18,8 @@ import { NowPlayingMotionProvider } from './nowPlayingMotion.tsx';
 import { NowPlayingBackdrop } from './NowPlayingBackdrop.tsx';
 import { PluginHookScope, PluginProviders, PluginSlot, PluginsProvider } from '../plugins/runtime.tsx';
 import { isDesktopApp } from './platform.ts';
+import { onCarPlayPlay } from './carplay.ts';
+import { remotePath } from './server.ts';
 import type { Track } from './tauri.ts';
 import { Player } from './Player.tsx';
 import { ArtistPage } from './ArtistPage.tsx';
@@ -64,6 +66,60 @@ function StartupSeed({
     const first = ordered[0];
     if (first) onSeed(first, ordered);
   }, [tracks, current, onSeed]);
+  return null;
+}
+
+/**
+ * Turns a tap on the car screen into playback here, where the audio lives.
+ *
+ * The car names the track and the list it was tapped in; the queue is rebuilt
+ * from that context in the same order the car displayed - liked order for
+ * Liked, album-then-track-number within an artist, alphabetical for Songs -
+ * so the drive hears what the screen promised. Headless and below the
+ * LibraryProvider for the same reason StartupSeed is: App itself renders the
+ * provider and cannot read it.
+ */
+function CarPlayBridge({ onPlay }: { onPlay: (track: Track, queue: Track[]) => void }) {
+  const { tracks, favoriteTracks } = useLibrary();
+  const latest = useRef({ tracks, favoriteTracks, onPlay });
+  latest.current = { tracks, favoriteTracks, onPlay };
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let dead = false;
+    void onCarPlayPlay((trackId, context) => {
+      const { tracks, favoriteTracks, onPlay } = latest.current;
+      const path = remotePath(trackId);
+      const track = tracks.find((t) => t.path === path);
+      if (!track) return;
+
+      let queue: Track[];
+      if (context === 'liked') {
+        queue = favoriteTracks;
+      } else if (context.startsWith('artist:')) {
+        const artist = context.slice('artist:'.length);
+        queue = tracks
+          .filter((t) => t.artist === artist)
+          .sort(
+            (a, b) =>
+              a.album.localeCompare(b.album, undefined, { sensitivity: 'base' }) ||
+              (a.trackNo ?? 0) - (b.trackNo ?? 0),
+          );
+      } else {
+        queue = [...tracks].sort((a, b) =>
+          a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }),
+        );
+      }
+      onPlay(track, queue.length > 0 ? queue : [track]);
+    }).then((stop) => {
+      if (dead) stop();
+      else unlisten = stop;
+    });
+    return () => {
+      dead = true;
+      unlisten?.();
+    };
+  }, []);
   return null;
 }
 
@@ -315,7 +371,23 @@ export function App() {
               // whole server connection - is unreachable off the desktop, which
               // is exactly backwards for the platform that needs a server most.
               <header className="mobileHeader">
-                <img className="mobileHeader__logo" src={wordmark} alt={APP_NAME} />
+                <span className="mobileHeader__nav">
+                  {/* Back has to live in the chrome here too: an artist page
+                      opened on a phone otherwise has no way out - the desktop
+                      back/forward pair sits in a title bar this build does not
+                      render. Disabled rather than hidden at the root, so the
+                      header never reflows. */}
+                  <IconButton
+                    variant="ghost"
+                    size="sm"
+                    aria-label="Back"
+                    disabled={!canBack}
+                    onClick={back}
+                  >
+                    <ChevronLeft size={18} />
+                  </IconButton>
+                  <img className="mobileHeader__logo" src={wordmark} alt={APP_NAME} />
+                </span>
                 <span className="mobileHeader__actions">
                   <IconButton
                     variant="ghost"
@@ -357,6 +429,8 @@ export function App() {
                 setQueue(ordered);
               }}
             />
+            {/* Songs tapped on the car screen start here, queue and all. */}
+            <CarPlayBridge onPlay={playFrom} />
             <div className="appPlayer">
               {/* The player walks the queue itself; it only reports where it
                   landed, and `current` follows. */}

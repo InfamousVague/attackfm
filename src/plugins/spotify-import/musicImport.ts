@@ -67,7 +67,11 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
   return mod.invoke<T>(cmd, args);
 }
 
-export async function enqueueMusicImport(url: string, outputDir: string): Promise<MusicImportJob> {
+export async function enqueueMusicImport(url: string, outputDir?: string): Promise<MusicImportJob> {
+  // outputDir omitted -> the backend's own fallback (the OS music folder).
+  // Callers pass a directory only when the library IS a local folder - a
+  // server library's musicDir is a URL, and a URL handed to the downloader
+  // becomes a literal "https:" directory on disk.
   return invoke<MusicImportJob>('music_import_enqueue', { url, outputDir });
 }
 
@@ -91,7 +95,7 @@ export async function clearMusicImports(states: MusicImportState[]): Promise<voi
   await invoke('music_imports_clear', { states });
 }
 
-export async function spotiflacStatus(outputDir: string): Promise<SpotiFlacStatus> {
+export async function spotiflacStatus(outputDir?: string): Promise<SpotiFlacStatus> {
   return invoke<SpotiFlacStatus>('music_spotiflac_status', { outputDir });
 }
 

@@ -1,6 +1,7 @@
-# HAND-EDITED: `deploymentTarget` here, and DEVELOPMENT_TEAM / CODE_SIGN_STYLE
-# further down. Neither is read from tauri.conf.json, though both are set there
-# too so a fixed CLI starts honouring them on its own.
+# HAND-EDITED: `deploymentTarget` here; DEVELOPMENT_TEAM / CODE_SIGN_STYLE /
+# the simulator CODE_SIGN_ENTITLEMENTS override further down; the CarPlay +
+# MediaPlayer framework dependencies; and Sources/app/carplay.{h,m} beside the
+# generated main.mm. None of that is read from tauri.conf.json.
 #
 # `tauri ios init` writes this file from its own template. It leaves an existing
 # one alone, but a delete-and-reinit resets both edits - so re-apply them, and
@@ -50,7 +51,14 @@ targets:
     sources:
       - path: Sources
       - path: Assets.xcassets
+      # Present for navigation only. Without `buildPhase: none`, xcodegen
+      # treats the libapp.a builds inside as resources and copies them into
+      # the app - and the moment two arch subdirs both hold one, the two
+      # copies collide: "Multiple commands produce .../AttackFM.app/libapp.a".
+      # Linking never needed target membership; it goes through the explicit
+      # framework dependency + LIBRARY_SEARCH_PATHS.
       - path: Externals
+        buildPhase: none
       - path: app_iOS
       - path: assets
         buildPhase: resources
@@ -90,6 +98,10 @@ targets:
         # from tauri.conf.json into this file, where it is set as well.
         DEVELOPMENT_TEAM: F6ZAL7ANAD
         CODE_SIGN_STYLE: Automatic
+        # Simulator builds sign with the CarPlay entitlement (no provisioning
+        # check there); device builds keep the base entitlements so signing
+        # succeeds before Apple grants com.apple.developer.carplay-audio.
+        "CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]": app_iOS/app_iOS.simulator.entitlements
         ENABLE_BITCODE: false
         ARCHS: [arm64]
         VALID_ARCHS: arm64 
@@ -101,6 +113,14 @@ targets:
     dependencies:
       - framework: libapp.a
         embed: false
+      # CarPlay templates + the system now-playing center (carplay.m). CarPlay
+      # itself is inert until the entitlement is present - see the simulator
+      # entitlements file for how that is staged. One dependencies block only:
+      # a second `dependencies:` key under this target is duplicate YAML, and
+      # xcodegen answers it with two libapp.a link phases and a "Multiple
+      # commands produce" build failure.
+      - sdk: CarPlay.framework
+      - sdk: MediaPlayer.framework
       - sdk: CoreGraphics.framework
       - sdk: Metal.framework
       - sdk: MetalKit.framework

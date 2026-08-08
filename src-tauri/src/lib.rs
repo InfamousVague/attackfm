@@ -26,6 +26,11 @@ mod spotify;
 // the audio the moment the screen locks.
 mod ios_audio;
 
+// The CarPlay seam. Compiled everywhere so the frontend can call its commands
+// unconditionally; every call is a no-op except on iOS, where it bridges to
+// the native template UI in gen/apple/Sources/app/carplay.m.
+mod carplay;
+
 /// Holds the window square while it is resized.
 ///
 /// macOS has this natively: an aspect ratio on the window is honoured by the
@@ -70,6 +75,50 @@ fn square_aspect(window: &tauri::WebviewWindow) {
     });
 }
 
+/// Makes the app's window the key window once the scene has attached it.
+///
+/// Under the scene lifecycle (UIApplicationSupportsMultipleScenes, which iOS
+/// 26+ forces on this app), tao attaches its window to the scene but nothing
+/// ever calls `makeKeyAndVisible` - and a window that is not KEY cannot host a
+/// first responder. The visible symptom is exactly Apple's QA1813: taps land
+/// (buttons work, focus rings draw) but the keyboard never rises, because the
+/// text field's becomeFirstResponder is silently refused. Asserted twice on a
+/// delay because the scene connect that creates the window races setup, and
+/// re-asserting on an already-key window is a no-op.
+#[cfg(target_os = "ios")]
+fn ensure_key_window(handle: &tauri::AppHandle) {
+    let handle = handle.clone();
+    std::thread::spawn(move || {
+        for delay_ms in [600u64, 2200] {
+            std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+            let _ = handle.run_on_main_thread(|| unsafe {
+                use objc2::msg_send;
+                use objc2::runtime::{AnyClass, AnyObject};
+                let Some(app_class) = AnyClass::get(c"UIApplication") else {
+                    return;
+                };
+                let shared: *mut AnyObject = msg_send![app_class, sharedApplication];
+                if shared.is_null() {
+                    return;
+                }
+                let key: *mut AnyObject = msg_send![shared, keyWindow];
+                if !key.is_null() {
+                    return;
+                }
+                let windows: *mut AnyObject = msg_send![shared, windows];
+                if windows.is_null() {
+                    return;
+                }
+                let first: *mut AnyObject = msg_send![windows, firstObject];
+                if first.is_null() {
+                    return;
+                }
+                let () = msg_send![first, makeKeyAndVisible];
+            });
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -88,6 +137,14 @@ pub fn run() {
             // at launch, not at the first play, or the first play is what
             // discovers it was never claimed.
             ios_audio::configure_session();
+            // The window the scene attaches must also become KEY, or text
+            // fields can never raise the keyboard - see ensure_key_window.
+            #[cfg(target_os = "ios")]
+            ensure_key_window(&app.handle());
+            // The CarPlay scene may connect at any moment (including before
+            // the webview loads, when the phone is already docked in the
+            // car), so the event handle is stored as early as possible.
+            carplay::init(&app.handle());
 
             #[cfg(desktop)]
             {
@@ -164,10 +221,14 @@ fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'stat
         spotify::spotify_disconnect,
         spotify::spotify_library,
         spotify::spotify_mark_synced,
+        // No-ops here; real on iOS. Registered on both so the frontend can
+        // push without asking which build it is in.
+        carplay::carplay_set_library,
+        carplay::carplay_now_playing,
     ]
 }
 
 #[cfg(mobile)]
 fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
-    tauri::generate_handler![]
+    tauri::generate_handler![carplay::carplay_set_library, carplay::carplay_now_playing]
 }

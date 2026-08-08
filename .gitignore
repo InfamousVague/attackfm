@@ -25,3 +25,22 @@ src-tauri/gen/apple/Podfile.lock
 src-tauri/gen/android/app/build
 src-tauri/gen/android/build
 src-tauri/gen/android/.gradle
+
+# Song data never belongs in this repo. The library lives in the OS music
+# folder or on the streaming server; the one time audio appeared here it was
+# the importer bug that turned a server URL into a literal "https:/host/"
+# directory of downloads. Belt (the extensions) and suspenders (the dir).
+*.m4a
+*.m4b
+*.mp3
+*.flac
+*.wav
+*.aiff
+*.aif
+*.ogg
+*.oga
+*.opus
+*.wma
+*.ape
+*.wv
+https:*/

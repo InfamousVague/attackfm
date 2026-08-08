@@ -1878,3 +1878,11 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Back + wordmark as one leading cluster in the mobile header, mirroring how
+   the desktop title bar seats its nav beside the logo. */
+.mobileHeader__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}

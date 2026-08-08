@@ -64,3 +64,14 @@ objc2-foundation = { version = "0.3", features = ["NSGeometry", "NSData"] }
 [features]
 # Kept in sync with tauri.conf.json > app > security > csp.
 custom-protocol = ["tauri/custom-protocol"]
+
+# tao 0.35.3 (the newest tao any released tauri accepts) returns a
+# UISceneConfiguration from application:configurationForConnectingSceneSession:
+# whose Retained drops before UIKit reads it. Debug builds survive on autorelease
+# -pool luck; release builds hand UIKit a freed object and segfault at launch in
+# -[UIApplication _connectUISceneFromFBSScene:transitionContext:] on iOS 26/27
+# devices. vendor/tao is a pristine 0.35.3 plus the one-line 0.36.0 backport
+# (autorelease_ptr) in src/platform_impl/ios/view.rs. Drop this patch and the
+# vendor/ copy once tauri-runtime-wry depends on tao >= 0.36.
+[patch.crates-io]
+tao = { path = "vendor/tao" }

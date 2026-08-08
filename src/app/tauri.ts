@@ -131,6 +131,13 @@ export interface Track {
   album: string;
   /** Length in seconds, or null when the tags do not carry it. */
   duration: number | null;
+  /**
+   * Position within its album, or null/absent when untagged. The server sends
+   * it for every track; the local scanner has never read it. CarPlay's artist
+   * lists are the consumer: an album played from the car should run in album
+   * order, not alphabetical.
+   */
+  trackNo?: number | null;
   /** When the file landed in the library, epoch milliseconds. */
   addedAt: number;
   /**

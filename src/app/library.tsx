@@ -21,6 +21,7 @@ import {
   type ServerSession,
 } from './server.ts';
 import { useServerSession } from './serverSession.tsx';
+import { pushCarPlayLibrary } from './carplay.ts';
 
 const STORAGE_KEY = 'attackfm-music-dir';
 const FAVORITES_KEY = 'attackfm-favorites';
@@ -356,6 +357,13 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
     () => remote.map((r) => toTrack(session, r)).sort((a, b) => b.addedAt - a.addedAt),
     [remote, session],
   );
+
+  // The car screen mirrors whatever this device has synced: every delta and
+  // every heart re-pushes. A no-op everywhere but iOS, where the native side
+  // rebuilds its templates from this.
+  useEffect(() => {
+    void pushCarPlayLibrary(tracks, favorites);
+  }, [tracks, favorites]);
 
   const value = useMemo<LibraryContextValue>(() => {
     const favoriteSet = new Set(favorites);

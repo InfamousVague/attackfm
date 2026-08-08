@@ -23,6 +23,7 @@ import { usePlayback } from './playback.tsx';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { VolumeControl, VOLUME_UNITY } from './VolumeControl.tsx';
 import { loadAudioUrl, type Track } from './tauri.ts';
+import { onCarPlayRemote, pushCarPlayNowPlaying } from './carplay.ts';
 import { BeatWave } from './BeatWave.tsx';
 import { initDockWave } from './dockWave.ts';
 
@@ -395,6 +396,91 @@ export function Player({
   useEffect(() => {
     publish({ meter, audible, track: track ?? DEMO_TRACK, position: coarsePosition });
   }, [publish, meter, audible, track, coarsePosition]);
+
+  // ── CarPlay / system now-playing ─────────────────────────────────────────
+  //
+  // The native side (carplay.m) owns MPNowPlayingInfoCenter and the remote
+  // command center; this feeds it and obeys it. Pushes go out only on
+  // discontinuities - track change, play/pause, seek - because iOS runs the
+  // clock itself from position + rate; obeying happens through one mount-once
+  // listener that reads the latest controls through a ref, since the control
+  // functions below are rebuilt every render and the listener is not.
+  const carPlayControls = useRef<{
+    setPlaying: (next: boolean) => void;
+    next: () => void;
+    previous: () => void;
+    seek: (to: number) => void;
+  } | null>(null);
+  const positionRef = useRef(position);
+  positionRef.current = position;
+  const playingLiveRef = useRef(playing);
+  playingLiveRef.current = playing;
+  // Where the last push left the clock, so a seek (a jump the extrapolated
+  // clock cannot have made) is recognisable against ordinary playback.
+  const carPlaySentPos = useRef(-10);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let dead = false;
+    void onCarPlayRemote((command) => {
+      const controls = carPlayControls.current;
+      if (!controls) return;
+      if (command === 'play') controls.setPlaying(true);
+      else if (command === 'pause') controls.setPlaying(false);
+      else if (command === 'toggle') controls.setPlaying(!playingLiveRef.current);
+      else if (command === 'next') controls.next();
+      else if (command === 'previous') controls.previous();
+      else if (command.startsWith('seek:')) {
+        const to = Number(command.slice(5));
+        if (Number.isFinite(to) && to >= 0) controls.seek(to);
+      }
+    }).then((stop) => {
+      if (dead) stop();
+      else unlisten = stop;
+    });
+    return () => {
+      dead = true;
+      unlisten?.();
+    };
+  }, []);
+
+  // The discontinuities the extrapolated clock cannot cover: a new track, a
+  // play or pause, a duration finally learned from metadata.
+  useEffect(() => {
+    if (!track) return;
+    carPlaySentPos.current = positionRef.current;
+    void pushCarPlayNowPlaying({
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      artUrl: artwork?.startsWith('http') ? artwork : '',
+      duration,
+      position: positionRef.current,
+      playing,
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on identity, state, and length; position rides along
+    });
+  }, [track, playing, duration]);
+
+  // Seeks: the coarse clock jumping further than a second of playback could
+  // carry it. Scrubs land here through commitSeek's setPosition.
+  useEffect(() => {
+    if (!track) return;
+    if (Math.abs(coarsePosition - carPlaySentPos.current) <= 2.5) {
+      carPlaySentPos.current = coarsePosition;
+      return;
+    }
+    carPlaySentPos.current = coarsePosition;
+    void pushCarPlayNowPlaying({
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      artUrl: artwork?.startsWith('http') ? artwork : '',
+      duration,
+      position: coarsePosition,
+      playing,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the jump detector runs on the clock alone
+  }, [coarsePosition]);
 
   // Push EQ edits onto the live filters as they happen.
   useEffect(() => {
@@ -1182,6 +1268,17 @@ export function Player({
       }, 1200);
     }
     audio.currentTime = to;
+  };
+
+  // The car's handles on this player, refreshed every render so the listener
+  // above always acts through current closures. Skips deliberately reuse the
+  // strip's own handlers: a press on the steering wheel and a press on the
+  // strip must do the identical thing, manners and all.
+  carPlayControls.current = {
+    setPlaying: setPlayingState,
+    next: skipForward,
+    previous: skipBack,
+    seek: commitSeek,
   };
 
   // The fader no longer touches the element: it rides the gain after the
