@@ -365,6 +365,23 @@ impl Db {
         rows.map(|r| r.filter_map(Result::ok).collect()).unwrap_or_default()
     }
 
+    /// Every live track's identity - title, artist, album artist, album,
+    /// duration - for the sync precheck to match a client's local files
+    /// against. Tags rather than hashes: the same song re-ripped should read
+    /// as already here, and nobody hashes forty gigabytes to ask that.
+    pub fn sync_identities(&self) -> Vec<(String, String, String, String, Option<i64>)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT title, artist, album_artist, album, duration_ms FROM tracks WHERE deleted = 0",
+        ) else {
+            return Vec::new();
+        };
+        let rows = stmt.query_map([], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+        });
+        rows.map(|r| r.filter_map(Result::ok).collect()).unwrap_or_default()
+    }
+
     /// Inserts or refreshes one scanned file, stamping it with `rev`.
     ///
     /// `added_at` is preserved across a re-scan: a file whose tags were fixed
@@ -465,23 +482,29 @@ impl Db {
 
     /// Everything stamped above `since`, live rows and tombstones alike. The
     /// tombstones come back as bare ids so a client can drop them.
-    pub fn tracks_since(&self, since: i64, limit: i64) -> (Vec<Track>, Vec<i64>) {
+    /// The third value is the highest rev this page SAW - tombstones
+    /// included. Folding tombstone revs in matters: a page of nothing but
+    /// deletions once reported rev == since with more == true, which a
+    /// paging client reads as "ask again from the same place", forever.
+    pub fn tracks_since(&self, since: i64, limit: i64) -> (Vec<Track>, Vec<i64>, i64) {
         let conn = self.lock();
         let sql = format!(
             "SELECT {} FROM tracks WHERE rev > ?1 ORDER BY rev, id LIMIT ?2",
             Self::TRACK_COLS
         );
         let Ok(mut stmt) = conn.prepare(&sql) else {
-            return (Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), since);
         };
         let mut live = Vec::new();
         let mut removed = Vec::new();
+        let mut max_rev = since;
         let rows = stmt.query_map(params![since, limit], |r| {
             let deleted: i64 = r.get(10)?;
             Ok((deleted != 0, Self::read_track(r)?))
         });
         if let Ok(rows) = rows {
             for (is_deleted, track) in rows.filter_map(Result::ok) {
+                max_rev = max_rev.max(track.rev);
                 if is_deleted {
                     removed.push(track.id);
                 } else {
@@ -489,7 +512,7 @@ impl Db {
                 }
             }
         }
-        (live, removed)
+        (live, removed, max_rev)
     }
 
     pub fn track(&self, id: i64) -> Option<Track> {

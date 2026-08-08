@@ -1,4 +1,5 @@
-import { Modal, Text } from '@glacier/react';
+import { IconButton, Modal, Text } from '@glacier/react';
+import { Trash2, X } from '@glacier/icons';
 import type { Track } from './tauri.ts';
 import placeholderArt from '../assets/attack-wave.png';
 
@@ -9,6 +10,10 @@ interface PlaylistModalProps {
   tracks: Track[];
   emptyLabel: string;
   onPlay: (track: Track) => void;
+  /** Present only for the user's own playlists: sheds one row. */
+  onRemoveTrack?: (path: string) => void;
+  /** Present only for the user's own playlists: deletes the list whole. */
+  onDelete?: () => void;
 }
 
 function formatDuration(seconds: number | null): string {
@@ -19,9 +24,20 @@ function formatDuration(seconds: number | null): string {
 
 /**
  * A playlist opened as a modal: the collection's tracks in a scrolling list,
- * each row playing the song and closing the sheet.
+ * each row playing the song and closing the sheet. A user playlist's rows
+ * carry a remove control beside the time - a sibling, not a nested button,
+ * because the row itself is one - and a delete row under the list.
  */
-export function PlaylistModal({ open, onClose, title, tracks, emptyLabel, onPlay }: PlaylistModalProps) {
+export function PlaylistModal({
+  open,
+  onClose,
+  title,
+  tracks,
+  emptyLabel,
+  onPlay,
+  onRemoveTrack,
+  onDelete,
+}: PlaylistModalProps) {
   return (
     <Modal open={open} onClose={onClose} title={title} size="md">
       {tracks.length === 0 ? (
@@ -29,24 +45,41 @@ export function PlaylistModal({ open, onClose, title, tracks, emptyLabel, onPlay
       ) : (
         <div className="playlistModalList">
           {tracks.map((track) => (
-            <button
-              key={track.path}
-              type="button"
-              className="playlistModalRow"
-              onClick={() => {
-                onPlay(track);
-                onClose();
-              }}
-            >
-              <img className="songArt" src={track.artwork ?? placeholderArt} alt="" loading="lazy" />
-              <span className="playlistModalMeta">
-                <span className="songTitle">{track.title}</span>
-                <span className="songArtist">{track.artist}</span>
-              </span>
-              <span className="songMuted playlistModalTime">{formatDuration(track.duration)}</span>
-            </button>
+            <div key={track.path} className="playlistModalItem">
+              <button
+                type="button"
+                className="playlistModalRow"
+                onClick={() => {
+                  onPlay(track);
+                  onClose();
+                }}
+              >
+                <img className="songArt" src={track.artwork ?? placeholderArt} alt="" loading="lazy" />
+                <span className="playlistModalMeta">
+                  <span className="songTitle">{track.title}</span>
+                  <span className="songArtist">{track.artist}</span>
+                </span>
+                <span className="songMuted playlistModalTime">{formatDuration(track.duration)}</span>
+              </button>
+              {onRemoveTrack && (
+                <IconButton
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`Remove ${track.title}`}
+                  onClick={() => onRemoveTrack(track.path)}
+                >
+                  <X size={15} />
+                </IconButton>
+              )}
+            </div>
           ))}
         </div>
+      )}
+      {onDelete && (
+        <button type="button" className="playlistDelete" onClick={onDelete}>
+          <Trash2 size={15} />
+          Delete playlist
+        </button>
       )}
     </Modal>
   );

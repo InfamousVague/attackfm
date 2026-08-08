@@ -118,6 +118,15 @@ export interface Plugin {
    */
   desktopOnly?: boolean;
   /**
+   * A plugin that runs off a desktop ONLY when signed into a server - the work
+   * it needs (a subprocess, a redirect) lives on the hub instead of the
+   * device. On the phone or the browser it appears when a server is connected
+   * and vanishes when it is not; the desktop always has it (local engine or
+   * server, whichever). Ignored when `desktopOnly` is set. The registry reads
+   * this against the live session, so the list re-filters on connect.
+   */
+  serverBacked?: boolean;
+  /**
    * The detail dialog's prose - a paragraph or two, where description is one
    * line. Falls back to description when absent.
    */

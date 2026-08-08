@@ -20,6 +20,7 @@
 mod api;
 mod auth;
 mod db;
+mod imports;
 mod scan;
 mod stream;
 mod upload;
@@ -44,6 +45,9 @@ pub struct AppState {
     pub library_quota_bytes: i64,
     /// Whether an ffmpeg was found at boot - decides if transcoding is offered.
     pub ffmpeg: bool,
+    /// The server-side import queue - links any signed-in device enqueues,
+    /// downloaded where the music lives.
+    pub imports: Arc<imports::ImportManager>,
 }
 
 fn env_or(key: &str, fallback: &str) -> String {
@@ -136,11 +140,16 @@ async fn main() {
         server_name,
         library_quota_bytes: quota_gb.max(0) * 1024 * 1024 * 1024,
         ffmpeg,
+        imports: imports::ImportManager::new(&data_dir),
     });
 
     // Index what is already there before taking requests, in the background so
     // a large library does not hold the port closed.
     scan::spawn_scan(db.clone(), music_root.clone(), art_dir.clone(), progress.clone());
+
+    // The import runner: downloads links onto this box and indexes them as
+    // they land, so every device's catalog follows.
+    imports::spawn_scheduler(state.clone());
 
     if scan_minutes > 0 {
         let db = db.clone();
@@ -184,6 +193,15 @@ async fn main() {
         .route("/api/auth/logout", post(api::logout))
         .route("/api/me", get(api::me))
         .route("/api/library", get(api::library))
+        .route("/api/library/missing", post(api::library_missing))
+        .route("/api/imports", get(imports::list).post(imports::enqueue))
+        .route("/api/imports/clear", post(imports::clear))
+        .route(
+            "/api/imports/{id}",
+            axum::routing::delete(imports::remove),
+        )
+        .route("/api/imports/{id}/cancel", post(imports::cancel))
+        .route("/api/imports/{id}/retry", post(imports::retry))
         .route("/api/scan", get(api::scan_status).post(api::scan_now))
         .route("/api/favorites", get(api::favorites))
         .route("/api/favorites/{id}", put(api::set_favorite))

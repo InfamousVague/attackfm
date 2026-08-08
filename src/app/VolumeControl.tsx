@@ -41,6 +41,47 @@ interface VolumeControlProps {
  * it was rather than at some default - and the fader stays live while muted,
  * since reaching for it is the clearest way of saying you want to hear again.
  */
+/**
+ * The same fader laid flat in a row - for the phone's overflow panel, where a
+ * hover-opened popover has no hover to open on and a second popover under the
+ * first would stack sheets. Same math, same detent, same readout; only the
+ * geometry changes.
+ */
+export function VolumeRow({ value, muted, onValueChange, onMutedChange }: VolumeControlProps) {
+  const shown = muted ? 0 : value;
+  return (
+    <div className="volRow">
+      <IconButton
+        variant="ghost"
+        size="sm"
+        aria-label={muted ? 'Unmute' : 'Mute'}
+        aria-pressed={muted}
+        onClick={() => onMutedChange(!muted)}
+      >
+        {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+      </IconButton>
+      <div className="volRowRailWrap">
+        {/* The unity (100%) line the fader detents against, upright against a
+            horizontal travel. */}
+        <span className="volRowUnityTick" aria-hidden="true" />
+        <Slider
+          className="volRowRail"
+          min={0}
+          max={VOLUME_MAX}
+          value={shown}
+          aria-label="Volume"
+          aria-valuetext={readoutFor(shown, muted)}
+          onValueChange={(next) => {
+            if (muted) onMutedChange(false);
+            onValueChange(snapToUnity(next));
+          }}
+        />
+      </div>
+      <span className="volReadout">{readoutFor(shown, muted)}</span>
+    </div>
+  );
+}
+
 export function VolumeControl({ value, muted, onValueChange, onMutedChange }: VolumeControlProps) {
   const shown = muted ? 0 : value;
   return (

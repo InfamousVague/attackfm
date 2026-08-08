@@ -20,10 +20,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// The extensions the server will take. Anything else is refused at `init`,
-/// before a byte is transferred.
+/// before a byte is transferred. No "wma": the tag reader (lofty) has no ASF
+/// parser, so a WMA could land on disk but never be indexed - invisible to
+/// the catalog and to the sync precheck, which would upload it again forever.
 const ACCEPTED: &[&str] = &[
-    "mp3", "m4a", "m4b", "aac", "flac", "wav", "aiff", "aif", "ogg", "oga", "opus", "wma", "ape",
-    "wv",
+    "mp3", "m4a", "m4b", "aac", "flac", "wav", "aiff", "aif", "ogg", "oga", "opus", "ape", "wv",
 ];
 
 /// A ceiling on a single file. A lossless 20-minute piece at 24/192 is around
@@ -250,6 +251,18 @@ pub async fn finish(
     let _ = std::fs::remove_file(temp.with_extension("meta"));
 
     let indexed = scan::scan_one(&state.db, &state.music_root, &state.art_dir, &rel);
+    if !indexed {
+        // A file the indexer cannot read must not stay: it would be invisible
+        // to the catalog AND to the sync precheck, so every fresh client
+        // would upload it again into an unbounded pile of suffixed copies.
+        // Refusing is the honest answer - the uploader reports it, and the
+        // library holds only what it can actually play.
+        let _ = std::fs::remove_file(&dest);
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "uploaded, but the file could not be read as audio; removed".into(),
+        ));
+    }
     Ok(Json(serde_json::json!({
         "ok": true,
         "path": rel,
@@ -257,8 +270,9 @@ pub async fn finish(
     })))
 }
 
-/// Where an uploaded file belongs, read from its own tags.
-fn destination_for(temp: &Path, original: &str, ext: &str) -> String {
+/// Where an uploaded file belongs, read from its own tags. Shared with the
+/// import runner, whose staged files land through the same routing.
+pub(crate) fn destination_for(temp: &Path, original: &str, ext: &str) -> String {
     use lofty::file::TaggedFileExt;
     use lofty::prelude::{Accessor, ItemKey};
     use lofty::probe::Probe;
@@ -311,7 +325,7 @@ fn destination_for(temp: &Path, original: &str, ext: &str) -> String {
 }
 
 /// Finds a free name near `rel`, so nothing is ever overwritten.
-fn unique_destination(root: &Path, rel: &str, dest: &Path) -> (String, PathBuf) {
+pub(crate) fn unique_destination(root: &Path, rel: &str, dest: &Path) -> (String, PathBuf) {
     if !dest.exists() {
         return (rel.to_string(), dest.to_path_buf());
     }

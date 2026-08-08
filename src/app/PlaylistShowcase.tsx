@@ -1,25 +1,25 @@
-import { ScrollArea, Text } from '@glacier/react';
-import { Heart, History, Plus } from '@glacier/icons';
-import { useMemo, useState, type ReactNode } from 'react';
+import { Button, Input, Modal, ScrollArea, Text } from '@glacier/react';
+import { Heart, History, ListMusic, Plus } from '@glacier/icons';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { useLibrary } from './library.tsx';
+import { usePlaylists } from './playlists.tsx';
 import { PluginFence, usePlugins } from '../plugins/runtime.tsx';
 import type { PluginPlaylistTile } from '../plugins/types.ts';
 import { PlaylistModal } from './PlaylistModal.tsx';
 import type { Track } from './tauri.ts';
 
 /**
- * The cover for the Liked Songs tile: a 2x2 mosaic of the four newest
- * favourites that have art. Below four, it is the heart glyph on its own -
- * there is no honest mosaic to make from a handful of covers.
+ * A 2x2 mosaic of the collection's first four artworks; below four, the given
+ * glyph on its own - there is no honest mosaic to make from a handful of
+ * covers. Liked and every user playlist wear this same cover.
  */
-function LikedCover() {
-  const { favoriteTracks } = useLibrary();
-  const arts = favoriteTracks.map((t) => t.artwork).filter((a): a is string => a !== null).slice(0, 4);
+function MosaicCover({ tracks, fallback, tone }: { tracks: Track[]; fallback: ReactNode; tone: string }) {
+  const arts = tracks.map((t) => t.artwork).filter((a): a is string => a !== null).slice(0, 4);
 
   if (arts.length < 4) {
     return (
-      <div className="tileSquircle tileLiked" aria-hidden>
-        <Heart size={24} fill="currentColor" />
+      <div className={`tileSquircle ${tone}`} aria-hidden>
+        {fallback}
       </div>
     );
   }
@@ -42,11 +42,6 @@ function Tile({ cover, name, onOpen }: { cover: ReactNode; name: string; onOpen:
     </button>
   );
 }
-
-type PlaylistId = 'liked' | 'recent' | 'new';
-
-// The tiles shown in the strip - Liked, Recent, New Playlist.
-const PLAYLIST_COUNT = 3;
 
 /**
  * One plugin tile: a dedicated component instance per contribution, so the
@@ -78,14 +73,19 @@ function PluginTile({ tile, onPlay }: { tile: PluginPlaylistTile; onPlay: (track
 }
 
 /**
- * The playlist strip above the library table: a horizontally scrolling row of
- * squircle tiles - Liked, Recent, and New Playlist. Opening one shows its
- * tracks in a modal.
+ * The playlist strip above the library table: Liked and Recent, then the
+ * user's own playlists, then the New Playlist tile that creates one, then
+ * whatever the plugins bring. Opening any tile shows its tracks in a modal;
+ * a user playlist's modal can also shed tracks or delete the list whole.
  */
 export function PlaylistShowcase({ onPlay }: { onPlay: (track: Track, queue: Track[]) => void }) {
   const { tracks, favoriteTracks } = useLibrary();
+  const { playlists, create, remove, removeTrack } = usePlaylists();
   const { enabled } = usePlugins();
-  const [open, setOpen] = useState<PlaylistId | null>(null);
+  // 'liked' | 'recent' | a user playlist's id.
+  const [open, setOpen] = useState<string | null>(null);
+  // The New Playlist dialog: null closed, otherwise the name being typed.
+  const [draftName, setDraftName] = useState<string | null>(null);
 
   // Recent stands in as the most recently added until play history is tracked.
   const recent = useMemo(() => [...tracks].sort((a, b) => b.addedAt - a.addedAt).slice(0, 50), [tracks]);
@@ -93,12 +93,43 @@ export function PlaylistShowcase({ onPlay }: { onPlay: (track: Track, queue: Tra
   // Tiles the plugins bring, trailing the app's own in registration order.
   const pluginTiles = enabled.flatMap((p) => (p.playlistTiles ?? []).map((tile) => ({ plugin: p, tile })));
 
-  const modal: Record<PlaylistId, { title: string; tracks: Track[]; empty: string }> = {
-    liked: { title: 'Liked', tracks: favoriteTracks, empty: 'No liked songs yet. Tap the heart while a song plays.' },
-    recent: { title: 'Recent', tracks: recent, empty: 'Nothing here yet.' },
-    new: { title: 'New Playlist', tracks: [], empty: 'Playlist creation is coming soon.' },
+  // Paths resolve against the live library, favourites-style: a row whose file
+  // is gone simply does not render, and comes back if the file does.
+  const byPath = useMemo(() => new Map(tracks.map((t) => [t.path, t] as const)), [tracks]);
+  const openPlaylist = open !== null ? playlists.find((p) => p.id === open) : undefined;
+
+  // A playlist deleted from another device while its modal is open here: the
+  // heartbeat removes it from the list, and the modal closes properly rather
+  // than rendering against an id that no longer resolves.
+  useEffect(() => {
+    if (open !== null && open !== 'liked' && open !== 'recent' && !openPlaylist) setOpen(null);
+  }, [open, openPlaylist]);
+
+  const current =
+    open === 'liked'
+      ? { title: 'Liked', tracks: favoriteTracks, empty: 'No liked songs yet. Tap the heart while a song plays.' }
+      : open === 'recent'
+        ? { title: 'Recent', tracks: recent, empty: 'Nothing here yet.' }
+        : openPlaylist
+          ? {
+              title: openPlaylist.name,
+              tracks: openPlaylist.paths.map((p) => byPath.get(p)).filter((t): t is Track => t !== undefined),
+              empty: 'Nothing here yet — right-click (or long-press) a song in the library and add it.',
+            }
+          : null;
+
+  const createDraft = (event: FormEvent) => {
+    event.preventDefault();
+    if (draftName === null) return;
+    const name = draftName;
+    setDraftName(null);
+    // Async because a server playlist's id is the server's to mint; the modal
+    // opens the moment it exists. A refused create reopens the dialog with
+    // the name still in it, which is also the retry.
+    create(name).then(setOpen, () => setDraftName(name));
   };
-  const current = open ? modal[open] : null;
+
+  const playlistCount = 2 + playlists.length + pluginTiles.length;
 
   return (
     <>
@@ -106,13 +137,17 @@ export function PlaylistShowcase({ onPlay }: { onPlay: (track: Track, queue: Tra
         <div className="stripHeading">
           <span className="stripTitle">Playlists</span>
           <Text tone="muted" size="sm">
-            {PLAYLIST_COUNT + pluginTiles.length} playlists · {tracks.length.toLocaleString()}{' '}
+            {playlistCount} {playlistCount === 1 ? 'playlist' : 'playlists'} · {tracks.length.toLocaleString()}{' '}
             {tracks.length === 1 ? 'song' : 'songs'} · {favoriteTracks.length.toLocaleString()} liked
           </Text>
         </div>
         <ScrollArea orientation="horizontal" className="showcaseScroll" hideScrollbar>
           <div className="showcaseRow">
-            <Tile name="Liked" cover={<LikedCover />} onOpen={() => setOpen('liked')} />
+            <Tile
+              name="Liked"
+              cover={<MosaicCover tracks={favoriteTracks} fallback={<Heart size={24} fill="currentColor" />} tone="tileLiked" />}
+              onOpen={() => setOpen('liked')}
+            />
             <Tile
               name="Recent"
               cover={
@@ -122,6 +157,20 @@ export function PlaylistShowcase({ onPlay }: { onPlay: (track: Track, queue: Tra
               }
               onOpen={() => setOpen('recent')}
             />
+            {playlists.map((playlist) => (
+              <Tile
+                key={playlist.id}
+                name={playlist.name}
+                cover={
+                  <MosaicCover
+                    tracks={playlist.paths.map((p) => byPath.get(p)).filter((t): t is Track => t !== undefined)}
+                    fallback={<ListMusic size={24} />}
+                    tone="tileRecent"
+                  />
+                }
+                onOpen={() => setOpen(playlist.id)}
+              />
+            ))}
             <Tile
               name="New Playlist"
               cover={
@@ -129,7 +178,7 @@ export function PlaylistShowcase({ onPlay }: { onPlay: (track: Track, queue: Tra
                   <Plus size={24} />
                 </div>
               }
-              onOpen={() => setOpen('new')}
+              onOpen={() => setDraftName('')}
             />
             {/* Plugin tiles trail the app's own, rendered with the house Tile
                 and modal so a plugin says what the playlist is, not what a
@@ -151,8 +200,35 @@ export function PlaylistShowcase({ onPlay }: { onPlay: (track: Track, queue: Tra
           emptyLabel={current.empty}
           // The open playlist is the queue: a row plays on through the rest.
           onPlay={(t) => onPlay(t, current.tracks)}
+          // Only the user's own lists can shed rows or be deleted; Liked and
+          // Recent are the library's, and the heart already edits Liked.
+          onRemoveTrack={openPlaylist ? (path) => removeTrack(openPlaylist.id, path) : undefined}
+          onDelete={
+            openPlaylist
+              ? () => {
+                  remove(openPlaylist.id);
+                  setOpen(null);
+                }
+              : undefined
+          }
         />
       )}
+      {/* Naming a new playlist: one field, and the name is the commitment -
+          an empty submit still creates, as "New Playlist". */}
+      <Modal open={draftName !== null} onClose={() => setDraftName(null)} title="New Playlist" size="sm">
+        <form className="playlistCreate" onSubmit={createDraft}>
+          <Input
+            autoFocus
+            placeholder="Name your playlist"
+            value={draftName ?? ''}
+            onChange={(e) => setDraftName(e.currentTarget.value)}
+            aria-label="Playlist name"
+          />
+          <Button type="submit" variant="solid">
+            Create
+          </Button>
+        </form>
+      </Modal>
     </>
   );
 }

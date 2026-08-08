@@ -24,6 +24,8 @@ import type { Track } from './tauri.ts';
 import { Player } from './Player.tsx';
 import { ArtistPage } from './ArtistPage.tsx';
 import { SettingsModal } from './SettingsModal.tsx';
+import { PlaylistsProvider } from './playlists.tsx';
+import { LibrarySyncProvider } from './librarySync.tsx';
 import { SongSearch } from './SongSearch.tsx';
 import { PlaylistShowcase } from './PlaylistShowcase.tsx';
 import { SongTable } from './SongTable.tsx';
@@ -246,6 +248,14 @@ export function App() {
                 below rather than blend two libraries together. */}
             <ServerSessionProvider>
             <LibraryProvider>
+            {/* The user's own playlists: storage only, so it sits beside the
+                library rather than inside it - the showcase and the song
+                table resolve its paths against whichever library is live. */}
+            <PlaylistsProvider>
+            {/* Keeps the local music folder reconciled with the connected
+                server - the up half of the hub model. Above the plugins so
+                the importer can kick a pass when a download lands. */}
+            <LibrarySyncProvider>
             <PluginProviders>
             <EqualizerProvider>
             {/* The playback settings - crossfade, shuffle manners, the sleep
@@ -375,17 +385,19 @@ export function App() {
                   {/* Back has to live in the chrome here too: an artist page
                       opened on a phone otherwise has no way out - the desktop
                       back/forward pair sits in a title bar this build does not
-                      render. Disabled rather than hidden at the root, so the
-                      header never reflows. */}
-                  <IconButton
-                    variant="ghost"
-                    size="sm"
-                    aria-label="Back"
-                    disabled={!canBack}
-                    onClick={back}
-                  >
-                    <ChevronLeft size={18} />
-                  </IconButton>
+                      render. Rendered only when there is somewhere to go: the
+                      root page needs no back, and the wordmark taking the
+                      leading edge reads as home. */}
+                  {canBack && (
+                    <IconButton
+                      variant="ghost"
+                      size="sm"
+                      aria-label="Back"
+                      onClick={back}
+                    >
+                      <ChevronLeft size={18} />
+                    </IconButton>
+                  )}
                   <img className="mobileHeader__logo" src={wordmark} alt={APP_NAME} />
                 </span>
                 <span className="mobileHeader__actions">
@@ -450,6 +462,8 @@ export function App() {
             </PlaybackProvider>
             </EqualizerProvider>
             </PluginProviders>
+            </LibrarySyncProvider>
+            </PlaylistsProvider>
             </LibraryProvider>
             </ServerSessionProvider>
             </PluginsProvider>

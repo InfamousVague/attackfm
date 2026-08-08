@@ -23,6 +23,9 @@ base64 = "0.22"
 lofty = "0.22"
 mime_guess = "2"
 futures-util = "0.3"
+# The import queue's Spotify embed metadata fetch. rustls, so the Linux
+# cross-compile stays free of an OpenSSL sysroot.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 
 [profile.release]
 lto = true

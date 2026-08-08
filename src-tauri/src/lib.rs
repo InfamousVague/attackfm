@@ -225,6 +225,7 @@ fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'stat
         // push without asking which build it is in.
         carplay::carplay_set_library,
         carplay::carplay_now_playing,
+        ios_audio::ios_reactivate_audio,
     ]
 }
 

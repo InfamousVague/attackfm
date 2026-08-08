@@ -162,13 +162,7 @@ pub async fn library(
         .unwrap_or(5000)
         .clamp(1, 20_000);
 
-    let (tracks, removed) = state.db.tracks_since(since, limit);
-    let page_rev = tracks
-        .iter()
-        .map(|t| t.rev)
-        .chain(removed.iter().map(|_| since))
-        .max()
-        .unwrap_or(since);
+    let (tracks, removed, page_rev) = state.db.tracks_since(since, limit);
     let more = (tracks.len() as i64 + removed.len() as i64) >= limit;
 
     Ok(Json(json!({
@@ -179,6 +173,99 @@ pub async fn library(
         "tracks": tracks,
         "removed": removed,
     })))
+}
+
+/// One side of the sync handshake: how a track is recognised across devices.
+/// Normalised tags, because paths differ per machine and hashes differ per rip.
+fn sync_key(title: &str, artist: &str, album: &str) -> String {
+    let norm = |s: &str| s.trim().to_lowercase();
+    format!("{}\u{1}{}\u{1}{}", norm(title), norm(artist), norm(album))
+}
+
+#[derive(serde::Deserialize)]
+pub struct MissingQuery {
+    pub tracks: Vec<MissingEntry>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct MissingEntry {
+    pub title: String,
+    pub artist: String,
+    #[serde(default)]
+    pub album: String,
+    /// Seconds, when the client knows it.
+    #[serde(default)]
+    pub duration: Option<f64>,
+}
+
+/// `POST /api/library/missing` - which of these tracks the server lacks.
+///
+/// The reply is indices into the request, so the client can upload exactly
+/// what is absent and skip what is already here - the precheck that makes
+/// folder sync idempotent instead of a duplicate factory (`finish` suffixes
+/// name collisions rather than overwriting; see upload.rs).
+///
+/// A track counts as present when tags match (case-insensitive title, artist,
+/// album) and any known durations agree within three seconds. The artist leg
+/// matches either the track artist or the album artist, because compilations
+/// disagree with themselves about which one names the song.
+pub async fn library_missing(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<MissingQuery>,
+) -> ApiResult {
+    auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+
+    use std::collections::HashMap as Map;
+    let mut have: Map<String, Vec<Option<i64>>> = Map::new();
+    // A third, artist-less leg (title + album only) absorbs the ways two tag
+    // readers join a multi-artist credit differently ("A & B" vs "A; B" vs
+    // "A feat. B") - within one ALBUM, an identical title with a duration
+    // within tolerance is the same recording, whoever the credit names.
+    let mut have_loose: Map<String, Vec<Option<i64>>> = Map::new();
+    for (title, artist, album_artist, album, duration_ms) in state.db.sync_identities() {
+        have.entry(sync_key(&title, &artist, &album))
+            .or_default()
+            .push(duration_ms);
+        if album_artist.trim().to_lowercase() != artist.trim().to_lowercase() {
+            have.entry(sync_key(&title, &album_artist, &album))
+                .or_default()
+                .push(duration_ms);
+        }
+        if !album.trim().is_empty() {
+            have_loose
+                .entry(sync_key(&title, "", &album))
+                .or_default()
+                .push(duration_ms);
+        }
+    }
+
+    let duration_close = |ours: &[Option<i64>], theirs: Option<f64>| -> bool {
+        let Some(theirs) = theirs else { return true };
+        ours.iter().any(|ms| match ms {
+            None => true,
+            Some(ms) => ((*ms as f64) / 1000.0 - theirs).abs() <= 3.0,
+        })
+    };
+
+    let missing: Vec<usize> = body
+        .tracks
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| {
+            let exact = have
+                .get(&sync_key(&t.title, &t.artist, &t.album))
+                .is_some_and(|durs| duration_close(durs, t.duration));
+            let loose = !t.album.trim().is_empty()
+                && have_loose
+                    .get(&sync_key(&t.title, "", &t.album))
+                    .is_some_and(|durs| duration_close(durs, t.duration));
+            !(exact || loose)
+        })
+        .map(|(i, _)| i)
+        .collect();
+
+    Ok(Json(json!({ "missing": missing })))
 }
 
 /// `GET /api/scan` - how the indexer is doing.

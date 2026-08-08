@@ -22,6 +22,9 @@ export interface MusicImportJob {
   /** 0-based index of the track currently downloading, if any. */
   currentIndex: number | null;
   outputDir: string;
+  /** Absolute paths of every file this job downloaded; empty until done, and
+   * empty forever on jobs from before the backend recorded them. */
+  files: string[];
 }
 
 export interface SpotiFlacStatus {
@@ -117,4 +120,61 @@ export async function getDownloadsPaused(): Promise<boolean> {
 
 export async function setDownloadsPaused(paused: boolean): Promise<void> {
   await invoke('music_import_set_paused', { paused });
+}
+
+// --- Server transport --------------------------------------------------------
+//
+// The same queue, run on the hub. Signed into a server, imports download where
+// the music lives (SpotiFLAC on the box) and index straight into the catalog,
+// so a phone - which can never spawn the engine locally - imports exactly like
+// the desktop. The wire shape is the same MusicImportJob, so the queue UI does
+// not know which transport it is watching.
+
+import type { ServerSession } from '../../app/server.ts';
+
+async function serverRequest<T>(
+  session: ServerSession,
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const headers = new Headers(init.headers);
+  headers.set('authorization', `Bearer ${session.token}`);
+  if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json');
+  const response = await fetch(`${session.url}${path}`, { ...init, headers });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(detail || `${response.status} ${response.statusText}`);
+  }
+  return (await response.json()) as T;
+}
+
+export async function serverEnqueueImport(session: ServerSession, url: string): Promise<MusicImportJob> {
+  return serverRequest<MusicImportJob>(session, '/api/imports', {
+    method: 'POST',
+    body: JSON.stringify({ url }),
+  });
+}
+
+export async function serverListImports(session: ServerSession): Promise<MusicImportJob[]> {
+  const reply = await serverRequest<{ jobs: MusicImportJob[] }>(session, '/api/imports');
+  return reply.jobs;
+}
+
+export async function serverRemoveImport(session: ServerSession, id: string): Promise<void> {
+  await serverRequest(session, `/api/imports/${id}`, { method: 'DELETE' });
+}
+
+export async function serverRetryImport(session: ServerSession, id: string): Promise<void> {
+  await serverRequest(session, `/api/imports/${id}/retry`, { method: 'POST' });
+}
+
+export async function serverCancelImport(session: ServerSession, id: string): Promise<void> {
+  await serverRequest(session, `/api/imports/${id}/cancel`, { method: 'POST' });
+}
+
+export async function serverClearImports(session: ServerSession, states: MusicImportState[]): Promise<void> {
+  await serverRequest(session, '/api/imports/clear', {
+    method: 'POST',
+    body: JSON.stringify({ states }),
+  });
 }

@@ -69,7 +69,7 @@ export function normalizeServerUrl(raw: string): string {
   return trimmed;
 }
 
-class ServerError extends Error {
+export class ServerError extends Error {
   constructor(
     readonly status: number,
     message: string,
@@ -389,6 +389,91 @@ export interface ScanStatus {
 
 export async function fetchScanStatus(session: ServerSession): Promise<ScanStatus> {
   return request<ScanStatus>(session.url, '/api/scan', { token: session.token });
+}
+
+// --- folder sync ------------------------------------------------------------
+
+/** One local file's identity, as the sync precheck states it to the server. */
+export interface SyncCheckEntry {
+  title: string;
+  artist: string;
+  album: string;
+  /** Seconds, when the tags said. */
+  duration: number | null;
+}
+
+/**
+ * Which of these tracks the server lacks, as indices into `entries`. Identity
+ * is tags, not bytes - the same song already uploaded from another rip counts
+ * as present. Throws ServerError 404 on a server from before the endpoint,
+ * which callers must read as "sync unavailable", never "upload everything".
+ */
+export async function fetchMissingTracks(
+  session: ServerSession,
+  entries: SyncCheckEntry[],
+): Promise<Set<number>> {
+  const reply = await request<{ missing: number[] }>(session.url, '/api/library/missing', {
+    method: 'POST',
+    token: session.token,
+    body: JSON.stringify({
+      tracks: entries.map((e) => ({
+        title: e.title,
+        artist: e.artist,
+        album: e.album,
+        duration: e.duration ?? undefined,
+      })),
+    }),
+  });
+  return new Set(reply.missing);
+}
+
+// --- playlists --------------------------------------------------------------
+
+/** A playlist as the server holds it: track ids, in order. */
+export interface RemotePlaylist {
+  id: number;
+  name: string;
+  updatedAt: number;
+  tracks: number[];
+}
+
+export async function fetchRemotePlaylists(session: ServerSession): Promise<RemotePlaylist[]> {
+  const reply = await request<{ playlists: RemotePlaylist[] }>(session.url, '/api/playlists', {
+    token: session.token,
+  });
+  return reply.playlists;
+}
+
+export async function createRemotePlaylist(
+  session: ServerSession,
+  name: string,
+  tracks: number[] = [],
+): Promise<number> {
+  const reply = await request<{ id: number }>(session.url, '/api/playlists', {
+    method: 'POST',
+    token: session.token,
+    body: JSON.stringify({ name, tracks }),
+  });
+  return reply.id;
+}
+
+export async function updateRemotePlaylist(
+  session: ServerSession,
+  id: number,
+  patch: { name?: string; tracks?: number[] },
+): Promise<void> {
+  await request(session.url, `/api/playlists/${id}`, {
+    method: 'PUT',
+    token: session.token,
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function deleteRemotePlaylist(session: ServerSession, id: number): Promise<void> {
+  await request(session.url, `/api/playlists/${id}`, {
+    method: 'DELETE',
+    token: session.token,
+  });
 }
 
 // --- uploading ------------------------------------------------------------

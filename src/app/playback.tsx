@@ -31,6 +31,15 @@ export interface PlaybackSettings {
   nightMode: boolean;
   /** Folds the channels together and plays the same signal to both ears. */
   mono: boolean;
+  /**
+   * iPhone only: route playback through the audio graph so the equalizer
+   * (and night mode, mono, the boost range) work there too. Off by default
+   * because WebKit can silence the graph when the screen locks - the
+   * background playback that direct playback guarantees is the safer trade
+   * until the native audio engine lands. Applies from the next launch: an
+   * element the graph has captured stays captured.
+   */
+  iosEq: boolean;
   pauseStyle: PauseStyle;
   /** How the hero spells the song's words behind the header. */
   lyricWay: LyricWay;
@@ -53,6 +62,7 @@ const DEFAULTS: PlaybackSettings = {
   autoDj: false,
   nightMode: false,
   mono: false,
+  iosEq: false,
   pauseStyle: 'turntable',
   lyricWay: 'stack',
 };
@@ -85,6 +95,7 @@ function readStored(): PlaybackSettings {
       autoDj: typeof parsed.autoDj === 'boolean' ? parsed.autoDj : DEFAULTS.autoDj,
       nightMode: typeof parsed.nightMode === 'boolean' ? parsed.nightMode : DEFAULTS.nightMode,
       mono: typeof parsed.mono === 'boolean' ? parsed.mono : DEFAULTS.mono,
+      iosEq: typeof parsed.iosEq === 'boolean' ? parsed.iosEq : DEFAULTS.iosEq,
       pauseStyle: PAUSE_STYLES.includes(parsed.pauseStyle as PauseStyle)
         ? (parsed.pauseStyle as PauseStyle)
         : DEFAULTS.pauseStyle,

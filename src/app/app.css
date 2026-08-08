@@ -1094,6 +1094,123 @@ body {
   max-inline-size: 100%;
 }
 
+/* The phone's overflow panel: the equalizer over the flat volume row, behind
+   the bar's one trailing button. Width leans on the EQ, capped to the phone.
+   The backing runs firmer than the kit's glass: this panel opens over the
+   busiest part of the song list, and EQ handles need to read at a glance. */
+.morePopoverPanel {
+  max-inline-size: min(26rem, calc(100vw - 2rem));
+  background: color-mix(in srgb, var(--glacier-bg) 88%, transparent);
+}
+
+.morePopover {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+/* The chooser the overflow opens on: three rows, each a doorway to its panel.
+   Thumb-height rows - this menu exists because the bar is read by thumb. */
+.moreMenu {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 13rem;
+}
+
+.moreMenuItem {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  min-block-size: 2.75rem;
+  padding-inline: var(--glacier-space-2);
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  background: transparent;
+  color: var(--glacier-text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.moreMenuItem:hover,
+.moreMenuItem:focus-visible {
+  background: var(--glacier-surface-sunken);
+}
+
+.moreMenuItem svg {
+  color: var(--glacier-text-muted);
+}
+
+/* The way back from a panel to the chooser: a slim row naming where you are,
+   with the chevron pointing home. */
+.moreBack {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  align-self: flex-start;
+  padding: var(--glacier-space-1) var(--glacier-space-2);
+  border: none;
+  border-radius: var(--glacier-radius-full);
+  background: transparent;
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-sm);
+  cursor: pointer;
+}
+
+.moreBack:hover,
+.moreBack:focus-visible {
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text);
+}
+
+/* Why there are no sliders on the phone, in a breath. */
+.moreEqNote {
+  max-inline-size: 16rem;
+  margin: 0;
+  padding-inline: var(--glacier-space-2);
+  padding-block-end: var(--glacier-space-2);
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-sm);
+  line-height: 1.5;
+}
+
+/* The lying-down fader: mute, rail, reading in one row. The rail takes what
+   the equalizer's width leaves; the readout pill is the vertical panel's. */
+.volRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.volRowRailWrap {
+  --vol-thumb: 0.875rem;
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.volRowRail {
+  inline-size: 100%;
+  --slider-length: 100%;
+  --slider-thumb: var(--vol-thumb);
+  --slider-track: 0.3125rem;
+}
+
+/* Unity, upright against a horizontal travel - same half-thumb correction as
+   the vertical tick, worked from the left. */
+.volRowUnityTick {
+  position: absolute;
+  left: calc(var(--vol-thumb) / 2 + (100% - var(--vol-thumb)) * 0.6667);
+  top: 50%;
+  block-size: 1.25rem;
+  inline-size: var(--glacier-hairline);
+  transform: translateY(-50%);
+  background: var(--glacier-border);
+  pointer-events: none;
+}
+
 /* The New Playlist tile wears the kit's frosted-glass material: translucent,
    blurred over whatever sits behind it, with a hairline edge and top highlight. */
 .tileAdd {
@@ -1152,6 +1269,62 @@ body {
 .playlistModalTime {
   flex: none;
   font-variant-numeric: tabular-nums;
+}
+
+/* A user playlist's row plus its remove control: siblings in a flex row, not
+   nested buttons - the row is already one. The row keeps the full-width feel;
+   the X rides its trailing edge. */
+.playlistModalItem {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}
+
+.playlistModalItem .playlistModalRow {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The way out of a playlist entirely: quiet until hovered, then plainly a
+   deletion. Sits under the list, clear of the rows it removes. */
+.playlistDelete {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  margin-block-start: var(--glacier-space-3);
+  padding: var(--glacier-space-2);
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  background: transparent;
+  color: var(--glacier-text-muted);
+  font: inherit;
+  font-size: var(--glacier-font-size-sm);
+  cursor: pointer;
+}
+
+.playlistDelete:hover,
+.playlistDelete:focus-visible {
+  background: color-mix(in srgb, var(--glacier-danger, #e5484d) 12%, transparent);
+  color: var(--glacier-danger, #e5484d);
+}
+
+/* Naming a new playlist: the field takes the width, the button takes the end. */
+.playlistCreate {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.playlistCreate > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The context-menu wrapper around the title cell: invisible in the layout,
+   the cell inside keeps its own flex. */
+.songTitleMenuTarget {
+  display: block;
+  min-width: 0;
 }
 
 /* The library table fills the content area edge to edge - no card frame, since
@@ -1497,6 +1670,111 @@ body {
    the output controls sit closer to the plate's edges. */
 .appPlayer [data-position] {
   padding-inline: var(--glacier-space-2);
+}
+
+/*
+ * Touch sizing for the strip. Matches MOBILE_PLAYER_QUERY in Player.tsx - the
+ * same condition that folds the trailing rail behind the overflow button; the
+ * width that buys goes here, into transport buttons at thumb size and a seek
+ * bar with somewhere to land.
+ *
+ * The kit's class names are hashed per build but keep their local names, so
+ * the selectors match on the stable `_name_` stem rather than the full hash.
+ *
+ * The width arm stops at 540px - beneath the desktop window's 560 minimum -
+ * so only true touch devices and phone-shaped browsers ever match; a
+ * squarish desktop window keeps the desktop bar. Matches MOBILE_PLAYER_QUERY.
+ */
+@media (pointer: coarse), (max-width: 540px) {
+  .appWindow {
+    /* The grown strip stands taller; the list clears it by the same amount. */
+    --app-player-height: 9rem;
+  }
+
+  /* The hero's lyric words hang from the BOTTOM of the header block: the
+     band's lower edge sits where the playlist tiles end (the hero header's
+     own bottom), and the words grow upward toward the heading - never into
+     the chrome above, never over the song table below, and nowhere near the
+     backdrop's clipped lower edge, which is where a top-anchored band sent
+     them on a notched phone.
+
+     The numbers are anchored to the backdrop's fixed 22rem height: the
+     header content ends 15rem below the safe area (3.375rem of chrome +
+     heading + tile row), so the bottom inset is what remains of the
+     backdrop, shrinking as the notch pushes the content down. The 8rem
+     height is the gap between the heading's bottom and the tiles' bottom -
+     the exact seam the words are meant to fill. */
+  .npWords {
+    inset-block-start: auto;
+    inset-block-end: calc(7rem - var(--app-safe-top, 0px));
+    block-size: 8rem;
+  }
+
+  /* The compact pack hugs its rows - fine at desktop control sizes, airless
+     once everything grows. The kit also pins the strip's height for the pack,
+     which quietly eats any padding given to it - so the height is handed back
+     to the content first, then the block padding actually gets spent. Top
+     takes the larger share: the seek thumb and the clocks live up there and
+     read against the plate's edge first. */
+  .appPlayer [data-position] {
+    block-size: auto;
+    padding-block: var(--glacier-space-4) var(--glacier-space-3);
+    /* The sides hold the same air as the bottom - the desktop's tighter
+       space-2 inset reads cramped once everything inside has grown. */
+    padding-inline: var(--glacier-space-3);
+  }
+
+  /* The kit sizes this row for its own 24px seek; the grown one needs the row
+     to follow it rather than being overflowed, or the extra height spends
+     itself over the padding instead of inside the row. */
+  .appPlayer [class*="_scrubber_"] {
+    block-size: auto;
+    min-block-size: 2.125rem;
+  }
+
+  /* A breath between the seek row and the transport. */
+  .appPlayer [class*="_center_"] {
+    row-gap: var(--glacier-space-2);
+  }
+
+  /* Rails and transport: the HIG floor is 44pt; the play button reads as the
+     one big thing. Icons scale with their buttons - CSS wins over the svg's
+     own width/height attributes. */
+  .appPlayer [class*="_rail_"] button {
+    inline-size: 2.75rem;
+    block-size: 2.75rem;
+  }
+
+  .appPlayer [class*="_transport_"] button {
+    inline-size: 2.875rem;
+    block-size: 2.875rem;
+  }
+
+  .appPlayer [class*="_transport_"] button svg {
+    inline-size: 1.375rem;
+    block-size: 1.375rem;
+  }
+
+  .appPlayer [class*="_transport_"] button[class*="_play_"] {
+    inline-size: 3.5rem;
+    block-size: 3.5rem;
+  }
+
+  .appPlayer [class*="_transport_"] button[class*="_play_"] svg {
+    inline-size: 1.625rem;
+    block-size: 1.625rem;
+  }
+
+  /* The seek bar: taller wave, bigger thumb, so a thumb can scrub without
+     covering what it is aiming at. */
+  .appPlayer [class*="_seek_"] {
+    block-size: 2.125rem;
+    --slider-thumb: 1.125rem;
+  }
+
+  .appPlayer [class*="_seek_"] svg {
+    block-size: 2.125rem;
+  }
 }
 
 /* A small glass pill above the player that reports the background indexer's

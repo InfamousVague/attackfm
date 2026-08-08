@@ -284,6 +284,35 @@ export async function parseTrack(file: string): Promise<Track | null> {
 }
 
 /**
+ * The identity of one local file, for the folder-sync precheck: tags and
+ * size, no artwork and no object URLs - this runs over whole folders, and a
+ * cover per file would be a leak with a scroll wheel. Null when the file
+ * cannot be read (it then simply is not offered to the sync).
+ */
+export async function parseTrackMeta(
+  file: string,
+): Promise<{ title: string; artist: string; album: string; duration: number | null; size: number } | null> {
+  if (!isTauri()) return null;
+  try {
+    const { fs, mm } = await audioRuntime();
+    const bytes = await fs.readFile(file);
+    const parsed = await mm.parseBuffer(bytes, { path: file }, { duration: true, skipCovers: true });
+    // Both separators: the fallback title must match the name the uploader
+    // sends, or an untagged file's sync identity diverges from itself.
+    const name = file.split(/[\\/]/).pop() ?? file;
+    return {
+      title: parsed.common.title?.trim() || nameWithoutExtension(name),
+      artist: parsed.common.artist?.trim() || 'Unknown artist',
+      album: parsed.common.album?.trim() || '',
+      duration: parsed.format.duration ?? null,
+      size: bytes.byteLength,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Walks the music folder and returns a track for every audio file found,
  * reading embedded tags (title, artist, album, cover) and the duration. Runs
  * only under Tauri; returns an empty list anywhere else. Individual files that
@@ -331,6 +360,20 @@ export async function saveIndexCache(dir: string, tracks: Track[]): Promise<void
   } catch {
     // The cache is an optimisation; a failed write just means a slower next run.
   }
+}
+
+/**
+ * Re-claims the iOS audio session. iOS releases it on interruptions (calls,
+ * Siri, an exclusive session elsewhere), after which play() is refused or
+ * silent - the player fires this before recovery attempts and on returning to
+ * the foreground. Fire-and-forget: a no-op on desktop and Android, and a
+ * failure only means the next attempt claims it instead.
+ */
+export function reactivateAudioSession(): void {
+  if (!isTauri()) return;
+  void import('@tauri-apps/api/core')
+    .then(({ invoke }) => invoke('ios_reactivate_audio'))
+    .catch(() => {});
 }
 
 /**

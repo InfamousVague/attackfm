@@ -1,7 +1,16 @@
-import { DataGrid, type DataGridColumn, type DataGridRow, type DataGridSort } from '@glacier/react';
-import { Clock } from '@glacier/icons';
+import {
+  ContextMenu,
+  DataGrid,
+  MenuItem,
+  MenuSub,
+  type DataGridColumn,
+  type DataGridRow,
+  type DataGridSort,
+} from '@glacier/react';
+import { Clock, ListMusic } from '@glacier/icons';
 import { useMemo, useState } from 'react';
 import { useLibrary } from './library.tsx';
+import { usePlaylists } from './playlists.tsx';
 import { hasLocalLibrary } from './platform.ts';
 import { useNarrowViewport } from './useNarrowViewport.ts';
 import type { Track } from './tauri.ts';
@@ -102,6 +111,7 @@ export function SongTable({
   tracks?: Track[];
 }) {
   const library = useLibrary();
+  const { playlists, addTrack } = usePlaylists();
   const tracks = tracksProp ?? library.tracks;
 
   // The sort is lifted out of the grid (controlled) for one reason: the play
@@ -116,7 +126,10 @@ export function SongTable({
   // still opens newest-first, and search covers finding an album by name.
   const narrow = useNarrowViewport();
 
-  // The artist is a link into its own page; its click must not also open the row.
+  // The artist is a link into its own page; its click must not also open the
+  // row. The title cell also carries the row's context menu - right-click (or
+  // long-press) to file the song into a playlist - because the title block is
+  // most of the row's width and the one part every layout keeps.
   const columns = useMemo<DataGridColumn[]>(
     () =>
       COLUMNS.filter((col) => !narrow || !NARROW_HIDDEN.has(col.key)).map((col) =>
@@ -124,31 +137,54 @@ export function SongTable({
           ? {
               ...col,
               render: (row) => (
-                <div className="songTitleCell">
-                  <img className="songArt" src={(row.artwork as string) || placeholderArt} alt="" loading="lazy" />
-                  <div className="songTitleText">
-                    <span className="songTitle">{row.title as string}</span>
-                    {onOpenArtist ? (
-                      <button
-                        type="button"
-                        className="songArtist songArtistLink"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenArtist(row.artist as string);
-                        }}
-                      >
-                        {row.artist as string}
-                      </button>
-                    ) : (
-                      <span className="songArtist">{row.artist as string}</span>
-                    )}
+                <ContextMenu
+                  aria-label={`${row.title as string} actions`}
+                  className="songTitleMenuTarget"
+                  content={
+                    <MenuSub label="Add to playlist" icon={<ListMusic size={15} />}>
+                      {playlists.length === 0 ? (
+                        <MenuItem disabled onSelect={() => {}}>
+                          No playlists yet — make one above
+                        </MenuItem>
+                      ) : (
+                        playlists.map((playlist) => (
+                          <MenuItem
+                            key={playlist.id}
+                            onSelect={() => addTrack(playlist.id, row.id as string)}
+                          >
+                            {playlist.name}
+                          </MenuItem>
+                        ))
+                      )}
+                    </MenuSub>
+                  }
+                >
+                  <div className="songTitleCell">
+                    <img className="songArt" src={(row.artwork as string) || placeholderArt} alt="" loading="lazy" />
+                    <div className="songTitleText">
+                      <span className="songTitle">{row.title as string}</span>
+                      {onOpenArtist ? (
+                        <button
+                          type="button"
+                          className="songArtist songArtistLink"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenArtist(row.artist as string);
+                          }}
+                        >
+                          {row.artist as string}
+                        </button>
+                      ) : (
+                        <span className="songArtist">{row.artist as string}</span>
+                      )}
+                    </div>
                   </div>
-                </div>
+                </ContextMenu>
               ),
             }
           : col,
       ),
-    [onOpenArtist, narrow],
+    [onOpenArtist, narrow, playlists, addTrack],
   );
 
   const rows: DataGridRow[] = tracks.map((track) => ({

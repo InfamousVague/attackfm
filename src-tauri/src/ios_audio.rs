@@ -64,3 +64,13 @@ pub fn configure_session() {
 /// background on its own, and desktops never stopped.
 #[cfg(not(target_os = "ios"))]
 pub fn configure_session() {}
+
+/// The launch-time claim, re-runnable from the webview. iOS drops the session
+/// on interruptions (a call, Siri, another app taking exclusive audio), and a
+/// deactivated session is the difference between playback resuming and the
+/// play press doing nothing - so the player calls this before every recovery
+/// attempt. Idempotent, cheap, and a no-op off iOS.
+#[tauri::command]
+pub fn ios_reactivate_audio() {
+    configure_session();
+}

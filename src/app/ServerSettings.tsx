@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from 'react';
 import { fetchScanStatus, fetchServerInfo, register, uploadFile, type ScanStatus, type ServerInfo } from './server.ts';
 import { normalizeServerUrl } from './server.ts';
 import { useLibrary } from './library.tsx';
+import { useLibrarySync } from './librarySync.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { isTauri } from './tauri.ts';
 
@@ -462,7 +463,54 @@ function UploadSection() {
           <Upload size={14} /> {busy ? 'Uploading…' : 'Upload files…'}
         </Button>
       </div>
+      <FolderSyncRow />
     </div>
+  );
+}
+
+/**
+ * The standing arrangement, beside the one-off picker above: this machine's
+ * music folder reconciles with the server on its own - on connect and after
+ * every finished download - and this row shows where that stands and offers
+ * a push. Everything in the folder that the server lacks goes up; nothing is
+ * ever sent twice.
+ */
+function FolderSyncRow() {
+  const { status, syncNow } = useLibrarySync();
+  const running = status.state === 'checking' || status.state === 'uploading';
+
+  const line =
+    status.state === 'checking'
+      ? 'Comparing the music folder with the server…'
+      : status.state === 'uploading'
+        ? `Uploading ${status.current ?? '…'} — ${status.done} of ${status.total}`
+        : status.state === 'unsupported'
+          ? 'This server predates folder sync; update it to sync automatically.'
+          : status.state === 'error'
+            ? status.error ?? 'Sync hit a problem; it will retry.'
+            : status.lastSyncedAt
+              ? `Folder is in sync (checked ${new Date(status.lastSyncedAt).toLocaleTimeString()}).`
+              : 'The music folder syncs to the server automatically.';
+
+  return (
+    <>
+      <Text tone={status.state === 'error' ? 'danger' : 'muted'} size="sm">
+        {line}
+      </Text>
+      {status.state === 'uploading' && status.total > 0 && (
+        <ProgressBar value={(status.done / status.total) * 100} />
+      )}
+      <div className="prefsActions">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={running || status.state === 'unsupported'}
+          onClick={syncNow}
+        >
+          {running ? 'Syncing…' : 'Sync folder now'}
+        </Button>
+      </div>
+    </>
   );
 }
 

@@ -19,6 +19,7 @@ import { Blocks, Cloud, FolderOpen, Info, Play, Settings, SlidersHorizontal } fr
 import { useEffect, useState } from 'react';
 import type { Plugin } from '../plugins/types.ts';
 import { BRAND_ACCENTS } from './brandAccents.ts';
+import { isIOS } from './platform.ts';
 import { useAppearance } from './appearance.tsx';
 import { canPickFolder, isTauri } from './tauri.ts';
 import { useLibrary } from './library.tsx';

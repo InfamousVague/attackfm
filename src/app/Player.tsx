@@ -13,7 +13,24 @@ import {
   volumeAmplitude,
 } from '@glacier/react';
 import type { AnalyserMeter, LoudnessMeter, PlayerRepeat } from '@glacier/react';
-import { AudioLines, Check, Disc3, Image as ImageIcon, Mic } from '@glacier/icons';
+import {
+  AudioLines,
+  Check,
+  ChevronLeft,
+  Disc3,
+  EllipsisVertical,
+  Image as ImageIcon,
+  Mic,
+  Volume2,
+} from '@glacier/icons';
+import { isIOS } from './platform.ts';
+import {
+  EQ_BANDS_NARROW,
+  EQ_PRESETS,
+  EQ_PRESETS_NARROW,
+  expandNarrowGains,
+  narrowEqGains,
+} from './equalizer.tsx';
 import { PluginSlot } from '../plugins/runtime.tsx';
 import { SpinningDisc } from './SpinningDisc.tsx';
 import { fetchLyrics, type TrackLyrics } from './lyrics.ts';
@@ -21,9 +38,14 @@ import { useLibrary } from './library.tsx';
 import { useEqualizer } from './equalizer.tsx';
 import { usePlayback } from './playback.tsx';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
-import { VolumeControl, VOLUME_UNITY } from './VolumeControl.tsx';
-import { loadAudioUrl, type Track } from './tauri.ts';
+import { VolumeControl, VolumeRow, VOLUME_UNITY } from './VolumeControl.tsx';
+import { loadAudioUrl, reactivateAudioSession, type Track } from './tauri.ts';
 import { onCarPlayRemote, pushCarPlayNowPlaying } from './carplay.ts';
+import {
+  bindMediaSessionHandlers,
+  updateMediaSessionMetadata,
+  updateMediaSessionState,
+} from './mediaSession.ts';
 import { BeatWave } from './BeatWave.tsx';
 import { initDockWave } from './dockWave.ts';
 
@@ -169,6 +191,46 @@ function LyricsPanel({
  * is handed up through onTrackChange rather than loaded directly - the app
  * owns what is playing; this owns what comes next.
  */
+/**
+ * Tracks a media query as state. The player reshapes itself for touch - the
+ * auxiliary controls fold behind one overflow button - and the same question
+ * gates the CSS that grows the transport, so the query string is shared with
+ * app.css rather than derived from the platform: a narrow desktop window
+ * deserves the tidier bar too.
+ */
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(query).matches,
+  );
+  useEffect(() => {
+    const mql = window.matchMedia(query);
+    const onChange = () => setMatches(mql.matches);
+    onChange();
+    mql.addEventListener('change', onChange);
+    // The resize listener repeats the question the mql should be answering:
+    // some embedded webviews resize the viewport without dispatching mql
+    // change events, and a phone never fires either (pointer: coarse holds),
+    // so the duplicate costs nothing where it is not needed.
+    window.addEventListener('resize', onChange);
+    return () => {
+      mql.removeEventListener('change', onChange);
+      window.removeEventListener('resize', onChange);
+    };
+  }, [query]);
+  return matches;
+}
+
+/**
+ * When the player folds its rails for touch. Kept beside the hook so the CSS
+ * block in app.css quoting the same condition has one source to match.
+ *
+ * Coarse pointer is the real signal - a phone in any orientation, a tablet.
+ * The width arm exists for browsers (previews included), and it stops at
+ * 540px because the DESKTOP window can be as narrow as 560 (tauri.conf.json
+ * minWidth): a squarish desktop window must never inherit the phone's bar.
+ */
+const MOBILE_PLAYER_QUERY = '(pointer: coarse), (max-width: 540px)';
+
 export function Player({
   track,
   queue = [],
@@ -199,7 +261,10 @@ export function Player({
   const [playing, setPlaying] = useState(false);
   const [shuffle, setShuffle] = useState(false);
   const [repeat, setRepeat] = useState<PlayerRepeat>('off');
-  const [volume, setVolume] = useState(INITIAL_VOLUME);
+  // The phone opens at unity and stays there: hardware buttons are the volume
+  // control a phone already has, so the app-side fader would only fight them.
+  // Desktop keeps its calibrated fader and opening level.
+  const [volume, setVolume] = useState(isIOS ? VOLUME_UNITY : INITIAL_VOLUME);
   const [muted, setMuted] = useState(false);
 
   // The strip is built from the music list, so there is nothing settled to show
@@ -237,6 +302,20 @@ export function Player({
   const { gains: eqGains, preset: eqPreset, setGains: setEqGains, setPreset: setEqPreset } = useEqualizer();
   const eqGainsRef = useRef(eqGains);
   eqGainsRef.current = eqGains;
+
+  // On touch (or squeezed) the trailing rail folds to one overflow button and
+  // the freed width goes to the transport, which app.css grows to thumb size
+  // under the same query.
+  const mobileControls = useMediaQuery(MOBILE_PLAYER_QUERY);
+  // The overflow popover opens on a chooser - Equalizer, Lyrics, Volume -
+  // and each pick swaps the panel in behind a back row. Controlled, so every
+  // open starts back at the chooser rather than wherever the last visit left
+  // off.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [moreView, setMoreView] = useState<'menu' | 'eq' | 'lyrics' | 'volume'>('menu');
+  // Portrait thins the equalizer to five bands; a phone turned landscape has
+  // the width for all eight again.
+  const narrowEq = useMediaQuery('(max-width: 600px)');
 
   // What the element is playing. The demo stream until a library track is opened.
   const [src, setSrc] = useState(TRACK_URL);
@@ -303,6 +382,16 @@ export function Player({
   };
 
   const ensureMeter = () => {
+    // iOS plays direct by default. WKWebView can interrupt an AudioContext
+    // the moment the screen locks - background entitlement, claimed session
+    // and all - and `createMediaElementSource` permanently reroutes an
+    // element through that context, so a captured element risks going silent
+    // in the pocket. Direct playback is verified to survive the lock; the
+    // graph's extras (EQ, meter visuals, night mode, the boost range) sit
+    // behind the "Equalizer on iPhone" setting for those who want to trade.
+    // Every path below carries an element-volume fallback for the no-graph
+    // world, and the watchdog below nudges an interrupted context back.
+    if (isIOS && !playbackRef.current.iosEq) return;
     const audio = audioRef.current;
     if (!audio) return;
     if (!analyserRef.current) {
@@ -363,6 +452,24 @@ export function Player({
   useEffect(() => {
     void initDockWave();
   }, []);
+  // What the transport was last ASKED, written synchronously at the moment of
+  // asking. The `playing` state says the same thing one render later - too
+  // late for the element's own pause event to consult. iOS pauses the media
+  // elements itself when the app backgrounds or the session is interrupted,
+  // and this ref is how those pauses are told apart from ours: an element
+  // pausing while the ref still says play was stopped by the system.
+  const wantPlaying = useRef(false);
+  // When the app last left the foreground. The suspension pause iOS lands on
+  // a playing element arrives within moments of this; a pause arriving
+  // minutes later is somebody PRESSING pause - on the lock screen, on the
+  // wheel - and must never be fought, whatever path it took to the element.
+  const hiddenAt = useRef(0);
+  // System pauses fought back against since the app last stood in the
+  // foreground. Capped, so a pause the phone insists on (a call, Siri,
+  // another app taking exclusive audio) wins after a few rounds instead of
+  // being fought forever.
+  const resumeAttempts = useRef(0);
+
   // Coming back to the window wakes the audio graph. The play press already
   // resumes a parked context, but audio that was ALREADY playing gets no
   // press when the OS interrupts the output behind an occluded window - so
@@ -370,8 +477,25 @@ export function Player({
   // nudge the context, and a running one ignores it for free.
   useEffect(() => {
     const wake = () => {
-      if (document.visibilityState !== 'visible') return;
+      if (document.visibilityState !== 'visible') {
+        hiddenAt.current = performance.now();
+        return;
+      }
+      resumeAttempts.current = 0;
       void analyserRef.current?.resume?.();
+      // The return also undoes a pause the background imposed: if the
+      // transport still wants playing but the deck sits paused, that pause
+      // was the system's - reclaim the session and pick the song back up. A
+      // refusal here means the session is truly gone (a call still ringing),
+      // and the bar goes honest rather than showing a play that is not on.
+      const audio = activeAudio();
+      if (wantPlaying.current && audio && audio.paused && !audio.ended) {
+        reactivateAudioSession();
+        void audio.play().catch(() => {
+          wantPlaying.current = false;
+          setPlaying(false);
+        });
+      }
     };
     window.addEventListener('focus', wake);
     document.addEventListener('visibilitychange', wake);
@@ -379,6 +503,69 @@ export function Player({
       window.removeEventListener('focus', wake);
       document.removeEventListener('visibilitychange', wake);
     };
+  }, []);
+
+  // The other half of surviving the background: iOS lands a pause on the
+  // playing element as the app suspends - even entitled for background audio
+  // (UIBackgroundModes + the claimed session), the suspension itself pauses
+  // the deck, and nothing un-pauses it. The pause event is the recovery hook:
+  // arriving while the transport still wants playing, it was the system's
+  // pause, and playing again from right here - session re-claimed first - is
+  // what carries the music into the background. Guards, in order: only the
+  // active deck (crossfade housekeeping parks the idle one), only against
+  // wanted playback, never over a natural end or a stop mid-wind-down, and
+  // only a few rounds per background spell so real interruptions win.
+  useEffect(() => {
+    const els = [audioRef.current, audioBRef.current].filter(
+      (el): el is HTMLAudioElement => el !== null,
+    );
+    const onPause = (event: Event) => {
+      const el = event.currentTarget as HTMLAudioElement;
+      if (el !== activeAudio()) return;
+      if (!wantPlaying.current) return;
+      if (el.ended || windingDown.current) return;
+      // Only the suspension window counts as the system's doing: iOS pauses a
+      // playing element within moments of the app leaving the foreground. A
+      // pause landing later - or while visible - is a person's (the lock
+      // screen's press reaches the element before it reaches any JS), and the
+      // transport FOLLOWS it: intent drops here, so neither this handler nor
+      // the return-to-foreground wake ever un-pauses what somebody paused.
+      const suspension =
+        document.visibilityState === 'hidden' &&
+        performance.now() - hiddenAt.current <= 10_000 &&
+        resumeAttempts.current < 3;
+      if (!suspension) {
+        wantPlaying.current = false;
+        setPlaying(false);
+        return;
+      }
+      resumeAttempts.current += 1;
+      reactivateAudioSession();
+      void analyserRef.current?.resume?.();
+      void el.play().catch(() => {
+        wantPlaying.current = false;
+        setPlaying(false);
+      });
+    };
+    els.forEach((el) => el.addEventListener('pause', onPause));
+    return () => els.forEach((el) => el.removeEventListener('pause', onPause));
+  }, []);
+
+  // The opted-in iPhone graph's lifeline: WebKit parks an AudioContext as
+  // 'interrupted' when the screen locks, and no event announces the moment it
+  // may come back - so while music should be playing through a graph on iOS,
+  // a slow pulse re-claims the session and offers the context a resume. The
+  // kit's resume() ignores a running context, so a healthy graph pays one
+  // no-op call every few seconds and a parked one comes back at the first
+  // pulse iOS will honour.
+  useEffect(() => {
+    if (!isIOS) return;
+    const interval = window.setInterval(() => {
+      if (!wantPlaying.current || !analyserRef.current) return;
+      reactivateAudioSession();
+      void analyserRef.current.resume?.();
+    }, 5000);
+    return () => window.clearInterval(interval);
   }, []);
 
   // The waveform the bar fills in as the track plays, sampled from the same
@@ -444,21 +631,48 @@ export function Player({
     };
   }, []);
 
+  // The system transport, wired through WebKit's own media session - the
+  // path the lock screen and Control Center actually use while playback runs
+  // direct. With the iPhone graph opted in, the native center in carplay.m
+  // owns the claim instead, and binding both would land every button twice.
+  useEffect(() => {
+    if (isIOS && playbackRef.current.iosEq) return;
+    bindMediaSessionHandlers({
+      play: () => carPlayControls.current?.setPlaying(true),
+      pause: () => carPlayControls.current?.setPlaying(false),
+      next: () => carPlayControls.current?.next(),
+      previous: () => carPlayControls.current?.previous(),
+      seek: (seconds) => carPlayControls.current?.seek(seconds),
+    });
+  }, []);
+
   // The discontinuities the extrapolated clock cannot cover: a new track, a
-  // play or pause, a duration finally learned from metadata.
+  // play or pause, a duration finally learned from metadata. One claimant
+  // per build: WebKit's media session for direct playback, the native center
+  // for the opted-in graph - see mediaSession.ts for why never both.
   useEffect(() => {
     if (!track) return;
     carPlaySentPos.current = positionRef.current;
-    void pushCarPlayNowPlaying({
-      title: track.title,
-      artist: track.artist,
-      album: track.album,
-      artUrl: artwork?.startsWith('http') ? artwork : '',
-      duration,
-      position: positionRef.current,
-      playing,
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on identity, state, and length; position rides along
-    });
+    if (isIOS && playbackRef.current.iosEq) {
+      void pushCarPlayNowPlaying({
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        artUrl: artwork?.startsWith('http') ? artwork : '',
+        duration,
+        position: positionRef.current,
+        playing,
+      });
+    } else {
+      updateMediaSessionMetadata({
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        artwork: artwork?.startsWith('http') ? artwork : null,
+      });
+      updateMediaSessionState({ duration, position: positionRef.current, playing });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on identity, state, and length; position rides along
   }, [track, playing, duration]);
 
   // Seeks: the coarse clock jumping further than a second of playback could
@@ -470,15 +684,19 @@ export function Player({
       return;
     }
     carPlaySentPos.current = coarsePosition;
-    void pushCarPlayNowPlaying({
-      title: track.title,
-      artist: track.artist,
-      album: track.album,
-      artUrl: artwork?.startsWith('http') ? artwork : '',
-      duration,
-      position: coarsePosition,
-      playing,
-    });
+    if (isIOS && playbackRef.current.iosEq) {
+      void pushCarPlayNowPlaying({
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        artUrl: artwork?.startsWith('http') ? artwork : '',
+        duration,
+        position: coarsePosition,
+        playing,
+      });
+    } else {
+      updateMediaSessionState({ duration, position: coarsePosition, playing });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the jump detector runs on the clock alone
   }, [coarsePosition]);
 
@@ -552,7 +770,7 @@ export function Player({
       (el): el is HTMLAudioElement => el !== null,
     );
     if (decks.length === 0) return;
-    applyVolume(INITIAL_VOLUME, false);
+    applyVolume(isIOS ? VOLUME_UNITY : INITIAL_VOLUME, false);
     // The element always runs at its own speed: the deck's bend is the graph's
     // job now, so nothing here touches playbackRate and there is no pitch
     // preservation to switch off.
@@ -591,11 +809,15 @@ export function Player({
         // part-way must not leave the new track half-mixed.
         seatOf(audio)?.setLevel(1);
         applyVolume();
+        wantPlaying.current = true;
         setPlaying(true);
         // An autoplay the runtime refuses (a queue advance outside any gesture,
         // on a strict browser) rejects; the bar goes back to paused rather than
         // showing a play that is not happening.
-        void audio.play().catch(() => setPlaying(false));
+        void audio.play().catch(() => {
+          wantPlaying.current = false;
+          setPlaying(false);
+        });
       };
       // A source that cannot load (a cached row whose file was deleted, say)
       // fires error and never canplay: without this the bar would stay showing
@@ -603,6 +825,7 @@ export function Player({
       const onError = () => {
         if (!isActive() || !audio.error) return;
         pendingPlay.current = false;
+        wantPlaying.current = false;
         setPlaying(false);
       };
       // The other end of a muted-through seek: the element has landed and is
@@ -771,6 +994,7 @@ export function Player({
 
   const setPlayingState = (next: boolean) => {
     const audio = activeAudio();
+    wantPlaying.current = next;
     setPlaying(next);
     if (!audio) return;
     const style = playbackRef.current.pauseStyle;
@@ -793,7 +1017,10 @@ export function Player({
         } else {
           applyVolume();
         }
-        void audio.play().catch(() => setPlaying(false));
+        void audio.play().catch(() => {
+          wantPlaying.current = false;
+          setPlaying(false);
+        });
         return;
       }
       // The platter spins up. Cold, from a park: the line is already empty,
@@ -802,12 +1029,18 @@ export function Player({
       // what is heard is the platter catching up, not the music fading in.
       if (!analyserRef.current) {
         applyVolume();
-        void audio.play().catch(() => setPlaying(false));
+        void audio.play().catch(() => {
+          wantPlaying.current = false;
+          setPlaying(false);
+        });
         rampDeck(1, SPIN_UP_MS);
       } else if (audio.paused) {
         analyserRef.current.setVolume(0);
         analyserRef.current.resetSpeed(RATE_FLOOR);
-        void audio.play().catch(() => setPlaying(false));
+        void audio.play().catch(() => {
+          wantPlaying.current = false;
+          setPlaying(false);
+        });
         analyserRef.current.rampVolume(currentAmplitude(), SPIN_UP_FADE_MS / 1000);
         rampDeck(1, SPIN_UP_MS);
       } else {
@@ -910,8 +1143,12 @@ export function Player({
     windingDown.current = false;
     if (audio.paused) analyserRef.current?.resetSpeed(1);
     analyserRef.current?.rampVolume(currentAmplitude(), SPIN_UP_FADE_MS / 1000);
+    wantPlaying.current = true;
     setPlaying(true);
-    void audio.play().catch(() => setPlaying(false));
+    void audio.play().catch(() => {
+          wantPlaying.current = false;
+          setPlaying(false);
+        });
     // From full speed this glide is a flat line that builds no backlog, so it
     // costs nothing except when it is needed - a restart pressed mid-brake.
     rampDeck(1, SPIN_UP_MS);
@@ -1002,7 +1239,9 @@ export function Player({
     const next = pickNext(dir, wrap);
     if (next === null) {
       // The element too, not just the bar: reached from a skip as well as
-      // from a natural end, and a skip's deck is still mid-song.
+      // from a natural end, and a skip's deck is still mid-song. Intent drops
+      // first: the pause event this fires must read as ours, not the system's.
+      wantPlaying.current = false;
       activeAudio()?.pause();
       setPlaying(false);
       return;
@@ -1038,6 +1277,14 @@ export function Player({
       // one ducks out before it stops.
       seatOf(activeAudio())?.fadeLevel(1, 0.3);
       seatOf(idle)?.fadeLevel(0, 0.15);
+      if (!analyserRef.current) {
+        // No seats to counterslide (iOS plays the elements direct): the
+        // incoming deck ducks out flat and the outgoing element takes its
+        // level straight back.
+        if (idle) idle.volume = 0;
+        const active = activeAudio();
+        if (active) active.volume = Math.min(1, currentAmplitude());
+      }
     }
     // The stop is scheduled whether or not the blend was audible yet: a
     // play() still settling when the abort landed would otherwise leave the
@@ -1049,6 +1296,31 @@ export function Player({
   };
   const abortCrossfadeRef = useRef(abortCrossfade);
   abortCrossfadeRef.current = abortCrossfade;
+
+  /**
+   * The blend without a graph: the elements' own volumes counterslide on a
+   * timer, the same equal-power legs the seats would run (sine up, cosine
+   * down, so the mix holds level through the middle). A timer rather than an
+   * animation frame for the same reason rampDeck uses one - this fade's whole
+   * point is finishing while the app is backgrounded.
+   */
+  const fadeElementBlend = (
+    active: HTMLAudioElement,
+    idle: HTMLAudioElement,
+    span: number,
+    token: number,
+  ) => {
+    const target = Math.min(1, currentAmplitude());
+    const start = performance.now();
+    const step = () => {
+      if (token !== xfadeToken.current) return;
+      const t = Math.min(1, (performance.now() - start) / (span * 1000));
+      idle.volume = target * Math.sin((t * Math.PI) / 2);
+      active.volume = target * Math.cos((t * Math.PI) / 2);
+      if (t < 1) setTimeout(step, 1000 / 60);
+    };
+    step();
+  };
 
   /** Starts the incoming deck the moment its file is ready, and the blend. */
   const beginCrossfade = (next: Track, token: number) => {
@@ -1077,6 +1349,7 @@ export function Player({
         }
         const span = Math.min(playbackRef.current.crossfade, remaining);
         seatOf(idle)?.setLevel(0);
+        if (!analyserRef.current) idle.volume = 0;
         idle.currentTime = 0;
         idle
           .play()
@@ -1088,8 +1361,12 @@ export function Player({
               return;
             }
             flight.started = true;
-            seatOf(idle)?.fadeLevel(1, span);
-            seatOf(active)?.fadeLevel(0, span);
+            if (analyserRef.current) {
+              seatOf(idle)?.fadeLevel(1, span);
+              seatOf(active)?.fadeLevel(0, span);
+            } else {
+              fadeElementBlend(active, idle, span, token);
+            }
           })
           .catch(() => {
             // A deck that will not start is not a blend; the ended path will
@@ -1174,8 +1451,12 @@ export function Player({
       // shorter than the blend) or errored would wedge the strip on silence.
       if (nowActive && !nowActive.ended && !nowActive.error) {
         seatOf(nowActive)?.setLevel(1);
+        // Without a graph the level lives on the elements themselves; one
+        // shared path re-asserts the fader on whichever deck now answers.
+        applyVolume();
         setPosition(nowActive.currentTime);
         setDuration(nowActive.duration || 0);
+        wantPlaying.current = true;
         setPlaying(true);
         adoptedPath.current = flight.next.path;
         recentRef.current = [...recentRef.current.slice(-19), flight.next.path];
@@ -1190,6 +1471,7 @@ export function Player({
     // than rolling into the next track and past the listener's sleep.
     if (playbackRef.current.sleep === 'end-of-track') {
       playbackRef.current.setSleep(null);
+      wantPlaying.current = false;
       setPlaying(false);
       return;
     }
@@ -1402,7 +1684,10 @@ export function Player({
         // words. Synced lines light with playback and a press seeks to that
         // line - the seek goes through commitSeek, the same path the bar's
         // own scrubber lands on.
+        // On touch the mic folds into the overflow chooser with the rest of
+        // the options; the heart the kit renders keeps the leading rail.
         leading={
+          mobileControls ? undefined : (
           <Popover
             placement="top"
             aria-label="Lyrics"
@@ -1426,43 +1711,176 @@ export function Player({
               />
             </div>
           </Popover>
+          )
         }
         levels={levels}
         beat={beat}
         // The equalizer and the custom volume fader share the trailing rail; the
         // kit's own volume is dropped (no volume props) since it stops at 100%.
+        // On touch the pair folds behind one overflow button - the phone's
+        // hardware buttons carry the volume moment to moment, so neither
+        // deserves a permanent seat the transport could be spending.
         trailing={
-          <>
-            {/* Plugin controls lead the app's own EQ and fader, mirroring how
-                the title bar seats plugins ahead of settings. Empty when none
-                contribute. */}
-            <PluginSlot id="player-trailing" />
-            <Popover
-              placement="top-end"
-              aria-label="Equalizer"
-              className="eqPopoverPanel"
-              trigger={
-                <IconButton variant="ghost" size="sm" aria-label="Equalizer">
-                  <AudioLines size={16} />
-                </IconButton>
-              }
-            >
-              <div className="eqPopover">
-                <AudioEqualizer
-                  value={eqGains}
-                  onValueChange={setEqGains}
-                  preset={eqPreset}
-                  onPresetChange={setEqPreset}
-                />
-              </div>
-            </Popover>
-            <VolumeControl
-              value={volume}
-              muted={muted}
-              onValueChange={setVolumeState}
-              onMutedChange={setMutedState}
-            />
-          </>
+          mobileControls && isIOS ? (
+            // The iPhone's whole option set is lyrics: the equalizer waits on
+            // the native audio engine and loudness belongs to the volume
+            // buttons - so the overflow chooser collapses to the mic itself.
+            <>
+              <PluginSlot id="player-trailing" />
+              <Popover
+                placement="top-end"
+                aria-label="Lyrics"
+                className="lyricsPopoverPanel"
+                trigger={
+                  <IconButton variant="ghost" size="sm" aria-label="Lyrics">
+                    <Mic size={18} />
+                  </IconButton>
+                }
+              >
+                <div className="lyricsPopover">
+                  <LyricsPanel
+                    key={(track ?? DEMO_TRACK).path}
+                    track={track ?? DEMO_TRACK}
+                    position={position}
+                    onSeek={commitSeek}
+                  />
+                </div>
+              </Popover>
+            </>
+          ) : mobileControls ? (
+            <>
+              <PluginSlot id="player-trailing" />
+              <Popover
+                placement="top-end"
+                aria-label="Player options"
+                className="morePopoverPanel"
+                open={moreOpen}
+                onOpenChange={(open) => {
+                  setMoreOpen(open);
+                  if (open) setMoreView('menu');
+                }}
+                trigger={
+                  <IconButton variant="ghost" size="sm" aria-label="Player options">
+                    <EllipsisVertical size={18} />
+                  </IconButton>
+                }
+              >
+                <div className="morePopover">
+                  {moreView === 'menu' && (
+                    <div className="moreMenu">
+                      <button
+                        type="button"
+                        className="moreMenuItem"
+                        onClick={() => setMoreView('eq')}
+                      >
+                        <AudioLines size={16} />
+                        Equalizer
+                      </button>
+                      <button
+                        type="button"
+                        className="moreMenuItem"
+                        onClick={() => setMoreView('lyrics')}
+                      >
+                        <Mic size={16} />
+                        Lyrics
+                      </button>
+                      <button
+                        type="button"
+                        className="moreMenuItem"
+                        onClick={() => setMoreView('volume')}
+                      >
+                        <Volume2 size={16} />
+                        Volume
+                      </button>
+                    </div>
+                  )}
+                  {moreView !== 'menu' && (
+                    <button
+                      type="button"
+                      className="moreBack"
+                      onClick={() => setMoreView('menu')}
+                    >
+                      <ChevronLeft size={14} />
+                      {moreView === 'eq' ? 'Equalizer' : moreView === 'lyrics' ? 'Lyrics' : 'Volume'}
+                    </button>
+                  )}
+                  {moreView === 'eq' &&
+                    (narrowEq ? (
+                      <AudioEqualizer
+                        size="sm"
+                        bands={EQ_BANDS_NARROW}
+                        presets={EQ_PRESETS_NARROW}
+                        value={narrowEqGains(eqGains)}
+                        onValueChange={(g) => setEqGains(expandNarrowGains(g, eqGains))}
+                        preset={eqPreset}
+                        onPresetChange={(id) => {
+                          setEqPreset(id ?? undefined);
+                          const preset = EQ_PRESETS.find((p) => p.id === id);
+                          if (preset) setEqGains([...preset.gains]);
+                        }}
+                      />
+                    ) : (
+                      <AudioEqualizer
+                        value={eqGains}
+                        onValueChange={setEqGains}
+                        preset={eqPreset}
+                        onPresetChange={setEqPreset}
+                      />
+                    ))}
+                  {moreView === 'lyrics' && (
+                    <div className="lyricsPopover">
+                      <LyricsPanel
+                        key={(track ?? DEMO_TRACK).path}
+                        track={track ?? DEMO_TRACK}
+                        position={position}
+                        onSeek={commitSeek}
+                      />
+                    </div>
+                  )}
+                  {moreView === 'volume' && (
+                    <VolumeRow
+                      value={volume}
+                      muted={muted}
+                      onValueChange={setVolumeState}
+                      onMutedChange={setMutedState}
+                    />
+                  )}
+                </div>
+              </Popover>
+            </>
+          ) : (
+            <>
+              {/* Plugin controls lead the app's own EQ and fader, mirroring how
+                  the title bar seats plugins ahead of settings. Empty when none
+                  contribute. */}
+              <PluginSlot id="player-trailing" />
+              <Popover
+                placement="top-end"
+                aria-label="Equalizer"
+                className="eqPopoverPanel"
+                trigger={
+                  <IconButton variant="ghost" size="sm" aria-label="Equalizer">
+                    <AudioLines size={16} />
+                  </IconButton>
+                }
+              >
+                <div className="eqPopover">
+                  <AudioEqualizer
+                    value={eqGains}
+                    onValueChange={setEqGains}
+                    preset={eqPreset}
+                    onPresetChange={setEqPreset}
+                  />
+                </div>
+              </Popover>
+              <VolumeControl
+                value={volume}
+                muted={muted}
+                onValueChange={setVolumeState}
+                onMutedChange={setMutedState}
+              />
+            </>
+          )
         }
         // The shadow trailing the beat under the played run; nothing is drawn
         // without a beat to trail, so it is safe to leave on.

@@ -366,6 +366,13 @@ pub struct MusicImportJob {
     /// Where this job's files are written (the app's music folder at enqueue time).
     #[serde(default)]
     output_dir: String,
+    /// Every file this job downloaded - absolute paths, in filename order.
+    /// This is what lets a server-connected client upload exactly what an
+    /// import produced instead of guessing from the folder. Empty on jobs
+    /// from before the field existed, which the uploader reads as "nothing
+    /// to send" rather than "send the whole folder".
+    #[serde(default)]
+    files: Vec<String>,
 }
 
 // ============================================================================
@@ -867,7 +874,7 @@ async fn run_music_import_job(
     url: &str,
     output_dir: PathBuf,
     mut cancel_rx: tokio::sync::oneshot::Receiver<()>,
-) -> Result<u32, String> {
+) -> Result<(u32, Vec<String>), String> {
     let app = manager.app.clone();
     std::fs::create_dir_all(&output_dir).map_err(|e| e.to_string())?;
     let baseline_files = current_music_file_set(&output_dir);
@@ -1103,7 +1110,11 @@ async fn run_music_import_job(
     }
 
     if completed > 0 {
-        return Ok(completed);
+        // The files this run claimed, in filename order - the track-number
+        // prefixes SpotiFLAC writes make that the album's own order.
+        let mut files: Vec<String> = { my_files.lock().await.iter().cloned().collect() };
+        files.sort();
+        return Ok((completed, files));
     }
     if stalled {
         let detail = build_detail("No tracks were saved before the import stalled.");
@@ -1121,7 +1132,7 @@ async fn run_music_import_job(
             build_detail("SpotiFLAC exited successfully, but no new music files were written.");
         return Err(format!("SpotiFLAC finished but saved no new files. {detail}"));
     }
-    Ok(0)
+    Ok((0, Vec::new()))
 }
 
 // ============================================================================
@@ -1175,7 +1186,7 @@ async fn music_import_worker(manager: Arc<MusicImportManager>) {
                 let mut jobs = mgr.jobs.lock().await;
                 if let Some(job) = jobs.iter_mut().find(|j| j.id == id) {
                     match &result {
-                        Ok(count) => {
+                        Ok((count, files)) => {
                             job.completed = (*count).max(job.completed);
                             if job.total.is_none() {
                                 job.total = Some(job.completed);
@@ -1184,6 +1195,7 @@ async fn music_import_worker(manager: Arc<MusicImportManager>) {
                             job.error = None;
                             job.current_track = None;
                             job.current_index = None;
+                            job.files = files.clone();
                         }
                         Err(err) => {
                             job.state = "error".to_string();
@@ -1248,6 +1260,7 @@ pub async fn music_import_enqueue(
         tracks: track_titles,
         current_index: None,
         output_dir: dir,
+        files: Vec::new(),
     };
     {
         let mut jobs = manager.jobs.lock().await;
