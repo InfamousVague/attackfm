@@ -76,6 +76,14 @@
 		</dict>
 	</dict>
 
+	<!-- Portrait only. The player is a one-hand surface; landscape gave a
+	     stretched bar and lyric bands built for a shape the design never
+	     meant to serve. -->
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
