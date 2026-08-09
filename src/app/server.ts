@@ -468,6 +468,48 @@ export async function fetchHome(session: ServerSession): Promise<HomeFeed> {
   return request<HomeFeed>(session.url, '/api/home', { token: session.token });
 }
 
+/** One thing the curator thinks you would like but do not own yet. */
+export interface Discovery {
+  id: string;
+  title: string;
+  artist: string;
+  cover: string;
+  url: string;
+  preview: string;
+  /** The artist of yours it hangs off - the "because you play X" line. */
+  seed: string;
+  /** Measured off the catalogue's own preview, when one existed. */
+  bpm: number | null;
+  /** Whether its words were actually read and compared, so the UI can say why
+   *  it is here without overclaiming. */
+  lyricsRead: boolean;
+  score: number;
+}
+
+export interface DiscoveryFeed {
+  items: Discovery[];
+  progress: { pool: number; listened: number };
+}
+
+/** What the curator found outside your library, best first. */
+export async function fetchDiscoveries(
+  session: ServerSession,
+  signal?: AbortSignal,
+): Promise<DiscoveryFeed> {
+  return request<DiscoveryFeed>(session.url, '/api/discoveries', {
+    token: session.token,
+    signal,
+  });
+}
+
+/** Not for me. Forgotten rather than hidden, so the harvest can replace it. */
+export async function dismissDiscovery(session: ServerSession, id: string): Promise<void> {
+  await request(session.url, `/api/discoveries/dismiss?id=${encodeURIComponent(id)}`, {
+    method: 'POST',
+    token: session.token,
+  });
+}
+
 /** One playlist the curator built from this listener's own history. */
 export interface CuratedList {
   slug: string;

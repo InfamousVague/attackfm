@@ -13,11 +13,12 @@
  * handlers are where their buttons land - inside the app's own transport,
  * where intent is recorded before anything pauses.
  *
- * When the iPhone graph is opted in (Equalizer on iPhone), WebKit's claim is
- * unreliable - audio through a WebAudio graph breaks its reflection - so the
- * native MPNowPlayingInfoCenter path in carplay.m takes over and THIS module
- * must stay unbound: two claimants means transport buttons firing twice.
- * The Player owns that choice; everything here just checks for API presence.
+ * On iPhone WebKit's claim is unreliable - audio through a WebAudio graph, which
+ * always runs there now, breaks its reflection - so the native
+ * MPNowPlayingInfoCenter path in carplay.m takes over and THIS module stays
+ * unbound: two claimants means transport buttons firing twice. Everywhere else
+ * this module is the claimant. The Player owns that split; everything here just
+ * checks for API presence.
  */
 
 export interface MediaSessionControls {

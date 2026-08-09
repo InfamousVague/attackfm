@@ -32,15 +32,6 @@ export interface PlaybackSettings {
   /** Folds the channels together and plays the same signal to both ears. */
   mono: boolean;
   /**
-   * iPhone only: route playback through the audio graph so the equalizer
-   * (and night mode, mono, the boost range) work there too. Off by default
-   * because WebKit can silence the graph when the screen locks - the
-   * background playback that direct playback guarantees is the safer trade
-   * until the native audio engine lands. Applies from the next launch: an
-   * element the graph has captured stays captured.
-   */
-  iosEq: boolean;
-  /**
    * Whether the fader may push past 100% into the boost range. Off caps it at
    * unity - a hearing-safety and speaker-protection choice, so the max the
    * hardware volume set is the max anything plays at.
@@ -74,7 +65,6 @@ const DEFAULTS: PlaybackSettings = {
   autoDj: false,
   nightMode: false,
   mono: false,
-  iosEq: false,
   volumeBoost: true,
   saveHistory: true,
   pauseStyle: 'turntable',
@@ -109,7 +99,6 @@ function readStored(): PlaybackSettings {
       autoDj: typeof parsed.autoDj === 'boolean' ? parsed.autoDj : DEFAULTS.autoDj,
       nightMode: typeof parsed.nightMode === 'boolean' ? parsed.nightMode : DEFAULTS.nightMode,
       mono: typeof parsed.mono === 'boolean' ? parsed.mono : DEFAULTS.mono,
-      iosEq: typeof parsed.iosEq === 'boolean' ? parsed.iosEq : DEFAULTS.iosEq,
       volumeBoost:
         typeof parsed.volumeBoost === 'boolean' ? parsed.volumeBoost : DEFAULTS.volumeBoost,
       saveHistory:

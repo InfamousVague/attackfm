@@ -40,6 +40,45 @@ body {
 }
 
 /*
+ * A long press belongs to the app, not to the system.
+ *
+ * On a phone the browser claims that gesture twice over: held on text it
+ * starts a selection with grab handles, and held on an image it raises the
+ * "Save Image / Copy" sheet. Both fire before the app sees anything, so the
+ * gestures this app puts on a long press - the artwork chooser on a cover, a
+ * song row's menu - could never happen on the one platform they were designed
+ * for. Nothing here is a document to select from, so the whole app opts out
+ * and the few places where selecting IS the point opt back in below.
+ */
+html {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Typing and editing need selection, and on a phone the paste callout lives on
+   this very gesture - so every field keeps both. */
+input,
+textarea,
+select,
+[contenteditable],
+[contenteditable] * {
+  -webkit-touch-callout: default;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* An image is never a thing to save out of here: every one is a cover the app
+   has its own gesture for. Drag is refused for the same reason - the desktop
+   window's own drag must win over dragging a picture out of it. */
+img {
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/*
  * The square desktop window: a vertical stack of the title bar and the content
  * area that takes the rest of the height.
  */
@@ -123,6 +162,14 @@ body {
   display: flex;
   align-items: center;
   gap: var(--glacier-space-1);
+}
+
+/* Nothing playing: no strip, so nothing to clear. Every surface pads its
+   bottom by --app-player-height, so zeroing it here is the whole change - and
+   it is written as its own rule AFTER the mobile override below so it wins on
+   a phone too, where the strip is 9rem when it exists at all. */
+.appWindow[data-player='off'] {
+  --app-player-height: 0rem;
 }
 
 /* The now-playing cover, blurred into a hero wash behind the top of the window.
@@ -807,7 +854,12 @@ body {
      allowed to break anywhere rather than forcing the panel wider than the
      settings modal. */
   overflow-wrap: anywhere;
+  /* The one string in the app that exists to be copied, so it opts back out of
+     the app-wide no-selection rule - prefixed too, since that is the property
+     WebKit actually reads on a phone. */
   user-select: all;
+  -webkit-user-select: all;
+  -webkit-touch-callout: default;
 }
 
 /* A slider and its reading on one line: the slider takes the room, the value
@@ -4741,4 +4793,107 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--glacier-font-size-sm);
+}
+
+/* A find: music the curator turned up that is NOT in the library. Shaped like
+   a track card so the shelf reads as one family, but carrying an add badge and
+   the reason it is here - and a dismiss, because a suggestion you cannot refuse
+   is an advert. */
+.findCard {
+  position: relative;
+  flex: none;
+}
+
+.findCard__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  inline-size: 9rem;
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.findCard__body:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.findCard__cover {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 9rem;
+  block-size: 9rem;
+  border-radius: var(--glacier-radius-md);
+  overflow: hidden;
+  background: var(--glacier-surface-raised, var(--glacier-hover));
+  color: var(--glacier-text-muted);
+}
+
+.findCard__cover img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+/* The add affordance rides the cover, so the whole card reads as "tap to get
+   this" without a second row of chrome. */
+.findCard__add {
+  position: absolute;
+  inset-block-end: var(--glacier-space-2);
+  inset-inline-end: var(--glacier-space-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-accent-on, #fff);
+  box-shadow: var(--glacier-shadow-2, 0 2px 6px rgba(0, 0, 0, 0.35));
+}
+
+/* Why it is here, in the terms actually measured. */
+.findCard__why {
+  color: var(--glacier-text-subtle, var(--glacier-text-muted));
+  font-size: var(--glacier-font-size-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.findCard__no {
+  position: absolute;
+  inset-block-start: var(--glacier-space-1);
+  inset-inline-end: var(--glacier-space-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  border-radius: var(--glacier-radius-full);
+  border: none;
+  background: var(--glacier-glass-regular, rgba(0, 0, 0, 0.5));
+  color: var(--glacier-text);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.findCard:hover .findCard__no,
+.findCard__no:focus-visible {
+  opacity: 1;
+}
+
+/* No hover on a touchscreen, so the dismiss is simply always there. */
+@media (pointer: coarse) {
+  .findCard__no {
+    opacity: 1;
+  }
 }

@@ -117,6 +117,12 @@ pub struct ImportManager {
 }
 
 impl ImportManager {
+    /// The writable HOME the SpotiFLAC child runs under - reused by the search
+    /// so its Spotify metadata client caches its session in the same place.
+    pub fn sf_home(&self) -> &Path {
+        &self.sf_home
+    }
+
     /// Loads persisted jobs; anything mid-flight when the process died goes
     /// back to queued - its staging directory is wiped at start, so a rerun
     /// is clean rather than double-counted.
@@ -291,7 +297,7 @@ fn staged_audio_files(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
-fn find_spotiflac() -> Option<PathBuf> {
+pub(crate) fn find_spotiflac() -> Option<PathBuf> {
     if let Ok(explicit) = std::env::var("AFM_SPOTIFLAC") {
         let p = PathBuf::from(explicit);
         if p.is_file() {

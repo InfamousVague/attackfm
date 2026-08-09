@@ -25,6 +25,7 @@ mod connect;
 mod curator;
 mod db;
 mod discover;
+mod discovery;
 mod home;
 mod imports;
 mod scan;
@@ -76,6 +77,8 @@ pub struct AppState {
     /// The curator: the always-running process that learns what this listener
     /// likes and builds playlists (and the DJ's next pick) from it.
     pub curator: Arc<curator::CuratorState>,
+    /// Per-listener harvest clocks for the discovery pool.
+    pub discovery: Arc<discovery::DiscoveryState>,
     /// When this process came up - the uptime the stats endpoint reports.
     pub started: std::time::Instant,
 }
@@ -184,6 +187,7 @@ async fn main() {
         discover: discover::DiscoverState::new(),
         connect: connect::ConnectState::new(),
         curator: curator::CuratorState::new(),
+        discovery: discovery::DiscoveryState::new(),
         started: std::time::Instant::now(),
     });
 
@@ -267,6 +271,8 @@ async fn main() {
         .route("/api/artist", get(search::artist))
         .route("/api/curator", get(curator::feed))
         .route("/api/dj/next", get(curator::dj))
+        .route("/api/discoveries", get(discovery::feed))
+        .route("/api/discoveries/dismiss", post(discovery::dismiss))
         .route("/api/connect", get(connect::connect))
         .route("/api/users", get(api::list_users))
         .route("/api/users/{id}", delete(api::delete_user))

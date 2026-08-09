@@ -96,7 +96,9 @@ const DEMO_TRACK: Track = {
 };
 
 /** Where the fader starts. The element opens at full, so it is told this too. */
-const INITIAL_VOLUME = 70;
+/** Where a fresh install opens: unity, the same place the phone sits. Nothing
+ *  is quieter than the file it is playing until somebody says so. */
+const INITIAL_VOLUME = VOLUME_UNITY;
 
 /** The deck's remembered dials - shuffle, repeat, the fader - one key each so
  * a bad value spoils only its own dial. */
@@ -460,16 +462,12 @@ export function Player({
   };
 
   const ensureMeter = () => {
-    // iOS plays direct by default. WKWebView can interrupt an AudioContext
-    // the moment the screen locks - background entitlement, claimed session
-    // and all - and `createMediaElementSource` permanently reroutes an
-    // element through that context, so a captured element risks going silent
-    // in the pocket. Direct playback is verified to survive the lock; the
-    // graph's extras (EQ, meter visuals, night mode, the boost range) sit
-    // behind the "Equalizer on iPhone" setting for those who want to trade.
-    // Every path below carries an element-volume fallback for the no-graph
-    // world, and the watchdog below nudges an interrupted context back.
-    if (isIOS && !playbackRef.current.iosEq) return;
+    // iOS routes through the audio graph like every other platform, so the
+    // equalizer, meter visuals, night mode, and the boost range work here too.
+    // WKWebView can interrupt an AudioContext when the screen locks, so every
+    // path below carries an element-volume fallback and the watchdog nudges an
+    // interrupted context back - the occasional lock-screen hiccup is the trade
+    // for the EQ being on by default.
     const audio = audioRef.current;
     if (!audio) return;
     if (!analyserRef.current) {
@@ -756,12 +754,12 @@ export function Player({
     };
   }, []);
 
-  // The system transport, wired through WebKit's own media session - the
-  // path the lock screen and Control Center actually use while playback runs
-  // direct. With the iPhone graph opted in, the native center in carplay.m
-  // owns the claim instead, and binding both would land every button twice.
+  // The system transport, wired through WebKit's own media session - the path
+  // the lock screen and Control Center use off iOS. On iOS the native center
+  // in carplay.m owns the claim instead (the graph always runs there now), and
+  // binding both would land every button twice.
   useEffect(() => {
-    if (isIOS && playbackRef.current.iosEq) return;
+    if (isIOS) return;
     bindMediaSessionHandlers({
       play: () => carPlayControls.current?.setPlaying(true),
       pause: () => carPlayControls.current?.setPlaying(false),
@@ -772,13 +770,13 @@ export function Player({
   }, []);
 
   // The discontinuities the extrapolated clock cannot cover: a new track, a
-  // play or pause, a duration finally learned from metadata. One claimant
-  // per build: WebKit's media session for direct playback, the native center
-  // for the opted-in graph - see mediaSession.ts for why never both.
+  // play or pause, a duration finally learned from metadata. One claimant per
+  // platform: the native center on iOS, WebKit's media session everywhere else
+  // - see mediaSession.ts for why never both.
   useEffect(() => {
     if (!track) return;
     carPlaySentPos.current = positionRef.current;
-    if (isIOS && playbackRef.current.iosEq) {
+    if (isIOS) {
       void pushCarPlayNowPlaying({
         title: track.title,
         artist: track.artist,
@@ -809,7 +807,7 @@ export function Player({
       return;
     }
     carPlaySentPos.current = coarsePosition;
-    if (isIOS && playbackRef.current.iosEq) {
+    if (isIOS) {
       void pushCarPlayNowPlaying({
         title: track.title,
         artist: track.artist,
@@ -895,7 +893,10 @@ export function Player({
       (el): el is HTMLAudioElement => el !== null,
     );
     if (decks.length === 0) return;
-    applyVolume(isIOS ? VOLUME_UNITY : INITIAL_VOLUME, false);
+    // The restored level, not the default: seeding the graph with the opening
+    // value would open a session at full voice for somebody who left the fader
+    // at a third. The ref already holds what the state was initialised from.
+    applyVolume(volumeRef.current, false);
     // The element always runs at its own speed: the deck's bend is the graph's
     // job now, so nothing here touches playbackRate and there is no pitch
     // preservation to switch off.
@@ -1801,17 +1802,26 @@ export function Player({
       becomeActive: (state) => {
         const cur = liveRef.current.track;
         if (state.trackId == null) return;
+        // The server froze the position at the moment of the hand-off; add the
+        // little that has elapsed since (network + load) so playback resumes
+        // where the song actually is, not a beat behind. Capped so a skewed
+        // client clock can nudge but never fling the playhead.
+        const elapsedMs = state.playing
+          ? Math.min(15000, Math.max(0, Date.now() - state.updatedAt))
+          : 0;
+        const positionMs = state.positionMs + elapsedMs;
         if (cur && trackIdFromPath(cur.path) === state.trackId) {
-          liveRef.current.commitSeek(state.positionMs / 1000);
+          liveRef.current.commitSeek(positionMs / 1000);
           liveRef.current.setPlayingState(!!state.playing);
           return;
         }
         const t = findByConnectId(state.trackId);
         if (t) {
-          resumeRef.current = { trackId: state.trackId, positionMs: state.positionMs, play: !!state.playing };
+          resumeRef.current = { trackId: state.trackId, positionMs, play: !!state.playing };
           liveRef.current.onTrackChange?.(t);
         }
       },
+
       release: () => liveRef.current.setPlayingState(false),
     });
     return () => connect.registerController(null);
@@ -2083,34 +2093,9 @@ export function Player({
         // hardware buttons carry the volume moment to moment, so neither
         // deserves a permanent seat the transport could be spending.
         trailing={
-          mobileControls && isIOS ? (
-            // The iPhone's whole option set is lyrics: the equalizer waits on
-            // the native audio engine and loudness belongs to the volume
-            // buttons - so the overflow chooser collapses to the mic itself.
-            <>
-              <PluginSlot id="player-trailing" />
-              <DevicePicker />
-              <Popover
-                placement="top-end"
-                aria-label="Lyrics"
-                className="lyricsPopoverPanel"
-                trigger={
-                  <IconButton variant="ghost" size="sm" aria-label="Lyrics">
-                    <Mic size={18} />
-                  </IconButton>
-                }
-              >
-                <div className="lyricsPopover">
-                  <LyricsPanel
-                    key={(track ?? DEMO_TRACK).path}
-                    track={track ?? DEMO_TRACK}
-                    position={position}
-                    onSeek={commitSeek}
-                  />
-                </div>
-              </Popover>
-            </>
-          ) : mobileControls ? (
+          // iPhone folds into the same mobile overflow as everywhere else now
+          // that the graph (and so the equalizer) always runs there.
+          mobileControls ? (
             <>
               <PluginSlot id="player-trailing" />
               <DevicePicker />

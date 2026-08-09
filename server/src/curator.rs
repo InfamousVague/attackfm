@@ -37,10 +37,11 @@ use std::time::Duration;
 /// How long a track's lookup stands before it is worth asking again. Tempo
 /// does not change, but a track whose lyrics arrived later deserves a vector.
 const FEATURE_TTL_MS: i64 = 7 * 24 * 60 * 60 * 1000;
-/// How long a lookup that found NOTHING stands. Much shorter: an empty answer
-/// is as often a query that was wrong or a model that was not running yet as it
-/// is a track nobody has data for.
-const EMPTY_TTL_MS: i64 = 6 * 60 * 60 * 1000;
+/// How soon to come back for a track that has lyrics but no vector yet. Short,
+/// because that gap usually means the embedder was not running when the track
+/// was first looked at - which is exactly the case when a model is switched on
+/// for a library that has already been read once.
+const VECTOR_RETRY_MS: i64 = 20 * 60 * 1000;
 /// Tracks looked up per cycle. Small on purpose: this is a background errand
 /// that must never be the reason a stream stutters.
 const ENRICH_BATCH: i64 = 6;
@@ -70,11 +71,16 @@ fn ai_url() -> Option<String> {
     std::env::var("AFM_AI_URL").ok().filter(|s| !s.trim().is_empty())
 }
 
-fn ai_model() -> String {
-    std::env::var("AFM_AI_MODEL")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| "llama3.2".to_string())
+/// The chat model, and whether there is one at all.
+///
+/// Deliberately not defaulted: writing playlist names and DJ patter is the
+/// EXPENSIVE half of this, and on a one-core box a chat model that was assumed
+/// rather than configured means every curation cycle and every DJ pick waits
+/// out a long timeout against a model that was never pulled. Embeddings - the
+/// half that actually drives the recommendations - run off their own switch
+/// below, so a server can read lyrics without ever generating a word.
+fn ai_chat_model() -> Option<String> {
+    std::env::var("AFM_AI_MODEL").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
 /// The embedding model. Separate from the chat model because they are
@@ -107,8 +113,11 @@ pub struct Status {
     pub phase: String,
     /// Epoch ms of the last completed curation pass.
     pub last_curated: i64,
-    /// Whether a model is wired up at all.
+    /// Whether an embedder is reachable - the half that reads lyrics.
     pub ai: bool,
+    /// Whether a chat model is configured - the half that writes names and
+    /// patter. Off by default, and not needed for the recommendations.
+    pub chat: bool,
     /// Whether the embedder answered last time it was asked - the difference
     /// between "lyrics are being read" and "only tempo and genre are".
     pub embeddings: bool,
@@ -131,7 +140,10 @@ pub fn spawn(state: Arc<AppState>) {
         loop {
             let did_work = enrich_cycle(&state).await;
             curate_cycle(&state).await;
-            tokio::time::sleep(if did_work { BUSY_SLEEP } else { IDLE_SLEEP }).await;
+            // Then the world outside the library: harvest candidates, listen to
+            // a couple, and keep the shelf honest about what is already owned.
+            let discovered = discovery_cycle(&state).await;
+            tokio::time::sleep(if did_work || discovered { BUSY_SLEEP } else { IDLE_SLEEP }).await;
         }
     });
 }
@@ -140,29 +152,44 @@ pub fn spawn(state: Arc<AppState>) {
 /// what decides how soon the loop comes back.
 async fn enrich_cycle(state: &Arc<AppState>) -> bool {
     let stale_before = now_ms() - FEATURE_TTL_MS;
-    let empty_before = now_ms() - EMPTY_TTL_MS;
-    let ids = state.db.tracks_needing_features(ENRICH_BATCH, stale_before, empty_before);
+    let vector_before = now_ms() - VECTOR_RETRY_MS;
+    // Only chase missing vectors when there is something that could produce
+    // one; otherwise every lyric-bearing track would be revisited forever.
+    let ids = state.db.tracks_needing_features(
+        ENRICH_BATCH,
+        stale_before,
+        vector_before,
+        ai_url().is_some(),
+    );
     if ids.is_empty() {
         let mut s = state.curator.status.lock().await;
         s.phase = "idle".into();
         s.ai = ai_url().is_some();
+        s.chat = ai_chat_model().is_some();
         return false;
     }
     {
         let mut s = state.curator.status.lock().await;
         s.phase = "enriching".into();
         s.ai = ai_url().is_some();
+        s.chat = ai_chat_model().is_some();
     }
 
     let tracks = state.db.tracks_for_curation(&ids);
     for track in tracks {
         // The tempo is measured off the file on this box - see tempo.rs for
-        // why the catalogues could not supply it.
-        let bpm = match state.db.track_rel_path(track.id) {
-            Some(rel) => crate::tempo::analyze(&state.music_root.join(rel)).await,
-            None => None,
+        // why the catalogues could not supply it. Skipped when it is already
+        // known: on a lyrics backfill pass that would mean decoding a minute of
+        // audio to learn nothing.
+        let bpm = if track.has_bpm {
+            None
+        } else {
+            match state.db.track_rel_path(track.id) {
+                Some(rel) => crate::tempo::analyze(&state.music_root.join(rel)).await,
+                None => None,
+            }
         };
-        let vec = embed_lyrics(&track).await;
+        let vec = if track.has_vec { None } else { embed_lyrics(&track).await };
         if vec.is_some() {
             let mut s = state.curator.status.lock().await;
             s.embeddings = true;
@@ -205,7 +232,7 @@ async fn embed_lyrics(track: &CurationTrack) -> Option<Vec<f32>> {
 
 // --- scoring -----------------------------------------------------------------
 
-fn cosine(a: &[f32], b: &[f32]) -> f32 {
+pub(crate) fn cosine(a: &[f32], b: &[f32]) -> f32 {
     if a.len() != b.len() || a.is_empty() {
         return 0.0;
     }
@@ -225,16 +252,16 @@ fn cosine(a: &[f32], b: &[f32]) -> f32 {
 
 /// What a listener has been into lately, in the three terms the curator scores
 /// against.
-struct Taste {
+pub(crate) struct Taste {
     /// The centre of lyrical gravity: the mean of what they play.
-    centroid: Option<Vec<f32>>,
+    pub(crate) centroid: Option<Vec<f32>>,
     /// The tempo they gravitate to (median of what has one).
-    tempo: Option<f64>,
+    pub(crate) tempo: Option<f64>,
     /// Genres by share of recent plays.
-    genres: HashMap<String, f32>,
+    pub(crate) genres: HashMap<String, f32>,
     /// Everything they have played lately - excluded from recommendations, so
     /// a "discover" list is not a mirror.
-    heard: HashSet<i64>,
+    pub(crate) heard: HashSet<i64>,
 }
 
 fn taste_from(plays: &[i64], feats: &HashMap<i64, &TrackFeatures>) -> Taste {
@@ -318,6 +345,72 @@ fn take_spread(mut ranked: Vec<(f32, &TrackFeatures)>, n: usize) -> Vec<i64> {
         }
     }
     out
+}
+
+
+/// This listener's taste, built from their heavy rotation. None until they
+/// have played enough for the question to have an answer.
+pub(crate) fn taste_for(state: &Arc<AppState>, user: i64) -> Option<Taste> {
+    let since = now_ms() - WINDOW_30D_MS;
+    let top: Vec<i64> = state.db.top_plays(user, since, 60).into_iter().map(|(id, _)| id).collect();
+    if top.len() < 4 {
+        return None;
+    }
+    let all = state.db.all_features();
+    let by_id: HashMap<i64, &TrackFeatures> = all.iter().map(|f| (f.track_id, f)).collect();
+    Some(taste_from(&top, &by_id))
+}
+
+/// The same three-term scoring the library uses, for something that is not a
+/// library row - a candidate from the catalogue, which has no track id and may
+/// be missing any of the three. Each term falls back to a neutral 0.5, so a
+/// candidate is never punished for what could not be measured.
+pub(crate) fn score_parts(
+    taste: &Taste,
+    lyric_vec: Option<&[f32]>,
+    bpm: Option<f64>,
+    genre: Option<&str>,
+) -> f32 {
+    let lyric = match (&taste.centroid, lyric_vec) {
+        (Some(c), Some(v)) => (cosine(c, v) + 1.0) / 2.0,
+        _ => 0.5,
+    };
+    let tempo = match (taste.tempo, bpm) {
+        (Some(t), Some(b)) => (-((t - b).abs() as f32) / 25.0).exp(),
+        _ => 0.5,
+    };
+    let g = match (taste.genres.is_empty(), genre) {
+        (false, Some(name)) => taste
+            .genres
+            .get(&name.to_lowercase())
+            .map(|s| (s * 3.0).min(1.0))
+            .unwrap_or(0.15),
+        _ => 0.5,
+    };
+    0.45 * lyric + 0.3 * tempo + 0.25 * g
+}
+
+/// Embeds arbitrary text with the configured model - what discovery uses for
+/// lyrics it fetched rather than lyrics the index already held.
+pub(crate) async fn embed_text(words: &str) -> Option<Vec<f32>> {
+    let url = ai_url()?;
+    let trimmed = words.trim();
+    if trimmed.len() < 40 {
+        return None;
+    }
+    let input: String = trimmed.chars().take(2000).collect();
+    let reply: serde_json::Value = client(60)
+        .post(format!("{}/v1/embeddings", url.trim_end_matches('/')))
+        .json(&json!({ "model": embed_model(), "input": input }))
+        .send()
+        .await
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+    let arr = reply.pointer("/data/0/embedding")?.as_array()?;
+    let v: Vec<f32> = arr.iter().filter_map(|x| x.as_f64()).map(|x| x as f32).collect();
+    (v.len() >= 32).then_some(v)
 }
 
 // --- curation ----------------------------------------------------------------
@@ -445,7 +538,11 @@ async fn name_lists(
     tempo: Option<i64>,
     genre: &Option<String>,
 ) -> Vec<(String, String)> {
-    let Some(url) = ai_url() else { return Vec::new() };
+    let (Some(url), Some(model)) = (ai_url(), ai_chat_model()) else {
+        // No chat model configured: the lists keep their plain names, which say
+        // what the maths did and cost nothing.
+        return Vec::new();
+    };
     let describe = |ids: &[i64]| -> String {
         state
             .db
@@ -475,7 +572,7 @@ async fn name_lists(
     let Ok(reply) = client(120)
         .post(format!("{}/v1/chat/completions", url.trim_end_matches('/')))
         .json(&json!({
-            "model": ai_model(),
+            "model": model,
             "messages": [{ "role": "user", "content": prompt }],
             "temperature": 0.7,
         }))
@@ -510,6 +607,20 @@ async fn name_lists(
         })
         .filter(|(t, _)| !t.is_empty())
         .collect()
+}
+
+/// One pass over the discovery pool for every recent listener.
+async fn discovery_cycle(state: &Arc<AppState>) -> bool {
+    let since = now_ms() - WINDOW_30D_MS;
+    let mut worked = false;
+    for user in state.db.listeners_since(since) {
+        crate::discovery::harvest(state, user).await;
+        crate::discovery::prune_owned(state, user);
+        if crate::discovery::listen_cycle(state, user).await {
+            worked = true;
+        }
+    }
+    worked
 }
 
 // --- the DJ ------------------------------------------------------------------
@@ -587,7 +698,7 @@ async fn dj_line(state: &Arc<AppState>, from: Option<i64>, to: i64) -> String {
     let Some(next) = next else { return String::new() };
     let prev = from.and_then(|id| state.db.tracks_for_curation(&[id]).into_iter().next());
 
-    if let Some(url) = ai_url() {
+    if let (Some(url), Some(model)) = (ai_url(), ai_chat_model()) {
         let prompt = format!(
             "You are a radio DJ on a listener's personal station, speaking between songs.\n\
              {}Now playing next: {} — {}{}.\n\n\
@@ -607,7 +718,7 @@ async fn dj_line(state: &Arc<AppState>, from: Option<i64>, to: i64) -> String {
         if let Ok(reply) = client(45)
             .post(format!("{}/v1/chat/completions", url.trim_end_matches('/')))
             .json(&json!({
-                "model": ai_model(),
+                "model": model,
                 "messages": [{ "role": "user", "content": prompt }],
                 "temperature": 0.9,
             }))

@@ -49,7 +49,6 @@ import {
   type RemotePluginListing,
 } from '../plugins/remote.ts';
 import { BRAND_ACCENTS } from './brandAccents.ts';
-import { isIOS } from './platform.ts';
 import { useAppearance } from './appearance.tsx';
 import { canPickFolder, isTauri } from './tauri.ts';
 import { useLibrary } from './library.tsx';
@@ -479,20 +478,6 @@ function PlaybackSettings() {
           Lets the fader push past 100% for quiet recordings. Off caps it at unity - kinder to
           ears and speakers.
         </Text>
-        {isIOS && (
-          <>
-            <Switch
-              label="Equalizer on iPhone"
-              checked={pb.iosEq}
-              onCheckedChange={(on) => pb.update({ iosEq: on })}
-            />
-            <Text tone="muted" size="sm">
-              Routes playback through the audio engine so the equalizer, night mode, and mono work
-              here too. iOS can silence that engine when the screen locks, so background playback
-              is steadier with this off. Applies from the next launch.
-            </Text>
-          </>
-        )}
       </div>
       <div className="prefsSection">
         <Label>History</Label>

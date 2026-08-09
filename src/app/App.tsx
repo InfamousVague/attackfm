@@ -49,42 +49,14 @@ const APP_NAME = 'AttackFM';
 const DESKTOP = isDesktopApp;
 
 /**
- * Puts the library's top row on the deck at launch, once and paused: the app
- * opens holding the song the table opens on (newest first, the table's own
- * default order) rather than the demo sample. Headless, and a separate
- * component because App itself renders the LibraryProvider and so cannot read
- * the library; this runs below it.
- */
-function StartupSeed({
-  current,
-  onSeed,
-}: {
-  current: Track | null;
-  onSeed: (track: Track, queue: Track[]) => void;
-}) {
-  const { tracks } = useLibrary();
-  const seeded = useRef(false);
-  useEffect(() => {
-    // Only ever before the first song: a user already holding a track - or a
-    // seed already placed - is never overridden by a scan landing late.
-    if (seeded.current || current || tracks.length === 0) return;
-    seeded.current = true;
-    const ordered = [...tracks].sort((a, b) => b.addedAt - a.addedAt);
-    const first = ordered[0];
-    if (first) onSeed(first, ordered);
-  }, [tracks, current, onSeed]);
-  return null;
-}
-
-/**
  * Turns a tap on the car screen into playback here, where the audio lives.
  *
  * The car names the track and the list it was tapped in; the queue is rebuilt
  * from that context in the same order the car displayed - liked order for
  * Liked, album-then-track-number within an artist, alphabetical for Songs -
- * so the drive hears what the screen promised. Headless and below the
- * LibraryProvider for the same reason StartupSeed is: App itself renders the
- * provider and cannot read it.
+ * so the drive hears what the screen promised. Headless, and a separate
+ * component below the LibraryProvider because App itself renders that provider
+ * and so cannot read the library.
  */
 function CarPlayBridge({ onPlay }: { onPlay: (track: Track, queue: Track[]) => void }) {
   const { tracks, favoriteTracks } = useLibrary();
@@ -134,8 +106,8 @@ function CarPlayBridge({ onPlay }: { onPlay: (track: Track, queue: Track[]) => v
  * The DJ: keeps the queue fed with the curator's next pick, and reports the
  * line it would say on the way in.
  *
- * Headless, and below the LibraryProvider for the same reason StartupSeed is -
- * it has to resolve the server's track ids against the synced library. It tops
+ * Headless, and below the LibraryProvider because it has to resolve the
+ * server's track ids against the synced library. It tops
  * the queue up to two ahead rather than building a whole set: the pick should
  * be made against what is playing NOW, so a set assembled ten songs in advance
  * would be answering a question the listener has already moved past.
@@ -611,7 +583,11 @@ export function App() {
                 plugin providers (a handler reads its own plugin's context) and
                 above the content that carries Add controls. */}
             <AcquireProvider>
-            <div className="appWindow">
+            {/* data-player tells the CSS whether a strip is down there:
+                every bottom clearance in the app is spent from
+                --app-player-height, so collapsing that one variable to 0
+                gives the list its rows back without a rule per surface. */}
+            <div className="appWindow" data-player={current ? 'on' : 'off'}>
             {/* The playing track's cover, blurred and faded, sits behind the top
                 of the window so the header reads against the album rather than a
                 flat panel. */}
@@ -775,14 +751,6 @@ export function App() {
                 onSettings={() => setSettingsOpen(true)}
               />
             )}
-            {/* Puts the newest song on the deck at launch, paused. */}
-            <StartupSeed
-              current={current}
-              onSeed={(track, ordered) => {
-                setCurrent(track);
-                setQueue(ordered);
-              }}
-            />
             {/* Songs tapped on the car screen start here, queue and all. */}
             <CarPlayBridge onPlay={playFrom} />
             {/* The DJ, when it is on: keeps the queue one or two picks ahead. */}
@@ -798,17 +766,24 @@ export function App() {
                 Lives here, inside the Connect provider, because only a child of
                 it can read the shared session. */}
             <ConnectPlayRouter routeRef={connectRouteRef} />
-            <div className="appPlayer">
-              {/* The player walks the queue itself; it only reports where it
-                  landed, and `current` follows. */}
-              <Player
-                track={current}
-                queue={queue}
-                onTrackChange={setCurrent}
-                onQueueChange={setQueue}
-                autoplay={autoplay}
-              />
-            </div>
+            {/* No song, no strip: the app opens on its library rather than on
+                a transport wired to nothing. The bar arrives with the first
+                thing played and stays for the session - `current` only ever
+                moves from one track to another after that, never back to
+                null, so the deck is never torn down mid-listen. */}
+            {current && (
+              <div className="appPlayer">
+                {/* The player walks the queue itself; it only reports where it
+                    landed, and `current` follows. */}
+                <Player
+                  track={current}
+                  queue={queue}
+                  onTrackChange={setCurrent}
+                  onQueueChange={setQueue}
+                  autoplay={autoplay}
+                />
+              </div>
+            )}
             {/* What the DJ said on the way into this song. Sits where the
                 indexing pill does, and only while the DJ is on. */}
             {djOn && djLine && (

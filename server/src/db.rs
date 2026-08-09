@@ -252,6 +252,34 @@ CREATE TABLE IF NOT EXISTS track_features (
 );
 CREATE INDEX IF NOT EXISTS features_checked ON track_features(checked_at);
 
+-- Music this listener does NOT own, harvested from the public catalogue and
+-- scored against their taste the same way their own library is. A row is a
+-- candidate, enriched slowly: lyrics from lrclib, tempo measured off the
+-- catalogue's thirty-second preview, then a score. `checked_at` of 0 means
+-- "harvested, not yet listened to".
+CREATE TABLE IF NOT EXISTS discoveries (
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  -- The catalogue's own id, e.g. "deezer:track:12345".
+  ext_id     TEXT NOT NULL,
+  title      TEXT NOT NULL,
+  artist     TEXT NOT NULL,
+  cover      TEXT NOT NULL DEFAULT '',
+  url        TEXT NOT NULL DEFAULT '',
+  preview    TEXT NOT NULL DEFAULT '',
+  -- Why it was surfaced: the artist of yours it hangs off.
+  seed       TEXT NOT NULL DEFAULT '',
+  -- How well the catalogue thinks it does, 0-1 within this harvest.
+  popularity REAL NOT NULL DEFAULT 0,
+  bpm        REAL,
+  lyric_vec  BLOB,
+  vec_dims   INTEGER NOT NULL DEFAULT 0,
+  score      REAL NOT NULL DEFAULT 0,
+  checked_at INTEGER NOT NULL DEFAULT 0,
+  found_at   INTEGER NOT NULL,
+  PRIMARY KEY (user_id, ext_id)
+);
+CREATE INDEX IF NOT EXISTS discoveries_score ON discoveries(user_id, score DESC);
+
 -- The playlists the curator built for one listener, rebuilt in place on its
 -- own schedule. Slug identifies the recipe ("tempo-lane"), so a rebuild
 -- replaces the last one rather than piling up a new list every cycle.
@@ -1108,8 +1136,10 @@ impl Db {
         let conn = self.lock();
         let list = ids.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
         let sql = format!(
-            "SELECT id, title, artist, album, genre, lyrics, duration_ms
-             FROM tracks WHERE deleted = 0 AND id IN ({list})"
+            "SELECT t.id, t.title, t.artist, t.album, t.genre, t.lyrics, t.duration_ms,
+                    f.bpm IS NOT NULL, COALESCE(f.vec_dims, 0) > 0
+             FROM tracks t LEFT JOIN track_features f ON f.track_id = t.id
+             WHERE t.deleted = 0 AND t.id IN ({list})"
         );
         let Ok(mut stmt) = conn.prepare(&sql) else { return Vec::new() };
         stmt.query_map([], |r| {
@@ -1121,6 +1151,8 @@ impl Db {
                 genre: r.get(4)?,
                 lyrics: r.get(5)?,
                 duration_ms: r.get(6)?,
+                has_bpm: r.get(7)?,
+                has_vec: r.get(8)?,
             })
         })
         .map(|rows| rows.filter_map(Result::ok).collect())
@@ -1139,7 +1171,8 @@ impl Db {
         &self,
         limit: i64,
         stale_before: i64,
-        empty_before: i64,
+        vector_before: i64,
+        want_vectors: bool,
     ) -> Vec<i64> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
@@ -1148,14 +1181,15 @@ impl Db {
              WHERE t.deleted = 0 AND (
                  f.track_id IS NULL
                  OR f.checked_at < ?2
-                 OR (f.bpm IS NULL AND f.vec_dims = 0 AND f.checked_at < ?3)
+                 OR (?4 AND COALESCE(f.vec_dims, 0) = 0
+                     AND LENGTH(TRIM(t.lyrics)) >= 40 AND f.checked_at < ?3)
              )
              ORDER BY f.checked_at IS NOT NULL, f.checked_at ASC, t.added_at DESC
              LIMIT ?1",
         ) else {
             return Vec::new();
         };
-        stmt.query_map(params![limit, stale_before, empty_before], |r| r.get(0))
+        stmt.query_map(params![limit, stale_before, vector_before, want_vectors], |r| r.get(0))
             .map(|rows| rows.filter_map(Result::ok).collect())
             .unwrap_or_default()
     }
@@ -1313,6 +1347,152 @@ impl Db {
         .map(|rows| rows.filter_map(Result::ok).collect())
         .unwrap_or_default()
     }
+
+    // --- discoveries: music not owned yet --------------------------------------
+
+    /// Every "artist|title", lowercased, that this library already holds - the
+    /// filter that keeps a discovery feed from recommending what you own.
+    pub fn owned_keys(&self) -> std::collections::HashSet<String> {
+        let conn = self.lock();
+        let Ok(mut stmt) =
+            conn.prepare("SELECT artist, title FROM tracks WHERE deleted = 0")
+        else {
+            return Default::default();
+        };
+        stmt.query_map([], |r| {
+            Ok(format!(
+                "{}|{}",
+                r.get::<_, String>(0)?.trim().to_lowercase(),
+                r.get::<_, String>(1)?.trim().to_lowercase()
+            ))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    /// Files a harvested candidate. Existing rows keep whatever has already
+    /// been learned about them - a re-harvest must not wipe a tempo that cost
+    /// a preview download to measure.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_discovery(
+        &self,
+        user_id: i64,
+        ext_id: &str,
+        title: &str,
+        artist: &str,
+        cover: &str,
+        url: &str,
+        preview: &str,
+        seed: &str,
+        popularity: f64,
+    ) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO discoveries
+               (user_id, ext_id, title, artist, cover, url, preview, seed, popularity, found_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             ON CONFLICT(user_id, ext_id) DO UPDATE SET
+               popularity = excluded.popularity, seed = excluded.seed",
+            params![user_id, ext_id, title, artist, cover, url, preview, seed, popularity, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// Candidates that have not been listened to yet, oldest find first.
+    pub fn discoveries_needing_work(&self, user_id: i64, limit: i64) -> Vec<DiscoveryRow> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT ext_id, title, artist, cover, url, preview, seed, popularity, bpm,
+                    lyric_vec, vec_dims, score
+             FROM discoveries WHERE user_id = ?1 AND checked_at = 0
+             ORDER BY popularity DESC LIMIT ?2",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, limit], discovery_from_row)
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Records what listening to a candidate found, and its score.
+    pub fn save_discovery_features(
+        &self,
+        user_id: i64,
+        ext_id: &str,
+        bpm: Option<f64>,
+        lyric_vec: Option<&[f32]>,
+        score: f64,
+    ) -> rusqlite::Result<()> {
+        let blob: Option<Vec<u8>> =
+            lyric_vec.map(|v| v.iter().flat_map(|f| f.to_le_bytes()).collect());
+        let dims = lyric_vec.map(|v| v.len() as i64).unwrap_or(0);
+        self.lock().execute(
+            "UPDATE discoveries SET bpm = COALESCE(?3, bpm),
+               lyric_vec = COALESCE(?4, lyric_vec),
+               vec_dims = CASE WHEN ?4 IS NULL THEN vec_dims ELSE ?5 END,
+               score = ?6, checked_at = ?7
+             WHERE user_id = ?1 AND ext_id = ?2",
+            params![user_id, ext_id, bpm, blob, dims, score, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// Rescores everything already listened to - what a changed taste needs.
+    pub fn all_discoveries(&self, user_id: i64) -> Vec<DiscoveryRow> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT ext_id, title, artist, cover, url, preview, seed, popularity, bpm,
+                    lyric_vec, vec_dims, score
+             FROM discoveries WHERE user_id = ?1 AND checked_at > 0",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id], discovery_from_row)
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn set_discovery_score(&self, user_id: i64, ext_id: &str, score: f64) {
+        let _ = self.lock().execute(
+            "UPDATE discoveries SET score = ?3 WHERE user_id = ?1 AND ext_id = ?2",
+            params![user_id, ext_id, score],
+        );
+    }
+
+    /// The best of what this listener does not own, scored highest first.
+    pub fn top_discoveries(&self, user_id: i64, limit: i64) -> Vec<DiscoveryRow> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT ext_id, title, artist, cover, url, preview, seed, popularity, bpm,
+                    lyric_vec, vec_dims, score
+             FROM discoveries WHERE user_id = ?1 AND checked_at > 0
+             ORDER BY score DESC LIMIT ?2",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, limit], discovery_from_row)
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Drops a candidate - what "I own this now" and "not for me" both do.
+    pub fn forget_discovery(&self, user_id: i64, ext_id: &str) {
+        let _ = self.lock().execute(
+            "DELETE FROM discoveries WHERE user_id = ?1 AND ext_id = ?2",
+            params![user_id, ext_id],
+        );
+    }
+
+    /// How many candidates are waiting, and how many have been listened to.
+    pub fn discovery_counts(&self, user_id: i64) -> (i64, i64) {
+        let conn = self.lock();
+        let one = |sql: &str| -> i64 {
+            conn.query_row(sql, params![user_id], |r| r.get(0)).unwrap_or(0)
+        };
+        (
+            one("SELECT COUNT(*) FROM discoveries WHERE user_id = ?1"),
+            one("SELECT COUNT(*) FROM discoveries WHERE user_id = ?1 AND checked_at > 0"),
+        )
+    }
 }
 
 /// A track as the curator reads it, for looking up and for describing.
@@ -1324,6 +1504,10 @@ pub struct CurationTrack {
     pub genre: String,
     pub lyrics: String,
     pub duration_ms: Option<i64>,
+    /// Already measured - so a lyrics-only pass skips the audio analysis.
+    pub has_bpm: bool,
+    /// Already embedded.
+    pub has_vec: bool,
 }
 
 /// What is known about one track's sound and words.
@@ -1342,4 +1526,40 @@ pub struct CuratedList {
     pub blurb: String,
     pub track_ids: Vec<i64>,
     pub built_at: i64,
+}
+
+/// One candidate from the wider catalogue.
+pub struct DiscoveryRow {
+    pub ext_id: String,
+    pub title: String,
+    pub artist: String,
+    pub cover: String,
+    pub url: String,
+    pub preview: String,
+    pub seed: String,
+    pub popularity: f64,
+    pub bpm: Option<f64>,
+    pub lyric_vec: Option<Vec<f32>>,
+    pub score: f64,
+}
+
+fn discovery_from_row(r: &rusqlite::Row) -> rusqlite::Result<DiscoveryRow> {
+    let blob: Option<Vec<u8>> = r.get(9)?;
+    let dims: i64 = r.get(10)?;
+    let vec = blob.filter(|b| dims > 0 && b.len() == dims as usize * 4).map(|b| {
+        b.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect::<Vec<f32>>()
+    });
+    Ok(DiscoveryRow {
+        ext_id: r.get(0)?,
+        title: r.get(1)?,
+        artist: r.get(2)?,
+        cover: r.get(3)?,
+        url: r.get(4)?,
+        preview: r.get(5)?,
+        seed: r.get(6)?,
+        popularity: r.get(7)?,
+        bpm: r.get(8)?,
+        lyric_vec: vec,
+        score: r.get(11)?,
+    })
 }

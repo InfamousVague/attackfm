@@ -400,7 +400,18 @@ async fn on_transfer(state: &Arc<AppState>, user_id: i64, target: &str) {
     }
     hub.session.active_device_id = Some(target.to_string());
     hub.session.epoch += 1;
-    hub.session.updated_at = now_ms();
+    // Advance the stored position to now before freezing the timestamp. The
+    // active device reports only on discontinuities (play/pause/seek/track), so
+    // between them the true position is position_ms + the time elapsed since
+    // updated_at. Without this the hand-off carries a stale position - often
+    // still 0 from the track's start - and the new device restarts the song
+    // instead of picking it up where it was.
+    let now = now_ms();
+    if hub.session.playing {
+        hub.session.position_ms =
+            (hub.session.position_ms + (now - hub.session.updated_at).max(0)).max(0);
+    }
+    hub.session.updated_at = now;
 
     // The old active device stops; the new one resumes from the session.
     if let Some(prev) = previous {

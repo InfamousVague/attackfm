@@ -70,6 +70,9 @@ fn token_cache() -> &'static Mutex<Option<(String, u64)>> {
     CACHE.get_or_init(|| Mutex::new(None))
 }
 
+// Superseded by the SpotiFLAC-backed search (its token endpoint is blocked from
+// the box), but kept for the day the anonymous token is reachable again.
+#[allow(dead_code)]
 async fn spotify_token() -> Option<String> {
     {
         let guard = token_cache().lock().await;
@@ -101,6 +104,7 @@ async fn spotify_token() -> Option<String> {
 
 // --- Sources -----------------------------------------------------------------
 
+#[allow(dead_code)]
 async fn spotify_search(q: &str) -> Vec<SearchResult> {
     let Some(token) = spotify_token().await else {
         return Vec::new();
@@ -247,6 +251,113 @@ async fn deezer_search(q: &str) -> Vec<SearchResult> {
 // --- Handler -----------------------------------------------------------------
 
 /// `GET /api/search?q=` - external catalogue search across Spotify and Deezer.
+/// The SpotiFLAC venv's Python. The importer already shells out to SpotiFLAC to
+/// download; the search borrows its Spotify metadata client, which reaches
+/// Spotify from a box where the web player's token endpoint (`spotify_search`
+/// below) is blocked. Derived from the spotiflac shim -
+/// `<home>/.local/bin/spotiflac` -> `<home>/.local/pipx/venvs/spotiflac/bin/python3`.
+fn spotiflac_python() -> Option<std::path::PathBuf> {
+    if let Ok(p) = std::env::var("AFM_SPOTIFLAC_PYTHON") {
+        let pb = std::path::PathBuf::from(p);
+        if pb.exists() {
+            return Some(pb);
+        }
+    }
+    if let Some(bin) = crate::imports::find_spotiflac() {
+        if let Some(local) = bin.parent().and_then(|p| p.parent()) {
+            let py = local.join("pipx/venvs/spotiflac/bin/python3");
+            if py.exists() {
+                return Some(py);
+            }
+        }
+    }
+    let fallback =
+        std::path::PathBuf::from("/opt/attackfm/.local/pipx/venvs/spotiflac/bin/python3");
+    fallback.exists().then_some(fallback)
+}
+
+/// The one-shot searcher: SpotiFLAC's Spotify client, invoked in its own venv,
+/// printing the tracks as JSON on stdout. Kept tiny and defensive - any import
+/// or network failure prints an empty list and exits clean, so the Rust side
+/// never has to tell "broke" from "found nothing".
+const SPOTIFLAC_SEARCH_PY: &str = r#"
+import sys, asyncio, json
+try:
+    from SpotiFLAC.providers.spotify_metadata import SpotifyMetadataClient
+except Exception:
+    print(json.dumps({"tracks": []})); sys.exit(0)
+q = sys.argv[1] if len(sys.argv) > 1 else ""
+m = SpotifyMetadataClient()
+async def go():
+    out = {"tracks": []}
+    try:
+        r = await m.search_async(q, limit=8)
+    except Exception:
+        print(json.dumps(out)); return
+    for t in (r.get("tracks") or [])[:8]:
+        d = t.__dict__ if hasattr(t, "__dict__") else {}
+        url = d.get("external_url") or ""
+        tid = d.get("id") or ""
+        if not url or not tid:
+            continue
+        out["tracks"].append({
+            "id": tid,
+            "title": d.get("title") or d.get("name") or "",
+            "artist": str(d.get("artists") or ""),
+            "cover": d.get("cover") or d.get("cover_url"),
+            "url": url,
+        })
+    print(json.dumps(out))
+asyncio.run(go())
+"#;
+
+/// Searches Spotify through SpotiFLAC's own client, so the links it returns
+/// (`open.spotify.com/track/...`) are ones `POST /api/imports` can actually
+/// download - unlike the Deezer links the fallback carries, which SpotiFLAC
+/// refuses as input. Empty on any failure (no venv, a timeout, a Spotify
+/// hiccup), leaving the Deezer fill to stand in exactly as before.
+async fn spotiflac_search(state: &Arc<AppState>, q: &str) -> Vec<SearchResult> {
+    let Some(py) = spotiflac_python() else {
+        return Vec::new();
+    };
+    let home = state.imports.sf_home().to_path_buf();
+    let output = {
+        let mut cmd = tokio::process::Command::new(&py);
+        cmd.arg("-c")
+            .arg(SPOTIFLAC_SEARCH_PY)
+            .arg(q)
+            .env("HOME", &home)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null());
+        match tokio::time::timeout(Duration::from_secs(20), cmd.output()).await {
+            Ok(Ok(o)) if o.status.success() => o,
+            _ => return Vec::new(),
+        }
+    };
+    let Ok(parsed) = serde_json::from_slice::<Value>(&output.stdout) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for t in parsed.get("tracks").and_then(|t| t.as_array()).into_iter().flatten() {
+        let id = t.get("id").and_then(|x| x.as_str()).unwrap_or_default();
+        let url = t.get("url").and_then(|x| x.as_str()).unwrap_or_default();
+        let title = t.get("title").and_then(|x| x.as_str()).unwrap_or_default();
+        if id.is_empty() || url.is_empty() || title.is_empty() {
+            continue;
+        }
+        out.push(SearchResult {
+            id: format!("spotify:track:{id}"),
+            kind: "track".into(),
+            title: title.to_string(),
+            subtitle: t.get("artist").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
+            cover: t.get("cover").and_then(|x| x.as_str()).map(String::from),
+            url: url.to_string(),
+            source: "spotify".into(),
+        });
+    }
+    out
+}
+
 pub async fn search(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -258,8 +369,9 @@ pub async fn search(
         return Ok(Json(json!({ "results": [] })));
     }
 
-    // Both sources at once; Spotify leads the merged order.
-    let (spotify, deezer) = tokio::join!(spotify_search(&q), deezer_search(&q));
+    // Spotify (through SpotiFLAC, whose links download) leads; Deezer fills the
+    // list out and stands in whole if the search subprocess comes back empty.
+    let (spotify, deezer) = tokio::join!(spotiflac_search(&state, &q), deezer_search(&q));
 
     let mut results: Vec<SearchResult> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();

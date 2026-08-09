@@ -1,18 +1,22 @@
 import { Pill, ScrollArea, SearchField, Text } from '@glacier/react';
-import { Radio, Sparkles } from '@glacier/icons';
+import { Plus, Radio, Sparkles, X } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
 import { useServerSession } from './serverSession.tsx';
 import {
+  dismissDiscovery,
   fetchCurator,
+  fetchDiscoveries,
   fetchHome,
   trackIdFromPath,
   type CuratorFeed,
+  type Discovery,
+  type DiscoveryFeed,
   type HomeFeed,
 } from './server.ts';
 import { filterTracks } from './trackSearch.ts';
 import { PlaylistModal } from './PlaylistModal.tsx';
-import { PluginSlot } from '../plugins/runtime.tsx';
+import { PluginSlot, useAcquire } from '../plugins/runtime.tsx';
 import type { Track } from './tauri.ts';
 import placeholderArt from '../assets/attack-wave.png';
 
@@ -126,10 +130,13 @@ export function HomePage({
 }) {
   const { tracks, favoriteTracks } = useLibrary();
   const { session } = useServerSession();
+  const acquire = useAcquire();
   const [feed, setFeed] = useState<HomeFeed | null>(null);
   // What the always-running curator has built for this listener, and how far
   // its reading of the library has got. Polled on the same rhythm as the feed.
   const [curator, setCurator] = useState<CuratorFeed | null>(null);
+  // Music the curator found OUTSIDE the library, for acquiring.
+  const [discoveries, setDiscoveries] = useState<DiscoveryFeed | null>(null);
   const [openMix, setOpenMix] = useState<ResolvedMix | null>(null);
   // The home search filters the local library in place: while it holds a query
   // the shelves stand aside and the matches take the page.
@@ -144,6 +151,11 @@ export function HomePage({
       setFeed(await fetchHome(s));
     } catch {
       // Unreachable right now; whatever is on screen stays.
+    }
+    try {
+      setDiscoveries(await fetchDiscoveries(s));
+    } catch {
+      // Older server, or none of these yet.
     }
     try {
       setCurator(await fetchCurator(s));
@@ -208,6 +220,23 @@ export function HomePage({
       tracks: resolve(l.trackIds),
     }))
     .filter((l) => l.tracks.length >= 4);
+
+  // What the curator found outside the library. Dismissals apply straight
+  // away rather than waiting for the next poll - the card is gone the moment
+  // you say no.
+  const [hidden, setHidden] = useState<string[]>([]);
+  const found: Discovery[] = (discoveries?.items ?? []).filter((d) => !hidden.includes(d.id));
+  const hide = (id: string) => {
+    setHidden((prev) => [...prev, id]);
+    const s = sessionRef.current;
+    if (s) void dismissDiscovery(s, id).catch(() => {});
+  };
+  const targetFor = (d: Discovery) => ({
+    kind: 'track' as const,
+    title: d.title,
+    artist: d.artist,
+    url: d.url,
+  });
 
   // Jump back in: each album arrives as its own ordered id list (the server
   // grouped by album artist and sorted by disc/track), so the client just
@@ -306,6 +335,52 @@ export function HomePage({
         )
       ) : (
         <>
+      <Shelf title="Worth adding" count={found.length}>
+        {found.map((d) => (
+          <div key={d.id} className="findCard">
+            <button
+              type="button"
+              className="findCard__body"
+              disabled={!acquire.hasHandlers(targetFor(d))}
+              title={
+                acquire.hasHandlers(targetFor(d))
+                  ? undefined
+                  : 'No way to add this — enable Music import or Buy in Plugins'
+              }
+              onClick={() => acquire.acquire(targetFor(d))}
+            >
+              <span className="findCard__cover">
+                {d.cover ? <img src={d.cover} alt="" loading="lazy" /> : <Sparkles size={24} />}
+                <span className="findCard__add" aria-hidden>
+                  <Plus size={16} />
+                </span>
+              </span>
+              <span className="trackCardTitle">{d.title}</span>
+              <span className="trackCardArtist">{d.artist}</span>
+              {/* Say only what was actually measured - the tempo when a preview
+                  was read, the words when lyrics were found. */}
+              <span className="findCard__why">
+                {[
+                  d.seed ? `like ${d.seed}` : null,
+                  d.bpm ? `${Math.round(d.bpm)} BPM` : null,
+                  d.lyricsRead ? 'words match' : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </span>
+            </button>
+            <button
+              type="button"
+              className="findCard__no"
+              aria-label={`Not interested in ${d.title}`}
+              onClick={() => hide(d.id)}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        ))}
+      </Shelf>
+
       <Shelf title="From your curator" count={curated.length}>
         {curated.map((mix) => (
           <button key={mix.id} type="button" className="mixCard" onClick={() => setOpenMix(mix)}>

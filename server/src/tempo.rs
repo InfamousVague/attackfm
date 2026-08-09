@@ -44,14 +44,14 @@ fn fps() -> f64 {
 
 /// Reads a mono f32 stream of the middle of the file. None when ffmpeg is
 /// missing, the format defeats it, or the track is too short to judge.
-async fn decode(path: &Path) -> Option<Vec<f32>> {
+async fn decode(input: &std::ffi::OsStr) -> Option<Vec<f32>> {
     // The middle first, then the whole thing. The second pass is what rescues
     // anything shorter than the skip - interludes, sketches, sub-90-second
     // songs - which would otherwise silently have no tempo at all.
     for skip in [SKIP_SECS, "0"] {
         let out = tokio::process::Command::new("ffmpeg")
             .args(["-v", "quiet", "-ss", skip, "-t", TAKE_SECS, "-i"])
-            .arg(path)
+            .arg(input)
             .args(["-ac", "1", "-ar", &RATE.to_string(), "-f", "f32le", "-"])
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -145,7 +145,19 @@ fn autocorr(x: &[f32], lag: usize) -> f32 {
 
 /// The tempo of one file, in BPM. None when it cannot be told confidently.
 pub async fn analyze(path: &Path) -> Option<f64> {
-    let samples = decode(path).await?;
+    analyze_input(path.as_os_str()).await
+}
+
+/// The tempo of a track the server does not own, measured off the catalogue's
+/// own thirty-second preview. ffmpeg reads the URL directly, so nothing is
+/// written to disk - and thirty seconds is comfortably above the ten the
+/// autocorrelation needs.
+pub async fn analyze_url(url: &str) -> Option<f64> {
+    analyze_input(std::ffi::OsStr::new(url)).await
+}
+
+async fn analyze_input(input: &std::ffi::OsStr) -> Option<f64> {
+    let samples = decode(input).await?;
     // The DSP is CPU-bound and long enough to matter; keep it off the async
     // worker that other requests are sharing.
     tokio::task::spawn_blocking(move || estimate(&samples)).await.ok()?

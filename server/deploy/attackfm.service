@@ -32,6 +32,22 @@ Environment=AFM_SCAN_MINUTES=15
 # The public origin, for OAuth redirect URIs (the Spotify account link).
 # Set it to your own domain; without it the Spotify connect endpoint explains.
 # Environment=AFM_PUBLIC_URL=https://music.example.com
+#
+# The curator's local model, if this box runs one (Ollama, LM Studio, llama.cpp
+# - anything with an OpenAI-compatible API). Two independent switches:
+#
+#   AFM_AI_URL + AFM_AI_EMBED_MODEL  read what songs are ABOUT, which is what
+#                                    powers lyrical similarity. Cheap: ~0.65s
+#                                    per track on one core with nomic-embed-text.
+#   AFM_AI_MODEL                     writes playlist names and DJ patter. The
+#                                    expensive half, and entirely optional -
+#                                    leave it unset and the maths still runs,
+#                                    with plain names.
+#
+# The ORIGIN only - the code appends /v1/embeddings and /v1/chat/completions.
+# Environment=AFM_AI_URL=http://127.0.0.1:11434
+# Environment=AFM_AI_EMBED_MODEL=nomic-embed-text
+# Environment=AFM_AI_MODEL=qwen2.5:0.5b
 
 WorkingDirectory=/opt/attackfm
 ExecStart=/opt/attackfm/bin/attackfm-server
