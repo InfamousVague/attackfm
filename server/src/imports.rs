@@ -73,6 +73,10 @@ pub struct ImportJob {
     pub quality: String,
     pub total: Option<u32>,
     pub completed: u32,
+    /// How many finished tracks were dropped as already in the library, so a
+    /// done job can say "already yours" rather than looking like it lost songs.
+    #[serde(default)]
+    pub skipped: u32,
     /// queued | downloading | done | error
     pub state: String,
     pub error: Option<String>,
@@ -217,18 +221,25 @@ fn identity_key(title: &str, artist: &str, album: &str) -> String {
     format!("{}\u{1}{}\u{1}{}", norm(title), norm(artist), norm(album))
 }
 
-/// Title / artist / album read from a staged file's own tags, for the filing
-/// precheck. None when the file has no readable primary tag.
-fn read_identity(path: &Path) -> Option<(String, String, String)> {
-    use lofty::file::TaggedFileExt;
+/// Title / artist / album and duration (ms) read from a staged file's own tags,
+/// for the filing precheck. None when the file has no readable primary tag. The
+/// duration lets the precheck tell two same-named songs apart by length before
+/// it calls one a duplicate of the other.
+fn read_identity(path: &Path) -> Option<(String, String, String, Option<i64>)> {
+    use lofty::file::{AudioFile, TaggedFileExt};
     use lofty::prelude::Accessor;
     use lofty::probe::Probe;
     let tagged = Probe::open(path).ok()?.guess_file_type().ok()?.read().ok()?;
+    let duration_ms = {
+        let ms = tagged.properties().duration().as_millis();
+        if ms == 0 { None } else { Some(ms as i64) }
+    };
     let tag = tagged.primary_tag().or_else(|| tagged.first_tag())?;
     Some((
         tag.title().map(|c| c.to_string()).unwrap_or_default(),
         tag.artist().map(|c| c.to_string()).unwrap_or_default(),
         tag.album().map(|c| c.to_string()).unwrap_or_default(),
+        duration_ms,
     ))
 }
 
@@ -432,13 +443,14 @@ pub fn spawn_scheduler(state: Arc<AppState>) {
                 let result = run_job(&run_state, &id, &url, cancel_rx).await;
                 manager.cancels.lock().await.remove(&id);
                 match result {
-                    Ok((count, files, track_ids)) => {
+                    Ok((count, files, track_ids, skipped)) => {
                         manager
                             .update(&id, |j| {
                                 j.completed = count.max(j.completed);
                                 if j.total.is_none() {
                                     j.total = Some(j.completed);
                                 }
+                                j.skipped = skipped;
                                 j.state = "done".to_string();
                                 j.error = None;
                                 j.current_track = None;
@@ -486,7 +498,7 @@ async fn run_job(
     id: &str,
     url: &str,
     mut cancel_rx: tokio::sync::oneshot::Receiver<()>,
-) -> Result<(u32, Vec<String>, Vec<i64>), String> {
+) -> Result<(u32, Vec<String>, Vec<i64>, u32), String> {
     let manager = Arc::clone(&state.imports);
     let staging = manager.staging_root.join(id);
     let _ = std::fs::remove_dir_all(&staging);
@@ -623,6 +635,7 @@ async fn run_job(
     let staged = staged_audio_files(&staging);
     let mut rels = Vec::new();
     let mut track_ids = Vec::new();
+    let mut skipped = 0u32;
     let _filing = state.filing.lock().await;
     // The library's current identities, for a tag precheck that makes filing
     // idempotent: a track already present (this album re-imported, or the same
@@ -630,10 +643,34 @@ async fn run_job(
     // duplicate. Built once under the lock, so it already reflects everything
     // an earlier filer just added.
     let mut have: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for (title, artist, album_artist, album, _dur) in state.db.sync_identities() {
+    // Album-agnostic identity, keyed on title + artist alone: the same song
+    // owned on its album is caught when a playlist lists it as a single or on a
+    // compilation (a different album tag), which the album-scoped set above
+    // misses. Each key holds the lengths of the songs behind it, so two truly
+    // different tracks that share a title and artist are told apart by duration
+    // rather than one silently swallowing the other.
+    let norm = |s: &str| s.trim().to_lowercase();
+    let track_key = |title: &str, artist: &str| format!("{}\u{1}{}", norm(title), norm(artist));
+    let mut have_tracks: std::collections::HashMap<String, Vec<Option<i64>>> =
+        std::collections::HashMap::new();
+    for (title, artist, album_artist, album, dur) in state.db.sync_identities() {
         have.insert(identity_key(&title, &artist, &album));
         have.insert(identity_key(&title, &album_artist, &album));
+        have_tracks.entry(track_key(&title, &artist)).or_default().push(dur);
+        if norm(&album_artist) != norm(&artist) {
+            have_tracks.entry(track_key(&title, &album_artist)).or_default().push(dur);
+        }
     }
+    // Same 3s tolerance the up-sync precheck (api.rs) allows for tag/encode
+    // drift between two rips of one song. An unknown length on either side does
+    // not block the match - name alone then decides, as it did before.
+    let dur_close = |ours: &[Option<i64>], theirs: Option<i64>| -> bool {
+        let Some(theirs) = theirs else { return true };
+        ours.iter().any(|ms| match ms {
+            None => true,
+            Some(ms) => (ms - theirs).abs() <= 3000,
+        })
+    };
     // The running quota headroom, decremented as files land so a big album
     // cannot push the library past its ceiling one track at a time.
     let mut used = state.db.total_bytes();
@@ -644,12 +681,19 @@ async fn run_job(
             // job reports the shortfall below.
             break;
         }
-        if let Some((title, artist, album)) = read_identity(path) {
+        if let Some((title, artist, album, dur)) = read_identity(path) {
             let key = identity_key(&title, &artist, &album);
-            if have.contains(&key) {
+            let tkey = track_key(&title, &artist);
+            // Already present if this exact album copy is filed, OR the same
+            // song (title + artist, matching length) is filed under any album.
+            let already =
+                have.contains(&key) || have_tracks.get(&tkey).is_some_and(|d| dur_close(d, dur));
+            if already {
+                skipped += 1;
                 continue;
             }
             have.insert(key);
+            have_tracks.entry(tkey).or_default().push(dur);
         }
         let original = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         let ext = original.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
@@ -680,7 +724,13 @@ async fn run_job(
     let _ = std::fs::remove_dir_all(&staging);
 
     if !rels.is_empty() {
-        return Ok((rels.len() as u32, rels, track_ids));
+        return Ok((rels.len() as u32, rels, track_ids, skipped));
+    }
+    // Everything that came down was already in the library: a real success -
+    // the playlist added nothing new because you already own it all - not the
+    // "downloaded nothing" failure below.
+    if skipped > 0 {
+        return Ok((0, Vec::new(), Vec::new(), skipped));
     }
 
     let stderr = tail_join(&*stderr_tail.lock().await);
@@ -753,6 +803,7 @@ pub async fn enqueue(
         quality: quality(),
         total: None,
         completed: 0,
+        skipped: 0,
         state: "queued".to_string(),
         error: None,
         created_at: now_unix(),

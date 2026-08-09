@@ -22,6 +22,7 @@
 mod api;
 mod auth;
 mod connect;
+mod curator;
 mod db;
 mod discover;
 mod home;
@@ -30,6 +31,7 @@ mod scan;
 mod spotify;
 mod search;
 mod stream;
+mod tempo;
 mod upload;
 
 use axum::http::{header, HeaderValue, Method, StatusCode};
@@ -71,6 +73,9 @@ pub struct AppState {
     /// AttackFM Connect: device registry + the authoritative playback session,
     /// so any device can see and drive what's playing on any other.
     pub connect: Arc<connect::ConnectState>,
+    /// The curator: the always-running process that learns what this listener
+    /// likes and builds playlists (and the DJ's next pick) from it.
+    pub curator: Arc<curator::CuratorState>,
     /// When this process came up - the uptime the stats endpoint reports.
     pub started: std::time::Instant,
 }
@@ -178,6 +183,7 @@ async fn main() {
         home: home::HomeState::new(),
         discover: discover::DiscoverState::new(),
         connect: connect::ConnectState::new(),
+        curator: curator::CuratorState::new(),
         started: std::time::Instant::now(),
     });
 
@@ -188,6 +194,10 @@ async fn main() {
     // The import runner: downloads links onto this box and indexes them as
     // they land, so every device's catalog follows.
     imports::spawn_scheduler(state.clone());
+
+    // The curator: enriches the library with tempo and lyric vectors, and
+    // rebuilds each listener's playlists from what they actually play.
+    curator::spawn(state.clone());
 
     if scan_minutes > 0 {
         let db = db.clone();
@@ -255,6 +265,8 @@ async fn main() {
         .route("/api/discover", get(discover::feed))
         .route("/api/search", get(search::search))
         .route("/api/artist", get(search::artist))
+        .route("/api/curator", get(curator::feed))
+        .route("/api/dj/next", get(curator::dj))
         .route("/api/connect", get(connect::connect))
         .route("/api/users", get(api::list_users))
         .route("/api/users/{id}", delete(api::delete_user))

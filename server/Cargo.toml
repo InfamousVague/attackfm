@@ -22,6 +22,9 @@ base64 = "0.22"
 # including embedded cover art and the stream properties the lossless badge needs.
 lofty = "0.22"
 mime_guess = "2"
+# The curator's tempo analysis: a spectral-flux onset envelope needs an FFT, and
+# this one is pure Rust so the Linux cross-compile stays a single binary.
+rustfft = "6"
 futures-util = "0.3"
 # The import queue's Spotify embed metadata fetch. rustls, so the Linux
 # cross-compile stays free of an OpenSSL sysroot.

@@ -468,6 +468,59 @@ export async function fetchHome(session: ServerSession): Promise<HomeFeed> {
   return request<HomeFeed>(session.url, '/api/home', { token: session.token });
 }
 
+/** One playlist the curator built from this listener's own history. */
+export interface CuratedList {
+  slug: string;
+  name: string;
+  blurb: string;
+  trackIds: number[];
+  builtAt: number;
+}
+
+/** What the always-running curator has done and how far it has got. */
+export interface CuratorFeed {
+  lists: CuratedList[];
+  status: {
+    /** "enriching" | "curating" | "idle". */
+    phase: string;
+    lastCurated: number;
+    /** Whether a local model is configured server-side. */
+    ai: boolean;
+    /** Whether the embedder is answering - i.e. lyrics are being read. */
+    embeddings: boolean;
+  };
+  progress: { checked: number; withTempo: number; withLyrics: number; total: number };
+}
+
+export async function fetchCurator(
+  session: ServerSession,
+  signal?: AbortSignal,
+): Promise<CuratorFeed> {
+  return request<CuratorFeed>(session.url, '/api/curator', { token: session.token, signal });
+}
+
+/**
+ * The DJ's next pick: what should follow `seed`, and the line that introduces
+ * it. `avoid` is what this session has already played, so a long set does not
+ * circle back on itself.
+ */
+export async function fetchDjNext(
+  session: ServerSession,
+  seed: number | null,
+  avoid: readonly number[],
+  signal?: AbortSignal,
+): Promise<{ trackId: number | null; line: string }> {
+  const params = new URLSearchParams();
+  if (seed != null) params.set('seed', String(seed));
+  // Only the recent tail matters, and a URL has a length.
+  if (avoid.length > 0) params.set('avoid', avoid.slice(-40).join(','));
+  return request<{ trackId: number | null; line: string }>(
+    session.url,
+    `/api/dj/next?${params.toString()}`,
+    { token: session.token, signal },
+  );
+}
+
 /** A suggested chart playlist the user can add through the import pipeline. */
 export interface Suggestion {
   id: string;

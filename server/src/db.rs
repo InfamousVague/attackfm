@@ -229,6 +229,42 @@ CREATE INDEX IF NOT EXISTS plays_user_track ON plays(user_id, track_id);
 -- The home shelves order live tracks by recency; without this the "new" and
 -- "unplayed" shelves full-scan and filesort the library on every load.
 CREATE INDEX IF NOT EXISTS tracks_added ON tracks(added_at DESC) WHERE deleted = 0;
+
+-- What the curator has learned about a track beyond its tags: the tempo it
+-- moves at, and a vector standing for what its words are about. Filled in
+-- slowly by the background curator rather than at scan time - the tempo comes
+-- off the public catalogue and the vector off a language model, and neither
+-- should hold up indexing a folder of music.
+--
+-- A row exists as soon as a track has been LOOKED AT, with null columns where
+-- the lookup found nothing, so the enricher can tell "not tried yet" from
+-- "tried, nothing there" and stop asking about the same track forever.
+CREATE TABLE IF NOT EXISTS track_features (
+  track_id   INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+  bpm        REAL,
+  bpm_source TEXT NOT NULL DEFAULT '',
+  -- Raw little-endian f32s; vec_dims says how many. A BLOB rather than a
+  -- vector extension: a few hundred floats per track is nothing to scan, and
+  -- it keeps the database a plain file anyone can copy.
+  lyric_vec  BLOB,
+  vec_dims   INTEGER NOT NULL DEFAULT 0,
+  checked_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS features_checked ON track_features(checked_at);
+
+-- The playlists the curator built for one listener, rebuilt in place on its
+-- own schedule. Slug identifies the recipe ("tempo-lane"), so a rebuild
+-- replaces the last one rather than piling up a new list every cycle.
+CREATE TABLE IF NOT EXISTS curated (
+  user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  slug      TEXT NOT NULL,
+  name      TEXT NOT NULL,
+  blurb     TEXT NOT NULL DEFAULT '',
+  -- JSON array of track ids, in the order the curator wants them heard.
+  track_ids TEXT NOT NULL DEFAULT '[]',
+  built_at  INTEGER NOT NULL,
+  PRIMARY KEY (user_id, slug)
+);
 "#;
 
 fn now_ms() -> i64 {
@@ -1060,4 +1096,250 @@ impl Db {
         )?;
         Ok(())
     }
+    // --- what the curator knows ----------------------------------------------
+
+    /// Title, artist, genre and lyric length for a set of tracks - what the
+    /// enricher needs to look a track up and what a prompt needs to describe
+    /// it. Only live tracks come back.
+    pub fn tracks_for_curation(&self, ids: &[i64]) -> Vec<CurationTrack> {
+        if ids.is_empty() {
+            return Vec::new();
+        }
+        let conn = self.lock();
+        let list = ids.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT id, title, artist, album, genre, lyrics, duration_ms
+             FROM tracks WHERE deleted = 0 AND id IN ({list})"
+        );
+        let Ok(mut stmt) = conn.prepare(&sql) else { return Vec::new() };
+        stmt.query_map([], |r| {
+            Ok(CurationTrack {
+                id: r.get(0)?,
+                title: r.get(1)?,
+                artist: r.get(2)?,
+                album: r.get(3)?,
+                genre: r.get(4)?,
+                lyrics: r.get(5)?,
+                duration_ms: r.get(6)?,
+            })
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    /// The next tracks the enricher should look at: never-seen ones first,
+    /// then any whose lookup is older than `stale_before`. Bounded so one
+    /// pass over a big library is many small, resumable batches.
+    /// `stale_before` retires a full lookup; `empty_before` retires one that
+    /// came back with nothing at all. The second is much sooner on purpose: a
+    /// track with neither tempo nor vector learned nothing, and the reason is
+    /// as often a bad query or a model that was not up yet as it is a track the
+    /// world does not know.
+    pub fn tracks_needing_features(
+        &self,
+        limit: i64,
+        stale_before: i64,
+        empty_before: i64,
+    ) -> Vec<i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT t.id FROM tracks t
+             LEFT JOIN track_features f ON f.track_id = t.id
+             WHERE t.deleted = 0 AND (
+                 f.track_id IS NULL
+                 OR f.checked_at < ?2
+                 OR (f.bpm IS NULL AND f.vec_dims = 0 AND f.checked_at < ?3)
+             )
+             ORDER BY f.checked_at IS NOT NULL, f.checked_at ASC, t.added_at DESC
+             LIMIT ?1",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![limit, stale_before, empty_before], |r| r.get(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Records what the lookup found. Nulls are a real answer ("looked, found
+    /// nothing"); the stamp is what stops the enricher asking again tomorrow.
+    /// A vector already stored is kept when this pass did not compute one, so
+    /// a tempo refresh never throws away an embedding.
+    pub fn save_features(
+        &self,
+        track_id: i64,
+        bpm: Option<f64>,
+        bpm_source: &str,
+        lyric_vec: Option<&[f32]>,
+    ) -> rusqlite::Result<()> {
+        let blob: Option<Vec<u8>> =
+            lyric_vec.map(|v| v.iter().flat_map(|f| f.to_le_bytes()).collect());
+        let dims = lyric_vec.map(|v| v.len() as i64).unwrap_or(0);
+        self.lock().execute(
+            "INSERT INTO track_features (track_id, bpm, bpm_source, lyric_vec, vec_dims, checked_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(track_id) DO UPDATE SET
+               bpm        = COALESCE(excluded.bpm, track_features.bpm),
+               bpm_source = CASE WHEN excluded.bpm IS NULL THEN track_features.bpm_source
+                                 ELSE excluded.bpm_source END,
+               lyric_vec  = COALESCE(excluded.lyric_vec, track_features.lyric_vec),
+               vec_dims   = CASE WHEN excluded.lyric_vec IS NULL THEN track_features.vec_dims
+                                 ELSE excluded.vec_dims END,
+               checked_at = excluded.checked_at",
+            params![track_id, bpm, bpm_source, blob, dims, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// Every live track's features, for the pass that scores a whole library
+    /// against a taste. A few hundred floats per track: cheap to hold, and the
+    /// alternative (a query per candidate) is far worse.
+    pub fn all_features(&self) -> Vec<TrackFeatures> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT f.track_id, f.bpm, f.lyric_vec, f.vec_dims, t.genre, t.artist
+             FROM track_features f JOIN tracks t ON t.id = f.track_id AND t.deleted = 0",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map([], |r| {
+            let blob: Option<Vec<u8>> = r.get(2)?;
+            let dims: i64 = r.get(3)?;
+            let vec = blob.filter(|b| dims > 0 && b.len() == dims as usize * 4).map(|b| {
+                b.chunks_exact(4)
+                    .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                    .collect::<Vec<f32>>()
+            });
+            Ok(TrackFeatures {
+                track_id: r.get(0)?,
+                bpm: r.get(1)?,
+                lyric_vec: vec,
+                genre: r.get(4)?,
+                artist: r.get(5)?,
+            })
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    /// The spread of tempos the curator has measured: (min, median, max).
+    /// What makes the numbers checkable - a library whose every track came
+    /// back at one value would be an analyser reading noise, not a taste.
+    pub fn tempo_spread(&self) -> Option<(f64, f64, f64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT f.bpm FROM track_features f JOIN tracks t ON t.id = f.track_id
+             AND t.deleted = 0 WHERE f.bpm IS NOT NULL ORDER BY f.bpm",
+        ) else {
+            return None;
+        };
+        let all: Vec<f64> = stmt
+            .query_map([], |r| r.get(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default();
+        if all.is_empty() {
+            return None;
+        }
+        Some((all[0], all[all.len() / 2], all[all.len() - 1]))
+    }
+
+    /// How far the enrichment has got: (tracks looked at, with a tempo, with a
+    /// vector, total live tracks).
+    pub fn feature_counts(&self) -> (i64, i64, i64, i64) {
+        let conn = self.lock();
+        let one = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap_or(0) };
+        (
+            one("SELECT COUNT(*) FROM track_features f JOIN tracks t ON t.id = f.track_id AND t.deleted = 0"),
+            one("SELECT COUNT(*) FROM track_features f JOIN tracks t ON t.id = f.track_id AND t.deleted = 0 WHERE f.bpm IS NOT NULL"),
+            one("SELECT COUNT(*) FROM track_features f JOIN tracks t ON t.id = f.track_id AND t.deleted = 0 WHERE f.vec_dims > 0"),
+            one("SELECT COUNT(*) FROM tracks WHERE deleted = 0"),
+        )
+    }
+
+    // --- the curator's playlists ---------------------------------------------
+
+    /// Everyone who has listened since `since_ms` - who the curator builds for.
+    pub fn listeners_since(&self, since_ms: i64) -> Vec<i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) =
+            conn.prepare("SELECT DISTINCT user_id FROM plays WHERE played_at >= ?1")
+        else {
+            return Vec::new();
+        };
+        stmt.query_map(params![since_ms], |r| r.get(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Writes one curated list, replacing whatever that recipe built last time.
+    pub fn put_curated(
+        &self,
+        user_id: i64,
+        slug: &str,
+        name: &str,
+        blurb: &str,
+        track_ids: &[i64],
+    ) -> rusqlite::Result<()> {
+        let json = serde_json::to_string(track_ids).unwrap_or_else(|_| "[]".into());
+        self.lock().execute(
+            "INSERT INTO curated (user_id, slug, name, blurb, track_ids, built_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(user_id, slug) DO UPDATE SET
+               name = excluded.name, blurb = excluded.blurb,
+               track_ids = excluded.track_ids, built_at = excluded.built_at",
+            params![user_id, slug, name, blurb, json, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// One listener's curated lists, newest build first.
+    pub fn curated_for(&self, user_id: i64) -> Vec<CuratedList> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT slug, name, blurb, track_ids, built_at FROM curated
+             WHERE user_id = ?1 ORDER BY built_at DESC",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id], |r| {
+            let raw: String = r.get(3)?;
+            Ok(CuratedList {
+                slug: r.get(0)?,
+                name: r.get(1)?,
+                blurb: r.get(2)?,
+                track_ids: serde_json::from_str(&raw).unwrap_or_default(),
+                built_at: r.get(4)?,
+            })
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+}
+
+/// A track as the curator reads it, for looking up and for describing.
+pub struct CurationTrack {
+    pub id: i64,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub genre: String,
+    pub lyrics: String,
+    pub duration_ms: Option<i64>,
+}
+
+/// What is known about one track's sound and words.
+pub struct TrackFeatures {
+    pub track_id: i64,
+    pub bpm: Option<f64>,
+    pub lyric_vec: Option<Vec<f32>>,
+    pub genre: String,
+    pub artist: String,
+}
+
+/// One playlist the curator built.
+pub struct CuratedList {
+    pub slug: String,
+    pub name: String,
+    pub blurb: String,
+    pub track_ids: Vec<i64>,
+    pub built_at: i64,
 }

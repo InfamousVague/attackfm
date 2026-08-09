@@ -197,31 +197,26 @@ fn desktop_setup(app: &tauri::App, main: &tauri::WebviewWindow) {
 #[cfg(desktop)]
 fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
-        music::music_import_enqueue,
-        music::music_imports_list,
-        music::music_import_remove,
-        music::music_import_cancel,
-        music::music_imports_clear,
-        music::music_import_retry,
-        music::music_spotiflac_status,
-        music::music_spotiflac_install,
-        music::music_import_get_settings,
-        music::music_import_set_settings,
-        music::music_import_set_paused,
-        music::music_import_paused,
-        music::music_album_art,
+        // The import engine and the Spotify sync moved to the server, so their
+        // commands (music::*, spotify::*) are gone on every platform; the
+        // album-art lookup they once housed stayed, now in its own module. The
+        // mobile handler below already reflects this - keep the two in step.
+        album_art::music_album_art,
+        // Desktop-only: the dock's now-playing wave.
         dock_wave::dock_wave_still,
-        spotify::spotify_status,
-        spotify::spotify_connect,
-        spotify::spotify_disconnect,
-        spotify::spotify_library,
-        spotify::spotify_mark_synced,
         // No-ops here; real on iOS. Registered on both so the frontend can
         // push without asking which build it is in.
         carplay::carplay_set_library,
         carplay::carplay_now_playing,
         ios_audio::ios_reactivate_audio,
         native_audio::native_audio_ping,
+        native_audio::native_audio_load,
+        native_audio::native_audio_play,
+        native_audio::native_audio_pause,
+        native_audio::native_audio_seek,
+        native_audio::native_audio_set_volume,
+        native_audio::native_audio_teardown,
+        native_audio::native_audio_poll,
     ]
 }
 
@@ -232,5 +227,12 @@ fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'stat
         carplay::carplay_set_library,
         carplay::carplay_now_playing,
         native_audio::native_audio_ping,
+        native_audio::native_audio_load,
+        native_audio::native_audio_play,
+        native_audio::native_audio_pause,
+        native_audio::native_audio_seek,
+        native_audio::native_audio_set_volume,
+        native_audio::native_audio_teardown,
+        native_audio::native_audio_poll,
     ]
 }

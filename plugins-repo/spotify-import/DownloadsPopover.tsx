@@ -52,6 +52,9 @@ function JobCard({ job }: { job: MusicImportJob }) {
         <span className="dlCard__sub">
           {job.subtitle ?? 'Music link'}
           {total > 0 ? ` · ${job.completed}/${total}` : ''}
+          {job.state === 'done' && job.skipped
+            ? ` · ${job.skipped} already in library`
+            : ''}
         </span>
         {active && (
           <ProgressBar

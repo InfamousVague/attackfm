@@ -1,9 +1,15 @@
 import { Pill, ScrollArea, SearchField, Text } from '@glacier/react';
-import { Sparkles } from '@glacier/icons';
+import { Radio, Sparkles } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
 import { useServerSession } from './serverSession.tsx';
-import { fetchHome, trackIdFromPath, type HomeFeed } from './server.ts';
+import {
+  fetchCurator,
+  fetchHome,
+  trackIdFromPath,
+  type CuratorFeed,
+  type HomeFeed,
+} from './server.ts';
 import { filterTracks } from './trackSearch.ts';
 import { PlaylistModal } from './PlaylistModal.tsx';
 import { PluginSlot } from '../plugins/runtime.tsx';
@@ -107,15 +113,23 @@ function Shelf({ title, children, count }: { title: string; children: React.Reac
 export function HomePage({
   onPlay,
   onOpenArtist,
+  djOn,
+  onToggleDj,
 }: {
   /** Called with the opened track and the shelf it came from as the queue. */
   onPlay: (track: Track, queue: Track[]) => void;
   /** Opens an artist's page - the Top artists shelf links through here. */
   onOpenArtist: (artist: string) => void;
+  /** Whether the DJ is running, and its switch. */
+  djOn?: boolean;
+  onToggleDj?: () => void;
 }) {
   const { tracks, favoriteTracks } = useLibrary();
   const { session } = useServerSession();
   const [feed, setFeed] = useState<HomeFeed | null>(null);
+  // What the always-running curator has built for this listener, and how far
+  // its reading of the library has got. Polled on the same rhythm as the feed.
+  const [curator, setCurator] = useState<CuratorFeed | null>(null);
   const [openMix, setOpenMix] = useState<ResolvedMix | null>(null);
   // The home search filters the local library in place: while it holds a query
   // the shelves stand aside and the matches take the page.
@@ -130,6 +144,12 @@ export function HomePage({
       setFeed(await fetchHome(s));
     } catch {
       // Unreachable right now; whatever is on screen stays.
+    }
+    try {
+      setCurator(await fetchCurator(s));
+    } catch {
+      // An older server with no curator, or one that is busy. The shelf simply
+      // does not appear; nothing else on the page depends on it.
     }
   }, []);
 
@@ -174,6 +194,20 @@ export function HomePage({
   const mixes: ResolvedMix[] = (feed?.mixes ?? [])
     .map((m) => ({ id: m.id, title: m.title, blurb: m.blurb, flavor: m.flavor, tracks: resolve(m.trackIds) }))
     .filter((m) => m.tracks.length >= 4);
+
+  // The curator's own lists, resolved against the synced library. Kept
+  // separate from the home feed's mixes: those are built when the page asks,
+  // these are built by a process that has been reading this listener's history
+  // and the library's tempos and lyrics in the background since boot.
+  const curated: ResolvedMix[] = (curator?.lists ?? [])
+    .map((l) => ({
+      id: `curated-${l.slug}`,
+      title: l.name,
+      blurb: l.blurb,
+      flavor: (curator?.status.ai ? 'ai' : 'heuristic') as 'ai' | 'heuristic',
+      tracks: resolve(l.trackIds),
+    }))
+    .filter((l) => l.tracks.length >= 4);
 
   // Jump back in: each album arrives as its own ordered id list (the server
   // grouped by album artist and sorted by disc/track), so the client just
@@ -228,6 +262,21 @@ export function HomePage({
         {/* The page's own actions, top-right: the importer's queue button when
             that plugin is running, and whatever else a plugin contributes. */}
         <div className="pageActions">
+          {/* The DJ's switch. Top-right of the front door, because starting one
+              is a thing you do on arrival rather than mid-listen. */}
+          {onToggleDj && (
+            <button
+              type="button"
+              className="djToggle"
+              data-on={djOn || undefined}
+              aria-pressed={djOn}
+              onClick={onToggleDj}
+              title={djOn ? 'Stop the DJ' : 'Start the DJ - it picks what comes next'}
+            >
+              <Radio size={15} />
+              DJ
+            </button>
+          )}
           <PluginSlot id="titlebar-end" />
         </div>
       </header>
@@ -257,6 +306,27 @@ export function HomePage({
         )
       ) : (
         <>
+      <Shelf title="From your curator" count={curated.length}>
+        {curated.map((mix) => (
+          <button key={mix.id} type="button" className="mixCard" onClick={() => setOpenMix(mix)}>
+            <MixCover tracks={mix.tracks} />
+            <span className="mixCardTitle">{mix.title}</span>
+            <span className="mixCardBlurb">{mix.blurb}</span>
+          </button>
+        ))}
+      </Shelf>
+
+      {/* While the curator is still reading the library, say so plainly with
+          the count - a shelf that is thin because the work is half done should
+          not look like a shelf that is thin because you have no taste. */}
+      {curator && curator.progress.checked < curator.progress.total && (
+        <p className="curatorNote">
+          Your curator is listening through the library — {curator.progress.checked} of{' '}
+          {curator.progress.total} tracks read, {curator.progress.withTempo} with a tempo
+          {curator.status.embeddings ? `, ${curator.progress.withLyrics} with lyrics read` : ''}.
+        </p>
+      )}
+
       <Shelf title="Made for you" count={mixes.length}>
         {mixes.map((mix) => (
           <button key={mix.id} type="button" className="mixCard" onClick={() => setOpenMix(mix)}>

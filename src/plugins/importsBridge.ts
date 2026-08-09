@@ -30,6 +30,10 @@ export interface MusicImportJob {
   quality: string;
   total: number | null;
   completed: number;
+  /** How many finished tracks were dropped as already in the library, so a
+   * done job can say "already yours" rather than looking like it lost songs.
+   * Absent on jobs from before the backend counted them. */
+  skipped?: number;
   state: MusicImportState;
   error: string | null;
   createdAt: number;

@@ -11,7 +11,7 @@ import { ChevronLeft, ChevronRight, Home, LibraryBig, Search, Settings } from '@
 import { useEffect, useRef, useState } from 'react';
 import { AppearanceProvider } from './appearance.tsx';
 import { LibraryProvider, useLibrary } from './library.tsx';
-import { ServerSessionProvider } from './serverSession.tsx';
+import { ServerSessionProvider, useServerSession } from './serverSession.tsx';
 import { EqualizerProvider } from './equalizer.tsx';
 import { PlaybackProvider } from './playback.tsx';
 import { PlaybackSyncProvider, useConnect } from './playbackSync.tsx';
@@ -27,7 +27,7 @@ import {
 } from '../plugins/runtime.tsx';
 import { isDesktopApp } from './platform.ts';
 import { onCarPlayPlay } from './carplay.ts';
-import { remotePath, trackIdFromPath } from './server.ts';
+import { fetchDjNext, remotePath, trackIdFromPath } from './server.ts';
 import type { Track } from './tauri.ts';
 import { Player } from './Player.tsx';
 import { ArtistPage } from './ArtistPage.tsx';
@@ -127,6 +127,71 @@ function CarPlayBridge({ onPlay }: { onPlay: (track: Track, queue: Track[]) => v
       unlisten?.();
     };
   }, []);
+  return null;
+}
+
+/**
+ * The DJ: keeps the queue fed with the curator's next pick, and reports the
+ * line it would say on the way in.
+ *
+ * Headless, and below the LibraryProvider for the same reason StartupSeed is -
+ * it has to resolve the server's track ids against the synced library. It tops
+ * the queue up to two ahead rather than building a whole set: the pick should
+ * be made against what is playing NOW, so a set assembled ten songs in advance
+ * would be answering a question the listener has already moved past.
+ */
+function DjRunner({
+  enabled,
+  current,
+  queue,
+  onPlay,
+  onQueueChange,
+  onLine,
+}: {
+  enabled: boolean;
+  current: Track | null;
+  queue: Track[];
+  onPlay: (track: Track, context?: Track[]) => void;
+  onQueueChange: (queue: Track[]) => void;
+  onLine: (line: string) => void;
+}) {
+  const { tracks } = useLibrary();
+  const { session } = useServerSession();
+  // One request in flight at a time: the effect re-runs on every queue change,
+  // and without this a slow answer would be asked for three times over.
+  const asking = useRef(false);
+
+  useEffect(() => {
+    if (!enabled || !session || asking.current) return;
+    const index = current ? queue.findIndex((t) => t.path === current.path) : -1;
+    const ahead = index >= 0 ? queue.length - 1 - index : 0;
+    if (current && ahead >= 2) return;
+
+    asking.current = true;
+    const seed = current ? trackIdFromPath(current.path) : null;
+    const avoid = queue
+      .map((t) => trackIdFromPath(t.path))
+      .filter((id): id is number => id !== null);
+    void fetchDjNext(session, seed, avoid)
+      .then(({ trackId, line }) => {
+        if (trackId === null) return;
+        const next = tracks.find((t) => t.path === remotePath(trackId));
+        if (!next) return;
+        if (line) onLine(line);
+        // Cold start drops the needle; otherwise the pick waits its turn behind
+        // whatever is playing.
+        if (current) onQueueChange([...queue, next]);
+        else onPlay(next, [next]);
+      })
+      .catch(() => {
+        // An unreachable server just means no next pick this time; the effect
+        // runs again on the next track change.
+      })
+      .finally(() => {
+        asking.current = false;
+      });
+  }, [enabled, current, queue, tracks, session, onPlay, onQueueChange, onLine]);
+
   return null;
 }
 
@@ -278,6 +343,8 @@ type Detail = { kind: 'artist'; artist: string } | { kind: 'playlist'; id: strin
 function AppMain({
   detail,
   tab,
+  djOn,
+  onToggleDj,
   onPlay,
   onOpenArtist,
   onOpenPlaylist,
@@ -285,6 +352,9 @@ function AppMain({
 }: {
   detail: Detail | null;
   tab: string;
+  /** Whether the DJ is running - Home carries its switch. */
+  djOn: boolean;
+  onToggleDj: () => void;
   onPlay: (track: Track, context?: Track[]) => void;
   onOpenArtist: (artist: string) => void;
   onOpenPlaylist: (id: string) => void;
@@ -312,7 +382,12 @@ function AppMain({
           onOpenPlaylist={onOpenPlaylist}
         />
       ) : (
-        <HomePage onPlay={onPlay} onOpenArtist={onOpenArtist} />
+        <HomePage
+          onPlay={onPlay}
+          onOpenArtist={onOpenArtist}
+          djOn={djOn}
+          onToggleDj={onToggleDj}
+        />
       )}
     </main>
   );
@@ -373,6 +448,13 @@ export function App() {
   // way a play context should be: re-sorting the table later reorders the
   // table, not the record already spinning.
   const [queue, setQueue] = useState<Track[]>([]);
+  // The DJ: on, and the last thing it said. The line is what makes it a DJ
+  // rather than an autoplay - something introduces the song.
+  const [djOn, setDjOn] = useState(false);
+  const [djLine, setDjLine] = useState('');
+  // Read by toggleDj, which must not close over a stale track.
+  const currentRef = useRef<Track | null>(null);
+  currentRef.current = current;
 
   // Every surface that starts playback comes through here: the track to play
   // and the list it came from. A surface with no list (a lone hit) plays the
@@ -390,6 +472,24 @@ export function App() {
   // a pick to that device and returns true; playFrom then does nothing locally,
   // so the song changes on every device while control stays where it is.
   const connectRouteRef = useRef<((track: Track, context?: Track[]) => boolean) | null>(null);
+
+  const toggleDj = () => {
+    setDjOn((on) => {
+      if (on) {
+        setDjLine('');
+        return false;
+      }
+      // Switching the DJ on hands it the wheel: the queue narrows to whatever
+      // is playing, so what comes next is its pick. Without this the DJ has
+      // nothing to do until an existing queue runs out - and the launch seed
+      // alone puts the whole library in there.
+      setQueue((q) => {
+        const playing = currentRef.current;
+        return playing ? [playing] : q.slice(0, 1);
+      });
+      return true;
+    });
+  };
 
   const playFrom = (track: Track, context?: Track[]) => {
     // Another device is the one playing: hand it the pick rather than seizing
@@ -596,22 +696,30 @@ export function App() {
               // is exactly backwards for the platform that needs a server most.
               <header className="mobileHeader">
                 <span className="mobileHeader__nav">
-                  {/* Back has to live in the chrome here too: an artist page
-                      opened on a phone otherwise has no way out - the desktop
-                      back/forward pair sits in a title bar this build does not
-                      render. Rendered only when there is somewhere to go: the
-                      root page needs no back, and the wordmark taking the
-                      leading edge reads as home. */}
-                  {canBack && (
-                    <IconButton
-                      variant="ghost"
-                      size="sm"
-                      aria-label="Back"
-                      onClick={back}
-                    >
-                      <ChevronLeft size={18} />
-                    </IconButton>
-                  )}
+                  {/* The desktop back/forward pair lives in a title bar this
+                      build does not render, so the phone carries its own. Both
+                      are always present in a fixed slot - the layout never
+                      shifts - and each greys out (disabled) at its end of the
+                      history rather than disappearing, so an artist page always
+                      has a way out and a step back is a step you can retrace. */}
+                  <IconButton
+                    variant="ghost"
+                    size="sm"
+                    aria-label="Back"
+                    disabled={!canBack}
+                    onClick={back}
+                  >
+                    <ChevronLeft size={18} />
+                  </IconButton>
+                  <IconButton
+                    variant="ghost"
+                    size="sm"
+                    aria-label="Forward"
+                    disabled={!canForward}
+                    onClick={forward}
+                  >
+                    <ChevronRight size={18} />
+                  </IconButton>
                   <img className="mobileHeader__logo" src={wordmark} alt={APP_NAME} />
                 </span>
                 {/* The one global search on the phone: opens the full-screen
@@ -644,6 +752,8 @@ export function App() {
               <AppMain
                 detail={detail}
                 tab={tab}
+                djOn={djOn}
+                onToggleDj={toggleDj}
                 onPlay={playFrom}
                 onOpenArtist={go}
                 onOpenPlaylist={goPlaylist}
@@ -675,6 +785,15 @@ export function App() {
             />
             {/* Songs tapped on the car screen start here, queue and all. */}
             <CarPlayBridge onPlay={playFrom} />
+            {/* The DJ, when it is on: keeps the queue one or two picks ahead. */}
+            <DjRunner
+              enabled={djOn}
+              current={current}
+              queue={queue}
+              onPlay={playFrom}
+              onQueueChange={setQueue}
+              onLine={setDjLine}
+            />
             {/* Teaches playFrom to route a pick to whichever device holds audio.
                 Lives here, inside the Connect provider, because only a child of
                 it can read the shared session. */}
@@ -690,6 +809,14 @@ export function App() {
                 autoplay={autoplay}
               />
             </div>
+            {/* What the DJ said on the way into this song. Sits where the
+                indexing pill does, and only while the DJ is on. */}
+            {djOn && djLine && (
+              <div className="djBar" role="status" aria-live="polite">
+                <span className="djBar__badge">DJ</span>
+                <span className="djBar__line">{djLine}</span>
+              </div>
+            )}
             <IndexingStatus />
             {/* Searches the library - titles, artists, albums, genres, lyrics -
                 and plays what is chosen. The palette calls plugin hooks, so it
