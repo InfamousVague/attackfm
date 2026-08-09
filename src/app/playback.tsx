@@ -40,6 +40,18 @@ export interface PlaybackSettings {
    * element the graph has captured stays captured.
    */
   iosEq: boolean;
+  /**
+   * Whether the fader may push past 100% into the boost range. Off caps it at
+   * unity - a hearing-safety and speaker-protection choice, so the max the
+   * hardware volume set is the max anything plays at.
+   */
+  volumeBoost: boolean;
+  /**
+   * Whether qualifying listens are reported to the connected server. On feeds
+   * the Home page's history shelves and mixes; off keeps listening entirely
+   * unrecorded, everywhere.
+   */
+  saveHistory: boolean;
   pauseStyle: PauseStyle;
   /** How the hero spells the song's words behind the header. */
   lyricWay: LyricWay;
@@ -63,6 +75,8 @@ const DEFAULTS: PlaybackSettings = {
   nightMode: false,
   mono: false,
   iosEq: false,
+  volumeBoost: true,
+  saveHistory: true,
   pauseStyle: 'turntable',
   lyricWay: 'stack',
 };
@@ -96,6 +110,10 @@ function readStored(): PlaybackSettings {
       nightMode: typeof parsed.nightMode === 'boolean' ? parsed.nightMode : DEFAULTS.nightMode,
       mono: typeof parsed.mono === 'boolean' ? parsed.mono : DEFAULTS.mono,
       iosEq: typeof parsed.iosEq === 'boolean' ? parsed.iosEq : DEFAULTS.iosEq,
+      volumeBoost:
+        typeof parsed.volumeBoost === 'boolean' ? parsed.volumeBoost : DEFAULTS.volumeBoost,
+      saveHistory:
+        typeof parsed.saveHistory === 'boolean' ? parsed.saveHistory : DEFAULTS.saveHistory,
       pauseStyle: PAUSE_STYLES.includes(parsed.pauseStyle as PauseStyle)
         ? (parsed.pauseStyle as PauseStyle)
         : DEFAULTS.pauseStyle,

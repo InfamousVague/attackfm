@@ -16,12 +16,17 @@
 //! | `AFM_SERVER_NAME` | `AttackFM` | What the client shows in its server settings. |
 //! | `AFM_QUOTA_GB` | `0` | A ceiling on the library, in gigabytes. 0 means no ceiling. |
 //! | `AFM_SCAN_MINUTES` | `15` | How often to re-walk the music folder. 0 turns the timer off. |
+//! | `AFM_PLUGINS_DIR` | `<data>/plugins` | The plugin repository served at `/plugins`. |
 
 mod api;
 mod auth;
+mod connect;
 mod db;
+mod discover;
+mod home;
 mod imports;
 mod scan;
+mod search;
 mod stream;
 mod upload;
 
@@ -33,6 +38,7 @@ use scan::ScanProgress;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::ServeDir;
 
 pub struct AppState {
     pub db: Arc<Db>,
@@ -52,6 +58,15 @@ pub struct AppState {
     /// it" sequence - uploads and imports alike - so two never resolve to the
     /// same destination in the shared library between the check and the move.
     pub filing: Arc<tokio::sync::Mutex<()>>,
+    /// The home feed's per-user mix cache (AI curation on a long TTL).
+    pub home: Arc<home::HomeState>,
+    /// Cached suggested-playlist metadata for the discover surface.
+    pub discover: Arc<discover::DiscoverState>,
+    /// AttackFM Connect: device registry + the authoritative playback session,
+    /// so any device can see and drive what's playing on any other.
+    pub connect: Arc<connect::ConnectState>,
+    /// When this process came up - the uptime the stats endpoint reports.
+    pub started: std::time::Instant,
 }
 
 fn env_or(key: &str, fallback: &str) -> String {
@@ -115,7 +130,12 @@ async fn main() {
 
     let art_dir = data_dir.join("art");
     let upload_dir = data_dir.join("uploads");
-    for dir in [&data_dir, &art_dir, &upload_dir, &music_root] {
+    // The plugin repository this server offers its clients: static bundles
+    // plus an index.json, published by `npm run redeploy -- plugins`. Served
+    // unauthenticated - a plugin repo is a distribution channel, and the app
+    // fetches it before anyone signs in.
+    let plugins_dir = PathBuf::from(env_or("AFM_PLUGINS_DIR", &data_dir.join("plugins").display().to_string()));
+    for dir in [&data_dir, &art_dir, &upload_dir, &music_root, &plugins_dir] {
         if let Err(e) = std::fs::create_dir_all(dir) {
             eprintln!("[attackfm] cannot create {}: {e}", dir.display());
             std::process::exit(1);
@@ -146,6 +166,10 @@ async fn main() {
         ffmpeg,
         imports: imports::ImportManager::new(&data_dir),
         filing: Arc::new(tokio::sync::Mutex::new(())),
+        home: home::HomeState::new(),
+        discover: discover::DiscoverState::new(),
+        connect: connect::ConnectState::new(),
+        started: std::time::Instant::now(),
     });
 
     // Index what is already there before taking requests, in the background so
@@ -208,6 +232,7 @@ async fn main() {
         .route("/api/imports/{id}/cancel", post(imports::cancel))
         .route("/api/imports/{id}/retry", post(imports::retry))
         .route("/api/scan", get(api::scan_status).post(api::scan_now))
+        .route("/api/stats", get(api::stats))
         .route("/api/favorites", get(api::favorites))
         .route("/api/favorites/{id}", put(api::set_favorite))
         .route("/api/playlists", get(api::playlists).post(api::create_playlist))
@@ -216,6 +241,12 @@ async fn main() {
             put(api::update_playlist).delete(api::delete_playlist),
         )
         .route("/api/play-state", get(api::play_states).post(api::set_play_state))
+        .route("/api/plays", post(home::record_play))
+        .route("/api/home", get(home::feed))
+        .route("/api/discover", get(discover::feed))
+        .route("/api/search", get(search::search))
+        .route("/api/artist", get(search::artist))
+        .route("/api/connect", get(connect::connect))
         .route("/api/users", get(api::list_users))
         .route("/api/users/{id}", delete(api::delete_user))
         .route("/api/users/{id}/revoke", post(api::revoke_streams))
@@ -225,6 +256,7 @@ async fn main() {
         .route("/api/stream/{id}", get(stream::stream))
         .route("/api/art/{id}", get(stream::art))
         .route("/api/transcode/{id}", get(stream::transcode))
+        .nest_service("/plugins", ServeDir::new(&plugins_dir))
         .fallback(|| async { (StatusCode::NOT_FOUND, "not found") })
         .layer(cors)
         .with_state(state);

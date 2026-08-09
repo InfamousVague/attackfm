@@ -1,4 +1,5 @@
 import type { LyricLine } from '@glacier/react';
+import { onlineMetadataEnabled } from './netPrefs.ts';
 import type { Track } from './tauri.ts';
 
 /**
@@ -112,7 +113,8 @@ function fromTags(track: Track): TrackLyrics | null {
   return plain.length > 0 ? { synced: null, plain } : null;
 }
 
-/** LRCLIB's answer for the track, 404 read as the miss it means. */
+/** LRCLIB's answer for the track, 404 read as the miss it means. The privacy
+ * gate lives in lookup(), which knows how to serve the miss without caching it. */
 async function fromLrclib(track: Track): Promise<TrackLyrics> {
   const query = new URLSearchParams({
     artist_name: track.artist,
@@ -153,6 +155,10 @@ async function fromLrclib(track: Track): Promise<TrackLyrics> {
 async function lookup(track: Track): Promise<{ lyrics: TrackLyrics; settled: boolean }> {
   const tagged = fromTags(track);
   if (tagged?.synced) return { lyrics: tagged, settled: true };
+  // The privacy switch: an answer that was never asked for is served but not
+  // kept (like a network failure), so flipping lookups back ON re-asks on the
+  // very next open instead of pinning the OFF-era blank for the session.
+  if (!onlineMetadataEnabled()) return { lyrics: tagged ?? NONE, settled: false };
   try {
     const fetched = await fromLrclib(track);
     return { lyrics: fetched.synced ? fetched : (tagged ?? fetched), settled: true };

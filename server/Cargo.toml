@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = { version = "0.8", features = ["multipart"] }
+axum = { version = "0.8", features = ["multipart", "ws"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "signal", "fs", "io-util", "process"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "fs"] }
@@ -25,7 +25,7 @@ mime_guess = "2"
 futures-util = "0.3"
 # The import queue's Spotify embed metadata fetch. rustls, so the Linux
 # cross-compile stays free of an OpenSSL sysroot.
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 
 [profile.release]
 lto = true

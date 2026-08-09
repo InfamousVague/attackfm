@@ -1,3 +1,4 @@
+import { onlineMetadataEnabled } from './netPrefs.ts';
 import { isTauri } from './tauri.ts';
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -13,6 +14,9 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
  */
 export async function fetchAlbumArt(artist: string, album: string): Promise<string | null> {
   if (!isTauri() || !artist || !album) return null;
+  // The privacy switch: no artist/album names leave for Apple when online
+  // metadata lookups are off - the page falls back to library artwork.
+  if (!onlineMetadataEnabled()) return null;
   try {
     return await invoke<string | null>('music_album_art', { artist, album });
   } catch {

@@ -207,6 +207,38 @@ function deploy(env) {
   console.log(`\n${c.green('✓')} Deployed. ${c.dim(`disk: ${disk}`)}\n`);
 }
 
+
+/**
+ * Publishes the plugin repository: builds every plugin under plugins-repo/
+ * and mirrors dist-plugins/ into the directory the server serves at /plugins.
+ * No service restart - ServeDir reads the files live.
+ */
+function deployPlugins(env) {
+  step('Building plugin bundles');
+  run('node', ['scripts/build-plugins.mjs'], { cwd: ROOT });
+  step('Publishing to /plugins');
+  const result = spawnSync(
+    'sshpass',
+    [
+      '-e', 'rsync', '-az', '--delete',
+      '-e', 'ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20',
+      `${ROOT}/dist-plugins/`,
+      `${env.AFM_DEPLOY_USER}@${env.AFM_DEPLOY_HOST}:/opt/attackfm/data/plugins/`,
+    ],
+    { stdio: 'inherit', env: { ...process.env, SSHPASS: env.AFM_DEPLOY_PASS } },
+  );
+  if (result.status !== 0) fail('plugin publish failed.');
+  ssh(env, 'chown -R attackfm:attackfm /opt/attackfm/data/plugins');
+  const check = ssh(
+    env,
+    'curl -fsS --max-time 10 http://127.0.0.1:8788/plugins/index.json | head -c 120 || echo UNREACHABLE',
+    { capture: true },
+  );
+  console.log(`  ${c.dim(check)}`);
+  if (check.includes('UNREACHABLE')) fail('/plugins is not answering.');
+  console.log(`\n${c.green('\u2713')} Plugin repository published.\n`);
+}
+
 const mode = process.argv[2] ?? 'deploy';
 const env = loadEnv();
 checkTools();
@@ -216,6 +248,8 @@ if (mode === 'setup') {
   deploy(env);
 } else if (mode === 'deploy') {
   deploy(env);
+} else if (mode === 'plugins') {
+  deployPlugins(env);
 } else {
   fail(`Unknown mode "${mode}". Use: redeploy [setup]`);
 }

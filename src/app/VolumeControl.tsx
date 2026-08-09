@@ -1,5 +1,6 @@
 import { IconButton, Popover, Slider, volumeGain } from '@glacier/react';
 import { Volume2, VolumeX } from '@glacier/icons';
+import { usePlayback } from './playback.tsx';
 
 /** Unity (0 dB) sits at 100; the fader runs on to 150 for a boost region. */
 export const VOLUME_UNITY = 100;
@@ -48,6 +49,9 @@ interface VolumeControlProps {
  * geometry changes.
  */
 export function VolumeRow({ value, muted, onValueChange, onMutedChange }: VolumeControlProps) {
+  // With boost off the fader simply ends at unity: no boost region, no detent
+  // line to mark where it would have started.
+  const { volumeBoost } = usePlayback();
   const shown = muted ? 0 : value;
   return (
     <div className="volRow">
@@ -63,11 +67,11 @@ export function VolumeRow({ value, muted, onValueChange, onMutedChange }: Volume
       <div className="volRowRailWrap">
         {/* The unity (100%) line the fader detents against, upright against a
             horizontal travel. */}
-        <span className="volRowUnityTick" aria-hidden="true" />
+        {volumeBoost && <span className="volRowUnityTick" aria-hidden="true" />}
         <Slider
           className="volRowRail"
           min={0}
-          max={VOLUME_MAX}
+          max={volumeBoost ? VOLUME_MAX : VOLUME_UNITY}
           value={shown}
           aria-label="Volume"
           aria-valuetext={readoutFor(shown, muted)}
@@ -83,6 +87,7 @@ export function VolumeRow({ value, muted, onValueChange, onMutedChange }: Volume
 }
 
 export function VolumeControl({ value, muted, onValueChange, onMutedChange }: VolumeControlProps) {
+  const { volumeBoost } = usePlayback();
   const shown = muted ? 0 : value;
   return (
     <Popover
@@ -105,12 +110,12 @@ export function VolumeControl({ value, muted, onValueChange, onMutedChange }: Vo
       <div className="volBody">
         <div className="volRailWrap">
           {/* The unity (100%) line the fader detents against. */}
-          <span className="volUnityTick" aria-hidden="true" />
+          {volumeBoost && <span className="volUnityTick" aria-hidden="true" />}
           <Slider
             className="volRail"
             orientation="vertical"
             min={0}
-            max={VOLUME_MAX}
+            max={volumeBoost ? VOLUME_MAX : VOLUME_UNITY}
             value={shown}
             aria-label="Volume"
             aria-valuetext={readoutFor(shown, muted)}

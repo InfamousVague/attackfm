@@ -78,7 +78,16 @@ function PluginTile({ tile, onPlay }: { tile: PluginPlaylistTile; onPlay: (track
  * whatever the plugins bring. Opening any tile shows its tracks in a modal;
  * a user playlist's modal can also shed tracks or delete the list whole.
  */
-export function PlaylistShowcase({ onPlay }: { onPlay: (track: Track, queue: Track[]) => void }) {
+export function PlaylistShowcase({
+  onPlay,
+  onOpenPlaylist,
+}: {
+  onPlay: (track: Track, queue: Track[]) => void;
+  /** Opens one of the user's own lists as a full page - where it can be
+   *  reordered, renamed and deleted. Liked and Recent stay modals: they are
+   *  the library's own views, with no order of their own to edit. */
+  onOpenPlaylist: (id: string) => void;
+}) {
   const { tracks, favoriteTracks } = useLibrary();
   const { playlists, create, remove, removeTrack } = usePlaylists();
   const { enabled } = usePlugins();
@@ -96,27 +105,16 @@ export function PlaylistShowcase({ onPlay }: { onPlay: (track: Track, queue: Tra
   // Paths resolve against the live library, favourites-style: a row whose file
   // is gone simply does not render, and comes back if the file does.
   const byPath = useMemo(() => new Map(tracks.map((t) => [t.path, t] as const)), [tracks]);
-  const openPlaylist = open !== null ? playlists.find((p) => p.id === open) : undefined;
 
-  // A playlist deleted from another device while its modal is open here: the
-  // heartbeat removes it from the list, and the modal closes properly rather
-  // than rendering against an id that no longer resolves.
-  useEffect(() => {
-    if (open !== null && open !== 'liked' && open !== 'recent' && !openPlaylist) setOpen(null);
-  }, [open, openPlaylist]);
-
+  // The strip's own modal now serves only the two library views. A user's list
+  // opens as a page instead - it has a running order to edit, which a
+  // read-through sheet has nowhere to put.
   const current =
     open === 'liked'
       ? { title: 'Liked', tracks: favoriteTracks, empty: 'No liked songs yet. Tap the heart while a song plays.' }
       : open === 'recent'
         ? { title: 'Recent', tracks: recent, empty: 'Nothing here yet.' }
-        : openPlaylist
-          ? {
-              title: openPlaylist.name,
-              tracks: openPlaylist.paths.map((p) => byPath.get(p)).filter((t): t is Track => t !== undefined),
-              empty: 'Nothing here yet — right-click (or long-press) a song in the library and add it.',
-            }
-          : null;
+        : null;
 
   const createDraft = (event: FormEvent) => {
     event.preventDefault();
@@ -126,7 +124,7 @@ export function PlaylistShowcase({ onPlay }: { onPlay: (track: Track, queue: Tra
     // Async because a server playlist's id is the server's to mint; the modal
     // opens the moment it exists. A refused create reopens the dialog with
     // the name still in it, which is also the retry.
-    create(name).then(setOpen, () => setDraftName(name));
+    create(name).then(onOpenPlaylist, () => setDraftName(name));
   };
 
   const playlistCount = 2 + playlists.length + pluginTiles.length;
@@ -168,7 +166,7 @@ export function PlaylistShowcase({ onPlay }: { onPlay: (track: Track, queue: Tra
                     tone="tileRecent"
                   />
                 }
-                onOpen={() => setOpen(playlist.id)}
+                onOpen={() => onOpenPlaylist(playlist.id)}
               />
             ))}
             <Tile
@@ -198,19 +196,10 @@ export function PlaylistShowcase({ onPlay }: { onPlay: (track: Track, queue: Tra
           title={current.title}
           tracks={current.tracks}
           emptyLabel={current.empty}
-          // The open playlist is the queue: a row plays on through the rest.
+          // The open view is the queue: a row plays on through the rest. Neither
+          // Liked nor Recent sheds rows here - the heart already edits Liked,
+          // and Recent is a window on the library rather than a list.
           onPlay={(t) => onPlay(t, current.tracks)}
-          // Only the user's own lists can shed rows or be deleted; Liked and
-          // Recent are the library's, and the heart already edits Liked.
-          onRemoveTrack={openPlaylist ? (path) => removeTrack(openPlaylist.id, path) : undefined}
-          onDelete={
-            openPlaylist
-              ? () => {
-                  remove(openPlaylist.id);
-                  setOpen(null);
-                }
-              : undefined
-          }
         />
       )}
       {/* Naming a new playlist: one field, and the name is the commitment -

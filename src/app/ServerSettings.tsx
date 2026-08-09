@@ -1,18 +1,53 @@
 import {
+  AlertDialog,
+  Avatar,
   Banner,
   Button,
   Field,
   Input,
   Label,
+  Meter,
+  Pill,
   ProgressBar,
   SegmentedControl,
   Slider,
   Spinner,
+  StatTile,
+  StatusDot,
   Text,
 } from '@glacier/react';
-import { Check, Cloud, Copy, FolderOpen, RefreshCw, Server, Upload } from '@glacier/icons';
-import { useEffect, useRef, useState } from 'react';
-import { fetchScanStatus, fetchServerInfo, register, uploadFile, type ScanStatus, type ServerInfo } from './server.ts';
+import {
+  Activity,
+  Check,
+  Cloud,
+  Copy,
+  Database,
+  FolderOpen,
+  HardDrive,
+  KeyRound,
+  Music,
+  RefreshCw,
+  Server,
+  Trash2,
+  Upload,
+  UserPlus,
+  Users,
+} from '@glacier/icons';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  deleteUser,
+  fetchScanStatus,
+  fetchServerInfo,
+  fetchServerStats,
+  fetchUsers,
+  register,
+  revokeUserStreams,
+  uploadFile,
+  type ScanStatus,
+  type ServerInfo,
+  type ServerStats,
+  type ServerUser,
+} from './server.ts';
 import { normalizeServerUrl } from './server.ts';
 import { useLibrary } from './library.tsx';
 import { useLibrarySync } from './librarySync.tsx';
@@ -254,52 +289,190 @@ function NoServerYet() {
   );
 }
 
-/** The signed-in status board. */
+/** "2d 4h" / "3h 12m" / "45m" - uptime at a glance. */
+function uptimeLabel(secs: number): string {
+  const days = Math.floor(secs / 86_400);
+  const hours = Math.floor((secs % 86_400) / 3_600);
+  const minutes = Math.floor((secs % 3_600) / 60);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+function gbLabel(bytes: number): string {
+  const gb = bytes / (1024 * 1024 * 1024);
+  return gb >= 100 ? `${Math.round(gb)} GB` : `${gb.toFixed(1)} GB`;
+}
+
+/** The signed-in status board: who and where, the numbers, the disk, and the
+ * controls - a dashboard, not a form. */
 function Connected() {
   const { session, settings, updateSettings, disconnect } = useServerSession();
   const { tracks, indexing, rescan, error } = useLibrary();
   const [status, setStatus] = useState<ScanStatus | null>(null);
+  const [stats, setStats] = useState<ServerStats | null>(null);
+
+  // The dashboard numbers: one call on arrival, refreshed when a scan lands
+  // (that is the moment the totals change). An older server without the
+  // endpoint just shows the scan-status numbers instead.
+  const refreshStats = useCallback(() => {
+    if (!session) return;
+    fetchServerStats(session)
+      .then(setStats)
+      .catch(() => {});
+  }, [session]);
+  useEffect(() => refreshStats(), [refreshStats]);
 
   // The server's own indexing progress, polled only while it is working - a
   // status board that keeps a phone's radio awake to say "idle" is worse than
-  // one that goes quiet.
+  // one that goes quiet. The poll self-clears once the server reports idle, so
+  // "Rescan & sync" bumps `scanNonce` to arm a fresh one - without it, a scan
+  // started after the first idle reading would run invisibly. When a watched
+  // walk ends, the dashboard numbers are re-fetched: that is the moment the
+  // totals actually change.
+  const [scanNonce, setScanNonce] = useState(0);
   useEffect(() => {
     if (!session) return;
     let live = true;
+    let sawRunning = false;
     const poll = async () => {
       try {
         const next = await fetchScanStatus(session);
         if (live) setStatus(next);
+        if (next.running) sawRunning = true;
+        else if (sawRunning) {
+          // The walk this poll watched has finished; the tiles are stale.
+          sawRunning = false;
+          refreshStats();
+        }
         return next.running;
       } catch {
         return false;
       }
     };
+    // A freshly-kicked walk may not report running on the first tick or two,
+    // so the poll holds on through a short idle grace before going quiet.
+    let idleTicks = 0;
     void poll();
     const interval = window.setInterval(() => {
       void poll().then((running) => {
-        if (!running) window.clearInterval(interval);
+        idleTicks = running ? 0 : idleTicks + 1;
+        if (!running && idleTicks >= 3) window.clearInterval(interval);
       });
     }, 2000);
     return () => {
       live = false;
       window.clearInterval(interval);
     };
-  }, [session]);
+  }, [session, scanNonce, refreshStats]);
 
   if (!session) return null;
+
+  const trackCount = stats?.tracks ?? status?.tracks ?? tracks.length;
+  const sizeLabel = stats?.bytesLabel ?? status?.bytesLabel ?? null;
+  const scanning = status?.running ?? false;
+
+  // Disk: used fraction of the volume the music lives on. High is the bad
+  // direction here, so the tone is graded by hand rather than Meter's
+  // health-bar 'auto' (which reads LOW as the danger).
+  const disk =
+    stats?.diskTotalBytes != null && stats.diskFreeBytes != null && stats.diskTotalBytes > 0
+      ? {
+          total: stats.diskTotalBytes,
+          free: stats.diskFreeBytes,
+          usedFraction: (stats.diskTotalBytes - stats.diskFreeBytes) / stats.diskTotalBytes,
+        }
+      : null;
+  const diskTone = disk === null ? 'accent' : disk.usedFraction > 0.9 ? 'danger' : disk.usedFraction > 0.7 ? 'warning' : 'accent';
 
   return (
     <div className="prefsBody">
       <div className="prefsSection">
-        <Field label="Connected to">
-          <Input readOnly value={session.url} aria-label="Server" leadingIcon={<Cloud size={16} />} />
-        </Field>
-        <Text tone="muted" size="sm">
-          Signed in as {session.username}
-          {session.isAdmin ? ' (owner)' : ''} · {tracks.length.toLocaleString()} tracks
-          {status ? ` · ${status.bytesLabel}` : ''}
-        </Text>
+        <div className="serverHero">
+          <span className="serverHero__glyph" aria-hidden="true">
+            <Server size={22} />
+          </span>
+          <div className="serverHero__meta">
+            <span className="serverHero__name">
+              <Text weight="semibold">{stats?.name ?? 'Connected'}</Text>
+              {stats && (
+                <Pill size="sm" tone="neutral">
+                  v{stats.version}
+                </Pill>
+              )}
+            </span>
+            <span className="serverHero__status">
+              <StatusDot tone={scanning ? 'warning' : 'success'} pulse size="sm" />
+              <Text size="sm" tone="muted">
+                {session.url.replace(/^https?:\/\//, '')}
+                {stats ? ` · up ${uptimeLabel(stats.uptimeSecs)}` : ''}
+              </Text>
+            </span>
+          </div>
+          <span className="serverHero__who">
+            <Avatar name={session.username} size="sm" />
+            <span className="serverHero__whoText">
+              <Text size="sm" weight="medium">
+                {session.username}
+              </Text>
+              {session.isAdmin && (
+                <Pill size="sm" tone="accent">
+                  Owner
+                </Pill>
+              )}
+            </span>
+          </span>
+        </div>
+
+        <div className="serverStats">
+          <StatTile icon={<Music size={16} />} value={trackCount.toLocaleString()} label="Songs" />
+          <StatTile icon={<Database size={16} />} value={sizeLabel ?? '—'} label="Library size" />
+          <StatTile
+            icon={<Users size={16} />}
+            value={stats ? String(stats.users) : '—'}
+            label={stats?.users === 1 ? 'Listener' : 'Listeners'}
+          />
+          <StatTile
+            icon={<Activity size={16} />}
+            value={
+              stats
+                ? stats.importsActive + stats.importsQueued > 0
+                  ? `${stats.importsActive + stats.importsQueued}`
+                  : 'Idle'
+                : '—'
+            }
+            label="Import queue"
+          />
+        </div>
+
+        {disk && (
+          <div className="serverDisk">
+            <span className="serverDisk__head">
+              <HardDrive size={14} aria-hidden="true" />
+              <Text size="sm" weight="medium">
+                Disk
+              </Text>
+              <Text size="sm" tone="muted" className="serverDisk__free">
+                {gbLabel(disk.free)} free of {gbLabel(disk.total)}
+              </Text>
+            </span>
+            <Meter
+              aria-label="Disk used"
+              value={Math.round(disk.usedFraction * 100)}
+              max={100}
+              segments={20}
+              size="sm"
+              tone={diskTone}
+            />
+            {sizeLabel && (
+              <Text size="xs" tone="subtle">
+                The library itself is {sizeLabel}
+                {stats && stats.quotaBytes > 0 ? ` of a ${gbLabel(stats.quotaBytes)} quota` : ''}.
+              </Text>
+            )}
+          </div>
+        )}
+
         {error && <Banner tone="danger">{error}</Banner>}
         {status?.running && (
           <>
@@ -314,7 +487,13 @@ function Connected() {
             variant="outline"
             size="sm"
             disabled={indexing}
-            onClick={() => void rescan()}
+            onClick={() => {
+              // Re-arm the scan poll (it goes quiet on an idle server) so the
+              // progress bar appears; the poll refreshes the tiles when the
+              // walk it watched actually finishes.
+              setScanNonce((n) => n + 1);
+              void rescan();
+            }}
           >
             <RefreshCw size={14} /> {indexing ? 'Syncing…' : 'Rescan & sync'}
           </Button>
@@ -323,6 +502,8 @@ function Connected() {
           </Button>
         </div>
       </div>
+
+      {session.isAdmin && <UsersSection />}
 
       <div className="prefsSection">
         <Field
@@ -361,6 +542,199 @@ function Connected() {
       </div>
 
       <UploadSection />
+    </div>
+  );
+}
+
+/**
+ * Account management, owner only - the client half of `/api/users`, which
+ * until now existed with no UI at all.
+ *
+ * Three verbs, matching the server exactly: add a listener (registration is
+ * admin-only past the first account), sign a listener's devices out
+ * everywhere (revoke), and delete the account. Deletion confirms through an
+ * AlertDialog because it is the one irreversible thing on this pane.
+ */
+function UsersSection() {
+  const { session } = useServerSession();
+  const [users, setUsers] = useState<ServerUser[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  // The add-a-listener drawer.
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  // The account a delete is pending on; the dialog is the second look.
+  const [condemned, setCondemned] = useState<ServerUser | null>(null);
+
+  const refresh = useCallback(() => {
+    if (!session) return;
+    fetchUsers(session)
+      .then((list) => {
+        setUsers(list);
+        setError(null);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : 'Could not load accounts'));
+  }, [session]);
+  useEffect(() => refresh(), [refresh]);
+
+  if (!session) return null;
+
+  const add = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await register(session.url, newName.trim(), newPassword, session.token);
+      setNotice(`Added ${newName.trim()}.`);
+      setAdding(false);
+      setNewName('');
+      setNewPassword('');
+      refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not add the account');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const revoke = async (user: ServerUser) => {
+    setError(null);
+    try {
+      await revokeUserStreams(session, user.id);
+      setNotice(`${user.username}'s devices were signed out everywhere.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not revoke');
+    }
+  };
+
+  const remove = async (user: ServerUser) => {
+    setCondemned(null);
+    setError(null);
+    try {
+      await deleteUser(session, user.id);
+      setNotice(`Deleted ${user.username}.`);
+      refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete the account');
+    }
+  };
+
+  return (
+    <div className="prefsSection">
+      <Label>Accounts</Label>
+      <Text tone="muted" size="sm">
+        Everyone with a sign-in on this server. Listeners share the library and keep
+        their own favourites, playlists, and history.
+      </Text>
+
+      {users === null && !error ? (
+        <Text tone="muted" size="sm">
+          Loading accounts…
+        </Text>
+      ) : (
+        <div className="userRows">
+          {(users ?? []).map((u) => (
+            <div key={u.id} className="userRow">
+              <Avatar name={u.username} size="sm" />
+              <span className="userRow__name">
+                <Text size="sm" weight="medium">
+                  {u.username}
+                  {u.username === session.username ? ' (you)' : ''}
+                </Text>
+                {u.isAdmin && (
+                  <Pill size="sm" tone="accent">
+                    Owner
+                  </Pill>
+                )}
+              </span>
+              <span className="userRow__actions">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  title="Sign this account's devices out everywhere"
+                  onClick={() => void revoke(u)}
+                >
+                  <KeyRound size={14} /> Revoke
+                </Button>
+                {u.username !== session.username && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    title="Delete this account"
+                    onClick={() => setCondemned(u)}
+                  >
+                    <Trash2 size={14} /> Delete
+                  </Button>
+                )}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {error && <Banner tone="danger">{error}</Banner>}
+      {notice && !error && (
+        <Banner tone="success" onDismiss={() => setNotice(null)}>
+          {notice}
+        </Banner>
+      )}
+
+      {adding ? (
+        <div className="userAdd">
+          <Field label="Username">
+            <Input
+              value={newName}
+              onChange={(e) => setNewName(e.currentTarget.value)}
+              aria-label="New username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+          </Field>
+          <Field label="Password" hint="At least 8 characters. They can change nothing about the server - just listen.">
+            <Input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.currentTarget.value)}
+              aria-label="New password"
+              autoComplete="new-password"
+            />
+          </Field>
+          <div className="prefsActions">
+            <Button
+              variant="solid"
+              size="sm"
+              disabled={busy || newName.trim().length === 0 || newPassword.length < 8}
+              onClick={() => void add()}
+            >
+              {busy ? 'Adding…' : 'Add listener'}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setAdding(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="prefsActions">
+          <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+            <UserPlus size={14} /> Add listener…
+          </Button>
+        </div>
+      )}
+
+      <AlertDialog
+        open={condemned !== null}
+        onClose={() => setCondemned(null)}
+        tone="danger"
+        title={`Delete ${condemned?.username ?? ''}?`}
+        description="Their favourites, playlists, and listening history go with the account. The music stays - the library belongs to the server."
+        actionLabel="Delete account"
+        cancelLabel="Keep it"
+        onAction={() => {
+          if (condemned) void remove(condemned);
+        }}
+      />
     </div>
   );
 }

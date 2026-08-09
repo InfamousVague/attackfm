@@ -756,40 +756,6 @@ body {
   -webkit-user-select: none;
 }
 
-/* The search field in the title bar's end slot. The slot is sized by its
-   content, so the field is given a width of its own: wide enough for a few
-   words, narrow enough to leave the wordmark its side of the bar. Its own glass
-   would stack a second dark layer over the bar's and read too dark, so the fill
-   and blur are dropped: it shows the bar's glass through it, kept legible as a
-   field by the `glass` prop's border alone. */
-.titleBarSearch {
-  inline-size: 12rem;
-  background: transparent;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-/* Search collapses to its icon once the window is too narrow to carry a field
-   as well as the wordmark and the actions - past that width the field would
-   either squeeze the logo off its side of the bar or shrink to a box too small
-   to read as a field. Nothing is lost with it: it takes no typing (a press
-   opens the palette either way), and the chord it advertises still works from
-   anywhere. Only ever one of the two is in the layout, so search keeps its
-   place in the bar rather than moving when the window is resized. */
-.titleBarSearchButton {
-  display: none;
-}
-
-@media (max-width: 40rem) {
-  .titleBarSearch {
-    display: none;
-  }
-
-  .titleBarSearchButton {
-    display: inline-flex;
-  }
-}
-
 /* Settings sections: a column of labelled controls, straight from the GlacierUI
    docs' own preferences layout. */
 .prefsBody {
@@ -901,8 +867,228 @@ body {
   outline-offset: 2px;
 }
 
+/* The band between the chrome and the player: the desktop's nav rail beside
+   the content, or just the content where the phone's tab bar lives at the
+   bottom instead. */
+.appBody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  position: relative;
+  z-index: 1;
+}
+
+/* Desktop primary navigation: a slim icon-only rail, the same floating pill
+   as the phone's turned on its side - a lifted, rounded, frosted plate riding
+   the leading edge. */
+.appNavRail {
+  flex: none;
+  align-self: flex-start;
+  margin: var(--glacier-space-3) 0 0 var(--glacier-space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  padding: var(--glacier-space-1);
+  /* A rounded rectangle, not a capsule and not a squircle - a plate with a
+     modest corner. The items keep the kit's own radius, which the sliding
+     active fill reads too (--glacier-navbar-item-radius), so tap target and
+     active plate share one shape instead of the circle-vs-box mismatch the
+     old radius-full button override caused. */
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-glass-thin);
+  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  box-shadow: var(--glacier-shadow-md), inset 0 var(--glacier-hairline) 0 var(--glacier-glass-highlight);
+  /* The rail may never run under the floating player: it stops short of the
+     player's band and scrolls its own items when the window is that small, so
+     the bottom icons stay reachable instead of losing their clicks to the
+     plate above them. */
+  max-block-size: calc(100% - var(--app-player-height) - 2 * var(--glacier-space-3));
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.appNavRail button,
+.appNavRail a {
+  flex: none;
+  inline-size: 3rem;
+  block-size: 3rem;
+}
+
+/* The progressive blur behind the nav. A stack of blur layers, each masked to
+   a different reach up the screen: the whole band is lightly frosted, and the
+   frost deepens toward the very bottom, so content does not cut off at a hard
+   line under the nav but dissolves into it. Full-width, taller than the bar,
+   purely decorative (pointer-events: none), and below the nav items (z 2 vs 3)
+   but above the content (z 1). */
+.appNavScrim {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  block-size: var(--app-nav-height);
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* Two stacked layers give a smoother ramp than one: a gentle blur across the
+   whole band, and a heavier blur that only reaches the bottom third. Each is a
+   masked backdrop-filter - the mask fades the blurred layer's contribution out
+   toward the top, which reads as the blur "coming in" from the bottom edge. */
+.appNavScrim::before,
+.appNavScrim::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+.appNavScrim::before {
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  -webkit-mask-image: linear-gradient(to top, black 55%, transparent);
+  mask-image: linear-gradient(to top, black 55%, transparent);
+}
+
+.appNavScrim::after {
+  backdrop-filter: blur(18px) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(18px) saturate(var(--glacier-glass-saturate));
+  -webkit-mask-image: linear-gradient(to top, black 18%, transparent 60%);
+  mask-image: linear-gradient(to top, black 18%, transparent 60%);
+  /* A faint darkening toward the bottom lifts the icons off the frost. */
+  background: linear-gradient(to top, var(--glacier-glass-thin), transparent 70%);
+}
+
+/* The phone's primary navigation: a full-width tab bar along the bottom edge,
+   items spread edge to edge over the progressive blur. The bar itself carries
+   no plate - the scrim behind it is the surface - so it reads as tabs resting
+   on the frost, not a second floating slab under the player. Each tab stacks a
+   glyph over its name, the way a phone's system tab bar does, and the whole
+   band is kept short so it costs the list as little height as possible. */
+.appNavBar {
+  position: absolute;
+  inset-inline: 0;
+  /* Welded to the sill: the safe area is padding inside the bar, not a gap
+     under it, so the frost runs to the very bottom of the screen. */
+  inset-block-end: 0;
+  z-index: 4;
+  display: flex;
+  align-items: stretch;
+  /* Bottom padding is the home-indicator safe area plus a bit of breathing room,
+     so the plate runs to the very bottom edge while the tabs sit clear above the
+     indicator rather than crowding it. */
+  padding: var(--glacier-space-1) var(--glacier-space-1)
+    calc(var(--app-safe-bottom) + var(--glacier-space-3));
+  border-radius: 0;
+  /* A dark frosted plate of its own rather than riding transparent on the
+     scrim: glass-thick is a near-opaque dark panel in dark mode (and a light
+     frost in light mode), so the bar reads as a solid base the tabs sit on.
+     The blur frosts whatever scrolls behind it; a hairline top edge keeps the
+     now-filled bar from bleeding into the content above. */
+  background: var(--glacier-glass-thick);
+  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  border: none;
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  box-shadow: none;
+}
+
+/* The kit nests its items in an inner container sized to their content; make
+   it fill the bar so the tabs divide the full width between them. */
+.appNavBar [class*="_items_"] {
+  flex: 1;
+  inline-size: 100%;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+
+/* A tab: an equal share of the width, glyph over label. Overrides the kit's
+   labelled-item row (fixed height, side-by-side, inline padding), which is
+   sized for a desktop nav rather than a phone's bottom bar. */
+.appNavBar button,
+.appNavBar a {
+  flex: 1;
+  min-inline-size: 0;
+  inline-size: auto;
+  block-size: var(--app-nav-item-height);
+  flex-direction: column;
+  /* Glyphs hang from a common line rather than each stack centring itself, so
+     an item without a label (a plugin's icon-only button) sits on the same row
+     as the rest instead of floating half a line above them. */
+  justify-content: flex-start;
+  /* Barely any inline padding: with six tabs on a phone, the width belongs to
+     the names - the tabs are already separated by their own spacing. */
+  padding: 0.375rem 0.125rem 0;
+  gap: 0.125rem;
+  border-radius: var(--glacier-radius-md);
+}
+
+/* A button a plugin contributes is not a NavBarItem and brings no label of its
+   own. It still has to name itself for a screen reader, so that name becomes
+   its tab text - every tab reads the same way, whoever supplied it. */
+.appNavBar [class*="_items_"] > button:not([class*="_item_"])::after {
+  content: attr(aria-label);
+  font-size: var(--app-nav-label-size);
+  line-height: 1.1;
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Glyphs sized for the shorter bar - CSS wins over the icons' own width/height
+   attributes. flex:none stops the kit's icon box from being squashed oval when
+   the label sets the row's width. */
+.appNavBar button svg,
+.appNavBar a svg {
+  inline-size: 1.125rem;
+  block-size: 1.125rem;
+  flex: none;
+}
+
+/* The tab's name. Small and tight, since it sits under a glyph that already
+   carries the meaning - it names the destination rather than shouting it. */
+.appNavBar [class*="_label_"] {
+  font-size: var(--app-nav-label-size);
+  line-height: 1.1;
+  max-inline-size: 100%;
+}
+
+/* No plate behind the active tab. Hide the kit's sliding fill entirely and let
+   the active tab announce itself by colour alone: the kit already recolours the
+   whole [data-active] item to the accent (glyph and label together, the glyph
+   following the label's colour), and a card would only fight the bar's own dark
+   plate. Colour is now the entire affordance. */
+.appNavBar [class*="_indicator_"] {
+  display: none;
+}
+
+/* How far the bottom nav band pushes the player up. Zero where the band does
+   not exist (desktop); measured where it does. :has keys it on the nav's
+   actual presence, so no JS and no media query can drift from truth. */
+.appWindow {
+  --app-nav-height: 0px;
+  /* One tab's height, named so the bar and the band it occupies cannot drift:
+     a glyph, a hairline gap and a small label, with room to tap. */
+  --app-nav-item-height: 2.75rem;
+  /* Tab names sit at the size a phone's own tab bar uses: small enough that
+     six of them fit across a narrow screen without a name being clipped. */
+  --app-nav-label-size: 0.625rem;
+}
+
+.appWindow:has(.appNavBar) {
+  /* The band's footprint: one tab plus the bar's own padding above and below,
+     the lower half of which is the home indicator's safe area. The player and
+     the blur scrim both clear exactly this. */
+  --app-nav-height: calc(
+    var(--app-nav-item-height) + var(--glacier-space-1) + var(--glacier-space-3) +
+      var(--app-safe-bottom)
+  );
+}
+
 .appContent {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -911,6 +1097,911 @@ body {
      through behind the showcase while the table's surface hides it lower down. */
   position: relative;
   z-index: 1;
+}
+
+/* The tap wrapper around the strip is layout-invisible; it only catches the
+   bubbling tap that lifts the full-screen player. */
+.playerBarShell {
+  display: contents;
+}
+
+/* ── Full-screen Now Playing ────────────────────────────────────────────────
+   The mini-strip blown up: cover, title, scrubber, transport, fader. Fixed to
+   the viewport, above everything, sliding up from the bottom. */
+.npScreen {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  /* Portalled to the body, so the app's --app-safe-* vars are out of scope
+     here - the notch/home-indicator insets come straight from env(). An
+     undefined var in this shorthand would drop the whole thing (that is how
+     the padding once read as zero). */
+  padding: calc(env(safe-area-inset-top, 0px) + var(--glacier-space-3)) var(--glacier-space-6, 1.75rem)
+    calc(env(safe-area-inset-bottom, 0px) + var(--glacier-space-6, 1.75rem));
+  gap: var(--glacier-space-4);
+  overflow: hidden;
+  background: var(--glacier-bg);
+  color: var(--glacier-text);
+  animation: npRise 0.28s var(--glacier-ease-out);
+}
+
+/* The title/heart row and the scrubber want a touch more room from the edges
+   than the screen's own gutter - they read as the sheet's content, set in
+   from the art above and the transport below. */
+.npScreen__meta,
+.npScreen__scrub {
+  padding-inline: var(--glacier-space-2);
+}
+
+@keyframes npRise {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* The cover, enlarged and blurred, as the surface behind the controls. A dark
+   veil over it keeps the white text and the icons legible on any art. */
+.npScreen__bg {
+  position: absolute;
+  inset: -10%;
+  z-index: -1;
+  background-size: cover;
+  background-position: center;
+  filter: blur(48px) saturate(1.3) brightness(0.55);
+  transform: scale(1.1);
+}
+
+.npScreen__bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.25), rgba(0, 0, 0, 0.6));
+}
+
+.npScreen__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+}
+
+.npScreen__source {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 550;
+  color: var(--glacier-text);
+  max-inline-size: 60%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+.npScreen__headSpacer {
+  inline-size: 2.5rem;
+}
+
+/* The artwork owns the middle: a big square that grows to fill the space left
+   between the header and the controls, capped so it never crowds them. */
+.npScreen__art {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The art chooser wraps EITHER the flat cover or the turning CD, and is the
+   square box both fill. Sizing the square here (not on the art) is what keeps
+   the disc a true circle - a non-square parent is exactly what stretched it to
+   an oval before. The side is the largest square the width cap and the row's
+   height both allow. */
+.npScreen__coverTarget {
+  display: flex;
+  aspect-ratio: 1;
+  block-size: min(78vw, 22rem);
+  max-block-size: 100%;
+  max-inline-size: 100%;
+}
+
+.npScreen__coverTarget > * {
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.npScreen__cover {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  border-radius: 22px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+.npScreen__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  flex: none;
+}
+
+.npScreen__lines {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.npScreen__title {
+  font-size: 1.4rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.npScreen__artist {
+  font-size: 1rem;
+  color: var(--glacier-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.npScreen__heart {
+  flex: none;
+}
+
+.npScreen__scrub {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.npScreen__times {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.npScreen__transport {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+  padding-inline: var(--glacier-space-1);
+}
+
+/* The active shuffle/repeat wear the accent; the play button is the one big
+   thing, a solid accent circle. */
+.npScreen__transport [data-on] {
+  color: var(--glacier-accent-solid);
+}
+
+.npScreen__play {
+  inline-size: 4.5rem;
+  block-size: 4.5rem;
+  border-radius: 50%;
+  border: none;
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-on-accent, #fff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.12s var(--glacier-ease-out);
+}
+
+.npScreen__play:active {
+  transform: scale(0.94);
+}
+
+.npScreen__volume {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  flex: none;
+  color: var(--glacier-text-muted);
+}
+
+.npScreen__volume :last-child {
+  flex: 1;
+}
+
+/* ── Mobile settings ────────────────────────────────────────────────────────
+   The touch settings surface: a full-screen sheet that opens on the section
+   list and pushes into a pane. Portalled to the body like Now Playing, so the
+   env() insets stand in for the out-of-scope --app-safe-* vars. */
+.settingsScreen {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  padding: calc(env(safe-area-inset-top, 0px) + var(--glacier-space-3))
+    var(--glacier-space-4)
+    calc(env(safe-area-inset-bottom, 0px) + var(--glacier-space-4));
+  gap: var(--glacier-space-3);
+  background: var(--glacier-bg);
+  color: var(--glacier-text);
+  animation: npRise 0.28s var(--glacier-ease-out);
+}
+
+/* A pane drilled into slides in from the right; the list it replaced was the
+   home the back arrow returns to. */
+.settingsScreen[data-view='detail'] .settingsScreen__pane {
+  animation: settingsPush 0.24s var(--glacier-ease-out);
+}
+
+@keyframes settingsPush {
+  from {
+    transform: translateX(12%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.settingsScreen__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+  flex: none;
+}
+
+/* The back and close targets: round, thumb-sized, ghosted until pressed. */
+.settingsScreen__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  border: none;
+  border-radius: var(--glacier-radius-full);
+  background: transparent;
+  color: var(--glacier-text);
+  cursor: pointer;
+}
+
+.settingsScreen__icon:active {
+  background: var(--glacier-surface-hover, rgba(128, 128, 128, 0.16));
+}
+
+.settingsScreen__title {
+  flex: 1;
+  min-inline-size: 0;
+  font-size: var(--glacier-font-size-lg);
+  font-weight: 650;
+  text-align: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Balances the single icon on the other end so the title stays centred. */
+.settingsScreen__headSpacer {
+  inline-size: 2.5rem;
+  flex: none;
+}
+
+/* The section list - the "sidebar", stacked as full-width rows on touch. */
+.settingsScreen__list {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  -webkit-overflow-scrolling: touch;
+}
+
+.settingsScreen__row {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  inline-size: 100%;
+  padding: var(--glacier-space-3) var(--glacier-space-3);
+  border: none;
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+  color: var(--glacier-text);
+  font: inherit;
+  font-weight: 550;
+  text-align: start;
+  cursor: pointer;
+}
+
+.settingsScreen__row:active {
+  background: var(--glacier-surface-hover, rgba(128, 128, 128, 0.16));
+}
+
+.settingsScreen__rowIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: var(--glacier-text-muted);
+}
+
+.settingsScreen__rowLabel {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.settingsScreen__rowChevron {
+  flex: none;
+  color: var(--glacier-text-muted);
+}
+
+/* The drilled-in pane: the section's own controls, scrolling under the header. */
+.settingsScreen__pane {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-inline: var(--glacier-space-1);
+}
+
+/* ── Acquire chooser & Buy sheet ─────────────────────────────────────────────
+   The small dialog shown when more than one plugin can "get" a track, and the
+   Buy plugin's storefront list. Both are plain vertical stacks inside a kit
+   Modal. */
+.acquireChooser {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.acquireChooser__blurb {
+  margin: 0 0 var(--glacier-space-1);
+  color: var(--glacier-text-muted);
+}
+
+.acquireChooser__option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--glacier-space-2);
+  inline-size: 100%;
+}
+
+.buyModal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+.buyModal__blurb {
+  margin: 0;
+  color: var(--glacier-text-muted);
+}
+
+.buyModal__stores {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.buyStore {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  inline-size: 100%;
+  padding: var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+  color: var(--glacier-text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.buyStore:hover {
+  background: var(--glacier-surface-hover, rgba(128, 128, 128, 0.12));
+}
+
+.buyStore__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.buyStore__name {
+  font-weight: 600;
+}
+
+.buyStore__formats {
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+}
+
+.buyStore__go {
+  flex: none;
+  color: var(--glacier-text-muted);
+}
+
+/* ── Home ──────────────────────────────────────────────────────────────────
+   The front door: a greeting over horizontal shelves. The page scrolls as a
+   whole (each shelf scrolls sideways inside it), and the bottom padding keeps
+   the last shelf clear of the floating player and the tab bar. */
+.homePage {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--glacier-space-5) var(--glacier-space-4);
+  padding-block-end: calc(var(--app-player-height) + var(--app-nav-height, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-5);
+}
+
+/* The greeting and the page's actions share a row: the words take the width
+   they need, the actions sit against the trailing edge. Aligned to the top so
+   the button lines up with the greeting itself rather than floating against
+   the sentence beneath it. */
+.homeGreeting {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+}
+
+.homeGreeting__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  min-inline-size: 0;
+}
+
+.homeGreetingTitle {
+  margin: 0;
+  font-size: clamp(1.5rem, 4.5vw, 2rem);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.homeShelf {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  min-width: 0;
+}
+
+.homeShelfTitle {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.homeShelfScroll {
+  margin-inline: calc(-1 * var(--glacier-space-4));
+}
+
+.homeShelfRow {
+  display: flex;
+  gap: var(--glacier-space-3);
+  padding-inline: var(--glacier-space-4);
+  padding-block-end: var(--glacier-space-1);
+}
+
+/* One song on a shelf: art above two tight lines. The whole card is the
+   button; the hover lift is the same the playlist tiles wear. */
+.trackCard {
+  flex: none;
+  inline-size: 9.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.trackCardArt {
+  inline-size: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--glacier-radius-lg);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  transition: transform 0.18s var(--glacier-ease-out);
+}
+
+.trackCard:hover .trackCardArt,
+.trackCard:focus-visible .trackCardArt {
+  transform: translateY(-2px) scale(1.02);
+}
+
+.trackCardTitle {
+  font-size: 0.875rem;
+  font-weight: 550;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trackCardArtist {
+  font-size: 0.75rem;
+  color: var(--glacier-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A suggested playlist to add: a cover, its name and size, and an Add button
+   that fires the import. Wider than a track card so the button has room. */
+.suggestCard {
+  flex: none;
+  inline-size: 11rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.suggestCardCover {
+  inline-size: 100%;
+  aspect-ratio: 1;
+  border-radius: var(--glacier-radius-lg);
+  overflow: hidden;
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  background: var(--glacier-surface-sunken);
+}
+
+.suggestCardCover img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.suggestCardCover--glyph {
+  inline-size: 100%;
+  block-size: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--glacier-accent);
+}
+
+.suggestCardTitle {
+  margin-block-start: var(--glacier-space-1);
+  font-size: 0.875rem;
+  font-weight: 550;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.suggestCardBlurb {
+  font-size: 0.75rem;
+  color: var(--glacier-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The Add button: quiet accent by default, muted while adding, a settled
+   success once queued - the card's own confirmation the import is under way. */
+.suggestAddBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--glacier-space-1);
+  margin-block-start: var(--glacier-space-1);
+  padding: 0.4rem var(--glacier-space-2);
+  border-radius: var(--glacier-radius-full);
+  border: var(--glacier-hairline) solid var(--glacier-border-accent, var(--glacier-border));
+  background: var(--glacier-accent-soft, var(--glacier-surface-sunken));
+  color: var(--glacier-accent);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 550;
+  cursor: pointer;
+  transition: background 0.15s var(--glacier-ease-out);
+}
+
+.suggestAddBtn:hover:not(:disabled) {
+  background: var(--glacier-accent);
+  color: var(--glacier-on-accent, #fff);
+}
+
+.suggestAddBtn[data-state='adding'] {
+  color: var(--glacier-text-muted);
+  border-color: var(--glacier-border);
+  background: var(--glacier-surface-sunken);
+  cursor: default;
+}
+
+.suggestAddBtn[data-state='added'] {
+  color: var(--glacier-success, #1d9e75);
+  border-color: var(--glacier-success, #1d9e75);
+  background: transparent;
+  cursor: default;
+}
+
+/* The Discover page (the discover plugin's destination): the same scroll frame
+   as Home, a titled header, then a section per catalogue group laid out as a
+   browsable grid rather than a single scrolling rail - a place to go, not a
+   strip to glance past. It reuses the suggestCard the old home shelf wore. */
+.discoverPage {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--glacier-space-5) var(--glacier-space-4);
+  padding-block-end: calc(var(--app-player-height) + var(--app-nav-height, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-5);
+}
+
+.discoverHead {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+.discoverHead__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  flex: none;
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-accent-soft, var(--glacier-surface-sunken));
+  color: var(--glacier-accent);
+}
+
+.discoverHead__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  min-width: 0;
+}
+
+.discoverHead__title {
+  margin: 0;
+  font-size: clamp(1.5rem, 4.5vw, 2rem);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.discoverHead__blurb {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--glacier-text-muted);
+  max-inline-size: 46ch;
+}
+
+.discoverNote {
+  margin: 0;
+  color: var(--glacier-text-muted);
+  font-size: 0.9rem;
+}
+
+.discoverSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  min-width: 0;
+}
+
+.discoverSection__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.discoverGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: var(--glacier-space-4) var(--glacier-space-3);
+}
+
+/* In the page grid the cards fill the column instead of the shelf's fixed
+   width, so a whole section is visible at once rather than scrolling sideways. */
+.discoverGrid .suggestCard {
+  inline-size: auto;
+}
+
+/* The cover-and-titles half of a card is one button into the preview: a plain
+   press target wearing the card's own layout, with the same hover lift the
+   track cards use so it reads as openable. */
+.suggestCardBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.suggestCardBody .suggestCardCover {
+  transition: transform 0.18s var(--glacier-ease-out);
+}
+
+.suggestCardBody:hover .suggestCardCover,
+.suggestCardBody:focus-visible .suggestCardCover {
+  transform: translateY(-2px) scale(1.02);
+}
+
+/* The preview a tapped card opens: the cover beside the blurb and the same
+   Add control the card wears, then the playlist's numbered tracks - what the
+   embed lists, before a single byte is committed to. */
+.discoverPreview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-4);
+  min-width: 0;
+}
+
+.discoverPreview__head {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-4);
+}
+
+.discoverPreview__cover {
+  inline-size: 7rem;
+  flex: none;
+}
+
+.discoverPreview__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--glacier-space-2);
+  min-width: 0;
+}
+
+.discoverPreview__tracks {
+  margin: 0;
+  padding-inline-start: 2rem;
+  max-block-size: 45vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+}
+
+.discoverPreview__tracks li::marker {
+  color: var(--glacier-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* An artist on the Top artists shelf: a round cover over a centered name,
+   the shape that reads "person" the way a square reads "release". */
+.artistCard {
+  flex: none;
+  inline-size: 8rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.artistCardArt {
+  inline-size: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 50%;
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  transition: transform 0.18s var(--glacier-ease-out);
+}
+
+.artistCard:hover .artistCardArt,
+.artistCard:focus-visible .artistCardArt {
+  transform: translateY(-2px) scale(1.02);
+}
+
+.artistCardName {
+  font-size: 0.875rem;
+  font-weight: 550;
+  text-align: center;
+  max-inline-size: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A mix: bigger than a song, cover mosaic over a title and a one-line blurb.
+   These are the page's hero objects. */
+.mixCard {
+  flex: none;
+  inline-size: 13rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.mixCardCover {
+  inline-size: 100%;
+  aspect-ratio: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  overflow: hidden;
+  border-radius: var(--glacier-radius-lg);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  transition: transform 0.18s var(--glacier-ease-out);
+}
+
+.mixCard:hover .mixCardCover,
+.mixCard:focus-visible .mixCardCover {
+  transform: translateY(-2px) scale(1.02);
+}
+
+.mixCardCover img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.mixCardCover--glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-accent);
+}
+
+.mixCardTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  margin-block-start: var(--glacier-space-1);
+  font-size: 0.95rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.mixCardBadge {
+  flex: none;
+}
+
+.mixCardBlurb {
+  font-size: 0.75rem;
+  color: var(--glacier-text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* The playlist strip sits above the library table, sized to its tiles; the
@@ -925,6 +2016,24 @@ body {
 .libraryBody {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* With the search field stacked above it, the table takes the rest of the
+   height and scrolls within it rather than pushing the field off screen. */
+.libraryBody > .songTable {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+}
+
+.libraryBody > .pageSearch {
+  margin: var(--glacier-space-3) var(--glacier-space-4);
+  /* Not the base rule's 100%: with side margins on top of that the field runs
+     past the window's right edge. Auto lets the flex column stretch it to the
+     body's width MINUS the margins. */
+  inline-size: auto;
 }
 
 /* A row of squircle tiles that scrolls sideways when it outgrows the window.
@@ -1107,6 +2216,26 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-3);
+}
+
+/* On a phone every popover becomes a near-sheet: pinned to both side gutters
+   and spanning the width between them, at whatever height its trigger put it.
+   Anchored floating panels are a pointer idiom; under a thumb the narrow panel
+   wastes the screen and half-hides its content. The kit's positioner carries
+   inline left/top from its floating math, so the side pins need !important;
+   the structural positioner>panel pair scopes this to popovers (tooltips and
+   plain portals use different bones) without leaning on hashed class names. */
+@media (pointer: coarse), (max-width: 540px) {
+  body > [class*='_positioner_']:has(> [class*='_panel_']) {
+    left: var(--glacier-space-3) !important;
+    right: var(--glacier-space-3) !important;
+    inline-size: auto !important;
+  }
+
+  body > [class*='_positioner_'] > [class*='_panel_'] {
+    inline-size: 100%;
+    max-inline-size: none;
+  }
 }
 
 /* The chooser the overflow opens on: three rows, each a doorway to its panel.
@@ -1343,7 +2472,7 @@ body {
      the header too - but a border is outside the clip, so it owns the seam
      pixel outright. Painted in the page background, it is invisible as a line. */
   border-block-start: 1px solid var(--glacier-bg);
-  padding-block-end: var(--app-player-height);
+  padding-block-end: calc(var(--app-player-height) + var(--app-nav-height, 0px));
 }
 
 /* The kit sizes the grid table to its content, so it neither fills the pane nor
@@ -1666,6 +2795,16 @@ body {
   padding-inline-end: calc(var(--glacier-space-2) + var(--app-safe-right));
 }
 
+/* With a bottom tab bar in play, the player stands on it rather than the
+   window edge - and the bar owns the home indicator's inset, so the player
+   gives that padding up instead of double-counting it. */
+.appWindow:has(.appNavBar) .appPlayer {
+  /* Lift the player clear of the pill by a full gap, so the two float as two
+     distinct plates rather than a stacked seam. */
+  inset-block-end: calc(var(--app-nav-height) + var(--glacier-space-2));
+  padding-block-end: var(--glacier-space-2);
+}
+
 /* Pull the strip's own inline padding in from the kit's default so the cover and
    the output controls sit closer to the plate's edges. */
 .appPlayer [data-position] {
@@ -1716,64 +2855,136 @@ body {
      to the content first, then the block padding actually gets spent. Top
      takes the larger share: the seek thumb and the clocks live up there and
      read against the plate's edge first. */
+  /* The mini-strip: the disc on the left, run full-bleed from the card's top
+     to its bottom, and beside it a stacked column - the seek across the top,
+     the transport centred under it with the heart and the lyrics mic at either
+     end. The kit's own layout says exactly this (its control row is a
+     1fr-auto-1fr grid), so the strip mostly gets out of its way and only sets
+     the phone's sizes. */
   .appPlayer [data-position] {
+    position: relative;
+    overflow: hidden;
     block-size: auto;
-    padding-block: var(--glacier-space-4) var(--glacier-space-3);
-    /* The sides hold the same air as the bottom - the desktop's tighter
-       space-2 inset reads cramped once everything inside has grown. */
-    padding-inline: var(--glacier-space-3);
+    flex-direction: row;
+    /* Stretch, so the artwork column can be as tall as the card itself. */
+    align-items: stretch;
+    gap: var(--glacier-space-3);
+    padding: var(--glacier-space-2) var(--glacier-space-3);
+    /* Two numbers set the strip's scale - the seek's band and the play button -
+       and everything else is derived from them: the kit's row height, the
+       disc's square, the card's own height. Nothing can drift out of step. */
+    --app-player-seek: 2.125rem;
+    --app-player-play: 2.5rem;
+    --bar-seek: var(--app-player-seek);
+    /* The disc is exactly as tall as the two rows beside it, which is the
+       card's content box: a square pinned to a definite size rather than one
+       stretched to the row. A stretched square cannot work here - flexbox
+       sizes the main axis before the cross axis, so an aspect-ratio width
+       measured off the row's height resolves to zero and the disc would
+       overlap the controls. */
+    --app-player-art: calc(
+      var(--app-player-seek) + var(--glacier-space-1) + var(--app-player-play)
+    );
   }
 
-  /* The kit sizes this row for its own 24px seek; the grown one needs the row
-     to follow it rather than being overflowed, or the extra height spends
-     itself over the padding instead of inside the row. */
-  .appPlayer [class*="_scrubber_"] {
-    block-size: auto;
-    min-block-size: 2.125rem;
+  /* The album cover, left-aligned: a fat, obvious tap target for lifting the
+     full-screen Now Playing (the whole strip opens it, but the cover reads as
+     the handle). The title lines fold away - the cover and the NP name it. */
+  .appPlayer [class*="_track_"] {
+    /* The kit hides the track under a 34rem container query; the strip is far
+       narrower than that, so re-show it - specificity wins over the kit rule. */
+    display: flex;
+    align-items: stretch;
+    flex: none;
+    min-inline-size: auto;
+    align-self: stretch;
   }
 
-  /* A breath between the seek row and the transport. */
+  /* The disc: a square the full height of the card's content box, rather than
+     the kit's thumbnail sized to the (hidden) title.
+     !important clears the more-specific kit rule for data-size=fill. */
+  .appPlayer [class*="_track_"] [class*="_artwork_"] {
+    inline-size: var(--app-player-art) !important;
+    block-size: var(--app-player-art) !important;
+    flex: none;
+  }
+
+  .appPlayer [class*="_track_"] [class*="_artwork_"] > * {
+    inline-size: 100%;
+    block-size: 100%;
+  }
+
+  .appPlayer [class*="_lines_"] {
+    display: none;
+  }
+
+  /* The column beside the disc: seek on top, control row under it. This is the
+     kit's own stacking - the strip only claims the leftover width and lets the
+     rows fill it. */
   .appPlayer [class*="_center_"] {
-    row-gap: var(--glacier-space-2);
+    flex: 1;
+    min-inline-size: 0;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: var(--glacier-space-1);
   }
 
-  /* Rails and transport: the HIG floor is 44pt; the play button reads as the
-     one big thing. Icons scale with their buttons - CSS wins over the svg's
-     own width/height attributes. */
-  .appPlayer [class*="_rail_"] button {
-    inline-size: 2.75rem;
-    block-size: 2.75rem;
+  /* The seek sits in the flow across the top of the column, full width. */
+  .appPlayer [class*="_scrubber_"] {
+    position: static;
+    flex: none;
+    inline-size: 100%;
+    min-inline-size: 0;
   }
 
+  /* The kit's 1fr-auto-1fr grid does the work: the transport sits in the
+     centre cell - optically centred under the seek whatever the rails hold -
+     with the heart's rail to its left and the lyrics mic's to its right. */
+  .appPlayer [class*="_controls_"] {
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+
+  /* Shuffle and repeat stay off the strip - they belong to the full-screen Now
+     Playing, where there is room for them. The heart keeps its seat in the
+     leading rail, opposite the lyrics mic. */
+  .appPlayer [aria-label="Shuffle"],
+  .appPlayer [aria-label^="Repeat"] {
+    display: none;
+  }
+
+  /* Smaller than the earlier grown set - a compact inline transport. */
+  .appPlayer [class*="_rail_"] button,
   .appPlayer [class*="_transport_"] button {
-    inline-size: 2.875rem;
-    block-size: 2.875rem;
+    inline-size: 2.25rem;
+    block-size: 2.25rem;
   }
 
   .appPlayer [class*="_transport_"] button svg {
-    inline-size: 1.375rem;
-    block-size: 1.375rem;
+    inline-size: 1.1rem;
+    block-size: 1.1rem;
   }
 
   .appPlayer [class*="_transport_"] button[class*="_play_"] {
-    inline-size: 3.5rem;
-    block-size: 3.5rem;
+    inline-size: var(--app-player-play);
+    block-size: var(--app-player-play);
   }
 
   .appPlayer [class*="_transport_"] button[class*="_play_"] svg {
-    inline-size: 1.625rem;
-    block-size: 1.625rem;
+    inline-size: 1.2rem;
+    block-size: 1.2rem;
   }
 
   /* The seek bar: taller wave, bigger thumb, so a thumb can scrub without
      covering what it is aiming at. */
   .appPlayer [class*="_seek_"] {
-    block-size: 2.125rem;
+    block-size: var(--app-player-seek);
     --slider-thumb: 1.125rem;
   }
 
   .appPlayer [class*="_seek_"] svg {
-    block-size: 2.125rem;
+    block-size: var(--app-player-seek);
   }
 }
 
@@ -1785,7 +2996,7 @@ body {
   z-index: 3;
   /* Sits above the floating player and in from the right edge by the same gap,
      so it reads as evenly inset from both the player and the window side. */
-  inset-block-end: calc(var(--app-player-height) + var(--glacier-space-2));
+  inset-block-end: calc(var(--app-player-height) + var(--app-nav-height, 0px) + var(--glacier-space-2));
   inset-inline-end: var(--glacier-space-2);
   display: inline-flex;
   align-items: center;
@@ -2109,6 +3320,39 @@ body {
   color: var(--glacier-danger-text, var(--glacier-text-muted));
 }
 
+/* On a phone (or a window that narrow) the queue keeps its FULL track lists -
+   every song a playlist import is fetching, visible - but flattened into one
+   scroll: the per-playlist inner clamp is lifted so the outer list is the only
+   thing that scrolls. A nested scroller inside a scroller is unusable under a
+   thumb, and hiding the tracks outright (the previous answer here) read as the
+   queue losing songs. Cards stay compact, and the content fills the popover,
+   which the popover rule above has already stretched to the screen's width. */
+@media (pointer: coarse), (max-width: 540px) {
+  .dlPanel {
+    inline-size: 100%;
+  }
+
+  .dlTracks {
+    max-block-size: none;
+    overflow-y: visible;
+  }
+
+  .dlCard {
+    gap: var(--glacier-space-2);
+    padding: var(--glacier-space-1) var(--glacier-space-2);
+    align-items: center;
+  }
+
+  .dlCard__art {
+    inline-size: 2.25rem;
+    block-size: 2.25rem;
+  }
+
+  .dlList {
+    max-block-size: 60vh;
+  }
+}
+
 /* The Spotify tab's account and library rows: art, name over detail, and the
    sync affordance at the end. The art square doubles as its own placeholder -
    an empty span keeps the grid when a playlist carries no image. */
@@ -2163,4 +3407,1261 @@ body {
   display: flex;
   align-items: center;
   gap: var(--glacier-space-1);
+}
+
+/* ── Connect device picker ───────────────────────────────────────────────── */
+
+/* The trigger takes the brand colour whenever there is live playback: when
+   this device is the one playing, and equally when it is playing on another
+   device (the standard "it's playing over there" tell). Uses the solid accent,
+   not the near-white `--glacier-accent`, so it actually reads against the idle
+   white icon. */
+.deviceTrigger[data-connected],
+.deviceTrigger[data-active] {
+  color: var(--glacier-accent-solid);
+}
+
+.devicePanel {
+  min-inline-size: 15rem;
+  max-inline-size: min(20rem, calc(100vw - 2rem));
+  padding: var(--glacier-space-2);
+}
+
+.deviceList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.deviceList__head {
+  padding: var(--glacier-space-1) var(--glacier-space-2);
+}
+
+/* One device: kind glyph, name over state, a check when it is the one playing.
+   The whole row is the tap target that moves playback there. */
+.deviceRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2);
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  background: transparent;
+  color: var(--glacier-text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.deviceRow:hover:not(:disabled),
+.deviceRow:focus-visible {
+  background: var(--glacier-surface-sunken);
+}
+
+.deviceRow:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.deviceRow[data-active] {
+  color: var(--glacier-accent);
+}
+
+.deviceRow__icon {
+  flex: none;
+  display: flex;
+}
+
+.deviceRow__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.deviceRow__name {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 550;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.deviceRow__state {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.deviceRow[data-active] .deviceRow__state {
+  color: var(--glacier-accent);
+}
+
+.deviceRow__check {
+  flex: none;
+  display: flex;
+  color: var(--glacier-accent);
+}
+
+/* ---- Playlists: the page, and the add-to-playlist panel ---------------- */
+
+/* A playlist's header: the cover, then the name and what you can do to the
+   list. Mirrors the artist page's stripHeader in weight, with room for the
+   actions a list has and an artist does not. */
+.playlistHead {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--glacier-space-4);
+  padding: var(--glacier-space-4) var(--glacier-space-4) var(--glacier-space-3);
+}
+
+.playlistHead__mosaic {
+  inline-size: 8rem;
+  block-size: 8rem;
+}
+
+.playlistHead__mosaic img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.playlistHead__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  min-inline-size: 0;
+}
+
+.playlistHead__kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.playlistHead__name {
+  margin: 0;
+  font-size: var(--glacier-font-size-2xl);
+  line-height: 1.1;
+  font-weight: var(--glacier-font-weight-bold, 700);
+  /* A long name wraps to two lines and then gives up, rather than pushing the
+     actions off the side of the page. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.playlistHead__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  margin-block-start: var(--glacier-space-2);
+}
+
+.playlistEmpty {
+  padding: var(--glacier-space-6) var(--glacier-space-4);
+  max-inline-size: 34rem;
+}
+
+.playlistPageScroll {
+  flex: 1;
+  min-block-size: 0;
+  padding: 0 var(--glacier-space-3) var(--glacier-space-4);
+}
+
+/* The kit's sortable rows carry the drag handle and the drag chrome; the row
+   inside one is ours. Give the row a plate so a dragged song reads as a card
+   lifting off the list. */
+.playlistRows > li {
+  border: var(--glacier-hairline) solid transparent;
+  border-radius: var(--glacier-radius-md);
+}
+
+.playlistRows > li:hover {
+  background: var(--glacier-hover);
+}
+
+.playlistRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+/* The song itself: art and title, and the whole block plays it. The artist
+   link and the remove control are siblings, not nested buttons. */
+.playlistRow__main {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  flex: 1;
+  min-inline-size: 0;
+  padding: var(--glacier-space-1) 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.playlistRow__text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+/* Wide enough for columns, the artist gets one of its own - a link to their
+   page, the way the song table does it - so the title block carries the title
+   alone rather than saying the artist's name twice in one row. */
+.playlistRow__text .songArtist {
+  display: none;
+}
+
+.playlistRow__artist {
+  flex: none;
+  inline-size: 12rem;
+  text-align: start;
+}
+
+.playlistRow__time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (pointer: coarse), (max-width: 540px) {
+  .playlistHead {
+    align-items: center;
+    gap: var(--glacier-space-3);
+    padding: var(--glacier-space-3);
+  }
+
+  .playlistHead__mosaic {
+    inline-size: 5.5rem;
+    block-size: 5.5rem;
+  }
+
+  .playlistHead__name {
+    font-size: var(--glacier-font-size-lg);
+  }
+
+  /* No room for a column, so the artist folds back under the title - the
+     phone's song table makes the same trade. */
+  .playlistRow__artist {
+    display: none;
+  }
+
+  .playlistRow__text .songArtist {
+    display: block;
+  }
+}
+
+/* The add-to-playlist panel. Worn as a popover off a control, or as a dialog
+   when the caller has nothing to anchor to - the body is the same either way. */
+.addPlaylistPanel {
+  inline-size: 20rem;
+  max-inline-size: calc(100vw - 2rem);
+}
+
+.addPlaylist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  min-inline-size: 0;
+}
+
+.addPlaylist__song {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.addPlaylist__search {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  color: var(--glacier-text-muted);
+}
+
+.addPlaylist__search > :last-child {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.addPlaylist__draft {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.addPlaylist__draft > :first-child {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+/* "New playlist" leads the list, the way it does everywhere else this panel
+   exists - the answer to "none of these" is always the first thing in reach. */
+.addPlaylist__new {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  inline-size: 100%;
+  padding: var(--glacier-space-2);
+  background: none;
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  color: inherit;
+  font: inherit;
+  font-weight: var(--glacier-font-weight-medium);
+  text-align: start;
+  cursor: pointer;
+}
+
+.addPlaylist__new:hover,
+.addPlaylist__new:focus-visible {
+  background: var(--glacier-hover);
+}
+
+.addPlaylist__newIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2rem;
+  block-size: 2rem;
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+}
+
+.addPlaylist__scroll {
+  max-block-size: 16rem;
+}
+
+.addPlaylist__list {
+  display: flex;
+  flex-direction: column;
+}
+
+.addPlaylist__empty {
+  padding: var(--glacier-space-3) var(--glacier-space-2);
+}
+
+.addPlaylistRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  inline-size: 100%;
+  padding: var(--glacier-space-2);
+  background: none;
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.addPlaylistRow:hover,
+.addPlaylistRow:focus-visible {
+  background: var(--glacier-hover);
+}
+
+.addPlaylistRow__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2rem;
+  block-size: 2rem;
+  flex: none;
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface-raised, var(--glacier-hover));
+  color: var(--glacier-text-muted);
+}
+
+/* A list the song is already in wears the accent on its glyph and its tick -
+   the row stays a toggle, so pressing it again takes the song back out. */
+.addPlaylistRow[data-in] .addPlaylistRow__icon {
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+}
+
+.addPlaylistRow__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.addPlaylistRow__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.addPlaylistRow__meta {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.addPlaylistRow__check {
+  flex: none;
+  display: inline-flex;
+  color: var(--glacier-accent-solid);
+}
+
+/* Deleting a list asks first; the two answers sit apart from the explanation. */
+.playlistConfirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-4);
+}
+
+.playlistConfirm__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--glacier-space-2);
+}
+
+/* ── Page-level search ───────────────────────────────────────────────────── */
+
+/* The search field each page now carries, in place of the old title-bar one.
+   Full-width where it introduces a list (the Library table), capped to a
+   readable measure on the browse pages so it does not run the width of a wide
+   window. */
+.pageSearch {
+  inline-size: 100%;
+}
+
+.homePage > .pageSearch,
+.discoverPage > .pageSearch {
+  max-inline-size: 34rem;
+}
+
+/* Home's local-search results: the same square cards the shelves use, laid out
+   as a wrapping grid rather than a single scrolling rail. */
+.homeResults .homeResultsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: var(--glacier-space-4) var(--glacier-space-3);
+  margin-block-start: var(--glacier-space-3);
+}
+
+/* The cards stretch to fill their grid cell here rather than keeping the
+   shelf's fixed width. */
+.homeResultsGrid .trackCard {
+  inline-size: 100%;
+}
+
+.homeResultsEmpty {
+  margin: var(--glacier-space-2) 0;
+  color: var(--glacier-text-muted);
+  font-size: 0.9rem;
+}
+
+/* ── Discover search results ─────────────────────────────────────────────── */
+
+/* A search hit (Spotify/Deezer): a square (round for an artist) cover, title,
+   subtitle, and a corner badge that is the Add affordance for a track and a
+   "search deeper" glyph for an artist. The whole card is one button - a track
+   imports on tap, an artist re-runs the search for its name. */
+.resultCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.resultCard:disabled {
+  cursor: default;
+}
+
+.resultCard__cover {
+  position: relative;
+  inline-size: 100%;
+  aspect-ratio: 1;
+  border-radius: var(--glacier-radius-lg);
+  overflow: hidden;
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  background: var(--glacier-surface-sunken);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--glacier-accent);
+}
+
+.resultCard__cover[data-kind='artist'] {
+  border-radius: var(--glacier-radius-full);
+}
+
+.resultCard__cover img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.resultCard__title {
+  margin-block-start: var(--glacier-space-1);
+  font-size: 0.875rem;
+  font-weight: 550;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.resultCard__sub {
+  font-size: 0.75rem;
+  color: var(--glacier-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The corner badge sits on the cover's top-right: a circular chip that reads
+   as the card's action and its state. */
+.resultCard__badge {
+  position: absolute;
+  inset-block-start: var(--glacier-space-2);
+  inset-inline-end: var(--glacier-space-2);
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface, rgba(0, 0, 0, 0.55));
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  color: var(--glacier-accent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.resultCard:hover:not(:disabled) .resultCard__badge[data-state='idle'] {
+  background: var(--glacier-accent);
+  color: var(--glacier-on-accent, #fff);
+}
+
+.resultCard__badge[data-state='added'] {
+  color: var(--glacier-success, #1d9e75);
+  border-color: var(--glacier-success, #1d9e75);
+}
+
+.resultCard__spin {
+  inline-size: 0.85rem;
+  block-size: 0.85rem;
+  border-radius: 50%;
+  border: 2px solid var(--glacier-border);
+  border-top-color: var(--glacier-accent);
+  animation: resultCardSpin 0.7s linear infinite;
+}
+
+@keyframes resultCardSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* A page's own action cluster, held against its trailing edge. Whatever the
+   plugins contribute lands here - the importer's downloads button, today - so
+   an action sits with the page it acts on rather than among the tabs, which
+   are destinations and nothing else. Empty when no plugin contributes, and it
+   collapses to nothing rather than leaving a gap. */
+.pageActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}
+
+.pageActions:empty {
+  display: none;
+}
+
+/* The library's cluster is a row of its own above the showcase, so it needs
+   the alignment and the breathing room the greeting's row gets for free. */
+.pageActions--library {
+  justify-content: flex-end;
+  padding-block-start: var(--glacier-space-2);
+  /* The same gutter the showcase's heading keeps, so the button lines up with
+     the page's edge rather than the screen's. */
+  padding-inline: var(--glacier-space-4);
+}
+
+/* ── Mobile full-screen search ───────────────────────────────────────────── */
+
+/* The phone's search is a full-screen sheet, not the desktop's centered
+   palette: a field under the status bar and a tappable results list filling the
+   rest. Sits above the floating player and the bottom nav (z 50), opaque so
+   nothing shows through. */
+.mobileSearch {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  background: var(--glacier-bg);
+  padding-block-start: env(safe-area-inset-top, 0px);
+  overscroll-behavior: contain;
+}
+
+.mobileSearch__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border-block-end: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.mobileSearch__field {
+  flex: 1;
+  min-width: 0;
+}
+
+.mobileSearch__results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-block-end: calc(env(safe-area-inset-bottom, 0px) + var(--glacier-space-4));
+}
+
+.mobileSearch__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* A generous thumb-sized row: cover (or a glyph for a command), then title over
+   a muted subtitle. */
+.mobileSearchRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  inline-size: 100%;
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.mobileSearchRow:active {
+  background: var(--glacier-surface-sunken);
+}
+
+.mobileSearchRow__art,
+.mobileSearchRow__glyph {
+  flex: none;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  border-radius: var(--glacier-radius-md);
+  object-fit: cover;
+  background: var(--glacier-surface-sunken);
+}
+
+.mobileSearchRow__glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--glacier-accent);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.mobileSearchRow__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.mobileSearchRow__title {
+  font-size: 0.95rem;
+  font-weight: 550;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobileSearchRow__sub {
+  font-size: 0.8rem;
+  color: var(--glacier-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobileSearch__note {
+  margin: var(--glacier-space-3);
+  color: var(--glacier-text-muted);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.mobileSearch__hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-6) var(--glacier-space-5);
+  color: var(--glacier-text-muted);
+  text-align: center;
+}
+
+/* ---- A catalogue artist's page (Discover) ------------------------------ */
+
+.catalogArtist__back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  padding: var(--glacier-space-1) var(--glacier-space-2) var(--glacier-space-1)
+    var(--glacier-space-1);
+  background: none;
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  color: var(--glacier-text-muted);
+  font: inherit;
+  font-size: var(--glacier-font-size-sm);
+  cursor: pointer;
+}
+
+.catalogArtist__back:hover,
+.catalogArtist__back:focus-visible {
+  background: var(--glacier-hover);
+  color: var(--glacier-text);
+}
+
+/* The hero: a round portrait beside the name and the numbers. Round because
+   this is a person, not a record - the release cards below are the squares. */
+.catalogArtist__head {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-4);
+}
+
+.catalogArtist__portrait {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 7.5rem;
+  block-size: 7.5rem;
+  border-radius: var(--glacier-radius-full);
+  overflow: hidden;
+  background: var(--glacier-surface-raised, var(--glacier-hover));
+  color: var(--glacier-text-muted);
+}
+
+.catalogArtist__portrait img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.catalogArtist__meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  min-inline-size: 0;
+}
+
+.catalogArtist__kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.catalogArtist__name {
+  margin: 0;
+  font-size: clamp(1.5rem, 4.5vw, 2.25rem);
+  line-height: 1.1;
+}
+
+.catalogArtist__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-1) var(--glacier-space-3);
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-sm);
+}
+
+.catalogArtist__stats strong {
+  color: var(--glacier-text);
+  font-weight: var(--glacier-font-weight-medium);
+}
+
+/* The popular tracks: a numbered list, each row one tap from the import queue. */
+.catalogTracks {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.catalogTrack {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-1) var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+}
+
+.catalogTrack:hover {
+  background: var(--glacier-hover);
+}
+
+.catalogTrack__rank {
+  flex: none;
+  inline-size: 1.25rem;
+  text-align: end;
+  color: var(--glacier-text-subtle, var(--glacier-text-muted));
+  font-variant-numeric: tabular-nums;
+  font-size: var(--glacier-font-size-sm);
+}
+
+.catalogTrack__art {
+  flex: none;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  border-radius: var(--glacier-radius-sm);
+  object-fit: cover;
+}
+
+.catalogTrack__art--glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--glacier-surface-raised, var(--glacier-hover));
+  color: var(--glacier-text-muted);
+}
+
+.catalogTrack__title {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalogTrack__time {
+  flex: none;
+  color: var(--glacier-text-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--glacier-font-size-sm);
+}
+
+.catalogTrack__add {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border-radius: var(--glacier-radius-full);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  background: transparent;
+  color: var(--glacier-text);
+  cursor: pointer;
+}
+
+.catalogTrack__add:hover:not(:disabled) {
+  background: var(--glacier-hover);
+}
+
+.catalogTrack__add[data-state='added'] {
+  color: var(--glacier-accent-solid);
+  border-color: var(--glacier-accent-border);
+}
+
+.catalogTrack__add:disabled {
+  cursor: default;
+}
+
+@media (pointer: coarse), (max-width: 540px) {
+  .catalogArtist__head {
+    gap: var(--glacier-space-3);
+  }
+
+  .catalogArtist__portrait {
+    inline-size: 5rem;
+    block-size: 5rem;
+  }
+}
+
+/* ── Settings revamp ─────────────────────────────────────────────────────── */
+
+/* The touch list's clusters: consecutive rows of one group share a card, the
+   iOS-settings shape, with hairlines between the rows inside. */
+.settingsScreen__group {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+  overflow: hidden;
+}
+
+.settingsScreen__group + .settingsScreen__group {
+  margin-block-start: var(--glacier-space-3);
+}
+
+.settingsScreen__group .settingsScreen__row {
+  border-radius: 0;
+  background: transparent;
+}
+
+.settingsScreen__group .settingsScreen__row:active {
+  background: var(--glacier-surface-hover, rgba(128, 128, 128, 0.16));
+}
+
+.settingsScreen__group .settingsScreen__row + .settingsScreen__row {
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+/* The tinted icon chip each row wears: a small squircle in the section's own
+   colour family, glyph in white. Fixed colours, tuned to read on both themes. */
+.settingsScreen__rowIcon[data-tint] {
+  inline-size: 1.85rem;
+  block-size: 1.85rem;
+  border-radius: 0.55rem;
+  color: #fff;
+}
+
+.settingsScreen__rowIcon[data-tint] svg {
+  inline-size: 1.05rem;
+  block-size: 1.05rem;
+}
+
+.settingsScreen__rowIcon[data-tint='pink'] { background: oklch(0.63 0.23 8); }
+.settingsScreen__rowIcon[data-tint='blue'] { background: oklch(0.58 0.18 250); }
+.settingsScreen__rowIcon[data-tint='green'] { background: oklch(0.6 0.15 160); }
+.settingsScreen__rowIcon[data-tint='orange'] { background: oklch(0.68 0.17 60); }
+.settingsScreen__rowIcon[data-tint='purple'] { background: oklch(0.58 0.2 300); }
+.settingsScreen__rowIcon[data-tint='slate'] { background: oklch(0.55 0.03 250); }
+
+/* Label over the live one-line reading of the section's state. */
+.settingsScreen__rowText {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.settingsScreen__rowText .settingsScreen__rowLabel {
+  flex: none;
+}
+
+.settingsScreen__rowSummary {
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--glacier-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The stat tiles Settings uses (the library in General, the server board):
+   a responsive grid of the kit's own micro-cards. */
+.libraryStats,
+.serverStats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: var(--glacier-space-2);
+}
+
+/* The server hero: glyph, name+status, and who is signed in - one glance. */
+.serverHero {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  flex-wrap: wrap;
+}
+
+.serverHero__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  flex: none;
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-accent-soft, var(--glacier-surface-sunken));
+  color: var(--glacier-accent-solid, var(--glacier-accent));
+}
+
+.serverHero__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.serverHero__name {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.serverHero__status {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  min-inline-size: 0;
+}
+
+.serverHero__who {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.serverHero__whoText {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+/* The disk readout: heading row, then the segmented meter. */
+.serverDisk {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface);
+}
+
+.serverDisk__head {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  color: var(--glacier-text-muted);
+}
+
+.serverDisk__free {
+  margin-inline-start: auto;
+}
+
+/* Account rows: avatar, name (+owner pill), actions on the trailing edge. */
+.userRows {
+  display: flex;
+  flex-direction: column;
+}
+
+.userRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2) 0;
+}
+
+.userRow + .userRow {
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.userRow__name {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.userRow__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  flex: none;
+}
+
+/* The add-a-listener drawer: an inset form under the rows. */
+.userAdd {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface);
+}
+
+/* This device's identity card on the Devices pane. */
+.deviceIdentity {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+.deviceIdentity__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  flex: none;
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-accent-soft, var(--glacier-surface-sunken));
+  color: var(--glacier-accent-solid, var(--glacier-accent));
+}
+
+.deviceIdentity__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.deviceIdentity__status {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+/* The rename field and its save button on one line. */
+.deviceRename {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.deviceRename > :first-child {
+  flex: 1;
+}
+
+/* About: the wordmark hero, then icon-led rows. */
+.aboutHero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-4) 0 var(--glacier-space-2);
+  text-align: center;
+}
+
+.aboutHero__mark {
+  inline-size: 9rem;
+  max-inline-size: 60%;
+}
+
+.aboutHero__pills {
+  display: flex;
+  gap: var(--glacier-space-2);
+}
+
+.aboutRows {
+  display: flex;
+  flex-direction: column;
+}
+
+.aboutRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2) 0;
+}
+
+.aboutRow + .aboutRow {
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.aboutRow__icon {
+  display: inline-flex;
+  color: var(--glacier-text-muted);
+  flex: none;
+}
+
+.aboutRow__label {
+  font-weight: 550;
+  flex: none;
+  min-inline-size: 6rem;
+}
+
+.aboutRow__value {
+  color: var(--glacier-text-muted);
+  font-size: 0.875rem;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The kit's StatTile sizes its value for dashboards twice this width; inside
+   the settings grids the number must fit a ~9rem tile beside its icon, so the
+   value steps down (and the body may actually flex into the spare room). The
+   attribute match rides the hashed module class - contained to these grids. */
+.libraryStats > *,
+.serverStats > * {
+  /* Icon above the number rather than beside it: at these tile widths a value
+     like "6.5 GB" cannot clip when it has the whole tile to itself. */
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--glacier-space-2);
+}
+
+.libraryStats [class*='_body_'],
+.serverStats [class*='_body_'] {
+  flex: none;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.libraryStats [class*='_value_'],
+.serverStats [class*='_value_'] {
+  font-size: 1.35rem;
+}
+
+/* ── Plugin repositories ─────────────────────────────────────────────── */
+
+/* One repository: its address row, then the plugins it offers. */
+.pluginRepo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-3);
+  border: 1px solid var(--glacier-border);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface);
+}
+
+.pluginRepoHead {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.pluginRepoUrl {
+  flex: 1;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.pluginRepoRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding-block-start: var(--glacier-space-2);
+  border-block-start: 1px solid var(--glacier-border);
+}
+
+.pluginRepoRowText {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+/* The add row: field takes the room, button rides along. */
+.pluginRepoAdd {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.pluginRepoAdd > :first-child {
+  flex: 1;
 }

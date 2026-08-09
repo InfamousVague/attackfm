@@ -10,21 +10,56 @@ import {
   SegmentedControl,
   Select,
   Slider,
+  Spinner,
+  StatTile,
   Switch,
   TabbedModal,
   Text,
 } from '@glacier/react';
 import { accentOptions, accentSteps } from '@glacier/tokens';
-import { Blocks, Cloud, FolderOpen, Info, Play, Settings, SlidersHorizontal } from '@glacier/icons';
-import { useEffect, useState } from 'react';
+import {
+  Blocks,
+  ChevronLeft,
+  ChevronRight,
+  Cloud,
+  Disc3,
+  FolderOpen,
+  Info,
+  Mic2,
+  MonitorSpeaker,
+  Music,
+  Palette,
+  Play,
+  Settings,
+  Timer,
+  X,
+} from '@glacier/icons';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import pkg from '../../package.json';
 import type { Plugin } from '../plugins/types.ts';
+import {
+  addSource,
+  fetchManifest,
+  installPlugin,
+  readSources,
+  removeSource,
+  uninstallPlugin,
+  type RemoteManifest,
+  type RemotePluginListing,
+} from '../plugins/remote.ts';
 import { BRAND_ACCENTS } from './brandAccents.ts';
 import { isIOS } from './platform.ts';
 import { useAppearance } from './appearance.tsx';
 import { canPickFolder, isTauri } from './tauri.ts';
 import { useLibrary } from './library.tsx';
+import { onlineMetadataEnabled, setOnlineMetadata } from './netPrefs.ts';
 import { usePlayback, type SleepTimer } from './playback.tsx';
 import { usePlugins, usePluginSettingsSections } from '../plugins/runtime.tsx';
+import { AboutSettings } from './AboutSettings.tsx';
+import { DevicesSettings } from './DevicesSettings.tsx';
+import { useConnect } from './playbackSync.tsx';
+import { useServerSession } from './serverSession.tsx';
 import { ServerSettings } from './ServerSettings.tsx';
 import { ThemeSelector } from './ThemeSelector.tsx';
 import { getThemePreset, THEME_PRESETS, type ThemePreference } from './themePresets.ts';
@@ -32,6 +67,47 @@ import { getThemePreset, THEME_PRESETS, type ThemePreference } from './themePres
 interface SettingsModalProps {
   open: boolean;
   onClose: () => void;
+}
+
+/** Same coarse/narrow signal the player folds its rails on, so Settings turns
+ *  into the touch drill-in exactly where the rest of the mobile chrome does. */
+const MOBILE_QUERY = '(pointer: coarse), (max-width: 540px)';
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(query).matches,
+  );
+  useEffect(() => {
+    const mql = window.matchMedia(query);
+    const onChange = () => setMatches(mql.matches);
+    onChange();
+    mql.addEventListener('change', onChange);
+    // Some embedded webviews resize without firing the mql change; the resize
+    // listener re-asks the same question for those, and costs nothing elsewhere.
+    window.addEventListener('resize', onChange);
+    return () => {
+      mql.removeEventListener('change', onChange);
+      window.removeEventListener('resize', onChange);
+    };
+  }, [query]);
+  return matches;
+}
+
+/** One entry in the settings rail: an id, its label, its icon, its pane -
+ * plus what the phone's drill-in list needs: a one-line reading of the
+ * section's current state, a tint for its icon chip, and which cluster of
+ * rows it files under. */
+interface SettingsSection {
+  id: string;
+  label: string;
+  icon?: ReactNode;
+  content: ReactNode;
+  /** The row's second line on the touch list, e.g. "Midnight · Attack". */
+  summary?: string;
+  /** The icon chip's colour family on the touch list. */
+  tint?: 'pink' | 'blue' | 'green' | 'orange' | 'purple' | 'slate';
+  /** Rows with the same group cluster into one card on the touch list. */
+  group?: number;
 }
 
 // The name and one-line gloss for each theme, keyed by preset id.
@@ -134,7 +210,53 @@ function Appearance() {
  * is built from and played through.
  */
 function General() {
-  const { source, musicDir, loading, isDefault, choose, reset } = useLibrary();
+  const { source, musicDir, loading, isDefault, choose, reset, tracks } = useLibrary();
+  // A module-level pref rather than context: the two consumers are plain
+  // async functions, so the switch just re-reads on each render.
+  const [online, setOnline] = useState(onlineMetadataEnabled);
+
+  // The library, counted: what the folder (or the server) amounts to.
+  const libStats = useMemo(() => {
+    const artists = new Set<string>();
+    const albums = new Set<string>();
+    let seconds = 0;
+    for (const t of tracks) {
+      if (t.artist) artists.add(t.artist);
+      if (t.album) albums.add(`${t.artist}\u0000${t.album}`);
+      seconds += t.duration ?? 0;
+    }
+    return { artists: artists.size, albums: albums.size, hours: Math.round(seconds / 3600) };
+  }, [tracks]);
+
+  const onlineSwitch = (
+    <div className="prefsSection">
+      <Label>Privacy</Label>
+      <Switch
+        label="Online metadata lookups"
+        checked={online}
+        onCheckedChange={(on) => {
+          setOnlineMetadata(on);
+          setOnline(on);
+        }}
+      />
+      <Text tone="muted" size="sm">
+        Fetches lyrics from LRCLIB and album art from Apple, keyed by track titles.
+        Off keeps the app entirely between your devices and your own server.
+      </Text>
+    </div>
+  );
+
+  const statsGrid = (
+    <div className="prefsSection">
+      <Label>Your library</Label>
+      <div className="libraryStats">
+        <StatTile icon={<Music size={16} />} value={tracks.length.toLocaleString()} label="Songs" />
+        <StatTile icon={<Mic2 size={16} />} value={libStats.artists.toLocaleString()} label="Artists" />
+        <StatTile icon={<Disc3 size={16} />} value={libStats.albums.toLocaleString()} label="Albums" />
+        <StatTile icon={<Timer size={16} />} value={libStats.hours.toLocaleString()} label="Hours" />
+      </div>
+    </div>
+  );
 
   // A connected server IS the library, so the folder picker would be pointing
   // at something nothing is playing from. Say where the music is coming from
@@ -142,6 +264,7 @@ function General() {
   if (source === 'server') {
     return (
       <div className="prefsBody">
+        {statsGrid}
         <div className="prefsSection">
           <Field
             label="Music library"
@@ -150,12 +273,14 @@ function General() {
             <Input readOnly value={musicDir} aria-label="Music library" leadingIcon={<Cloud size={16} />} />
           </Field>
         </div>
+        {onlineSwitch}
       </div>
     );
   }
 
   return (
     <div className="prefsBody">
+      {statsGrid}
       <div className="prefsSection">
         <Field
           label="Music folder"
@@ -188,15 +313,17 @@ function General() {
           </div>
         )}
       </div>
+      {onlineSwitch}
     </div>
   );
 }
 
-// The sections down the side. Appearance, General, and Playback are wired up;
-// the copy names what the others will hold.
-const PLACEHOLDERS = [
-  { id: 'about', label: 'About', icon: <Info size={16} />, blurb: 'Version, licences, and the credits for what is playing.' },
-];
+/** The accent slug's human name, brand accents first, kit accents after. */
+function accentLabel(accent: string): string {
+  const brand = Object.values(BRAND_ACCENTS).find((a) => a.name === accent);
+  if (brand) return brand.label;
+  return accentOptions.find((a) => a.name === accent)?.label ?? accent;
+}
 
 /** The sleep timer's countdown, ticking once a second while one is armed. */
 function SleepCountdown({ sleep }: { sleep: SleepTimer }) {
@@ -343,6 +470,41 @@ function PlaybackSettings() {
         <Text tone="muted" size="sm">
           Plays the same signal to both ears - for single-earbud listening, or hearing comfort.
         </Text>
+        <Switch
+          label="Volume boost range"
+          checked={pb.volumeBoost}
+          onCheckedChange={(on) => pb.update({ volumeBoost: on })}
+        />
+        <Text tone="muted" size="sm">
+          Lets the fader push past 100% for quiet recordings. Off caps it at unity - kinder to
+          ears and speakers.
+        </Text>
+        {isIOS && (
+          <>
+            <Switch
+              label="Equalizer on iPhone"
+              checked={pb.iosEq}
+              onCheckedChange={(on) => pb.update({ iosEq: on })}
+            />
+            <Text tone="muted" size="sm">
+              Routes playback through the audio engine so the equalizer, night mode, and mono work
+              here too. iOS can silence that engine when the screen locks, so background playback
+              is steadier with this off. Applies from the next launch.
+            </Text>
+          </>
+        )}
+      </div>
+      <div className="prefsSection">
+        <Label>History</Label>
+        <Switch
+          label="Save listening history"
+          checked={pb.saveHistory}
+          onCheckedChange={(on) => pb.update({ saveHistory: on })}
+        />
+        <Text tone="muted" size="sm">
+          Reports finished listens to your server - it is what feeds the Home page&rsquo;s
+          recently-played shelves and your mixes. Off, nothing is written anywhere.
+        </Text>
       </div>
       <div className="prefsSection">
         <Field label="Sleep timer" hint="Fades out and pauses when the time is up. Cleared on relaunch.">
@@ -452,6 +614,205 @@ function PluginCard({
   );
 }
 
+/** The detail dialog's uninstall control: removes the stored bundle. */
+function UninstallButton({
+  pluginId,
+  name,
+  onDone,
+}: {
+  pluginId: string;
+  name: string;
+  onDone: () => void;
+}) {
+  const { reloadRemote } = usePlugins();
+  return (
+    <Button
+      variant="ghost"
+      onClick={() => {
+        uninstallPlugin(pluginId);
+        reloadRemote();
+        onDone();
+      }}
+      aria-label={`Uninstall ${name}`}
+    >
+      Uninstall
+    </Button>
+  );
+}
+
+/**
+ * The repositories the marketplace pulls from, and what they offer.
+ *
+ * A repository is a URL serving a manifest of installable plugin bundles.
+ * Installing downloads the code once and keeps it locally - from then on the
+ * plugin loads at boot with no network - so a repository is a distribution
+ * channel, not a dependency. Adding one is trusting its owner with code that
+ * runs inside the app, and the confirm on Add says exactly that.
+ */
+function PluginRepositories() {
+  const { remoteInstalled, reloadRemote } = usePlugins();
+  const [sources, setSources] = useState<string[]>(readSources);
+  const [adding, setAdding] = useState('');
+  // source URL -> its fetched manifest, error string, or 'loading'.
+  const [feeds, setFeeds] = useState<Map<string, RemoteManifest | string | 'loading'>>(new Map());
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    const controller = new AbortController();
+    setFeeds(new Map(sources.map((s) => [s, 'loading' as const])));
+    for (const source of sources) {
+      void fetchManifest(source, controller.signal)
+        .then((manifest) => {
+          if (!live) return;
+          setFeeds((prev) => new Map(prev).set(source, manifest));
+        })
+        .catch((err) => {
+          if (!live) return;
+          setFeeds((prev) =>
+            new Map(prev).set(source, err instanceof Error ? err.message : 'unreachable'),
+          );
+        });
+    }
+    return () => {
+      live = false;
+      controller.abort();
+    };
+  }, [sources]);
+
+  const install = async (source: string, listing: RemotePluginListing) => {
+    setBusyId(listing.id);
+    try {
+      await installPlugin(source, listing);
+      reloadRemote();
+    } catch (err) {
+      // Surfaced inline on the row rather than a toast: the row is where the
+      // user is looking, and the message names the listing already.
+      setFeeds((prev) => {
+        const feed = prev.get(source);
+        if (typeof feed === 'object' && feed !== null && 'plugins' in feed) return prev;
+        return prev;
+      });
+      window.alert(
+        `Could not install ${listing.name}: ${err instanceof Error ? err.message : err}`,
+      );
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <div className="prefsSection">
+      <Label>Plugin repositories</Label>
+      <Text size="sm" tone="muted">
+        Where the marketplace looks for installable plugins. Your own server
+        hosts one at <code>/plugins</code>.
+      </Text>
+
+      {sources.map((source) => {
+        const feed = feeds.get(source);
+        const listings =
+          typeof feed === 'object' && feed !== null && 'plugins' in feed ? feed.plugins : [];
+        return (
+          <div key={source} className="pluginRepo">
+            <div className="pluginRepoHead">
+              <Text size="sm" mono className="pluginRepoUrl">
+                {source.replace(/^https?:\/\//, '')}
+              </Text>
+              {feed === 'loading' && <Spinner size="sm" />}
+              {typeof feed === 'string' && feed !== 'loading' && (
+                <Pill size="sm" tone="danger">
+                  {feed}
+                </Pill>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={`Remove repository ${source}`}
+                onClick={() => setSources(removeSource(source))}
+              >
+                Remove
+              </Button>
+            </div>
+            {listings.map((listing) => {
+              const installed = remoteInstalled.get(listing.id);
+              const upToDate = installed?.version === listing.version;
+              return (
+                <div key={listing.id} className="pluginRepoRow">
+                  <div className="pluginRepoRowText">
+                    <Text size="sm">
+                      {listing.name}{' '}
+                      <Text as="span" size="xs" tone="subtle">
+                        v{listing.version}
+                        {listing.author ? ` · ${listing.author}` : ''}
+                      </Text>
+                    </Text>
+                    <Text size="xs" tone="muted">
+                      {listing.description}
+                    </Text>
+                  </div>
+                  {installed && upToDate ? (
+                    <Pill size="sm" tone="success">
+                      Installed
+                    </Pill>
+                  ) : (
+                    <Button
+                      variant={installed ? 'outline' : 'solid'}
+                      size="sm"
+                      disabled={busyId === listing.id}
+                      onClick={() => void install(source, listing)}
+                    >
+                      {busyId === listing.id
+                        ? 'Installing…'
+                        : installed
+                          ? `Update to v${listing.version}`
+                          : 'Install'}
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
+            {Array.isArray(listings) && listings.length === 0 && feed !== 'loading' && typeof feed !== 'string' && (
+              <Text size="xs" tone="subtle">
+                This repository offers nothing yet.
+              </Text>
+            )}
+          </div>
+        );
+      })}
+
+      <div className="pluginRepoAdd">
+        <Input
+          value={adding}
+          onChange={(e) => setAdding(e.currentTarget.value)}
+          placeholder="plugins.example.com"
+          aria-label="Repository address"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!adding.trim()}
+          onClick={() => {
+            // Adding a repository is trusting its owner with code that runs
+            // inside the app - said out loud, once, at the moment it matters.
+            const sure = window.confirm(
+              'Plugins from a repository run inside AttackFM with the same access the app has. Only add repositories you trust.\n\nAdd this repository?',
+            );
+            if (!sure) return;
+            setSources(addSource(adding));
+            setAdding('');
+          }}
+        >
+          Add
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * The marketplace: every registered plugin as a card on a shelf, each opening
  * a detail dialog that says what it is, what it adds, and holds the switch.
@@ -459,20 +820,21 @@ function PluginCard({
  * being toggled owns the selected section.
  */
 function PluginsSettings() {
-  const { all, isEnabled, setEnabled, failures } = usePlugins();
+  const { all, isEnabled, setEnabled, failures, remoteInstalled } = usePlugins();
   // The id, not the object: a plugin pulled mid-session closes its dialog
   // instead of showing a ghost of it.
   const [openId, setOpenId] = useState<string | null>(null);
   const open = all.find((p) => p.id === openId) ?? null;
   const openFailure = open ? failures.get(open.id) : undefined;
+  const openRemote = open ? remoteInstalled.get(open.id) : undefined;
   const enabledCount = all.filter((p) => isEnabled(p.id)).length;
 
   return (
     <div className="prefsBody">
       <Text size="sm" tone="muted">
         {all.length === 1 ? '1 plugin' : `${all.length} plugins`} · {enabledCount} enabled.
-        Everything here is built in and runs locally; flip one on to add what it
-        carries, off to put it away.
+        Flip one on to add what it carries, off to put it away. Plugins install
+        from the repositories below and run locally once installed.
       </Text>
       <div className="pluginMarket">
         {all.map((p) => (
@@ -496,6 +858,9 @@ function PluginsSettings() {
         say - carries on in the background without its controls until it is
         switched back on.
       </Text>
+
+      <PluginRepositories />
+
 
       {/* The detail dialog, stacked over the settings modal - the kit's layer
           stack peels Escape one dialog at a time. */}
@@ -522,12 +887,21 @@ function PluginsSettings() {
         }
         footer={
           open && (
-            <Button
-              variant={isEnabled(open.id) ? 'ghost' : 'solid'}
-              onClick={() => setEnabled(open.id, !isEnabled(open.id))}
-            >
-              {isEnabled(open.id) ? 'Disable' : 'Enable'}
-            </Button>
+            <>
+              {openRemote && (
+                <UninstallButton
+                  pluginId={open.id}
+                  name={open.name}
+                  onDone={() => setOpenId(null)}
+                />
+              )}
+              <Button
+                variant={isEnabled(open.id) ? 'ghost' : 'solid'}
+                onClick={() => setEnabled(open.id, !isEnabled(open.id))}
+              >
+                {isEnabled(open.id) ? 'Disable' : 'Enable'}
+              </Button>
+            </>
           )
         }
       >
@@ -579,48 +953,101 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   // modal survives a toggle without remounting out from under the user.
   const pluginSections = usePluginSettingsSections();
 
-  const sections = [
+  // The one-line readings the touch list shows under each row - each section's
+  // current state, read from the same stores the panes edit so they can never
+  // disagree. Cheap enough to compute on every open.
+  const { theme, accent } = useAppearance();
+  const pb = usePlayback();
+  const { session } = useServerSession();
+  const { connected, devices } = useConnect();
+  const { all: allPlugins, isEnabled } = usePlugins();
+  const { source, tracks } = useLibrary();
+
+  const playbackBits = [
+    pb.crossfade > 0 ? `Crossfade ${pb.crossfade}s` : null,
+    pb.smartShuffle ? 'Smart shuffle' : null,
+    pb.autoDj ? 'Auto DJ' : null,
+    pb.nightMode ? 'Night mode' : null,
+  ].filter(Boolean);
+  const online = devices.filter((d) => d.online).length;
+  const enabledPlugins = allPlugins.filter((p) => isEnabled(p.id)).length;
+
+  const sections: SettingsSection[] = [
     {
       id: 'appearance',
       label: 'Appearance',
-      icon: <SlidersHorizontal size={16} />,
+      icon: <Palette size={16} />,
       content: <Appearance />,
+      summary: `${THEME_COPY[theme].label} · ${accentLabel(accent)}`,
+      tint: 'purple',
+      group: 0,
     },
     {
       id: 'general',
       label: 'General',
       icon: <Settings size={16} />,
       content: <General />,
+      summary:
+        source === 'server'
+          ? `${tracks.length.toLocaleString()} songs from your server`
+          : `${tracks.length.toLocaleString()} songs in your folder`,
+      tint: 'slate',
+      group: 0,
     },
     {
       id: 'playback',
       label: 'Playback',
       icon: <Play size={16} />,
       content: <PlaybackSettings />,
+      summary: playbackBits.length > 0 ? playbackBits.slice(0, 2).join(' · ') : 'Standard playback',
+      tint: 'pink',
+      group: 0,
     },
-    // Where the music comes from, when it does not come from this machine.
-    // Sits next to General for that reason: the two answer the same question.
+    // Where the music comes from, when it does not come from this machine -
+    // and, beside it, the devices it goes out to.
     {
       id: 'server',
       label: 'Server',
       icon: <Cloud size={16} />,
       content: <ServerSettings />,
+      summary: session ? session.url.replace(/^https?:\/\//, '') : 'Not connected',
+      tint: 'blue',
+      group: 1,
+    },
+    {
+      id: 'devices',
+      label: 'Devices',
+      icon: <MonitorSpeaker size={16} />,
+      content: <DevicesSettings />,
+      summary: !session
+        ? 'Needs a server'
+        : connected
+          ? `${online} ${online === 1 ? 'device' : 'devices'} online`
+          : 'Connecting…',
+      tint: 'green',
+      group: 1,
     },
     // The importer contributes Downloads here, exactly where it has always
     // sat; any plugin's tabs land in this run of the rail.
-    ...pluginSections,
+    ...pluginSections.map((s) => ({ ...s, tint: 'orange' as const, group: 2 })),
     {
       id: 'plugins',
       label: 'Plugins',
       icon: <Blocks size={16} />,
       content: <PluginsSettings />,
+      summary: `${enabledPlugins} of ${allPlugins.length} enabled`,
+      tint: 'orange',
+      group: 2,
     },
-    ...PLACEHOLDERS.map((s) => ({
-      id: s.id,
-      label: s.label,
-      icon: s.icon,
-      content: <Text tone="muted">{s.blurb}</Text>,
-    })),
+    {
+      id: 'about',
+      label: 'About',
+      icon: <Info size={16} />,
+      content: <AboutSettings />,
+      summary: `AttackFM v${pkg.version}`,
+      tint: 'slate',
+      group: 3,
+    },
   ];
 
   // The tab is controlled so a section that leaves the rail - a plugin pulled
@@ -632,6 +1059,13 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   useEffect(() => {
     if (!sectionIds.split('\n').includes(tab)) setTab('plugins');
   }, [sectionIds, tab]);
+
+  // On touch the rail-beside-a-pane collapses to a drill-in: a full-screen list
+  // of sections that pushes into the chosen pane, a back arrow returning to it.
+  const mobile = useMediaQuery(MOBILE_QUERY);
+  if (mobile) {
+    return <MobileSettings open={open} onClose={onClose} sections={sections} />;
+  }
 
   return (
     <TabbedModal
@@ -645,5 +1079,118 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       divider={false}
       sections={sections}
     />
+  );
+}
+
+/**
+ * The touch settings surface: a full-screen sheet portalled over everything.
+ * It opens on the section list (the "sidebar"); tapping a row pushes into that
+ * section's pane, and a back arrow at the top returns to the list. Portalled to
+ * the body so it escapes the app's stacking context, exactly like Now Playing.
+ */
+function MobileSettings({
+  open,
+  onClose,
+  sections,
+}: {
+  open: boolean;
+  onClose: () => void;
+  sections: SettingsSection[];
+}) {
+  const [activeId, setActiveId] = useState<string | null>(null);
+  // Every fresh open lands on the list, never mid-drill on a stale section.
+  useEffect(() => {
+    if (!open) setActiveId(null);
+  }, [open]);
+  // A section pulled from under us (a plugin crash) drops us back to the list
+  // rather than onto a pane that no longer exists.
+  const active = sections.find((s) => s.id === activeId) ?? null;
+  useEffect(() => {
+    if (activeId && !sections.some((s) => s.id === activeId)) setActiveId(null);
+  }, [activeId, sections]);
+
+  if (!open) return null;
+
+  return createPortal(
+    <div
+      className="settingsScreen"
+      role="dialog"
+      aria-label="Settings"
+      data-view={active ? 'detail' : 'list'}
+    >
+      {active ? (
+        <>
+          <header className="settingsScreen__head">
+            <button
+              type="button"
+              className="settingsScreen__icon"
+              onClick={() => setActiveId(null)}
+              aria-label="Back to settings"
+            >
+              <ChevronLeft size={22} />
+            </button>
+            <span className="settingsScreen__title">{active.label}</span>
+            <span className="settingsScreen__headSpacer" aria-hidden="true" />
+          </header>
+          <div className="settingsScreen__pane">{active.content}</div>
+        </>
+      ) : (
+        <>
+          <header className="settingsScreen__head">
+            <span className="settingsScreen__headSpacer" aria-hidden="true" />
+            <span className="settingsScreen__title">Settings</span>
+            <button
+              type="button"
+              className="settingsScreen__icon"
+              onClick={onClose}
+              aria-label="Close settings"
+            >
+              <X size={22} />
+            </button>
+          </header>
+          <nav className="settingsScreen__list">
+            {/* Rows cluster into cards by their group - the iOS-settings shape:
+                appearance and behaviour together, the server pair, the plugin
+                pair, then About on its own. */}
+            {sections
+              .reduce<SettingsSection[][]>((clusters, s) => {
+                const last = clusters[clusters.length - 1];
+                if (last && (last[0]!.group ?? 99) === (s.group ?? 99)) last.push(s);
+                else clusters.push([s]);
+                return clusters;
+              }, [])
+              .map((cluster) => (
+                <div key={cluster[0]!.id} className="settingsScreen__group">
+                  {cluster.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      className="settingsScreen__row"
+                      onClick={() => setActiveId(s.id)}
+                    >
+                      {s.icon ? (
+                        <span
+                          className="settingsScreen__rowIcon"
+                          data-tint={s.tint ?? 'slate'}
+                        >
+                          {s.icon}
+                        </span>
+                      ) : null}
+                      <span className="settingsScreen__rowText">
+                        <span className="settingsScreen__rowLabel">{s.label}</span>
+                        {s.summary && (
+                          <span className="settingsScreen__rowSummary">{s.summary}</span>
+                        )}
+                      </span>
+                      <ChevronRight size={18} className="settingsScreen__rowChevron" />
+                    </button>
+                  ))}
+                </div>
+              ))}
+          </nav>
+        </>
+      )}
+    </div>,
+    document.body,
   );
 }

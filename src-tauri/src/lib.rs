@@ -31,6 +31,10 @@ mod ios_audio;
 // the native template UI in gen/apple/Sources/app/carplay.m.
 mod carplay;
 
+// The native audio engine seam. Compiled everywhere so the frontend can probe
+// unconditionally; only iOS links the real Swift engine (AudioEngine.swift).
+mod native_audio;
+
 /// Holds the window square while it is resized.
 ///
 /// macOS has this natively: an aspect ratio on the window is honoured by the
@@ -226,10 +230,15 @@ fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'stat
         carplay::carplay_set_library,
         carplay::carplay_now_playing,
         ios_audio::ios_reactivate_audio,
+        native_audio::native_audio_ping,
     ]
 }
 
 #[cfg(mobile)]
 fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
-    tauri::generate_handler![carplay::carplay_set_library, carplay::carplay_now_playing]
+    tauri::generate_handler![
+        carplay::carplay_set_library,
+        carplay::carplay_now_playing,
+        native_audio::native_audio_ping,
+    ]
 }

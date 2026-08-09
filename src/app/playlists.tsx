@@ -37,13 +37,20 @@ export interface Playlist {
 
 interface PlaylistsContextValue {
   playlists: Playlist[];
-  /** Creates an empty playlist and resolves to its id. */
-  create: (name: string) => Promise<string>;
+  /**
+   * Creates a playlist and resolves to its id. Given paths, it is born holding
+   * them - which is what "New playlist" in the add-to-playlist panel does, so
+   * the song that prompted the new list is in it from the first moment rather
+   * than added a beat later.
+   */
+  create: (name: string, paths?: readonly string[]) => Promise<string>;
   remove: (id: string) => void;
   rename: (id: string, name: string) => void;
   /** Appends a track; already-present paths are left where they are. */
   addTrack: (id: string, path: string) => void;
   removeTrack: (id: string, path: string) => void;
+  /** Sets the whole running order - what a drag in the playlist page commits. */
+  reorder: (id: string, paths: readonly string[]) => void;
 }
 
 const PlaylistsContext = createContext<PlaylistsContextValue | null>(null);
@@ -105,10 +112,13 @@ function LocalPlaylists({ children }: { children: ReactNode }) {
   const value = useMemo<PlaylistsContextValue>(
     () => ({
       playlists,
-      create: (name: string) => {
+      create: (name: string, paths: readonly string[] = []) => {
         const id = makeId();
         const trimmed = name.trim() || 'New Playlist';
-        setPlaylists((prev) => [...prev, { id, name: trimmed, paths: [], createdAt: Date.now() }]);
+        setPlaylists((prev) => [
+          ...prev,
+          { id, name: trimmed, paths: [...new Set(paths)], createdAt: Date.now() },
+        ]);
         return Promise.resolve(id);
       },
       remove: (id: string) => setPlaylists((prev) => prev.filter((p) => p.id !== id)),
@@ -127,6 +137,8 @@ function LocalPlaylists({ children }: { children: ReactNode }) {
         setPlaylists((prev) =>
           prev.map((p) => (p.id === id ? { ...p, paths: p.paths.filter((x) => x !== path) } : p)),
         ),
+      reorder: (id: string, paths: readonly string[]) =>
+        setPlaylists((prev) => prev.map((p) => (p.id === id ? { ...p, paths: [...paths] } : p))),
     }),
     [playlists],
   );
@@ -187,11 +199,16 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
 
     return {
       playlists,
-      create: async (name: string) => {
+      create: async (name: string, paths: readonly string[] = []) => {
         const trimmed = name.trim() || 'New Playlist';
-        const id = await createRemotePlaylist(session, trimmed);
+        // Only tracks the server knows can ride a server playlist; a local file
+        // becomes one when the folder sync uploads it, not before.
+        const tracks = [
+          ...new Set(paths.map(trackIdFromPath).filter((t): t is number => t !== null)),
+        ];
+        const id = await createRemotePlaylist(session, trimmed, tracks);
         editSeq.current += 1;
-        setRemote((prev) => [...prev, { id, name: trimmed, updatedAt: Date.now(), tracks: [] }]);
+        setRemote((prev) => [...prev, { id, name: trimmed, updatedAt: Date.now(), tracks }]);
         void refresh();
         return String(id);
       },
@@ -229,6 +246,18 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
         const trackId = trackIdFromPath(path);
         if (!target || trackId === null) return;
         const tracks = target.tracks.filter((t) => t !== trackId);
+        mutate(
+          remote.map((p) => (p.id === target.id ? { ...p, tracks } : p)),
+          () => updateRemotePlaylist(session, target.id, { tracks }),
+        );
+      },
+      reorder: (id: string, paths: readonly string[]) => {
+        const target = byId(id);
+        if (!target) return;
+        // The new order as ids. Anything that does not resolve is dropped from
+        // the write rather than guessed at, and the refetch behind the PUT is
+        // what settles the truth either way.
+        const tracks = paths.map(trackIdFromPath).filter((t): t is number => t !== null);
         mutate(
           remote.map((p) => (p.id === target.id ? { ...p, tracks } : p)),
           () => updateRemotePlaylist(session, target.id, { tracks }),

@@ -32,12 +32,17 @@ function userAgent(): string {
 export const isMobile = (() => {
   const ua = userAgent();
   if (/Android|iPhone|iPod/i.test(ua)) return true;
-  // iPad on iPadOS 13+ claims to be a Mac; a Mac with a touchscreen does not
-  // exist, so the pair of them together is the tell.
   if (/iPad/i.test(ua)) return true;
-  if (/Macintosh/i.test(ua) && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1) {
-    return true;
-  }
+  // iPadOS 13+ claims to be a Mac, and a Tauri iOS webview can report a
+  // Mac-class agent too (no "iPhone" in the string at all). A real Mac has no
+  // touchscreen, so a Mac agent paired with ANY touch capability - touch
+  // points, touch events, or a coarse pointer - is a phone or tablet wearing a
+  // Mac's clothes. Any one of the three is enough; a desktop trips none of them.
+  const touchy =
+    (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0) ||
+    (typeof window !== 'undefined' && 'ontouchstart' in window) ||
+    (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches);
+  if (/Macintosh/i.test(ua) && touchy) return true;
   return false;
 })();
 

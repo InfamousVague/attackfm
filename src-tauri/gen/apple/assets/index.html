@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- maximum-scale=1 / user-scalable=no: this is an app shell, not a
+         document - without them iOS zooms the whole page whenever a focused
+         input's font is under 16px, and leaves it zoomed. viewport-fit=cover
+         is what makes env(safe-area-inset-*) report real values, so the
+         notch/home-indicator padding in app.css actually engages. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>AttackFM</title>
+    <style>
+      /* Pre-tokens paint so the first frame is never a white flash. */
+      html { background: #0f0f10; }
+      html[data-theme='light'] { background: #ffffff; }
+    </style>
+    <script type="module" crossorigin src="./assets/index-s28oj5jQ.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-Br1Gjkzm.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

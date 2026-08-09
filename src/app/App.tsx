@@ -1,47 +1,52 @@
 import {
   HapticsProvider,
   IconButton,
-  Kbd,
   LocaleProvider,
-  SearchField,
+  NavBar,
+  NavBarItem,
   TitleBar,
   ToastProvider,
 } from '@glacier/react';
-import { ChevronLeft, ChevronRight, Search, Settings } from '@glacier/icons';
+import { ChevronLeft, ChevronRight, Home, LibraryBig, Search, Settings } from '@glacier/icons';
 import { useEffect, useRef, useState } from 'react';
 import { AppearanceProvider } from './appearance.tsx';
 import { LibraryProvider, useLibrary } from './library.tsx';
 import { ServerSessionProvider } from './serverSession.tsx';
 import { EqualizerProvider } from './equalizer.tsx';
 import { PlaybackProvider } from './playback.tsx';
+import { PlaybackSyncProvider, useConnect } from './playbackSync.tsx';
 import { NowPlayingMotionProvider } from './nowPlayingMotion.tsx';
 import { NowPlayingBackdrop } from './NowPlayingBackdrop.tsx';
-import { PluginHookScope, PluginProviders, PluginSlot, PluginsProvider } from '../plugins/runtime.tsx';
+import {
+  AcquireProvider,
+  PluginHookScope,
+  PluginProviders,
+  PluginSlot,
+  PluginsProvider,
+  usePluginPages,
+} from '../plugins/runtime.tsx';
 import { isDesktopApp } from './platform.ts';
 import { onCarPlayPlay } from './carplay.ts';
-import { remotePath } from './server.ts';
+import { remotePath, trackIdFromPath } from './server.ts';
 import type { Track } from './tauri.ts';
 import { Player } from './Player.tsx';
 import { ArtistPage } from './ArtistPage.tsx';
+import { PlaylistPage } from './PlaylistPage.tsx';
+import { HomePage } from './HomePage.tsx';
 import { SettingsModal } from './SettingsModal.tsx';
 import { PlaylistsProvider } from './playlists.tsx';
 import { LibrarySyncProvider } from './librarySync.tsx';
 import { SongSearch } from './SongSearch.tsx';
-import { PlaylistShowcase } from './PlaylistShowcase.tsx';
-import { SongTable } from './SongTable.tsx';
+import { LibraryView } from './LibraryView.tsx';
 import wordmark from '../assets/attack-white.png';
 
 const APP_NAME = 'AttackFM';
 
 // Window chrome only makes sense where there is a window to decorate: a desktop
-// Tauri build. A phone build is inside Tauri too, but has no frame, no traffic
-// lights, and no room for a title bar with a search field in it - so it gets
-// the plain header below instead, as does the browser.
+// Tauri build. A phone build is inside Tauri too, but has no frame and no
+// traffic lights - so it gets the plain header below instead, as does the
+// browser.
 const DESKTOP = isDesktopApp;
-
-// The palette answers to both chords everywhere; the hint shows the one this
-// machine's users reach for.
-const SUMMON_HINT = /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘K' : 'Ctrl K';
 
 /**
  * Puts the library's top row on the deck at launch, once and paused: the app
@@ -171,6 +176,190 @@ function IndexingStatus() {
 
 
 /**
+ * The primary navigation, in the shape each platform holds: a vertical icon
+ * rail on the desktop, a floating horizontal bar on the phone. Both carry the
+ * same items - the core Home and Library tabs, then one per plugin page in
+ * registration order - so a plugin's page is a first-class destination
+ * wherever the app runs.
+ *
+ * It reads the plugin pages itself (usePluginPages) rather than taking them as
+ * a prop, so it must render inside the provider tree - which it does, seated
+ * below PluginsProvider like PluginSlot. The current tab and the callbacks are
+ * plain props from App, whose state lives above the plugin providers and so
+ * survives a plugin toggle untouched.
+ */
+function PrimaryNav({
+  variant,
+  tab,
+  onTab,
+  onSettings,
+}: {
+  variant: 'rail' | 'bar';
+  /** The active tab: 'home', 'library', or a plugin page's `${id}:${page}` key. */
+  tab: string;
+  onTab: (tab: string) => void;
+  onSettings: () => void;
+}) {
+  const pages = usePluginPages();
+  // A tab pointing at a plugin page whose plugin was just switched off reads as
+  // Home - the same fallback the content host makes - so the lit item never
+  // disagrees with what is actually on screen.
+  const onPluginPage = pages.some((pg) => pg.key === tab);
+  const homeActive = tab === 'home' || (tab !== 'library' && !onPluginPage);
+
+  const primaryItems = (
+    <>
+      <NavBarItem
+        icon={<Home size={18} />}
+        label="Home"
+        active={homeActive}
+        onClick={() => onTab('home')}
+      />
+      <NavBarItem
+        icon={<LibraryBig size={18} />}
+        label="Library"
+        active={tab === 'library'}
+        onClick={() => onTab('library')}
+      />
+      {pages.map((pg) => (
+        <NavBarItem
+          key={pg.key}
+          icon={pg.icon}
+          label={pg.label}
+          active={tab === pg.key}
+          onClick={() => onTab(pg.key)}
+        />
+      ))}
+    </>
+  );
+
+  if (variant === 'rail') {
+    return (
+      <NavBar
+        orientation="vertical"
+        aria-label="Primary"
+        className="appNavRail"
+        end={
+          <NavBarItem icon={<Settings size={18} />} label="Settings" onClick={onSettings} />
+        }
+      >
+        {primaryItems}
+      </NavBar>
+    );
+  }
+
+  return (
+    <NavBar orientation="horizontal" aria-label="Primary" className="appNavBar" showLabels>
+      {/* Destinations only. Search is not one - every page carries its own
+          field - and a plugin's actions (the importer's queue) belong with the
+          page they act on, top-right, rather than among the tabs. */}
+      {primaryItems}
+      <NavBarItem icon={<Settings size={18} />} label="Settings" onClick={onSettings} />
+    </NavBar>
+  );
+}
+
+/**
+ * A page stacked on top of a tab: an artist, or one playlist opened whole.
+ * Both behave the same way in the history - pushed inside whichever tab was
+ * current, so Back returns there - which is why they are one type rather than
+ * two fields that could contradict each other.
+ */
+type Detail = { kind: 'artist'; artist: string } | { kind: 'playlist'; id: string };
+
+/**
+ * The content area: whichever place is current renders here. A detail page -
+ * an artist or a playlist, opened on top of any tab - wins; then a plugin page
+ * whose nav item is active; then the Library tab; then Home, which is also the
+ * fallback when a tab points at a plugin page that is no longer running. Reads
+ * the plugin pages the same way PrimaryNav does, so the two always agree on
+ * what "active" means.
+ */
+function AppMain({
+  detail,
+  tab,
+  onPlay,
+  onOpenArtist,
+  onOpenPlaylist,
+  onCloseDetail,
+}: {
+  detail: Detail | null;
+  tab: string;
+  onPlay: (track: Track, context?: Track[]) => void;
+  onOpenArtist: (artist: string) => void;
+  onOpenPlaylist: (id: string) => void;
+  onCloseDetail: () => void;
+}) {
+  const pages = usePluginPages();
+  const activePage = detail ? null : (pages.find((pg) => pg.key === tab) ?? null);
+  return (
+    <main className="appContent">
+      {detail?.kind === 'artist' ? (
+        <ArtistPage artist={detail.artist} onPlay={onPlay} onOpenArtist={onOpenArtist} />
+      ) : detail?.kind === 'playlist' ? (
+        <PlaylistPage
+          id={detail.id}
+          onPlay={onPlay}
+          onOpenArtist={onOpenArtist}
+          onGone={onCloseDetail}
+        />
+      ) : activePage ? (
+        activePage.render({ onPlay, onOpenArtist })
+      ) : tab === 'library' ? (
+        <LibraryView
+          onPlay={onPlay}
+          onOpenArtist={onOpenArtist}
+          onOpenPlaylist={onOpenPlaylist}
+        />
+      ) : (
+        <HomePage onPlay={onPlay} onOpenArtist={onOpenArtist} />
+      )}
+    </main>
+  );
+}
+
+/**
+ * Bridges playFrom to AttackFM Connect. Renders nothing; it just keeps a router
+ * function in the ref App holds, refreshed whenever the shared session changes.
+ * When another device holds audio, the router forwards a pick to it as a
+ * setQueue command (the whole list, so that device's skips follow it) and
+ * returns true; App then skips local playback, so a song picked on any device -
+ * even one not playing the audio - changes the song for every device.
+ */
+function ConnectPlayRouter({
+  routeRef,
+}: {
+  routeRef: { current: ((track: Track, context?: Track[]) => boolean) | null };
+}) {
+  const connect = useConnect();
+  useEffect(() => {
+    routeRef.current = (track, context) => {
+      const activeElsewhere =
+        connect.connected &&
+        connect.session?.activeDeviceId != null &&
+        connect.session.activeDeviceId !== connect.thisDeviceId;
+      if (!activeElsewhere) return false;
+      const list = context ?? [track];
+      const ids = list
+        .map((t) => trackIdFromPath(t.path))
+        .filter((x): x is number => x !== null);
+      if (ids.length === 0) return false;
+      const pickId = trackIdFromPath(track.path);
+      const index = Math.max(
+        0,
+        pickId == null ? 0 : ids.indexOf(pickId),
+      );
+      connect.sendCommand({ action: 'setQueue', queue: ids, index });
+      return true;
+    };
+    return () => {
+      routeRef.current = null;
+    };
+  }, [connect, routeRef]);
+  return null;
+}
+
+/**
  * The app root: a small square window carrying the cross-cutting Glacier
  * providers and, for now, a single centered placeholder screen.
  */
@@ -196,28 +385,73 @@ export function App() {
   // the deck without dropping the needle.
   const [autoplay, setAutoplay] = useState(false);
 
+  // Populated by ConnectPlayRouter (which lives inside the Connect provider and
+  // so can read the shared session). When another device holds audio, it routes
+  // a pick to that device and returns true; playFrom then does nothing locally,
+  // so the song changes on every device while control stays where it is.
+  const connectRouteRef = useRef<((track: Track, context?: Track[]) => boolean) | null>(null);
+
   const playFrom = (track: Track, context?: Track[]) => {
+    // Another device is the one playing: hand it the pick rather than seizing
+    // playback here. The active device loads and plays it, then reports, and
+    // this device (a remote) updates from that report like any other.
+    if (connectRouteRef.current?.(track, context)) return;
     setAutoplay(true);
     setCurrent((prev) => (prev === track ? { ...track } : track));
     setQueue(context ?? [track]);
   };
-  // Page history as a stack with a cursor, so back and forward move through the
-  // places visited rather than just toggling home. A view is an artist name, or
-  // null for the main library.
-  const [nav, setNav] = useState<{ stack: (string | null)[]; index: number }>({ stack: [null], index: 0 });
-  const artist = nav.stack[nav.index] ?? null;
+  // Page history as a stack with a cursor, so back and forward move through
+  // the places visited rather than just toggling. A place is a primary tab
+  // plus, within it, an optional detail page - the tab is what the nav bar
+  // lights, whether or not a detail is open on top of it. The tab is 'home',
+  // 'library', or a plugin page's namespaced `${pluginId}:${pageId}` key; the
+  // nav and the content host resolve the last kind against the running plugins.
+  type Place = { tab: string; detail: Detail | null };
+  const sameDetail = (a: Detail | null | undefined, b: Detail | null) =>
+    a?.kind !== b?.kind
+      ? false
+      : a?.kind === 'artist' && b?.kind === 'artist'
+        ? a.artist === b.artist
+        : a?.kind === 'playlist' && b?.kind === 'playlist'
+          ? a.id === b.id
+          : true;
+  const samePlace = (a: Place | undefined, b: Place) =>
+    a?.tab === b.tab && sameDetail(a?.detail ?? null, b.detail);
+  const [nav, setNav] = useState<{ stack: Place[]; index: number }>({
+    stack: [{ tab: 'home', detail: null }],
+    index: 0,
+  });
+  const place = nav.stack[nav.index] ?? { tab: 'home', detail: null };
+  const detail = place.detail;
+  const tab = place.tab;
   const canBack = nav.index > 0;
   const canForward = nav.index < nav.stack.length - 1;
 
   // Opening a place truncates any forward history and pushes the new view, the
   // way a browser does. Reopening the current view is a no-op.
-  const go = (next: string | null) =>
+  // A long session visits a lot of places; keep the back-history bounded so
+  // the stack cannot grow without limit. The cap is generous - far past any
+  // real back-button reach - and only ever drops the oldest entries.
+  const NAV_HISTORY_CAP = 100;
+  const push = (next: Place) =>
     setNav((s) => {
-      if (s.stack[s.index] === next) return s;
-      const stack = s.stack.slice(0, s.index + 1);
+      if (samePlace(s.stack[s.index], next)) return s;
+      let stack = s.stack.slice(0, s.index + 1);
       stack.push(next);
+      if (stack.length > NAV_HISTORY_CAP) stack = stack.slice(stack.length - NAV_HISTORY_CAP);
       return { stack, index: stack.length - 1 };
     });
+  /** An artist page, opened inside whichever tab is current. */
+  const go = (next: string | null) =>
+    push({ tab, detail: next === null ? null : { kind: 'artist', artist: next } });
+  /** A playlist page, likewise stacked inside the current tab. */
+  const goPlaylist = (id: string) => push({ tab, detail: { kind: 'playlist', id } });
+  /** Steps off a detail page back to its tab's root - what a deleted playlist
+   *  does, since there is no page left to stand on. */
+  const closeDetail = () => push({ tab, detail: null });
+  /** A primary tab, from the nav bar - always lands on the tab's root. Accepts
+   *  the core 'home'/'library' and any plugin page key. */
+  const goTab = (next: string) => push({ tab: next, detail: null });
   const back = () => setNav((s) => (s.index > 0 ? { ...s, index: s.index - 1 } : s));
   const forward = () => setNav((s) => (s.index < s.stack.length - 1 ? { ...s, index: s.index + 1 } : s));
 
@@ -263,9 +497,20 @@ export function App() {
             {/* The playback settings - crossfade, shuffle manners, the sleep
                 timer - read by the player below and by the settings modal. */}
             <PlaybackProvider>
+            {/* AttackFM Connect: the device registry and shared playback
+                session, so any signed-in device can see and drive what is
+                playing on any other. Inert (no socket) off a server. Wraps the
+                player, which registers as this device's executor. */}
+            <PlaybackSyncProvider>
             {/* The loudness reading the player publishes and the header moves
                 to. It wraps both, which is the whole reason it exists. */}
             <NowPlayingMotionProvider>
+            {/* The acquire hub: gathers every enabled plugin's "get this"
+                handlers so any Add control gates on whether one exists, fires
+                the lone one, or lets the user choose among several. Inside the
+                plugin providers (a handler reads its own plugin's context) and
+                above the content that carries Add controls. */}
+            <AcquireProvider>
             <div className="appWindow">
             {/* The playing track's cover, blurred and faded, sits behind the top
                 of the window so the header reads against the album rather than a
@@ -322,48 +567,15 @@ export function App() {
                     />
                   </>
                 }
-                // Search is the one thing reached from anywhere, so it lives
-                // in the chrome rather than in a screen. The end slot keeps it
-                // off the wordmark and out of the drag region, so a press
-                // lands in the field instead of moving the window.
+                // Search now lives on the pages themselves (Home, Library, and
+                // Discover each carry their own field), so the chrome's end slot
+                // is just plugin actions and settings. ⌘K still opens the global
+                // palette from anywhere for those who reach for it.
                 end={
                   <>
-                    <SearchField
-                      className="titleBarSearch"
-                      size="sm"
-                      glass
-                      placeholder="Search"
-                      aria-label="Search"
-                      // The field is a doorway, not a place to type: the query
-                      // is taken by the palette, which is where the results are
-                      // going to appear.
-                      readOnly
-                      shortcut={<Kbd glass>{SUMMON_HINT}</Kbd>}
-                      onClick={() => setSearchOpen(true)}
-                      onKeyDown={(event) => {
-                        if (event.key !== 'Enter') return;
-                        event.preventDefault();
-                        setSearchOpen(true);
-                      }}
-                    />
-                    {/* The same doorway with its frame taken off, for a window
-                        too narrow to hold a field beside the wordmark. Only one
-                        of the two is ever displayed - the CSS decides which -
-                        so search never leaves the bar, it just stops spelling
-                        itself out. */}
-                    <IconButton
-                      className="titleBarSearchButton"
-                      variant="ghost"
-                      size="sm"
-                      aria-label="Search"
-                      onClick={() => setSearchOpen(true)}
-                    >
-                      <Search size={16} />
-                    </IconButton>
-                    {/* Plugin actions (the importer's queue button, say) sit
-                        between search and settings, where the downloads
-                        button always has. */}
-                    <PluginSlot id="titlebar-end" />
+                    {/* Plugin actions have moved to the pages themselves, beside
+                        the heading they act on, so the chrome's end slot is
+                        settings alone. */}
                     <IconButton
                       variant="ghost"
                       size="sm"
@@ -402,39 +614,57 @@ export function App() {
                   )}
                   <img className="mobileHeader__logo" src={wordmark} alt={APP_NAME} />
                 </span>
-                <span className="mobileHeader__actions">
-                  <IconButton
-                    variant="ghost"
-                    size="sm"
-                    aria-label="Search"
-                    onClick={() => setSearchOpen(true)}
-                  >
-                    <Search size={18} />
-                  </IconButton>
-                  <PluginSlot id="titlebar-end" />
-                  <IconButton
-                    variant="ghost"
-                    size="sm"
-                    aria-label="Settings"
-                    onClick={() => setSettingsOpen(true)}
-                  >
-                    <Settings size={18} />
-                  </IconButton>
-                </span>
+                {/* The one global search on the phone: opens the full-screen
+                    search sheet (SongSearch renders it as such off the desktop).
+                    Distinct from each page's own field - this searches the whole
+                    library from anywhere, the way ⌘K does on the desktop. */}
+                <IconButton
+                  variant="ghost"
+                  size="sm"
+                  aria-label="Search"
+                  onClick={() => setSearchOpen(true)}
+                >
+                  <Search size={20} />
+                </IconButton>
               </header>
             )}
-            <main className="appContent">
-              {artist ? (
-                <ArtistPage artist={artist} onPlay={playFrom} onOpenArtist={go} />
-              ) : (
-                <>
-                  <PlaylistShowcase onPlay={playFrom} />
-                  <div className="libraryBody">
-                    <SongTable onPlay={playFrom} onOpenArtist={go} />
-                  </div>
-                </>
+            <div className="appBody">
+              {/* Desktop's primary navigation: a slim icon rail beside the
+                  content. The phone gets the bottom tab bar below instead -
+                  same items, the shape each platform holds naturally. Both are
+                  the one PrimaryNav, which folds in each plugin's page. */}
+              {DESKTOP && (
+                <PrimaryNav
+                  variant="rail"
+                  tab={tab}
+                  onTab={goTab}
+                  onSettings={() => setSettingsOpen(true)}
+                />
               )}
-            </main>
+              <AppMain
+                detail={detail}
+                tab={tab}
+                onPlay={playFrom}
+                onOpenArtist={go}
+                onOpenPlaylist={goPlaylist}
+                onCloseDetail={closeDetail}
+              />
+            </div>
+            {/* The phone's primary navigation: a full-width icon bar along the
+                bottom, its items spread edge to edge, icon-only (the tooltip
+                names each). Behind it, a progressive blur rises from the very
+                bottom of the screen, so content scrolling under the nav
+                dissolves into frost toward the edge rather than cutting off at
+                a hard line. The scrim is aria-hidden - pure decoration. */}
+            {!DESKTOP && <div className="appNavScrim" aria-hidden="true" />}
+            {!DESKTOP && (
+              <PrimaryNav
+                variant="bar"
+                tab={tab}
+                onTab={goTab}
+                onSettings={() => setSettingsOpen(true)}
+              />
+            )}
             {/* Puts the newest song on the deck at launch, paused. */}
             <StartupSeed
               current={current}
@@ -445,10 +675,20 @@ export function App() {
             />
             {/* Songs tapped on the car screen start here, queue and all. */}
             <CarPlayBridge onPlay={playFrom} />
+            {/* Teaches playFrom to route a pick to whichever device holds audio.
+                Lives here, inside the Connect provider, because only a child of
+                it can read the shared session. */}
+            <ConnectPlayRouter routeRef={connectRouteRef} />
             <div className="appPlayer">
               {/* The player walks the queue itself; it only reports where it
                   landed, and `current` follows. */}
-              <Player track={current} queue={queue} onTrackChange={setCurrent} autoplay={autoplay} />
+              <Player
+                track={current}
+                queue={queue}
+                onTrackChange={setCurrent}
+                onQueueChange={setQueue}
+                autoplay={autoplay}
+              />
             </div>
             <IndexingStatus />
             {/* Searches the library - titles, artists, albums, genres, lyrics -
@@ -460,7 +700,9 @@ export function App() {
             </PluginHookScope>
             <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
             </div>
+            </AcquireProvider>
             </NowPlayingMotionProvider>
+            </PlaybackSyncProvider>
             </PlaybackProvider>
             </EqualizerProvider>
             </PluginProviders>

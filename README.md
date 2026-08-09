@@ -132,6 +132,28 @@ npm run tauri:build   # produce an installer
 Requires the [Rust toolchain](https://www.rust-lang.org/tools/install) and the
 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
 
+## Plugin repositories
+
+Plugins install from repositories at runtime - the app ships with the shelf
+empty of the importer and one default source: your server's own repo at
+`https://<your-server>/plugins`. `plugins-repo/` holds the source of each
+distributable plugin; `scripts/build-plugins.mjs` compiles every one with
+esbuild into a single bundle whose imports (`react`, `@glacier/react`, the
+`@attackfm/app/*` seam) resolve through the host's module table at runtime -
+never bundled, so a plugin shares the app's React, contexts and hooks.
+
+```sh
+node scripts/build-plugins.mjs      # -> dist-plugins/
+npm run redeploy -- plugins         # publish to the server's /plugins
+```
+
+Install and manage under Settings -> Plugins, which also holds the repository
+list. Installing stores the bundle locally and loads it at every boot; a
+repository is a distribution channel, not a runtime dependency. The seam a
+remote plugin may import is curated in `src/plugins/hostRuntime.ts`, and
+cross-plugin contracts (the import queue Discover consumes) live host-side in
+`src/plugins/importsBridge.ts` so both sides hold the same context identity.
+
 ## Plugins
 
 Features that are not the core player live under `src/plugins/` as compiled-in

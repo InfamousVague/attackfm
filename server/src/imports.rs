@@ -92,6 +92,11 @@ pub struct ImportJob {
     /// Library-relative paths of the indexed results, in filename order.
     #[serde(default)]
     pub files: Vec<String>,
+    /// Database ids of the indexed results, matching `files` - what a client
+    /// resolves against its synced library to play an import the moment it
+    /// lands, no path or title matching required.
+    #[serde(default)]
+    pub track_ids: Vec<i64>,
 }
 
 pub struct ImportManager {
@@ -333,7 +338,7 @@ fn find_key<'a>(v: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::V
     }
 }
 
-async fn fetch_embed_meta(
+pub(crate) async fn fetch_embed_meta(
     link: &str,
     kind: &str,
 ) -> Option<(String, Option<String>, Option<u32>, Vec<String>)> {
@@ -427,7 +432,7 @@ pub fn spawn_scheduler(state: Arc<AppState>) {
                 let result = run_job(&run_state, &id, &url, cancel_rx).await;
                 manager.cancels.lock().await.remove(&id);
                 match result {
-                    Ok((count, files)) => {
+                    Ok((count, files, track_ids)) => {
                         manager
                             .update(&id, |j| {
                                 j.completed = count.max(j.completed);
@@ -439,6 +444,7 @@ pub fn spawn_scheduler(state: Arc<AppState>) {
                                 j.current_track = None;
                                 j.current_index = None;
                                 j.files = files;
+                                j.track_ids = track_ids;
                             })
                             .await;
                     }
@@ -480,7 +486,7 @@ async fn run_job(
     id: &str,
     url: &str,
     mut cancel_rx: tokio::sync::oneshot::Receiver<()>,
-) -> Result<(u32, Vec<String>), String> {
+) -> Result<(u32, Vec<String>, Vec<i64>), String> {
     let manager = Arc::clone(&state.imports);
     let staging = manager.staging_root.join(id);
     let _ = std::fs::remove_dir_all(&staging);
@@ -616,6 +622,7 @@ async fn run_job(
     // destination between the free-name check and the rename.
     let staged = staged_audio_files(&staging);
     let mut rels = Vec::new();
+    let mut track_ids = Vec::new();
     let _filing = state.filing.lock().await;
     // The library's current identities, for a tag precheck that makes filing
     // idempotent: a track already present (this album re-imported, or the same
@@ -660,6 +667,9 @@ async fn run_job(
         }
         if scan::scan_one(&state.db, &state.music_root, &state.art_dir, &rel) {
             used += size;
+            if let Some(tid) = state.db.track_id_by_path(&rel) {
+                track_ids.push(tid);
+            }
             rels.push(rel);
         } else {
             // Unindexable never stays - same rule as uploads.
@@ -670,7 +680,7 @@ async fn run_job(
     let _ = std::fs::remove_dir_all(&staging);
 
     if !rels.is_empty() {
-        return Ok((rels.len() as u32, rels));
+        return Ok((rels.len() as u32, rels, track_ids));
     }
 
     let stderr = tail_join(&*stderr_tail.lock().await);
@@ -753,6 +763,7 @@ pub async fn enqueue(
         current_index: None,
         output_dir: state.music_root.display().to_string(),
         files: Vec::new(),
+        track_ids: Vec::new(),
     };
     {
         let mut jobs = state.imports.jobs.lock().await;
@@ -826,6 +837,7 @@ pub async fn retry(
                 j.current_track = None;
                 j.current_index = None;
                 j.files = Vec::new();
+                j.track_ids = Vec::new();
             }
         })
         .await;

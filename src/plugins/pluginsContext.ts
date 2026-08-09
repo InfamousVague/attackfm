@@ -26,6 +26,18 @@ export interface PluginsContextValue {
   failures: ReadonlyMap<string, string>;
   /** Pulls a plugin until toggled or relaunch. */
   reportCrash: (id: string, error: unknown) => void;
+  /**
+   * Metadata for the remotely-installed plugins (id → version/source), so the
+   * marketplace can mark what came from a repository and offer updates. The
+   * bundles themselves never travel through context.
+   */
+  remoteInstalled: ReadonlyMap<string, { version: string; source: string }>;
+  /**
+   * Re-reads the installed store and re-evaluates its bundles - what the
+   * marketplace calls after an install, update, or uninstall so the running
+   * set follows without a relaunch.
+   */
+  reloadRemote: () => void;
 }
 
 export const PluginsContext = createContext<PluginsContextValue | null>(null);

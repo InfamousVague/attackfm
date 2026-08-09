@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AudioEqualizer,
   ContextMenu,
@@ -7,6 +8,7 @@ import {
   MenuItem,
   PlayerBar,
   Popover,
+  SeekBar,
   createAnalyserMeter,
   useBeat,
   useLiveLevels,
@@ -16,11 +18,22 @@ import type { AnalyserMeter, LoudnessMeter, PlayerRepeat } from '@glacier/react'
 import {
   AudioLines,
   Check,
+  ChevronDown,
   ChevronLeft,
   Disc3,
   EllipsisVertical,
+  Heart,
   Image as ImageIcon,
+  ListPlus,
   Mic,
+  MonitorSpeaker,
+  Pause,
+  Play,
+  Repeat,
+  Repeat1,
+  Shuffle,
+  SkipBack,
+  SkipForward,
   Volume2,
 } from '@glacier/icons';
 import { isIOS } from './platform.ts';
@@ -38,8 +51,14 @@ import { useLibrary } from './library.tsx';
 import { useEqualizer } from './equalizer.tsx';
 import { usePlayback } from './playback.tsx';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
-import { VolumeControl, VolumeRow, VOLUME_UNITY } from './VolumeControl.tsx';
+import { VolumeControl, VolumeRow, VOLUME_MAX, VOLUME_UNITY } from './VolumeControl.tsx';
+import npPlaceholderArt from '../assets/attack-wave.png';
 import { loadAudioUrl, reactivateAudioSession, type Track } from './tauri.ts';
+import { reportPlay, trackIdFromPath } from './server.ts';
+import { useConnect } from './playbackSync.tsx';
+import { DeviceList, DevicePicker, useDevicesAvailable } from './DevicePicker.tsx';
+import { AddToPlaylistDialog } from './AddToPlaylist.tsx';
+import { useServerSession } from './serverSession.tsx';
 import { onCarPlayRemote, pushCarPlayNowPlaying } from './carplay.ts';
 import {
   bindMediaSessionHandlers,
@@ -78,6 +97,24 @@ const DEMO_TRACK: Track = {
 
 /** Where the fader starts. The element opens at full, so it is told this too. */
 const INITIAL_VOLUME = 70;
+
+/** The deck's remembered dials - shuffle, repeat, the fader - one key each so
+ * a bad value spoils only its own dial. */
+function readDeckPref(name: string): string | null {
+  try {
+    return localStorage.getItem(`attackfm-deck-${name}`);
+  } catch {
+    return null;
+  }
+}
+
+function writeDeckPref(name: string, value: string): void {
+  try {
+    localStorage.setItem(`attackfm-deck-${name}`, value);
+  } catch {
+    // Storage refused: the dial just resets next launch, as it always did.
+  }
+}
 
 /**
  * The fader's 0-100 read as a beat intensity. Loud lifts the bar higher, but the
@@ -235,6 +272,7 @@ export function Player({
   track,
   queue = [],
   onTrackChange,
+  onQueueChange,
   autoplay = true,
 }: {
   track: Track | null;
@@ -242,6 +280,9 @@ export function Player({
   queue?: Track[];
   /** Adopts the track a skip or the end of the current one advanced to. */
   onTrackChange?: (track: Track) => void;
+  /** Replaces the play context - used when a remote hands this (active) device
+   *  a whole new queue to play through, not just a single track. */
+  onQueueChange?: (tracks: Track[]) => void;
   /**
    * Whether a newly handed track starts playing once loaded. Off for the
    * launch seed - the app opens with a song on the deck, not blaring - and
@@ -259,13 +300,34 @@ export function Player({
   // metadata lands.
   const [duration, setDuration] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const [shuffle, setShuffle] = useState(false);
-  const [repeat, setRepeat] = useState<PlayerRepeat>('off');
+  // Shuffle, repeat, and the fader survive a relaunch the way every other
+  // playback preference does - a player that forgets its own dials every
+  // morning reads as broken, not fresh.
+  const [shuffle, setShuffle] = useState(() => readDeckPref('shuffle') === 'on');
+  const [repeat, setRepeat] = useState<PlayerRepeat>(() => {
+    const saved = readDeckPref('repeat');
+    return saved === 'all' || saved === 'one' ? saved : 'off';
+  });
   // The phone opens at unity and stays there: hardware buttons are the volume
   // control a phone already has, so the app-side fader would only fight them.
-  // Desktop keeps its calibrated fader and opening level.
-  const [volume, setVolume] = useState(isIOS ? VOLUME_UNITY : INITIAL_VOLUME);
+  // Desktop keeps its calibrated fader, restored from the last session.
+  const [volume, setVolume] = useState(() => {
+    if (isIOS) return VOLUME_UNITY;
+    // The absent-key check must come before Number(): Number(null) is 0, which
+    // would pass the range guard and open every fresh install silent.
+    const raw = readDeckPref('volume');
+    if (!raw) return INITIAL_VOLUME;
+    const saved = Number(raw);
+    return Number.isFinite(saved) && saved >= 0 && saved <= 150 ? saved : INITIAL_VOLUME;
+  });
   const [muted, setMuted] = useState(false);
+
+  // Written on change rather than on quit - there is no reliable "on quit".
+  useEffect(() => writeDeckPref('shuffle', shuffle ? 'on' : 'off'), [shuffle]);
+  useEffect(() => writeDeckPref('repeat', repeat), [repeat]);
+  useEffect(() => {
+    if (!isIOS) writeDeckPref('volume', String(Math.round(volume)));
+  }, [volume]);
 
   // The strip is built from the music list, so there is nothing settled to show
   // until the folder is resolved and its files have been walked. The whole bar
@@ -312,7 +374,19 @@ export function Player({
   // open starts back at the chooser rather than wherever the last visit left
   // off.
   const [moreOpen, setMoreOpen] = useState(false);
-  const [moreView, setMoreView] = useState<'menu' | 'eq' | 'lyrics' | 'volume'>('menu');
+  // 'lyrics' and 'volume' are the phone's views; 'devices' is the desktop's -
+  // one state serves both because only one trailing branch renders at a time.
+  const [moreView, setMoreView] = useState<'menu' | 'eq' | 'lyrics' | 'volume' | 'devices'>('menu');
+  // Whether the overflow offers the device hand-off row at all.
+  const devicesAvailable = useDevicesAvailable();
+  // The song being filed into a playlist, or null when that sheet is shut.
+  const [filing, setFiling] = useState<Track | null>(null);
+  // The full-screen Now Playing surface, opened by tapping the strip on touch.
+  const [npOpen, setNpOpen] = useState(false);
+  // Bumped on every seek so the Connect report effect refires (a seek moves the
+  // clock without changing play/track). A ref mirrors it for closures.
+  const [seekTick, setSeekTick] = useState(0);
+  const seekEpoch = useRef(0);
   // Portrait thins the equalizer to five bands; a phone turned landscape has
   // the width for all eight again.
   const narrowEq = useMediaQuery('(max-width: 600px)');
@@ -326,6 +400,10 @@ export function Player({
   const playback = usePlayback();
   const playbackRef = useRef(playback);
   playbackRef.current = playback;
+  // Switching the boost range off pulls a fader parked above unity back to it;
+  // the effect itself lives below setVolumeState, which it must go through so
+  // the audible gain drops with the fader rather than at the next pause.
+  const volumeBoost = playback.volumeBoost;
   // Which of the two decks the transport answers to. A crossfade plays the
   // next track on the idle deck and, when the outgoing one ends, hands the
   // whole strip over to it - a ref, not state, because nothing rendered names
@@ -583,6 +661,53 @@ export function Player({
   useEffect(() => {
     publish({ meter, audible, track: track ?? DEMO_TRACK, position: coarsePosition });
   }, [publish, meter, audible, track, coarsePosition]);
+
+  // The listening log. One report per listen-through, once the track has
+  // genuinely been HEARD - thirty seconds of actual playback, or half its
+  // length for anything shorter, the shape of threshold streaming services
+  // count by. Measured as accumulated listened time, not a position reached:
+  // a scrub or a jump forward to 0:45 moves the clock without playing those
+  // seconds, and must not count as a listen. A new track resets the tally;
+  // repeat-one restarts it, so every spin is logged. Server only - local
+  // listening has no account to write history against.
+  const { session: playSession } = useServerSession();
+  const playSessionRef = useRef(playSession);
+  playSessionRef.current = playSession;
+  const listened = useRef({ path: '' as string, seconds: 0, prev: 0, reported: false });
+  useEffect(() => {
+    if (!track) return;
+    const l = listened.current;
+    if (l.path !== track.path) {
+      listened.current = { path: track.path, seconds: 0, prev: coarsePosition, reported: false };
+      return;
+    }
+    const delta = coarsePosition - l.prev;
+    l.prev = coarsePosition;
+    // Only forward, only a natural tick's worth (<=2s), only while genuinely
+    // playing and not scrubbing - anything larger is a seek and buys no
+    // credit. A backward jump (rewind) re-arms the report for the next spin.
+    // The rearm also restarts the tally: without the reset, seconds already
+    // past the threshold would log a duplicate play the instant a rewind
+    // lands, rather than after another genuine listen-through.
+    if (delta < 0) {
+      l.reported = false;
+      l.seconds = 0;
+    }
+    if (playing && !scrubbing.current && delta > 0 && delta <= 2) {
+      l.seconds += delta;
+    }
+    if (l.reported) return;
+    const threshold = Math.min(30, Math.max(5, (duration || 60) / 2));
+    if (l.seconds < threshold) return;
+    l.reported = true;
+    // The privacy switch: with history off the listen is simply never written.
+    // Marked reported all the same, so flipping the switch mid-song does not
+    // retroactively log a listen that began under "off".
+    if (!playbackRef.current.saveHistory) return;
+    const id = trackIdFromPath(track.path);
+    if (id !== null && playSessionRef.current) reportPlay(playSessionRef.current, id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the clock drives it; the rest ride refs or are stable per tick
+  }, [coarsePosition, playing, track, duration]);
 
   // ── CarPlay / system now-playing ─────────────────────────────────────────
   //
@@ -1514,12 +1639,35 @@ export function Player({
   // move re-seeks the file and stutters. The element is set once, on release.
   const onScrub = (to: number) => {
     scrubbing.current = true;
+    scrubValue.current = to;
     setPosition(to);
+  };
+  // The live scrub target, committed on release by the full-screen scrubber
+  // (the raw Slider has no seek-end callback of its own).
+  const scrubValue = useRef(0);
+
+  // Repeat cycles the way the strip's own control does: off → all → one → off.
+  const cycleRepeat = () =>
+    setRepeat((r) => (r === 'off' ? 'all' : r === 'all' ? 'one' : 'off'));
+
+  // A tap on the strip's dead space (the artwork, the title, the empty rail -
+  // not a control) lifts the full-screen Now Playing. Guarded to touch, where
+  // the strip is small and the big surface earns its keep; the desktop strip
+  // stays a strip.
+  const openNowPlaying = (event: React.MouseEvent) => {
+    if (!track) return;
+    const el = event.target as HTMLElement;
+    if (el.closest('button, a, input, [role="slider"], [role="menu"], [role="menuitem"]')) return;
+    setNpOpen(true);
   };
 
   const commitSeek = (to: number) => {
     scrubbing.current = false;
     setPosition(to);
+    // A seek is a discontinuity the extrapolated clock cannot follow, so it is
+    // one of the moments this device (when active) republishes to the hub.
+    seekEpoch.current += 1;
+    setSeekTick((t) => t + 1);
     // A seek re-earns the whole track - dragging back out of the fade window
     // must not leave a half-blended next track playing underneath it.
     abortCrossfade();
@@ -1582,6 +1730,204 @@ export function Player({
     if (!windingDown.current) applyVolume(volumeRef.current, next);
   };
 
+  // Switching the boost range off pulls a fader parked above unity back to it,
+  // through the same path a hand on the fader takes - so the audible gain
+  // drops with the setting, not at the next incidental pause.
+  useEffect(() => {
+    if (!volumeBoost && volumeRef.current > VOLUME_UNITY) setVolumeState(VOLUME_UNITY);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setVolumeState is stable-per-render plumbing; the setting is the trigger
+  }, [volumeBoost]);
+
+  // ── AttackFM Connect ──────────────────────────────────────────────────────
+  //
+  // This device is either the ACTIVE one (it plays and publishes state) or a
+  // REMOTE (it mirrors what plays elsewhere and its controls send commands).
+  // The seam is small on purpose: the controller below routes hub commands into
+  // the same local handlers a tap would, and one effect republishes state on
+  // each discontinuity. Off a server the provider is inert and all of this is
+  // a no-op, so a lone device just plays.
+  const connect = useConnect();
+  // The controller is registered once but must act through the current render's
+  // handlers and values, so it reaches them all through this ref.
+  const liveRef = useRef({
+    playing, position, duration, track, shuffle, repeat, volume,
+    setPlayingState, skipForward, skipBack, commitSeek, setVolumeState,
+    libraryTracks, onTrackChange, onQueueChange,
+  });
+  liveRef.current = {
+    playing, position, duration, track, shuffle, repeat, volume,
+    setPlayingState, skipForward, skipBack, commitSeek, setVolumeState,
+    libraryTracks, onTrackChange, onQueueChange,
+  };
+  // A cross-track "play here": the track is loaded via onTrackChange, then this
+  // remembered seek+play is applied once it has actually loaded (below).
+  const resumeRef = useRef<{ trackId: number; positionMs: number; play: boolean } | null>(null);
+
+  useEffect(() => {
+    const findByConnectId = (id: number) =>
+      liveRef.current.libraryTracks.find((t) => trackIdFromPath(t.path) === id) ?? null;
+    connect.registerController({
+      play: () => liveRef.current.setPlayingState(true),
+      pause: () => liveRef.current.setPlayingState(false),
+      toggle: () => liveRef.current.setPlayingState(!liveRef.current.playing),
+      next: () => liveRef.current.skipForward(),
+      prev: () => liveRef.current.skipBack(),
+      seek: (ms) => liveRef.current.commitSeek(ms / 1000),
+      // A remote's fader obeys the same ceiling as the local one: without the
+      // clamp a Connect command could push the gain past the boost cap (or to
+      // arbitrary amplitudes) regardless of the setting.
+      setVolume: (v) =>
+        liveRef.current.setVolumeState(
+          Math.max(0, Math.min(v, playbackRef.current.volumeBoost ? VOLUME_MAX : VOLUME_UNITY)),
+        ),
+      setQueue: (ids, index) => {
+        // A remote picked a song (and the list it came from) for this active
+        // device to play. Rebuild the whole play context from the library so
+        // this device's own skips walk the new list, load the picked track,
+        // and start it - the pick plays here, and the report that follows
+        // changes the song on every device without moving audio control.
+        const tracks = ids
+          .map(findByConnectId)
+          .filter((t): t is Track => t != null);
+        const pick = tracks[index] ?? tracks[0];
+        if (!pick) return;
+        const pickId = trackIdFromPath(pick.path);
+        if (tracks.length > 0) liveRef.current.onQueueChange?.(tracks);
+        if (pickId != null) {
+          resumeRef.current = { trackId: pickId, positionMs: 0, play: true };
+        }
+        liveRef.current.onTrackChange?.(pick);
+      },
+      becomeActive: (state) => {
+        const cur = liveRef.current.track;
+        if (state.trackId == null) return;
+        if (cur && trackIdFromPath(cur.path) === state.trackId) {
+          liveRef.current.commitSeek(state.positionMs / 1000);
+          liveRef.current.setPlayingState(!!state.playing);
+          return;
+        }
+        const t = findByConnectId(state.trackId);
+        if (t) {
+          resumeRef.current = { trackId: state.trackId, positionMs: state.positionMs, play: !!state.playing };
+          liveRef.current.onTrackChange?.(t);
+        }
+      },
+      release: () => liveRef.current.setPlayingState(false),
+    });
+    return () => connect.registerController(null);
+  }, [connect]);
+
+  // Apply a pending cross-track resume once the handed track has loaded.
+  useEffect(() => {
+    const r = resumeRef.current;
+    if (!r || !track || duration <= 0) return;
+    if (trackIdFromPath(track.path) !== r.trackId) return;
+    commitSeek(r.positionMs / 1000);
+    if (r.play) setPlayingState(true);
+    resumeRef.current = null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires on the load that satisfies the resume
+  }, [track, duration]);
+
+  // Publish this device's state to the hub on each discontinuity - but only
+  // while it is the one playing (or already holds the seat). A mere app-open
+  // never claims the seat; pressing play does, which is how playback starts
+  // cold. Position is not a dep (the server extrapolates); seekTick stands in
+  // for the one position jump extrapolation cannot follow.
+  const ownsPlayback = connect.activeDeviceId === connect.thisDeviceId;
+  const shouldReport = connect.connected && !!track && (playing || ownsPlayback);
+  useEffect(() => {
+    if (!shouldReport || !track) return;
+    // Starting playback here while ANOTHER device holds the seat (a song picked
+    // on a remote) claims it first: the hub only accepts state from the active
+    // device, so without the claim the song would play here while the other
+    // device kept playing too. The transfer releases (pauses) the other one.
+    if (
+      playing &&
+      connect.activeDeviceId !== null &&
+      connect.activeDeviceId !== connect.thisDeviceId
+    ) {
+      connect.transfer(connect.thisDeviceId);
+    }
+    const id = trackIdFromPath(track.path);
+    connect.reportState({
+      trackId: id,
+      positionMs: Math.round(positionRef.current * 1000),
+      playing,
+      shuffle,
+      repeat,
+      volume,
+      queue: queue
+        .map((t) => trackIdFromPath(t.path))
+        .filter((x): x is number => x !== null),
+      queueIndex: Math.max(0, queue.findIndex((t) => t.path === track.path)),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- discontinuities only; position rides refs
+  }, [shouldReport, track, playing, shuffle, repeat, volume, seekTick]);
+
+  // Playback lives on another device: this one is a remote. It shows that
+  // device's now-playing (resolved from the library) and its transport sends
+  // commands rather than driving local audio.
+  const activeElsewhere =
+    connect.connected &&
+    connect.session?.activeDeviceId != null &&
+    connect.session.activeDeviceId !== connect.thisDeviceId;
+  const remoteTrack =
+    activeElsewhere && connect.session?.trackId != null
+      ? (libraryTracks.find((t) => trackIdFromPath(t.path) === connect.session!.trackId) ?? null)
+      : null;
+  const activeDeviceName =
+    activeElsewhere
+      ? (connect.devices.find((d) => d.id === connect.session?.activeDeviceId)?.name ?? 'another device')
+      : null;
+
+  // A remote's clock ticks locally between hub updates, extrapolated from the
+  // last true position while the shared state says it is playing.
+  const [, setRemoteTick] = useState(0);
+  useEffect(() => {
+    if (!activeElsewhere || !connect.session?.playing) return;
+    const iv = window.setInterval(() => setRemoteTick((t) => t + 1), 1000);
+    return () => window.clearInterval(iv);
+  }, [activeElsewhere, connect.session?.playing, connect.session?.updatedAt]);
+  const remotePosition = (() => {
+    const s = connect.session;
+    if (!s) return 0;
+    const base = s.positionMs / 1000;
+    return s.playing ? base + Math.max(0, (Date.now() - s.updatedAt) / 1000) : base;
+  })();
+
+  // Becoming a remote pauses local audio, even if the explicit release did not
+  // arrive (a seat claimed out from under this device).
+  useEffect(() => {
+    if (activeElsewhere && playing) setPlayingState(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reacts to the mode flip
+  }, [activeElsewhere]);
+
+  // What the strip shows and what its controls do, swapped by mode. Active (or
+  // alone): local track, local handlers. Remote: the other device's track, and
+  // controls that send commands to it.
+  const dispTrack = activeElsewhere ? (remoteTrack ?? track) : track;
+  const dispPlaying = activeElsewhere ? !!connect.session?.playing : playing;
+  const dispPosition = activeElsewhere ? remotePosition : position;
+  const dispDuration = activeElsewhere ? (remoteTrack?.duration ?? 0) : duration;
+  const dispArtwork = activeElsewhere ? (remoteTrack?.artwork ?? TRACK_ART) : artwork;
+  const onPlayingChangeDisp = activeElsewhere
+    ? (p: boolean) => connect.sendCommand({ action: p ? 'play' : 'pause' })
+    : setPlayingState;
+  const onSkipBackDisp = activeElsewhere
+    ? () => connect.sendCommand({ action: 'prev' })
+    : canSkip
+      ? skipBack
+      : undefined;
+  const onSkipForwardDisp = activeElsewhere
+    ? () => connect.sendCommand({ action: 'next' })
+    : canSkip
+      ? skipForward
+      : undefined;
+  const onSeekEndDisp = activeElsewhere
+    ? (s: number) => connect.sendCommand({ action: 'seek', positionMs: Math.round(s * 1000) })
+    : commitSeek;
+  const onScrubDisp = activeElsewhere ? () => {} : onScrub;
+
   return (
     <>
       {/* crossOrigin keeps the analyser readable: both the asset protocol and
@@ -1595,6 +1941,14 @@ export function Player({
           as its twin; preload=auto because when it has a src at all, that file
           is about to be needed inside a fade window. */}
       <audio ref={audioBRef} src={srcB} crossOrigin="anonymous" preload="auto" />
+      {/* On touch the strip's dead space is a handle: a tap lifts the
+          full-screen Now Playing. display:contents keeps the wrapper out of
+          the layout the kit and the shell CSS assume - it only catches the
+          bubbling tap. */}
+      <div
+        className="playerBarShell"
+        onClick={mobileControls ? openNowPlaying : undefined}
+      >
       <PlayerBar
         // The shell already insets the strip from the window edges, so it reads
         // as a plate lifted off the background rather than welded to the sill.
@@ -1633,8 +1987,8 @@ export function Player({
           >
             {artView === 'cd' ? (
               <SpinningDisc
-                art={artwork}
-                spinning={audible}
+                art={dispArtwork}
+                spinning={activeElsewhere ? dispPlaying : audible}
                 beat={beat}
                 // The platter and the sound share a motor: the disc brakes and
                 // catches up over the same stretch the audio does, whichever
@@ -1662,17 +2016,25 @@ export function Player({
             )}
           </ContextMenu>
         }
-        title={track?.title ?? 'Funky Chunk'}
-        subtitle={track?.artist ?? 'Kevin MacLeod'}
-        duration={duration}
-        value={position}
-        onValueChange={onScrub}
-        onSeekEnd={commitSeek}
-        playing={playing}
-        onPlayingChange={setPlayingState}
+        // disp* swap between local playback and mirroring the active device -
+        // see the AttackFM Connect block above. Alone or active, these are the
+        // local track and handlers; as a remote, the other device's now-playing
+        // and controls that command it.
+        title={dispTrack?.title ?? 'Funky Chunk'}
+        subtitle={
+          activeElsewhere
+            ? `${dispTrack?.artist ?? ''}${activeDeviceName ? ` · on ${activeDeviceName}` : ''}`
+            : (track?.artist ?? 'Kevin MacLeod')
+        }
+        duration={dispDuration}
+        value={dispPosition}
+        onValueChange={onScrubDisp}
+        onSeekEnd={onSeekEndDisp}
+        playing={dispPlaying}
+        onPlayingChange={onPlayingChangeDisp}
         // Skip moves between tracks in the list, not within the current one.
-        onSkipBack={canSkip ? skipBack : undefined}
-        onSkipForward={canSkip ? skipForward : undefined}
+        onSkipBack={onSkipBackDisp}
+        onSkipForward={onSkipForwardDisp}
         shuffle={shuffle}
         onShuffleChange={setShuffle}
         repeat={repeat}
@@ -1727,6 +2089,7 @@ export function Player({
             // buttons - so the overflow chooser collapses to the mic itself.
             <>
               <PluginSlot id="player-trailing" />
+              <DevicePicker />
               <Popover
                 placement="top-end"
                 aria-label="Lyrics"
@@ -1750,6 +2113,7 @@ export function Player({
           ) : mobileControls ? (
             <>
               <PluginSlot id="player-trailing" />
+              <DevicePicker />
               <Popover
                 placement="top-end"
                 aria-label="Player options"
@@ -1792,6 +2156,22 @@ export function Player({
                         <Volume2 size={16} />
                         Volume
                       </button>
+                      {/* Leaves the chooser rather than nesting inside it: the
+                          panel wants the whole sheet, and the popover it would
+                          sit in is too slim to search a list of playlists in. */}
+                      {track && (
+                        <button
+                          type="button"
+                          className="moreMenuItem"
+                          onClick={() => {
+                            setMoreOpen(false);
+                            setFiling(track);
+                          }}
+                        >
+                          <ListPlus size={16} />
+                          Add to playlist
+                        </button>
+                      )}
                     </div>
                   )}
                   {moreView !== 'menu' && (
@@ -1850,27 +2230,89 @@ export function Player({
             </>
           ) : (
             <>
-              {/* Plugin controls lead the app's own EQ and fader, mirroring how
-                  the title bar seats plugins ahead of settings. Empty when none
+              {/* Plugin controls lead the app's own cluster, mirroring how the
+                  title bar seats plugins ahead of settings. Empty when none
                   contribute. */}
               <PluginSlot id="player-trailing" />
+              {/* The equalizer, playlist filing, and device hand-off fold
+                  behind one overflow: five trailing buttons were crowding the
+                  bar, and none of the three is a moment-to-moment reach.
+                  Volume is, so the fader keeps its own seat. */}
               <Popover
                 placement="top-end"
-                aria-label="Equalizer"
+                aria-label="Player options"
                 className="eqPopoverPanel"
+                open={moreOpen}
+                onOpenChange={(open) => {
+                  setMoreOpen(open);
+                  if (open) setMoreView('menu');
+                }}
                 trigger={
-                  <IconButton variant="ghost" size="sm" aria-label="Equalizer">
-                    <AudioLines size={16} />
+                  <IconButton variant="ghost" size="sm" aria-label="Player options">
+                    <EllipsisVertical size={18} />
                   </IconButton>
                 }
               >
-                <div className="eqPopover">
-                  <AudioEqualizer
-                    value={eqGains}
-                    onValueChange={setEqGains}
-                    preset={eqPreset}
-                    onPresetChange={setEqPreset}
-                  />
+                <div className="morePopover">
+                  {moreView === 'menu' && (
+                    <div className="moreMenu">
+                      <button
+                        type="button"
+                        className="moreMenuItem"
+                        onClick={() => setMoreView('eq')}
+                      >
+                        <AudioLines size={16} />
+                        Equalizer
+                      </button>
+                      {/* Filing the song that is playing, without going to
+                          find its row in the table first. The dialog wants the
+                          whole sheet, so the pick leaves the popover. */}
+                      {track && (
+                        <button
+                          type="button"
+                          className="moreMenuItem"
+                          onClick={() => {
+                            setMoreOpen(false);
+                            setFiling(track);
+                          }}
+                        >
+                          <ListPlus size={16} />
+                          Add to playlist
+                        </button>
+                      )}
+                      {devicesAvailable && (
+                        <button
+                          type="button"
+                          className="moreMenuItem"
+                          onClick={() => setMoreView('devices')}
+                        >
+                          <MonitorSpeaker size={16} />
+                          Connect to a device
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {moreView !== 'menu' && (
+                    <button
+                      type="button"
+                      className="moreBack"
+                      onClick={() => setMoreView('menu')}
+                    >
+                      <ChevronLeft size={14} />
+                      {moreView === 'devices' ? 'Devices' : 'Equalizer'}
+                    </button>
+                  )}
+                  {moreView === 'eq' && (
+                    <div className="eqPopover">
+                      <AudioEqualizer
+                        value={eqGains}
+                        onValueChange={setEqGains}
+                        preset={eqPreset}
+                        onPresetChange={setEqPreset}
+                      />
+                    </div>
+                  )}
+                  {moreView === 'devices' && <DeviceList />}
                 </div>
               </Popover>
               <VolumeControl
@@ -1888,6 +2330,189 @@ export function Player({
         // The bar moves as hard as the station is playing.
         intensity={beatIntensity(volume, muted)}
       />
+      </div>
+
+      {/* The full-screen Now Playing surface, on touch only. Portalled to the
+          body so its stacking is the viewport's, not the mini-strip's plate
+          (which sits below the nav bar) - otherwise the nav would paint over
+          it. It reuses every handler the strip does, so the two never diverge. */}
+      {mobileControls && npOpen && createPortal(
+        <div className="npScreen" role="dialog" aria-label="Now playing" data-open={npOpen || undefined}>
+          {/* The song's own cover, blown up and blurred, as the surface behind
+              the controls - the same move the mini-strip's backdrop makes,
+              scoped to this sheet. */}
+          <div
+            className="npScreen__bg"
+            aria-hidden="true"
+            style={artwork ? { backgroundImage: `url(${JSON.stringify(artwork)})` } : undefined}
+          />
+          <header className="npScreen__head">
+            <IconButton variant="ghost" aria-label="Close now playing" onClick={() => setNpOpen(false)}>
+              <ChevronDown size={22} />
+            </IconButton>
+            <span className="npScreen__source">{track?.album || 'Now playing'}</span>
+            {/* Where the close button's counterweight was: filing the song is
+                the one action worth a permanent seat up here, and this sheet
+                has the room the mini-strip's rail does not. */}
+            {track ? (
+              <IconButton
+                variant="ghost"
+                aria-label="Add to playlist"
+                onClick={() => setFiling(track)}
+              >
+                <ListPlus size={20} />
+              </IconButton>
+            ) : (
+              <span className="npScreen__headSpacer" aria-hidden="true" />
+            )}
+          </header>
+
+          <div className="npScreen__art">
+            {/* The hero art follows the same artView the mini-strip does, so the
+                choice is one setting in two places. A press (long-press on
+                touch) opens the chooser - flat squircle cover or turning CD. */}
+            <ContextMenu
+              aria-label="Artwork style"
+              className="npScreen__coverTarget"
+              content={
+                <>
+                  <MenuItem
+                    icon={<Disc3 size={15} />}
+                    shortcut={artView === 'cd' ? <Check size={14} /> : undefined}
+                    onSelect={() => chooseArtView('cd')}
+                  >
+                    Spinning CD
+                  </MenuItem>
+                  <MenuItem
+                    icon={<ImageIcon size={15} />}
+                    shortcut={artView === 'cover' ? <Check size={14} /> : undefined}
+                    onSelect={() => chooseArtView('cover')}
+                  >
+                    Album cover
+                  </MenuItem>
+                </>
+              }
+            >
+              {artView === 'cd' ? (
+                <SpinningDisc
+                  art={dispArtwork}
+                  spinning={activeElsewhere ? dispPlaying : audible}
+                  beat={beat}
+                  spinUpMs={
+                    playback.pauseStyle === 'turntable'
+                      ? SPIN_UP_MS
+                      : playback.pauseStyle === 'fade'
+                        ? 250
+                        : 0
+                  }
+                  spinDownMs={
+                    playback.pauseStyle === 'turntable'
+                      ? SPIN_DOWN_MS
+                      : playback.pauseStyle === 'fade'
+                        ? 200
+                        : 0
+                  }
+                />
+              ) : (
+                <img
+                  className="npScreen__cover"
+                  src={artwork ?? npPlaceholderArt}
+                  alt=""
+                />
+              )}
+            </ContextMenu>
+          </div>
+
+          <div className="npScreen__meta">
+            <div className="npScreen__lines">
+              <span className="npScreen__title">{track?.title ?? ''}</span>
+              <span className="npScreen__artist">{track?.artist ?? ''}</span>
+            </div>
+            <IconButton
+              variant="ghost"
+              aria-label={favorite ? 'Remove from favourites' : 'Add to favourites'}
+              aria-pressed={favorite}
+              className="npScreen__heart"
+              onClick={() => track && toggleFavorite(track.path)}
+            >
+              <Heart size={22} fill={favorite ? 'currentColor' : 'none'} />
+            </IconButton>
+          </div>
+
+          <div className="npScreen__scrub">
+            {/* The kit's live bar, not a plain slider: the same waveform the
+                mini strip wears, driven by the same levels and beat, so the
+                now-playing screen deforms in time with the music. Pushed toward
+                the hero end of the intensity range (max 3) since this bar IS
+                the surface's focus, and set on a raised-card rail so the run
+                ahead stays legible over the blurred cover behind it. */}
+            <SeekBar
+              duration={Math.max(1, duration)}
+              value={position}
+              aria-label="Seek"
+              shape="swell"
+              tone="accent"
+              fill="solid"
+              rail="contrast"
+              levels={levels}
+              beat={beat}
+              tracer
+              intensity={Math.min(3, beatIntensity(volume, muted) * 1.6)}
+              onValueChange={onScrub}
+              onSeekEnd={commitSeek}
+            />
+            <div className="npScreen__times">
+              <span>{formatClock(position)}</span>
+              <span>-{formatClock(Math.max(0, duration - position))}</span>
+            </div>
+          </div>
+
+          <div className="npScreen__transport">
+            <IconButton
+              variant="ghost"
+              aria-label="Shuffle"
+              aria-pressed={shuffle}
+              data-on={shuffle || undefined}
+              onClick={() => setShuffle((s) => !s)}
+            >
+              <Shuffle size={20} />
+            </IconButton>
+            <IconButton variant="ghost" aria-label="Previous" disabled={!canSkip} onClick={skipBack}>
+              <SkipBack size={26} fill="currentColor" />
+            </IconButton>
+            <button
+              type="button"
+              className="npScreen__play"
+              aria-label={playing ? 'Pause' : 'Play'}
+              onClick={() => setPlayingState(!playing)}
+            >
+              {playing ? <Pause size={30} fill="currentColor" /> : <Play size={30} fill="currentColor" />}
+            </button>
+            <IconButton variant="ghost" aria-label="Next" disabled={!canSkip} onClick={skipForward}>
+              <SkipForward size={26} fill="currentColor" />
+            </IconButton>
+            <IconButton
+              variant="ghost"
+              aria-label={`Repeat: ${repeat}`}
+              data-on={repeat !== 'off' || undefined}
+              onClick={cycleRepeat}
+            >
+              {repeat === 'one' ? <Repeat1 size={20} /> : <Repeat size={20} />}
+            </IconButton>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {/* One sheet for both phone entry points - the strip's overflow and the
+          Now Playing header - so the same panel answers either. */}
+      <AddToPlaylistDialog track={filing} open={filing !== null} onClose={() => setFiling(null)} />
     </>
   );
+}
+
+/** mm:ss for the Now Playing clock. */
+function formatClock(seconds: number): string {
+  const t = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
 }

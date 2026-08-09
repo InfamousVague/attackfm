@@ -2,6 +2,9 @@ import { CommandPalette } from '@glacier/react';
 import { useEffect, useMemo, useState } from 'react';
 import { useLibrary } from './library.tsx';
 import { usePluginCommands } from '../plugins/runtime.tsx';
+import { flatten, matches } from './trackSearch.ts';
+import { isDesktopApp } from './platform.ts';
+import { MobileSearch } from './MobileSearch.tsx';
 import type { Track } from './tauri.ts';
 
 interface SongSearchProps {
@@ -9,23 +12,6 @@ interface SongSearchProps {
   onOpenChange: (open: boolean) => void;
   /** Receives the chosen track and the hit list it was chosen from. */
   onPlay: (track: Track, queue: Track[]) => void;
-}
-
-// Fold to lowercase words separated by single spaces, dropping punctuation, so a
-// typed phrase matches a lyric across the commas and line breaks it really has.
-const flatten = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-
-/**
- * Whether a track answers the query. Metadata (title, artist, album, genre) is
- * word-ANDed - every typed word must appear somewhere in it - while lyrics are
- * matched as a contiguous phrase. Splitting them is the point: a lyric is long
- * prose where the short words of any query turn up scattered everywhere, so only
- * the phrase typed verbatim should count there.
- */
-function matches(track: Track, phrase: string, words: string[]): boolean {
-  const meta = flatten(`${track.title} ${track.artist} ${track.album} ${track.genre}`);
-  if (words.every((w) => meta.includes(w))) return true;
-  return track.lyrics.length > 0 && flatten(track.lyrics).includes(phrase);
 }
 
 /**
@@ -70,6 +56,27 @@ export function SongSearch({ open, onOpenChange, onPlay }: SongSearchProps) {
   // rows stand aside. Otherwise plugin commands trail the songs, in
   // registration order.
   const commands = plugin.exclusive ? plugin.commands : [...songs, ...plugin.commands];
+
+  // One set of state, two shells: a full-screen sheet on the phone, the centered
+  // command palette on the desktop. An exclusive claim (a pasted link) drops the
+  // song rows on both.
+  if (!isDesktopApp) {
+    return (
+      <MobileSearch
+        open={open}
+        onClose={() => onOpenChange(false)}
+        query={query}
+        onQueryChange={setQuery}
+        tracks={plugin.exclusive ? [] : hits}
+        commands={plugin.commands}
+        onRunCommand={(id) => plugin.run(id)}
+        onPlayTrack={(track) => {
+          onPlay(track, hits);
+          onOpenChange(false);
+        }}
+      />
+    );
+  }
 
   return (
     <CommandPalette

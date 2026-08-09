@@ -295,6 +295,62 @@ pub async fn scan_now(State(state): State<Arc<AppState>>, headers: HeaderMap) ->
     Ok(Json(json!({ "started": true })))
 }
 
+/// The volume the music lives on, asked of `df` - dependency-free, and the
+/// server already shells out for heavier things (ffmpeg, the importer). POSIX
+/// `-kP` output is two lines: a header, then
+/// `filesystem 1024-blocks used available capacity mount`. Best-effort: a
+/// container without `df` just reports no disk numbers rather than an error.
+fn disk_space(path: &std::path::Path) -> Option<(i64, i64)> {
+    let out = std::process::Command::new("df").arg("-kP").arg(path).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let line = text.lines().nth(1)?;
+    let mut cols = line.split_whitespace();
+    let total_kb: i64 = cols.nth(1)?.parse().ok()?;
+    let _used = cols.next()?;
+    let free_kb: i64 = cols.next()?.parse().ok()?;
+    Some((total_kb * 1024, free_kb * 1024))
+}
+
+/// `GET /api/stats` - the numbers behind the settings dashboard, one call.
+///
+/// Everything a client would otherwise stitch together from three endpoints
+/// (plus the two things it cannot derive at all: process uptime and the real
+/// free space on the music volume). Any signed-in caller may read it - it is
+/// the user's own server, and nothing here is a secret from a listener whose
+/// uploads share the same disk.
+pub async fn stats(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
+    auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+
+    let used = state.db.total_bytes();
+    let disk = disk_space(&state.music_root);
+    let (queued, downloading) = {
+        let jobs = state.imports.jobs.lock().await;
+        (
+            jobs.iter().filter(|j| j.state == "queued").count(),
+            jobs.iter().filter(|j| j.state == "downloading").count(),
+        )
+    };
+
+    Ok(Json(json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "name": state.server_name,
+        "uptimeSecs": state.started.elapsed().as_secs(),
+        "tracks": state.db.track_count(),
+        "users": state.db.user_count(),
+        "bytesUsed": used,
+        "bytesLabel": human_bytes(used),
+        "quotaBytes": state.library_quota_bytes,
+        "diskTotalBytes": disk.map(|(total, _)| total),
+        "diskFreeBytes": disk.map(|(_, free)| free),
+        "transcode": state.ffmpeg,
+        "importsQueued": queued,
+        "importsActive": downloading,
+    })))
+}
+
 // --- favourites -----------------------------------------------------------
 
 pub async fn favorites(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
@@ -476,9 +532,16 @@ pub async fn revoke_streams(
     headers: HeaderMap,
 ) -> ApiResult {
     auth::require_admin(&state.db, &headers).map_err(|s| (s, "admins only".into()))?;
+    // Both halves, or the revoke is theatre: the epoch bump invalidates
+    // stream tokens already in the wild, and dropping the session tokens
+    // stops the client from just minting fresh ones via /api/me.
     state
         .db
         .bump_stream_epoch(user_id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    state
+        .db
+        .delete_tokens_for_user(user_id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(json!({ "ok": true })))
 }

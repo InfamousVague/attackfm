@@ -65,6 +65,43 @@ export interface PluginCommand {
 }
 
 /**
+ * A thing a surface offers to pull in - a single song, a whole album, or a
+ * playlist - handed to whatever plugins can "get" it. Carries what a handler
+ * needs: a title (and, for a song or album, its artist) to search a store or
+ * tag a download, and the source URL an importer downloads from when the
+ * surface has one (a Discover card does; a bare title from elsewhere may not).
+ */
+export interface AcquireTarget {
+  kind: 'track' | 'album' | 'playlist';
+  title: string;
+  artist?: string;
+  /** The source link an importer pulls from, when the surface has one. */
+  url?: string;
+}
+
+/**
+ * A way to acquire a target, contributed by a plugin: the importer's download,
+ * the Buy plugin's store finder, anything else answering "get this". The chrome
+ * gathers every enabled plugin's handlers, keeps the ones that can service a
+ * given target, and - when more than one can - lets the user choose. None that
+ * can service it means the surface's Add control stays inert.
+ */
+export interface AcquireHandler {
+  /** Unique within the plugin; the runtime namespaces it before merging. */
+  id: string;
+  /** The verb shown in the chooser (and, when it is the only handler, what the
+   *  surface's own control means): 'Download', 'Buy'. */
+  label: string;
+  /** The chooser row's glyph. */
+  icon?: ReactNode;
+  /** Whether this handler can service the target. Absent means always. A
+   *  download handler needs a URL; Buy wants a song or album, not a playlist. */
+  canHandle?: (target: AcquireTarget) => boolean;
+  /** Do it. Fire-and-forget - the handler owns its own feedback. */
+  run: (target: AcquireTarget) => void;
+}
+
+/**
  * A playlist tile for the showcase strip. A data contract rather than a
  * component: the showcase renders it with its own Tile and PlaylistModal and
  * wires play-through, so a plugin says what the playlist IS, not what a tile
@@ -86,6 +123,48 @@ export interface PluginPlaylistTile {
     tracks: readonly Track[];
     emptyLabel: string;
   };
+}
+
+/**
+ * What a plugin's page is handed when it mounts: the same two doors the core
+ * pages (Home, the artist page) are given, and no more. A page starts playback
+ * by handing the player a track and the list it came from, and opens an artist
+ * by name - which lands as an artist view stacked inside the plugin's own tab,
+ * so Back returns to the page. Everything else a page needs (a server session,
+ * the library, another plugin's context) it reads from the providers it renders
+ * under, exactly as a core page does.
+ */
+export interface PluginPageProps {
+  /** Play a track, with the list it belongs to as the queue to walk. */
+  onPlay: (track: Track, queue?: Track[]) => void;
+  /** Open an artist's page, stacked inside the current tab. */
+  onOpenArtist: (artist: string) => void;
+}
+
+/**
+ * A full-screen destination a plugin adds to the primary navigation: one nav
+ * item (its icon and label) that, when chosen, replaces the main content area
+ * with the plugin's page. It is a first-class sibling of Home and Library, not
+ * a panel bolted onto one of them - the app's back/forward history walks
+ * through it, an artist opened from it stacks on top of it, and the nav bar
+ * lights its item while it is showing.
+ *
+ * The runtime keys each page by the plugin id and this id together, so two
+ * plugins may both call their page 'main' without colliding. The page renders
+ * behind the plugin's crash fence: a throw here pulls the whole plugin for the
+ * session and the nav snaps back to Home, rather than taking the app down.
+ */
+export interface PluginPage {
+  /** Unique within the plugin; the runtime namespaces it into a route key. */
+  id: string;
+  /** The nav item's text - a tooltip on the icon-only phone bar, a label on
+   *  the desktop rail. */
+  label: string;
+  /** The nav item's glyph, sized for the rail like the core items (18px). */
+  icon: ReactNode;
+  /** The destination itself, rendered in the content area while its nav item
+   *  is active and fenced against crashes. */
+  Content: ComponentType<PluginPageProps>;
 }
 
 export interface Plugin {
@@ -127,6 +206,17 @@ export interface Plugin {
    */
   serverBacked?: boolean;
   /**
+   * A plugin whose whole value is a server feature - its data or engine lives
+   * on the hub and nowhere else - so it is absent on EVERY platform until a
+   * server is connected, the desktop included. Where `serverBacked` says "a
+   * local engine will do if there is one", this says "there is no local
+   * equivalent": the discover feed, for instance, is built and cached on the
+   * server, so a desktop with no hub has nothing to show. Filtered against the
+   * live session, so the card appears on connect and leaves on disconnect.
+   * Takes precedence over `serverBacked` when both are set.
+   */
+  requiresServer?: boolean;
+  /**
    * The detail dialog's prose - a paragraph or two, where description is one
    * line. Falls back to description when absent.
    */
@@ -146,6 +236,12 @@ export interface Plugin {
   /** Tiles appended to the playlist showcase after the built-in three. */
   playlistTiles?: readonly PluginPlaylistTile[];
   /**
+   * Navigable pages this plugin adds to the primary navigation, each its own
+   * nav item and destination. Appended after the core tabs (Home, Library) in
+   * registration order, on the desktop rail and the phone's bottom bar alike.
+   */
+  pages?: readonly PluginPage[];
+  /**
    * A React hook returning the plugin's commands for the current query. It
    * may call other hooks, but must call them unconditionally and in a fixed
    * order BEFORE any early return - the ordinary rule every hook lives by.
@@ -153,4 +249,12 @@ export interface Plugin {
    * hook-order note on usePluginCommands in runtime.tsx.
    */
   usePaletteCommands?: (ctx: PaletteContext) => readonly PluginCommand[];
+  /**
+   * A React hook returning the plugin's acquire handlers - the ways it can
+   * "get this" for a track, album, or playlist a surface offers. Same rules as
+   * usePaletteCommands: called from a PluginHookScope, its own hooks
+   * unconditional and in fixed order before any early return, so it may read
+   * the plugin's own provider (an importer's queue, the Buy modal's opener).
+   */
+  useAcquireHandlers?: () => readonly AcquireHandler[];
 }

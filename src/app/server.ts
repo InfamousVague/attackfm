@@ -383,12 +383,205 @@ export interface ScanStatus {
   seen: number;
   total: number;
   tracks: number;
+  /** Library bytes on disk, raw and human-labelled. */
+  bytes: number;
   bytesLabel: string;
+  /** The AFM_QUOTA_GB ceiling in bytes; 0 means uncapped. */
+  quota: number;
   rev: number;
 }
 
 export async function fetchScanStatus(session: ServerSession): Promise<ScanStatus> {
   return request<ScanStatus>(session.url, '/api/scan', { token: session.token });
+}
+
+// --- the server dashboard ----------------------------------------------------
+
+/** The numbers behind Settings > Server, from `GET /api/stats` in one call.
+ * Disk fields are null when the box could not answer (no `df`); the whole
+ * fetch fails on a server that predates the endpoint - callers fall back to
+ * the scan status they already poll. */
+export interface ServerStats {
+  version: string;
+  name: string;
+  uptimeSecs: number;
+  tracks: number;
+  users: number;
+  bytesUsed: number;
+  bytesLabel: string;
+  quotaBytes: number;
+  diskTotalBytes: number | null;
+  diskFreeBytes: number | null;
+  transcode: boolean;
+  importsQueued: number;
+  importsActive: number;
+}
+
+export async function fetchServerStats(session: ServerSession): Promise<ServerStats> {
+  return request<ServerStats>(session.url, '/api/stats', { token: session.token });
+}
+
+// --- user management (admin) -------------------------------------------------
+
+export interface ServerUser {
+  id: number;
+  username: string;
+  isAdmin: boolean;
+}
+
+/** The account list. Admin only - a listener gets a 403. */
+export async function fetchUsers(session: ServerSession): Promise<ServerUser[]> {
+  const reply = await request<{ users: ServerUser[] }>(session.url, '/api/users', {
+    token: session.token,
+  });
+  return reply.users;
+}
+
+/** Removes an account outright. The server refuses self-deletion. */
+export async function deleteUser(session: ServerSession, id: number): Promise<void> {
+  await request(session.url, `/api/users/${id}`, { method: 'DELETE', token: session.token });
+}
+
+/** Kills every stream token the account holds - each device must sign in again
+ * to keep listening. The account itself stays. */
+export async function revokeUserStreams(session: ServerSession, id: number): Promise<void> {
+  await request(session.url, `/api/users/${id}/revoke`, { method: 'POST', token: session.token });
+}
+
+// --- the home feed -----------------------------------------------------------
+
+/** The home page's shelves, as track ids resolved against the synced library. */
+export interface HomeFeed {
+  recent: number[];
+  heavy: number[];
+  fresh: number[];
+  /** Recently-played albums, each a full ordered track-id list to play as-is. */
+  jumpBackIn: number[][];
+  /** The user's top artist names this month. */
+  topArtists: string[];
+  mixes: { id: string; title: string; blurb: string; trackIds: number[]; flavor: 'ai' | 'heuristic' }[];
+  /** Whether a local model is wired up server-side. */
+  ai: boolean;
+}
+
+export async function fetchHome(session: ServerSession): Promise<HomeFeed> {
+  return request<HomeFeed>(session.url, '/api/home', { token: session.token });
+}
+
+/** A suggested chart playlist the user can add through the import pipeline. */
+export interface Suggestion {
+  id: string;
+  title: string;
+  blurb: string;
+  cover: string | null;
+  /** The playlist URL to hand the importer. */
+  url: string;
+  section: string;
+  trackCount: number | null;
+  /** Track titles in order, for the preview - absent on an older server. */
+  tracks?: string[];
+}
+
+export async function fetchDiscover(session: ServerSession): Promise<Suggestion[]> {
+  const reply = await request<{ suggestions: Suggestion[] }>(session.url, '/api/discover', {
+    token: session.token,
+  });
+  return reply.suggestions;
+}
+
+/** One external catalogue hit (Spotify/Deezer), from `GET /api/search`. A
+ *  track carries an importable `url`; an artist is a name to search deeper. */
+export interface SearchResult {
+  id: string;
+  kind: 'track' | 'artist';
+  title: string;
+  subtitle: string;
+  cover: string | null;
+  /** The link to hand the importer (present for tracks). */
+  url: string;
+  source: string;
+}
+
+/** Search Spotify and other public sources for new artists and songs. */
+export async function searchCatalog(
+  session: ServerSession,
+  query: string,
+  signal?: AbortSignal,
+): Promise<SearchResult[]> {
+  const reply = await request<{ results: SearchResult[] }>(
+    session.url,
+    `/api/search?q=${encodeURIComponent(query)}`,
+    { token: session.token, signal },
+  );
+  return reply.results;
+}
+
+/** One release on an artist's page: an album, EP, single or compilation. Its
+ *  `url` is an album link the importer takes whole. */
+export interface CatalogRelease {
+  id: string;
+  title: string;
+  cover: string | null;
+  year: string | null;
+  trackCount: number | null;
+  kind: string;
+  url: string;
+}
+
+/** One of an artist's best-known tracks, importable on its own. */
+export interface CatalogTrack {
+  id: string;
+  title: string;
+  cover: string | null;
+  url: string;
+  /** Seconds. */
+  duration: number | null;
+}
+
+/** An artist's profile and discography, from `GET /api/artist`. */
+export interface CatalogArtist {
+  id: string;
+  name: string;
+  picture: string | null;
+  url: string;
+  source: string;
+  /** Follower count, as the catalogue reports it. */
+  fans: number | null;
+  albumCount: number | null;
+  albums: CatalogRelease[];
+  singles: CatalogRelease[];
+  top: CatalogTrack[];
+  related: { id: string; name: string; picture: string | null }[];
+}
+
+/**
+ * One catalogue artist, opened from a search row. The name rides along because
+ * a Spotify row carries no Deezer id and the server resolves it by name.
+ */
+export async function fetchCatalogArtist(
+  session: ServerSession,
+  id: string,
+  name: string,
+  signal?: AbortSignal,
+): Promise<CatalogArtist> {
+  const reply = await request<{ artist: CatalogArtist }>(
+    session.url,
+    `/api/artist?id=${encodeURIComponent(id)}&name=${encodeURIComponent(name)}`,
+    { token: session.token, signal },
+  );
+  return reply.artist;
+}
+
+/**
+ * Logs one qualifying play. Fire-and-forget from the player: a listen that
+ * fails to record is not worth interrupting.
+ */
+export function reportPlay(session: ServerSession, trackId: number): void {
+  void request(session.url, '/api/plays', {
+    method: 'POST',
+    token: session.token,
+    body: JSON.stringify({ trackId }),
+  }).catch(() => {});
 }
 
 // --- folder sync ------------------------------------------------------------

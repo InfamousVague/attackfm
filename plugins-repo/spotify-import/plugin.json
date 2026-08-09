@@ -1,0 +1,10 @@
+{
+  "id": "spotify-import",
+  "name": "Music import",
+  "version": "1.0.0",
+  "description": "Downloads pasted Spotify, Apple Music, Tidal, Deezer, YT Music, and Qobuz links into the library.",
+  "author": "AttackFM",
+  "tags": ["Importer", "Downloads"],
+  "entry": "plugin.ts",
+  "serverBacked": true
+}

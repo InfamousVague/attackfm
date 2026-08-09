@@ -185,6 +185,24 @@ CREATE TABLE IF NOT EXISTS play_state (
   updated_at  INTEGER NOT NULL,
   PRIMARY KEY (user_id, track_id)
 );
+
+-- The listening log: one row per qualifying play (a track that ran past the
+-- report threshold), append-only. What the home page's shelves and the mix
+-- engine read taste from - play_state above is "where did I stop", this is
+-- "what do I actually listen to".
+CREATE TABLE IF NOT EXISTS plays (
+  id        INTEGER PRIMARY KEY,
+  user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  track_id  INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+  played_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS plays_user_time ON plays(user_id, played_at DESC);
+-- Probed by unplayed()'s NOT EXISTS, which asks "did this user play THIS
+-- track" - a lookup the time index above cannot serve.
+CREATE INDEX IF NOT EXISTS plays_user_track ON plays(user_id, track_id);
+-- The home shelves order live tracks by recency; without this the "new" and
+-- "unplayed" shelves full-scan and filesort the library on every load.
+CREATE INDEX IF NOT EXISTS tracks_added ON tracks(added_at DESC) WHERE deleted = 0;
 "#;
 
 fn now_ms() -> i64 {
@@ -275,6 +293,17 @@ impl Db {
             .flatten()
     }
 
+    /// The id of the track filed at this library-relative path, if indexed.
+    /// The importer asks right after scan_one so a finished job can name the
+    /// track ids it produced - what lets a client play an import on arrival.
+    pub fn track_id_by_path(&self, rel_path: &str) -> Option<i64> {
+        self.lock()
+            .query_row("SELECT id FROM tracks WHERE rel_path = ?1", params![rel_path], |r| r.get(0))
+            .optional()
+            .ok()
+            .flatten()
+    }
+
     pub fn user_by_id(&self, id: i64) -> Option<User> {
         self.lock()
             .query_row(
@@ -309,6 +338,15 @@ impl Db {
             "UPDATE users SET stream_epoch = stream_epoch + 1 WHERE id = ?1",
             params![id],
         )?;
+        Ok(())
+    }
+
+    /// Drops every session token the account holds - the other half of a
+    /// revoke. The epoch bump above kills stream tokens already minted, but a
+    /// surviving session token would just mint a fresh one on the client's
+    /// next `/api/me`, quietly undoing the revoke.
+    pub fn delete_tokens_for_user(&self, user_id: i64) -> rusqlite::Result<()> {
+        self.lock().execute("DELETE FROM tokens WHERE user_id = ?1", params![user_id])?;
         Ok(())
     }
 
@@ -696,6 +734,185 @@ impl Db {
     }
 
     // --- resume positions -------------------------------------------------
+
+    // --- the listening log --------------------------------------------------
+
+    /// Appends one qualifying play.
+    pub fn record_play(&self, user_id: i64, track_id: i64) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO plays (user_id, track_id, played_at) VALUES (?1, ?2, ?3)",
+            params![user_id, track_id, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// Distinct recently played live tracks, newest first.
+    pub fn recent_plays(&self, user_id: i64, limit: i64) -> Vec<i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT p.track_id FROM plays p JOIN tracks t ON t.id = p.track_id AND t.deleted = 0
+             WHERE p.user_id = ?1 GROUP BY p.track_id ORDER BY MAX(p.played_at) DESC LIMIT ?2",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, limit], |r| r.get(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// The heavy rotation: most-played live tracks inside the window.
+    pub fn top_plays(&self, user_id: i64, since_ms: i64, limit: i64) -> Vec<(i64, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT p.track_id, COUNT(*) AS n
+             FROM plays p JOIN tracks t ON t.id = p.track_id AND t.deleted = 0
+             WHERE p.user_id = ?1 AND p.played_at >= ?2
+             GROUP BY p.track_id ORDER BY n DESC, MAX(p.played_at) DESC LIMIT ?3",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, since_ms, limit], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Play counts grouped by artist inside the window, most-played first -
+    /// the compact taste summary the mix engine reasons from.
+    pub fn top_artists(&self, user_id: i64, since_ms: i64, limit: i64) -> Vec<(String, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            // NOCASE grouping so \"MF DOOM\" and \"MF Doom\" count as one artist -
+            // matching tracks_by_artist's own NOCASE lookup, so the ranked
+            // names and the tracks they resolve to never disagree.
+            "SELECT t.artist, COUNT(*) AS n
+             FROM plays p JOIN tracks t ON t.id = p.track_id AND t.deleted = 0
+             WHERE p.user_id = ?1 AND p.played_at >= ?2
+             GROUP BY t.artist COLLATE NOCASE ORDER BY n DESC LIMIT ?3",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, since_ms, limit], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Play counts grouped by genre inside the window, most-played first -
+    /// blank genres skipped. Genres are often comma-joined ("Pop, R&B"); this
+    /// counts the whole string as one bucket, which is enough to name a mix.
+    pub fn top_genres(&self, user_id: i64, since_ms: i64, limit: i64) -> Vec<(String, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT t.genre, COUNT(*) AS n
+             FROM plays p JOIN tracks t ON t.id = p.track_id AND t.deleted = 0
+             WHERE p.user_id = ?1 AND p.played_at >= ?2 AND TRIM(t.genre) <> ''
+             GROUP BY t.genre ORDER BY n DESC LIMIT ?3",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, since_ms, limit], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Live tracks in a genre, newest first - genre-mix material.
+    pub fn tracks_by_genre(&self, genre: &str, limit: i64) -> Vec<i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT id FROM tracks WHERE deleted = 0 AND genre = ?1 COLLATE NOCASE
+             ORDER BY added_at DESC LIMIT ?2",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![genre, limit], |r| r.get(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// The albums behind the user's recent plays, newest touch first - each as
+    /// its FULL ordered track-id list (disc then track). The server owns album
+    /// identity and order here so the client never has to: it plays the list
+    /// as given, which is what keeps two same-named albums by different artists
+    /// from ever merging, and multi-disc albums in disc order.
+    pub fn recent_album_track_lists(&self, user_id: i64, album_limit: i64) -> Vec<Vec<i64>> {
+        let conn = self.lock();
+        // The recent (album_artist, album) pairs, newest touch first. Collected
+        // into owned strings so the statement is done before the per-album
+        // queries below reuse the connection.
+        let pairs: Vec<(String, String)> = {
+            let Ok(mut stmt) = conn.prepare(
+                "SELECT t.album_artist, t.album, MAX(p.played_at) AS last
+                 FROM plays p JOIN tracks t ON t.id = p.track_id AND t.deleted = 0
+                 WHERE p.user_id = ?1 AND TRIM(t.album) <> ''
+                 GROUP BY t.album_artist, t.album ORDER BY last DESC LIMIT ?2",
+            ) else {
+                return Vec::new();
+            };
+            stmt.query_map(params![user_id, album_limit], |r| Ok((r.get(0)?, r.get(1)?)))
+                .map(|rows| rows.filter_map(Result::ok).collect())
+                .unwrap_or_default()
+        };
+
+        let mut out = Vec::new();
+        for (album_artist, album) in pairs {
+            let Ok(mut stmt) = conn.prepare(
+                "SELECT id FROM tracks WHERE deleted = 0 AND album_artist = ?1 AND album = ?2
+                 ORDER BY disc_no, track_no",
+            ) else {
+                continue;
+            };
+            let ids: Vec<i64> = stmt
+                .query_map(params![album_artist, album], |r| r.get(0))
+                .map(|rows| rows.filter_map(Result::ok).collect())
+                .unwrap_or_default();
+            if !ids.is_empty() {
+                out.push(ids);
+            }
+        }
+        out
+    }
+
+    /// Live tracks the user has NEVER logged a play for, newest additions
+    /// first - the pool "fresh finds" and discovery mixes draw from.
+    pub fn unplayed(&self, user_id: i64, limit: i64) -> Vec<i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT t.id FROM tracks t WHERE t.deleted = 0
+               AND NOT EXISTS (SELECT 1 FROM plays p WHERE p.user_id = ?1 AND p.track_id = t.id)
+             ORDER BY t.added_at DESC LIMIT ?2",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, limit], |r| r.get(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Newest live tracks by added_at, for the "recently added" shelf.
+    pub fn recently_added(&self, limit: i64) -> Vec<i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT id FROM tracks WHERE deleted = 0 ORDER BY added_at DESC LIMIT ?1",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![limit], |r| r.get(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Every live track by an artist, album order - mix material.
+    pub fn tracks_by_artist(&self, artist: &str, limit: i64) -> Vec<i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT id FROM tracks WHERE deleted = 0 AND artist = ?1 COLLATE NOCASE
+             ORDER BY album, disc_no, track_no LIMIT ?2",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![artist, limit], |r| r.get(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
 
     pub fn set_play_state(&self, user_id: i64, track_id: i64, position_ms: i64) -> rusqlite::Result<()> {
         self.lock().execute(
