@@ -276,6 +276,14 @@ if [ -n "$DOMAIN" ] || [ "$NO_PROXY" = "1" ]; then
 else
 	BIND="0.0.0.0"
 fi
+# With a domain the server can state its public origin, which the Spotify
+# account link needs for its OAuth redirect. Without one it stays unset and
+# the connect endpoint explains.
+if [ -n "$DOMAIN" ]; then
+	PUBLIC_URL_LINE="Environment=AFM_PUBLIC_URL=https://$DOMAIN"
+else
+	PUBLIC_URL_LINE="# Environment=AFM_PUBLIC_URL=https://your.domain (needed for the Spotify link)"
+fi
 
 cat > "/etc/systemd/system/$SERVICE.service" <<EOF
 # Written by the AttackFM installer. Edit freely - it is only rewritten if you
@@ -293,6 +301,7 @@ Environment=AFM_MUSIC_DIR=$MUSIC_DIR
 Environment=AFM_SERVER_NAME=AttackFM
 Environment=AFM_QUOTA_GB=$QUOTA_GB
 Environment=AFM_SCAN_MINUTES=15
+$PUBLIC_URL_LINE
 
 WorkingDirectory=$PREFIX
 ExecStart=$PREFIX/bin/attackfm-server

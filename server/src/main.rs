@@ -17,6 +17,7 @@
 //! | `AFM_QUOTA_GB` | `0` | A ceiling on the library, in gigabytes. 0 means no ceiling. |
 //! | `AFM_SCAN_MINUTES` | `15` | How often to re-walk the music folder. 0 turns the timer off. |
 //! | `AFM_PLUGINS_DIR` | `<data>/plugins` | The plugin repository served at `/plugins`. |
+//! | `AFM_PUBLIC_URL` | *(empty)* | The public origin, e.g. `https://matt.attack.fm` - needed for the Spotify OAuth redirect. |
 
 mod api;
 mod auth;
@@ -26,6 +27,7 @@ mod discover;
 mod home;
 mod imports;
 mod scan;
+mod spotify;
 mod search;
 mod stream;
 mod upload;
@@ -51,6 +53,10 @@ pub struct AppState {
     pub library_quota_bytes: i64,
     /// Whether an ffmpeg was found at boot - decides if transcoding is offered.
     pub ffmpeg: bool,
+    /// The server's public origin (AFM_PUBLIC_URL), for OAuth redirect URIs.
+    pub public_url: String,
+    /// Spotify logins parked between /connect and the browser's /callback.
+    pub spotify: Arc<spotify::SpotifyLogins>,
     /// The server-side import queue - links any signed-in device enqueues,
     /// downloaded where the music lives.
     pub imports: Arc<imports::ImportManager>,
@@ -127,6 +133,7 @@ async fn main() {
     let server_name = env_or("AFM_SERVER_NAME", "AttackFM");
     let quota_gb: i64 = env_or("AFM_QUOTA_GB", "0").parse().unwrap_or(0);
     let scan_minutes: u64 = env_or("AFM_SCAN_MINUTES", "15").parse().unwrap_or(15);
+    let public_url = env_or("AFM_PUBLIC_URL", "");
 
     let art_dir = data_dir.join("art");
     let upload_dir = data_dir.join("uploads");
@@ -165,6 +172,8 @@ async fn main() {
         library_quota_bytes: quota_gb.max(0) * 1024 * 1024 * 1024,
         ffmpeg,
         imports: imports::ImportManager::new(&data_dir),
+        public_url,
+        spotify: Arc::new(spotify::SpotifyLogins::default()),
         filing: Arc::new(tokio::sync::Mutex::new(())),
         home: home::HomeState::new(),
         discover: discover::DiscoverState::new(),
@@ -256,6 +265,12 @@ async fn main() {
         .route("/api/stream/{id}", get(stream::stream))
         .route("/api/art/{id}", get(stream::art))
         .route("/api/transcode/{id}", get(stream::transcode))
+        .route("/api/spotify/status", get(spotify::status))
+        .route("/api/spotify/connect", post(spotify::connect))
+        .route("/api/spotify/callback", get(spotify::callback))
+        .route("/api/spotify/disconnect", post(spotify::disconnect))
+        .route("/api/spotify/library", get(spotify::library))
+        .route("/api/spotify/synced", post(spotify::mark_synced))
         .nest_service("/plugins", ServeDir::new(&plugins_dir))
         .fallback(|| async { (StatusCode::NOT_FOUND, "not found") })
         .layer(cors)

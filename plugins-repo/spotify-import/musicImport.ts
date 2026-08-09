@@ -4,23 +4,6 @@
 import type { MusicImportJob, MusicImportState } from '@attackfm/app/importsBridge';
 export type { MusicImportJob, MusicImportState };
 
-export interface SpotiFlacStatus {
-  available: boolean;
-  command: string | null;
-  outputDir: string;
-  hint: string | null;
-}
-
-/** Configurable download settings, mirroring the Rust `MusicSettings`. */
-export interface MusicSettings {
-  quality: string;
-  services: string;
-  retries: number;
-  timeout: number;
-  lyrics: boolean;
-  enrich: boolean;
-}
-
 const MAGNET_RE = /^magnet:/i;
 
 /**
@@ -42,63 +25,6 @@ export function isMusicImportLink(value: string): boolean {
   );
 }
 
-async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  const mod = await import('@tauri-apps/api/core');
-  return mod.invoke<T>(cmd, args);
-}
-
-export async function enqueueMusicImport(url: string, outputDir?: string): Promise<MusicImportJob> {
-  // outputDir omitted -> the backend's own fallback (the OS music folder).
-  // Callers pass a directory only when the library IS a local folder - a
-  // server library's musicDir is a URL, and a URL handed to the downloader
-  // becomes a literal "https:" directory on disk.
-  return invoke<MusicImportJob>('music_import_enqueue', { url, outputDir });
-}
-
-export async function listMusicImports(): Promise<MusicImportJob[]> {
-  return invoke<MusicImportJob[]>('music_imports_list');
-}
-
-export async function removeMusicImport(id: string): Promise<void> {
-  await invoke('music_import_remove', { id });
-}
-
-export async function retryMusicImport(id: string): Promise<void> {
-  await invoke('music_import_retry', { id });
-}
-
-export async function cancelMusicImport(id: string): Promise<void> {
-  await invoke('music_import_cancel', { id });
-}
-
-export async function clearMusicImports(states: MusicImportState[]): Promise<void> {
-  await invoke('music_imports_clear', { states });
-}
-
-export async function spotiflacStatus(outputDir?: string): Promise<SpotiFlacStatus> {
-  return invoke<SpotiFlacStatus>('music_spotiflac_status', { outputDir });
-}
-
-export async function installSpotiflac(): Promise<{ resolvedCommand: string | null }> {
-  return invoke('music_spotiflac_install');
-}
-
-export async function getMusicSettings(): Promise<MusicSettings> {
-  return invoke<MusicSettings>('music_import_get_settings');
-}
-
-export async function setMusicSettings(settings: MusicSettings): Promise<void> {
-  await invoke('music_import_set_settings', { settings });
-}
-
-export async function getDownloadsPaused(): Promise<boolean> {
-  return invoke<boolean>('music_import_paused');
-}
-
-export async function setDownloadsPaused(paused: boolean): Promise<void> {
-  await invoke('music_import_set_paused', { paused });
-}
-
 // --- Server transport --------------------------------------------------------
 //
 // The same queue, run on the hub. Signed into a server, imports download where
@@ -109,7 +35,7 @@ export async function setDownloadsPaused(paused: boolean): Promise<void> {
 
 import type { ServerSession } from '../../src/app/server.ts';
 
-async function serverRequest<T>(
+export async function serverRequest<T>(
   session: ServerSession,
   path: string,
   init: RequestInit = {},

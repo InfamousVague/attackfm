@@ -41,6 +41,7 @@ const HOST_MODULES = new Set([
   '@attackfm/app/tauri',
   '@attackfm/app/platform',
   '@attackfm/app/importsBridge',
+  '@attackfm/app/openExternal',
   '@attackfm/app/library',
   '@attackfm/app/librarySync',
   '@attackfm/app/serverSession',

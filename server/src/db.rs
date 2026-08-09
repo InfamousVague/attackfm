@@ -92,6 +92,16 @@ pub struct User {
     pub stream_epoch: i64,
 }
 
+
+/// One user's Spotify link, as stored.
+pub struct SpotifyAccountRow {
+    pub client_id: String,
+    pub refresh_token: String,
+    pub access_token: Option<String>,
+    pub expires_at: i64,
+    pub display_name: Option<String>,
+}
+
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
@@ -190,6 +200,22 @@ CREATE TABLE IF NOT EXISTS play_state (
 -- report threshold), append-only. What the home page's shelves and the mix
 -- engine read taste from - play_state above is "where did I stop", this is
 -- "what do I actually listen to".
+CREATE TABLE IF NOT EXISTS spotify_accounts (
+  user_id       INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  client_id     TEXT NOT NULL DEFAULT '',
+  refresh_token TEXT NOT NULL DEFAULT '',
+  access_token  TEXT,
+  expires_at    INTEGER NOT NULL DEFAULT 0,
+  display_name  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS spotify_synced (
+  user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  key      TEXT NOT NULL,
+  snapshot TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (user_id, key)
+);
+
 CREATE TABLE IF NOT EXISTS plays (
   id        INTEGER PRIMARY KEY,
   user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -942,5 +968,96 @@ impl Db {
         })
         .map(|r| r.filter_map(Result::ok).collect())
         .unwrap_or_default()
+    }
+
+    // --- Spotify account link ---------------------------------------------
+
+    pub fn spotify_account(&self, user_id: i64) -> Option<SpotifyAccountRow> {
+        self.lock()
+            .query_row(
+                "SELECT client_id, refresh_token, access_token, expires_at, display_name
+                   FROM spotify_accounts WHERE user_id = ?1",
+                params![user_id],
+                |r| {
+                    Ok(SpotifyAccountRow {
+                        client_id: r.get(0)?,
+                        refresh_token: r.get(1)?,
+                        access_token: r.get(2)?,
+                        expires_at: r.get(3)?,
+                        display_name: r.get(4)?,
+                    })
+                },
+            )
+            .optional()
+            .ok()
+            .flatten()
+    }
+
+    pub fn spotify_save_account(
+        &self,
+        user_id: i64,
+        client_id: &str,
+        refresh_token: &str,
+        access_token: &str,
+        expires_at: i64,
+        display_name: Option<&str>,
+    ) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO spotify_accounts (user_id, client_id, refresh_token, access_token, expires_at, display_name)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(user_id) DO UPDATE SET
+                 client_id = excluded.client_id, refresh_token = excluded.refresh_token,
+                 access_token = excluded.access_token, expires_at = excluded.expires_at,
+                 display_name = excluded.display_name",
+            params![user_id, client_id, refresh_token, access_token, expires_at, display_name],
+        )?;
+        Ok(())
+    }
+
+    /// Refresh-token rotation: persisted before the new access token is used.
+    pub fn spotify_update_tokens(
+        &self,
+        user_id: i64,
+        refresh_token: &str,
+        access_token: &str,
+        expires_at: i64,
+    ) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "UPDATE spotify_accounts SET refresh_token = ?2, access_token = ?3, expires_at = ?4
+              WHERE user_id = ?1",
+            params![user_id, refresh_token, access_token, expires_at],
+        )?;
+        Ok(())
+    }
+
+    /// Disconnect keeps the client id and the sync bookkeeping - a reconnect
+    /// should pick up where the account left off, not re-list everything new.
+    pub fn spotify_clear_tokens(&self, user_id: i64) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "UPDATE spotify_accounts SET refresh_token = '', access_token = NULL, expires_at = 0, display_name = NULL
+              WHERE user_id = ?1",
+            params![user_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn spotify_synced(&self, user_id: i64) -> std::collections::HashMap<String, String> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare("SELECT key, snapshot FROM spotify_synced WHERE user_id = ?1")
+        else {
+            return Default::default();
+        };
+        stmt.query_map(params![user_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn spotify_mark_synced(&self, user_id: i64, key: &str, snapshot: &str) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO spotify_synced (user_id, key, snapshot) VALUES (?1, ?2, ?3)
+             ON CONFLICT(user_id, key) DO UPDATE SET snapshot = excluded.snapshot",
+            params![user_id, key, snapshot],
+        )?;
+        Ok(())
     }
 }

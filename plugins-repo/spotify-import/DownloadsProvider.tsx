@@ -7,19 +7,8 @@ import {
   type ReactNode,
 } from 'react';
 import { useLibrary } from '@attackfm/app/library';
-import { useLibrarySync } from '@attackfm/app/librarySync';
 import { useServerSession } from '@attackfm/app/serverSession';
-import { canRunSubprocesses } from '@attackfm/app/platform';
-import { isTauri, safeUnlisten } from '@attackfm/app/tauri';
 import {
-  cancelMusicImport,
-  clearMusicImports,
-  enqueueMusicImport,
-  getDownloadsPaused,
-  listMusicImports,
-  removeMusicImport,
-  retryMusicImport,
-  setDownloadsPaused,
   serverCancelImport,
   serverClearImports,
   serverEnqueueImport,
@@ -32,28 +21,19 @@ import { DownloadsContext, type DownloadsContextValue } from '@attackfm/app/impo
 import { settlePendingSyncs } from './spotifyAccount.ts';
 
 /**
- * Owns the music-import queue. Two transports behind one context, chosen by
- * where the engine can actually run - NOT merely by whether a server is
- * connected:
+ * Owns the music-import queue. One transport: the HUB. Enqueue posts a link,
+ * the server downloads and indexes it where the music lives, and a poll
+ * watches the jobs - the same path on every platform, which is the point: the
+ * app itself carries no download machinery, this plugin is a remote control
+ * for the server's engine, and a desktop is no more special than a phone.
+ * (The local SpotiFLAC engine that desktop builds once compiled in is gone
+ * with it; requiresServer on the plugin says so.)
  *
- * - A desktop (canRunSubprocesses) always uses its LOCAL engine, server or
- *   not. This is what keeps imports working on a desktop with no server at
- *   all, and keeps a connected desktop from depending on the box having
- *   SpotiFLAC installed - the results ride up to a connected server through
- *   the ordinary folder sync.
- * - Anywhere else (a phone, a browser) the engine is the HUB: enqueue posts a
- *   link, the server downloads and indexes it, and a poll watches the jobs.
- *   This is the only path a phone has, and it needs a connected server.
- *
- * The wire shape is identical, so nothing downstream knows which is in play.
  * Mounted by the plugin runtime inside the LibraryProvider, so switching the
  * plugin off tears everything down with the component.
  */
 export function DownloadsProvider({ children }: { children: ReactNode }) {
   const { session } = useServerSession();
-  // The local engine wins wherever it exists; the server engine is the
-  // fallback for devices that have none of their own.
-  if (canRunSubprocesses) return <LocalDownloads>{children}</LocalDownloads>;
   return <ServerDownloads key={session?.url ?? 'none'}>{children}</ServerDownloads>;
 }
 
@@ -71,6 +51,8 @@ function ServerDownloads({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<MusicImportJob[]>([]);
   const rescanRef = useRef(rescan);
   rescanRef.current = rescan;
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
   const doneIds = useRef<Set<string>>(new Set());
   const seeded = useRef(false);
 
@@ -81,7 +63,7 @@ function ServerDownloads({ children }: { children: ReactNode }) {
     seeded.current = true;
     doneIds.current = new Set(done);
     if (isFresh) void rescanRef.current();
-    void settlePendingSyncs(next);
+    if (sessionRef.current) void settlePendingSyncs(sessionRef.current, next);
   }, []);
 
   useEffect(() => {
@@ -143,110 +125,6 @@ function ServerDownloads({ children }: { children: ReactNode }) {
       },
     };
   }, [jobs, session, apply]);
-
-  return <DownloadsContext.Provider value={value}>{children}</DownloadsContext.Provider>;
-}
-
-function LocalDownloads({ children }: { children: ReactNode }) {
-  const { source, musicDir, rescan } = useLibrary();
-  const { syncNow } = useLibrarySync();
-  // Downloads always land in a LOCAL folder. musicDir is one only while the
-  // library source is local - connected to a server it is that server's URL,
-  // and passing it through once minted a literal "https:/host/" directory tree
-  // beside the binary. Connected, the CHOSEN local folder still applies when
-  // there is one - it is the folder the sync engine walks, and downloads that
-  // land anywhere else would never ride up to the server.
-  const downloadDir =
-    source === 'local' ? musicDir : (localStorage.getItem('attackfm-music-dir') ?? undefined);
-  const [jobs, setJobs] = useState<MusicImportJob[]>([]);
-  const [paused, setPausedState] = useState(false);
-  // Latest values kept in refs so the subscription effect can stay mount-once.
-  const rescanRef = useRef(rescan);
-  rescanRef.current = rescan;
-  const syncNowRef = useRef(syncNow);
-  syncNowRef.current = syncNow;
-  const doneIds = useRef<Set<string>>(new Set());
-  const seeded = useRef(false);
-
-  const applyJobs = useCallback((next: MusicImportJob[]) => {
-    setJobs(next);
-    const done = next.filter((j) => j.state === 'done').map((j) => j.id);
-    const isFresh = seeded.current && done.some((id) => !doneIds.current.has(id));
-    // The first delivery is history, not news: jobs finished in past runs
-    // must not fire a rescan or a sync on every launch.
-    seeded.current = true;
-    doneIds.current = new Set(done);
-    const anyWriting = next.some((j) => j.state === 'queued' || j.state === 'downloading');
-    if (isFresh) {
-      // A local library re-walks its folder and sees the new files directly.
-      void rescanRef.current();
-      // Signed into a server, the files landed in a folder the catalog never
-      // reads - the folder sync carries them up, and the catalog follows. But
-      // only once the queue has DRAINED: up to three jobs write into this
-      // folder at once, and a sync pass that walks it mid-write can upload a
-      // truncated file whose tags then block the finished one. The last job
-      // to finish is the one that triggers.
-      if (!anyWriting) syncNowRef.current();
-    }
-    // Spotify sync marks ride download completion, not enqueue - a failed
-    // download must stay offered. Cheap when nothing is pending.
-    void settlePendingSyncs(next);
-  }, []);
-
-  useEffect(() => {
-    if (!isTauri()) return;
-    let alive = true;
-    let unlisten: (() => void) | undefined;
-    void (async () => {
-      try {
-        const [initial, isPaused] = await Promise.all([listMusicImports(), getDownloadsPaused()]);
-        if (alive) {
-          applyJobs(initial);
-          setPausedState(isPaused);
-        }
-        // A cleanup that already ran (a StrictMode ghost mount, a hot-reload
-        // remount) means nobody wants this subscription: bail before listen()
-        // rather than registering a listener only to tear it straight down -
-        // an unlisten issued that fast can outrun its own registration in the
-        // webview and leave a zombie listener behind.
-        if (!alive) return;
-        const mod = await import('@tauri-apps/api/event');
-        const un = await mod.listen<MusicImportJob[]>('music-imports://state', (e) => applyJobs(e.payload));
-        if (alive) unlisten = un;
-        else safeUnlisten(un);
-      } catch {
-        // No backend (browser) - the queue simply stays empty.
-      }
-    })();
-    return () => {
-      alive = false;
-      if (unlisten) safeUnlisten(unlisten);
-    };
-  }, [applyJobs]);
-
-  const value = useMemo<DownloadsContextValue>(() => {
-    // Newest first, with anything still working pinned above finished cards.
-    const ordered = [...jobs].sort((a, b) => {
-      const aActive = a.state === 'queued' || a.state === 'downloading';
-      const bActive = b.state === 'queued' || b.state === 'downloading';
-      if (aActive !== bActive) return aActive ? -1 : 1;
-      return b.createdAt - a.createdAt;
-    });
-    return {
-      jobs: ordered,
-      active: ordered.filter((j) => j.state === 'queued' || j.state === 'downloading'),
-      paused,
-      enqueue: (url: string) => enqueueMusicImport(url, downloadDir),
-      remove: (id: string) => void removeMusicImport(id),
-      retry: (id: string) => void retryMusicImport(id),
-      cancel: (id: string) => void cancelMusicImport(id),
-      setPaused: (next: boolean) => {
-        setPausedState(next);
-        void setDownloadsPaused(next);
-      },
-      clearFinished: () => void clearMusicImports(['done', 'error']),
-    };
-  }, [jobs, downloadDir, paused]);
 
   return <DownloadsContext.Provider value={value}>{children}</DownloadsContext.Provider>;
 }

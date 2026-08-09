@@ -23,6 +23,7 @@ import * as glacierIcons from '@glacier/icons';
 import * as tauriBridge from '../app/tauri.ts';
 import * as platform from '../app/platform.ts';
 import * as importsBridge from './importsBridge.ts';
+import { openExternal } from '../app/openExternal.ts';
 import { useLibrary } from '../app/library.tsx';
 import { useLibrarySync } from '../app/librarySync.tsx';
 import { useServerSession } from '../app/serverSession.tsx';
@@ -53,6 +54,7 @@ export function installHostRuntime(): PluginHost {
       '@attackfm/app/tauri': tauriBridge,
       '@attackfm/app/platform': platform,
       '@attackfm/app/importsBridge': importsBridge,
+      '@attackfm/app/openExternal': { openExternal },
       '@attackfm/app/library': { useLibrary },
       '@attackfm/app/librarySync': { useLibrarySync },
       '@attackfm/app/serverSession': { useServerSession },

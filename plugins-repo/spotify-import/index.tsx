@@ -80,7 +80,7 @@ export const spotifyImport: Plugin = {
     'Downloads pasted Spotify, Apple Music, Tidal, Deezer, YT Music, and Qobuz links into the library.',
   icon: <Download size={22} />,
   author: 'AttackFM',
-  version: '1.0.0',
+  version: '1.1.0',
   tags: ['Importer', 'Downloads'],
   // The engine runs where the music lives. On a desktop that is the local
   // SpotiFLAC subprocess; signed into a server it is the hub, which downloads
@@ -88,7 +88,7 @@ export const spotifyImport: Plugin = {
   // commanding the box rather than running anything itself. serverBacked is
   // what makes the card appear on a phone once a server is connected and
   // vanish when it is not; a plain browser with neither engine never sees it.
-  serverBacked: true,
+  requiresServer: true,
   details:
     'Paste a link from Spotify, Apple Music, Tidal, Deezer, YT Music, or Qobuz ' +
     'anywhere in the command palette and this turns it into files in your ' +

@@ -29,6 +29,9 @@ Environment=AFM_QUOTA_GB=25
 # How often to re-walk the music folder. An unchanged library costs a directory
 # walk and no tag reads, so this is cheap even on one core.
 Environment=AFM_SCAN_MINUTES=15
+# The public origin, for OAuth redirect URIs (the Spotify account link).
+# Set it to your own domain; without it the Spotify connect endpoint explains.
+# Environment=AFM_PUBLIC_URL=https://music.example.com
 
 WorkingDirectory=/opt/attackfm
 ExecStart=/opt/attackfm/bin/attackfm-server

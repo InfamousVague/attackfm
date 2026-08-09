@@ -1,10 +1,11 @@
 import { Button, Field, Input, Label, Pill, Text } from '@glacier/react';
 import { useCallback, useEffect, useState } from 'react';
-import { isTauri } from '@attackfm/app/tauri';
+import { useServerSession } from '@attackfm/app/serverSession';
+import { openExternal } from '@attackfm/app/openExternal';
 import { useDownloads } from '@attackfm/app/importsBridge';
 import {
   registerPendingSync,
-  spotifyConnect,
+  spotifyBeginConnect,
   spotifyDisconnect,
   spotifyLibrary,
   spotifyStatus,
@@ -17,12 +18,12 @@ import {
 /**
  * The Spotify tab: connect an account, browse its saved albums and
  * playlists, and feed them to the import queue. The heavy lifting all lives
- * elsewhere - OAuth and the Web API in the Rust account layer, the actual
- * downloading in the existing SpotiFLAC pipeline - so this is glue: list
- * what the account has, say what has already been synced, and enqueue the
- * rest on request.
+ * on the HUB - OAuth and the Web API in the server's account layer, the
+ * downloading in its import engine - so this is glue: list what the account
+ * has, say what has already been synced, and enqueue the rest on request.
  */
 export function SpotifyAccountSettings() {
+  const { session } = useServerSession();
   const { enqueue, jobs } = useDownloads();
   const [status, setStatus] = useState<SpotifyStatus | null>(null);
   const [clientId, setClientId] = useState('');
@@ -33,38 +34,52 @@ export function SpotifyAccountSettings() {
   const [error, setError] = useState<string | null>(null);
 
   const refreshLibrary = useCallback(async () => {
+    if (!session) return;
     setLoadingLibrary(true);
     setError(null);
     try {
-      setLibrary(await spotifyLibrary());
+      setLibrary(await spotifyLibrary(session));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoadingLibrary(false);
     }
-  }, []);
+  }, [session]);
 
   useEffect(() => {
-    if (!isTauri()) return;
+    if (!session) return;
     void (async () => {
       try {
-        const s = await spotifyStatus();
+        const s = await spotifyStatus(session);
         setStatus(s);
         if (s.clientId) setClientId(s.clientId);
         if (s.connected) void refreshLibrary();
       } catch {
-        // Backend unavailable - the section shows its desktop-only note.
+        // Hub unreachable - the section shows its connect-a-server note.
       }
     })();
-  }, [refreshLibrary]);
+  }, [session, refreshLibrary]);
 
   const connect = async () => {
+    if (!session) return;
     setConnecting(true);
     setError(null);
     try {
-      const s = await spotifyConnect(clientId);
-      setStatus(s);
-      void refreshLibrary();
+      // The hub parks the login and hands back the authorize URL; the browser
+      // returns to the SERVER, so from here it is a poll until status flips.
+      const { authorizeUrl } = await spotifyBeginConnect(session, clientId);
+      await openExternal(authorizeUrl);
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < 5 * 60 * 1000) {
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        const s = await spotifyStatus(session);
+        if (s.connected) {
+          setStatus(s);
+          void refreshLibrary();
+          return;
+        }
+      }
+      setError('Spotify login timed out - try connecting again.');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -73,8 +88,9 @@ export function SpotifyAccountSettings() {
   };
 
   const disconnect = async () => {
+    if (!session) return;
     try {
-      await spotifyDisconnect();
+      await spotifyDisconnect(session);
       setStatus((prev) => (prev ? { ...prev, connected: false, displayName: null } : prev));
       setLibrary(null);
     } catch (err) {
@@ -147,11 +163,12 @@ export function SpotifyAccountSettings() {
     }
   };
 
-  if (!isTauri()) {
+  if (!session) {
     return (
       <div className="prefsBody">
         <Text tone="muted" size="sm">
-          Spotify sync needs the download engine, which only runs in the desktop app.
+          Spotify sync runs on your server - connect one under Settings &rarr; Server
+          first.
         </Text>
       </div>
     );

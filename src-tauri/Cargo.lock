@@ -57,15 +57,12 @@ checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
 name = "app"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
- "rand",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-decorum",

@@ -1,26 +1,19 @@
 // Add your own #[tauri::command] functions here and register them in the
 // invoke_handler below.
 //
-// Three of the four modules here are desktop-only, and gated as such rather
-// than left to fail at runtime on a phone:
-//
-// - `dock_wave` paints a Dock tile. Phones have no Dock.
-// - `music` drives the SpotiFLAC downloader as a child process. iOS and Android
-//   both forbid an app spawning executables outright, so the code could not
-//   work there even if it compiled.
-// - `spotify` completes an OAuth flow by opening a browser and catching a
-//   loopback redirect, which is a desktop shape.
-//
-// What is left - the window itself, the filesystem plugin, the dialog plugin -
-// is what a phone build actually needs, and the streaming server covers the
-// rest: on mobile the library comes over HTTP rather than off a disk.
+// The app deliberately carries NO music-downloading machinery. The import
+// engine and the Spotify account link both live on the streaming server, and
+// the importer plugin - installed from a plugin repository - is a remote
+// control for them. What remains native here is presentation and platform
+// glue: the Dock tile, album-art lookup (display metadata, not music), the
+// iOS audio session, and CarPlay.
 
 #[cfg(desktop)]
 mod dock_wave;
-#[cfg(desktop)]
-mod music;
-#[cfg(desktop)]
-mod spotify;
+
+// Album-art lookup for the artist pages - metadata display, kept when the
+// import engine (which once housed it) moved to the server.
+mod album_art;
 
 // The one piece of native code a phone build DOES need: without it iOS stops
 // the audio the moment the screen locks.
@@ -154,7 +147,7 @@ pub fn run() {
             {
                 use tauri::Manager;
                 // On a phone this is where setup ends: there is no window to
-                // shape and no download queue to run.
+                // shape.
                 let Some(main) = app.get_webview_window("main") else {
                     return Ok(());
                 };
@@ -172,9 +165,7 @@ pub fn run() {
 #[cfg(desktop)]
 fn desktop_setup(app: &tauri::App, main: &tauri::WebviewWindow) {
     {
-        // Spin up the music-import download queue (SpotiFLAC-backed).
-        music::init(&app.handle());
-        spotify::init(&app.handle());
+        let _ = app;
             // Center the native macOS traffic lights in the taller custom title
             // bar. decorum's `y` is the extra title-bar height reserved BELOW the
             // buttons (container height = button_height + y), and the buttons
@@ -237,6 +228,7 @@ fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'stat
 #[cfg(mobile)]
 fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
+        album_art::music_album_art,
         carplay::carplay_set_library,
         carplay::carplay_now_playing,
         native_audio::native_audio_ping,

@@ -1,4 +1,4 @@
-/** The Spotify account bridge, mirroring the Rust `spotify.rs` commands. */
+/** The Spotify account bridge - the hub's /api/spotify endpoints. */
 
 export interface SpotifyStatus {
   connected: boolean;
@@ -37,37 +37,44 @@ export interface SpotifyLibrary {
   playlists: SpotifyPlaylist[];
 }
 
-async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  const mod = await import('@tauri-apps/api/core');
-  return mod.invoke<T>(cmd, args);
-}
+import type { ServerSession } from '../../src/app/server.ts';
+import { serverRequest } from './musicImport.ts';
 
-export async function spotifyStatus(): Promise<SpotifyStatus> {
-  return invoke<SpotifyStatus>('spotify_status');
+export async function spotifyStatus(session: ServerSession): Promise<SpotifyStatus> {
+  return serverRequest<SpotifyStatus>(session, '/api/spotify/status');
 }
 
 /**
- * The whole login roundtrip: opens the browser and resolves once the user
- * has finished consenting (or five minutes pass). Long-running by design.
+ * Starts the login: the hub parks a PKCE state and hands back the authorize
+ * URL for the system browser. The redirect returns to the SERVER, not here -
+ * the caller polls `spotifyStatus` until it reads connected.
  */
-export async function spotifyConnect(clientId: string): Promise<SpotifyStatus> {
-  return invoke<SpotifyStatus>('spotify_connect', { clientId });
+export async function spotifyBeginConnect(
+  session: ServerSession,
+  clientId: string,
+): Promise<{ authorizeUrl: string }> {
+  return serverRequest<{ authorizeUrl: string }>(session, '/api/spotify/connect', {
+    method: 'POST',
+    body: JSON.stringify({ clientId }),
+  });
 }
 
-export async function spotifyDisconnect(): Promise<void> {
-  await invoke('spotify_disconnect');
+export async function spotifyDisconnect(session: ServerSession): Promise<void> {
+  await serverRequest(session, '/api/spotify/disconnect', { method: 'POST' });
 }
 
-export async function spotifyLibrary(): Promise<SpotifyLibrary> {
-  return invoke<SpotifyLibrary>('spotify_library');
+export async function spotifyLibrary(session: ServerSession): Promise<SpotifyLibrary> {
+  return serverRequest<SpotifyLibrary>(session, '/api/spotify/library');
 }
 
 /** Records items whose downloads finished so the next read shows them synced. */
 export async function spotifyMarkSynced(
+  session: ServerSession,
   items: Array<{ key: string; snapshot?: string }>,
 ): Promise<void> {
-  await invoke('spotify_mark_synced', {
-    items: items.map((i) => ({ key: i.key, snapshot: i.snapshot ?? '' })),
+  await serverRequest(session, '/api/spotify/synced', {
+    method: 'POST',
+    body: JSON.stringify({ items: items.map((i) => ({ key: i.key, snapshot: i.snapshot ?? '' })) }),
   });
 }
 
@@ -116,6 +123,7 @@ export function registerPendingSync(jobId: string, key: string, snapshot?: strin
  * when nothing is pending. Returns true when something was marked.
  */
 export async function settlePendingSyncs(
+  session: ServerSession,
   jobs: Array<{ id: string; state: string }>,
 ): Promise<boolean> {
   const map = readPending();
@@ -148,7 +156,7 @@ export async function settlePendingSyncs(
   if (changed) writePending(map);
   if (done.length === 0) return false;
   try {
-    await spotifyMarkSynced(done);
+    await spotifyMarkSynced(session, done);
     return true;
   } catch {
     // Marking failed (signed out, say): put the notes back for next time.
