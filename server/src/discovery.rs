@@ -444,13 +444,13 @@ async fn build_new_music(state: &Arc<AppState>, user: i64) -> Option<Vec<serde_j
         return None;
     }
     let mut lines = Vec::new();
-    for d in &pool {
-        lines.push(format!("{}|{} — {} (near {})", d.ext_id, d.artist, d.title, d.seed));
+    for (i, d) in pool.iter().enumerate() {
+        lines.push(format!("{}|{} — {} (near {})", i + 1, d.artist, d.title, d.seed));
     }
     let prompt = format!(
-        "You build 'new music' playlists for one listener from tracks they do NOT own yet - fresh picks harvested from artists near their taste. Candidates, one per line as ext_id|artist — title (near = the artist of theirs it came from):\n{}\n\n\
+        "You build 'new music' playlists for one listener from tracks they do NOT own yet - fresh picks harvested from artists near their taste. Candidates, one per line as N|artist — title (near = the artist of theirs it came from):\n{}\n\n\
          Group them into 3-5 themed playlists of new music, each a coherent scene or vibe - a genre lane, a 'because you play X' set, or a mood. Titles short and evocative (2-4 words); one-line blurbs, warm and plain, no exclamation marks. Each playlist 5-12 tracks.\n\
-         Answer with STRICT JSON only: [{{\"title\":\"...\",\"blurb\":\"...\",\"ids\":[\"ext_id\",...]}}] using ONLY the ext_ids above.",
+         Answer with STRICT JSON only: [{{\"title\":\"...\",\"blurb\":\"...\",\"ids\":[N,...]}}] using ONLY the numbers N above.",
         lines.join("\n"),
     );
     let reply: serde_json::Value = client(120)
@@ -470,9 +470,8 @@ async fn build_new_music(state: &Arc<AppState>, user: i64) -> Option<Vec<serde_j
     }
     let parsed: Vec<serde_json::Value> = serde_json::from_str(content.get(start..=end)?).ok()?;
 
-    let by_id: std::collections::HashMap<&str, &crate::db::DiscoveryRow> =
-        pool.iter().map(|d| (d.ext_id.as_str(), d)).collect();
-    let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let n = pool.len();
+    let mut used: std::collections::HashSet<usize> = std::collections::HashSet::new();
     let mut out = Vec::new();
     for (i, m) in parsed.into_iter().take(5).enumerate() {
         let title = m.get("title").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
@@ -482,9 +481,10 @@ async fn build_new_music(state: &Arc<AppState>, user: i64) -> Option<Vec<serde_j
             .and_then(|v| v.as_array())
             .map(|a| {
                 a.iter()
-                    .filter_map(|v| v.as_str())
-                    .filter(|id| by_id.contains_key(id) && used.insert((*id).to_string()))
-                    .filter_map(|id| by_id.get(id))
+                    .filter_map(|v| v.as_i64())
+                    .filter_map(|k| usize::try_from(k).ok())
+                    .filter(|k| *k >= 1 && *k <= n && used.insert(*k))
+                    .filter_map(|k| pool.get(k - 1))
                     .map(|d| {
                         json!({
                             "id": d.ext_id, "title": d.title, "artist": d.artist, "cover": d.cover,
