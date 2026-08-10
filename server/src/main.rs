@@ -340,7 +340,6 @@ async fn main() {
         .route("/api/curator", get(curator::feed))
         .route("/api/dj", get(dj::station))
         .route("/api/playlists/{id}/suggestions", get(curator::playlist_suggestions))
-        .route("/api/dj", get(dj::station))
         .route("/api/discoveries", get(discovery::feed))
         .route("/api/new-music", get(discovery::new_music))
         .route("/api/discoveries/dismiss", post(discovery::dismiss))
