@@ -467,6 +467,22 @@ struct CreateInviteBody {
     role: String,
 }
 
+/// The alphabet invite codes are drawn from: uppercase letters and digits with
+/// the look-alikes removed (no 0/O, 1/I/L, U), so a code reads cleanly aloud and
+/// drops into the app's segmented code boxes without a "was that an O or a zero?"
+const INVITE_ALPHABET: &[u8] = b"23456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+/// An 8-character invite code. ~39 bits of entropy over a single-use invite that
+/// lives a week - ample against guessing, yet short enough to read over the
+/// phone or type by hand into eight boxes.
+fn invite_code() -> String {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    (0..8)
+        .map(|_| INVITE_ALPHABET[rng.gen_range(0..INVITE_ALPHABET.len())] as char)
+        .collect()
+}
+
 /// `POST /v1/invites` - a server owner mints an invite to their server. The code
 /// is what an invite link carries; redeeming it joins the bearer to the server.
 async fn create_invite(
@@ -479,9 +495,7 @@ async fn create_invite(
         return Err((StatusCode::BAD_REQUEST, "Which server is this an invite to?".into()));
     }
     let role = if body.role.trim().is_empty() { "member" } else { body.role.trim() };
-    let mut bytes = [0u8; 12];
-    rand::thread_rng().fill_bytes(&mut bytes);
-    let code = URL_SAFE_NO_PAD.encode(bytes);
+    let code = invite_code();
     // A week to use it.
     let expires = now_secs() + 7 * 24 * 3600;
     state
@@ -607,7 +621,7 @@ async fn invite_landing(
              <p>{who} invited you to their music library on AttackFM.</p>\
              <a class=\"open\" href=\"attackfm://i/{safe}\">Open in AttackFM</a>\
              <p class=\"hint\" style=\"margin-top:1.5rem\">No app yet, or the button did nothing? \
-             Paste this code into AttackFM under Join a server:</p>\
+             Enter this code in AttackFM under Join a server:</p>\
              <div class=\"code\">{safe}</div>",
             name = esc(&inv.server_name),
         ),

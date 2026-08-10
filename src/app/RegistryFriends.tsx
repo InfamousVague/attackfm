@@ -174,6 +174,7 @@ function FriendsGraph({ token, me, onSignOut }: { token: string; me: string; onS
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
   const [invite, setInvite] = useState<string | null>(null);
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -233,6 +234,7 @@ function FriendsGraph({ token, me, onSignOut }: { token: string; me: string; onS
     try {
       const { code } = await createInvite(token, server.url, server.username ? `${server.username}'s AttackFM` : 'AttackFM');
       setInvite(inviteLink(code));
+      setInviteCode(code);
       setCopied(false);
     } catch (error) {
       setNote({ tone: 'bad', text: error instanceof Error ? error.message : 'Could not make an invite.' });
@@ -307,6 +309,14 @@ function FriendsGraph({ token, me, onSignOut }: { token: string; me: string; onS
           >
             Link this server to your account
           </Button>
+          {inviteCode && (
+            <p className="registryFriends__inviteCode">
+              Code to read out or type in:{' '}
+              <strong>
+                {inviteCode.slice(0, 4)} {inviteCode.slice(4)}
+              </strong>
+            </p>
+          )}
           {invite && (
             <div className="registryFriends__inviteLink">
               <Input readOnly value={invite} aria-label="Invite link" onFocus={(e) => e.currentTarget.select()} />
