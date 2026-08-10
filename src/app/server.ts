@@ -584,6 +584,40 @@ export async function fetchHome(session: ServerSession): Promise<HomeFeed> {
   return request<HomeFeed>(session.url, '/api/home', { token: session.token });
 }
 
+// --- DJ --------------------------------------------------------------------
+
+/** One run of the DJ set: a spoken line, then the tracks it introduces. */
+export interface DjBlock {
+  say: string;
+  trackIds: number[];
+}
+
+export interface DjSet {
+  /** Whether a model wrote the patter (false = a wordless set of good picks). */
+  ai: boolean;
+  /** The vibe it was steered toward, echoed back. */
+  vibe: string;
+  blocks: DjBlock[];
+}
+
+/**
+ * A continuous DJ set drawn from the listener's OWN library: runs of tracks
+ * with a spoken line opening each. `seed` steers the whole thing toward a vibe
+ * ("something mellow for a rainy morning"); empty just mirrors recent listening.
+ */
+export async function fetchDj(session: ServerSession, seed = '', count?: number): Promise<DjSet> {
+  const params = new URLSearchParams();
+  if (seed.trim()) params.set('seed', seed.trim());
+  if (count) params.set('count', String(count));
+  const qs = params.toString();
+  const out = await request<Partial<DjSet>>(
+    session.url,
+    `/api/dj${qs ? `?${qs}` : ''}`,
+    { token: session.token },
+  );
+  return { ai: out.ai ?? false, vibe: out.vibe ?? seed, blocks: out.blocks ?? [] };
+}
+
 // --- friends ---------------------------------------------------------------
 
 export interface Friend {

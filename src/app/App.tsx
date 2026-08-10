@@ -9,7 +9,7 @@ import {
   ToastProvider,
 } from '@glacier/react';
 import { ChevronLeft, ChevronRight, Compass, Download, LibraryBig, Search, Settings, Users } from '@glacier/icons';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AppearanceProvider } from './appearance.tsx';
 import { LibraryProvider, useLibrary } from './library.tsx';
 import { ServerSessionProvider } from './serverSession.tsx';
@@ -46,6 +46,7 @@ import { JamProvider } from './jam.tsx';
 import { MobileAuthGate } from './MobileAuthGate.tsx';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
 import wordmark from '../assets/attack-white.png';
+import appIcon from '../assets/attack-icon.svg';
 
 const APP_NAME = 'AttackFM';
 
@@ -270,14 +271,81 @@ function PrimaryNav({
     );
   }
 
+  // The phone bar: a floating island with a raised, app-icon centre button.
+  // Custom markup rather than the kit NavBar because the raised centre and the
+  // two flanking groups are a shape the kit's even row cannot make. The centre
+  // is home (the library, where the mixes live); the groups hold the rest,
+  // split so the brand button sits dead-centre whatever each side holds.
   return (
-    <NavBar orientation="horizontal" aria-label="Primary" className="appNavBar" showLabels>
-      {/* Destinations only. Search is not one - every page carries its own
-          field - and a plugin's actions (the importer's queue) belong with the
-          page they act on, top-right, rather than among the tabs. */}
-      {primaryItems}
-      <NavBarItem icon={<Settings size={18} />} label="Settings" onClick={onSettings} />
-    </NavBar>
+    <nav className="appNavBar" aria-label="Primary">
+      <div className="appNavBar__group appNavBar__group--left">
+        {hasDownloads && (
+          <BarTab
+            icon={<Compass size={20} />}
+            label="Discover"
+            active={tab === 'discover'}
+            onClick={() => onTab('discover')}
+          />
+        )}
+        <BarTab
+          icon={<Users size={20} />}
+          label="Friends"
+          active={tab === 'friends'}
+          onClick={() => onTab('friends')}
+        />
+      </div>
+
+      {/* The brand, raised: the app icon, protruding above the island, home. */}
+      <button
+        type="button"
+        className="appNavBar__center"
+        aria-label="Home"
+        aria-current={libraryActive ? 'page' : undefined}
+        data-active={libraryActive || undefined}
+        onClick={() => onTab('library')}
+      >
+        <img className="appNavBar__centerIcon" src={appIcon} alt="" />
+      </button>
+
+      <div className="appNavBar__group appNavBar__group--right">
+        {hasDownloads && (
+          <BarTab
+            icon={<Download size={20} />}
+            label="Downloads"
+            active={tab === 'downloads'}
+            onClick={() => onTab('downloads')}
+          />
+        )}
+        <BarTab icon={<Settings size={20} />} label="Settings" onClick={onSettings} />
+      </div>
+    </nav>
+  );
+}
+
+/** One tab in the floating phone bar: a glyph over a small label, lit when
+ *  it is the page you are on. */
+function BarTab({
+  icon,
+  label,
+  active,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  active?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="appNavBarTab"
+      data-active={active || undefined}
+      aria-current={active ? 'page' : undefined}
+      onClick={onClick}
+    >
+      <span className="appNavBarTab__icon">{icon}</span>
+      <span className="appNavBarTab__label">{label}</span>
+    </button>
   );
 }
 

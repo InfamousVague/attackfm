@@ -260,7 +260,7 @@ pub(crate) struct Taste {
     pub(crate) heard: HashSet<i64>,
 }
 
-fn taste_from(plays: &[i64], feats: &HashMap<i64, &TrackFeatures>) -> Taste {
+pub(crate) fn taste_from(plays: &[i64], feats: &HashMap<i64, &TrackFeatures>) -> Taste {
     let mut sum: Vec<f32> = Vec::new();
     let mut n = 0usize;
     let mut tempos: Vec<f64> = Vec::new();
@@ -303,7 +303,7 @@ fn taste_from(plays: &[i64], feats: &HashMap<i64, &TrackFeatures>) -> Taste {
 /// How well one track answers a taste, in [0, 1]. Each term degrades to a
 /// neutral 0.5 when the data behind it is missing, so a library with no
 /// tempos still ranks sensibly on words and genre alone.
-fn score(f: &TrackFeatures, taste: &Taste) -> f32 {
+pub(crate) fn score(f: &TrackFeatures, taste: &Taste) -> f32 {
     let lyric = match (&taste.centroid, &f.lyric_vec) {
         (Some(c), Some(v)) => (cosine(c, v) + 1.0) / 2.0,
         _ => 0.5,

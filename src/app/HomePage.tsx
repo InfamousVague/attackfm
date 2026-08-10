@@ -25,6 +25,7 @@ import { isMusicImportLink, useDownloadsOptional } from '../plugins/importsBridg
 import type { Track } from './tauri.ts';
 import placeholderArt from '../assets/attack-wave.png';
 import { ImportFromSearch } from './ImportFromSearch.tsx';
+import { DjLauncher } from './DjLauncher.tsx';
 
 /**
  * The front door. A greeting, then shelves: the mixes made from the
@@ -411,6 +412,10 @@ export function HomePage({
         )
       ) : (
         <>
+      {/* The DJ: a continuous set of your own library, steerable by a vibe,
+          played straight from here. Lives above the mixes on the main surface
+          (embedded and standalone alike). */}
+      <DjLauncher onPlay={onPlay} />
       {skelFound ? (
         <ShelfSkeleton title="Worth adding" kind="find" count={6} />
       ) : (
