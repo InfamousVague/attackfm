@@ -548,6 +548,11 @@ function useCollectedAcquireHandlers(): ResolvedAcquireHandler[] {
 
 /** What a surface reads to gate its Add control and fire the action. */
 export interface AcquireValue {
+  /** True when ANY acquire handler is enabled at all (importer, buy, …),
+   *  regardless of a specific target. Surfaces like Discover gate their whole
+   *  presence on this: with no way to acquire anything, there is nothing to
+   *  discover toward. */
+  hasAny: boolean;
   /** True when at least one enabled plugin can service this target. */
   hasHandlers: (target: AcquireTarget) => boolean;
   /** The handlers that can service this target, in registration order. */
@@ -631,6 +636,7 @@ export function AcquireProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AcquireValue>(
     () => ({
+      hasAny: signature.length > 0,
       hasHandlers: (target) => handlersFor(target).length > 0,
       handlersFor,
       acquire,
@@ -687,6 +693,7 @@ export function AcquireProvider({ children }: { children: ReactNode }) {
 export function useAcquire(): AcquireValue {
   return (
     useContext(AcquireContext) ?? {
+      hasAny: false,
       hasHandlers: () => false,
       handlersFor: () => [],
       acquire: () => {},

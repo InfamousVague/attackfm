@@ -1,27 +1,21 @@
-import { Pill, ScrollArea, SearchField, Spinner, Text } from '@glacier/react';
-import { Plus, Sparkles, X } from '@glacier/icons';
+import { Pill, ScrollArea, SearchField, Text } from '@glacier/react';
+import { Sparkles } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
-import { useOwned } from './owned.ts';
 import { useServerSession } from './serverSession.tsx';
 import {
-  dismissDiscovery,
   fetchCurator,
-  fetchDiscoveries,
   fetchHome,
   trackIdFromPath,
   type CuratorFeed,
-  type Discovery,
-  type DiscoveryFeed,
   type HomeFeed,
 } from './server.ts';
 import { filterTracks } from './trackSearch.ts';
 import { readFeedCache, writeFeedCache } from './feedCache.ts';
 import { ShelfSkeleton } from './ShelfSkeleton.tsx';
 import { PlaylistModal } from './PlaylistModal.tsx';
-import { useAcquire } from '../plugins/runtime.tsx';
 import { EmptyArt } from './EmptyArt.tsx';
-import { isMusicImportLink, useDownloadsOptional } from '../plugins/importsBridge.ts';
+import { isMusicImportLink } from '../plugins/importsBridge.ts';
 import type { Track } from './tauri.ts';
 import placeholderArt from '../assets/attack-wave.png';
 import { ImportFromSearch } from './ImportFromSearch.tsx';
@@ -137,11 +131,6 @@ export function HomePage({
 }) {
   const { tracks, favoriteTracks } = useLibrary();
   const { session } = useServerSession();
-  const acquire = useAcquire();
-  const owned = useOwned();
-  // The import queue, when the importer plugin is on: a Worth-adding card reads
-  // its own download's state from here, by the URL it was enqueued with.
-  const downloads = useDownloadsOptional();
   // Every feed seeds from the last launch's answer, so the shelves paint at
   // full size on the first frame and the refresh below swaps content in place
   // - the page must never assemble itself in front of the listener twice.
@@ -150,10 +139,6 @@ export function HomePage({
   // its reading of the library has got. Polled on the same rhythm as the feed.
   const [curator, setCurator] = useState<CuratorFeed | null>(() =>
     readFeedCache<CuratorFeed>(session, 'curator'),
-  );
-  // Music the curator found OUTSIDE the library, for acquiring.
-  const [discoveries, setDiscoveries] = useState<DiscoveryFeed | null>(() =>
-    readFeedCache<DiscoveryFeed>(session, 'discoveries'),
   );
   // The first launch on this account has no cache to stand on, so the shelves
   // hold as skeletons for a beat (and until their feeds answer) rather than
@@ -172,10 +157,6 @@ export function HomePage({
   const [query, setQuery] = useState('');
   const sessionRef = useRef(session);
   sessionRef.current = session;
-  // Whether an importer is on, read through a ref so `refresh` can gate the
-  // discovery fetch without being rebuilt each time the queue ticks.
-  const canImportRef = useRef(false);
-  canImportRef.current = downloads !== null;
 
   const refresh = useCallback(async () => {
     const s = sessionRef.current;
@@ -186,20 +167,6 @@ export function HomePage({
       writeFeedCache(s, 'home', fresh);
     } catch {
       // Unreachable right now; whatever is on screen stays.
-    }
-    // Discoveries are music to ACQUIRE. With no importer there is nothing to
-    // acquire it with, so the feed is neither fetched nor shown - the app stays
-    // entirely between the listener's devices and their own server.
-    if (canImportRef.current) {
-      try {
-        const fresh = await fetchDiscoveries(s);
-        setDiscoveries(fresh);
-        writeFeedCache(s, 'discoveries', fresh);
-      } catch {
-        // Older server, or none of these yet.
-      }
-    } else {
-      setDiscoveries(null);
     }
     try {
       const fresh = await fetchCurator(s);
@@ -267,53 +234,6 @@ export function HomePage({
     }))
     .filter((l) => l.tracks.length >= 4);
 
-  // What the curator found outside the library. Dismissals apply straight
-  // away rather than waiting for the next poll - the card is gone the moment
-  // you say no.
-  const [hidden, setHidden] = useState<string[]>([]);
-  // This discovery's import job, matched by the URL it was enqueued with.
-  const jobForUrl = (url: string) => downloads?.jobs?.find((j) => j.url === url) ?? null;
-  // Whether the library now holds this: by the ids its own download produced
-  // when there was one (exact), and by name otherwise (so a song added last
-  // week, or on another device, counts just the same).
-  const landed = (d: Discovery) => {
-    const ids = jobForUrl(d.url)?.trackIds ?? [];
-    if (ids.some((id) => byId.has(id))) return true;
-    return owned.has(d.artist, d.title);
-  };
-  // A shelf of things to add must not hold things you have. The card carries
-  // its spinner until the file actually lands, and then leaves, because at that
-  // point it is a song, not a suggestion.
-  const found: Discovery[] = (discoveries?.items ?? []).filter(
-    (d) => !hidden.includes(d.id) && !landed(d),
-  );
-  const hide = (id: string) => {
-    setHidden((prev) => [...prev, id]);
-    const s = sessionRef.current;
-    if (s) void dismissDiscovery(s, id).catch(() => {});
-  };
-  // Leaving the shelf is not enough: the server would keep serving the same
-  // suggestion on every poll until its own sweep noticed. Tell it once, the
-  // moment the library proves the song has arrived.
-  const forgotten = useRef(new Set<string>());
-  useEffect(() => {
-    const s = sessionRef.current;
-    if (!s) return;
-    for (const d of discoveries?.items ?? []) {
-      if (forgotten.current.has(d.id) || !landed(d)) continue;
-      forgotten.current.add(d.id);
-      void dismissDiscovery(s, d.id).catch(() => {});
-    }
-    // `landed` is rebuilt every render; the deps are what it actually reads.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [discoveries, owned, byId, downloads?.jobs]);
-  const targetFor = (d: Discovery) => ({
-    kind: 'track' as const,
-    title: d.title,
-    artist: d.artist,
-    url: d.url,
-  });
-
   // Jump back in: each album arrives as its own ordered id list (the server
   // grouped by album artist and sorted by disc/track), so the client just
   // resolves and plays it - no name matching, no way to merge two albums that
@@ -358,8 +278,7 @@ export function HomePage({
   const wantsFeed = session !== null;
   const skelFeed = held || (wantsFeed && feed === null);
   const skelCurator = held || (wantsFeed && curator === null);
-  const skelFound = held || (wantsFeed && downloads !== null && discoveries === null);
-  const anySkeleton = skelFeed || skelCurator || skelFound;
+  const anySkeleton = skelFeed || skelCurator;
 
   return (
     <div className={embedded ? 'homeMixes' : 'homePage'}>
@@ -416,78 +335,8 @@ export function HomePage({
           played straight from here. Lives above the mixes on the main surface
           (embedded and standalone alike). */}
       <DjLauncher onPlay={onPlay} />
-      {skelFound ? (
-        <ShelfSkeleton title="Worth adding" kind="find" count={6} />
-      ) : (
-      <Shelf title="Worth adding" count={found.length}>
-        {found.map((d) => {
-          const job = jobForUrl(d.url);
-          // "Working" runs from the tap to the moment the library holds the
-          // file - the download itself and the sync lag behind it. The card
-          // leaves the shelf at the end of it, so there is no third state.
-          const working =
-            job?.state === 'queued' || job?.state === 'downloading' || job?.state === 'done';
-          const canAdd = acquire.hasHandlers(targetFor(d));
-          return (
-            <div key={d.id} className="findCard">
-              <button
-                type="button"
-                className="findCard__body"
-                // Inert while its own download is in flight, and while nothing
-                // enabled can add it.
-                disabled={working || !canAdd}
-                title={canAdd ? undefined : 'No way to add this — enable Music import or Buy in Plugins'}
-                onClick={() => acquire.acquire(targetFor(d))}
-              >
-                <span className="findCard__cover" data-downloading={working || undefined}>
-                  {d.cover ? <img src={d.cover} alt="" loading="lazy" /> : <Sparkles size={24} />}
-                  {working ? (
-                    // The cover dims under a spinner until the file has landed.
-                    <span
-                      className="findCard__progress"
-                      role="status"
-                      aria-label={`Downloading ${d.title}`}
-                    >
-                      <Spinner size="md" />
-                    </span>
-                  ) : (
-                    <span className="findCard__add" aria-hidden>
-                      <Plus size={16} />
-                    </span>
-                  )}
-                </span>
-                <span className="trackCardTitle">{d.title}</span>
-                <span className="trackCardArtist">{d.artist}</span>
-                {/* Say only what was actually measured - the tempo when a preview
-                    was read, the words when lyrics were found. */}
-                <span className="findCard__why">
-                  {[
-                    d.seed ? `like ${d.seed}` : null,
-                    d.bpm ? `${Math.round(d.bpm)} BPM` : null,
-                    d.lyricsRead ? 'words match' : null,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </span>
-              </button>
-              {/* The dismiss 'x' up until the download has actually finished -
-                  after that the card is only waiting for the sync, and it is
-                  about to leave the shelf on its own. */}
-              {job?.state !== 'done' && (
-                <button
-                  type="button"
-                  className="findCard__no"
-                  aria-label={`Not interested in ${d.title}`}
-                  onClick={() => hide(d.id)}
-                >
-                  <X size={14} />
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </Shelf>
-      )}
+      {/* "Worth adding" (curator finds from outside the library) lives on the
+          Discover page now — a library surface should show what you HAVE. */}
 
       {skelCurator ? (
         <ShelfSkeleton title="From your curator" kind="mix" count={4} />
@@ -602,7 +451,6 @@ export function HomePage({
           plainly not empty. The host owns its own empty state. */}
       {!embedded &&
         !anySkeleton &&
-        found.length === 0 &&
         curated.length === 0 &&
         mixes.length === 0 &&
         jumpBack.length === 0 &&

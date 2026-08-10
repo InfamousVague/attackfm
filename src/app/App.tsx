@@ -25,6 +25,7 @@ import {
   PluginProviders,
   PluginSlot,
   PluginsProvider,
+  useAcquire,
   usePluginPages,
 } from '../plugins/runtime.tsx';
 import { isDesktopApp } from './platform.ts';
@@ -186,6 +187,10 @@ function PrimaryNav({
   // importer - a fresh install, or anyone who has not added a plugin source -
   // there is nothing to download, so the tab is absent rather than a dead end.
   const hasDownloads = useDownloadsOptional() !== null;
+  // Discover appears whenever there is ANY way to acquire music - an importer
+  // to download through, or a Buy handler to purchase through. Only a build with
+  // no acquire handlers at all (the plugin-free App-Review server) hides it.
+  const canDiscover = hasDownloads || useAcquire().hasAny;
   // A tab pointing at a plugin page whose plugin was just switched off reads as
   // Home - the same fallback the content host makes - so the lit item never
   // disagrees with what is actually on screen.
@@ -202,14 +207,14 @@ function PrimaryNav({
     <>
       {/* Library leads: the music you actually own, plus the mixes made from it.
           Discover sits beside it as the place you go to find what you do NOT
-          have - and only appears with an importer to add through. */}
+          have - and appears whenever there is a way to acquire (import or buy). */}
       <NavBarItem
         icon={<LibraryBig size={18} />}
         label="Library"
         active={libraryActive}
         onClick={() => onTab('library')}
       />
-      {hasDownloads && (
+      {canDiscover && (
         <NavBarItem
           icon={<Compass size={18} />}
           label="Discover"
@@ -279,7 +284,7 @@ function PrimaryNav({
   return (
     <nav className="appNavBar" aria-label="Primary">
       <div className="appNavBar__group appNavBar__group--left">
-        {hasDownloads && (
+        {canDiscover && (
           <BarTab
             icon={<Compass size={20} />}
             label="Discover"
@@ -450,6 +455,9 @@ function AppMain({
   // 'downloads' from a past session falls through to Home rather than a page
   // that should not be here.
   const hasDownloads = useDownloadsOptional() !== null;
+  // Discover is reachable whenever there is any acquire handler (import or buy),
+  // matching the nav gate; the plugin-free App-Review build has neither.
+  const canDiscover = hasDownloads || useAcquire().hasAny;
   return (
     <main className="appContent">
       {detail?.kind === 'artist' ? (
@@ -476,11 +484,11 @@ function AppMain({
           onOpenArtist={onOpenArtist}
           onOpenPlaylist={onOpenPlaylist}
         />
-      ) : tab === 'discover' && hasDownloads ? (
+      ) : tab === 'discover' && canDiscover ? (
         // Discover: what you do NOT have - the server's curated charts and a
-        // live search across Spotify + Deezer, each a one-tap add. Gated on an
-        // importer being present, so a server with nothing to add through (and
-        // any App-Review build) never surfaces it.
+        // live search across Spotify + Deezer, each a one-tap add. Gated on any
+        // acquire handler (import or buy), so a build with no way to add through
+        // (the plugin-free App-Review server) never surfaces it.
         <DiscoverPage onPlay={onPlay} onOpenArtist={onOpenArtist} />
       ) : tab === 'friends' ? (
         // Friends: who you know on this server, and the asks in flight.

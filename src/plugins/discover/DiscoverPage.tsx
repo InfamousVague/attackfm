@@ -498,11 +498,7 @@ export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
         </span>
         <div className="discoverHead__text">
           <h1 className="discoverHead__title">Discover</h1>
-          <p className="discoverHead__blurb">
-            Search your own library and the wider catalogue at once - Spotify and
-            other public sources - or browse the charts and staples your server
-            keeps fresh. Anything you do not have adds through your import queue.
-          </p>
+          <p className="discoverHead__blurb">Find music beyond your library and add it in a tap.</p>
         </div>
       </header>
 
