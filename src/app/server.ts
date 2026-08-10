@@ -727,16 +727,33 @@ export async function leaveJam(session: ServerSession, id: string): Promise<void
   await request(session.url, `/api/jams/${id}/leave`, { token: session.token, method: 'POST' });
 }
 
-/** The host's clock, posted as it plays. Members read it and follow. */
+/** The host's clock, posted as it plays. Members read it and follow. The reply
+ *  hands back any track ids members have asked to add since the last beat, for
+ *  the host to fold into its own queue. */
 export async function pushJamState(
   session: ServerSession,
   id: string,
   state: { trackId: number | null; positionMs: number; playing: boolean; queue?: number[] },
-): Promise<void> {
-  await request(session.url, `/api/jams/${id}/state`, {
+): Promise<number[]> {
+  const out = await request<{ additions?: number[] }>(session.url, `/api/jams/${id}/state`, {
     token: session.token,
     method: 'POST',
     body: JSON.stringify(state),
+  });
+  return out.additions ?? [];
+}
+
+/** A member drops a track into the room's queue; the host folds it in on its
+ *  next beat. */
+export async function addToJamQueue(
+  session: ServerSession,
+  id: string,
+  trackId: number,
+): Promise<void> {
+  await request(session.url, `/api/jams/${id}/queue`, {
+    token: session.token,
+    method: 'POST',
+    body: JSON.stringify({ trackId }),
   });
 }
 

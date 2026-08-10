@@ -9,7 +9,7 @@ import {
   ToastProvider,
 } from '@glacier/react';
 import { ChevronLeft, ChevronRight, Compass, Download, LibraryBig, Search, Settings, Users } from '@glacier/icons';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AppearanceProvider } from './appearance.tsx';
 import { LibraryProvider, useLibrary } from './library.tsx';
 import { ServerSessionProvider } from './serverSession.tsx';
@@ -33,6 +33,7 @@ import { onCarPlayPlay } from './carplay.ts';
 import { remotePath, trackIdFromPath } from './server.ts';
 import type { Track } from './tauri.ts';
 import { Player } from './Player.tsx';
+import { QueueControlsBridge } from './queueControls.tsx';
 import { ArtistPage } from './ArtistPage.tsx';
 import { PlaylistPage } from './PlaylistPage.tsx';
 import { DownloadsPage } from './DownloadsPage.tsx';
@@ -596,6 +597,37 @@ export function App() {
     setCurrent((prev) => (prev === track ? { ...track } : track));
     setQueue(context ?? [track]);
   };
+
+  // Queue editing (see queueControls.tsx). The queue is just `queue` in play
+  // order; the current track's spot is found by path, so inserting after it,
+  // appending, reordering or removing is all a matter of rewriting the array -
+  // the player's skips read whatever it holds now. Kept path-deduped so those
+  // by-path lookups stay unambiguous. Read `current` through a ref so the two
+  // verbs stay stable (they ride in a context) yet always see the live track.
+  const currentRef = useRef(current);
+  currentRef.current = current;
+  const playFromRef = useRef(playFrom);
+  playFromRef.current = playFrom;
+  const addToQueue = useCallback((track: Track) => {
+    const cur = currentRef.current;
+    if (!cur) return playFromRef.current(track, [track]);
+    if (track.path === cur.path) return;
+    setQueue((q) => (q.some((t) => t.path === track.path) ? q : [...q, track]));
+  }, []);
+  const playNext = useCallback((track: Track) => {
+    const cur = currentRef.current;
+    if (!cur) return playFromRef.current(track, [track]);
+    if (track.path === cur.path) return;
+    setQueue((q) => {
+      const without = q.filter((t) => t.path !== track.path);
+      const at = without.findIndex((t) => t.path === cur.path) + 1;
+      // findIndex -1 (current not in the list) + 1 = 0 would jump it to the
+      // very front; fall to the end instead, which is the honest "next" when
+      // there is no known position to insert after.
+      const insert = at === 0 ? without.length : at;
+      return [...without.slice(0, insert), track, ...without.slice(insert)];
+    });
+  }, []);
   // Page history as a stack with a cursor, so back and forward move through
   // the places visited rather than just toggling. A place is a primary tab
   // plus, within it, an optional detail page - the tab is what the nav bar
@@ -718,6 +750,10 @@ export function App() {
                 plugin providers (a handler reads its own plugin's context) and
                 above the content that carries Add controls. */}
             <AcquireProvider>
+            {/* Queue editing (Play next / Add to queue) for every track surface
+                below - onto this deck's queue, or, when following a jam, into
+                the room the host folds it into. */}
+            <QueueControlsBridge localPlayNext={playNext} localAddToQueue={addToQueue}>
             {/* data-player tells the CSS whether a strip is down there:
                 every bottom clearance in the app is spent from
                 --app-player-height, so collapsing that one variable to 0
@@ -950,6 +986,7 @@ export function App() {
             </PluginHookScope>
             <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
             </div>
+            </QueueControlsBridge>
             </AcquireProvider>
             </NowPlayingMotionProvider>
             </JamProvider>

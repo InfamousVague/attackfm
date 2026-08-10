@@ -24,6 +24,7 @@ import {
   EllipsisVertical,
   Heart,
   Image as ImageIcon,
+  ListMusic,
   ListPlus,
   Mic,
   MonitorSpeaker,
@@ -62,6 +63,7 @@ import { AddToPlaylistDialog } from './AddToPlaylist.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { onCarPlayRemote, pushCarPlayNowPlaying, setIdleTimerDisabled } from './carplay.ts';
 import { useJamOptional } from './jam.tsx';
+import { QueuePanel } from './QueuePanel.tsx';
 import {
   bindMediaSessionHandlers,
   updateMediaSessionMetadata,
@@ -434,6 +436,9 @@ export function Player({
   // The lyrics, opened over the Now Playing sheet as a full-screen view rather
   // than a popover anchored to the bottom rail (which sat too low).
   const [npLyrics, setNpLyrics] = useState(false);
+  // The queue, opened over the same sheet the same way: what plays next, and
+  // draggable into any order.
+  const [npQueue, setNpQueue] = useState(false);
   // The Spotify move: while this sheet is up and the music is going, the phone
   // must not lock - but a screen at full brightness all song long is rude, so
   // after a quiet half-minute the sheet pulls a near-black veil over itself.
@@ -2180,14 +2185,28 @@ export function Player({
     const beat = () => {
       const live = liveRef.current;
       const id = live.track ? trackIdFromPath(live.track.path) : null;
-      jam.hostBeat({
-        trackId: id,
-        positionMs: Math.round(positionRef.current * 1000),
-        playing: live.playing,
-        queue: live.queue
-          .map((t: Track) => trackIdFromPath(t.path))
-          .filter((n): n is number => n != null),
-      });
+      void jam
+        .hostBeat({
+          trackId: id,
+          positionMs: Math.round(positionRef.current * 1000),
+          playing: live.playing,
+          queue: live.queue
+            .map((t: Track) => trackIdFromPath(t.path))
+            .filter((n): n is number => n != null),
+        })
+        .then((additions) => {
+          // Fold in what the room asked for. Resolve each id against this
+          // library (host and members share the server's, so they land), drop
+          // anything already queued, and append - the next beat carries the
+          // grown queue back out to everyone.
+          if (!additions.length) return;
+          const now = liveRef.current;
+          const have = new Set(now.queue.map((t: Track) => t.path));
+          const add = additions
+            .map((aid) => now.libraryTracks.find((t: Track) => trackIdFromPath(t.path) === aid))
+            .filter((t): t is Track => !!t && !have.has(t.path));
+          if (add.length) now.onQueueChange?.([...now.queue, ...add]);
+        });
     };
     beat();
     const timer = window.setInterval(beat, 2500);
@@ -2959,6 +2978,9 @@ export function Player({
               carries shuffle/repeat/skip, and favourite and filing sit on the
               meta and header rows. */}
           <div className="npScreen__actions">
+            <IconButton variant="ghost" aria-label="Queue" onClick={() => setNpQueue(true)}>
+              <ListMusic size={20} />
+            </IconButton>
             <IconButton variant="ghost" aria-label="Lyrics" onClick={() => setNpLyrics(true)}>
               <Mic size={20} />
             </IconButton>
@@ -3042,6 +3064,26 @@ export function Player({
                   onSeek={commitSeek}
                 />
               </div>
+            </div>
+          )}
+          {/* The queue, over the same sheet the same way: what plays next, drag-
+              reorderable, each row a jump. */}
+          {npQueue && (
+            <div
+              className="npScreen__lyricsScrim"
+              aria-hidden="true"
+              onPointerDown={() => setNpQueue(false)}
+            />
+          )}
+          {npQueue && (
+            <div className="npScreen__queueView">
+              <QueuePanel
+                queue={queue}
+                current={track}
+                onQueueChange={(next) => onQueueChange?.(next)}
+                onPlayTrack={(t) => onTrackChange?.(t)}
+                onClose={() => setNpQueue(false)}
+              />
             </div>
           )}
           {/* The inactivity veil: near-black, fading in over everything on

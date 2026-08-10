@@ -332,6 +332,7 @@ async fn main() {
         .route("/api/jams/{id}/join", post(jams::join))
         .route("/api/jams/{id}/leave", post(jams::leave))
         .route("/api/jams/{id}/state", post(jams::set_state))
+        .route("/api/jams/{id}/queue", post(jams::add_to_queue))
         .route("/api/home", get(home::feed))
         .route("/api/discover", get(discover::feed))
         .route("/api/search", get(search::search))

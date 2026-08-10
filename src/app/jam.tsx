@@ -34,13 +34,15 @@ interface JamValue {
   join: (id: string) => Promise<void>;
   leave: () => Promise<void>;
   refresh: () => Promise<void>;
-  /** The host's Player calls this as it plays; a follower's never does. */
+  /** The host's Player calls this as it plays; a follower's never does.
+   *  Resolves with any track ids the room has asked to add since the last
+   *  beat, for the host to fold into its queue (empty when throttled). */
   hostBeat: (state: {
     trackId: number | null;
     positionMs: number;
     playing: boolean;
     queue?: number[];
-  }) => void;
+  }) => Promise<number[]>;
 }
 
 const JamContext = createContext<JamValue | null>(null);
@@ -106,17 +108,24 @@ export function JamProvider({ children }: { children: ReactNode }) {
   const jamRef = useRef<Jam | null>(null);
   jamRef.current = current;
   const hostBeat = useCallback(
-    (state: { trackId: number | null; positionMs: number; playing: boolean; queue?: number[] }) => {
+    async (state: {
+      trackId: number | null;
+      positionMs: number;
+      playing: boolean;
+      queue?: number[];
+    }): Promise<number[]> => {
       const jam = jamRef.current;
-      if (!session || !jam || !isHost(jam, session.username)) return;
+      if (!session || !jam || !isHost(jam, session.username)) return [];
       const now = Date.now();
-      if (now - lastPost.current < 2500) return;
+      if (now - lastPost.current < 2500) return [];
       lastPost.current = now;
-      void import('./server.ts').then(({ pushJamState }) =>
-        pushJamState(session, jam.id, state).catch(() => {
-          // The room may have ended under us; the next poll notices.
-        }),
-      );
+      try {
+        const { pushJamState } = await import('./server.ts');
+        return await pushJamState(session, jam.id, state);
+      } catch {
+        // The room may have ended under us; the next poll notices.
+        return [];
+      }
     },
     [session],
   );
