@@ -647,10 +647,18 @@ export function App() {
                 --app-player-height, so collapsing that one variable to 0
                 gives the list its rows back without a rule per surface. */}
             <div className="appWindow" data-player={current ? 'on' : 'off'}>
-            {/* The playing track's cover, blurred and faded, sits behind the top
-                of the window so the header reads against the album rather than a
-                flat panel. */}
-            {current?.artwork && (
+            {/* The playing track's cover, blurred and faded, behind the top of
+                the WINDOW - a desktop flourish, where there is room for the
+                album to sit behind a header without crowding anything.
+
+                Off the desktop it is gone. On a phone the same wash covers the
+                whole screen, so the cover and its lyric words ended up behind
+                the library, the downloads queue, settings - every page, whether
+                or not that page had anything to do with the song. The artwork
+                belongs to Now Playing, which paints its own backdrop, and every
+                other page reads better on the flat background it was designed
+                against. */}
+            {DESKTOP && current?.artwork && (
               // Keyed on the path so a track change starts the new cover's own
               // drift from the top rather than picking up the last one's phase.
               <NowPlayingBackdrop key={current.path} artwork={current.artwork} seed={current.path} />

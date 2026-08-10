@@ -164,6 +164,48 @@ export async function login(url: string, username: string, password: string): Pr
   };
 }
 
+/**
+ * Bind your central identity to the account you already have on this server -
+ * the owner's migration, so an existing library stays yours and you enter as
+ * yourself from then on. Needs both proofs: the server session and the registry
+ * token.
+ */
+export async function linkAccount(
+  url: string,
+  serverToken: string,
+  registryToken: string,
+): Promise<{ handle: string }> {
+  return request<{ ok: boolean; handle: string }>(url, '/api/registry/link', {
+    method: 'POST',
+    token: serverToken,
+    body: JSON.stringify({ token: registryToken }),
+  });
+}
+
+/**
+ * Sign into a server with a central-registry identity instead of a password.
+ * The server verifies the registry token, admits the account (invite-gated the
+ * first time), and answers with the same session a password login would - so
+ * the rest of the app is none the wiser about which door was used.
+ */
+export async function enterServer(
+  url: string,
+  registryToken: string,
+  invite?: string,
+): Promise<ServerSession> {
+  const reply = await request<LoginReply>(url, '/api/registry/enter', {
+    method: 'POST',
+    body: JSON.stringify({ token: registryToken, invite: invite ?? '' }),
+  });
+  return {
+    url,
+    token: reply.token,
+    streamToken: reply.streamToken,
+    username: reply.user.username,
+    isAdmin: reply.user.isAdmin,
+  };
+}
+
 /** What `POST /api/pair/start` hands a signed-in device: a code to show. */
 export interface PairCode {
   code: string;
@@ -775,9 +817,13 @@ export interface Suggestion {
   title: string;
   blurb: string;
   cover: string | null;
-  /** The playlist URL to hand the importer. */
+  /** The playlist/album/track URL to hand the importer. */
   url: string;
   section: string;
+  /** Where it came from ('spotify' | 'deezer'); absent on an older server. */
+  source?: string;
+  /** What it is ('playlist' | 'album' | 'track'); absent on an older server. */
+  kind?: string;
   trackCount: number | null;
   /** Track titles in order, for the preview - absent on an older server. */
   tracks?: string[];

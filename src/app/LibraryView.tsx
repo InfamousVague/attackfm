@@ -1,5 +1,4 @@
-import { ScrollArea, Skeleton } from '@glacier/react';
-import { HardDrive, Heart, ListMusic, MicVocal, Music2 } from '@glacier/icons';
+import { ScrollArea } from '@glacier/react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLibrary } from './library.tsx';
 import { usePlaylists } from './playlists.tsx';
@@ -168,84 +167,6 @@ function ArtistCard({ name, cover, onOpen }: { name: string; cover: string | nul
   );
 }
 
-/** Decimal units, the way disks are sold: GB above a gigabyte, MB below. */
-function formatSize(bytes: number): string {
-  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
-  return `${Math.max(1, Math.round(bytes / 1e6))} MB`;
-}
-
-/**
- * The library in numbers, as one card: how many songs, lists, likes and
- * artists, and how much disk the whole thing weighs. This is where the stats
- * that used to ride the playlist strip's header live now - a card owns them,
- * the shelves stay shelves.
- */
-function LibraryStatsCard({
-  songs,
-  playlistCount,
-  liked,
-  artistCount,
-  bytes,
-}: {
-  songs: number;
-  playlistCount: number;
-  liked: number;
-  artistCount: number;
-  bytes: number;
-}) {
-  const stats: { icon: ReactNode; value: string; label: string }[] = [
-    { icon: <Music2 size={16} />, value: songs.toLocaleString(), label: songs === 1 ? 'song' : 'songs' },
-    {
-      icon: <ListMusic size={16} />,
-      value: playlistCount.toLocaleString(),
-      label: playlistCount === 1 ? 'playlist' : 'playlists',
-    },
-    { icon: <Heart size={16} />, value: liked.toLocaleString(), label: 'liked' },
-    {
-      icon: <MicVocal size={16} />,
-      value: artistCount.toLocaleString(),
-      label: artistCount === 1 ? 'artist' : 'artists',
-    },
-    // Size only when it is known: the local scanner does not always weigh
-    // files, and "0.0 GB" over a full library is a lie wearing decimals.
-    ...(bytes > 0
-      ? [{ icon: <HardDrive size={16} />, value: formatSize(bytes), label: 'of music' }]
-      : []),
-  ];
-  return (
-    <section className="libStats" aria-label="Library statistics">
-      {stats.map((stat) => (
-        <div key={stat.label} className="libStat">
-          <span className="libStat__icon" aria-hidden>
-            {stat.icon}
-          </span>
-          <span className="libStat__body">
-            <span className="libStat__value">{stat.value}</span>
-            <span className="libStat__label">{stat.label}</span>
-          </span>
-        </div>
-      ))}
-    </section>
-  );
-}
-
-/** The card's stand-in, same box, same slots, while the library first loads. */
-function LibraryStatsSkeleton() {
-  return (
-    <section className="libStats" aria-busy="true">
-      {Array.from({ length: 5 }, (_, i) => (
-        <div key={i} className="libStat">
-          <Skeleton variant="rect" width="2rem" height="2rem" radius="34%" />
-          <span className="libStat__body">
-            <Skeleton variant="text" width="3.5rem" />
-            <Skeleton variant="text" width="2.75rem" />
-          </span>
-        </div>
-      ))}
-    </section>
-  );
-}
-
 export function LibraryView({
   view,
   onPlay,
@@ -321,7 +242,6 @@ export function LibraryView({
         <>
           {/* The first-launch skeleton pass: every surface the page will hold,
               at its real size, for a beat - so the library assembles once. */}
-          <LibraryStatsSkeleton />
           <ShelfSkeleton title="Playlists" kind="tile" count={8} />
           <ShelfSkeleton title="Recently added" kind="track" />
           <ShelfSkeleton title="Liked songs" kind="track" />
@@ -330,29 +250,17 @@ export function LibraryView({
         </>
       ) : view === 'summary' ? (
         <>
-          {/* The personalized mixes, folded in from the old Home: what the
-              server made from your listening, above the shelves of what you
-              own. Renders its own shelves and skeletons; empty and silent on a
-              local library with no server to read a history from. */}
-          <HomePage embedded onPlay={onPlay} onOpenArtist={onOpenArtist} />
-
-          {/* The library in numbers - one card, before the shelves. */}
-          <LibraryStatsCard
-            songs={tracks.length}
-            playlistCount={playlists.length}
-            liked={favoriteTracks.length}
-            // Counted whole, not off the shelf's memo - that list is capped at
-            // twenty for display, and a cap is not a census.
-            artistCount={
-              new Set(tracks.map((t) => t.artist.trim().toLowerCase()).filter(Boolean)).size
-            }
-            bytes={tracks.reduce((sum, t) => sum + (t.sizeBytes ?? 0), 0)}
-          />
-
           {/* Playlists lead the shelves: making and managing lists is the
               library's working surface, so it sits where the thumb lands
               first, above the read-only shelves. */}
           <PlaylistShowcase onPlay={onPlay} onOpenPlaylist={onOpenPlaylist} onOpenArtist={onOpenArtist} />
+
+          {/* The personalized mixes, folded in from the old Home: what the
+              server made from your listening. They sit BELOW the stats and the
+              playlists now - the page should open on your own library, not on
+              a shelf that is empty until a history exists. Renders its own
+              shelves and skeletons, and nothing at all on a local library. */}
+          <HomePage embedded onPlay={onPlay} onOpenArtist={onOpenArtist} />
 
           {recentlyAdded.length === 0 &&
             favoriteTracks.length === 0 &&

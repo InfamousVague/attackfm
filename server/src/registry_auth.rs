@@ -1,0 +1,230 @@
+//! Signing into a server with a central identity.
+//!
+//! A listener no longer types a username and password at a server; they carry a
+//! token the registry signed, and this is where a server turns that token into
+//! access. The signature is checked OFFLINE against the registry's public key
+//! (fetched once), so per-request auth never calls the registry - it stays fast,
+//! and stays working if the registry blips.
+//!
+//! The flow, once a token is verified:
+//!   - already a member here → straight in, as their own account;
+//!   - no owner on this server yet → the first arrival becomes the owner;
+//!   - otherwise → they need an invite to this server, checked with the
+//!     registry, and joining binds their registry id to a fresh local account.
+//!
+//! That last part is the whole point: an invited friend gets THEIR OWN user row
+//! - their own playlists, favourites and history - instead of landing inside the
+//! owner's account, which is what happened before any of this existed.
+
+use crate::{auth, AppState};
+use afm_identity::Verifier2;
+use axum::extract::State;
+use axum::http::{HeaderMap, StatusCode};
+use axum::Json;
+use serde::Deserialize;
+use serde_json::{json, Value};
+use std::sync::Arc;
+
+type ApiError = (StatusCode, String);
+type ApiResult = Result<Json<Value>, ApiError>;
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Two server URLs naming the same place, trailing slash and case aside.
+fn same_server(a: &str, b: &str) -> bool {
+    let norm = |s: &str| s.trim().trim_end_matches('/').to_ascii_lowercase();
+    !a.is_empty() && norm(a) == norm(b)
+}
+
+/// The registry's public key, fetched once and kept. Fetched lazily on the
+/// first `enter` if boot could not reach the registry, so a registry that comes
+/// up late does not need a server restart.
+async fn ensure_verifier(state: &AppState) -> Option<Verifier2> {
+    {
+        let held = state.registry_verifier.lock().await;
+        if let Some(v) = held.as_ref() {
+            return Some(v.clone());
+        }
+    }
+    let url = format!("{}/v1/pubkey", state.registry_url.trim_end_matches('/'));
+    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)).build().ok()?;
+    let body: Value = client.get(&url).send().await.ok()?.json().await.ok()?;
+    let pk = body.get("publicKey").and_then(|v| v.as_str())?;
+    let verifier = Verifier2::from_public_b64(pk)?;
+    *state.registry_verifier.lock().await = Some(verifier.clone());
+    Some(verifier)
+}
+
+/// Fetch the registry's public key at boot. Failure is not fatal: local
+/// username/password auth still works, and the key is fetched on demand later.
+pub async fn prime_verifier(state: Arc<AppState>) {
+    if ensure_verifier(&state).await.is_some() {
+        println!("[attackfm] registry identity verified against {}", state.registry_url);
+    } else {
+        eprintln!("[attackfm] registry {} unreachable at boot; identity sign-in will retry on demand", state.registry_url);
+    }
+}
+
+/// The session an entering account gets - the exact shape `/api/auth/login`
+/// returns, so the client machinery downstream is unchanged.
+fn session_json(state: &AppState, user: &crate::db::User) -> Result<Value, ApiError> {
+    let token = auth::random_token();
+    state
+        .db
+        .create_token(&token, user.id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let stream_token = auth::mint_stream_token(&state.stream_secret, user.id, user.stream_epoch);
+    Ok(json!({
+        "token": token,
+        "streamToken": stream_token,
+        "streamTokenExpires": auth::STREAM_TOKEN_TTL_SECS,
+        "user": { "id": user.id, "username": user.username, "isAdmin": user.is_admin },
+    }))
+}
+
+/// Create the local account a registry identity gets on this server, and bind
+/// the two. The local username is the handle when free, else the handle plus
+/// the registry id - never silently attaching to an existing local account,
+/// which would let anyone who took a handle inherit that account's data.
+fn admit(state: &AppState, sub: i64, handle: &str, owner: bool) -> Result<crate::db::User, ApiError> {
+    let username = if state.db.user_by_name(handle).is_none() {
+        handle.to_string()
+    } else {
+        format!("{handle}.{sub}")
+    };
+    let user_id = state
+        .db
+        .create_user(&username, "", owner)
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "could not create your account here".into()))?;
+    state
+        .db
+        .add_registry_member(sub, user_id, handle, if owner { "owner" } else { "member" })
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "could not record membership".into()))?;
+    state
+        .db
+        .user_by_id(user_id)
+        .ok_or((StatusCode::INTERNAL_SERVER_ERROR, "account vanished after creation".into()))
+}
+
+#[derive(Deserialize)]
+pub struct EnterBody {
+    /// The registry-issued identity token.
+    token: String,
+    /// An invite code, needed the first time a non-owner joins an established
+    /// server. Ignored once a membership exists.
+    #[serde(default)]
+    invite: String,
+}
+
+#[derive(Deserialize)]
+pub struct LinkBody {
+    /// The registry identity to bind to the currently signed-in local account.
+    token: String,
+}
+
+/// `POST /api/registry/link` - claim your central identity for THIS local
+/// account. The migration primitive: an existing user (the owner, say) signs in
+/// the old way, then binds their registry account to the local one they already
+/// have, so their library, playlists and history stay theirs and they enter as
+/// themselves ever after. Secure because it needs both proofs at once - the
+/// local session AND the registry token.
+pub async fn link(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<LinkBody>,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers)
+        .map_err(|s| (s, "sign in to this server first".to_string()))?;
+    let verifier = ensure_verifier(&state)
+        .await
+        .ok_or((StatusCode::SERVICE_UNAVAILABLE, "The identity service is unreachable right now.".into()))?;
+    let claims = verifier
+        .verify(body.token.trim(), now_secs())
+        .map_err(|_| (StatusCode::UNAUTHORIZED, "That identity token is not valid.".into()))?;
+    state
+        .db
+        .add_registry_member(claims.sub, caller.id, &claims.handle, if caller.is_admin { "owner" } else { "member" })
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "could not link the account".into()))?;
+    Ok(Json(json!({ "ok": true, "handle": claims.handle })))
+}
+
+/// `POST /api/registry/enter` - trade a registry identity for a session here.
+pub async fn enter(State(state): State<Arc<AppState>>, Json(body): Json<EnterBody>) -> ApiResult {
+    let verifier = ensure_verifier(&state)
+        .await
+        .ok_or((StatusCode::SERVICE_UNAVAILABLE, "The identity service is unreachable right now.".into()))?;
+    let claims = verifier
+        .verify(body.token.trim(), now_secs())
+        .map_err(|_| (StatusCode::UNAUTHORIZED, "Your sign-in has expired. Open the app again.".into()))?;
+    let sub = claims.sub;
+    let handle = claims.handle;
+
+    // Already a member: in as themselves, no invite needed.
+    if let Some((user_id, _role)) = state.db.registry_member(sub) {
+        if let Some(user) = state.db.user_by_id(user_id) {
+            return Ok(Json(session_json(&state, &user)?));
+        }
+        // The local user was deleted out from under the membership; re-admit.
+    }
+
+    // A server with no owner yet crowns its first arrival.
+    if !state.db.has_any_admin() {
+        let user = admit(&state, sub, &handle, true)?;
+        return Ok(Json(session_json(&state, &user)?));
+    }
+
+    // Established server: invite-only.
+    let code = body.invite.trim();
+    if code.is_empty() {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "This server is invite-only. Ask a member for an invite link.".into(),
+        ));
+    }
+
+    // Check the invite with the registry: it must name THIS server, be unspent
+    // and unexpired. The check is the registry's public preview - no secret.
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "could not check the invite".into()))?;
+    let preview_url = format!("{}/v1/invites/{}", state.registry_url.trim_end_matches('/'), code);
+    let preview: Value = client
+        .get(&preview_url)
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map_err(|_| (StatusCode::BAD_REQUEST, "That invite is not valid.".into()))?
+        .json()
+        .await
+        .map_err(|_| (StatusCode::BAD_REQUEST, "That invite could not be read.".into()))?;
+
+    let inv_server = preview.get("serverUrl").and_then(|v| v.as_str()).unwrap_or("");
+    if !same_server(inv_server, &state.public_url) {
+        return Err((StatusCode::BAD_REQUEST, "That invite is for a different server.".into()));
+    }
+    if preview.get("spent").and_then(|v| v.as_bool()).unwrap_or(false) {
+        return Err((StatusCode::GONE, "That invite has already been used.".into()));
+    }
+    if preview.get("expired").and_then(|v| v.as_bool()).unwrap_or(false) {
+        return Err((StatusCode::GONE, "That invite has expired.".into()));
+    }
+
+    let user = admit(&state, sub, &handle, false)?;
+
+    // Tell the registry the invite is spent, using the caller's own verified
+    // token, so both sides' records agree. Best-effort: the join already holds.
+    let redeem_url = format!("{}/v1/invites/{}/redeem", state.registry_url.trim_end_matches('/'), code);
+    let _ = client
+        .post(&redeem_url)
+        .header("authorization", format!("Bearer {}", body.token.trim()))
+        .send()
+        .await;
+
+    Ok(Json(session_json(&state, &user)?))
+}

@@ -2739,15 +2739,10 @@ export function Player({
             aria-hidden="true"
             style={artwork ? { backgroundImage: `url(${JSON.stringify(artwork)})` } : undefined}
           />
-          {/* The lyric words run the full height of the sheet, behind the
-              controls - the same wash the home background wears, over this
-              sheet's own blurred cover. */}
-          <NowPlayingBackdrop wordsOnly artwork={artwork ?? npPlaceholderArt} seed={track?.path ?? 'np'} />
-          {/* The Spotify Canvas, when the track has one: a muted loop that takes
-              over the backdrop (drawn last of the background layers so it sits
-              over the blur and the lyric wash, still behind the controls),
-              keyed on its URL so a new clip restarts cleanly. Absent - the
-              common case - it is simply not rendered and the cover shows. */}
+          {/* The Spotify Canvas, when the track has one: a muted loop over this
+              sheet's blurred cover, keyed on its URL so a new clip restarts
+              cleanly. Absent - the common case - it is simply not rendered and
+              the cover shows instead. */}
           {npCanvas && (
             <video
               key={npCanvas}
@@ -2760,6 +2755,15 @@ export function Player({
               aria-hidden="true"
             />
           )}
+          {/* The lyric words run the full height of the sheet, behind the
+              controls. Drawn AFTER the clip on purpose: a canvas is a backdrop,
+              not a cover, and the words are the thing worth reading over it. */}
+          <NowPlayingBackdrop wordsOnly artwork={artwork ?? npPlaceholderArt} seed={track?.path ?? 'np'} />
+          {/* A blur that rises through the bottom third, so the transport, the
+              times and the title read against something settled instead of
+              against whatever frame the clip happens to be on. Sits over the
+              canvas and the words, under every control. */}
+          <div className="npScreen__veil" aria-hidden="true" />
           <header className="npScreen__head">
             <IconButton
               variant="ghost"
@@ -2788,6 +2792,10 @@ export function Player({
             )}
           </header>
 
+          {/* A track with a Canvas has moving art already; a spinning disc on
+              top of it is two pieces of artwork fighting for the same screen.
+              The clip takes over and this stands down. */}
+          {!npCanvas && (
           <div className="npScreen__art">
             {/* The hero art follows the same artView the mini-strip does, so the
                 choice is one setting in two places. A press (long-press on
@@ -2843,6 +2851,7 @@ export function Player({
               )}
             </ContextMenu>
           </div>
+          )}
 
           <div className="npScreen__meta">
             <div className="npScreen__lines">
@@ -3011,7 +3020,14 @@ export function Player({
           {/* Lyrics fill the whole sheet rather than a low popover: a header to
               step back to the art, and the words scrolling below it. */}
           {npLyrics && (
-            <div className="npScreen__lyricsView">
+            <div
+              className="npScreen__lyricsScrim"
+              aria-hidden="true"
+              onPointerDown={() => setNpLyrics(false)}
+            />
+          )}
+          {npLyrics && (
+            <div className="npScreen__lyricsView" role="dialog" aria-label="Lyrics">
               <header className="npScreen__lyricsHead">
                 <span className="npScreen__lyricsTitle">{track?.title ?? 'Lyrics'}</span>
                 <IconButton variant="ghost" aria-label="Close lyrics" onClick={() => setNpLyrics(false)}>

@@ -1475,28 +1475,36 @@ img {
    from env() - the --app-safe-* vars are out of scope here (see .npScreen). */
 .npScreen__lyricsView {
   position: absolute;
-  /* An absolutely positioned child resolves against the PADDING box, so
-     `inset: 0` already starts below the sheet's own top inset - and the
-     padding below then applied the notch inset a second time, which is what
-     held the words a header's height too low. Pulling the panel back up by
-     exactly the sheet's top padding puts it against the top of the screen, so
-     the lyrics claim the header's space and its own padding is the only thing
-     keeping them clear of the notch.
-
-     Left, right and bottom stay on the padding box: the sides keep the
-     sheet's margins, and the bottom is what stops the words running under the
-     controls. */
-  top: calc(-1 * (env(safe-area-inset-top, 0px) + var(--glacier-space-3)));
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 10;
+  /* Big, but deliberately NOT the whole screen. Full-bleed it ran under the
+     notch and its close button went with it, so the panel could be opened and
+     not shut. Inset from every edge instead: the sheet underneath frames it,
+     the header sits well clear of the notch, and the margin around it is
+     itself a way out (tapping it dismisses). */
+  top: 12%;
+  right: var(--glacier-space-4);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--glacier-space-4));
+  left: var(--glacier-space-4);
+  z-index: 11;
   display: flex;
   flex-direction: column;
-  padding: calc(env(safe-area-inset-top, 0px) + var(--glacier-space-3))
-    var(--glacier-space-6, 1.75rem) calc(env(safe-area-inset-bottom, 0px) + var(--glacier-space-5));
-  background: var(--glacier-bg);
+  padding: var(--glacier-space-4);
+  background: var(--glacier-surface);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-xl);
+  box-shadow: var(--glacier-shadow-5);
   animation: npRise 0.24s var(--glacier-ease-out);
+}
+
+/* The catcher behind the panel: a tap anywhere off it closes, which is the
+   gesture people reach for before they look for a button. */
+.npScreen__lyricsScrim {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: rgba(9, 9, 10, 0.5);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  animation: npCanvasIn 0.24s ease both;
 }
 
 .npScreen__lyricsHead {
@@ -1785,7 +1793,20 @@ img {
   padding-block-end: calc(var(--app-player-height) + var(--app-nav-height, 0px));
   display: flex;
   flex-direction: column;
-  gap: var(--glacier-space-5);
+  /* Between sections: a full step above the title-to-content gap (space-3),
+     so a shelf's heading clearly belongs to the cards BELOW it rather than
+     floating between two groups. */
+  gap: var(--glacier-space-8);
+}
+
+/* The home feed rendered inside another page (the Library wears it): the same
+   stack, the same rhythm, just without the page chrome - THIS wrapper is why
+   its shelves were colliding at zero gap, it had no layout of its own. */
+.homeMixes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-8);
+  min-width: 0;
 }
 
 /* The greeting and the page's actions share a row: the words take the width
@@ -1987,12 +2008,39 @@ img {
 }
 
 .suggestCardCover {
+  position: relative;
   inline-size: 100%;
   aspect-ratio: 1;
   border-radius: var(--glacier-radius-lg);
   overflow: hidden;
   border: var(--glacier-hairline) solid var(--glacier-border-subtle);
   background: var(--glacier-surface-sunken);
+}
+
+/* A small corner tag naming the source, so the page reads as many services at
+   a glance rather than one. Frosted so it sits on any cover art. */
+.suggestCardSource {
+  position: absolute;
+  inset-block-start: var(--glacier-space-1);
+  inset-inline-start: var(--glacier-space-1);
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--glacier-radius-sm);
+  font-size: var(--glacier-font-size-2xs, 0.65rem);
+  font-weight: var(--glacier-font-weight-semibold);
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: color-mix(in srgb, #000 55%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+
+.suggestCardSource--spotify {
+  background: color-mix(in srgb, #1db954 78%, transparent);
+}
+
+.suggestCardSource--deezer {
+  background: color-mix(in srgb, #a238ff 78%, transparent);
 }
 
 .suggestCardCover img {
@@ -2078,7 +2126,8 @@ img {
   padding-block-end: calc(var(--app-player-height) + var(--app-nav-height, 0px));
   display: flex;
   flex-direction: column;
-  gap: var(--glacier-space-5);
+  /* The same section rhythm the home and library pages keep. */
+  gap: var(--glacier-space-8);
 }
 
 .discoverHead {
@@ -4322,10 +4371,11 @@ body [class*='_panel_']:has(> .dlPanel) {
 
 /* ── Discover search results ─────────────────────────────────────────────── */
 
-/* A search hit (Spotify/Deezer): a square (round for an artist) cover, title,
-   subtitle, and a corner badge that is the Add affordance for a track and a
-   "search deeper" glyph for an artist. The whole card is one button - a track
-   imports on tap, an artist re-runs the search for its name. */
+/* A search hit: a square (round for an artist) cover, title, subtitle, and a
+   corner badge that says what tapping does. The whole card is one button, and
+   which half of the results it is in decides the verb - a library hit plays or
+   opens the artist's page, a catalogue hit imports or reads the artist's
+   discography. */
 .resultCard {
   position: relative;
   display: flex;
@@ -4412,6 +4462,14 @@ body [class*='_panel_']:has(> .dlPanel) {
 .resultCard__badge[data-state='added'] {
   color: var(--glacier-success, #1d9e75);
   border-color: var(--glacier-success, #1d9e75);
+}
+
+/* A hit you already own: the badge is a play button, not an Add, and fills on
+   hover the way the idle Add does - the tap starts the song rather than
+   fetching it. */
+.resultCard:hover:not(:disabled) .resultCard__badge[data-state='owned'] {
+  background: var(--glacier-accent);
+  color: var(--glacier-on-accent, #fff);
 }
 
 .resultCard__spin {
@@ -5183,10 +5241,29 @@ body [class*='_panel_']:has(> .dlPanel) {
   gap: var(--glacier-space-2);
 }
 
-.registryFriends__invite {
+.registryFriends__invite,
+.registryFriends__join {
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-2);
+}
+
+.joinServer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-3);
+  border: 1px solid var(--glacier-border);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface);
+}
+
+.joinServer__preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+  flex-wrap: wrap;
 }
 
 .registryFriends__inviteLink {
@@ -5305,11 +5382,9 @@ body [class*='_panel_']:has(> .dlPanel) {
 }
 
 /* The add affordance rides the cover, so the whole card reads as "tap to get
-   this" without a second row of chrome. */
-/* The floating accent badge on the cover: a plus while the song is still a
-   suggestion, a play glyph once it is downloaded (the whole card plays it). */
-.findCard__add,
-.findCard__play {
+   this" without a second row of chrome. A card only ever shows the plus or its
+   spinner: once the song is in the library it leaves the shelf entirely. */
+.findCard__add {
   position: absolute;
   inset-block-end: var(--glacier-space-2);
   inset-inline-end: var(--glacier-space-2);
@@ -5447,10 +5522,32 @@ body [class*='_panel_']:has(> .dlPanel) {
 }
 
 .loginGate__mark {
-  inline-size: 168px;
-  max-inline-size: 60vw;
+  inline-size: 336px;
+  /* The cap rises with it, or the doubling is undone on every phone: 60vw of
+     a 390px screen is 234px, which would have clamped the new size straight
+     back to roughly the old one. */
+  max-inline-size: 85vw;
   height: auto;
   object-fit: contain;
+}
+
+/* The wordmark ships as white artwork, so on a light theme it is white on
+   near-white - invisible. The header's copy of this logo has flipped for that
+   reason for a while; the sign-in one never did, and at twice the size it is
+   twice as much nothing. Same three cases as .mobileHeader__logo: system
+   follows the OS, an explicit theme overrides it either way. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .loginGate__mark {
+    filter: invert(1);
+  }
+}
+
+:root[data-theme='light'] .loginGate__mark {
+  filter: invert(1);
+}
+
+:root[data-theme='dark'] .loginGate__mark {
+  filter: none;
 }
 
 .loginGate__tag {
@@ -5468,6 +5565,20 @@ body [class*='_panel_']:has(> .dlPanel) {
 
 .loginGate__submit {
   margin-top: 4px;
+}
+
+/* The secondary ways off an onboarding step - sign into a server directly, or
+   skip - sat under the main action, quiet, side by side. */
+.loginGate__alts {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--glacier-space-2);
+  flex-wrap: wrap;
+  inline-size: 100%;
+  max-inline-size: 420px;
+  margin-inline: auto;
+  margin-block-start: var(--glacier-space-3);
 }
 
 .loginGate__foot {
@@ -6132,4 +6243,52 @@ button.artistAlbum {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* The bottom-third blur behind the Now Playing controls. A canvas is moving
+   footage of anything at all, so the transport can land on a bright frame and
+   lose its contrast; this rises from nothing at the top of the band to a full
+   blur plus a dark wash at the very bottom. Masked rather than a hard edge,
+   or the blur announces itself as a rectangle across the artwork.
+
+   z-index -1 keeps it in the background layer beside the canvas (later in the
+   DOM, so it paints over it) while every control, being in normal flow, stays
+   above. */
+.npScreen__veil {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  /* Tall enough to reach up past the seek bar and the title, not just the
+     transport - those read against the clip too, and a blur that stopped
+     under them left the words fighting the footage. */
+  block-size: 55%;
+  z-index: -1;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(22px) saturate(1.1);
+  backdrop-filter: blur(22px) saturate(1.1);
+  background: linear-gradient(to bottom, transparent, rgba(9, 9, 10, 0.55));
+  /* The fade takes the whole upper half of the band now, so a taller veil
+     still arrives gradually rather than as a visible seam across the art. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 55%);
+  mask-image: linear-gradient(to bottom, transparent, #000 55%);
+}
+
+/* --- Now Playing without a disc -------------------------------------------
+   The art block carries `flex: 1`, so it was the thing absorbing the sheet's
+   free space and holding the meta and transport down at the bottom. With a
+   Canvas playing that block is gone, and everything collapsed to the top.
+   An auto leading margin puts the free space back above the meta. Harmless
+   when the art IS present: it has already taken the space, so there is none
+   left for this to claim. */
+.npScreen__meta {
+  margin-block-start: auto;
+}
+
+/* The lyric words on this sheet start at the very top. The shared band sits
+   them 12% down, which is right for the desktop hero (whose upper half reads
+   as the title) and wrong here, where the sheet is theirs and the space above
+   is simply empty. Scoped to the words-only variant so the hero keeps its
+   own framing. */
+.nowPlayingBackdrop[data-words-only] .npWords {
+  inset-block-start: 0;
 }

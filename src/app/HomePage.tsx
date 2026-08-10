@@ -1,7 +1,8 @@
 import { Pill, ScrollArea, SearchField, Spinner, Text } from '@glacier/react';
-import { Play, Plus, Sparkles, X } from '@glacier/icons';
+import { Plus, Sparkles, X } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
+import { useOwned } from './owned.ts';
 import { useServerSession } from './serverSession.tsx';
 import {
   dismissDiscovery,
@@ -136,6 +137,7 @@ export function HomePage({
   const { tracks, favoriteTracks } = useLibrary();
   const { session } = useServerSession();
   const acquire = useAcquire();
+  const owned = useOwned();
   // The import queue, when the importer plugin is on: a Worth-adding card reads
   // its own download's state from here, by the URL it was enqueued with.
   const downloads = useDownloadsOptional();
@@ -270,16 +272,40 @@ export function HomePage({
   const [hidden, setHidden] = useState<string[]>([]);
   // This discovery's import job, matched by the URL it was enqueued with.
   const jobForUrl = (url: string) => downloads?.jobs?.find((j) => j.url === url) ?? null;
-  // A finished download STAYS on the shelf as a play button rather than
-  // vanishing - tapping it plays the song it just fetched. It only leaves when
-  // dismissed, or when the next curator poll drops it (the song is in the
-  // library now, so the curator stops suggesting it).
-  const found: Discovery[] = (discoveries?.items ?? []).filter((d) => !hidden.includes(d.id));
+  // Whether the library now holds this: by the ids its own download produced
+  // when there was one (exact), and by name otherwise (so a song added last
+  // week, or on another device, counts just the same).
+  const landed = (d: Discovery) => {
+    const ids = jobForUrl(d.url)?.trackIds ?? [];
+    if (ids.some((id) => byId.has(id))) return true;
+    return owned.has(d.artist, d.title);
+  };
+  // A shelf of things to add must not hold things you have. The card carries
+  // its spinner until the file actually lands, and then leaves, because at that
+  // point it is a song, not a suggestion.
+  const found: Discovery[] = (discoveries?.items ?? []).filter(
+    (d) => !hidden.includes(d.id) && !landed(d),
+  );
   const hide = (id: string) => {
     setHidden((prev) => [...prev, id]);
     const s = sessionRef.current;
     if (s) void dismissDiscovery(s, id).catch(() => {});
   };
+  // Leaving the shelf is not enough: the server would keep serving the same
+  // suggestion on every poll until its own sweep noticed. Tell it once, the
+  // moment the library proves the song has arrived.
+  const forgotten = useRef(new Set<string>());
+  useEffect(() => {
+    const s = sessionRef.current;
+    if (!s) return;
+    for (const d of discoveries?.items ?? []) {
+      if (forgotten.current.has(d.id) || !landed(d)) continue;
+      forgotten.current.add(d.id);
+      void dismissDiscovery(s, d.id).catch(() => {});
+    }
+    // `landed` is rebuilt every render; the deps are what it actually reads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [discoveries, owned, byId, downloads?.jobs]);
   const targetFor = (d: Discovery) => ({
     kind: 'track' as const,
     title: d.title,
@@ -391,37 +417,22 @@ export function HomePage({
       <Shelf title="Worth adding" count={found.length}>
         {found.map((d) => {
           const job = jobForUrl(d.url);
-          const active = job?.state === 'queued' || job?.state === 'downloading';
-          const done = job?.state === 'done';
-          // The library track the download produced, once the sync has landed
-          // it - what a tap plays. Absent for the brief window between the job
-          // finishing and the library delta pulling the file in.
-          const doneTrack = done
-            ? ((job?.trackIds ?? []).map((id) => byId.get(id)).find((t): t is Track => !!t) ?? null)
-            : null;
-          const playable = doneTrack !== null;
-          // "Working" covers both the download and that sync-lag tail, so the
-          // card never offers a play button that cannot play yet.
-          const working = active || (done && !playable);
+          // "Working" runs from the tap to the moment the library holds the
+          // file - the download itself and the sync lag behind it. The card
+          // leaves the shelf at the end of it, so there is no third state.
+          const working =
+            job?.state === 'queued' || job?.state === 'downloading' || job?.state === 'done';
           const canAdd = acquire.hasHandlers(targetFor(d));
           return (
             <div key={d.id} className="findCard">
               <button
                 type="button"
                 className="findCard__body"
-                data-done={playable || undefined}
-                // Tappable to play once downloaded; to add while idle (a handler
-                // must exist); inert while its own download is in flight.
-                disabled={working || (!playable && !canAdd)}
-                title={
-                  playable || canAdd
-                    ? undefined
-                    : 'No way to add this — enable Music import or Buy in Plugins'
-                }
-                onClick={() => {
-                  if (playable && doneTrack) onPlay(doneTrack, [doneTrack]);
-                  else if (!done) acquire.acquire(targetFor(d));
-                }}
+                // Inert while its own download is in flight, and while nothing
+                // enabled can add it.
+                disabled={working || !canAdd}
+                title={canAdd ? undefined : 'No way to add this — enable Music import or Buy in Plugins'}
+                onClick={() => acquire.acquire(targetFor(d))}
               >
                 <span className="findCard__cover" data-downloading={working || undefined}>
                   {d.cover ? <img src={d.cover} alt="" loading="lazy" /> : <Sparkles size={24} />}
@@ -433,11 +444,6 @@ export function HomePage({
                       aria-label={`Downloading ${d.title}`}
                     >
                       <Spinner size="md" />
-                    </span>
-                  ) : playable ? (
-                    // Downloaded: a play glyph, and the tap plays it.
-                    <span className="findCard__play" aria-hidden>
-                      <Play size={16} fill="currentColor" />
                     </span>
                   ) : (
                     <span className="findCard__add" aria-hidden>
@@ -459,9 +465,10 @@ export function HomePage({
                     .join(' · ')}
                 </span>
               </button>
-              {/* The dismiss 'x' only while it is still a suggestion; once it is
-                  downloaded the card is a play button, not something to refuse. */}
-              {!done && (
+              {/* The dismiss 'x' up until the download has actually finished -
+                  after that the card is only waiting for the sync, and it is
+                  about to leave the shelf on its own. */}
+              {job?.state !== 'done' && (
                 <button
                   type="button"
                   className="findCard__no"
@@ -583,7 +590,13 @@ export function HomePage({
         ))}
       </Shelf>
 
-      {!anySkeleton &&
+      {/* Embedded in the Library, this stays silent. The empty state speaks for
+          a whole page ("nothing here yet, play something"), and folded into a
+          page that already has playlists, stats and shelves above it, a
+          full-height graphic announcing emptiness is just wrong - the page is
+          plainly not empty. The host owns its own empty state. */}
+      {!embedded &&
+        !anySkeleton &&
         found.length === 0 &&
         curated.length === 0 &&
         mixes.length === 0 &&

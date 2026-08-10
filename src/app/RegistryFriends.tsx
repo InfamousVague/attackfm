@@ -17,6 +17,8 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { EmptyArt } from './EmptyArt.tsx';
 import { useRegistry } from './registrySession.tsx';
 import { useServerSession } from './serverSession.tsx';
+import { JoinServer } from './JoinServer.tsx';
+import { linkAccount } from './server.ts';
 import {
   acceptFriendRequest,
   announce,
@@ -223,10 +225,31 @@ function FriendsGraph({ token, me, onSignOut }: { token: string; me: string; onS
         </Button>
       </form>
 
+      {/* No server yet: the way in is an invite from someone who runs one. */}
+      {!server && (
+        <div className="registryFriends__join">
+          <JoinServer />
+        </div>
+      )}
+
       {server && (
         <div className="registryFriends__invite">
           <Button variant="outline" size="sm" onClick={() => void makeInvite()} disabled={busy}>
             <Link2 size={15} /> Invite a friend to your server
+          </Button>
+          {/* One-time migration: claim the account you already have on this
+              server for your central identity, so it stays yours. Idempotent. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() =>
+              void act(async () => {
+                await linkAccount(server.url, server.token, token);
+              }, 'Linked this server to your account.')
+            }
+          >
+            Link this server to your account
           </Button>
           {invite && (
             <div className="registryFriends__inviteLink">

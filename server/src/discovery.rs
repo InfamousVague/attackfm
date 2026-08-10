@@ -66,8 +66,162 @@ fn client(secs: u64) -> reqwest::Client {
         .unwrap_or_default()
 }
 
+/// Lowercase, unaccented, punctuation folded to single spaces. A catalogue and
+/// a file's tags almost never agree character for character - "Beyoncé" against
+/// "Beyonce", "Don't" against "Dont" - and a filter that misses is a shelf
+/// offering music the listener already owns.
+pub fn fold(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    let mut gap = false;
+    for ch in value.chars() {
+        // An apostrophe is dropped, not spaced: "Don't" and "Dont" are the same
+        // song, and one tagger in three leaves it out.
+        if ch == '\'' || ch == '\u{2019}' || ch == '\u{02bc}' {
+            continue;
+        }
+        let plain = deaccent(ch);
+        if plain.is_alphanumeric() {
+            if gap && !out.is_empty() {
+                out.push(' ');
+            }
+            gap = false;
+            out.extend(plain.to_lowercase());
+        } else {
+            gap = true;
+        }
+    }
+    out
+}
+
+/// The Latin letters a tagger and a catalogue disagree about. Anything outside
+/// this passes through unchanged - a CJK title still folds to itself.
+fn deaccent(ch: char) -> char {
+    match ch {
+        'á' | 'à' | 'â' | 'ä' | 'ã' | 'å' | 'ā' => 'a',
+        'Á' | 'À' | 'Â' | 'Ä' | 'Ã' | 'Å' | 'Ā' => 'A',
+        'é' | 'è' | 'ê' | 'ë' | 'ē' => 'e',
+        'É' | 'È' | 'Ê' | 'Ë' | 'Ē' => 'E',
+        'í' | 'ì' | 'î' | 'ï' | 'ī' => 'i',
+        'Í' | 'Ì' | 'Î' | 'Ï' | 'Ī' => 'I',
+        'ó' | 'ò' | 'ô' | 'ö' | 'õ' | 'ø' | 'ō' => 'o',
+        'Ó' | 'Ò' | 'Ô' | 'Ö' | 'Õ' | 'Ø' | 'Ō' => 'O',
+        'ú' | 'ù' | 'û' | 'ü' | 'ū' => 'u',
+        'Ú' | 'Ù' | 'Û' | 'Ü' | 'Ū' => 'U',
+        'ñ' => 'n',
+        'Ñ' => 'N',
+        'ç' => 'c',
+        'Ç' => 'C',
+        _ => ch,
+    }
+}
+
+/// Words that mark an aside as saying nothing about WHICH recording this is.
+/// Deliberately short: "remix", "live" and "acoustic" are absent, because a
+/// track wearing one of those is a different performance, not the same file.
+const NOISE_WORDS: [&str; 16] = [
+    "feat",
+    "ft",
+    "featuring",
+    "remaster",
+    "remastered",
+    "explicit",
+    "clean",
+    "radio edit",
+    "single version",
+    "album version",
+    "bonus",
+    "deluxe",
+    "expanded",
+    "edition",
+    "anniversary",
+    "original mix",
+];
+
+fn is_noise(segment: &str) -> bool {
+    let s = fold(segment);
+    if s.is_empty() {
+        return true;
+    }
+    // A bare year is NOT noise. "Alive (2007)" is a record; "Alive - 2007
+    // Remaster" is caught below by the word, not the number. Erring the other
+    // way would hide a song the listener does not have.
+    let padded = format!(" {s} ");
+    NOISE_WORDS.iter().any(|w| padded.contains(&format!(" {w} ")))
+}
+
+/// A title reduced to the recording it names: bracketed asides and a trailing
+/// " - ..." dropped when, and only when, they are noise.
+fn title_key(title: &str) -> String {
+    let mut out = String::with_capacity(title.len());
+    let mut aside = String::new();
+    let mut depth = 0u32;
+    for ch in title.chars() {
+        match ch {
+            '(' | '[' if depth == 0 => {
+                depth = 1;
+                aside.clear();
+            }
+            ')' | ']' if depth == 1 => {
+                depth = 0;
+                if !is_noise(&aside) {
+                    out.push(' ');
+                    out.push_str(&aside);
+                }
+            }
+            _ if depth == 1 => aside.push(ch),
+            _ => out.push(ch),
+        }
+    }
+    // An unclosed bracket: keep what was swallowed rather than losing the title.
+    if depth == 1 {
+        out.push(' ');
+        out.push_str(&aside);
+    }
+    let parts: Vec<&str> = out.split(" - ").collect();
+    if parts.len() > 1 && is_noise(parts[parts.len() - 1]) {
+        out = parts[..parts.len() - 1].join(" - ");
+    }
+    fold(&out)
+}
+
 fn key_of(artist: &str, title: &str) -> String {
-    format!("{}|{}", artist.trim().to_lowercase(), title.trim().to_lowercase())
+    format!("{}|{}", fold(artist), title_key(title))
+}
+
+#[cfg(test)]
+mod key_tests {
+    use super::*;
+
+    #[test]
+    fn tags_and_catalogue_meet_in_the_middle() {
+        // Accents, punctuation and case are spelling, not identity.
+        assert_eq!(key_of("Beyoncé", "Don't Hurt Yourself"), key_of("BEYONCE", "Dont Hurt Yourself"));
+        // Asides that do not change the recording.
+        assert_eq!(key_of("The Weeknd", "Blinding Lights"), key_of("The Weeknd", "Blinding Lights (Explicit)"));
+        assert_eq!(key_of("Queen", "Bohemian Rhapsody"), key_of("Queen", "Bohemian Rhapsody - 2011 Remaster"));
+        assert_eq!(key_of("Doja Cat", "Kiss Me More"), key_of("Doja Cat", "Kiss Me More (feat. SZA)"));
+    }
+
+    #[test]
+    fn different_recordings_stay_different() {
+        // A remix, a live take and a re-recording are other songs; folding them
+        // together would hide music the listener does not actually have.
+        assert_ne!(key_of("Dua Lipa", "Levitating"), key_of("Dua Lipa", "Levitating (DaBaby Remix)"));
+        assert_ne!(key_of("Nirvana", "Come As You Are"), key_of("Nirvana", "Come As You Are (Live)"));
+        assert_ne!(key_of("Taylor Swift", "Red"), key_of("Taylor Swift", "Red (Taylor's Version)"));
+        // A parenthetical that is part of the name survives.
+        assert_ne!(key_of("Daft Punk", "Alive"), key_of("Daft Punk", "Alive (2007)"));
+    }
+}
+
+/// The whole library as comparison keys - what a candidate is tested against.
+fn owned_keys(state: &Arc<AppState>) -> HashSet<String> {
+    state
+        .db
+        .owned_names()
+        .into_iter()
+        .map(|(artist, title)| key_of(&artist, &title))
+        .collect()
 }
 
 /// When each user last harvested, so the six-hourly sweep is per listener.
@@ -105,7 +259,7 @@ pub async fn harvest(state: &Arc<AppState>, user: i64) {
     if seeds.is_empty() {
         return;
     }
-    let owned = state.db.owned_keys();
+    let owned = owned_keys(state);
     let c = client(15);
 
     for (seed_name, _) in seeds {
@@ -325,7 +479,7 @@ pub fn rescore(state: &Arc<AppState>, user: i64) {
 /// Drops candidates the listener has since acquired - the shelf must not offer
 /// what is already in the library.
 pub fn prune_owned(state: &Arc<AppState>, user: i64) {
-    let owned = state.db.owned_keys();
+    let owned = owned_keys(state);
     for d in state.db.all_discoveries(user) {
         if owned.contains(&key_of(&d.artist, &d.title)) {
             state.db.forget_discovery(user, &d.ext_id);
@@ -364,6 +518,10 @@ pub async fn feed(
     headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    // Before answering, not on the background sweep's schedule: a song
+    // downloaded a minute ago must not come back as a suggestion on the very
+    // next poll. The pool is small and this is a poll every few minutes.
+    prune_owned(&state, caller.id);
     let items: Vec<DiscoveryOut> = state
         .db
         .top_discoveries(caller.id, 40)
