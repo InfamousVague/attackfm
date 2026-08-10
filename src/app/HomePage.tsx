@@ -1,5 +1,6 @@
-import { Pill, ScrollArea, SearchField, Text } from '@glacier/react';
-import { Sparkles } from '@glacier/icons';
+import { ContextMenu, MenuItem, Pill, ScrollArea, SearchField, Text } from '@glacier/react';
+import { ListEnd, ListStart, Sparkles } from '@glacier/icons';
+import { useQueueControls } from './queueControls.tsx';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
 import { useServerSession } from './serverSession.tsx';
@@ -44,12 +45,27 @@ function greetingFor(hour: number): string {
 
 /** One square track card on a shelf. */
 function TrackCard({ track, onOpen }: { track: Track; onOpen: () => void }) {
+  const { playNext, addToQueue, inJam } = useQueueControls();
   return (
-    <button type="button" className="trackCard" onClick={onOpen}>
-      <img className="trackCardArt" src={track.artwork ?? placeholderArt} alt="" loading="lazy" />
-      <span className="trackCardTitle">{track.title}</span>
-      <span className="trackCardArtist">{track.artist}</span>
-    </button>
+    <ContextMenu
+      aria-label={`${track.title} actions`}
+      content={
+        <>
+          <MenuItem icon={<ListStart size={15} />} onSelect={() => playNext(track)}>
+            Play next
+          </MenuItem>
+          <MenuItem icon={<ListEnd size={15} />} onSelect={() => addToQueue(track)}>
+            {inJam ? 'Add to jam queue' : 'Add to queue'}
+          </MenuItem>
+        </>
+      }
+    >
+      <button type="button" className="trackCard" onClick={onOpen}>
+        <img className="trackCardArt" src={track.artwork ?? placeholderArt} alt="" loading="lazy" />
+        <span className="trackCardTitle">{track.title}</span>
+        <span className="trackCardArtist">{track.artist}</span>
+      </button>
+    </ContextMenu>
   );
 }
 

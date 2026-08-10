@@ -51,6 +51,13 @@ pub struct Jam {
     pub playing: bool,
     /// What the host is playing through, so a member can show what is next.
     pub queue: Vec<i64>,
+    /// Tracks members have asked to add, waiting for the host to take them into
+    /// its own queue. Kept apart from `queue` so the host's next state post -
+    /// which overwrites `queue` wholesale - cannot clobber a pending request;
+    /// the host drains this on its beat and folds them into its real queue,
+    /// which then flows back out to the room. One-way (member -> host) by
+    /// design, so there is never a merge to reconcile.
+    pub additions: Vec<i64>,
     /// When position_ms was true. Members extrapolate forward from here.
     pub updated_at: i64,
     pub created_at: i64,
@@ -133,6 +140,7 @@ pub async fn create(State(state): State<Arc<AppState>>, headers: HeaderMap) -> A
         position_ms: 0,
         playing: false,
         queue: Vec::new(),
+        additions: Vec::new(),
         updated_at: now_ms(),
         created_at: now_ms(),
     };
@@ -251,5 +259,41 @@ pub async fn set_state(
         jam.queue = queue;
     }
     jam.updated_at = now_ms();
+    // Hand the host anything the room has asked to add since its last beat, and
+    // clear it: the host folds these into its real queue, which comes back to
+    // everyone on the next post. Draining here (the host's own write) means no
+    // extra round trip and no chance a member's request is served twice.
+    let additions = std::mem::take(&mut jam.additions);
+    Ok(Json(json!({ "ok": true, "additions": additions })))
+}
+
+#[derive(Deserialize)]
+pub struct QueueAdd {
+    #[serde(rename = "trackId")]
+    pub track_id: i64,
+}
+
+/// `POST /api/jams/{id}/queue` - a member drops a track into the room's line.
+/// Anyone in the jam may (that is the point); the host folds it in on its next
+/// beat. Deduped against what is already queued or pending so a double-tap does
+/// not stack the same song twice.
+pub async fn add_to_queue(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(body): Json<QueueAdd>,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let mut jams = state.jams.jams.lock().unwrap();
+    state.jams.sweep(&mut jams);
+    let Some(jam) = jams.get_mut(&id) else {
+        return Err((StatusCode::NOT_FOUND, "that jam has ended".into()));
+    };
+    if !jam.members.contains_key(&caller.id) {
+        return Err((StatusCode::FORBIDDEN, "join the jam to add to it".into()));
+    }
+    if !jam.queue.contains(&body.track_id) && !jam.additions.contains(&body.track_id) {
+        jam.additions.push(body.track_id);
+    }
     Ok(Json(json!({ "ok": true })))
 }
