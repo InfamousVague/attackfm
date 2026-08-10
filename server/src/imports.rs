@@ -56,6 +56,26 @@ fn services() -> Vec<String> {
         .collect()
 }
 
+/// Metadata-enrichment providers handed to SpotiFLAC (`--enrich-providers`),
+/// set via AFM_IMPORT_ENRICH. Unset keeps SpotiFLAC's own default; a value of
+/// `none` (or `off`) disables enrichment entirely. This is separate from the
+/// download `--service` list so a deployment can drop a provider that 429s a
+/// datacentre IP (deezer) from enrichment without losing it as a download source
+/// or having to touch the other list.
+fn enrich_providers() -> Option<Vec<String>> {
+    let raw = std::env::var("AFM_IMPORT_ENRICH").ok()?;
+    let raw = raw.trim().to_string();
+    if raw.is_empty() {
+        return None;
+    }
+    Some(
+        raw.split([' ', ','])
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| s.trim().to_string())
+            .collect(),
+    )
+}
+
 /// How long ONE track may take from a provider before SpotiFLAC gives up on
 /// it. The old 120s was tuned for backends answering promptly; when a public
 /// backend is throttling a datacentre address the transfer crawls rather than
@@ -598,6 +618,21 @@ async fn run_job(
     let mut args: Vec<String> = vec![input, staging.display().to_string()];
     args.push("--service".to_string());
     args.extend(services());
+    // Enrichment providers, tunable via AFM_IMPORT_ENRICH (e.g. to drop deezer,
+    // which 429s from a datacentre IP). Unset leaves SpotiFLAC's default.
+    match enrich_providers() {
+        Some(list)
+            if list.len() == 1
+                && matches!(list[0].to_ascii_lowercase().as_str(), "none" | "off" | "no") =>
+        {
+            args.push("--no-enrich".to_string());
+        }
+        Some(list) => {
+            args.push("--enrich-providers".to_string());
+            args.extend(list);
+        }
+        None => {}
+    }
     args.push("--quality".to_string());
     args.push(quality());
     args.push("--use-album-track-numbers".to_string());
