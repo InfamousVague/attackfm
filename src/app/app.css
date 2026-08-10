@@ -109,6 +109,27 @@ img {
 }
 
 /*
+ * Card footprints, on the root because a card can be rendered into a portal
+ * (the Now Playing sheet, a modal) and would otherwise lose them.
+ *
+ * These are named rather than written into each rule because the shelf
+ * skeletons hold a seat at exactly these sizes: ShelfSkeleton reads the same
+ * variables, so a card that is resized takes its own stand-in with it. Every
+ * card's art is `inline-size: 100%; aspect-ratio: 1`, so the footprint is the
+ * art size too, and one number per family is the whole geometry. The last time
+ * these lived in two places the shelves shrank by a third and their skeletons
+ * did not, so a loading page jumped when it settled.
+ */
+:root {
+  /* A song, and the playlist tiles that stand beside it as peers. */
+  --card-track: 6.35rem;
+  /* A mix - the page's hero object, wider than a song. */
+  --card-mix: 8.7rem;
+  /* An artist: a round portrait, narrower than a release. */
+  --card-artist: 5.35rem;
+}
+
+/*
  * The header for every surface with no window to decorate - the phone builds
  * and the browser. It carries the same cluster the desktop title bar does
  * (search, plugin actions, settings), minus everything that is about a window:
@@ -1088,16 +1109,16 @@ img {
    on the frost, not a second floating slab under the player. Each tab stacks a
    glyph over its name, the way a phone's system tab bar does, and the whole
    band is kept short so it costs the list as little height as possible. */
-/* A rounded card inset from the screen's sides, with the app icon raised out of
-   its centre - and a CHIN: the card runs all the way down to the bottom edge,
-   its lower band empty of content, so the home indicator's inset is filled by
-   the nav instead of left as dead screen. The phone's own corner curve trims
-   the chin's bottom corners, which is what makes it read as contoured to the
-   device rather than a card that happens to end there. */
+/* A rounded card held off the screen's edges by the same margin on all three
+   sides, with the app icon raised out of its centre - and a CHIN: the card runs
+   down over the home indicator's strip, its lower band empty of content, so
+   that dead space carries the nav instead of nothing. The chin's corners sweep
+   wider than the top's, following the curve the phone is already making down
+   there. */
 .appNavBar {
   position: absolute;
-  inset-inline: var(--glacier-space-4);
-  inset-block-end: 0;
+  inset-inline: var(--app-nav-inset);
+  inset-block-end: var(--app-nav-inset);
   z-index: 4;
   /* Border-box, so the tabs centre in the island band and the chin is padding
      below them rather than height stolen from them. */
@@ -1237,11 +1258,15 @@ img {
   /* The island's own height: the band the tabs live in, not counting the chin
      below them or the brand button that overhangs their top. */
   --app-nav-island-height: 4rem;
-  /* The chin: the band of card below the tabs, filling what used to be dead
-     space at the bottom of the screen - the home indicator's inset, plus the
-     gap the island used to float on. The card reaches the very bottom edge now,
-     so the phone's own corner curve is what contours the chin. */
-  --app-nav-chin: calc(var(--app-safe-bottom) + var(--glacier-space-2));
+  /* What the nav card holds back from the screen's edges - the same margin on
+     the sides and underneath, so the card sits in an even frame rather than
+     floating wide and welded low. Matched to the player plate's own inset (its
+     padding, over an inset-inline of 0), so the two plates line up down both
+     sides instead of stepping in and out. */
+  --app-nav-inset: var(--glacier-space-2);
+  /* The chin: the band of card below the tabs that covers the home indicator's
+     dead strip, so that space carries the nav instead of nothing. */
+  --app-nav-chin: var(--app-safe-bottom);
   /* The sweep on the chin's bottom corners, echoing the phone's own. */
   --app-nav-chin-radius: 2.25rem;
   /* How far the raised brand button's border box rises above the card's top.
@@ -1268,7 +1293,8 @@ img {
      down to the screen's edge. The player and the blur scrim clear exactly
      this, so nothing tucks under the card or the raised button. */
   --app-nav-height: calc(
-    var(--app-nav-overhang) + var(--app-nav-island-height) + var(--app-nav-chin)
+    var(--app-nav-overhang) + var(--app-nav-island-height) + var(--app-nav-chin) +
+      var(--app-nav-inset)
   );
 }
 
@@ -2173,8 +2199,9 @@ img {
 .trackCard {
   flex: none;
   /* Two thirds of the old 9.5rem: more of the shelf visible at a glance,
-     which is what a shelf is for. */
-  inline-size: 6.35rem;
+     which is what a shelf is for. Shared with the skeleton that holds its
+     seat, so the two cannot drift. */
+  inline-size: var(--card-track);
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-1);
@@ -2498,7 +2525,7 @@ img {
 .artistCard {
   flex: none;
   /* Two thirds of the old 8rem, matching the square cards' reduction. */
-  inline-size: 5.35rem;
+  inline-size: var(--card-artist);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2541,7 +2568,7 @@ img {
   flex: none;
   /* Two thirds, with the album cards it sits beside - a mosaic of four covers
      is still a cover, and left at full size it dwarfed the shrunken shelf. */
-  inline-size: 8.7rem;
+  inline-size: var(--card-mix);
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-1);
@@ -2660,9 +2687,9 @@ img {
   gap: var(--glacier-space-1);
   flex: 0 0 auto;
   /* The same footprint as every other card on the page (.trackCard): the
-     playlists are peers of the shelves, not a runt row of chips. Moves with
-     it, so the two never drift apart. */
-  width: 6.35rem;
+     playlists are peers of the shelves, not a runt row of chips. The shared
+     variable is what makes "moves with it" true rather than a hope. */
+  width: var(--card-track);
   padding: 0;
   background: none;
   border: none;
@@ -5782,9 +5809,122 @@ body [class*='_panel_']:has(> .dlPanel) {
   gap: 28px;
   padding: max(32px, env(safe-area-inset-top)) 24px max(32px, env(safe-area-inset-bottom));
   overflow-y: auto;
+  /* Clips the art wall, which is deliberately larger than the screen. */
+  overflow-x: hidden;
+  isolation: isolate;
   background:
     radial-gradient(120% 80% at 50% -10%, color-mix(in srgb, var(--glacier-accent) 22%, transparent), transparent 60%),
     var(--glacier-bg, #0b0b0d);
+}
+
+/* ── The art wall ────────────────────────────────────────────────────────────
+   attack.fm's own hero treatment, brought into the app's front door so the site
+   and the first screen read as one thing: four columns of covers drifting in
+   alternating directions, the slab rotated off-square and blurred back until it
+   is texture rather than pictures.
+
+   Oversized on purpose - 172vw x 192vh, centred and rotated - because a
+   rotated rectangle has to be bigger than its own bounding box or the corners
+   come up empty. */
+.artWall {
+  /* Fixed, not absolute: the gate is the scroll container (so the form can
+     scroll out from under the keyboard), and an absolute child this size
+     BECOMES the scroll range - the page could be dragged down through 192vh
+     of empty blur. Pinned to the viewport it paints identically, adds nothing
+     to the scroll extent, and holds still while the form scrolls over it. */
+  position: fixed;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  z-index: 0;
+  inline-size: 172vw;
+  block-size: 192vh;
+  transform: translate(-50%, -50%) rotate(-11deg);
+  display: flex;
+  gap: 16px;
+  filter: blur(7px) saturate(0.9) brightness(0.82);
+  pointer-events: none;
+}
+
+/* The gate's own content rides above both the wall and the veil. Everything in
+   .loginGate is a direct child, so one rule lifts the lot. */
+.loginGate > *:not(.artWall) {
+  position: relative;
+  z-index: 2;
+}
+
+/* The veil, between the art and the words. Its z-index is not decoration: a
+   pseudo-element paints as the FIRST child, so at an equal index the wall -
+   a real element, later in the DOM - would cover it and the art would come
+   through at full strength.
+
+   The stops are attack.fm's own (rgba(9,9,10,·) at .42 / .9 / .996 over a flat
+   .55-.72), written against the theme's background so a light theme veils in
+   its own colour rather than in the site's near-black. Heavy on purpose: the
+   art is a texture to be felt, not a picture to be looked at, and a form has to
+   stay readable over whatever happens to be drifting past. */
+.loginGate::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      125% 95% at 50% 32%,
+      color-mix(in srgb, var(--glacier-bg, #0b0b0d) 42%, transparent),
+      color-mix(in srgb, var(--glacier-bg, #0b0b0d) 90%, transparent) 60%,
+      color-mix(in srgb, var(--glacier-bg, #0b0b0d) 99%, transparent) 100%
+    ),
+    linear-gradient(
+      color-mix(in srgb, var(--glacier-bg, #0b0b0d) 55%, transparent),
+      color-mix(in srgb, var(--glacier-bg, #0b0b0d) 72%, transparent)
+    );
+}
+
+.artWall__col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1 1 0;
+  will-change: transform;
+  animation: artWallUp var(--wall-dur, 60s) linear infinite;
+}
+
+/* Half the columns run the other way, so the wall drifts rather than marches. */
+.artWall__col[data-dir='down'] {
+  animation-name: artWallDown;
+}
+
+.artWall__col img {
+  inline-size: 100%;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  object-fit: cover;
+  display: block;
+}
+
+/* Each column carries its covers twice and travels exactly half its own
+   height, so the second copy arrives where the first began and the loop has no
+   seam. */
+@keyframes artWallUp {
+  to {
+    transform: translateY(-50%);
+  }
+}
+
+@keyframes artWallDown {
+  from {
+    transform: translateY(-50%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artWall__col {
+    animation: none;
+  }
 }
 
 .loginGate__hero {
@@ -6565,4 +6705,341 @@ button.artistAlbum {
    own framing. */
 .nowPlayingBackdrop[data-words-only] .npWords {
   inset-block-start: 0;
+}
+
+/* ---- Friends, redone: people and places, not rows ----------------------- */
+
+/* A person's mark: gradient from their own handle, initial on top. Sizes are
+   the three jobs it does - chip, card, and the profile strip. */
+.friendAvatar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: rgb(255 255 255 / 0.92);
+  font-weight: 700;
+  user-select: none;
+}
+
+.friendAvatar--sm {
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  font-size: 0.7rem;
+}
+
+.friendAvatar--md {
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  font-size: 1rem;
+}
+
+.friendAvatar--lg {
+  inline-size: 3.5rem;
+  block-size: 3.5rem;
+  font-size: 1.4rem;
+}
+
+/* Who you are: the page opens on a person - your own mark, your handle - with
+   sign-out as a quiet icon rather than a labelled button competing with it. */
+.friendsMe {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+.friendsMe__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.friendsMe__handle {
+  font-size: var(--glacier-font-size-lg);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.friendsMe__caption {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-sm);
+}
+
+/* An ask is a decision, so it gets a card with the accent on its edge - the
+   one place on the page allowed to bid for attention. */
+.requestCards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+}
+
+.requestCard {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-accent-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-accent-soft);
+  /* Never wider than the page: a long handle gives way (ellipsis below), the
+     Accept and decline never leave the screen - the card exists for exactly
+     those two controls. */
+  max-inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.requestCard__handle {
+  font-weight: 600;
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.requestCard__actions {
+  flex: none;
+}
+
+.requestCard__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}
+
+/* Asks still in the air: chips, glanceable and quiet. */
+.friendChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+}
+
+.friendChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-1) var(--glacier-space-3) var(--glacier-space-1)
+    var(--glacier-space-1);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface);
+  font-size: var(--glacier-font-size-sm);
+}
+
+.friendChip__state {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+}
+
+/* The graph itself: a grid of people. Cards, coloured by their owners, with
+   the remove tucked into the corner where it waits without being the point. */
+.friendGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: var(--glacier-space-3);
+}
+
+.friendCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-4) var(--glacier-space-3) var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+  text-align: center;
+}
+
+/* A green ring on the mark while they are around - presence worn where the
+   eye already is, not another line of text. */
+.friendCard[data-online] .friendCard__face {
+  box-shadow:
+    0 0 0 2px var(--glacier-bg),
+    0 0 0 4px oklch(0.72 0.17 150);
+}
+
+.friendCard__handle {
+  font-weight: 650;
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friendCard__meta {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friendCard__remove {
+  position: absolute;
+  inset-block-start: var(--glacier-space-1);
+  inset-inline-end: var(--glacier-space-1);
+  opacity: 0;
+  transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.friendCard:hover .friendCard__remove,
+.friendCard__remove:focus-visible {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .friendCard__remove {
+    opacity: 0.6;
+  }
+}
+
+/* ---- Jams: the live layer ------------------------------------------------ */
+
+/* The room you are in: cover art with a live pulse, who's inside, and the way
+   out. The one card on the page that is happening right now. */
+.jamLive {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-accent-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-glass-regular, var(--glacier-surface));
+}
+
+.jamLive__art {
+  position: relative;
+  flex: none;
+  inline-size: 3.5rem;
+  block-size: 3.5rem;
+  border-radius: var(--glacier-radius-md);
+  overflow: hidden;
+}
+
+.jamLive__art img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.jamLive__pulse {
+  position: absolute;
+  inset-block-end: 4px;
+  inset-inline-end: 4px;
+  inline-size: 10px;
+  block-size: 10px;
+  border-radius: 50%;
+  background: oklch(0.72 0.17 150);
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 0.4);
+  animation: jamPulse 2s ease-in-out infinite;
+}
+
+@keyframes jamPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.8); opacity: 0.6; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jamLive__pulse { animation: none; }
+}
+
+.jamLive__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.jamLive__title {
+  font-weight: 700;
+}
+
+.jamLive__song {
+  font-size: var(--glacier-font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jamLive__meta {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+}
+
+/* Friends' rooms: doors you can walk through, on one wrapping row. */
+.jamRooms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-3);
+}
+
+.jamRoom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-3);
+  inline-size: 10rem;
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+  text-align: center;
+}
+
+.jamRoom__art {
+  position: relative;
+  inline-size: 5rem;
+  block-size: 5rem;
+  border-radius: var(--glacier-radius-md);
+  overflow: visible;
+}
+
+.jamRoom__art img {
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+/* The host's mark rides the corner of what they're playing. */
+.jamRoom__host {
+  position: absolute;
+  inset-block-end: -0.4rem;
+  inset-inline-end: -0.4rem;
+  box-shadow: 0 0 0 2px var(--glacier-bg);
+}
+
+.jamRoom__name {
+  font-weight: 650;
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jamRoom__meta {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Nothing live yet: the verb stays reachable without pretending to be news. */
+.jamIdle {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+.jamIdle__hint {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-sm);
 }

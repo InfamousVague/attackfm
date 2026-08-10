@@ -8,11 +8,12 @@
 
 import { Button, Field, Input, Text } from '@glacier/react';
 import { LogIn } from '@glacier/icons';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRegistry } from './registrySession.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { previewInvite, type InvitePreview } from './registry.ts';
 import { enterServer } from './server.ts';
+import { onInvite } from './deepLink.ts';
 
 /** Pull the code out of a full invite link, or take a bare code as-is. */
 function codeFrom(text: string): string {
@@ -29,8 +30,8 @@ export function JoinServer() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const look = async () => {
-    const code = codeFrom(value);
+  const look = async (explicit?: string) => {
+    const code = codeFrom(explicit ?? value);
     if (!code) return;
     setBusy(true);
     setError(null);
@@ -46,6 +47,17 @@ export function JoinServer() {
       setBusy(false);
     }
   };
+
+  // An invite that arrived by link (the "Open in AttackFM" button) fills the
+  // field and checks itself, so the listener lands on the ready-to-join card
+  // rather than an empty box they have to paste into.
+  useEffect(() => {
+    return onInvite((code) => {
+      setValue(code);
+      void look(code);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- subscribe once; look reads the code it is handed
+  }, []);
 
   const join = async () => {
     if (!registry || !preview) return;

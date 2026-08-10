@@ -121,7 +121,11 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init());
+        .plugin(tauri_plugin_fs::init())
+        // Invite links open the app through the attackfm:// scheme (registered in
+        // the iOS Info.plist); this delivers that URL to the web layer, which
+        // pulls the code out of it and drops it into Join a server.
+        .plugin(tauri_plugin_deep_link::init());
 
     // decorum positions the native macOS traffic lights. There are none to
     // position on a phone, and the plugin is not built for those targets.

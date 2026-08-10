@@ -16,6 +16,7 @@ import { parsePairPayload } from './pairing.ts';
 import { QrScanner } from './QrScanner.tsx';
 import { isMobile } from './platform.ts';
 import wordmark from '../assets/attack-white.png';
+import { ArtWall } from './ArtWall.tsx';
 
 /** Once the listener chose to skip onboarding, they enter in local mode and are
  *  not asked again; joining or signing in later lives on the Friends page. */
@@ -114,12 +115,14 @@ function OnboardAccount({
 
   return (
     <div className="loginGate">
+      <ArtWall />
       <div className="loginGate__hero">
         <img className="loginGate__mark" src={wordmark} alt="AttackFM" />
+        {/* The front door leads with what the app IS, the way attack.fm does -
+            not with what to do next, which the fields and the button below
+            already say. */}
         <Text className="loginGate__tag" tone="muted">
-          {mode === 'create'
-            ? 'Create your account. One account works on every server, and lets friends invite you to theirs.'
-            : 'Sign in to your AttackFM account.'}
+          Lossless audio streaming
         </Text>
       </div>
       <form className="loginGate__form" onSubmit={go}>
@@ -188,6 +191,7 @@ function OnboardServer({
 }) {
   return (
     <div className="loginGate">
+      <ArtWall />
       <div className="loginGate__hero">
         <img className="loginGate__mark" src={wordmark} alt="AttackFM" />
         <Text className="loginGate__tag" tone="muted">
@@ -277,6 +281,7 @@ function ConnectScreen({ onBack }: { onBack?: () => void }) {
 
   return (
     <div className="loginGate">
+      <ArtWall />
       {onBack && step === 'server' && (
         <button type="button" className="loginGate__back" onClick={onBack}>
           <ArrowLeft size={15} />
