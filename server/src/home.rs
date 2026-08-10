@@ -34,7 +34,7 @@ const WINDOW_30D_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 /// How long AI mixes stay before a background regeneration - fresh enough to
 /// follow the listener's week, stable enough that home does not reshuffle
 /// every visit.
-const AI_TTL: Duration = Duration::from_secs(6 * 60 * 60);
+const AI_TTL: Duration = Duration::from_secs(24 * 60 * 60); // daily mixes: refresh once a day
 
 type ApiError = (StatusCode, String);
 
@@ -343,7 +343,7 @@ async fn ai_mixes(state: &Arc<AppState>, user: i64, url: &str) -> Option<Vec<Mix
          Their most-played artists this month: {}.\n\
          Recently played: {}.\n\
          Candidate tracks, one per line as id|artist — title:\n{}\n\n\
-         Build 6 distinct mixes from ONLY these candidate ids. Vary the moods and angles widely - energy level, era, late-night vs daytime, and make at least one discovery-forward with lesser-played picks; make the titles evocative but short (2-4 words); one-line blurbs, warm but plain, no exclamation marks.\n\
+         Build 6 DAILY MIXES from ONLY these candidate ids, the way a music app's Daily Mixes work: each mix is a COHERENT lane of this listener's OWN taste - a cluster of artists and a sound they actually play together (one lane per genre/scene/mood they keep returning to), NOT a grab-bag, and each lane clearly distinct from the others. Order each lane so it flows. Titles evocative but short (2-4 words); one-line blurbs naming the through-line, warm and plain, no exclamation marks.\n\
          Answer with STRICT JSON, nothing else: [{{\"title\":\"...\",\"blurb\":\"...\",\"ids\":[1,2,3]}}] with 10-20 ids each.",
         taste.join(", "),
         recent_titles.join("; "),

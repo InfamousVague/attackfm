@@ -74,6 +74,25 @@ fn key_of(artist: &str, title: &str) -> String {
 #[derive(Default)]
 pub struct DiscoveryState {
     pub last_harvest: tokio::sync::Mutex<std::collections::HashMap<i64, i64>>,
+    /// Per-user cache of AI-grouped "new music" playlists. Refreshed daily and
+    /// regenerated in the background, so a request never waits on the model.
+    new_music: tokio::sync::Mutex<std::collections::HashMap<i64, CachedNewMusic>>,
+}
+
+struct CachedNewMusic {
+    playlists: Vec<serde_json::Value>,
+    built_at: std::time::Instant,
+    refreshing: bool,
+}
+
+/// New-music playlists refresh once a day.
+const NM_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+
+fn nm_ai_url() -> Option<String> {
+    std::env::var("AFM_AI_URL").ok().filter(|s| !s.trim().is_empty())
+}
+fn nm_ai_model() -> Option<String> {
+    std::env::var("AFM_AI_MODEL").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
 impl DiscoveryState {
@@ -356,6 +375,132 @@ pub struct DiscoveryOut {
     /// here honestly rather than implying more than was measured.
     pub lyrics_read: bool,
     pub score: f64,
+}
+
+/// `GET /api/new-music` - AI-grouped playlists of music this listener does NOT
+/// own yet, drawn from the discovery pool. Refreshed daily; the grouping is
+/// regenerated in the background so the request itself never waits on a model.
+pub async fn new_music(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    Ok(Json(json!({ "playlists": new_music_lists(&state, caller.id).await })))
+}
+
+async fn new_music_lists(state: &Arc<AppState>, user: i64) -> Vec<serde_json::Value> {
+    if nm_ai_url().is_none() {
+        return Vec::new();
+    }
+    let mut cache = state.discovery.new_music.lock().await;
+    let entry = cache.get(&user);
+    let fresh = entry.map(|e| e.built_at.elapsed() < NM_TTL && !e.playlists.is_empty()).unwrap_or(false);
+    if fresh {
+        return entry.map(|e| e.playlists.clone()).unwrap_or_default();
+    }
+    // Serve whatever we have (stale or empty) at once; kick a background rebuild.
+    let stale = entry.map(|e| e.playlists.clone()).unwrap_or_default();
+    let already = entry.map(|e| e.refreshing).unwrap_or(false);
+    if !already {
+        cache
+            .entry(user)
+            .and_modify(|e| e.refreshing = true)
+            .or_insert(CachedNewMusic {
+                playlists: Vec::new(),
+                built_at: std::time::Instant::now(),
+                refreshing: true,
+            });
+        let bg = Arc::clone(state);
+        tokio::spawn(async move {
+            let built = build_new_music(&bg, user).await;
+            let mut cache = bg.discovery.new_music.lock().await;
+            match built {
+                Some(pls) if !pls.is_empty() => {
+                    cache.insert(
+                        user,
+                        CachedNewMusic { playlists: pls, built_at: std::time::Instant::now(), refreshing: false },
+                    );
+                }
+                _ => {
+                    if let Some(e) = cache.get_mut(&user) {
+                        e.refreshing = false;
+                        e.built_at = std::time::Instant::now();
+                    }
+                }
+            }
+        });
+    }
+    stale
+}
+
+/// The model groups the discovery pool into a few themed playlists of unowned
+/// music; every ext_id is validated back against the pool, and the full track is
+/// attached so the client can preview or import it.
+async fn build_new_music(state: &Arc<AppState>, user: i64) -> Option<Vec<serde_json::Value>> {
+    let url = nm_ai_url()?;
+    let model = nm_ai_model()?;
+    let pool = state.db.top_discoveries(user, 60);
+    if pool.len() < 6 {
+        return None;
+    }
+    let mut lines = Vec::new();
+    for d in &pool {
+        lines.push(format!("{}|{} — {} (near {})", d.ext_id, d.artist, d.title, d.seed));
+    }
+    let prompt = format!(
+        "You build 'new music' playlists for one listener from tracks they do NOT own yet - fresh picks harvested from artists near their taste. Candidates, one per line as ext_id|artist — title (near = the artist of theirs it came from):\n{}\n\n\
+         Group them into 3-5 themed playlists of new music, each a coherent scene or vibe - a genre lane, a 'because you play X' set, or a mood. Titles short and evocative (2-4 words); one-line blurbs, warm and plain, no exclamation marks. Each playlist 5-12 tracks.\n\
+         Answer with STRICT JSON only: [{{\"title\":\"...\",\"blurb\":\"...\",\"ids\":[\"ext_id\",...]}}] using ONLY the ext_ids above.",
+        lines.join("\n"),
+    );
+    let reply: serde_json::Value = client(120)
+        .post(format!("{}/v1/chat/completions", url.trim_end_matches('/')))
+        .json(&json!({ "model": model, "messages": [{ "role": "user", "content": prompt }], "temperature": 0.8 }))
+        .send()
+        .await
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+    let content = reply.pointer("/choices/0/message/content")?.as_str()?;
+    let start = content.find('[')?;
+    let end = content.rfind(']')?;
+    if end <= start {
+        return None;
+    }
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(content.get(start..=end)?).ok()?;
+
+    let by_id: std::collections::HashMap<&str, &crate::db::DiscoveryRow> =
+        pool.iter().map(|d| (d.ext_id.as_str(), d)).collect();
+    let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for (i, m) in parsed.into_iter().take(5).enumerate() {
+        let title = m.get("title").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+        let blurb = m.get("blurb").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+        let items: Vec<serde_json::Value> = m
+            .get("ids")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str())
+                    .filter(|id| by_id.contains_key(id) && used.insert((*id).to_string()))
+                    .filter_map(|id| by_id.get(id))
+                    .map(|d| {
+                        json!({
+                            "id": d.ext_id, "title": d.title, "artist": d.artist, "cover": d.cover,
+                            "url": d.url, "preview": d.preview, "seed": d.seed, "bpm": d.bpm,
+                            "lyricsRead": d.lyric_vec.is_some(), "score": d.score,
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        if title.is_empty() || items.len() < 4 {
+            continue;
+        }
+        out.push(json!({ "id": format!("nm-{i}"), "title": title, "blurb": blurb, "items": items }));
+    }
+    (!out.is_empty()).then_some(out)
 }
 
 /// `GET /api/discoveries` - the best of what this listener does not own.
