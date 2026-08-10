@@ -169,8 +169,27 @@ export async function redeemInvite(
   return call(`/v1/invites/${encodeURIComponent(code)}/redeem`, { method: 'POST', token });
 }
 
-/** An invite link the app can share. The code alone is enough to redeem; the
- *  link just wraps it so a tap opens the app on the join step. */
+/**
+ * An invite link the app can share. The code alone is enough to redeem; the
+ * link wraps it so it can be sent to somebody who has never seen the app.
+ *
+ * What a tap on it actually does, and why it is not simpler:
+ *
+ * `GET /i/{code}` on the registry serves a landing page (invite_landing in
+ * crates/registry) - the server's name, who sent it, an "Open in AttackFM"
+ * button pointing at `attackfm://i/{code}`, and the code in plain text to
+ * paste. The browser is in the middle of that on purpose. For this https link
+ * to open the app DIRECTLY, the build needs a
+ * `com.apple.developer.associated-domains` entitlement and the registry needs
+ * an apple-app-site-association file - and an entitlement the provisioning
+ * profile does not grant makes a device build fail to sign, the same trap the
+ * CarPlay key sits in. The custom scheme needs no entitlement and no
+ * capability, so the button works today at the cost of one tap.
+ *
+ * The scheme is registered in gen/apple/app_iOS/Info.plist (CFBundleURLTypes).
+ * That file is rewritten on every build and loses its XML comments, which is
+ * why this explanation lives here instead.
+ */
 export function inviteLink(code: string): string {
   return `${REGISTRY_URL}/i/${code}`;
 }

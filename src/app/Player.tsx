@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   AudioEqualizer,
@@ -1317,13 +1317,56 @@ export function Player({
   // built there is suspended on WebKit and the meter reads silence, so the seek
   // bar shows no intensity. Priming here means the graph is live before playback.
   useEffect(() => {
-    const prime = () => ensureMeter();
+    const prime = () => {
+      ensureMeter();
+      claimDecks();
+    };
     window.addEventListener('pointerdown', prime, { once: true });
     window.addEventListener('keydown', prime, { once: true });
     return () => {
       window.removeEventListener('pointerdown', prime);
       window.removeEventListener('keydown', prime);
     };
+  }, []);
+
+  /**
+   * Claims a user gesture's media permission for both decks.
+   *
+   * WebKit refuses to start an <audio> element outside a gesture until that
+   * element has been played inside one at least once - and no play this deck
+   * makes is inside one: the source is fetched async and playback starts on
+   * `canplay`, several hops past the tap. So the first song of a session opens
+   * the bar and sits there paused, its play() rejected and swallowed into the
+   * paused state by the handler above. Every song after it works, because by
+   * then the listener has hit Play by hand and that WAS a gesture.
+   *
+   * The call rejects here - there is no source yet - and rejecting is the
+   * point: WebKit lifts the restriction when play() is CALLED under
+   * activation, not when it succeeds. A deck that already has something loaded
+   * is left alone, so this can never start a track behind the user's back.
+   *
+   * The pause immediately after is not tidiness. play() on a sourceless
+   * element leaves it un-paused and WAITING for a source - so the next src the
+   * crossfade hands the idle deck would start on its own, ahead of the fade
+   * that was meant to bring it in. The pause puts the element back exactly as
+   * it was found, and the permission stays claimed.
+   */
+  const claimDecks = () => {
+    for (const el of [audioRef.current, audioBRef.current]) {
+      if (!el || el.currentSrc) continue;
+      void el.play()?.catch(() => {});
+      el.pause();
+    }
+  };
+
+  // The decks are created by the very tap that opened the first song, so the
+  // claim goes in on the frame they appear. A LAYOUT effect, not a passive
+  // one: for a discrete event like a click React commits inside the event's own
+  // task, so this still runs while the gesture counts - where a useEffect would
+  // land after the window has shut.
+  useLayoutEffect(() => {
+    claimDecks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on mount
   }, []);
 
   // Opening a track points the active deck at its file; the canplay handler
