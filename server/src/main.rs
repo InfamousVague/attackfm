@@ -33,6 +33,7 @@ mod home;
 mod imports;
 mod jams;
 mod pair;
+mod registry_auth;
 mod scan;
 mod spotify;
 mod spotify_sync;
@@ -68,6 +69,11 @@ pub struct AppState {
     /// has not brought their own. Not a secret: PKCE puts the client id in the
     /// authorize URL in plain sight, which is why there is no secret at all.
     pub spotify_client_id: String,
+    /// The central identity directory (AFM_REGISTRY_URL) this server trusts.
+    pub registry_url: String,
+    /// Its public key, fetched once and cached, for verifying identity tokens
+    /// offline. `None` until fetched (boot, or the first sign-in that needs it).
+    pub registry_verifier: Arc<tokio::sync::Mutex<Option<afm_identity::Verifier2>>>,
     /// Spotify logins parked between /connect and the browser's /callback.
     pub spotify: Arc<spotify::SpotifyLogins>,
     /// The playlist-mirror engine's in-memory half. Every durable counter
@@ -163,6 +169,7 @@ async fn main() {
     let scan_minutes: u64 = env_or("AFM_SCAN_MINUTES", "15").parse().unwrap_or(15);
     let public_url = env_or("AFM_PUBLIC_URL", "");
     let spotify_client_id = env_or("AFM_SPOTIFY_CLIENT_ID", "");
+    let registry_url = env_or("AFM_REGISTRY_URL", "https://registry.attack.fm");
 
     let art_dir = data_dir.join("art");
     let upload_dir = data_dir.join("uploads");
@@ -205,6 +212,8 @@ async fn main() {
         canvas: canvas::CanvasCache::new(),
         public_url,
         spotify_client_id,
+        registry_url,
+        registry_verifier: Arc::new(tokio::sync::Mutex::new(None)),
         spotify: Arc::new(spotify::SpotifyLogins::default()),
         spotify_sync: Arc::new(spotify_sync::SpotifySyncState::default()),
         filing: Arc::new(tokio::sync::Mutex::new(())),
@@ -216,6 +225,10 @@ async fn main() {
         discovery: discovery::DiscoveryState::new(),
         started: std::time::Instant::now(),
     });
+
+    // Fetch the registry's public key so identity sign-in verifies offline.
+    // Non-fatal if the registry is down: it retries on first use.
+    tokio::spawn(registry_auth::prime_verifier(state.clone()));
 
     // Index what is already there before taking requests, in the background so
     // a large library does not hold the port closed.
@@ -273,6 +286,13 @@ async fn main() {
         .route("/api/auth/register", post(api::register))
         .route("/api/auth/login", post(api::login))
         .route("/api/auth/logout", post(api::logout))
+        // Sign in with a central-registry identity, invite-gated after the
+        // first (owner) arrival. This is how an invited friend enters under
+        // their own account rather than the owner's.
+        .route("/api/registry/enter", post(registry_auth::enter))
+        // Bind your registry identity to your existing local account here (the
+        // owner's migration path), keeping all your data.
+        .route("/api/registry/link", post(registry_auth::link))
         // Device pairing: a signed-in device mints a code (start), a fresh one
         // spends it for a session (claim) - the QR "link a device" flow.
         .route("/api/pair/start", post(pair::start))
@@ -312,6 +332,7 @@ async fn main() {
         .route("/api/jams/{id}/join", post(jams::join))
         .route("/api/jams/{id}/leave", post(jams::leave))
         .route("/api/jams/{id}/state", post(jams::set_state))
+        .route("/api/jams/{id}/queue", post(jams::add_to_queue))
         .route("/api/home", get(home::feed))
         .route("/api/discover", get(discover::feed))
         .route("/api/search", get(search::search))
@@ -319,6 +340,7 @@ async fn main() {
         .route("/api/curator", get(curator::feed))
         .route("/api/dj", get(dj::station))
         .route("/api/playlists/{id}/suggestions", get(curator::playlist_suggestions))
+        .route("/api/dj", get(dj::station))
         .route("/api/discoveries", get(discovery::feed))
         .route("/api/new-music", get(discovery::new_music))
         .route("/api/discoveries/dismiss", post(discovery::dismiss))

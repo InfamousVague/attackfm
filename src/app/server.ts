@@ -164,6 +164,48 @@ export async function login(url: string, username: string, password: string): Pr
   };
 }
 
+/**
+ * Bind your central identity to the account you already have on this server -
+ * the owner's migration, so an existing library stays yours and you enter as
+ * yourself from then on. Needs both proofs: the server session and the registry
+ * token.
+ */
+export async function linkAccount(
+  url: string,
+  serverToken: string,
+  registryToken: string,
+): Promise<{ handle: string }> {
+  return request<{ ok: boolean; handle: string }>(url, '/api/registry/link', {
+    method: 'POST',
+    token: serverToken,
+    body: JSON.stringify({ token: registryToken }),
+  });
+}
+
+/**
+ * Sign into a server with a central-registry identity instead of a password.
+ * The server verifies the registry token, admits the account (invite-gated the
+ * first time), and answers with the same session a password login would - so
+ * the rest of the app is none the wiser about which door was used.
+ */
+export async function enterServer(
+  url: string,
+  registryToken: string,
+  invite?: string,
+): Promise<ServerSession> {
+  const reply = await request<LoginReply>(url, '/api/registry/enter', {
+    method: 'POST',
+    body: JSON.stringify({ token: registryToken, invite: invite ?? '' }),
+  });
+  return {
+    url,
+    token: reply.token,
+    streamToken: reply.streamToken,
+    username: reply.user.username,
+    isAdmin: reply.user.isAdmin,
+  };
+}
+
 /** What `POST /api/pair/start` hands a signed-in device: a code to show. */
 export interface PairCode {
   code: string;
@@ -542,6 +584,40 @@ export async function fetchHome(session: ServerSession): Promise<HomeFeed> {
   return request<HomeFeed>(session.url, '/api/home', { token: session.token });
 }
 
+// --- DJ --------------------------------------------------------------------
+
+/** One run of the DJ set: a spoken line, then the tracks it introduces. */
+export interface DjBlock {
+  say: string;
+  trackIds: number[];
+}
+
+export interface DjSet {
+  /** Whether a model wrote the patter (false = a wordless set of good picks). */
+  ai: boolean;
+  /** The vibe it was steered toward, echoed back. */
+  vibe: string;
+  blocks: DjBlock[];
+}
+
+/**
+ * A continuous DJ set drawn from the listener's OWN library: runs of tracks
+ * with a spoken line opening each. `seed` steers the whole thing toward a vibe
+ * ("something mellow for a rainy morning"); empty just mirrors recent listening.
+ */
+export async function fetchDj(session: ServerSession, seed = '', count?: number): Promise<DjSet> {
+  const params = new URLSearchParams();
+  if (seed.trim()) params.set('seed', seed.trim());
+  if (count) params.set('count', String(count));
+  const qs = params.toString();
+  const out = await request<Partial<DjSet>>(
+    session.url,
+    `/api/dj${qs ? `?${qs}` : ''}`,
+    { token: session.token },
+  );
+  return { ai: out.ai ?? false, vibe: out.vibe ?? seed, blocks: out.blocks ?? [] };
+}
+
 // --- friends ---------------------------------------------------------------
 
 export interface Friend {
@@ -651,16 +727,33 @@ export async function leaveJam(session: ServerSession, id: string): Promise<void
   await request(session.url, `/api/jams/${id}/leave`, { token: session.token, method: 'POST' });
 }
 
-/** The host's clock, posted as it plays. Members read it and follow. */
+/** The host's clock, posted as it plays. Members read it and follow. The reply
+ *  hands back any track ids members have asked to add since the last beat, for
+ *  the host to fold into its own queue. */
 export async function pushJamState(
   session: ServerSession,
   id: string,
   state: { trackId: number | null; positionMs: number; playing: boolean; queue?: number[] },
-): Promise<void> {
-  await request(session.url, `/api/jams/${id}/state`, {
+): Promise<number[]> {
+  const out = await request<{ additions?: number[] }>(session.url, `/api/jams/${id}/state`, {
     token: session.token,
     method: 'POST',
     body: JSON.stringify(state),
+  });
+  return out.additions ?? [];
+}
+
+/** A member drops a track into the room's queue; the host folds it in on its
+ *  next beat. */
+export async function addToJamQueue(
+  session: ServerSession,
+  id: string,
+  trackId: number,
+): Promise<void> {
+  await request(session.url, `/api/jams/${id}/queue`, {
+    token: session.token,
+    method: 'POST',
+    body: JSON.stringify({ trackId }),
   });
 }
 
@@ -775,9 +868,13 @@ export interface Suggestion {
   title: string;
   blurb: string;
   cover: string | null;
-  /** The playlist URL to hand the importer. */
+  /** The playlist/album/track URL to hand the importer. */
   url: string;
   section: string;
+  /** Where it came from ('spotify' | 'deezer'); absent on an older server. */
+  source?: string;
+  /** What it is ('playlist' | 'album' | 'track'); absent on an older server. */
+  kind?: string;
   trackCount: number | null;
   /** Track titles in order, for the preview - absent on an older server. */
   tracks?: string[];

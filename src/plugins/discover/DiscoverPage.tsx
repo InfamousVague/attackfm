@@ -1,8 +1,10 @@
 import { Modal, SearchField, Text } from '@glacier/react';
-import { Check, ChevronRight, Compass, ListMusic, Music, Plus, User } from '@glacier/icons';
+import { Check, ChevronRight, Compass, ListMusic, Music, Play, Plus, User } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useServerSession } from '../../app/serverSession.tsx';
 import { useLibrary } from '../../app/library.tsx';
+import { useOwned } from '../../app/owned.ts';
+import { localHits } from '../../app/trackSearch.ts';
 import {
   fetchDiscover,
   fetchDiscoveries,
@@ -13,7 +15,7 @@ import {
   type Suggestion,
 } from '../../app/server.ts';
 import type { AcquireTarget, PluginPageProps } from '../types.ts';
-import { useAcquire } from '../runtime.tsx';
+import { IMPORTER_PLUGIN_ID, useAcquire } from '../runtime.tsx';
 import { useDownloadsOptional } from '../importsBridge.ts';
 import { CatalogArtistPage } from './CatalogArtistPage.tsx';
 import type { MusicImportJob } from '../importsBridge.ts';
@@ -51,6 +53,13 @@ function discoveryTarget(d: Discovery): AcquireTarget {
  * the public embed - so the user can see what fifty songs they are about to
  * commit to before the Add.
  *
+ * Searching blends two sources into one page. The library answers first - it is
+ * already in memory, so its hits are on screen by the first keystroke, ahead of
+ * the debounced catalogue fetch - and the catalogue fills in underneath. That
+ * order is the useful one: a song you own is one tap from playing, while a song
+ * you do not is a download and a wait, and being shown the download when the
+ * file is already on the shelf is the whole of the annoyance.
+ *
  * The catalogue is a server feature (built and cached on the hub, no Spotify
  * key), so the plugin that owns this page is `requiresServer` and never mounts
  * without a session. Adding needs the Music import plugin's queue too; with it
@@ -59,6 +68,12 @@ function discoveryTarget(d: Discovery): AcquireTarget {
  */
 
 const REFRESH_MS = 30 * 60 * 1000;
+
+/** How much of the library one search shows before the catalogue gets its turn.
+ *  Enough to answer "do I have this?" without pushing the fill-in off screen -
+ *  the Library page is where a search of your own shelf belongs in full. */
+const LOCAL_ARTISTS = 4;
+const LOCAL_TRACKS = 12;
 
 type AddState = 'idle' | 'adding' | 'added';
 
@@ -145,6 +160,13 @@ function SuggestionCard({
               <ListMusic size={26} />
             </div>
           )}
+          {/* Which service this is from, so the page reads as many sources
+              rather than one. Only when the server says (older ones do not). */}
+          {item.source && (
+            <span className={`suggestCardSource suggestCardSource--${item.source}`}>
+              {item.source === 'deezer' ? 'Deezer' : 'Spotify'}
+            </span>
+          )}
         </div>
         <span className="suggestCardTitle">{item.title}</span>
         <span className="suggestCardBlurb">{item.blurb}</span>
@@ -171,13 +193,15 @@ function groupBySection(items: readonly Suggestion[]): { section: string; items:
   return order.map((section) => ({ section, items: bySection.get(section)! }));
 }
 
-// The play/navigation doors are part of the page contract, but Discover adds to
-// the library rather than starting playback, so it takes none of them today.
-export function DiscoverPage({ onPlay }: PluginPageProps) {
+// Both page doors are used: a song you already own plays from the search
+// results, and one of your own artists opens their library page, stacked in
+// this tab the way it would be from anywhere else.
+export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
   const { session } = useServerSession();
   const downloads = useDownloadsOptional();
   const acquire = useAcquire();
   const { tracks: libraryTracks } = useLibrary();
+  const owned = useOwned();
   // null while the first fetch is in flight; an array (possibly empty) after.
   const [items, setItems] = useState<Suggestion[] | null>(null);
   // The server's AI picks: songs you do NOT own, harvested from the artists you
@@ -275,6 +299,14 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
   const sections = useMemo(() => groupBySection(items ?? []), [items]);
   const searching = query.trim().length > 0;
 
+  // The library's own answer to the query. No debounce and no request: the
+  // tracks are already here, so this lands on the keystroke rather than 350ms
+  // and a round trip later, and stays put while the catalogue arrives beneath.
+  const local = useMemo(() => localHits(libraryTracks, query), [libraryTracks, query]);
+  const localArtists = local.artists.slice(0, LOCAL_ARTISTS);
+  const localTracks = local.tracks.slice(0, LOCAL_TRACKS);
+  const hasLocal = localArtists.length > 0 || localTracks.length > 0;
+
   const add = (item: Suggestion) => {
     if (!downloads) return;
     const job = jobFor(downloads.jobs, item);
@@ -360,18 +392,17 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
   }, [playWhenAdded, downloads?.jobs, importedTrack, onPlay]);
 
   // Route a card's Add through the acquire hub. The gate itself lives on the
-  // button (canAdd = hasHandlers); this only picks the PATH. When the importer
-  // is the one and only way to get this, keep Discover's own flow - the card
-  // reflects the queue, and a tapped song autoplays once it lands. Otherwise
-  // (Buy is also on, or the importer is off) hand to the chooser, which offers
-  // every applicable handler and runs the picked one.
-  const soleImporter = (target: AcquireTarget) => {
-    const hs = acquire.handlersFor(target);
-    return hs.length === 1 && hs[0]?.pluginId === 'spotify-import';
-  };
+  // button (canAdd = hasHandlers); this only picks the PATH. Whenever the
+  // importer can service the target, keep Discover's own flow - the card
+  // reflects the queue, and a tapped song autoplays once it lands. Only with
+  // the importer off does this hand to the chooser.
+  const canImport = (target: AcquireTarget) =>
+    acquire.handlersFor(target).some((h) => h.pluginId === IMPORTER_PLUGIN_ID);
 
-  /** An AI pick's Add state, the queue's word winning over the optimistic tap. */
+  /** An AI pick's Add state: the library first (a song you already have reads
+   *  as added however it got here), then the queue, then the optimistic tap. */
   const discoveryState = (d: Discovery): AddState => {
+    if (owned.has(d.artist, d.title)) return 'added';
     const job = downloads?.jobs?.find((j) => j.url === d.url) ?? null;
     if (job?.state === 'done') return 'added';
     if (job?.state === 'queued' || job?.state === 'downloading') return 'adding';
@@ -383,7 +414,7 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
   const addDiscovery = (d: Discovery) => {
     const target = discoveryTarget(d);
     if (!acquire.hasHandlers(target)) return;
-    if (!soleImporter(target)) {
+    if (!canImport(target)) {
       acquire.acquire(target);
       return;
     }
@@ -405,20 +436,35 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
       });
   };
   const onAddSuggestion = (item: Suggestion) => {
-    if (soleImporter(suggestionTarget(item))) add(item);
+    if (canImport(suggestionTarget(item))) add(item);
     else acquire.acquire(suggestionTarget(item));
   };
   const onAddResult = (r: SearchResult) => {
     if (r.kind !== 'track') return;
-    if (soleImporter(resultTarget(r))) addResult(r);
+    if (canImport(resultTarget(r))) addResult(r);
     else acquire.acquire(resultTarget(r));
   };
 
-  /** The Add state of a searched track, the queue's word winning over the tap. */
+  /** The Add state of a searched track: owning it already is the strongest
+   *  answer there is, then the queue, then the optimistic tap. */
   const resultState = (r: SearchResult): AddState => {
+    if (r.kind === 'track' && owned.has(r.subtitle, r.title)) return 'added';
     const job = downloads?.jobs?.find((j) => j.url === r.url) ?? null;
     return stateFrom(job, searchTapped[r.id]);
   };
+
+  // The catalogue half of the results, with anything already standing above it
+  // removed - the same song twice, once to play and once to add, is the page
+  // arguing with itself. A row goes only when the very track it would resolve
+  // to is one of the ones shown: past the local cap the copy is off screen, so
+  // the catalogue keeps its row and wears the Added check instead. Artists
+  // always stay - your artist page holds what you own, theirs holds the rest.
+  const shownPaths = new Set(localTracks.map((t) => t.path));
+  const catalogue = (results ?? []).filter((r) => {
+    if (r.kind !== 'track') return true;
+    const mine = owned.find(r.subtitle, r.title);
+    return !mine || !shownPaths.has(mine.path);
+  });
 
   /** Everything a card or the preview needs to render one suggestion. */
   const describe = (item: Suggestion) => {
@@ -452,11 +498,7 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
         </span>
         <div className="discoverHead__text">
           <h1 className="discoverHead__title">Discover</h1>
-          <p className="discoverHead__blurb">
-            Search Spotify and other public sources for new artists and songs, or
-            browse the charts and staples your server keeps fresh. Everything adds
-            through your import queue.
-          </p>
+          <p className="discoverHead__blurb">Find music beyond your library and add it in a tap.</p>
         </div>
       </header>
 
@@ -464,84 +506,152 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
         className="pageSearch"
         value={query}
         onValueChange={setQuery}
-        placeholder="Search new artists and songs"
-        aria-label="Search new artists and songs"
+        placeholder="Search your library and beyond"
+        aria-label="Search your library and the wider catalogue"
       />
 
       {searching ? (
-        results === null ? (
-          <p className="discoverNote" role="status">
-            Searching…
-          </p>
-        ) : results.length === 0 ? (
-          <p className="discoverNote">Nothing found for “{query.trim()}”.</p>
-        ) : (
-          <div className="discoverGrid">
-            {results.map((r) => {
-              const isTrack = r.kind === 'track';
-              const state = resultState(r);
-              const canAdd = acquire.hasHandlers(resultTarget(r));
-              return (
-                <button
-                  key={r.id}
-                  type="button"
-                  className="resultCard"
-                  data-kind={r.kind}
-                  disabled={isTrack && !canAdd}
-                  // A track is a thing to hear; an artist is a place to go. A
-                  // fresh tap imports AND arms autoplay; a tap mid-download
-                  // re-arms it (play this one when it lands); a tap on an
-                  // already-imported song just plays it from the library.
-                  onClick={() => {
-                    if (!isTrack) {
-                      setArtistTrail([{ id: r.id, name: r.title }]);
-                      return;
-                    }
-                    const job = downloads?.jobs?.find((j) => j.url === r.url) ?? null;
-                    if (state === 'added') {
-                      const track = importedTrack(job);
-                      if (track) onPlay(track, [track]);
-                    } else if (state === 'adding') {
-                      if (job) setPlayWhenAdded(job.id);
-                    } else {
-                      onAddResult(r);
-                    }
-                  }}
-                  title={
-                    isTrack && !canAdd
-                      ? 'No way to add this — enable Music import or Buy in Plugins'
-                      : undefined
-                  }
-                >
-                  <span className="resultCard__cover" data-kind={r.kind}>
-                    {r.cover ? (
-                      <img src={r.cover} alt="" loading="lazy" />
-                    ) : isTrack ? (
-                      <Music size={22} />
-                    ) : (
-                      <User size={22} />
-                    )}
-                  </span>
-                  <span className="resultCard__title">{r.title}</span>
-                  <span className="resultCard__sub">{r.subtitle}</span>
-                  <span className="resultCard__badge" data-state={isTrack ? state : 'artist'}>
-                    {!isTrack ? (
-                      // The row opens the artist now rather than re-running the
-                      // search, so it points onward instead of back at itself.
+        <>
+          {/* What you already have, first: an artist of yours opens their page,
+              a song of yours plays on the spot. No spinner ever precedes this -
+              the library is in memory, so it is on screen as you type. */}
+          {hasLocal && (
+            <section className="discoverSection">
+              <h2 className="discoverSection__title">In your library</h2>
+              <div className="discoverGrid">
+                {localArtists.map((a) => (
+                  <button
+                    key={`local-artist:${a.name}`}
+                    type="button"
+                    className="resultCard"
+                    data-kind="artist"
+                    onClick={() => onOpenArtist(a.name)}
+                  >
+                    <span className="resultCard__cover" data-kind="artist">
+                      {a.cover ? (
+                        <img src={a.cover} alt="" loading="lazy" />
+                      ) : (
+                        <User size={22} />
+                      )}
+                    </span>
+                    <span className="resultCard__title">{a.name}</span>
+                    <span className="resultCard__sub">
+                      {a.count === 1 ? '1 song' : `${a.count} songs`}
+                    </span>
+                    <span className="resultCard__badge" data-state="artist">
                       <ChevronRight size={14} />
-                    ) : state === 'added' ? (
-                      <Check size={14} />
-                    ) : state === 'adding' ? (
-                      <span className="resultCard__spin" aria-label="Adding" />
-                    ) : (
-                      <Plus size={14} />
-                    )}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )
+                    </span>
+                  </button>
+                ))}
+                {localTracks.map((t) => (
+                  <button
+                    key={`local-track:${t.path}`}
+                    type="button"
+                    className="resultCard"
+                    data-kind="track"
+                    // The queue is the shelf this came off: the other hits, in
+                    // the order they are shown.
+                    onClick={() => onPlay(t, localTracks)}
+                  >
+                    <span className="resultCard__cover" data-kind="track">
+                      {t.artwork ? (
+                        <img src={t.artwork} alt="" loading="lazy" />
+                      ) : (
+                        <Music size={22} />
+                      )}
+                    </span>
+                    <span className="resultCard__title">{t.title}</span>
+                    <span className="resultCard__sub">{t.artist}</span>
+                    <span className="resultCard__badge" data-state="owned">
+                      <Play size={14} />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {results === null ? (
+            <p className="discoverNote" role="status">
+              Searching Spotify and Deezer…
+            </p>
+          ) : catalogue.length === 0 ? (
+            hasLocal ? null : (
+              <p className="discoverNote">Nothing found for “{query.trim()}”.</p>
+            )
+          ) : (
+            <section className="discoverSection">
+              <h2 className="discoverSection__title">From Spotify and Deezer</h2>
+              <div className="discoverGrid">
+                {catalogue.map((r) => {
+                  const isTrack = r.kind === 'track';
+                  const state = resultState(r);
+                  const canAdd = acquire.hasHandlers(resultTarget(r));
+                  return (
+                    <button
+                      key={r.id}
+                      type="button"
+                      className="resultCard"
+                      data-kind={r.kind}
+                      disabled={isTrack && !canAdd}
+                      // A track is a thing to hear; an artist is a place to go. A
+                      // fresh tap imports AND arms autoplay; a tap mid-download
+                      // re-arms it (play this one when it lands); a tap on an
+                      // already-imported song just plays it from the library.
+                      onClick={() => {
+                        if (!isTrack) {
+                          setArtistTrail([{ id: r.id, name: r.title }]);
+                          return;
+                        }
+                        const job = downloads?.jobs?.find((j) => j.url === r.url) ?? null;
+                        if (state === 'added') {
+                          // This session's download, or the copy already on the
+                          // shelf when the search ran.
+                          const track = importedTrack(job) ?? owned.find(r.subtitle, r.title);
+                          if (track) onPlay(track, [track]);
+                        } else if (state === 'adding') {
+                          if (job) setPlayWhenAdded(job.id);
+                        } else {
+                          onAddResult(r);
+                        }
+                      }}
+                      title={
+                        isTrack && !canAdd
+                          ? 'No way to add this — enable Music import or Buy in Plugins'
+                          : undefined
+                      }
+                    >
+                      <span className="resultCard__cover" data-kind={r.kind}>
+                        {r.cover ? (
+                          <img src={r.cover} alt="" loading="lazy" />
+                        ) : isTrack ? (
+                          <Music size={22} />
+                        ) : (
+                          <User size={22} />
+                        )}
+                      </span>
+                      <span className="resultCard__title">{r.title}</span>
+                      <span className="resultCard__sub">{r.subtitle}</span>
+                      <span className="resultCard__badge" data-state={isTrack ? state : 'artist'}>
+                        {!isTrack ? (
+                          // The row opens the artist now rather than re-running the
+                          // search, so it points onward instead of back at itself.
+                          <ChevronRight size={14} />
+                        ) : state === 'added' ? (
+                          <Check size={14} />
+                        ) : state === 'adding' ? (
+                          <span className="resultCard__spin" aria-label="Adding" />
+                        ) : (
+                          <Plus size={14} />
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+        </>
       ) : (
         <>
           {/* Picks by your AI: songs you do not own, chosen by your server from
@@ -565,7 +675,7 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
                       onClick={() => {
                         const job = downloads?.jobs?.find((j) => j.url === d.url) ?? null;
                         if (state === 'added') {
-                          const t = importedTrack(job);
+                          const t = importedTrack(job) ?? owned.find(d.artist, d.title);
                           if (t) onPlay(t, [t]);
                         } else if (state === 'adding') {
                           if (job) setPlayWhenAdded(job.id);
@@ -663,9 +773,11 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
                   <li key={`${i}-${t}`}>{t}</li>
                 ))}
               </ol>
-            ) : (
+            ) : preview.kind === 'track' ? null : (
               <Text tone="muted" size="sm">
-                No track list available for this playlist.
+                {preview.kind === 'album'
+                  ? 'Add the album and it downloads track by track.'
+                  : 'No track list available for this playlist.'}
               </Text>
             )}
           </div>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   AudioEqualizer,
@@ -24,6 +24,7 @@ import {
   EllipsisVertical,
   Heart,
   Image as ImageIcon,
+  ListMusic,
   ListPlus,
   Mic,
   MonitorSpeaker,
@@ -62,6 +63,7 @@ import { AddToPlaylistDialog } from './AddToPlaylist.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { onCarPlayRemote, pushCarPlayNowPlaying, setIdleTimerDisabled } from './carplay.ts';
 import { useJamOptional } from './jam.tsx';
+import { QueuePanel } from './QueuePanel.tsx';
 import {
   bindMediaSessionHandlers,
   updateMediaSessionMetadata,
@@ -434,6 +436,9 @@ export function Player({
   // The lyrics, opened over the Now Playing sheet as a full-screen view rather
   // than a popover anchored to the bottom rail (which sat too low).
   const [npLyrics, setNpLyrics] = useState(false);
+  // The queue, opened over the same sheet the same way: what plays next, and
+  // draggable into any order.
+  const [npQueue, setNpQueue] = useState(false);
   // The Spotify move: while this sheet is up and the music is going, the phone
   // must not lock - but a screen at full brightness all song long is rude, so
   // after a quiet half-minute the sheet pulls a near-black veil over itself.
@@ -1312,13 +1317,56 @@ export function Player({
   // built there is suspended on WebKit and the meter reads silence, so the seek
   // bar shows no intensity. Priming here means the graph is live before playback.
   useEffect(() => {
-    const prime = () => ensureMeter();
+    const prime = () => {
+      ensureMeter();
+      claimDecks();
+    };
     window.addEventListener('pointerdown', prime, { once: true });
     window.addEventListener('keydown', prime, { once: true });
     return () => {
       window.removeEventListener('pointerdown', prime);
       window.removeEventListener('keydown', prime);
     };
+  }, []);
+
+  /**
+   * Claims a user gesture's media permission for both decks.
+   *
+   * WebKit refuses to start an <audio> element outside a gesture until that
+   * element has been played inside one at least once - and no play this deck
+   * makes is inside one: the source is fetched async and playback starts on
+   * `canplay`, several hops past the tap. So the first song of a session opens
+   * the bar and sits there paused, its play() rejected and swallowed into the
+   * paused state by the handler above. Every song after it works, because by
+   * then the listener has hit Play by hand and that WAS a gesture.
+   *
+   * The call rejects here - there is no source yet - and rejecting is the
+   * point: WebKit lifts the restriction when play() is CALLED under
+   * activation, not when it succeeds. A deck that already has something loaded
+   * is left alone, so this can never start a track behind the user's back.
+   *
+   * The pause immediately after is not tidiness. play() on a sourceless
+   * element leaves it un-paused and WAITING for a source - so the next src the
+   * crossfade hands the idle deck would start on its own, ahead of the fade
+   * that was meant to bring it in. The pause puts the element back exactly as
+   * it was found, and the permission stays claimed.
+   */
+  const claimDecks = () => {
+    for (const el of [audioRef.current, audioBRef.current]) {
+      if (!el || el.currentSrc) continue;
+      void el.play()?.catch(() => {});
+      el.pause();
+    }
+  };
+
+  // The decks are created by the very tap that opened the first song, so the
+  // claim goes in on the frame they appear. A LAYOUT effect, not a passive
+  // one: for a discrete event like a click React commits inside the event's own
+  // task, so this still runs while the gesture counts - where a useEffect would
+  // land after the window has shut.
+  useLayoutEffect(() => {
+    claimDecks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on mount
   }, []);
 
   // Opening a track points the active deck at its file; the canplay handler
@@ -2180,14 +2228,28 @@ export function Player({
     const beat = () => {
       const live = liveRef.current;
       const id = live.track ? trackIdFromPath(live.track.path) : null;
-      jam.hostBeat({
-        trackId: id,
-        positionMs: Math.round(positionRef.current * 1000),
-        playing: live.playing,
-        queue: live.queue
-          .map((t: Track) => trackIdFromPath(t.path))
-          .filter((n): n is number => n != null),
-      });
+      void jam
+        .hostBeat({
+          trackId: id,
+          positionMs: Math.round(positionRef.current * 1000),
+          playing: live.playing,
+          queue: live.queue
+            .map((t: Track) => trackIdFromPath(t.path))
+            .filter((n): n is number => n != null),
+        })
+        .then((additions) => {
+          // Fold in what the room asked for. Resolve each id against this
+          // library (host and members share the server's, so they land), drop
+          // anything already queued, and append - the next beat carries the
+          // grown queue back out to everyone.
+          if (!additions.length) return;
+          const now = liveRef.current;
+          const have = new Set(now.queue.map((t: Track) => t.path));
+          const add = additions
+            .map((aid) => now.libraryTracks.find((t: Track) => trackIdFromPath(t.path) === aid))
+            .filter((t): t is Track => !!t && !have.has(t.path));
+          if (add.length) now.onQueueChange?.([...now.queue, ...add]);
+        });
     };
     beat();
     const timer = window.setInterval(beat, 2500);
@@ -2739,15 +2801,10 @@ export function Player({
             aria-hidden="true"
             style={artwork ? { backgroundImage: `url(${JSON.stringify(artwork)})` } : undefined}
           />
-          {/* The lyric words run the full height of the sheet, behind the
-              controls - the same wash the home background wears, over this
-              sheet's own blurred cover. */}
-          <NowPlayingBackdrop wordsOnly artwork={artwork ?? npPlaceholderArt} seed={track?.path ?? 'np'} />
-          {/* The Spotify Canvas, when the track has one: a muted loop that takes
-              over the backdrop (drawn last of the background layers so it sits
-              over the blur and the lyric wash, still behind the controls),
-              keyed on its URL so a new clip restarts cleanly. Absent - the
-              common case - it is simply not rendered and the cover shows. */}
+          {/* The Spotify Canvas, when the track has one: a muted loop over this
+              sheet's blurred cover, keyed on its URL so a new clip restarts
+              cleanly. Absent - the common case - it is simply not rendered and
+              the cover shows instead. */}
           {npCanvas && (
             <video
               key={npCanvas}
@@ -2760,6 +2817,15 @@ export function Player({
               aria-hidden="true"
             />
           )}
+          {/* The lyric words run the full height of the sheet, behind the
+              controls. Drawn AFTER the clip on purpose: a canvas is a backdrop,
+              not a cover, and the words are the thing worth reading over it. */}
+          <NowPlayingBackdrop wordsOnly artwork={artwork ?? npPlaceholderArt} seed={track?.path ?? 'np'} />
+          {/* A blur that rises through the bottom third, so the transport, the
+              times and the title read against something settled instead of
+              against whatever frame the clip happens to be on. Sits over the
+              canvas and the words, under every control. */}
+          <div className="npScreen__veil" aria-hidden="true" />
           <header className="npScreen__head">
             <IconButton
               variant="ghost"
@@ -2788,6 +2854,10 @@ export function Player({
             )}
           </header>
 
+          {/* A track with a Canvas has moving art already; a spinning disc on
+              top of it is two pieces of artwork fighting for the same screen.
+              The clip takes over and this stands down. */}
+          {!npCanvas && (
           <div className="npScreen__art">
             {/* The hero art follows the same artView the mini-strip does, so the
                 choice is one setting in two places. A press (long-press on
@@ -2843,6 +2913,7 @@ export function Player({
               )}
             </ContextMenu>
           </div>
+          )}
 
           <div className="npScreen__meta">
             <div className="npScreen__lines">
@@ -2950,6 +3021,9 @@ export function Player({
               carries shuffle/repeat/skip, and favourite and filing sit on the
               meta and header rows. */}
           <div className="npScreen__actions">
+            <IconButton variant="ghost" aria-label="Queue" onClick={() => setNpQueue(true)}>
+              <ListMusic size={20} />
+            </IconButton>
             <IconButton variant="ghost" aria-label="Lyrics" onClick={() => setNpLyrics(true)}>
               <Mic size={20} />
             </IconButton>
@@ -3011,7 +3085,14 @@ export function Player({
           {/* Lyrics fill the whole sheet rather than a low popover: a header to
               step back to the art, and the words scrolling below it. */}
           {npLyrics && (
-            <div className="npScreen__lyricsView">
+            <div
+              className="npScreen__lyricsScrim"
+              aria-hidden="true"
+              onPointerDown={() => setNpLyrics(false)}
+            />
+          )}
+          {npLyrics && (
+            <div className="npScreen__lyricsView" role="dialog" aria-label="Lyrics">
               <header className="npScreen__lyricsHead">
                 <span className="npScreen__lyricsTitle">{track?.title ?? 'Lyrics'}</span>
                 <IconButton variant="ghost" aria-label="Close lyrics" onClick={() => setNpLyrics(false)}>
@@ -3026,6 +3107,26 @@ export function Player({
                   onSeek={commitSeek}
                 />
               </div>
+            </div>
+          )}
+          {/* The queue, over the same sheet the same way: what plays next, drag-
+              reorderable, each row a jump. */}
+          {npQueue && (
+            <div
+              className="npScreen__lyricsScrim"
+              aria-hidden="true"
+              onPointerDown={() => setNpQueue(false)}
+            />
+          )}
+          {npQueue && (
+            <div className="npScreen__queueView">
+              <QueuePanel
+                queue={queue}
+                current={track}
+                onQueueChange={(next) => onQueueChange?.(next)}
+                onPlayTrack={(t) => onTrackChange?.(t)}
+                onClose={() => setNpQueue(false)}
+              />
             </div>
           )}
           {/* The inactivity veil: near-black, fading in over everything on

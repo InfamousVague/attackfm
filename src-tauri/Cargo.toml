@@ -31,6 +31,7 @@ tokio = { version = "1", features = ["full"] }
 # Scrapes public Spotify embed pages for import cover art / titles / totals.
 # json feature: the Spotify account layer reads the Web API as JSON.
 reqwest = { version = "0.12", features = ["json"] }
+tauri-plugin-deep-link = "2.4.9"
 
 # Desktop-only crates. A phone has no traffic lights to position, and decorum
 # does not build for iOS or Android - so it is named per-target rather than

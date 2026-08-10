@@ -22,6 +22,7 @@ use argon2::Argon2;
 use axum::extract::State;
 use axum::http::{HeaderMap, Method, StatusCode};
 use axum::routing::{get, post};
+use axum::response::Html;
 use axum::{Json, Router};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -466,6 +467,22 @@ struct CreateInviteBody {
     role: String,
 }
 
+/// The alphabet invite codes are drawn from: uppercase letters and digits with
+/// the look-alikes removed (no 0/O, 1/I/L, U), so a code reads cleanly aloud and
+/// drops into the app's segmented code boxes without a "was that an O or a zero?"
+const INVITE_ALPHABET: &[u8] = b"23456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+/// An 8-character invite code. ~39 bits of entropy over a single-use invite that
+/// lives a week - ample against guessing, yet short enough to read over the
+/// phone or type by hand into eight boxes.
+fn invite_code() -> String {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    (0..8)
+        .map(|_| INVITE_ALPHABET[rng.gen_range(0..INVITE_ALPHABET.len())] as char)
+        .collect()
+}
+
 /// `POST /v1/invites` - a server owner mints an invite to their server. The code
 /// is what an invite link carries; redeeming it joins the bearer to the server.
 async fn create_invite(
@@ -478,9 +495,7 @@ async fn create_invite(
         return Err((StatusCode::BAD_REQUEST, "Which server is this an invite to?".into()));
     }
     let role = if body.role.trim().is_empty() { "member" } else { body.role.trim() };
-    let mut bytes = [0u8; 12];
-    rand::thread_rng().fill_bytes(&mut bytes);
-    let code = URL_SAFE_NO_PAD.encode(bytes);
+    let code = invite_code();
     // A week to use it.
     let expires = now_secs() + 7 * 24 * 3600;
     state
@@ -506,6 +521,111 @@ async fn invite_preview(
         "spent": inv.redeemed_by.is_some(),
         "expired": expired,
     })))
+}
+
+/// Text made safe to drop into HTML. Everything this page shows comes from
+/// somebody's keyboard - a server's name, a handle, the code out of the URL -
+/// and this page is served from the registry's own origin, so an unescaped
+/// name would be script running with the registry's cookies behind it.
+fn esc(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+/// The landing page's shell: the same frame whatever the invite turned out to
+/// be, so a dead code and a live one are the same page with different words.
+fn invite_page(title: &str, body: &str) -> Html<String> {
+    Html(format!(
+        r#"<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{title} · AttackFM</title>
+<style>
+  :root {{ color-scheme: dark; }}
+  body {{ margin: 0; min-height: 100dvh; display: grid; place-items: center;
+    padding: 1.5rem; background: #0b0b0d; color: #f2f2f4;
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }}
+  main {{ width: 100%; max-width: 26rem; text-align: center; }}
+  h1 {{ font-size: 1.5rem; margin: 0 0 0.25rem; }}
+  p {{ color: #a8a8b3; margin: 0.25rem 0 0; }}
+  .open {{ display: block; margin: 1.75rem 0 0; padding: 0.9rem 1.25rem;
+    border-radius: 999px; background: #f0356d; color: #fff; font-weight: 600;
+    text-decoration: none; }}
+  .code {{ margin-top: 1.5rem; font: 600 1.05rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: 0.04em; background: #17171b; border: 1px solid #26262d;
+    border-radius: 0.75rem; padding: 0.75rem; word-break: break-all; }}
+  .hint {{ font-size: 0.85rem; }}
+</style>
+</head><body><main>{body}</main></body></html>"#
+    ))
+}
+
+/// `GET /i/{code}` - what an invite LINK opens.
+///
+/// The link is the shareable face of an invite; `/v1/invites/{code}` is the
+/// same thing for the app to read. Until the app carries an associated-domains
+/// entitlement, iOS hands a tapped https link to the browser and there is
+/// nothing the app can do about it - so this page is what the browser lands on,
+/// and it offers the app the one way a page can: a custom scheme the app
+/// registers. The code is printed too, because a scheme link is a dead end on a
+/// device with no app installed and pasting always works.
+///
+/// A bad, spent or expired code still renders a page rather than a bare 404: a
+/// shared link that answers "this invite has already been used" is doing its
+/// job; one that answers with the server's error page is not.
+async fn invite_landing(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(code): axum::extract::Path<String>,
+) -> Html<String> {
+    let safe = esc(&code);
+    let Some(inv) = state.db.invite(&code) else {
+        return invite_page(
+            "Invite not found",
+            "<h1>That invite is not valid</h1><p>The link may have been mistyped, or the invite \
+             withdrawn.</p>",
+        );
+    };
+    if inv.redeemed_by.is_some() {
+        return invite_page(
+            "Invite already used",
+            "<h1>That invite has already been used</h1><p>Ask whoever sent it for another.</p>",
+        );
+    }
+    if inv.expires_at != 0 && now_secs() >= inv.expires_at {
+        return invite_page(
+            "Invite expired",
+            "<h1>That invite has expired</h1><p>Ask whoever sent it for another.</p>",
+        );
+    }
+    let from = state.db.account_by_id(inv.created_by).map(|a| a.handle).unwrap_or_default();
+    let who = if from.is_empty() {
+        "Someone".to_string()
+    } else {
+        format!("<strong>{}</strong>", esc(&from))
+    };
+    invite_page(
+        "You're invited",
+        &format!(
+            "<h1>Join {name}</h1>\
+             <p>{who} invited you to their music library on AttackFM.</p>\
+             <a class=\"open\" href=\"attackfm://i/{safe}\">Open in AttackFM</a>\
+             <p class=\"hint\" style=\"margin-top:1.5rem\">No app yet, or the button did nothing? \
+             Enter this code in AttackFM under Join a server:</p>\
+             <div class=\"code\">{safe}</div>",
+            name = esc(&inv.server_name),
+        ),
+    )
 }
 
 /// `POST /v1/invites/{code}/redeem` - the signed-in account spends the invite and
@@ -595,6 +715,8 @@ async fn main() {
         .route("/v1/invites", post(create_invite))
         .route("/v1/invites/{code}", get(invite_preview))
         .route("/v1/invites/{code}/redeem", post(redeem_invite))
+        // The shareable face of an invite: what a tapped link lands on.
+        .route("/i/{code}", get(invite_landing))
         .route("/v1/memberships", get(memberships))
         .layer(cors)
         .with_state(state);

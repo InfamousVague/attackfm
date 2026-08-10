@@ -10,18 +10,28 @@ import { ScrollArea, Skeleton } from '@glacier/react';
  * thing pinned in place across the swap.
  */
 
-/** The card families a shelf can hold, each measured off its CSS. */
+/**
+ * The card families a shelf can hold. The footprints are NOT written here -
+ * they are the same `--card-*` variables the cards themselves use (app.css),
+ * because a skeleton measured off a card by hand goes stale the first time the
+ * card is resized, and a stand-in of the wrong size is worse than none: the
+ * page visibly jumps when the real content lands. Every card's art is a square
+ * filling the card's width, so one number is the whole geometry.
+ */
 const KINDS = {
-  /** .trackCard - 9.5rem, square art, two text lines. */
-  track: { width: '9.5rem', art: '9.5rem', radius: 'var(--glacier-radius-lg)', round: false, lines: 2 },
-  /** .findCard - 9rem, square art, three lines (title, artist, the why). */
-  find: { width: '9rem', art: '9rem', radius: 'var(--glacier-radius-md)', round: false, lines: 3 },
-  /** .mixCard - 13rem, square mosaic, two lines. */
-  mix: { width: '13rem', art: '13rem', radius: 'var(--glacier-radius-lg)', round: false, lines: 2 },
-  /** .artistCard - 8rem, round portrait, centred name. */
-  artist: { width: '8rem', art: '8rem', radius: '50%', round: true, lines: 1 },
-  /** .playlistTile - 5rem squircle, one caption line. */
-  tile: { width: '5rem', art: '5rem', radius: '34%', round: true, lines: 1 },
+  /** .trackCard - square art over a title and an artist. */
+  track: {
+    size: 'var(--card-track)',
+    radius: 'var(--glacier-radius-lg)',
+    center: false,
+    lines: 2,
+  },
+  /** .mixCard - a square cover mosaic over a title and a blurb. */
+  mix: { size: 'var(--card-mix)', radius: 'var(--glacier-radius-lg)', center: false, lines: 2 },
+  /** .artistCard - a round portrait under a centred name. */
+  artist: { size: 'var(--card-artist)', radius: '50%', center: true, lines: 1 },
+  /** .playlistTile - a squircle and one caption, sized as a song card. */
+  tile: { size: 'var(--card-track)', radius: 'var(--glacier-radius-lg)', center: false, lines: 1 },
 } as const;
 
 export type ShelfSkeletonKind = keyof typeof KINDS;
@@ -45,13 +55,12 @@ export function ShelfSkeleton({
             <div
               key={i}
               className="shelfGhost"
-              style={{ inlineSize: k.width }}
-              data-center={k.round || undefined}
+              style={{ inlineSize: k.size }}
+              data-center={k.center || undefined}
             >
-              <Skeleton variant="rect" width={k.art} height={k.art} radius={k.radius} />
-              <Skeleton variant="text" width={k.round ? '70%' : '85%'} />
+              <Skeleton variant="rect" width={k.size} height={k.size} radius={k.radius} />
+              <Skeleton variant="text" width={k.center ? '70%' : '85%'} />
               {k.lines >= 2 && <Skeleton variant="text" width="55%" />}
-              {k.lines >= 3 && <Skeleton variant="text" width="70%" />}
             </div>
           ))}
         </div>

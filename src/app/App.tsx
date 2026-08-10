@@ -9,7 +9,7 @@ import {
   ToastProvider,
 } from '@glacier/react';
 import { ChevronLeft, ChevronRight, Compass, Download, LibraryBig, Search, Settings, Users } from '@glacier/icons';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AppearanceProvider } from './appearance.tsx';
 import { LibraryProvider, useLibrary } from './library.tsx';
 import { ServerSessionProvider } from './serverSession.tsx';
@@ -25,6 +25,7 @@ import {
   PluginProviders,
   PluginSlot,
   PluginsProvider,
+  useAcquire,
   usePluginPages,
 } from '../plugins/runtime.tsx';
 import { isDesktopApp } from './platform.ts';
@@ -32,6 +33,7 @@ import { onCarPlayPlay } from './carplay.ts';
 import { remotePath, trackIdFromPath } from './server.ts';
 import type { Track } from './tauri.ts';
 import { Player } from './Player.tsx';
+import { QueueControlsBridge } from './queueControls.tsx';
 import { ArtistPage } from './ArtistPage.tsx';
 import { PlaylistPage } from './PlaylistPage.tsx';
 import { DownloadsPage } from './DownloadsPage.tsx';
@@ -46,6 +48,7 @@ import { JamProvider } from './jam.tsx';
 import { MobileAuthGate } from './MobileAuthGate.tsx';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
 import wordmark from '../assets/attack-white.png';
+import appIcon from '../assets/attack-icon.svg';
 
 const APP_NAME = 'AttackFM';
 
@@ -185,6 +188,10 @@ function PrimaryNav({
   // importer - a fresh install, or anyone who has not added a plugin source -
   // there is nothing to download, so the tab is absent rather than a dead end.
   const hasDownloads = useDownloadsOptional() !== null;
+  // Discover appears whenever there is ANY way to acquire music - an importer
+  // to download through, or a Buy handler to purchase through. Only a build with
+  // no acquire handlers at all (the plugin-free App-Review server) hides it.
+  const canDiscover = hasDownloads || useAcquire().hasAny;
   // A tab pointing at a plugin page whose plugin was just switched off reads as
   // Home - the same fallback the content host makes - so the lit item never
   // disagrees with what is actually on screen.
@@ -201,14 +208,14 @@ function PrimaryNav({
     <>
       {/* Library leads: the music you actually own, plus the mixes made from it.
           Discover sits beside it as the place you go to find what you do NOT
-          have - and only appears with an importer to add through. */}
+          have - and appears whenever there is a way to acquire (import or buy). */}
       <NavBarItem
         icon={<LibraryBig size={18} />}
         label="Library"
         active={libraryActive}
         onClick={() => onTab('library')}
       />
-      {hasDownloads && (
+      {canDiscover && (
         <NavBarItem
           icon={<Compass size={18} />}
           label="Discover"
@@ -270,14 +277,81 @@ function PrimaryNav({
     );
   }
 
+  // The phone bar: a floating island with a raised, app-icon centre button.
+  // Custom markup rather than the kit NavBar because the raised centre and the
+  // two flanking groups are a shape the kit's even row cannot make. The centre
+  // is home (the library, where the mixes live); the groups hold the rest,
+  // split so the brand button sits dead-centre whatever each side holds.
   return (
-    <NavBar orientation="horizontal" aria-label="Primary" className="appNavBar" showLabels>
-      {/* Destinations only. Search is not one - every page carries its own
-          field - and a plugin's actions (the importer's queue) belong with the
-          page they act on, top-right, rather than among the tabs. */}
-      {primaryItems}
-      <NavBarItem icon={<Settings size={18} />} label="Settings" onClick={onSettings} />
-    </NavBar>
+    <nav className="appNavBar" aria-label="Primary">
+      <div className="appNavBar__group appNavBar__group--left">
+        {canDiscover && (
+          <BarTab
+            icon={<Compass size={20} />}
+            label="Discover"
+            active={tab === 'discover'}
+            onClick={() => onTab('discover')}
+          />
+        )}
+        <BarTab
+          icon={<Users size={20} />}
+          label="Friends"
+          active={tab === 'friends'}
+          onClick={() => onTab('friends')}
+        />
+      </div>
+
+      {/* The brand, raised: the app icon, protruding above the island, home. */}
+      <button
+        type="button"
+        className="appNavBar__center"
+        aria-label="Home"
+        aria-current={libraryActive ? 'page' : undefined}
+        data-active={libraryActive || undefined}
+        onClick={() => onTab('library')}
+      >
+        <img className="appNavBar__centerIcon" src={appIcon} alt="" />
+      </button>
+
+      <div className="appNavBar__group appNavBar__group--right">
+        {hasDownloads && (
+          <BarTab
+            icon={<Download size={20} />}
+            label="Downloads"
+            active={tab === 'downloads'}
+            onClick={() => onTab('downloads')}
+          />
+        )}
+        <BarTab icon={<Settings size={20} />} label="Settings" onClick={onSettings} />
+      </div>
+    </nav>
+  );
+}
+
+/** One tab in the floating phone bar: a glyph over a small label, lit when
+ *  it is the page you are on. */
+function BarTab({
+  icon,
+  label,
+  active,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  active?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="appNavBarTab"
+      data-active={active || undefined}
+      aria-current={active ? 'page' : undefined}
+      onClick={onClick}
+    >
+      <span className="appNavBarTab__icon">{icon}</span>
+      <span className="appNavBarTab__label">{label}</span>
+    </button>
   );
 }
 
@@ -382,6 +456,9 @@ function AppMain({
   // 'downloads' from a past session falls through to Home rather than a page
   // that should not be here.
   const hasDownloads = useDownloadsOptional() !== null;
+  // Discover is reachable whenever there is any acquire handler (import or buy),
+  // matching the nav gate; the plugin-free App-Review build has neither.
+  const canDiscover = hasDownloads || useAcquire().hasAny;
   return (
     <main className="appContent">
       {detail?.kind === 'artist' ? (
@@ -408,11 +485,11 @@ function AppMain({
           onOpenArtist={onOpenArtist}
           onOpenPlaylist={onOpenPlaylist}
         />
-      ) : tab === 'discover' && hasDownloads ? (
+      ) : tab === 'discover' && canDiscover ? (
         // Discover: what you do NOT have - the server's curated charts and a
-        // live search across Spotify + Deezer, each a one-tap add. Gated on an
-        // importer being present, so a server with nothing to add through (and
-        // any App-Review build) never surfaces it.
+        // live search across Spotify + Deezer, each a one-tap add. Gated on any
+        // acquire handler (import or buy), so a build with no way to add through
+        // (the plugin-free App-Review server) never surfaces it.
         <DiscoverPage onPlay={onPlay} onOpenArtist={onOpenArtist} />
       ) : tab === 'friends' ? (
         // Friends: who you know on this server, and the asks in flight.
@@ -520,6 +597,37 @@ export function App() {
     setCurrent((prev) => (prev === track ? { ...track } : track));
     setQueue(context ?? [track]);
   };
+
+  // Queue editing (see queueControls.tsx). The queue is just `queue` in play
+  // order; the current track's spot is found by path, so inserting after it,
+  // appending, reordering or removing is all a matter of rewriting the array -
+  // the player's skips read whatever it holds now. Kept path-deduped so those
+  // by-path lookups stay unambiguous. Read `current` through a ref so the two
+  // verbs stay stable (they ride in a context) yet always see the live track.
+  const currentRef = useRef(current);
+  currentRef.current = current;
+  const playFromRef = useRef(playFrom);
+  playFromRef.current = playFrom;
+  const addToQueue = useCallback((track: Track) => {
+    const cur = currentRef.current;
+    if (!cur) return playFromRef.current(track, [track]);
+    if (track.path === cur.path) return;
+    setQueue((q) => (q.some((t) => t.path === track.path) ? q : [...q, track]));
+  }, []);
+  const playNext = useCallback((track: Track) => {
+    const cur = currentRef.current;
+    if (!cur) return playFromRef.current(track, [track]);
+    if (track.path === cur.path) return;
+    setQueue((q) => {
+      const without = q.filter((t) => t.path !== track.path);
+      const at = without.findIndex((t) => t.path === cur.path) + 1;
+      // findIndex -1 (current not in the list) + 1 = 0 would jump it to the
+      // very front; fall to the end instead, which is the honest "next" when
+      // there is no known position to insert after.
+      const insert = at === 0 ? without.length : at;
+      return [...without.slice(0, insert), track, ...without.slice(insert)];
+    });
+  }, []);
   // Page history as a stack with a cursor, so back and forward move through
   // the places visited rather than just toggling. A place is a primary tab
   // plus, within it, an optional detail page - the tab is what the nav bar
@@ -642,15 +750,27 @@ export function App() {
                 plugin providers (a handler reads its own plugin's context) and
                 above the content that carries Add controls. */}
             <AcquireProvider>
+            {/* Queue editing (Play next / Add to queue) for every track surface
+                below - onto this deck's queue, or, when following a jam, into
+                the room the host folds it into. */}
+            <QueueControlsBridge localPlayNext={playNext} localAddToQueue={addToQueue}>
             {/* data-player tells the CSS whether a strip is down there:
                 every bottom clearance in the app is spent from
                 --app-player-height, so collapsing that one variable to 0
                 gives the list its rows back without a rule per surface. */}
             <div className="appWindow" data-player={current ? 'on' : 'off'}>
-            {/* The playing track's cover, blurred and faded, sits behind the top
-                of the window so the header reads against the album rather than a
-                flat panel. */}
-            {current?.artwork && (
+            {/* The playing track's cover, blurred and faded, behind the top of
+                the WINDOW - a desktop flourish, where there is room for the
+                album to sit behind a header without crowding anything.
+
+                Off the desktop it is gone. On a phone the same wash covers the
+                whole screen, so the cover and its lyric words ended up behind
+                the library, the downloads queue, settings - every page, whether
+                or not that page had anything to do with the song. The artwork
+                belongs to Now Playing, which paints its own backdrop, and every
+                other page reads better on the flat background it was designed
+                against. */}
+            {DESKTOP && current?.artwork && (
               // Keyed on the path so a track change starts the new cover's own
               // drift from the top rather than picking up the last one's phase.
               <NowPlayingBackdrop key={current.path} artwork={current.artwork} seed={current.path} />
@@ -866,6 +986,7 @@ export function App() {
             </PluginHookScope>
             <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
             </div>
+            </QueueControlsBridge>
             </AcquireProvider>
             </NowPlayingMotionProvider>
             </JamProvider>

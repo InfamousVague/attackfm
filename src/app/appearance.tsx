@@ -8,6 +8,32 @@ export interface Appearance {
   theme: ThemePreference;
   accent: string;
   density: DensityMode;
+  /**
+   * How large the whole interface draws, as a multiple of normal. Applied to
+   * the root font size, which is the one knob that moves everything at once:
+   * the app is built in rem throughout - the spacing scale, the radii, the type
+   * ramp, every card's footprint - so one number here resizes the interface
+   * uniformly rather than growing text out of the boxes that hold it.
+   *
+   * Deliberately NOT the same idea as `density`, which changes how tightly
+   * things are packed at a fixed size. This changes the size.
+   */
+  scale: number;
+}
+
+/** What the setting offers, smallest first. Steps rather than a slider: a
+ *  number that only ever lands on a known value is one that can be reasoned
+ *  about, and every one of these has been looked at. */
+export const UI_SCALES = [0.85, 0.925, 1, 1.1, 1.25] as const;
+
+const MIN_SCALE = UI_SCALES[0]!;
+const MAX_SCALE = UI_SCALES[UI_SCALES.length - 1]!;
+
+/** A stored or chosen scale, made safe: a number in range, or normal. */
+export function clampScale(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number.NaN;
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(MAX_SCALE, Math.max(MIN_SCALE, n));
 }
 
 // The blue that ships as the kit's own default, applied by removing data-accent.
@@ -41,6 +67,7 @@ const DEFAULT_APPEARANCE: Appearance = {
   theme: 'dark',
   accent: DEFAULT_ACCENT,
   density: 'comfortable',
+  scale: 1,
 };
 
 // Bumped to -v2 so a value saved before the brand accent existed (which pinned
@@ -62,6 +89,9 @@ function readStored(): Appearance {
       theme: isThemePreference(parsed.theme) ? parsed.theme : DEFAULT_APPEARANCE.theme,
       accent: typeof parsed.accent === 'string' ? parsed.accent : DEFAULT_APPEARANCE.accent,
       density: (parsed.density as DensityMode) ?? DEFAULT_APPEARANCE.density,
+      // Clamped on the way in as well as the way out: a value edited by hand
+      // in storage should not be able to render the app unusable.
+      scale: clampScale(parsed.scale),
     };
   } catch {
     return DEFAULT_APPEARANCE;
@@ -126,6 +156,14 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
 
     if (appearance.density === 'comfortable') root.removeAttribute('data-density');
     else root.setAttribute('data-density', appearance.density);
+
+    // As a percentage of the browser's own base size rather than a hard pixel
+    // count, so a listener who has raised their default text size keeps that
+    // and this scales on top of it. Cleared at normal, leaving the stylesheet
+    // untouched.
+    const scale = clampScale(appearance.scale);
+    if (scale === 1) root.style.removeProperty('font-size');
+    else root.style.setProperty('font-size', `${(scale * 100).toFixed(3)}%`);
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(appearance));
   }, [appearance, systemDark]);

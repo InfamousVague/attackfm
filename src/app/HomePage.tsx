@@ -1,29 +1,26 @@
-import { Pill, ScrollArea, SearchField, Spinner, Text } from '@glacier/react';
-import { Play, Plus, Sparkles, X } from '@glacier/icons';
+import { ContextMenu, MenuItem, Pill, ScrollArea, SearchField, Text } from '@glacier/react';
+import { ListEnd, ListStart, Sparkles } from '@glacier/icons';
+import { useQueueControls } from './queueControls.tsx';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
 import { useServerSession } from './serverSession.tsx';
 import {
-  dismissDiscovery,
   fetchCurator,
-  fetchDiscoveries,
   fetchHome,
   trackIdFromPath,
   type CuratorFeed,
-  type Discovery,
-  type DiscoveryFeed,
   type HomeFeed,
 } from './server.ts';
 import { filterTracks } from './trackSearch.ts';
 import { readFeedCache, writeFeedCache } from './feedCache.ts';
 import { ShelfSkeleton } from './ShelfSkeleton.tsx';
 import { PlaylistModal } from './PlaylistModal.tsx';
-import { useAcquire } from '../plugins/runtime.tsx';
 import { EmptyArt } from './EmptyArt.tsx';
-import { isMusicImportLink, useDownloadsOptional } from '../plugins/importsBridge.ts';
+import { isMusicImportLink } from '../plugins/importsBridge.ts';
 import type { Track } from './tauri.ts';
 import placeholderArt from '../assets/attack-wave.png';
 import { ImportFromSearch } from './ImportFromSearch.tsx';
+import { DjLauncher } from './DjLauncher.tsx';
 
 /**
  * The front door. A greeting, then shelves: the mixes made from the
@@ -48,12 +45,27 @@ function greetingFor(hour: number): string {
 
 /** One square track card on a shelf. */
 function TrackCard({ track, onOpen }: { track: Track; onOpen: () => void }) {
+  const { playNext, addToQueue, inJam } = useQueueControls();
   return (
-    <button type="button" className="trackCard" onClick={onOpen}>
-      <img className="trackCardArt" src={track.artwork ?? placeholderArt} alt="" loading="lazy" />
-      <span className="trackCardTitle">{track.title}</span>
-      <span className="trackCardArtist">{track.artist}</span>
-    </button>
+    <ContextMenu
+      aria-label={`${track.title} actions`}
+      content={
+        <>
+          <MenuItem icon={<ListStart size={15} />} onSelect={() => playNext(track)}>
+            Play next
+          </MenuItem>
+          <MenuItem icon={<ListEnd size={15} />} onSelect={() => addToQueue(track)}>
+            {inJam ? 'Add to jam queue' : 'Add to queue'}
+          </MenuItem>
+        </>
+      }
+    >
+      <button type="button" className="trackCard" onClick={onOpen}>
+        <img className="trackCardArt" src={track.artwork ?? placeholderArt} alt="" loading="lazy" />
+        <span className="trackCardTitle">{track.title}</span>
+        <span className="trackCardArtist">{track.artist}</span>
+      </button>
+    </ContextMenu>
   );
 }
 
@@ -135,10 +147,6 @@ export function HomePage({
 }) {
   const { tracks, favoriteTracks } = useLibrary();
   const { session } = useServerSession();
-  const acquire = useAcquire();
-  // The import queue, when the importer plugin is on: a Worth-adding card reads
-  // its own download's state from here, by the URL it was enqueued with.
-  const downloads = useDownloadsOptional();
   // Every feed seeds from the last launch's answer, so the shelves paint at
   // full size on the first frame and the refresh below swaps content in place
   // - the page must never assemble itself in front of the listener twice.
@@ -147,10 +155,6 @@ export function HomePage({
   // its reading of the library has got. Polled on the same rhythm as the feed.
   const [curator, setCurator] = useState<CuratorFeed | null>(() =>
     readFeedCache<CuratorFeed>(session, 'curator'),
-  );
-  // Music the curator found OUTSIDE the library, for acquiring.
-  const [discoveries, setDiscoveries] = useState<DiscoveryFeed | null>(() =>
-    readFeedCache<DiscoveryFeed>(session, 'discoveries'),
   );
   // The first launch on this account has no cache to stand on, so the shelves
   // hold as skeletons for a beat (and until their feeds answer) rather than
@@ -169,10 +173,6 @@ export function HomePage({
   const [query, setQuery] = useState('');
   const sessionRef = useRef(session);
   sessionRef.current = session;
-  // Whether an importer is on, read through a ref so `refresh` can gate the
-  // discovery fetch without being rebuilt each time the queue ticks.
-  const canImportRef = useRef(false);
-  canImportRef.current = downloads !== null;
 
   const refresh = useCallback(async () => {
     const s = sessionRef.current;
@@ -183,20 +183,6 @@ export function HomePage({
       writeFeedCache(s, 'home', fresh);
     } catch {
       // Unreachable right now; whatever is on screen stays.
-    }
-    // Discoveries are music to ACQUIRE. With no importer there is nothing to
-    // acquire it with, so the feed is neither fetched nor shown - the app stays
-    // entirely between the listener's devices and their own server.
-    if (canImportRef.current) {
-      try {
-        const fresh = await fetchDiscoveries(s);
-        setDiscoveries(fresh);
-        writeFeedCache(s, 'discoveries', fresh);
-      } catch {
-        // Older server, or none of these yet.
-      }
-    } else {
-      setDiscoveries(null);
     }
     try {
       const fresh = await fetchCurator(s);
@@ -264,29 +250,6 @@ export function HomePage({
     }))
     .filter((l) => l.tracks.length >= 4);
 
-  // What the curator found outside the library. Dismissals apply straight
-  // away rather than waiting for the next poll - the card is gone the moment
-  // you say no.
-  const [hidden, setHidden] = useState<string[]>([]);
-  // This discovery's import job, matched by the URL it was enqueued with.
-  const jobForUrl = (url: string) => downloads?.jobs?.find((j) => j.url === url) ?? null;
-  // A finished download STAYS on the shelf as a play button rather than
-  // vanishing - tapping it plays the song it just fetched. It only leaves when
-  // dismissed, or when the next curator poll drops it (the song is in the
-  // library now, so the curator stops suggesting it).
-  const found: Discovery[] = (discoveries?.items ?? []).filter((d) => !hidden.includes(d.id));
-  const hide = (id: string) => {
-    setHidden((prev) => [...prev, id]);
-    const s = sessionRef.current;
-    if (s) void dismissDiscovery(s, id).catch(() => {});
-  };
-  const targetFor = (d: Discovery) => ({
-    kind: 'track' as const,
-    title: d.title,
-    artist: d.artist,
-    url: d.url,
-  });
-
   // Jump back in: each album arrives as its own ordered id list (the server
   // grouped by album artist and sorted by disc/track), so the client just
   // resolves and plays it - no name matching, no way to merge two albums that
@@ -331,8 +294,7 @@ export function HomePage({
   const wantsFeed = session !== null;
   const skelFeed = held || (wantsFeed && feed === null);
   const skelCurator = held || (wantsFeed && curator === null);
-  const skelFound = held || (wantsFeed && downloads !== null && discoveries === null);
-  const anySkeleton = skelFeed || skelCurator || skelFound;
+  const anySkeleton = skelFeed || skelCurator;
 
   return (
     <div className={embedded ? 'homeMixes' : 'homePage'}>
@@ -385,97 +347,12 @@ export function HomePage({
         )
       ) : (
         <>
-      {skelFound ? (
-        <ShelfSkeleton title="Worth adding" kind="find" count={6} />
-      ) : (
-      <Shelf title="Worth adding" count={found.length}>
-        {found.map((d) => {
-          const job = jobForUrl(d.url);
-          const active = job?.state === 'queued' || job?.state === 'downloading';
-          const done = job?.state === 'done';
-          // The library track the download produced, once the sync has landed
-          // it - what a tap plays. Absent for the brief window between the job
-          // finishing and the library delta pulling the file in.
-          const doneTrack = done
-            ? ((job?.trackIds ?? []).map((id) => byId.get(id)).find((t): t is Track => !!t) ?? null)
-            : null;
-          const playable = doneTrack !== null;
-          // "Working" covers both the download and that sync-lag tail, so the
-          // card never offers a play button that cannot play yet.
-          const working = active || (done && !playable);
-          const canAdd = acquire.hasHandlers(targetFor(d));
-          return (
-            <div key={d.id} className="findCard">
-              <button
-                type="button"
-                className="findCard__body"
-                data-done={playable || undefined}
-                // Tappable to play once downloaded; to add while idle (a handler
-                // must exist); inert while its own download is in flight.
-                disabled={working || (!playable && !canAdd)}
-                title={
-                  playable || canAdd
-                    ? undefined
-                    : 'No way to add this — enable Music import or Buy in Plugins'
-                }
-                onClick={() => {
-                  if (playable && doneTrack) onPlay(doneTrack, [doneTrack]);
-                  else if (!done) acquire.acquire(targetFor(d));
-                }}
-              >
-                <span className="findCard__cover" data-downloading={working || undefined}>
-                  {d.cover ? <img src={d.cover} alt="" loading="lazy" /> : <Sparkles size={24} />}
-                  {working ? (
-                    // The cover dims under a spinner until the file has landed.
-                    <span
-                      className="findCard__progress"
-                      role="status"
-                      aria-label={`Downloading ${d.title}`}
-                    >
-                      <Spinner size="md" />
-                    </span>
-                  ) : playable ? (
-                    // Downloaded: a play glyph, and the tap plays it.
-                    <span className="findCard__play" aria-hidden>
-                      <Play size={16} fill="currentColor" />
-                    </span>
-                  ) : (
-                    <span className="findCard__add" aria-hidden>
-                      <Plus size={16} />
-                    </span>
-                  )}
-                </span>
-                <span className="trackCardTitle">{d.title}</span>
-                <span className="trackCardArtist">{d.artist}</span>
-                {/* Say only what was actually measured - the tempo when a preview
-                    was read, the words when lyrics were found. */}
-                <span className="findCard__why">
-                  {[
-                    d.seed ? `like ${d.seed}` : null,
-                    d.bpm ? `${Math.round(d.bpm)} BPM` : null,
-                    d.lyricsRead ? 'words match' : null,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </span>
-              </button>
-              {/* The dismiss 'x' only while it is still a suggestion; once it is
-                  downloaded the card is a play button, not something to refuse. */}
-              {!done && (
-                <button
-                  type="button"
-                  className="findCard__no"
-                  aria-label={`Not interested in ${d.title}`}
-                  onClick={() => hide(d.id)}
-                >
-                  <X size={14} />
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </Shelf>
-      )}
+      {/* The DJ: a continuous set of your own library, steerable by a vibe,
+          played straight from here. Lives above the mixes on the main surface
+          (embedded and standalone alike). */}
+      <DjLauncher onPlay={onPlay} />
+      {/* "Worth adding" (curator finds from outside the library) lives on the
+          Discover page now — a library surface should show what you HAVE. */}
 
       {skelCurator ? (
         <ShelfSkeleton title="From your curator" kind="mix" count={4} />
@@ -583,8 +460,13 @@ export function HomePage({
         ))}
       </Shelf>
 
-      {!anySkeleton &&
-        found.length === 0 &&
+      {/* Embedded in the Library, this stays silent. The empty state speaks for
+          a whole page ("nothing here yet, play something"), and folded into a
+          page that already has playlists, stats and shelves above it, a
+          full-height graphic announcing emptiness is just wrong - the page is
+          plainly not empty. The host owns its own empty state. */}
+      {!embedded &&
+        !anySkeleton &&
         curated.length === 0 &&
         mixes.length === 0 &&
         jumpBack.length === 0 &&
