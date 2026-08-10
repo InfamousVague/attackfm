@@ -1076,33 +1076,118 @@ img {
    on the frost, not a second floating slab under the player. Each tab stacks a
    glyph over its name, the way a phone's system tab bar does, and the whole
    band is kept short so it costs the list as little height as possible. */
+/* A floating island, not a sill-welded bar: a tall rounded card lifted off the
+   screen's edges, with the app icon raised out of its centre. The safe area is
+   a gap BELOW the card now, not padding inside it, so the card floats clear of
+   the home indicator. */
 .appNavBar {
   position: absolute;
-  inset-inline: 0;
-  /* Welded to the sill: the safe area is padding inside the bar, not a gap
-     under it, so the frost runs to the very bottom of the screen. */
-  inset-block-end: 0;
+  inset-inline: var(--glacier-space-4);
+  inset-block-end: calc(var(--app-safe-bottom) + var(--glacier-space-2));
   z-index: 4;
-  display: flex;
-  align-items: stretch;
-  /* Top padding gives the tabs a little air under the hairline instead of
-     starting hard against it. Bottom padding is the home-indicator safe area
-     plus breathing room, so the plate runs to the very bottom edge while the
-     tabs sit clear above the indicator rather than crowding it. */
-  padding: var(--glacier-space-2) var(--glacier-space-1)
-    calc(var(--app-safe-bottom) + var(--glacier-space-3));
-  border-radius: 0;
-  /* A dark frosted plate of its own rather than riding transparent on the
-     scrim: glass-thick is a near-opaque dark panel in dark mode (and a light
-     frost in light mode), so the bar reads as a solid base the tabs sit on.
-     The blur frosts whatever scrolls behind it; a hairline top edge keeps the
-     now-filled bar from bleeding into the content above. */
+  block-size: var(--app-nav-island-height);
+  /* Three cells: a flexible group each side of a fixed centre, so the raised
+     brand button lands dead-centre whatever each side happens to hold. */
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding-inline: var(--glacier-space-3);
+  border-radius: var(--glacier-radius-2xl, 1.75rem);
+  /* The card: a near-opaque frosted panel, a hairline edge, and a real shadow
+     so it reads as lifted off the content that scrolls behind it. */
   background: var(--glacier-glass-thick);
   backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
   -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  box-shadow: var(--glacier-shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.42));
+  /* The centre button overhangs the top edge, so nothing may clip it. */
+  overflow: visible;
+}
+
+.appNavBar__group {
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  gap: var(--glacier-space-1);
+}
+
+/* A flanking tab: glyph over a small label, lit crimson when it is the page. */
+.appNavBarTab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: var(--glacier-space-1) var(--glacier-space-2);
   border: none;
-  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
-  box-shadow: none;
+  background: none;
+  cursor: pointer;
+  color: var(--glacier-text-subtle);
+  transition: color 0.15s ease;
+}
+
+.appNavBarTab[data-active] {
+  color: var(--glacier-accent-text);
+}
+
+.appNavBarTab__icon {
+  display: grid;
+  place-items: center;
+}
+
+.appNavBarTab__label {
+  font-size: var(--app-nav-label-size);
+  font-weight: 550;
+  line-height: 1;
+}
+
+/* The raised centre: the app icon itself, lifted so it overhangs the island's
+   top edge, ringed in the page background to cut it cleanly from the card, and
+   haloed in the accent so it reads as the prominent home button. */
+.appNavBar__center {
+  justify-self: center;
+  inline-size: 3.5rem;
+  block-size: 3.5rem;
+  margin-block-start: -1.9rem;
+  padding: 0;
+  border: none;
+  /* Circular, filled with the brand pink - the app icon's own dark backdrop is
+     dropped (see the icon's blend below) so the wave sits straight on the
+     colour, the way the reference's centre button does. */
+  border-radius: 50%;
+  background: var(--glacier-accent-solid);
+  overflow: hidden;
+  cursor: pointer;
+  box-shadow:
+    0 0 0 5px var(--glacier-bg),
+    0 9px 22px rgba(0, 0, 0, 0.5);
+  transition: transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease;
+}
+
+.appNavBar__center:active {
+  transform: translateY(1px) scale(0.97);
+}
+
+/* Lit when it is the page: a hair brighter, with a thin ring of the bg around
+   it, so "you are home" reads without changing the shape. */
+.appNavBar__center[data-active] {
+  filter: brightness(1.08);
+  box-shadow:
+    0 0 0 5px var(--glacier-bg),
+    0 0 0 6.5px color-mix(in srgb, var(--glacier-accent-solid) 70%, #fff),
+    0 9px 22px rgba(0, 0, 0, 0.5);
+}
+
+.appNavBar__centerIcon {
+  inline-size: 100%;
+  block-size: 100%;
+  display: block;
+  object-fit: cover;
+  border-radius: inherit;
+  /* The icon is a white wave on a black square; `screen` drops the black to
+     nothing over the pink fill and keeps the wave, so the button reads as one
+     pink disc with the mark on it. */
+  mix-blend-mode: screen;
 }
 
 /* The kit nests its items in an inner container sized to their content; make
@@ -1118,69 +1203,19 @@ img {
 /* A tab: an equal share of the width, glyph over label. Overrides the kit's
    labelled-item row (fixed height, side-by-side, inline padding), which is
    sized for a desktop nav rather than a phone's bottom bar. */
-.appNavBar button,
-.appNavBar a {
-  flex: 1;
-  min-inline-size: 0;
-  inline-size: auto;
-  block-size: var(--app-nav-item-height);
-  flex-direction: column;
-  /* Glyphs hang from a common line rather than each stack centring itself, so
-     an item without a label (a plugin's icon-only button) sits on the same row
-     as the rest instead of floating half a line above them. */
-  justify-content: flex-start;
-  /* Barely any inline padding: with six tabs on a phone, the width belongs to
-     the names - the tabs are already separated by their own spacing. */
-  padding: 0.375rem 0.125rem 0;
-  gap: 0.125rem;
-  border-radius: var(--glacier-radius-md);
-}
-
-/* A button a plugin contributes is not a NavBarItem and brings no label of its
-   own. It still has to name itself for a screen reader, so that name becomes
-   its tab text - every tab reads the same way, whoever supplied it. */
-.appNavBar [class*="_items_"] > button:not([class*="_item_"])::after {
-  content: attr(aria-label);
-  font-size: var(--app-nav-label-size);
-  line-height: 1.1;
-  max-inline-size: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Glyphs sized for the shorter bar - CSS wins over the icons' own width/height
-   attributes. flex:none stops the kit's icon box from being squashed oval when
-   the label sets the row's width. */
-.appNavBar button svg,
-.appNavBar a svg {
-  inline-size: 1.125rem;
-  block-size: 1.125rem;
-  flex: none;
-}
-
-/* The tab's name. Small and tight, since it sits under a glyph that already
-   carries the meaning - it names the destination rather than shouting it. */
-.appNavBar [class*="_label_"] {
-  font-size: var(--app-nav-label-size);
-  line-height: 1.1;
-  max-inline-size: 100%;
-}
-
-/* No plate behind the active tab. Hide the kit's sliding fill entirely and let
-   the active tab announce itself by colour alone: the kit already recolours the
-   whole [data-active] item to the accent (glyph and label together, the glyph
-   following the label's colour), and a card would only fight the bar's own dark
-   plate. Colour is now the entire affordance. */
-.appNavBar [class*="_indicator_"] {
-  display: none;
-}
+/* The old kit-NavBar bar rules (.appNavBar button/a sizing, the _items_/_label_/
+   _indicator_ hashed-class hooks) lived here. The phone bar is custom markup
+   now - a group each side of the raised centre - so those rules are gone; the
+   tab and centre styles above are the whole of it. */
 
 /* How far the bottom nav band pushes the player up. Zero where the band does
    not exist (desktop); measured where it does. :has keys it on the nav's
    actual presence, so no JS and no media query can drift from truth. */
 .appWindow {
   --app-nav-height: 0px;
+  /* The floating island's own height (the card, not counting the gap under it
+     or the brand button that overhangs its top). */
+  --app-nav-island-height: 4rem;
   /* One tab's height, named so the bar and the band it occupies cannot drift:
      a glyph, a hairline gap and a small label, with room to tap. */
   --app-nav-item-height: 2.75rem;
@@ -1190,12 +1225,12 @@ img {
 }
 
 .appWindow:has(.appNavBar) {
-  /* The band's footprint: one tab plus the bar's own padding above and below,
-     the lower half of which is the home indicator's safe area. The player and
-     the blur scrim both clear exactly this. */
+  /* The floating island's footprint, measured from the very bottom: the brand
+     button's overhang above the card, the card itself, the gap under it, and
+     the home-indicator safe area. The player and the blur scrim clear exactly
+     this so nothing tucks under the island or the raised button. */
   --app-nav-height: calc(
-    var(--app-nav-item-height) + var(--glacier-space-1) + var(--glacier-space-3) +
-      var(--app-safe-bottom)
+    1.9rem + var(--app-nav-island-height) + var(--glacier-space-2) + var(--app-safe-bottom)
   );
 }
 
@@ -5205,6 +5240,29 @@ body [class*='_panel_']:has(> .dlPanel) {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* ---- The DJ launcher --------------------------------------------------- */
+
+.djLauncher {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.djLauncher__row {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.djLauncher__field {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.djLauncher__line {
+  font-style: italic;
 }
 
 /* ---- Registry: account setup + friends --------------------------------- */
