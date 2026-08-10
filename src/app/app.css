@@ -5578,6 +5578,21 @@ body [class*='_panel_']:has(> .dlPanel) {
   min-inline-size: 0;
 }
 
+/* The bare code, for reading aloud or typing into the eight boxes on the other
+   end. Monospace and spaced so the two groups of four read at a glance. */
+.registryFriends__inviteCode {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--glacier-text-muted);
+}
+
+.registryFriends__inviteCode strong {
+  font-family: var(--glacier-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 1.05rem;
+  letter-spacing: 0.12em;
+  color: var(--glacier-text);
+}
+
 /* ---- Plugins: updates, browse, sources --------------------------------- */
 
 /* The update notice sits above the tabs, tinted so it reads as news rather
@@ -7032,14 +7047,3 @@ button.artistAlbum {
   white-space: nowrap;
 }
 
-/* Nothing live yet: the verb stays reachable without pretending to be news. */
-.jamIdle {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-3);
-}
-
-.jamIdle__hint {
-  color: var(--glacier-text-muted);
-  font-size: var(--glacier-font-size-sm);
-}

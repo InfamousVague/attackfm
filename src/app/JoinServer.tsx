@@ -6,7 +6,7 @@
 //! listener's central identity, which the server admits because the invite says
 //! so. The result is an ordinary server session; the account is theirs.
 
-import { Button, Field, Input, Text } from '@glacier/react';
+import { Button, Field, OtpField, Text } from '@glacier/react';
 import { LogIn } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { useRegistry } from './registrySession.tsx';
@@ -31,7 +31,7 @@ export function JoinServer() {
   const [error, setError] = useState<string | null>(null);
 
   const look = async (explicit?: string) => {
-    const code = codeFrom(explicit ?? value);
+    const code = codeFrom(explicit ?? value).toUpperCase();
     if (!code) return;
     setBusy(true);
     setError(null);
@@ -53,7 +53,7 @@ export function JoinServer() {
   // rather than an empty box they have to paste into.
   useEffect(() => {
     return onInvite((code) => {
-      setValue(code);
+      setValue(code.toUpperCase());
       void look(code);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- subscribe once; look reads the code it is handed
@@ -61,7 +61,7 @@ export function JoinServer() {
 
   const join = async () => {
     if (!registry || !preview) return;
-    const code = codeFrom(value);
+    const code = codeFrom(value).toUpperCase();
     setBusy(true);
     setError(null);
     try {
@@ -77,23 +77,26 @@ export function JoinServer() {
 
   return (
     <div className="joinServer">
-      <Field label="Have an invite?" hint="Paste the invite link a friend sent you.">
-        <Input
+      <Field label="Have an invite?" hint="Enter the 8-character code a friend sent you.">
+        <OtpField
+          length={8}
+          groupSize={4}
+          type="alphanumeric"
           value={value}
-          onChange={(e) => setValue(e.currentTarget.value)}
-          placeholder="registry.attack.fm/i/…"
-          aria-label="Invite link"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') void look();
+          aria-label="Invite code"
+          onValueChange={(v) => {
+            // Uppercase so the cells and the redeemed code match what the
+            // registry mints; a fresh edit clears a stale preview/error.
+            setValue(v.toUpperCase());
+            if (preview) setPreview(null);
+            if (error) setError(null);
           }}
+          onComplete={(v) => void look(v)}
         />
       </Field>
 
       {!preview ? (
-        <Button variant="outline" size="sm" onClick={() => void look()} disabled={busy || value.trim() === ''}>
+        <Button variant="outline" size="sm" onClick={() => void look()} disabled={busy || value.length !== 8}>
           {busy ? 'Checking…' : 'Check invite'}
         </Button>
       ) : (
