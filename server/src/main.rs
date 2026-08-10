@@ -27,6 +27,7 @@ mod curator;
 mod db;
 mod discover;
 mod discovery;
+mod dj;
 mod friends;
 mod home;
 mod imports;
@@ -316,6 +317,7 @@ async fn main() {
         .route("/api/search", get(search::search))
         .route("/api/artist", get(search::artist))
         .route("/api/curator", get(curator::feed))
+        .route("/api/dj", get(dj::station))
         .route("/api/playlists/{id}/suggestions", get(curator::playlist_suggestions))
         .route("/api/discoveries", get(discovery::feed))
         .route("/api/discoveries/dismiss", post(discovery::dismiss))
