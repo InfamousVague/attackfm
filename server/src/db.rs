@@ -2236,8 +2236,7 @@ impl Db {
              WHERE t.deleted = 0 AND (
                  f.track_id IS NULL
                  OR f.checked_at < ?2
-                 OR (?4 AND COALESCE(f.vec_dims, 0) = 0
-                     AND LENGTH(TRIM(t.lyrics)) >= 40 AND f.checked_at < ?3)
+                 OR (?4 AND COALESCE(f.vec_dims, 0) = 0 AND f.checked_at < ?3)
              )
              ORDER BY f.checked_at IS NOT NULL, f.checked_at ASC, t.added_at DESC
              LIMIT ?1",

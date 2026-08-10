@@ -33,14 +33,14 @@ use std::time::Duration;
 /// How long a track's lookup stands before it is worth asking again. Tempo
 /// does not change, but a track whose lyrics arrived later deserves a vector.
 const FEATURE_TTL_MS: i64 = 7 * 24 * 60 * 60 * 1000;
-/// How soon to come back for a track that has lyrics but no vector yet. Short,
-/// because that gap usually means the embedder was not running when the track
-/// was first looked at - which is exactly the case when a model is switched on
-/// for a library that has already been read once.
-const VECTOR_RETRY_MS: i64 = 20 * 60 * 1000;
-/// Tracks looked up per cycle. Small on purpose: this is a background errand
-/// that must never be the reason a stream stutters.
-const ENRICH_BATCH: i64 = 6;
+/// How soon to come back for a track with no vector yet. Short, because that gap
+/// usually means the embedder was not running when the track was first looked at
+/// - exactly the case when a model is switched on for a library already read once.
+const VECTOR_RETRY_MS: i64 = 3 * 60 * 1000;
+/// Tracks looked up per cycle. A background errand that must never be the reason
+/// a stream stutters - but embeddings are cheap and the tempo is measured only
+/// once, so a fresh library backfills its vectors in minutes, not an hour.
+const ENRICH_BATCH: i64 = 24;
 /// Politeness gap between catalogue lookups.
 const LOOKUP_GAP: Duration = Duration::from_millis(900);
 /// Between cycles with work left to do.
@@ -52,7 +52,7 @@ const CURATE_EVERY_MS: i64 = 30 * 60 * 1000;
 /// The listening window that counts as "lately".
 const WINDOW_30D_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 /// Tracks per curated list.
-const LIST_LEN: usize = 20;
+const LIST_LEN: usize = 30;
 /// At most this many by one artist in a list, so a favourite cannot fill it.
 const PER_ARTIST_CAP: usize = 2;
 
@@ -185,7 +185,7 @@ async fn enrich_cycle(state: &Arc<AppState>) -> bool {
                 None => None,
             }
         };
-        let vec = if track.has_vec { None } else { embed_lyrics(&track).await };
+        let vec = if track.has_vec { None } else { embed_track(&track).await };
         if vec.is_some() {
             let mut s = state.curator.status.lock().await;
             s.embeddings = true;
@@ -201,17 +201,43 @@ async fn enrich_cycle(state: &Arc<AppState>) -> bool {
     true
 }
 
-/// What the words are about, as a vector, from the operator's own model. No
-/// model, no lyrics, or an embedder that will not answer: no vector, and the
-/// curator falls back on tempo and genre alone.
-async fn embed_lyrics(track: &CurationTrack) -> Option<Vec<f32>> {
+/// A vector for a track's overall character, from the operator's own embedder.
+///
+/// The metadata every track carries - artist, title, album, genre - leads, and
+/// the lyrics follow when there are any. That is deliberate: embedding lyrics
+/// alone left every instrumental, every mis-tagged rip and every track a lyrics
+/// provider did not cover with no vector at all, which is most of a fresh
+/// library. Folding the metadata in means EVERY track gets a usable vector, and
+/// the lyrics sharpen the ones that have them rather than being the whole signal.
+///
+/// No model or an embedder that will not answer: no vector, and the curator
+/// falls back on tempo and genre alone.
+async fn embed_track(track: &CurationTrack) -> Option<Vec<f32>> {
     let url = ai_url()?;
+    let mut parts: Vec<String> = Vec::new();
+    if !track.artist.trim().is_empty() {
+        parts.push(format!("Artist: {}", track.artist.trim()));
+    }
+    if !track.title.trim().is_empty() {
+        parts.push(format!("Title: {}", track.title.trim()));
+    }
+    if !track.album.trim().is_empty() {
+        parts.push(format!("Album: {}", track.album.trim()));
+    }
+    if !track.genre.trim().is_empty() {
+        parts.push(format!("Genre: {}", track.genre.trim()));
+    }
+    // Enough lyrics to characterise a song without paying for a whole repeated
+    // chorus, and leaving room for the metadata above under the input cap.
     let words = track.lyrics.trim();
-    if words.len() < 40 {
+    if !words.is_empty() {
+        let excerpt: String = words.chars().take(1500).collect();
+        parts.push(format!("Lyrics: {excerpt}"));
+    }
+    let input: String = parts.join("\n").chars().take(2000).collect();
+    if input.trim().is_empty() {
         return None;
     }
-    // Enough to characterise a song without paying for a whole repeated chorus.
-    let input: String = words.chars().take(2000).collect();
     let reply: serde_json::Value = client(60)
         .post(format!("{}/v1/embeddings", url.trim_end_matches('/')))
         .json(&json!({ "model": embed_model(), "input": input }))
@@ -260,7 +286,7 @@ pub(crate) struct Taste {
     pub(crate) heard: HashSet<i64>,
 }
 
-fn taste_from(plays: &[i64], feats: &HashMap<i64, &TrackFeatures>) -> Taste {
+pub(crate) fn taste_from(plays: &[i64], feats: &HashMap<i64, &TrackFeatures>) -> Taste {
     let mut sum: Vec<f32> = Vec::new();
     let mut n = 0usize;
     let mut tempos: Vec<f64> = Vec::new();
@@ -303,7 +329,7 @@ fn taste_from(plays: &[i64], feats: &HashMap<i64, &TrackFeatures>) -> Taste {
 /// How well one track answers a taste, in [0, 1]. Each term degrades to a
 /// neutral 0.5 when the data behind it is missing, so a library with no
 /// tempos still ranks sensibly on words and genre alone.
-fn score(f: &TrackFeatures, taste: &Taste) -> f32 {
+pub(crate) fn score(f: &TrackFeatures, taste: &Taste) -> f32 {
     let lyric = match (&taste.centroid, &f.lyric_vec) {
         (Some(c), Some(v)) => (cosine(c, v) + 1.0) / 2.0,
         _ => 0.5,

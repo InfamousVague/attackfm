@@ -314,15 +314,15 @@ async fn ai_mixes(state: &Arc<AppState>, user: i64, url: &str) -> Option<Vec<Mix
     // Candidates: heavy rotation + the top artists' catalogues + unplayed
     // discoveries, deduped, described compactly.
     let mut candidate_ids: Vec<i64> = Vec::new();
-    candidate_ids.extend(state.db.top_plays(user, since, 40).into_iter().map(|(id, _)| id));
+    candidate_ids.extend(state.db.top_plays(user, since, 60).into_iter().map(|(id, _)| id));
     for (artist, _) in &top_artists {
-        candidate_ids.extend(state.db.tracks_by_artist(artist, 20));
+        candidate_ids.extend(state.db.tracks_by_artist(artist, 24));
     }
-    candidate_ids.extend(state.db.unplayed(user, 40));
+    candidate_ids.extend(state.db.unplayed(user, 60));
     candidate_ids.dedup();
     let mut seen = std::collections::HashSet::new();
     candidate_ids.retain(|id| seen.insert(*id));
-    candidate_ids.truncate(160);
+    candidate_ids.truncate(240);
 
     let mut lines = Vec::new();
     for id in &candidate_ids {
@@ -343,8 +343,8 @@ async fn ai_mixes(state: &Arc<AppState>, user: i64, url: &str) -> Option<Vec<Mix
          Their most-played artists this month: {}.\n\
          Recently played: {}.\n\
          Candidate tracks, one per line as id|artist — title:\n{}\n\n\
-         Build 3 distinct mixes from ONLY these candidate ids. Vary the moods; make the titles evocative but short (2-4 words); one-line blurbs, warm but plain, no exclamation marks.\n\
-         Answer with STRICT JSON, nothing else: [{{\"title\":\"...\",\"blurb\":\"...\",\"ids\":[1,2,3]}}] with 8-16 ids each.",
+         Build 6 distinct mixes from ONLY these candidate ids. Vary the moods and angles widely - energy level, era, late-night vs daytime, and make at least one discovery-forward with lesser-played picks; make the titles evocative but short (2-4 words); one-line blurbs, warm but plain, no exclamation marks.\n\
+         Answer with STRICT JSON, nothing else: [{{\"title\":\"...\",\"blurb\":\"...\",\"ids\":[1,2,3]}}] with 10-20 ids each.",
         taste.join(", "),
         recent_titles.join("; "),
         lines.join("\n"),
@@ -377,7 +377,7 @@ async fn ai_mixes(state: &Arc<AppState>, user: i64, url: &str) -> Option<Vec<Mix
 
     let valid: std::collections::HashSet<i64> = candidate_ids.iter().copied().collect();
     let mut mixes = Vec::new();
-    for (i, m) in parsed.into_iter().take(4).enumerate() {
+    for (i, m) in parsed.into_iter().take(8).enumerate() {
         let title = m.get("title").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
         let blurb = m.get("blurb").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
         let mut seen_ids = std::collections::HashSet::new();

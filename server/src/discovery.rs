@@ -38,16 +38,16 @@ use std::time::Duration;
 
 /// Candidates listened to per cycle. Each one costs a lyrics fetch, an
 /// embedding and a preview download, so this stays small.
-const LISTEN_BATCH: i64 = 2;
+const LISTEN_BATCH: i64 = 4;
 /// Stop harvesting once this many candidates are waiting - the pool should be
 /// deep enough to choose from, not unbounded.
-const POOL_TARGET: i64 = 120;
+const POOL_TARGET: i64 = 180;
 /// How often to go looking for new candidates.
 const HARVEST_EVERY_MS: i64 = 6 * 60 * 60 * 1000;
 /// Artists of yours to expand from, and how far each expands.
-const SEED_ARTISTS: i64 = 6;
-const RELATED_PER_SEED: usize = 6;
-const TRACKS_PER_ARTIST: usize = 4;
+const SEED_ARTISTS: i64 = 8;
+const RELATED_PER_SEED: usize = 8;
+const TRACKS_PER_ARTIST: usize = 6;
 /// Politeness between catalogue calls.
 const GAP: Duration = Duration::from_millis(700);
 
