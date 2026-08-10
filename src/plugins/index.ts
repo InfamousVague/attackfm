@@ -1,6 +1,5 @@
 import { canRunSubprocesses } from '../app/platform.ts';
 import type { Plugin } from './types.ts';
-import { discover } from './discover/index.tsx';
 import { buy } from './buy/index.tsx';
 
 export type { Plugin } from './types.ts';
@@ -18,7 +17,7 @@ export type { Plugin } from './types.ts';
  */
 // The importer ships through the plugin repository now (plugins-repo/),
 // installed from Settings -> Plugins rather than compiled in.
-const REGISTERED: readonly Plugin[] = [discover, buy];
+const REGISTERED: readonly Plugin[] = [buy];
 
 /**
  * The plugins this device can host RIGHT NOW, given whether a server is

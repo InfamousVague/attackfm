@@ -103,6 +103,11 @@ targets:
         # succeeds before Apple grants com.apple.developer.carplay-audio.
         "CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]": app_iOS/app_iOS.simulator.entitlements
         ENABLE_BITCODE: false
+        # iPhone only (1). AttackFM's mobile UI is phone-designed - the desktop
+        # experience is the separate Tauri desktop app, not an iPad layout - so
+        # the store listing needs no iPad screenshots and reviewers never see a
+        # stretched-up phone UI on a tablet.
+        TARGETED_DEVICE_FAMILY: "1"
         ARCHS: [arm64]
         VALID_ARCHS: arm64 
         LIBRARY_SEARCH_PATHS[arch=x86_64]: $(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)

@@ -53,13 +53,15 @@ import { usePlayback } from './playback.tsx';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { VolumeControl, VolumeRow, VOLUME_MAX, VOLUME_UNITY } from './VolumeControl.tsx';
 import npPlaceholderArt from '../assets/attack-wave.png';
-import { loadAudioUrl, reactivateAudioSession, type Track } from './tauri.ts';
-import { reportPlay, trackIdFromPath } from './server.ts';
+import { NowPlayingBackdrop } from './NowPlayingBackdrop.tsx';
+import { loadAudioUrl, reactivateAudioSession, systemOutputVolume, type Track } from './tauri.ts';
+import { fetchCanvas, isRemotePath, reportPlay, trackIdFromPath } from './server.ts';
 import { useConnect } from './playbackSync.tsx';
 import { DeviceList, DevicePicker, useDevicesAvailable } from './DevicePicker.tsx';
 import { AddToPlaylistDialog } from './AddToPlaylist.tsx';
 import { useServerSession } from './serverSession.tsx';
-import { onCarPlayRemote, pushCarPlayNowPlaying } from './carplay.ts';
+import { onCarPlayRemote, pushCarPlayNowPlaying, setIdleTimerDisabled } from './carplay.ts';
+import { useJamOptional } from './jam.tsx';
 import {
   bindMediaSessionHandlers,
   updateMediaSessionMetadata,
@@ -124,9 +126,30 @@ function writeDeckPref(name: string, value: string): void {
  * fader sets the ceiling, not whether the bar reacts at all. Muting, or a fader
  * on the floor, is the only thing that holds it still: nothing is coming out, so
  * nothing moves. The floor and ceiling both sit inside `SEEK_MAX_INTENSITY` (3).
+ *
+ * `system` is the phone's own hardware level (0-1), applied AFTER the app's
+ * graph - so it, not the in-app fader, is what says how loud the room actually
+ * is. It scales the result on the same curve, which means turning the volume
+ * buttons down calms the bar and turning them up drives it, and the two faders
+ * compound the way the ear hears them. It is 1 wherever there is no separate
+ * system fader to read (desktop, the browser), leaving the old behaviour
+ * exactly as it was. Silenced hardware holds the bar still for the same reason
+ * a muted app does: nothing is coming out.
  */
-const beatIntensity = (volume: number, muted: boolean) =>
-  muted || volume <= 0 ? 0 : Math.max(1.2, 0.28 * volume ** 0.398);
+const beatIntensity = (volume: number, muted: boolean, system = 1) => {
+  if (muted || volume <= 0 || system <= 0) return 0;
+  // The app fader's own curve, untouched: ~1.76 wide open.
+  const app = 0.28 * volume ** 0.398;
+  // The device's own level, as a multiplier that sweeps nearly the whole way
+  // down. An earlier pass floored this at 0.35, which left the bar swinging
+  // between 1.75 and 0.90 across the entire hardware range - a difference you
+  // have to measure rather than see. The small floor that remains keeps a bar
+  // that is still audible from reading as dead; silence is handled above.
+  // At system = 1 this is exactly 1, so anywhere without a separate hardware
+  // fader (desktop, the browser) lands on the original number.
+  const hardware = 0.12 + 0.88 * system ** 0.8;
+  return app * hardware;
+};
 
 /**
  * The turntable ramp: how far the speed bends and how long the motor takes in
@@ -275,6 +298,7 @@ export function Player({
   queue = [],
   onTrackChange,
   onQueueChange,
+  onOpenArtist,
   autoplay = true,
 }: {
   track: Track | null;
@@ -285,6 +309,9 @@ export function Player({
   /** Replaces the play context - used when a remote hands this (active) device
    *  a whole new queue to play through, not just a single track. */
   onQueueChange?: (tracks: Track[]) => void;
+  /** Opens an artist's page - the Now Playing sheet's artist line links
+   *  through here, closing the sheet as it goes. */
+  onOpenArtist?: (artist: string) => void;
   /**
    * Whether a newly handed track starts playing once loaded. Off for the
    * launch seed - the app opens with a song on the deck, not blaring - and
@@ -335,6 +362,20 @@ export function Player({
   // until the folder is resolved and its files have been walked. The whole bar
   // loads as a skeleton until then.
   const { loading: libraryLoading, scanning, isFavorite, toggleFavorite, tracks: libraryTracks } = useLibrary();
+  // The listening room this device is in, if any. Optional: the Player also
+  // renders in trees without the provider.
+  const jam = useJamOptional();
+  const connect = useConnect();
+  // True when the music is on ANOTHER device: this one is a remote. Read up
+  // here because the audio loader below has to consult it - a remote must
+  // never fetch the file it is not playing, which on a phone would be a whole
+  // track pulled over the network for nothing.
+  const remoteOnly =
+    connect.connected &&
+    connect.session?.activeDeviceId != null &&
+    connect.session.activeDeviceId !== connect.thisDeviceId;
+  const remoteOnlyRef = useRef(remoteOnly);
+  remoteOnlyRef.current = remoteOnly;
   const listLoading = libraryLoading || scanning;
   // The heart reflects and toggles the current track's place in favourites.
   const favorite = track ? isFavorite(track.path) : false;
@@ -385,6 +426,46 @@ export function Player({
   const [filing, setFiling] = useState<Track | null>(null);
   // The full-screen Now Playing surface, opened by tapping the strip on touch.
   const [npOpen, setNpOpen] = useState(false);
+  // The playing track's Spotify Canvas (a short looping clip), when the server
+  // is set up to fetch one and the track has one. Null the rest of the time,
+  // and on every track change until the next answer lands, so a clip never
+  // lingers over the wrong song. Only fetched while the full sheet is open.
+  const [npCanvas, setNpCanvas] = useState<string | null>(null);
+  // The lyrics, opened over the Now Playing sheet as a full-screen view rather
+  // than a popover anchored to the bottom rail (which sat too low).
+  const [npLyrics, setNpLyrics] = useState(false);
+  // The Spotify move: while this sheet is up and the music is going, the phone
+  // must not lock - but a screen at full brightness all song long is rude, so
+  // after a quiet half-minute the sheet pulls a near-black veil over itself.
+  // Any touch lifts it. Paused or closed, the OS idle timer is handed back and
+  // the phone dims and locks like it always did.
+  const [npDimmed, setNpDimmed] = useState(false);
+  const npDimTimer = useRef<number | null>(null);
+  const pokeNpDim = () => {
+    if (npDimTimer.current !== null) window.clearTimeout(npDimTimer.current);
+    npDimTimer.current = window.setTimeout(() => setNpDimmed(true), 30_000);
+  };
+  useEffect(() => {
+    const keepAwake = npOpen && playing;
+    void setIdleTimerDisabled(keepAwake);
+    if (!keepAwake) {
+      if (npDimTimer.current !== null) {
+        window.clearTimeout(npDimTimer.current);
+        npDimTimer.current = null;
+      }
+      setNpDimmed(false);
+      return;
+    }
+    pokeNpDim();
+    return () => {
+      if (npDimTimer.current !== null) {
+        window.clearTimeout(npDimTimer.current);
+        npDimTimer.current = null;
+      }
+      void setIdleTimerDisabled(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pokeNpDim only touches refs
+  }, [npOpen, playing]);
   // Bumped on every seek so the Connect report effect refires (a seek moves the
   // clock without changing play/track). A ref mirrors it for closures.
   const [seekTick, setSeekTick] = useState(0);
@@ -417,6 +498,122 @@ export function Player({
   const idleAudio = () => (activeIsB.current ? audioRef.current : audioBRef.current);
   const setIdleSrc = (url: string) => (activeIsB.current ? setSrc(url) : setSrcB(url));
   const setActiveSrc = (url: string) => (activeIsB.current ? setSrcB(url) : setSrc(url));
+
+  // --- running dry -----------------------------------------------------------
+  //
+  // Streaming a lossless file over a phone's radio means about a megabit a
+  // second, sustained, and a lift or a weak cell takes that away for a moment.
+  // Nothing here used to notice: only six media events were bound, none of them
+  // the ones that fire when the buffer runs out, so an underrun left `paused`
+  // false, stopped `timeupdate`, and played silence under a transport still
+  // showing play. Every transient hiccup became a permanent stop.
+  //
+  // So: notice it, say so, and put the deck back on its feet without letting
+  // the ear hear a seam. Recovery re-resolves the source and seeks back to
+  // where the music actually was - a fresh request, because the connection that
+  // stalled is precisely the one not worth waiting on.
+
+  /** True while the active deck has run dry. Drives the "Buffering" line. */
+  const [buffering, setBuffering] = useState(false);
+  /** When the clock stopped moving, or 0 when it is moving. */
+  const stalledAt = useRef(0);
+  /** The last position the deck reported, to resume to. */
+  const lastGoodPos = useRef(0);
+  /** Reloads spent on THIS track, reset whenever the listener moves. */
+  const resumeCount = useRef(0);
+  /** Bumped per reload so a re-resolved URL is never byte-identical: an
+   *  unchanged src is a no-op through React, and the stalled connection's
+   *  partial may itself be what is poisoned. */
+  const resumeNonce = useRef(0);
+  const recoverTimer = useRef<number | undefined>(undefined);
+
+  /** How long a frozen clock is tolerated before reaching for the source. */
+  const STALL_GRACE_MS = 1600;
+  /** Waits between reloads, then giving up honestly. */
+  const RETRY_BACKOFF_MS = [400, 1500, 4000];
+  const MAX_RELOADS_PER_TRACK = 3;
+
+  /** Forget an episode. Called wherever the listener's intent changes, so a
+   *  timer can never fire against a deck they have already moved on from. */
+  const clearStall = () => {
+    window.clearTimeout(recoverTimer.current);
+    recoverTimer.current = undefined;
+    stalledAt.current = 0;
+    resumeCount.current = 0;
+    setBuffering(false);
+  };
+
+  /**
+   * Put the active deck back where it was, on a new connection.
+   *
+   * Deliberately goes through the same two lines a normal track load uses -
+   * `pendingPlay` then `setActiveSrc` - so the existing `canplay` handler does
+   * the starting, with its ramp token, its seat level and its volume, exactly
+   * as it always does. No second start path, no new fade, nothing for the
+   * careful machinery below to fight with.
+   */
+  const resumeInPlace = async () => {
+    const audio = activeAudio();
+    const current = liveRef.current.track;
+    if (!audio || !current || remoteOnlyRef.current) return;
+    if (resumeCount.current >= MAX_RELOADS_PER_TRACK) {
+      // Out of attempts: stop claiming to play.
+      pendingPlay.current = false;
+      wantPlaying.current = false;
+      setPlaying(false);
+      setBuffering(false);
+      return;
+    }
+    const at = audio.currentTime || lastGoodPos.current;
+    resumeCount.current += 1;
+    const url = await loadAudioUrl(current.path);
+    if (!url) return;
+    // A crossfade may have swapped decks while that resolved; landing this on
+    // the wrong element would restart a track nobody asked for.
+    if (activeAudio() !== audio || liveRef.current.track?.path !== current.path) return;
+    const fresh = url.startsWith('http')
+      ? `${url}${url.includes('?') ? '&' : '?'}r=${(resumeNonce.current += 1)}`
+      : url;
+    // Seek before the element is audible: loadedmetadata always precedes
+    // canplay, so the start that canplay performs is already at the right spot.
+    audio.addEventListener(
+      'loadedmetadata',
+      () => {
+        try {
+          audio.currentTime = at;
+        } catch {
+          // A source that refuses the seek still plays; it just starts over.
+        }
+      },
+      { once: true },
+    );
+    pendingPlay.current = true;
+    setActiveSrc(fresh);
+  };
+
+  /** Arm the ladder. Idempotent: an episode already running keeps its timer. */
+  const noteStall = () => {
+    if (!wantPlaying.current || remoteOnlyRef.current) return;
+    if (stalledAt.current !== 0) return;
+    stalledAt.current = Date.now();
+    setBuffering(true);
+    const wait = RETRY_BACKOFF_MS[resumeCount.current] ?? 4000;
+    window.clearTimeout(recoverTimer.current);
+    recoverTimer.current = window.setTimeout(() => {
+      recoverTimer.current = undefined;
+      // Still dry? Only then is it worth throwing the connection away.
+      if (stalledAt.current !== 0) void resumeInPlace();
+    }, STALL_GRACE_MS + wait);
+  };
+
+  /** Sound is back. */
+  const noteFlowing = () => {
+    if (stalledAt.current === 0 && !buffering) return;
+    window.clearTimeout(recoverTimer.current);
+    recoverTimer.current = undefined;
+    stalledAt.current = 0;
+    setBuffering(false);
+  };
   // An element can back only one analyser source, so the meter is built once and
   // reused across tracks rather than rebuilt on every play.
   const analyserRef = useRef<AnalyserMeter | null>(null);
@@ -522,6 +719,34 @@ export function Player({
   const audible = playing && !muted && volume > 0;
   const beat = useBeat({ meter, active: audible, at: progress });
 
+  // The phone's own volume, polled while there is something to hear. The
+  // hardware buttons fire no event the webview can see, so a poll is the whole
+  // mechanism, and the call is one message send into the audio session.
+  // Parked entirely when nothing is playing.
+  //
+  // Quantised to the sixteenths iOS actually moves in: the reading is a float,
+  // and passing it through raw means a value that wobbles in the last decimals
+  // re-renders this component - one of the largest in the app - for a change
+  // no eye can see. Rounding first makes a render happen once per real step of
+  // the volume rocker and never otherwise, since React drops a set to an
+  // identical number.
+  const [systemVolume, setSystemVolume] = useState(1);
+  useEffect(() => {
+    if (!audible) return;
+    let alive = true;
+    const read = () => {
+      void systemOutputVolume().then((v) => {
+        if (alive) setSystemVolume(Math.round(v * 16) / 16);
+      });
+    };
+    read();
+    const timer = window.setInterval(read, 400);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, [audible]);
+
   // The dock icon: the brand mark, drawn and shipped once at boot. A dev
   // binary has no bundle icon of its own, so without this the Dock shows the
   // generic executable tile.
@@ -555,6 +780,15 @@ export function Player({
     const wake = () => {
       if (document.visibilityState !== 'visible') {
         hiddenAt.current = performance.now();
+        // Leaving the app is the moment the graph gets parked, and waiting for
+        // the slow pulse below to notice is an audible hole in the music. So
+        // reclaim the session and offer the context a resume RIGHT HERE, while
+        // the page still has a run loop - iOS gives a backgrounding app a
+        // moment to finish what it is doing, and this is what it is for.
+        if (isIOS && wantPlaying.current) {
+          reactivateAudioSession();
+          void analyserRef.current?.resume?.();
+        }
         return;
       }
       resumeAttempts.current = 0;
@@ -638,10 +872,22 @@ export function Player({
     if (!isIOS) return;
     const interval = window.setInterval(() => {
       if (!wantPlaying.current || !analyserRef.current) return;
+      // Five seconds is the steady-state heartbeat, but the window that
+      // actually matters is the few seconds after the app changes state - so
+      // the pulse runs fast for a spell after each transition and settles back
+      // once the graph has clearly survived it.
       reactivateAudioSession();
       void analyserRef.current.resume?.();
     }, 5000);
-    return () => window.clearInterval(interval);
+    const quick = window.setInterval(() => {
+      if (!wantPlaying.current || !analyserRef.current) return;
+      if (performance.now() - hiddenAt.current > 8000) return;
+      void analyserRef.current.resume?.();
+    }, 600);
+    return () => {
+      window.clearInterval(interval);
+      window.clearInterval(quick);
+    };
   }, []);
 
   // The waveform the bar fills in as the track plays, sampled from the same
@@ -671,6 +917,27 @@ export function Player({
   const { session: playSession } = useServerSession();
   const playSessionRef = useRef(playSession);
   playSessionRef.current = playSession;
+
+  // The Canvas clip for whatever is open. Cleared on every change first, so a
+  // previous song's clip is never left playing over a new one; a null answer -
+  // no clip, or a server with no Spotify session set up - simply leaves the
+  // blurred cover in place. Only while the sheet is open, since the clip is a
+  // full-screen surface nobody sees from the mini strip.
+  useEffect(() => {
+    setNpCanvas(null);
+    if (!npOpen || !track || !playSession) return;
+    const controller = new AbortController();
+    void fetchCanvas(
+      playSession,
+      track.title,
+      track.artist,
+      controller.signal,
+      trackIdFromPath(track.path),
+    ).then((url) => {
+      if (!controller.signal.aborted) setNpCanvas(url);
+    });
+    return () => controller.abort();
+  }, [npOpen, track?.title, track?.artist, playSession]);
   const listened = useRef({ path: '' as string, seconds: 0, prev: 0, reported: false });
   useEffect(() => {
     if (!track) return;
@@ -755,11 +1022,15 @@ export function Player({
   }, []);
 
   // The system transport, wired through WebKit's own media session - the path
-  // the lock screen and Control Center use off iOS. On iOS the native center
-  // in carplay.m owns the claim instead (the graph always runs there now), and
-  // binding both would land every button twice.
+  // the lock screen and Control Center use EVERYWHERE, iOS included: with
+  // playback running through the <audio> elements, WebKit claims the OS
+  // now-playing session and its claim beats carplay.m's native writes (the
+  // phone showed the generic "AttackFM" card with ±10s skips - WebKit's
+  // defaults - whenever this stayed unbound). Feeding the claim is the only
+  // move that sticks. Double-delivery with the native command targets is not
+  // a risk in practice: while WebKit holds the claim its handlers are the
+  // ones iOS calls, and the native targets only matter when it does not.
   useEffect(() => {
-    if (isIOS) return;
     bindMediaSessionHandlers({
       play: () => carPlayControls.current?.setPlaying(true),
       pause: () => carPlayControls.current?.setPlaying(false),
@@ -770,12 +1041,20 @@ export function Player({
   }, []);
 
   // The discontinuities the extrapolated clock cannot cover: a new track, a
-  // play or pause, a duration finally learned from metadata. One claimant per
-  // platform: the native center on iOS, WebKit's media session everywhere else
-  // - see mediaSession.ts for why never both.
+  // play or pause, a duration finally learned from metadata. The media session
+  // is the claimant everywhere (see the binding above); on iOS the native push
+  // ALSO goes out, because carplay.m feeds the car's own templates from it and
+  // it is the standing fallback for the moments WebKit holds no claim.
   useEffect(() => {
     if (!track) return;
     carPlaySentPos.current = positionRef.current;
+    updateMediaSessionMetadata({
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      artwork: artwork?.startsWith('http') ? artwork : null,
+    });
+    updateMediaSessionState({ duration, position: positionRef.current, playing });
     if (isIOS) {
       void pushCarPlayNowPlaying({
         title: track.title,
@@ -786,14 +1065,6 @@ export function Player({
         position: positionRef.current,
         playing,
       });
-    } else {
-      updateMediaSessionMetadata({
-        title: track.title,
-        artist: track.artist,
-        album: track.album,
-        artwork: artwork?.startsWith('http') ? artwork : null,
-      });
-      updateMediaSessionState({ duration, position: positionRef.current, playing });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on identity, state, and length; position rides along
   }, [track, playing, duration]);
@@ -807,6 +1078,7 @@ export function Player({
       return;
     }
     carPlaySentPos.current = coarsePosition;
+    updateMediaSessionState({ duration, position: coarsePosition, playing });
     if (isIOS) {
       void pushCarPlayNowPlaying({
         title: track.title,
@@ -817,8 +1089,6 @@ export function Player({
         position: coarsePosition,
         playing,
       });
-    } else {
-      updateMediaSessionState({ duration, position: coarsePosition, playing });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the jump detector runs on the clock alone
   }, [coarsePosition]);
@@ -905,6 +1175,11 @@ export function Player({
       const onTime = () => {
         if (!isActive()) return;
         if (!scrubbing.current) setPosition(audio.currentTime);
+        // The clock moving IS the proof sound is coming out, and the spot a
+        // recovery would return to. Both are recorded here, in the one handler
+        // that only fires while the deck is genuinely advancing.
+        lastGoodPos.current = audio.currentTime;
+        noteFlowing();
         // The crossfade watches the clock from here: the one place the active
         // deck's remaining time is always fresh.
         tickRef.current(audio);
@@ -945,14 +1220,55 @@ export function Player({
           setPlaying(false);
         });
       };
-      // A source that cannot load (a cached row whose file was deleted, say)
-      // fires error and never canplay: without this the bar would stay showing
-      // the previous track's play state forever, over silence.
+      // A source that cannot load fires error and never canplay: without this
+      // the bar would stay showing the previous track's play state forever,
+      // over silence.
+      //
+      // Which error it is decides everything. A decode failure or an
+      // unsupported source is about the FILE and will fail again identically,
+      // so it stops - the case this handler was written for, a cached row whose
+      // local file was deleted. A network error on a streamed track is about
+      // the WIRE (a dropped connection, a server restart, an aged token) and
+      // the same bytes are still there to be asked for again, so it recovers
+      // rather than ending the song.
       const onError = () => {
         if (!isActive() || !audio.error) return;
+        const code = audio.error.code;
+        const networkish =
+          code === MediaError.MEDIA_ERR_NETWORK || code === MediaError.MEDIA_ERR_ABORTED;
+        const remote = !!liveRef.current.track && isRemotePath(liveRef.current.track.path);
+        if (networkish && remote && resumeCount.current < MAX_RELOADS_PER_TRACK) {
+          setBuffering(true);
+          window.clearTimeout(recoverTimer.current);
+          recoverTimer.current = window.setTimeout(
+            () => {
+              recoverTimer.current = undefined;
+              void resumeInPlace();
+            },
+            RETRY_BACKOFF_MS[resumeCount.current] ?? 4000,
+          );
+          return;
+        }
         pendingPlay.current = false;
         wantPlaying.current = false;
         setPlaying(false);
+        setBuffering(false);
+      };
+      // The buffer running dry, and refilling. Neither was listened for, which
+      // is why a hiccup used to be indistinguishable from music.
+      const onWaiting = () => {
+        if (!isActive()) return;
+        noteStall();
+      };
+      const onPlaying = () => {
+        if (!isActive()) return;
+        noteFlowing();
+      };
+      // Fired when the fetch itself goes quiet. Treated the same as a dry
+      // buffer: both mean the bytes have stopped arriving.
+      const onStalled = () => {
+        if (!isActive() || audio.paused) return;
+        noteStall();
       };
       // The other end of a muted-through seek: the element has landed and is
       // sounding the new position, so the graph fades back up - short, on the
@@ -972,6 +1288,9 @@ export function Player({
       audio.addEventListener('canplay', onCanPlay);
       audio.addEventListener('error', onError);
       audio.addEventListener('seeked', onSeeked);
+      audio.addEventListener('waiting', onWaiting);
+      audio.addEventListener('playing', onPlaying);
+      audio.addEventListener('stalled', onStalled);
       return () => {
         audio.removeEventListener('timeupdate', onTime);
         audio.removeEventListener('loadedmetadata', onMeta);
@@ -979,6 +1298,9 @@ export function Player({
         audio.removeEventListener('canplay', onCanPlay);
         audio.removeEventListener('error', onError);
         audio.removeEventListener('seeked', onSeeked);
+        audio.removeEventListener('waiting', onWaiting);
+        audio.removeEventListener('playing', onPlaying);
+        audio.removeEventListener('stalled', onStalled);
       };
     });
     return () => cleanups.forEach((cleanup) => cleanup());
@@ -1004,6 +1326,10 @@ export function Player({
   // session does not leak them.
   useEffect(() => {
     if (!track) return;
+    // Mirroring another device: show its song, fetch nothing. The strip exists
+    // here to display progress and send commands, and buffering a file this
+    // device will not play is pure cost.
+    if (remoteOnlyRef.current) return;
     // A track a crossfade already carried onto the other deck arrives here
     // pre-played: the handover flipped the decks and handed the track up, so
     // there is nothing to load - loading would start it over from the top.
@@ -1013,6 +1339,10 @@ export function Player({
     }
     // Any fade still in flight is about tracks that are no longer next.
     abortCrossfadeRef.current();
+    // A new track gets a fresh set of recovery attempts, and any episode armed
+    // against the previous one is void.
+    clearStall();
+    lastGoodPos.current = 0;
     // The played trail, for shuffle manners and the DJ's memory.
     recentRef.current = [...recentRef.current.slice(-19), track.path];
     let cancelled = false;
@@ -1122,6 +1452,10 @@ export function Player({
     const audio = activeAudio();
     wantPlaying.current = next;
     setPlaying(next);
+    // Pressing play or pause is a decision that outranks any recovery still
+    // pending: a reload landing after a deliberate pause would start the music
+    // up again on its own.
+    clearStall();
     if (!audio) return;
     const style = playbackRef.current.pauseStyle;
     if (next) {
@@ -1665,6 +1999,10 @@ export function Player({
   const commitSeek = (to: number) => {
     scrubbing.current = false;
     setPosition(to);
+    // The listener has chosen a spot; a recovery aimed at the old one is void,
+    // and the seek itself earns a fresh set of attempts.
+    clearStall();
+    lastGoodPos.current = to;
     // A seek is a discontinuity the extrapolated clock cannot follow, so it is
     // one of the moments this device (when active) republishes to the hub.
     seekEpoch.current += 1;
@@ -1747,16 +2085,16 @@ export function Player({
   // the same local handlers a tap would, and one effect republishes state on
   // each discontinuity. Off a server the provider is inert and all of this is
   // a no-op, so a lone device just plays.
-  const connect = useConnect();
+  // (connect is read near the top of the component - see remoteOnly.)
   // The controller is registered once but must act through the current render's
   // handlers and values, so it reaches them all through this ref.
   const liveRef = useRef({
-    playing, position, duration, track, shuffle, repeat, volume,
+    playing, position, duration, track, shuffle, repeat, volume, queue,
     setPlayingState, skipForward, skipBack, commitSeek, setVolumeState,
     libraryTracks, onTrackChange, onQueueChange,
   });
   liveRef.current = {
-    playing, position, duration, track, shuffle, repeat, volume,
+    playing, position, duration, track, shuffle, repeat, volume, queue,
     setPlayingState, skipForward, skipBack, commitSeek, setVolumeState,
     libraryTracks, onTrackChange, onQueueChange,
   };
@@ -1827,6 +2165,65 @@ export function Player({
     return () => connect.registerController(null);
   }, [connect]);
 
+  // --- jams ---------------------------------------------------------------
+  //
+  // A jam is the same idea as a Connect hand-off, pointed at another PERSON
+  // rather than another of your own devices: the host's deck is the clock and
+  // everyone else steers to it. Two halves, and a device is only ever one of
+  // them.
+  //
+  // Hosting: report where this deck is, on the room's own rhythm. The context
+  // throttles the write, so this can afford to run on a plain interval and
+  // stay ignorant of what has changed.
+  useEffect(() => {
+    if (!jam?.current || !jam.hosting) return;
+    const beat = () => {
+      const live = liveRef.current;
+      const id = live.track ? trackIdFromPath(live.track.path) : null;
+      jam.hostBeat({
+        trackId: id,
+        positionMs: Math.round(positionRef.current * 1000),
+        playing: live.playing,
+        queue: live.queue
+          .map((t: Track) => trackIdFromPath(t.path))
+          .filter((n): n is number => n != null),
+      });
+    };
+    beat();
+    const timer = window.setInterval(beat, 2500);
+    return () => window.clearInterval(timer);
+  }, [jam?.current?.id, jam?.hosting]);
+
+  // Following: steer to the host. A different song loads and resumes at their
+  // position (the same resumeRef the Connect hand-off uses); the same song
+  // only corrects when it has drifted far enough to hear, since nudging the
+  // playhead every few seconds is worse than a little slip. The position the
+  // server hands over is already carried forward to the moment it was read.
+  useEffect(() => {
+    const room = jam?.current;
+    if (!room || jam.hosting || room.trackId == null) return;
+    const live = liveRef.current;
+    const wanted = room.trackId;
+    const currentId = live.track ? trackIdFromPath(live.track.path) : null;
+
+    if (currentId !== wanted) {
+      const t = live.libraryTracks.find((x) => trackIdFromPath(x.path) === wanted);
+      // Not in this listener's library: nothing to play, so the room simply
+      // moves on without them rather than the app inventing a track.
+      if (!t) return;
+      resumeRef.current = { trackId: wanted, positionMs: room.positionMs, play: room.playing };
+      live.onTrackChange?.(t);
+      return;
+    }
+
+    const driftSec = Math.abs(positionRef.current - room.positionMs / 1000);
+    if (driftSec > 3) live.commitSeek(room.positionMs / 1000);
+    if (live.playing !== room.playing) live.setPlayingState(room.playing);
+    // Keyed on updatedAt so this runs once per report from the host rather
+    // than on every render of this component.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jam?.current?.updatedAt, jam?.current?.trackId, jam?.hosting]);
+
   // Apply a pending cross-track resume once the handed track has loaded.
   useEffect(() => {
     const r = resumeRef.current;
@@ -1877,10 +2274,7 @@ export function Player({
   // Playback lives on another device: this one is a remote. It shows that
   // device's now-playing (resolved from the library) and its transport sends
   // commands rather than driving local audio.
-  const activeElsewhere =
-    connect.connected &&
-    connect.session?.activeDeviceId != null &&
-    connect.session.activeDeviceId !== connect.thisDeviceId;
+  const activeElsewhere = remoteOnly;
   const remoteTrack =
     activeElsewhere && connect.session?.trackId != null
       ? (libraryTracks.find((t) => trackIdFromPath(t.path) === connect.session!.trackId) ?? null)
@@ -2097,8 +2491,9 @@ export function Player({
           // that the graph (and so the equalizer) always runs there.
           mobileControls ? (
             <>
+              {/* No device picker on the strip: the "playing on" button lives on
+                  the full-screen Now Playing sheet, which has the room for it. */}
               <PluginSlot id="player-trailing" />
-              <DevicePicker />
               <Popover
                 placement="top-end"
                 aria-label="Player options"
@@ -2313,7 +2708,7 @@ export function Player({
         // without a beat to trail, so it is safe to leave on.
         tracer
         // The bar moves as hard as the station is playing.
-        intensity={beatIntensity(volume, muted)}
+        intensity={beatIntensity(volume, muted, systemVolume)}
       />
       </div>
 
@@ -2322,7 +2717,20 @@ export function Player({
           (which sits below the nav bar) - otherwise the nav would paint over
           it. It reuses every handler the strip does, so the two never diverge. */}
       {mobileControls && npOpen && createPortal(
-        <div className="npScreen" role="dialog" aria-label="Now playing" data-open={npOpen || undefined}>
+        <div
+          className="npScreen"
+          role="dialog"
+          aria-label="Now playing"
+          data-open={npOpen || undefined}
+          // Capture phase, so ANY touch on the sheet - a control, the art, the
+          // veil itself - counts as activity: the dim lifts and its clock
+          // restarts. The veil below swallows its own tap so a wake-up touch
+          // never also presses whatever sat under it.
+          onPointerDownCapture={() => {
+            setNpDimmed(false);
+            if (playing) pokeNpDim();
+          }}
+        >
           {/* The song's own cover, blown up and blurred, as the surface behind
               the controls - the same move the mini-strip's backdrop makes,
               scoped to this sheet. */}
@@ -2331,8 +2739,36 @@ export function Player({
             aria-hidden="true"
             style={artwork ? { backgroundImage: `url(${JSON.stringify(artwork)})` } : undefined}
           />
+          {/* The lyric words run the full height of the sheet, behind the
+              controls - the same wash the home background wears, over this
+              sheet's own blurred cover. */}
+          <NowPlayingBackdrop wordsOnly artwork={artwork ?? npPlaceholderArt} seed={track?.path ?? 'np'} />
+          {/* The Spotify Canvas, when the track has one: a muted loop that takes
+              over the backdrop (drawn last of the background layers so it sits
+              over the blur and the lyric wash, still behind the controls),
+              keyed on its URL so a new clip restarts cleanly. Absent - the
+              common case - it is simply not rendered and the cover shows. */}
+          {npCanvas && (
+            <video
+              key={npCanvas}
+              className="npScreen__canvas"
+              src={npCanvas}
+              autoPlay
+              loop
+              muted
+              playsInline
+              aria-hidden="true"
+            />
+          )}
           <header className="npScreen__head">
-            <IconButton variant="ghost" aria-label="Close now playing" onClick={() => setNpOpen(false)}>
+            <IconButton
+              variant="ghost"
+              aria-label="Close now playing"
+              onClick={() => {
+                setNpOpen(false);
+                setNpLyrics(false);
+              }}
+            >
               <ChevronDown size={22} />
             </IconButton>
             <span className="npScreen__source">{track?.album || 'Now playing'}</span>
@@ -2411,7 +2847,29 @@ export function Player({
           <div className="npScreen__meta">
             <div className="npScreen__lines">
               <span className="npScreen__title">{track?.title ?? ''}</span>
-              <span className="npScreen__artist">{track?.artist ?? ''}</span>
+              {onOpenArtist && track ? (
+                <button
+                  type="button"
+                  className="npScreen__artist npScreen__artistLink"
+                  onClick={() => {
+                    // The page opens under the sheet, so the sheet steps aside.
+                    setNpOpen(false);
+                    onOpenArtist(track.artist);
+                  }}
+                >
+                  {track.artist}
+                </button>
+              ) : (
+                <span className="npScreen__artist">{track?.artist ?? ''}</span>
+              )}
+              {/* Only while the buffer is actually dry. Silence with the
+                  transport still showing play is the thing this whole path
+                  exists to stop being a mystery. */}
+              {buffering && (
+                <span className="npScreen__buffering" role="status">
+                  Buffering…
+                </span>
+              )}
             </div>
             <IconButton
               variant="ghost"
@@ -2442,7 +2900,7 @@ export function Player({
               levels={levels}
               beat={beat}
               tracer
-              intensity={Math.min(3, beatIntensity(volume, muted) * 1.6)}
+              intensity={Math.min(3, beatIntensity(volume, muted, systemVolume) * 1.6)}
               onValueChange={onScrub}
               onSeekEnd={commitSeek}
             />
@@ -2485,6 +2943,103 @@ export function Player({
               {repeat === 'one' ? <Repeat1 size={20} /> : <Repeat size={20} />}
             </IconButton>
           </div>
+
+          {/* The secondary controls the strip has no room for: lyrics, the
+              device hand-off (only when there is somewhere to send it), the
+              equalizer, and the volume fader. The transport above already
+              carries shuffle/repeat/skip, and favourite and filing sit on the
+              meta and header rows. */}
+          <div className="npScreen__actions">
+            <IconButton variant="ghost" aria-label="Lyrics" onClick={() => setNpLyrics(true)}>
+              <Mic size={20} />
+            </IconButton>
+            <DevicePicker />
+            <Popover
+              placement="top"
+              aria-label="Equalizer"
+              className="eqPopoverPanel"
+              trigger={
+                <IconButton variant="ghost" aria-label="Equalizer">
+                  <AudioLines size={20} />
+                </IconButton>
+              }
+            >
+              <div className="eqPopover">
+                {narrowEq ? (
+                  <AudioEqualizer
+                    size="sm"
+                    bands={EQ_BANDS_NARROW}
+                    presets={EQ_PRESETS_NARROW}
+                    value={narrowEqGains(eqGains)}
+                    onValueChange={(g) => setEqGains(expandNarrowGains(g, eqGains))}
+                    preset={eqPreset}
+                    onPresetChange={(id) => {
+                      setEqPreset(id ?? undefined);
+                      const preset = EQ_PRESETS.find((p) => p.id === id);
+                      if (preset) setEqGains([...preset.gains]);
+                    }}
+                  />
+                ) : (
+                  <AudioEqualizer
+                    value={eqGains}
+                    onValueChange={setEqGains}
+                    preset={eqPreset}
+                    onPresetChange={setEqPreset}
+                  />
+                )}
+              </div>
+            </Popover>
+            <Popover
+              placement="top"
+              aria-label="Volume"
+              className="morePopoverPanel"
+              trigger={
+                <IconButton variant="ghost" aria-label="Volume">
+                  <Volume2 size={20} />
+                </IconButton>
+              }
+            >
+              <VolumeRow
+                value={volume}
+                muted={muted}
+                onValueChange={setVolumeState}
+                onMutedChange={setMutedState}
+              />
+            </Popover>
+          </div>
+
+          {/* Lyrics fill the whole sheet rather than a low popover: a header to
+              step back to the art, and the words scrolling below it. */}
+          {npLyrics && (
+            <div className="npScreen__lyricsView">
+              <header className="npScreen__lyricsHead">
+                <span className="npScreen__lyricsTitle">{track?.title ?? 'Lyrics'}</span>
+                <IconButton variant="ghost" aria-label="Close lyrics" onClick={() => setNpLyrics(false)}>
+                  <ChevronDown size={22} />
+                </IconButton>
+              </header>
+              <div className="npScreen__lyricsBody">
+                <LyricsPanel
+                  key={(track ?? DEMO_TRACK).path}
+                  track={track ?? DEMO_TRACK}
+                  position={position}
+                  onSeek={commitSeek}
+                />
+              </div>
+            </div>
+          )}
+          {/* The inactivity veil: near-black, fading in over everything on
+              this sheet. It takes pointer events only while dimmed, so the
+              waking tap lands here and nowhere else. */}
+          <div
+            className="npScreen__dim"
+            data-dim={npDimmed || undefined}
+            aria-hidden="true"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          />
         </div>,
         document.body,
       )}

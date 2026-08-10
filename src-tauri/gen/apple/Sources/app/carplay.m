@@ -353,6 +353,17 @@
 
 @end
 
+#pragma mark - Idle timer
+
+// The Spotify move: while the full-screen player is up, the phone must not
+// lock - the webview dims itself instead. Main-thread hop because the idle
+// timer is UIKit state; safe to call from any thread, idempotent both ways.
+void afm_set_idle_timer_disabled(int disabled) {
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [UIApplication sharedApplication].idleTimerDisabled = disabled ? YES : NO;
+  });
+}
+
 #pragma mark - Scene delegate
 
 // Named in Info.plist under CPTemplateApplicationSceneSessionRoleApplication.

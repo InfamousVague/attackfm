@@ -19,6 +19,7 @@ import {
   type ServerSession,
 } from './server.ts';
 import { useServerSession } from './serverSession.tsx';
+import { readFeedCache, writeFeedCache } from './feedCache.ts';
 
 const STORAGE_KEY = 'attackfm-playlists';
 
@@ -147,7 +148,12 @@ function LocalPlaylists({ children }: { children: ReactNode }) {
 }
 
 function RemotePlaylists({ session, children }: { session: ServerSession; children: ReactNode }) {
-  const [remote, setRemote] = useState<RemotePlaylist[]>([]);
+  // Seeded from the last launch's answer so the tiles paint immediately and
+  // the fetch below swaps in place - a strip that assembles tile by tile is
+  // the exact jumpiness the feed caches exist to end.
+  const [remote, setRemote] = useState<RemotePlaylist[]>(
+    () => readFeedCache<RemotePlaylist[]>(session, 'playlists') ?? [],
+  );
   // Bumped on every local edit. A fetch snapshots this before asking and only
   // applies its answer if nothing was edited in between - a heartbeat that
   // left before an edit landed must not roll the screen (or the next
@@ -158,7 +164,10 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
     const seqAtAsk = editSeq.current;
     try {
       const lists = await fetchRemotePlaylists(session);
-      if (editSeq.current === seqAtAsk) setRemote(lists);
+      if (editSeq.current === seqAtAsk) {
+        setRemote(lists);
+        writeFeedCache(session, 'playlists', lists);
+      }
     } catch {
       // Unreachable right now; whatever is on screen stays, and the next
       // heartbeat tries again.

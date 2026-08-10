@@ -20,7 +20,7 @@
 
 use crate::auth;
 use crate::AppState;
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde::Deserialize;
@@ -101,6 +101,29 @@ pub async fn record_play(
         .record_play(caller.id, body.track_id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(json!({ "ok": true })))
+}
+
+/// `GET /api/artist-top?name=` - one artist's most-played songs, all-time:
+/// `{ top: [{ id, plays }] }`, most-played first. Ids only, like the home
+/// feed: the client resolves them against its synced library.
+#[derive(Deserialize)]
+pub struct ArtistTopQuery {
+    pub name: String,
+}
+
+pub async fn artist_top(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(query): Query<ArtistTopQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let top: Vec<serde_json::Value> = state
+        .db
+        .top_plays_for_artist(caller.id, &query.name, 10)
+        .into_iter()
+        .map(|(id, plays)| json!({ "id": id, "plays": plays }))
+        .collect();
+    Ok(Json(json!({ "top": top })))
 }
 
 // --- the feed ----------------------------------------------------------------

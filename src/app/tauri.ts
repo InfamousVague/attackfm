@@ -377,6 +377,24 @@ export function reactivateAudioSession(): void {
 }
 
 /**
+ * Where the phone's own volume buttons sit, 0-1 - the level applied AFTER
+ * everything the app does, so it is the only reading of how loud the music
+ * actually is. 1 everywhere there is no separate system fader to ask (desktop,
+ * the browser, an older binary without the command), which leaves anything
+ * reading it behaving exactly as it did before.
+ */
+export async function systemOutputVolume(): Promise<number> {
+  if (!isTauri()) return 1;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const volume = await invoke<number>('ios_output_volume');
+    return typeof volume === 'number' && volume >= 0 && volume <= 1 ? volume : 1;
+  } catch {
+    return 1;
+  }
+}
+
+/**
  * Returns a URL an `<audio>` element can play for a local file, or null off
  * Tauri. It uses the ASSET PROTOCOL, not a blob: URL: WebKit's
  * `createMediaElementSource` reads silence from a blob (the track plays, but the

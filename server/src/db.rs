@@ -102,6 +102,142 @@ pub struct SpotifyAccountRow {
     pub display_name: Option<String>,
 }
 
+/// A live track's identity, carrying the id the matcher needs to report.
+pub struct MatchRow {
+    pub id: i64,
+    pub title: String,
+    pub artist: String,
+    pub album_artist: String,
+    pub album: String,
+    pub duration_ms: Option<i64>,
+}
+
+/// One watched Spotify collection and where its mirror stands.
+#[derive(Clone)]
+pub struct MirrorHead {
+    pub key: String,
+    pub kind: String,
+    pub spotify_id: String,
+    pub playlist_id: Option<i64>,
+    pub name: String,
+    pub owner: String,
+    pub image: String,
+    pub snapshot: String,
+    pub head_snapshot: String,
+    pub watch: bool,
+    pub state: String,
+    pub error: String,
+    pub total: i64,
+    pub resolved: i64,
+    pub queued: i64,
+    pub missing: i64,
+    pub ambiguous: i64,
+    pub local_name: String,
+    pub resolved_rev: i64,
+    pub next_check: i64,
+    pub checked_at: i64,
+    pub synced_at: i64,
+}
+
+/// One entry in a mirrored collection.
+#[derive(Clone)]
+pub struct MirrorItem {
+    pub track_uid: String,
+    pub occurrence: i64,
+    pub position: i64,
+    pub isrc: String,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub album_artist: String,
+    pub duration_ms: Option<i64>,
+    pub added_at: i64,
+    pub track_id: Option<i64>,
+    pub match_method: String,
+    pub state: String,
+    pub attempts: i64,
+    pub next_try_at: i64,
+    pub job_id: String,
+    pub note: String,
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct MirrorCounts {
+    pub total: i64,
+    pub resolved: i64,
+    pub queued: i64,
+    pub missing: i64,
+    pub ambiguous: i64,
+}
+
+const MIRROR_COLS: &str = "key, kind, spotify_id, playlist_id, name, owner, image, snapshot, \
+     head_snapshot, watch, state, error, total, resolved, queued, missing, ambiguous, \
+     local_name, resolved_rev, next_check, checked_at, synced_at";
+
+fn mirror_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<MirrorHead> {
+    Ok(MirrorHead {
+        key: r.get(0)?,
+        kind: r.get(1)?,
+        spotify_id: r.get(2)?,
+        playlist_id: r.get(3)?,
+        name: r.get(4)?,
+        owner: r.get(5)?,
+        image: r.get(6)?,
+        snapshot: r.get(7)?,
+        head_snapshot: r.get(8)?,
+        watch: r.get::<_, i64>(9)? != 0,
+        state: r.get(10)?,
+        error: r.get(11)?,
+        total: r.get(12)?,
+        resolved: r.get(13)?,
+        queued: r.get(14)?,
+        missing: r.get(15)?,
+        ambiguous: r.get(16)?,
+        local_name: r.get(17)?,
+        resolved_rev: r.get(18)?,
+        next_check: r.get(19)?,
+        checked_at: r.get(20)?,
+        synced_at: r.get(21)?,
+    })
+}
+
+const ITEM_COLS: &str = "track_uid, occurrence, position, isrc, title, artist, album, \
+     album_artist, duration_ms, added_at, track_id, match_method, state, attempts, next_try_at, \
+     job_id, note";
+
+fn item_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<MirrorItem> {
+    Ok(MirrorItem {
+        track_uid: r.get(0)?,
+        occurrence: r.get(1)?,
+        position: r.get(2)?,
+        isrc: r.get(3)?,
+        title: r.get(4)?,
+        artist: r.get(5)?,
+        album: r.get(6)?,
+        album_artist: r.get(7)?,
+        duration_ms: r.get(8)?,
+        added_at: r.get(9)?,
+        track_id: r.get(10)?,
+        match_method: r.get(11)?,
+        state: r.get(12)?,
+        attempts: r.get(13)?,
+        next_try_at: r.get(14)?,
+        job_id: r.get(15)?,
+        note: r.get(16)?,
+    })
+}
+
+/// How much a pin is trusted. A stored pin is only replaced by a strictly
+/// higher rank, so a listener's correction outlives every later guess.
+fn ext_method_rank(method: &str) -> i64 {
+    match method {
+        "manual" => 4,
+        "download" | "isrc" => 3,
+        "strict" => 2,
+        _ => 1,
+    }
+}
+
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
@@ -293,6 +429,153 @@ CREATE TABLE IF NOT EXISTS curated (
   built_at  INTEGER NOT NULL,
   PRIMARY KEY (user_id, slug)
 );
+
+-- A stable external identity for a local track, as a sidecar rather than a
+-- column on `tracks`: open() is execute_batch(SCHEMA) and nothing else, so a
+-- new TABLE lands on the deployed database and a new COLUMN silently never
+-- would. Global rather than per-user because the library itself is shared -
+-- a song one listener resolved is resolved for everyone, no second download
+-- and no second fuzzy match.
+--
+-- Keyed on track_id, so a pin survives re-tagging; and because upsert_track
+-- conflicts on rel_path it survives a re-scan too. Every read joins tracks
+-- and checks deleted = 0, so a pin whose target was tombstoned reads as
+-- unresolved and is re-run rather than pointing at a ghost.
+CREATE TABLE IF NOT EXISTS track_ext_ids (
+  source     TEXT    NOT NULL,          -- 'spotify' (bare id) | 'isrc'
+  ext_id     TEXT    NOT NULL,
+  track_id   INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+  -- How it was decided, RANKED. A pin may only be replaced by a strictly
+  -- better one: manual > download = isrc > strict > loose. That ranking is
+  -- what makes a correction permanent while still letting a later ISRC read
+  -- upgrade an earlier loose guess.
+  method     TEXT    NOT NULL DEFAULT 'loose',
+  matched_by TEXT    NOT NULL DEFAULT '',
+  linked_at  INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (source, ext_id)
+);
+CREATE INDEX IF NOT EXISTS track_ext_ids_track ON track_ext_ids(track_id);
+
+-- One watched Spotify collection <-> one local playlist. `key` reuses the
+-- convention spotify_synced already composes ('playlist:{id}' | 'album:{id}'
+-- | 'liked'), so the new tables need no translation against old bookkeeping.
+--
+-- playlist_id is ON DELETE SET NULL, not CASCADE: deleting the local playlist
+-- unlinks it and the next sync builds a fresh one, rather than throwing away
+-- the resolution work. No column is added to `playlists`.
+CREATE TABLE IF NOT EXISTS spotify_mirrors (
+  user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  key           TEXT    NOT NULL,
+  kind          TEXT    NOT NULL DEFAULT 'playlist',
+  spotify_id    TEXT    NOT NULL DEFAULT '',
+  playlist_id   INTEGER REFERENCES playlists(id) ON DELETE SET NULL,
+  name          TEXT    NOT NULL DEFAULT '',
+  owner         TEXT    NOT NULL DEFAULT '',
+  image         TEXT    NOT NULL DEFAULT '',
+  collaborative INTEGER NOT NULL DEFAULT 0,
+  public        INTEGER NOT NULL DEFAULT 0,
+  -- The snapshot whose items are FULLY mirrored below. For 'liked' (saved
+  -- tracks carry no snapshot_id) this is a synthesized "{total}:{newest}".
+  snapshot      TEXT    NOT NULL DEFAULT '',
+  -- The snapshot last SEEN by the cheap one-request head poll. head_snapshot
+  -- != snapshot is exactly "changed", decided on the server with no client
+  -- assertion involved.
+  head_snapshot TEXT    NOT NULL DEFAULT '',
+  watch         INTEGER NOT NULL DEFAULT 0,
+  -- idle | enumerating | resolving | downloading | partial | synced | error
+  state         TEXT    NOT NULL DEFAULT 'idle',
+  error         TEXT    NOT NULL DEFAULT '',
+  -- Durable counters, so the progress surface survives a restart and reads
+  -- the same on every device.
+  total         INTEGER NOT NULL DEFAULT 0,
+  resolved      INTEGER NOT NULL DEFAULT 0,
+  queued        INTEGER NOT NULL DEFAULT 0,
+  missing       INTEGER NOT NULL DEFAULT 0,
+  ambiguous     INTEGER NOT NULL DEFAULT 0,
+  -- The name last WRITTEN onto playlists.name. If the live name has drifted
+  -- from this, the listener renamed it and upstream must not clobber that.
+  local_name    TEXT    NOT NULL DEFAULT '',
+  detached_at   INTEGER NOT NULL DEFAULT 0,
+  -- current_rev() at the last resolve pass. When the library rev moves past
+  -- it, the unresolved rows are worth another run: new files may satisfy
+  -- them for free.
+  resolved_rev  INTEGER NOT NULL DEFAULT 0,
+  next_check    INTEGER NOT NULL DEFAULT 0,
+  backoff_secs  INTEGER NOT NULL DEFAULT 900,
+  checked_at    INTEGER NOT NULL DEFAULT 0,
+  synced_at     INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, key)
+);
+CREATE INDEX IF NOT EXISTS spotify_mirrors_due   ON spotify_mirrors(watch, next_check);
+CREATE INDEX IF NOT EXISTS spotify_mirrors_local ON spotify_mirrors(playlist_id);
+
+-- One row per playlist ENTRY, keyed by (track_uid, occurrence) rather than by
+-- position. That is load-bearing: an upstream reorder rewrites `position`
+-- while track_id - the expensive thing - survives untouched. `occurrence`
+-- exists because Spotify permits the same track twice in one playlist.
+--
+-- No foreign key on track_id on purpose: a tombstoned track must not erase
+-- mirror history. Validity is re-checked at materialize time.
+CREATE TABLE IF NOT EXISTS spotify_items (
+  user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  key          TEXT    NOT NULL,
+  -- Bare Spotify track id, preferring linked_from.id so the uid is stable
+  -- across markets. 'local:{position}' for local-file entries, which have no
+  -- id and resolve straight to 'unavailable'.
+  track_uid    TEXT    NOT NULL,
+  occurrence   INTEGER NOT NULL DEFAULT 0,
+  position     INTEGER NOT NULL,
+  isrc         TEXT    NOT NULL DEFAULT '',
+  title        TEXT    NOT NULL DEFAULT '',
+  artist       TEXT    NOT NULL DEFAULT '',
+  album        TEXT    NOT NULL DEFAULT '',
+  album_artist TEXT    NOT NULL DEFAULT '',
+  duration_ms  INTEGER,
+  added_at     INTEGER NOT NULL DEFAULT 0,
+  track_id     INTEGER,
+  match_method TEXT    NOT NULL DEFAULT '',
+  -- pending | resolved | queued | missing | ambiguous | unavailable | ignored
+  state        TEXT    NOT NULL DEFAULT 'pending',
+  attempts     INTEGER NOT NULL DEFAULT 0,
+  -- Backoff ladder: 1h, 6h, 24h, 7d, then dormant until an explicit retry, so
+  -- a track no provider carries stops being fetched forever.
+  next_try_at  INTEGER NOT NULL DEFAULT 0,
+  job_id       TEXT    NOT NULL DEFAULT '',
+  note         TEXT    NOT NULL DEFAULT '',
+  updated_at   INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, key, track_uid, occurrence)
+);
+CREATE INDEX IF NOT EXISTS spotify_items_order ON spotify_items(user_id, key, position);
+CREATE INDEX IF NOT EXISTS spotify_items_due   ON spotify_items(state, next_try_at);
+CREATE INDEX IF NOT EXISTS spotify_items_job   ON spotify_items(job_id);
+
+-- Free while we are here: "which playlists hold this track" and every cascade
+-- check on a track delete currently full-scan, since the only index on
+-- playlist_tracks is its (playlist_id, position) primary key.
+CREATE INDEX IF NOT EXISTS playlist_tracks_track ON playlist_tracks(track_id);
+
+-- Friends. A request is one row that exists until it is answered; a
+-- friendship is one row, not two, with the lower id always in a_id so
+-- "are these two friends" is a single primary-key lookup rather than an OR
+-- over both orderings.
+CREATE TABLE IF NOT EXISTS friend_requests (
+  id         INTEGER PRIMARY KEY,
+  from_user  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  to_user    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  -- One pending ask per direction: asking twice is the same ask.
+  UNIQUE(from_user, to_user)
+);
+CREATE INDEX IF NOT EXISTS friend_requests_to   ON friend_requests(to_user);
+CREATE INDEX IF NOT EXISTS friend_requests_from ON friend_requests(from_user);
+
+CREATE TABLE IF NOT EXISTS friendships (
+  a_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  b_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  since INTEGER NOT NULL,
+  PRIMARY KEY (a_id, b_id)
+);
+CREATE INDEX IF NOT EXISTS friendships_b ON friendships(b_id);
 "#;
 
 fn now_ms() -> i64 {
@@ -772,6 +1055,20 @@ impl Db {
             .collect()
     }
 
+    /// One playlist's live track ids, in order.
+    pub fn playlist_track_ids(&self, playlist_id: i64) -> Vec<i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT pt.track_id FROM playlist_tracks pt JOIN tracks t ON t.id = pt.track_id
+              WHERE pt.playlist_id = ?1 AND t.deleted = 0 ORDER BY pt.position",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![playlist_id], |r| r.get(0))
+            .map(|r| r.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
     pub fn playlist_owner(&self, playlist_id: i64) -> Option<i64> {
         self.lock()
             .query_row(
@@ -807,6 +1104,20 @@ impl Db {
             params![playlist_id, now_ms()],
         )?;
         tx.commit()
+    }
+
+    /// A playlist's current name - what the mirror compares against to notice
+    /// the listener renamed it locally.
+    pub fn playlist_name(&self, playlist_id: i64) -> Option<String> {
+        self.lock()
+            .query_row(
+                "SELECT name FROM playlists WHERE id = ?1",
+                params![playlist_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .ok()
+            .flatten()
     }
 
     pub fn rename_playlist(&self, playlist_id: i64, name: &str) -> rusqlite::Result<()> {
@@ -862,6 +1173,151 @@ impl Db {
             return Vec::new();
         };
         stmt.query_map(params![user_id, since_ms, limit], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    // --- friends -------------------------------------------------------
+    //
+    // A friendship is stored once, lower id first, so every question about a
+    // pair is one primary-key lookup. Everything below normalises before it
+    // touches the table.
+
+    /// Every friend of this user: (id, username), by name.
+    pub fn friends_of(&self, user_id: i64) -> Vec<(i64, String)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT u.id, u.username FROM friendships f
+             JOIN users u ON u.id = CASE WHEN f.a_id = ?1 THEN f.b_id ELSE f.a_id END
+             WHERE f.a_id = ?1 OR f.b_id = ?1
+             ORDER BY u.username COLLATE NOCASE",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Pending asks aimed AT this user: (request id, their id, their name).
+    pub fn incoming_requests(&self, user_id: i64) -> Vec<(i64, i64, String)> {
+        self.requests_where("r.to_user = ?1", "r.from_user", user_id)
+    }
+
+    /// Pending asks this user SENT: (request id, their id, their name).
+    pub fn outgoing_requests(&self, user_id: i64) -> Vec<(i64, i64, String)> {
+        self.requests_where("r.from_user = ?1", "r.to_user", user_id)
+    }
+
+    fn requests_where(&self, whose: &str, other: &str, user_id: i64) -> Vec<(i64, i64, String)> {
+        let conn = self.lock();
+        let sql = format!(
+            "SELECT r.id, u.id, u.username FROM friend_requests r
+             JOIN users u ON u.id = {other}
+             WHERE {whose} ORDER BY r.created_at DESC",
+        );
+        let Ok(mut stmt) = conn.prepare(&sql) else { return Vec::new() };
+        stmt.query_map(params![user_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn are_friends(&self, a: i64, b: i64) -> bool {
+        let (lo, hi) = if a < b { (a, b) } else { (b, a) };
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT 1 FROM friendships WHERE a_id = ?1 AND b_id = ?2",
+            params![lo, hi],
+            |_| Ok(()),
+        )
+        .is_ok()
+    }
+
+    /// Files a request. Returns its id, or the id of the one already standing.
+    pub fn add_friend_request(&self, from: i64, to: i64) -> rusqlite::Result<i64> {
+        let conn = self.lock();
+        conn.execute(
+            "INSERT OR IGNORE INTO friend_requests (from_user, to_user, created_at)
+             VALUES (?1, ?2, ?3)",
+            params![from, to, now_ms()],
+        )?;
+        Ok(conn.query_row(
+            "SELECT id FROM friend_requests WHERE from_user = ?1 AND to_user = ?2",
+            params![from, to],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// A pending request by id: (from, to). None once it has been answered.
+    pub fn friend_request(&self, id: i64) -> Option<(i64, i64)> {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT from_user, to_user FROM friend_requests WHERE id = ?1",
+            params![id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .ok()
+    }
+
+    pub fn delete_friend_request(&self, id: i64) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute("DELETE FROM friend_requests WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Makes the pair friends and clears any ask in either direction, so an
+    /// accepted request cannot leave a mirror-image one standing behind it.
+    pub fn add_friendship(&self, a: i64, b: i64) -> rusqlite::Result<()> {
+        let (lo, hi) = if a < b { (a, b) } else { (b, a) };
+        let conn = self.lock();
+        conn.execute(
+            "INSERT OR IGNORE INTO friendships (a_id, b_id, since) VALUES (?1, ?2, ?3)",
+            params![lo, hi, now_ms()],
+        )?;
+        conn.execute(
+            "DELETE FROM friend_requests
+             WHERE (from_user = ?1 AND to_user = ?2) OR (from_user = ?2 AND to_user = ?1)",
+            params![a, b],
+        )?;
+        Ok(())
+    }
+
+    pub fn remove_friendship(&self, a: i64, b: i64) -> rusqlite::Result<()> {
+        let (lo, hi) = if a < b { (a, b) } else { (b, a) };
+        let conn = self.lock();
+        conn.execute(
+            "DELETE FROM friendships WHERE a_id = ?1 AND b_id = ?2",
+            params![lo, hi],
+        )?;
+        Ok(())
+    }
+
+    /// Finds a user by exact name, case-insensitively - how one person names
+    /// another when adding them.
+    pub fn user_by_username(&self, username: &str) -> Option<(i64, String)> {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT id, username FROM users WHERE username = ?1 COLLATE NOCASE",
+            params![username],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .ok()
+    }
+
+    /// One artist's most-played songs, all-time: (track id, play count),
+    /// most-played first. NOCASE on the artist so "MF DOOM" and "MF Doom"
+    /// are one page. Feeds the library's artist view - its Top songs list.
+    pub fn top_plays_for_artist(&self, user_id: i64, artist: &str, limit: i64) -> Vec<(i64, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT p.track_id, COUNT(*) AS n
+             FROM plays p JOIN tracks t ON t.id = p.track_id AND t.deleted = 0
+             WHERE p.user_id = ?1 AND t.artist = ?2 COLLATE NOCASE
+             GROUP BY p.track_id ORDER BY n DESC, MAX(p.played_at) DESC LIMIT ?3",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, artist, limit], |r| Ok((r.get(0)?, r.get(1)?)))
             .map(|rows| rows.filter_map(Result::ok).collect())
             .unwrap_or_default()
     }
@@ -1124,6 +1580,541 @@ impl Db {
         )?;
         Ok(())
     }
+
+    // --- the Spotify mirror ---------------------------------------------------
+
+    /// Every user with a live Spotify link - who the sync loop has work for.
+    pub fn spotify_users(&self) -> Vec<i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) =
+            conn.prepare("SELECT user_id FROM spotify_accounts WHERE refresh_token != ''")
+        else {
+            return Vec::new();
+        };
+        stmt.query_map([], |r| r.get(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Resolve external ids to live local tracks. A pin whose target was
+    /// tombstoned simply misses, so the caller re-runs the ladder instead of
+    /// handing back a ghost.
+    pub fn ext_id_lookup(
+        &self,
+        source: &str,
+        ext_ids: &[String],
+    ) -> std::collections::HashMap<String, i64> {
+        if ext_ids.is_empty() {
+            return Default::default();
+        }
+        let conn = self.lock();
+        let mut found = std::collections::HashMap::new();
+        // Chunked rather than one giant IN list: SQLite's variable limit is
+        // 999 by default and a big playlist blows straight past it.
+        for chunk in ext_ids.chunks(400) {
+            let holes = std::iter::repeat("?").take(chunk.len()).collect::<Vec<_>>().join(",");
+            let sql = format!(
+                "SELECT e.ext_id, e.track_id FROM track_ext_ids e
+                 JOIN tracks t ON t.id = e.track_id
+                 WHERE t.deleted = 0 AND e.source = ? AND e.ext_id IN ({holes})"
+            );
+            let Ok(mut stmt) = conn.prepare(&sql) else { continue };
+            let mut args: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(chunk.len() + 1);
+            args.push(&source);
+            for id in chunk {
+                args.push(id);
+            }
+            let pairs: Vec<(String, i64)> = stmt
+                .query_map(args.as_slice(), |r| Ok((r.get(0)?, r.get(1)?)))
+                .map(|rows| rows.filter_map(Result::ok).collect())
+                .unwrap_or_default();
+            found.extend(pairs);
+        }
+        found
+    }
+
+    /// Record how an external id maps to a local track. A stored pin is only
+    /// ever replaced by a strictly better-ranked one (or when its target has
+    /// been tombstoned), so a re-sync never thrashes a good match and a
+    /// listener's manual correction is permanent.
+    pub fn ext_id_pin(
+        &self,
+        source: &str,
+        ext_id: &str,
+        track_id: i64,
+        method: &str,
+        matched_by: &str,
+    ) -> rusqlite::Result<()> {
+        let rank = ext_method_rank(method);
+        self.lock().execute(
+            "INSERT INTO track_ext_ids (source, ext_id, track_id, method, matched_by, linked_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(source, ext_id) DO UPDATE SET
+               track_id   = excluded.track_id,
+               method     = excluded.method,
+               matched_by = excluded.matched_by,
+               linked_at  = excluded.linked_at
+             WHERE ?7 > CASE track_ext_ids.method
+                          WHEN 'manual'   THEN 4
+                          WHEN 'download' THEN 3
+                          WHEN 'isrc'     THEN 3
+                          WHEN 'strict'   THEN 2
+                          ELSE 1 END
+                OR NOT EXISTS (
+                     SELECT 1 FROM tracks t
+                      WHERE t.id = track_ext_ids.track_id AND t.deleted = 0)",
+            params![source, ext_id, track_id, method, matched_by, now_ms(), rank],
+        )?;
+        Ok(())
+    }
+
+    pub fn ext_id_unpin(&self, source: &str, ext_id: &str) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "DELETE FROM track_ext_ids WHERE source = ?1 AND ext_id = ?2",
+            params![source, ext_id],
+        )?;
+        Ok(())
+    }
+
+    /// Every live track's identity CARRYING its id - `sync_identities` is the
+    /// same query without one, and the matcher needs to know what it matched.
+    pub fn match_index(&self) -> Vec<MatchRow> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT id, title, artist, album_artist, album, duration_ms
+               FROM tracks WHERE deleted = 0",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map([], |r| {
+            Ok(MatchRow {
+                id: r.get(0)?,
+                title: r.get(1)?,
+                artist: r.get(2)?,
+                album_artist: r.get(3)?,
+                album: r.get(4)?,
+                duration_ms: r.get(5)?,
+            })
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    pub fn spotify_mirror(&self, user_id: i64, key: &str) -> Option<MirrorHead> {
+        let conn = self.lock();
+        conn.query_row(
+            &format!("SELECT {MIRROR_COLS} FROM spotify_mirrors WHERE user_id = ?1 AND key = ?2"),
+            params![user_id, key],
+            mirror_from_row,
+        )
+        .optional()
+        .ok()
+        .flatten()
+    }
+
+    pub fn spotify_mirrors(&self, user_id: i64) -> Vec<MirrorHead> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(&format!(
+            "SELECT {MIRROR_COLS} FROM spotify_mirrors WHERE user_id = ?1 ORDER BY name"
+        )) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id], mirror_from_row)
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Create the mirror head if it is new, otherwise leave every field the
+    /// sync engine owns alone and refresh only what the listing knows.
+    pub fn spotify_mirror_seed(
+        &self,
+        user_id: i64,
+        key: &str,
+        kind: &str,
+        spotify_id: &str,
+        name: &str,
+        owner: &str,
+        image: &str,
+        head_snapshot: &str,
+    ) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO spotify_mirrors
+               (user_id, key, kind, spotify_id, name, owner, image, head_snapshot)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(user_id, key) DO UPDATE SET
+               name          = excluded.name,
+               owner         = excluded.owner,
+               image         = excluded.image,
+               head_snapshot = excluded.head_snapshot",
+            params![user_id, key, kind, spotify_id, name, owner, image, head_snapshot],
+        )?;
+        Ok(())
+    }
+
+    pub fn spotify_mirror_set_watch(&self, user_id: i64, key: &str, watch: bool) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "UPDATE spotify_mirrors SET watch = ?3, next_check = 0 WHERE user_id = ?1 AND key = ?2",
+            params![user_id, key, i64::from(watch)],
+        )?;
+        Ok(())
+    }
+
+    pub fn spotify_mirror_set_state(
+        &self,
+        user_id: i64,
+        key: &str,
+        state: &str,
+        error: &str,
+    ) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "UPDATE spotify_mirrors SET state = ?3, error = ?4 WHERE user_id = ?1 AND key = ?2",
+            params![user_id, key, state, error],
+        )?;
+        Ok(())
+    }
+
+    pub fn spotify_mirror_set_playlist(
+        &self,
+        user_id: i64,
+        key: &str,
+        playlist_id: i64,
+        local_name: &str,
+    ) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "UPDATE spotify_mirrors SET playlist_id = ?3, local_name = ?4
+              WHERE user_id = ?1 AND key = ?2",
+            params![user_id, key, playlist_id, local_name],
+        )?;
+        Ok(())
+    }
+
+    /// Stamp the end of a pass: what was mirrored, when, and when to look again.
+    pub fn spotify_mirror_stamp(
+        &self,
+        user_id: i64,
+        key: &str,
+        snapshot: &str,
+        resolved_rev: i64,
+        next_check: i64,
+        synced: bool,
+    ) -> rusqlite::Result<()> {
+        let now = now_ms();
+        self.lock().execute(
+            "UPDATE spotify_mirrors SET
+               snapshot     = ?3,
+               resolved_rev = ?4,
+               next_check   = ?5,
+               checked_at   = ?6,
+               synced_at    = CASE WHEN ?7 THEN ?6 ELSE synced_at END
+             WHERE user_id = ?1 AND key = ?2",
+            params![user_id, key, snapshot, resolved_rev, next_check, now, synced],
+        )?;
+        Ok(())
+    }
+
+    pub fn spotify_mirror_head_seen(
+        &self,
+        user_id: i64,
+        key: &str,
+        head_snapshot: &str,
+        next_check: i64,
+    ) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "UPDATE spotify_mirrors SET head_snapshot = ?3, next_check = ?4, checked_at = ?5
+              WHERE user_id = ?1 AND key = ?2",
+            params![user_id, key, head_snapshot, next_check, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// Watched mirrors whose next check is due, soonest first.
+    pub fn spotify_mirrors_due(&self, now_ms_val: i64, limit: i64) -> Vec<(i64, String)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT user_id, key FROM spotify_mirrors
+              WHERE watch = 1 AND next_check <= ?1
+              ORDER BY next_check LIMIT ?2",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![now_ms_val, limit], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Recount a mirror from its items and write the counters onto the head,
+    /// so the progress surface is restart-safe rather than in-memory.
+    pub fn spotify_mirror_recount(&self, user_id: i64, key: &str) -> rusqlite::Result<MirrorCounts> {
+        let conn = self.lock();
+        let counts = conn.query_row(
+            "SELECT COUNT(*),
+                    SUM(state = 'resolved'),
+                    SUM(state = 'queued'),
+                    SUM(state IN ('missing','unavailable','ignored')),
+                    SUM(state = 'ambiguous')
+               FROM spotify_items WHERE user_id = ?1 AND key = ?2",
+            params![user_id, key],
+            |r| {
+                Ok(MirrorCounts {
+                    total: r.get::<_, Option<i64>>(0)?.unwrap_or(0),
+                    resolved: r.get::<_, Option<i64>>(1)?.unwrap_or(0),
+                    queued: r.get::<_, Option<i64>>(2)?.unwrap_or(0),
+                    missing: r.get::<_, Option<i64>>(3)?.unwrap_or(0),
+                    ambiguous: r.get::<_, Option<i64>>(4)?.unwrap_or(0),
+                })
+            },
+        )?;
+        conn.execute(
+            "UPDATE spotify_mirrors SET total = ?3, resolved = ?4, queued = ?5,
+                                        missing = ?6, ambiguous = ?7
+              WHERE user_id = ?1 AND key = ?2",
+            params![
+                user_id,
+                key,
+                counts.total,
+                counts.resolved,
+                counts.queued,
+                counts.missing,
+                counts.ambiguous
+            ],
+        )?;
+        Ok(counts)
+    }
+
+    pub fn spotify_mirror_forget(&self, user_id: i64, key: &str) -> rusqlite::Result<()> {
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM spotify_items WHERE user_id = ?1 AND key = ?2",
+            params![user_id, key],
+        )?;
+        tx.execute(
+            "DELETE FROM spotify_mirrors WHERE user_id = ?1 AND key = ?2",
+            params![user_id, key],
+        )?;
+        tx.commit()
+    }
+
+    pub fn spotify_items(&self, user_id: i64, key: &str) -> Vec<MirrorItem> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(&format!(
+            "SELECT {ITEM_COLS} FROM spotify_items
+              WHERE user_id = ?1 AND key = ?2 ORDER BY position"
+        )) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, key], item_from_row)
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Replace a mirror's body with what upstream just reported, in one
+    /// transaction, CARRYING FORWARD the resolution of every row that is still
+    /// there. Only position and metadata are refreshed - that carry-forward is
+    /// the whole reason the table is keyed by (uid, occurrence) and not by
+    /// position, and it is what makes an upstream reorder nearly free.
+    pub fn spotify_items_replace(
+        &self,
+        user_id: i64,
+        key: &str,
+        fetched: &[MirrorItem],
+    ) -> rusqlite::Result<()> {
+        let mut conn = self.lock();
+        let now = now_ms();
+        let tx = conn.transaction()?;
+        for item in fetched {
+            tx.execute(
+                "INSERT INTO spotify_items
+                   (user_id, key, track_uid, occurrence, position, isrc, title, artist,
+                    album, album_artist, duration_ms, added_at, state, updated_at)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'pending',?13)
+                 ON CONFLICT(user_id, key, track_uid, occurrence) DO UPDATE SET
+                   position     = excluded.position,
+                   isrc         = CASE WHEN excluded.isrc != '' THEN excluded.isrc
+                                       ELSE spotify_items.isrc END,
+                   title        = excluded.title,
+                   artist       = excluded.artist,
+                   album        = excluded.album,
+                   album_artist = excluded.album_artist,
+                   duration_ms  = excluded.duration_ms,
+                   added_at     = excluded.added_at,
+                   updated_at   = excluded.updated_at",
+                params![
+                    user_id,
+                    key,
+                    item.track_uid,
+                    item.occurrence,
+                    item.position,
+                    item.isrc,
+                    item.title,
+                    item.artist,
+                    item.album,
+                    item.album_artist,
+                    item.duration_ms,
+                    item.added_at,
+                    now
+                ],
+            )?;
+        }
+        // Anything no longer upstream leaves the mirror. Building the keep-set
+        // as a temp table beats a 3,000-hole NOT IN list.
+        tx.execute_batch("CREATE TEMP TABLE IF NOT EXISTS _keep (uid TEXT, occ INTEGER); DELETE FROM _keep;")?;
+        {
+            let mut ins = tx.prepare("INSERT INTO _keep (uid, occ) VALUES (?1, ?2)")?;
+            for item in fetched {
+                ins.execute(params![item.track_uid, item.occurrence])?;
+            }
+        }
+        tx.execute(
+            "DELETE FROM spotify_items
+              WHERE user_id = ?1 AND key = ?2
+                AND (track_uid, occurrence) NOT IN (SELECT uid, occ FROM _keep)",
+            params![user_id, key],
+        )?;
+        tx.execute_batch("DROP TABLE IF EXISTS _keep;")?;
+        tx.commit()
+    }
+
+    /// Rows the resolver should look at: never-tried ones first, then those
+    /// whose backoff has come due.
+    pub fn spotify_items_pending(
+        &self,
+        user_id: i64,
+        key: &str,
+        now_ms_val: i64,
+        limit: i64,
+    ) -> Vec<MirrorItem> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(&format!(
+            "SELECT {ITEM_COLS} FROM spotify_items
+              WHERE user_id = ?1 AND key = ?2
+                AND state IN ('pending','missing','ambiguous')
+                AND next_try_at <= ?3
+              ORDER BY position LIMIT ?4"
+        )) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, key, now_ms_val, limit], item_from_row)
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn spotify_item_set(
+        &self,
+        user_id: i64,
+        key: &str,
+        uid: &str,
+        occurrence: i64,
+        state: &str,
+        track_id: Option<i64>,
+        method: &str,
+        job_id: &str,
+        note: &str,
+    ) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "UPDATE spotify_items SET
+               state = ?5, track_id = ?6, match_method = ?7, job_id = ?8,
+               note = ?9, updated_at = ?10
+             WHERE user_id = ?1 AND key = ?2 AND track_uid = ?3 AND occurrence = ?4",
+            params![user_id, key, uid, occurrence, state, track_id, method, job_id, note, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// Push a failed entry down the backoff ladder: 1h, 6h, 24h, 7d, then
+    /// dormant until someone asks for a retry.
+    pub fn spotify_item_defer(
+        &self,
+        user_id: i64,
+        key: &str,
+        uid: &str,
+        occurrence: i64,
+        note: &str,
+    ) -> rusqlite::Result<()> {
+        const LADDER_MS: [i64; 4] = [3_600_000, 21_600_000, 86_400_000, 604_800_000];
+        let conn = self.lock();
+        let attempts: i64 = conn
+            .query_row(
+                "SELECT attempts FROM spotify_items
+                  WHERE user_id = ?1 AND key = ?2 AND track_uid = ?3 AND occurrence = ?4",
+                params![user_id, key, uid, occurrence],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let next = LADDER_MS
+            .get(attempts as usize)
+            .copied()
+            .map(|d| now_ms() + d)
+            .unwrap_or(i64::MAX);
+        conn.execute(
+            "UPDATE spotify_items SET state = 'missing', attempts = attempts + 1,
+                                      next_try_at = ?5, job_id = '', note = ?6,
+                                      updated_at = ?7
+              WHERE user_id = ?1 AND key = ?2 AND track_uid = ?3 AND occurrence = ?4",
+            params![user_id, key, uid, occurrence, next, note, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// Clear the backoff on a mirror's unfindable rows so they are tried again.
+    pub fn spotify_items_retry(&self, user_id: i64, key: &str) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "UPDATE spotify_items SET attempts = 0, next_try_at = 0, state = 'pending', note = ''
+              WHERE user_id = ?1 AND key = ?2 AND state IN ('missing','ambiguous')",
+            params![user_id, key],
+        )?;
+        Ok(())
+    }
+
+    /// Which mirror entry a download job belongs to, for the completion hook.
+    pub fn spotify_item_by_job(&self, job_id: &str) -> Option<(i64, String, String, i64)> {
+        self.lock()
+            .query_row(
+                "SELECT user_id, key, track_uid, occurrence FROM spotify_items
+                  WHERE job_id = ?1 AND state = 'queued' LIMIT 1",
+                params![job_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .optional()
+            .ok()
+            .flatten()
+    }
+
+    /// The honest sibling of `set_playlist_tracks`: same wholesale replace, but
+    /// it reports which ids failed to land instead of swallowing the error, so
+    /// a mirror can tell the difference between "wrote 300" and "wrote 12".
+    pub fn set_playlist_tracks_checked(
+        &self,
+        playlist_id: i64,
+        track_ids: &[i64],
+    ) -> rusqlite::Result<(usize, Vec<i64>)> {
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM playlist_tracks WHERE playlist_id = ?1",
+            params![playlist_id],
+        )?;
+        let mut landed = 0usize;
+        let mut dropped = Vec::new();
+        for (position, track_id) in track_ids.iter().enumerate() {
+            match tx.execute(
+                "INSERT INTO playlist_tracks (playlist_id, track_id, position)
+                 VALUES (?1, ?2, ?3)",
+                params![playlist_id, track_id, position as i64],
+            ) {
+                Ok(_) => landed += 1,
+                Err(_) => dropped.push(*track_id),
+            }
+        }
+        tx.execute(
+            "UPDATE playlists SET updated_at = ?2 WHERE id = ?1",
+            params![playlist_id, now_ms()],
+        )?;
+        tx.commit()?;
+        Ok((landed, dropped))
+    }
+
     // --- what the curator knows ----------------------------------------------
 
     /// Title, artist, genre and lyric length for a set of tracks - what the

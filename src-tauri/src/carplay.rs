@@ -24,6 +24,7 @@ mod native {
     extern "C" {
         fn afm_carplay_set_library(json: *const c_char);
         fn afm_carplay_set_now_playing(json: *const c_char);
+        fn afm_set_idle_timer_disabled(disabled: i32);
     }
 
     // The handle events ride out on. A OnceLock because the CarPlay scene can
@@ -45,6 +46,10 @@ mod native {
         if let Ok(json) = CString::new(payload) {
             unsafe { afm_carplay_set_now_playing(json.as_ptr()) };
         }
+    }
+
+    pub fn set_idle_disabled(disabled: bool) {
+        unsafe { afm_set_idle_timer_disabled(if disabled { 1 } else { 0 }) };
     }
 
     /// A song tapped on the car screen: forwarded to the webview, which owns
@@ -99,4 +104,13 @@ pub fn carplay_now_playing(payload: String) {
     #[cfg(target_os = "ios")]
     native::push_now_playing(&payload);
     let _ = payload;
+}
+
+/// Parks the phone's auto-lock while the full-screen player is up (the
+/// webview dims itself instead - the Spotify behavior). No-op off iOS.
+#[tauri::command]
+pub fn set_idle_timer_disabled(disabled: bool) {
+    #[cfg(target_os = "ios")]
+    native::set_idle_disabled(disabled);
+    let _ = disabled;
 }

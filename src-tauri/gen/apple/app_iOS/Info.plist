@@ -15,9 +15,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.0</string>
+	<string>0.1.3</string>
 	<key>CFBundleVersion</key>
-	<string>0.1.0</string>
+	<string>0.1.3</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -75,5 +75,11 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>AttackFM connects to your music server on this network.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.music</string>
+	<key>NSCameraUsageDescription</key>
+	<string>AttackFM uses the camera only to scan QR codes: signing in from another device you own, and adding a friend from their code.</string>
 </dict>
 </plist>

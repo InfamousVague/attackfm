@@ -144,6 +144,15 @@ img {
   pointer-events: none;
 }
 
+/* Library and Downloads put their name where the wordmark sits on Home, so the
+   page is named once, up top, instead of spending body space on a heading. */
+.mobileHeader__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) .mobileHeader__logo {
     filter: invert(1);
@@ -664,6 +673,24 @@ img {
   height: 100%;
 }
 
+/* The clear rim's frost: a light translucent wash over the outer band, with a
+   faint ring where the print ends - the same grammar as the hub's plastic.
+   On the root rather than the face, because it is material, not print: the
+   frost holds still while the disc turns under it. */
+.spinningDisc::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(
+    circle closest-side at 50%,
+    transparent 0 calc(100% - max(5.5%, 4px)),
+    rgb(255 255 255 / 0.14) calc(100% - max(5%, 3.5px)) calc(100% - max(4.6%, 3.2px)),
+    rgb(255 255 255 / 0.07) calc(100% - max(4.2%, 2.8px)) 100%
+  );
+}
+
 .spinningDisc__face {
   position: absolute;
   inset: 0;
@@ -672,16 +699,23 @@ img {
   /* No drawn border: the spectral hairline at the rim is the edge. The mask
      stops the print cleanly at the hub - a real disc's label ends there, and
      inside it there is only clear plastic with the strip's glass showing
-     through. The plastic itself is the hub overlay's to suggest. */
+     through. The plastic itself is the hub overlay's to suggest.
+     The print also stops short of the RIM: a pressed disc keeps a clear ring
+     of bare polycarbonate around the outside, so the art ghosts to a quarter
+     strength there and the frost overlay (the root's ::after) does the rest.
+     Proportional with a floor - a band the size of the player strip's disc
+     must still read as a band, not a hairline. */
   -webkit-mask-image: radial-gradient(
     circle closest-side at 50%,
     transparent 0 33%,
-    black 36% 100%
+    black 36% calc(100% - max(5.5%, 4px)),
+    rgb(0 0 0 / 0.25) calc(100% - max(4.5%, 3px)) 100%
   );
   mask-image: radial-gradient(
     circle closest-side at 50%,
     transparent 0 33%,
-    black 36% 100%
+    black 36% calc(100% - max(5.5%, 4px)),
+    rgb(0 0 0 / 0.25) calc(100% - max(4.5%, 3px)) 100%
   );
   /* The turn itself is written here as an inline transform by SpinningDisc,
      frame by frame: a platter brakes and catches up rather than toggling, so
@@ -727,12 +761,14 @@ img {
      border; a spectral echo on top of it read as one thick outline. */
   -webkit-mask-image: radial-gradient(
     circle closest-side at 50%,
-    transparent 0 calc(100% - 2px),
+    transparent 0 calc(100% - max(5.5%, 4px)),
+    rgb(0 0 0 / 0.35) calc(100% - max(4.5%, 3px)) calc(100% - 2.5px),
     black calc(100% - 1.5px) 100%
   );
   mask-image: radial-gradient(
     circle closest-side at 50%,
-    transparent 0 calc(100% - 2px),
+    transparent 0 calc(100% - max(5.5%, 4px)),
+    rgb(0 0 0 / 0.35) calc(100% - max(4.5%, 3px)) calc(100% - 2.5px),
     black calc(100% - 1.5px) 100%
   );
   mix-blend-mode: screen;
@@ -1025,10 +1061,11 @@ img {
   z-index: 4;
   display: flex;
   align-items: stretch;
-  /* Bottom padding is the home-indicator safe area plus a bit of breathing room,
-     so the plate runs to the very bottom edge while the tabs sit clear above the
-     indicator rather than crowding it. */
-  padding: var(--glacier-space-1) var(--glacier-space-1)
+  /* Top padding gives the tabs a little air under the hairline instead of
+     starting hard against it. Bottom padding is the home-indicator safe area
+     plus breathing room, so the plate runs to the very bottom edge while the
+     tabs sit clear above the indicator rather than crowding it. */
+  padding: var(--glacier-space-2) var(--glacier-space-1)
     calc(var(--app-safe-bottom) + var(--glacier-space-3));
   border-radius: 0;
   /* A dark frosted plate of its own rather than riding transparent on the
@@ -1179,6 +1216,35 @@ img {
   animation: npRise 0.28s var(--glacier-ease-out);
 }
 
+/* The inactivity veil over the Now Playing sheet: the screen stays awake (the
+   native idle timer is parked while the sheet is up and playing), and this
+   near-black wash is the "dim" - a slow fade in, an instant lift on touch.
+   Inert until dimmed so it never eats a tap meant for the controls. */
+.npScreen__dim {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  /* The waking touch lifts it near-instantly; the fade IN gets its own, far
+     slower clock on the dimmed state below. */
+  transition: opacity 0.25s ease;
+}
+.npScreen__dim[data-dim] {
+  /* A whisper of a dim - enough to read as "resting", not a blackout. The art
+     and controls stay fully visible; the screen just eases back a touch. */
+  opacity: 0.22;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: opacity 2.4s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .npScreen__dim {
+    transition: none;
+  }
+}
+
 /* The title/heart row and the scrubber want a touch more room from the edges
    than the screen's own gutter - they read as the sheet's content, set in
    from the art above and the transport below. */
@@ -1305,6 +1371,35 @@ img {
   text-overflow: ellipsis;
 }
 
+/* Shown only while the deck has genuinely run dry, under the artist line.
+   Quiet on purpose: it is an explanation for a pause the ear already noticed,
+   not an alarm. */
+.npScreen__buffering {
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-subtle, var(--glacier-text-muted));
+  animation: npBufferPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes npBufferPulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
+/* The artist line as a link into their page: the same line, tappable. */
+.npScreen__artistLink {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.npScreen__artistLink:active {
+  color: var(--glacier-text);
+  text-decoration: underline;
+}
+
 .npScreen__heart {
   flex: none;
 }
@@ -1336,6 +1431,74 @@ img {
    thing, a solid accent circle. */
 .npScreen__transport [data-on] {
   color: var(--glacier-accent-solid);
+}
+
+/* The secondary action row under the transport: the device hand-off and the
+   equalizer, centred and quieter than the controls above them. */
+.npScreen__actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--glacier-space-5);
+  flex: none;
+  padding-block-start: var(--glacier-space-2);
+  color: var(--glacier-text-muted);
+}
+
+/* Lyrics as a full-screen view OVER the Now Playing sheet - it fills the whole
+   sheet (which is fixed inset:0), not a popover pinned to the bottom rail that
+   sat too low. Portalled with the sheet, so the safe-area insets come straight
+   from env() - the --app-safe-* vars are out of scope here (see .npScreen). */
+.npScreen__lyricsView {
+  position: absolute;
+  /* An absolutely positioned child resolves against the PADDING box, so
+     `inset: 0` already starts below the sheet's own top inset - and the
+     padding below then applied the notch inset a second time, which is what
+     held the words a header's height too low. Pulling the panel back up by
+     exactly the sheet's top padding puts it against the top of the screen, so
+     the lyrics claim the header's space and its own padding is the only thing
+     keeping them clear of the notch.
+
+     Left, right and bottom stay on the padding box: the sides keep the
+     sheet's margins, and the bottom is what stops the words running under the
+     controls. */
+  top: calc(-1 * (env(safe-area-inset-top, 0px) + var(--glacier-space-3)));
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  padding: calc(env(safe-area-inset-top, 0px) + var(--glacier-space-3))
+    var(--glacier-space-6, 1.75rem) calc(env(safe-area-inset-bottom, 0px) + var(--glacier-space-5));
+  background: var(--glacier-bg);
+  animation: npRise 0.24s var(--glacier-ease-out);
+}
+
+.npScreen__lyricsHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+  flex: none;
+  margin-block-end: var(--glacier-space-3);
+}
+
+.npScreen__lyricsTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+  font-size: 1.05rem;
+}
+
+/* The words own the rest of the sheet and scroll within it; the kit Lyrics
+   fills whatever height it is given. */
+.npScreen__lyricsBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .npScreen__play {
@@ -1624,6 +1787,96 @@ img {
   font-size: clamp(1.5rem, 4.5vw, 2rem);
   font-weight: 650;
   letter-spacing: -0.02em;
+}
+
+/* ── Library ─────────────────────────────────────────────────────────────────
+   The Library tab reuses the Home page's scroll/padding (it wears both classes)
+   and its shelf/card look; these are its own header and the browse panel at the
+   foot. */
+.libraryHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  min-width: 0;
+}
+
+.libraryHead__title {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* The full song table sits at the bottom as a self-contained scrollable panel -
+   a bounded height so the shelves above stay reachable by the page's own
+   scroll, rather than the grid swallowing the whole viewport. */
+.librarySongs .libraryBody {
+  flex: none;
+  block-size: min(70dvh, 44rem);
+}
+
+/* The table is the screen, so it bleeds through the page's side padding to the
+   window edges - rows end where the glass does, and only the cells' own
+   padding insets their content. */
+.librarySongs {
+  margin-inline: calc(-1 * var(--glacier-space-4));
+}
+
+/* Skeleton loading for shelf cards. A card whose artwork is still resolving
+   wears a sheen over its cover and its two text lines - the same elements, so
+   its height never changes - and reveals art + text together once the cover
+   arrives. Toggled by `data-loading` on each piece; the JS clears it on the
+   image's load. */
+@keyframes skelSheen {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.trackCardArt[data-loading],
+.artistCardArt[data-loading],
+.trackCardTitle[data-loading],
+.trackCardArtist[data-loading],
+.artistCardName[data-loading] {
+  color: transparent;
+  background-image: linear-gradient(
+    100deg,
+    var(--glacier-surface) 30%,
+    var(--glacier-surface-hover, rgba(150, 150, 150, 0.16)) 50%,
+    var(--glacier-surface) 70%
+  );
+  background-size: 200% 100%;
+  animation: skelSheen 1.25s ease-in-out infinite;
+}
+
+/* The text sheens are short bars, not full-width - a skeleton, not a fill. */
+.trackCardTitle[data-loading] {
+  inline-size: 78%;
+  border-radius: 0.3rem;
+}
+
+.trackCardArtist[data-loading] {
+  inline-size: 52%;
+  border-radius: 0.3rem;
+}
+
+.artistCardName[data-loading] {
+  inline-size: 70%;
+  border-radius: 0.3rem;
+}
+
+/* Stillness asked for is stillness given: hold the sheen, drop the motion. */
+@media (prefers-reduced-motion: reduce) {
+  .trackCardArt[data-loading],
+  .artistCardArt[data-loading],
+  .trackCardTitle[data-loading],
+  .trackCardArtist[data-loading],
+  .artistCardName[data-loading] {
+    animation: none;
+  }
 }
 
 .homeShelf {
@@ -2103,10 +2356,12 @@ img {
 .playlistTile {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: var(--glacier-space-2);
+  align-items: stretch;
+  gap: var(--glacier-space-1);
   flex: 0 0 auto;
-  width: 5rem;
+  /* The same footprint as every other card on the page (.trackCard): the
+     playlists are peers of the shelves, not a runt row of chips. */
+  width: 9.5rem;
   padding: 0;
   background: none;
   border: none;
@@ -2120,16 +2375,24 @@ img {
 .tileSquircle {
   display: grid;
   place-items: center;
-  width: 5rem;
-  height: 5rem;
-  border-radius: 34%;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: var(--glacier-radius-lg);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
   overflow: hidden;
   color: var(--glacier-accent-contrast, #fff);
   transition: transform var(--glacier-duration-fast) var(--glacier-ease-out);
 }
 
+/* One cover standing for the whole list, filling the square. */
+.tileCoverFull img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .playlistTile:hover .tileSquircle {
-  transform: scale(1.06);
+  transform: translateY(-2px) scale(1.02);
 }
 
 .playlistTile:focus-visible {
@@ -2408,8 +2671,9 @@ img {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--glacier-text-muted);
-  font-size: var(--glacier-font-size-xs);
+  text-align: start;
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 600;
 }
 
 /* The playlist modal's track list: a column of clickable rows, art then a
@@ -2882,23 +3146,63 @@ img {
     --app-player-height: 9rem;
   }
 
-  /* The hero's lyric words hang from the BOTTOM of the header block: the
-     band's lower edge sits where the playlist tiles end (the hero header's
-     own bottom), and the words grow upward toward the heading - never into
-     the chrome above, never over the song table below, and nowhere near the
-     backdrop's clipped lower edge, which is where a top-anchored band sent
-     them on a notched phone.
+  /* The download queue lives in the header's action cluster on the phone now,
+     global to every page - so the per-page copy each page still renders (for
+     the desktop title-bar-less case) is a duplicate here and stands down. */
+  .pageActions {
+    display: none;
+  }
 
-     The numbers are anchored to the backdrop's fixed 22rem height: the
-     header content ends 15rem below the safe area (3.375rem of chrome +
-     heading + tile row), so the bottom inset is what remains of the
-     backdrop, shrinking as the notch pushes the content down. The 8rem
-     height is the gap between the heading's bottom and the tiles' bottom -
-     the exact seam the words are meant to fill. */
+  /* On the phone the lyric words fill the WHOLE height of the background - a
+     full-height wash of lyrics behind the page (Home) and behind the sheet
+     (Now Playing) - rather than the old band in the header seam. */
+  .nowPlayingBackdrop {
+    block-size: 100%;
+  }
+  /* The blurred art keeps to a top wash; only the words run the full height.
+     The mask has to fade over that full height now, or the lower reaches of
+     the words clip to nothing. (Words-only backdrops carry no art to cap.) */
+  .nowPlayingBackdrop:not([data-words-only]) .npDrift,
+  .nowPlayingBackdrop:not([data-words-only]) .npGlow {
+    block-size: 22rem;
+    inset-block-end: auto;
+  }
+  .nowPlayingBackdrop:not([data-words-only]) {
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.95),
+      rgba(0, 0, 0, 0.5) 30%,
+      rgba(0, 0, 0, 0.32)
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.95),
+      rgba(0, 0, 0, 0.5) 30%,
+      rgba(0, 0, 0, 0.32)
+    );
+  }
+  /* The words span the page: full width in from the gutter, and top to bottom
+     clear of the header above and the floating player below. */
   .npWords {
-    inset-block-start: auto;
-    inset-block-end: calc(7rem - var(--app-safe-top, 0px));
-    block-size: 8rem;
+    inset-block: calc(env(safe-area-inset-top, 0px) + 3.5rem)
+      calc(env(safe-area-inset-bottom, 0px) + var(--app-player-height, 9rem));
+    inset-inline: var(--glacier-space-4);
+  }
+
+  /* The Now Playing sheet's own words layer: fill the sheet, ride ABOVE its
+     blurred cover (z -1, same layer but later in the DOM) and UNDER the
+     controls, and clear the transport row at the bottom. */
+  .npScreen .nowPlayingBackdrop {
+    position: absolute;
+    inset: 0;
+    block-size: 100%;
+    z-index: -1;
+    opacity: 0.5;
+  }
+  .npScreen .npWords {
+    inset-block: calc(env(safe-area-inset-top, 0px) + 4rem)
+      calc(env(safe-area-inset-bottom, 0px) + 5rem);
+    inset-inline: var(--glacier-space-6);
   }
 
   /* The compact pack hugs its rows - fine at desktop control sizes, airless
@@ -3305,6 +3609,67 @@ img {
   gap: 0.1rem;
 }
 
+/* A per-job action button on the Downloads page (retry / cancel / remove). */
+.dlCard__act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.9rem;
+  block-size: 1.9rem;
+  border: none;
+  border-radius: var(--glacier-radius-full);
+  background: transparent;
+  color: var(--glacier-text-muted);
+  cursor: pointer;
+}
+
+.dlCard__act:hover {
+  background: var(--glacier-surface-hover, rgba(128, 128, 128, 0.14));
+  color: var(--glacier-text);
+}
+
+/* ── Downloads tab ──────────────────────────────────────────────────────────
+   The import queue as a full page; inherits .homePage's scroll/gutter. */
+.downloadsHead {
+  display: flex;
+  align-items: center;
+  /* The page title moved into the app header, so the queue's controls are the
+     row's only content; they hold the right edge they always had. */
+  justify-content: flex-end;
+  gap: var(--glacier-space-3);
+  flex-wrap: wrap;
+}
+
+.downloadsHead__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.downloadsEmpty {
+  color: var(--glacier-text-muted);
+  padding: var(--glacier-space-6) var(--glacier-space-2);
+  text-align: center;
+}
+
+/* The full-page queue is NOT the popover: no inner clamp, no nested scroller.
+   The page itself scrolls (it is a .homePage), so the cards run under the
+   bottom nav and dissolve into its blur like every other page's content.
+   Doubled selector so this outweighs the popover's mobile 60vh clamp. */
+.dlList.downloadsList {
+  margin-block-start: var(--glacier-space-3);
+  max-block-size: none;
+  overflow-y: visible;
+}
+
+/* And the per-song lists inside the page's cards follow suit: fully expanded
+   at every width, no scroller-in-scroller. */
+.downloadsList .dlTracks {
+  max-block-size: none;
+  overflow-y: visible;
+}
+
+/* The Library's Summary / All-songs tab switch, under the header title. */
 /* The per-song sub-list under an album/playlist import. */
 .dlTracks {
   margin: 0.35rem 0 0;
@@ -4718,7 +5083,53 @@ img {
   flex: 1;
 }
 
-/* ---- The curator and the DJ -------------------------------------------- */
+/* ---- Plugins: updates, browse, sources --------------------------------- */
+
+/* The update notice sits above the tabs, tinted so it reads as news rather
+   than as another section. Nothing here updates on its own, so this banner is
+   the only thing that says a new version exists. */
+.pluginUpdates {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-3);
+  border: 1px solid var(--glacier-accent-6);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-accent-2);
+}
+
+.pluginUpdatesHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+}
+
+.pluginUpdateRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding-block-start: var(--glacier-space-2);
+  border-block-start: 1px solid var(--glacier-accent-6);
+}
+
+.pluginBrowse,
+.pluginSources {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+/* Browse rows stand alone rather than under a repository heading, so each
+   needs its own frame instead of the divider the repo list uses. */
+.pluginBrowse .pluginRepoRow {
+  padding: var(--glacier-space-3);
+  border: 1px solid var(--glacier-border);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface);
+}
+
+/* ---- The curator ------------------------------------------------------- */
 
 /* Said while the curator is still reading the library, so a thin shelf reads
    as work in progress rather than a verdict on your taste. */
@@ -4726,72 +5137,6 @@ img {
   margin: 0;
   padding: 0 var(--glacier-space-4);
   color: var(--glacier-text-muted);
-  font-size: var(--glacier-font-size-sm);
-}
-
-/* The DJ's switch, in the page's action cluster. Wears the accent while it is
-   running - it changes what plays next, which is worth being obvious about. */
-.djToggle {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--glacier-space-1);
-  padding: var(--glacier-space-1) var(--glacier-space-3);
-  border-radius: var(--glacier-radius-full);
-  border: var(--glacier-hairline) solid var(--glacier-border);
-  background: transparent;
-  color: var(--glacier-text-muted);
-  font: inherit;
-  font-size: var(--glacier-font-size-sm);
-  font-weight: var(--glacier-font-weight-medium);
-  cursor: pointer;
-}
-
-.djToggle:hover {
-  background: var(--glacier-hover);
-  color: var(--glacier-text);
-}
-
-.djToggle[data-on] {
-  background: var(--glacier-accent-soft);
-  border-color: var(--glacier-accent-border);
-  color: var(--glacier-accent-text);
-}
-
-/* What the DJ said on the way into this song, above the player. Same footprint
-   as the indexing pill, so the two never fight for the same strip. */
-.djBar {
-  position: absolute;
-  z-index: 3;
-  inset-inline: var(--glacier-space-4);
-  inset-block-end: calc(var(--app-nav-height) + 6.5rem);
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-2);
-  padding: var(--glacier-space-2) var(--glacier-space-3);
-  border-radius: var(--glacier-radius-full);
-  background: var(--glacier-glass-regular, var(--glacier-glass-thin));
-  backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
-  border: var(--glacier-hairline) solid var(--glacier-border);
-  pointer-events: none;
-}
-
-.djBar__badge {
-  flex: none;
-  padding: 0 var(--glacier-space-2);
-  border-radius: var(--glacier-radius-full);
-  background: var(--glacier-accent-solid);
-  color: var(--glacier-accent-on, #fff);
-  font-size: var(--glacier-font-size-xs);
-  font-weight: var(--glacier-font-weight-bold, 700);
-  letter-spacing: 0.04em;
-}
-
-.djBar__line {
-  min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-size: var(--glacier-font-size-sm);
 }
 
@@ -4844,7 +5189,10 @@ img {
 
 /* The add affordance rides the cover, so the whole card reads as "tap to get
    this" without a second row of chrome. */
-.findCard__add {
+/* The floating accent badge on the cover: a plus while the song is still a
+   suggestion, a play glyph once it is downloaded (the whole card plays it). */
+.findCard__add,
+.findCard__play {
   position: absolute;
   inset-block-end: var(--glacier-space-2);
   inset-inline-end: var(--glacier-space-2);
@@ -4857,6 +5205,23 @@ img {
   background: var(--glacier-accent-solid);
   color: var(--glacier-accent-on, #fff);
   box-shadow: var(--glacier-shadow-2, 0 2px 6px rgba(0, 0, 0, 0.35));
+}
+
+/* While its download runs, the cover dims under a full circular-progress
+   overlay - the card wears its own status until the file lands and it drops off
+   the shelf. */
+.findCard__cover[data-downloading] img {
+  filter: brightness(0.4) saturate(0.85);
+}
+
+.findCard__progress {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
 }
 
 /* Why it is here, in the terms actually measured. */
@@ -4896,4 +5261,736 @@ img {
   .findCard__no {
     opacity: 1;
   }
+}
+
+/* "Suggested for this playlist": what else belongs, under the list itself -
+   the same row shape as the playlist's own, so it reads as a continuation
+   rather than an advert bolted to the bottom. Its rows carry a + instead of an
+   × and no drag handle: they are not part of the order until you say so. */
+.playlistSuggest {
+  padding: var(--glacier-space-5) var(--glacier-space-4) var(--glacier-space-6);
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border);
+  margin-block-start: var(--glacier-space-4);
+}
+
+.playlistSuggest__title {
+  margin: 0;
+  font-size: var(--glacier-font-size-lg);
+}
+
+.playlistSuggest__blurb {
+  display: block;
+  margin-block-end: var(--glacier-space-3);
+}
+
+.playlistSuggest__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The playlist's own rows sit inside the kit's sortable item, which supplies
+   the padding; these stand alone and need their own. */
+.playlistSuggest__row {
+  padding: var(--glacier-space-1) var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+}
+
+.playlistSuggest__row:hover {
+  background: var(--glacier-hover);
+}
+
+/* --- Mobile sign-in gate ---------------------------------------------------
+   The phone's front door: a full-screen welcome + connect form shown until a
+   server is signed into. Scrolls if the keyboard shrinks the viewport, and
+   keeps its content in a comfortable reading column on any width. */
+.loginGate {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 28px;
+  padding: max(32px, env(safe-area-inset-top)) 24px max(32px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+  background:
+    radial-gradient(120% 80% at 50% -10%, color-mix(in srgb, var(--glacier-accent) 22%, transparent), transparent 60%),
+    var(--glacier-bg, #0b0b0d);
+}
+
+.loginGate__hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.loginGate__mark {
+  inline-size: 168px;
+  max-inline-size: 60vw;
+  height: auto;
+  object-fit: contain;
+}
+
+.loginGate__tag {
+  max-inline-size: 30ch;
+}
+
+.loginGate__form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  inline-size: 100%;
+  max-inline-size: 420px;
+  margin-inline: auto;
+}
+
+.loginGate__submit {
+  margin-top: 4px;
+}
+
+.loginGate__foot {
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* --- Sign-in wizard extras (back link) + code path ------------------------- */
+.loginGate__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 6px 10px 6px 6px;
+  margin-bottom: 2px;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--glacier-fg, #fff) 8%, transparent);
+  color: var(--glacier-fg, #fff);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  max-inline-size: 100%;
+}
+.loginGate__back > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.loginGate__back:hover {
+  background: color-mix(in srgb, var(--glacier-fg, #fff) 14%, transparent);
+}
+
+/* --- QR camera scanner ----------------------------------------------------- */
+.qrScanner {
+  position: relative;
+  inline-size: 100%;
+  aspect-ratio: 1 / 1;
+  max-inline-size: 260px;
+  margin-inline: auto;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #000;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--glacier-fg, #fff) 12%, transparent);
+}
+.qrScanner__video {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  display: block;
+}
+.qrScanner__frame {
+  position: absolute;
+  inset: 16%;
+  border: 3px solid color-mix(in srgb, var(--glacier-accent) 85%, white);
+  border-radius: 14px;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.25);
+}
+
+/* --- Desktop: Link a device ----------------------------------------------- */
+.linkDevice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--glacier-fg, #fff) 4%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--glacier-fg, #fff) 8%, transparent);
+}
+.linkDevice__qr {
+  inline-size: 220px;
+  max-inline-size: 60vw;
+  height: auto;
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px;
+  transition: opacity 0.2s ease;
+}
+.linkDevice__qr[data-expired] {
+  opacity: 0.28;
+  filter: grayscale(1);
+}
+.linkDevice__code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.5rem;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+}
+
+/* The empty-state block: spot art centred over its one line of guidance. */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-4);
+  text-align: center;
+  padding-block: var(--glacier-space-6);
+}
+.emptyState--tall {
+  padding-block: var(--glacier-space-10);
+}
+.emptyState__text {
+  color: var(--glacier-text-muted);
+  max-inline-size: 24rem;
+}
+
+/* Empty-state spot art. A light/dark pair per motif, each painted on the exact
+   page-background hex so it melts into the page. Which one shows is pure CSS,
+   mirroring appearance.tsx: system (no data-theme) follows prefers-color-scheme,
+   an explicit data-theme overrides it. */
+.emptyArt {
+  display: flex;
+  justify-content: center;
+  margin-inline: auto;
+  inline-size: min(60%, 15rem);
+  max-inline-size: 15rem;
+  pointer-events: none;
+  user-select: none;
+}
+.emptyArt__img {
+  display: none;
+  inline-size: 100%;
+  block-size: auto;
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  /* Every motif is centred well inside its square, so fading the outer ring to
+     transparent dissolves any residual box - a per-image background that isn't
+     a pixel-exact match for the page - into the real page colour underneath. */
+  -webkit-mask-image: radial-gradient(circle at center, #000 68%, transparent 100%);
+  mask-image: radial-gradient(circle at center, #000 68%, transparent 100%);
+}
+/* System preset: no data-theme attribute — follow the OS scheme. */
+:root:not([data-theme]) .emptyArt__img--light {
+  display: block;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .emptyArt__img--light {
+    display: none;
+  }
+  :root:not([data-theme]) .emptyArt__img--dark {
+    display: block;
+  }
+}
+/* Explicit choice wins over the OS scheme. */
+:root[data-theme='light'] .emptyArt__img--light {
+  display: block;
+}
+:root[data-theme='dark'] .emptyArt__img--dark {
+  display: block;
+}
+
+/* ---- Skeleton shelves and the library stats card ------------------------ */
+
+/* A skeleton card: the exact footprint of the card family it stands in for,
+   so the swap to content moves nothing. */
+.shelfGhost {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.shelfGhost[data-center] {
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+/* The playlists row worn as a shelf: the shelf's gutters win over the old
+   strip padding, so the first tile lines up with every other shelf's first
+   card. */
+.homeShelfRow.showcaseRow {
+  padding: 0 var(--glacier-space-4) var(--glacier-space-1);
+  gap: var(--glacier-space-3);
+  align-items: flex-start;
+}
+
+/* The library in numbers: one card, an icon beside each figure. It wraps on a
+   phone rather than shrinking - five stats forced into one 375px row would be
+   confetti. */
+.libStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2) var(--glacier-space-5);
+  padding: var(--glacier-space-3) var(--glacier-space-4);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+}
+
+.libStat {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  min-inline-size: 0;
+}
+
+.libStat__icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2rem;
+  block-size: 2rem;
+  border-radius: 34%;
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+}
+
+.libStat__body {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.libStat__value {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.libStat__label {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+/* --- Artist page ---------------------------------------------------------- */
+
+.artistHero {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-4);
+  flex-wrap: wrap;
+}
+
+.artistHero__art {
+  inline-size: 5.5rem;
+  block-size: 5.5rem;
+  border-radius: var(--glacier-radius-full);
+  object-fit: cover;
+  background: var(--glacier-surface-sunken);
+  box-shadow: var(--glacier-shadow-2);
+  flex: none;
+}
+
+.artistHero__text {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.artistHero__name {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.artistHero__actions {
+  display: flex;
+  gap: var(--glacier-space-2);
+  inline-size: 100%;
+}
+
+/* Top songs: a compact ranked list, each row one tap-to-play button. */
+.artistTop {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.artistTopRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  inline-size: 100%;
+  padding-block: var(--glacier-space-2);
+  padding-inline: var(--glacier-space-2);
+  background: none;
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.artistTopRow:hover,
+.artistTopRow:active {
+  background: var(--glacier-surface);
+}
+
+.artistTopRank {
+  inline-size: 1.25rem;
+  flex: none;
+  text-align: center;
+  color: var(--glacier-text-subtle);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--glacier-font-size-sm);
+}
+
+.artistTopArt {
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  border-radius: var(--glacier-radius-sm);
+  object-fit: cover;
+  background: var(--glacier-surface-sunken);
+  flex: none;
+}
+
+.artistTopMeta {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.artistTopTitle {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.artistTopPlays {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+}
+
+.artistTopTime {
+  color: var(--glacier-text-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--glacier-font-size-sm);
+  flex: none;
+}
+
+/* The albums shelf reuses .artistAlbum's layout; this only unstyles the fact
+   that each tile is a button now (tap plays the album through). */
+button.artistAlbum {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* A playlist tile on the "In your playlists" shelf: a mosaic of the artist's
+   own covers inside that list, the list's name, and how much of it is theirs. */
+.artistPlaylist {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--glacier-space-1);
+  inline-size: 8.5rem;
+  flex: none;
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.artistPlaylistCover {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  inline-size: 8.5rem;
+  block-size: 8.5rem;
+  border-radius: var(--glacier-radius-lg);
+  overflow: hidden;
+  background: var(--glacier-surface-sunken);
+}
+
+.artistPlaylistCover img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+/* A single cover fills the whole tile rather than sitting in one quadrant. */
+.artistPlaylistCover img:only-child {
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+}
+
+.artistPlaylistName {
+  max-inline-size: 100%;
+  font-weight: 600;
+  font-size: var(--glacier-font-size-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.artistPlaylistCount {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+}
+
+/* An artist's name on a card, tappable into their page. A span wearing a
+   link's manners because the card around it is already a button - nested
+   buttons are invalid - and the tap must not also fire the card. */
+.cardArtistLink {
+  cursor: pointer;
+}
+
+.cardArtistLink:hover,
+.cardArtistLink:active {
+  color: var(--glacier-text);
+  text-decoration: underline;
+}
+
+/* --- Spotify Canvas: the looping clip behind the now-playing controls -------
+   Drawn after .npScreen__bg at the same negative layer, so it covers the
+   blurred cover but stays behind every control. Dimmed a touch so the white
+   title, times and transport read over a bright frame. */
+.npScreen__canvas {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  background: #000;
+  filter: brightness(0.72) saturate(1.05);
+  animation: npCanvasIn 0.6s ease both;
+}
+@keyframes npCanvasIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .npScreen__canvas { animation: none; }
+}
+
+/* --- Friends -------------------------------------------------------------- */
+
+.friendsAdd {
+  display: flex;
+  gap: var(--glacier-space-2);
+  align-items: center;
+}
+
+.friendsAdd__field {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.friendsNote {
+  font-size: var(--glacier-font-size-sm);
+}
+
+.friendsNote--ok {
+  color: var(--glacier-success-text, var(--glacier-text-muted));
+}
+
+.friendsNote--bad {
+  color: var(--glacier-danger-text, var(--glacier-text-muted));
+}
+
+.friendsEmptyGlyph {
+  color: var(--glacier-text-subtle);
+}
+
+.friendList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.friendRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+}
+
+.friendRow:hover {
+  background: var(--glacier-surface);
+}
+
+/* An initial standing in for a face: this server holds no avatars, and a
+   letter in the brand's own wash reads as a person better than a glyph
+   repeated down the whole list. */
+.friendRow__avatar {
+  flex: none;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  border-radius: var(--glacier-radius-full);
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  color: var(--glacier-accent-contrast, #fff);
+  background: linear-gradient(
+    140deg,
+    var(--glacier-accent-solid),
+    var(--glacier-accent-solid-hover)
+  );
+}
+
+.friendRow__name {
+  flex: 1;
+  min-inline-size: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friendRow__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  flex: none;
+}
+
+/* The jam strip on the Friends page: what room you are in, or the button to
+   open one. A live room wears a slow pulse so the page says "this is
+   happening now" without a spinner's urgency. */
+.jamStrip {
+  display: flex;
+}
+
+.jamCard {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  inline-size: 100%;
+  padding: var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg);
+  background: color-mix(in oklch, var(--glacier-accent-solid) 12%, transparent);
+  border: var(--glacier-hairline) solid
+    color-mix(in oklch, var(--glacier-accent-solid) 34%, transparent);
+}
+
+.jamCard__pulse {
+  flex: none;
+  inline-size: 0.6rem;
+  block-size: 0.6rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-solid);
+  animation: jamPulse 2s ease-in-out infinite;
+}
+
+@keyframes jamPulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--glacier-accent-solid) 60%, transparent);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 0 0.35rem transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jamCard__pulse {
+    animation: none;
+  }
+}
+
+.jamCard__body {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.jamCard__title {
+  font-weight: 600;
+}
+
+.jamCard__sub {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+}
+
+.jamRow__count {
+  color: var(--glacier-text-muted);
+  font-weight: 400;
+  font-size: var(--glacier-font-size-xs);
+}
+
+/* The friend QR: your own code to be scanned, or the camera pointed at
+   someone else's. */
+.friendsQrBar {
+  display: flex;
+  gap: var(--glacier-space-2);
+}
+
+.friendsQr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-4);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  text-align: center;
+}
+
+/* Always on white, in both themes: a dark-on-dark QR is unreadable to a
+   camera, and the quiet zone is part of the code. */
+.friendsQr__img {
+  inline-size: min(60vw, 15rem);
+  block-size: auto;
+  aspect-ratio: 1;
+  border-radius: var(--glacier-radius-md);
+  background: #fff;
+  padding: 10px;
+}
+
+.friendsQr__img--waiting {
+  display: grid;
+  place-items: center;
+  background: var(--glacier-surface-sunken);
+}
+
+.friendsQr__cam {
+  inline-size: min(70vw, 18rem);
+  aspect-ratio: 1;
+  border-radius: var(--glacier-radius-lg);
+  overflow: hidden;
+  background: #000;
+}
+
+.friendsQr__cam video {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
 }

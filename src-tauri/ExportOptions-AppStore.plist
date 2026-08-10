@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  App Store distribution export options, for the command-line upload path:
+
+    xcodebuild -exportArchive \
+      -archivePath src-tauri/gen/apple/build/app_iOS.xcarchive \
+      -exportPath  src-tauri/gen/apple/build/appstore \
+      -exportOptionsPlist src-tauri/ExportOptions-AppStore.plist
+
+  then upload the resulting .ipa with Transporter (App Store Connect > Transporter)
+  or `xcrun notarytool`/`altool` under YOUR Apple ID.
+
+  The easier path needs none of this: open the .xcarchive in Xcode's Organizer
+  (Window > Organizer) and use Distribute App > App Store Connect, which signs
+  and uploads for you and prompts your own Apple ID.
+-->
+<plist version="1.0">
+<dict>
+    <key>method</key>
+    <string>app-store-connect</string>
+    <key>destination</key>
+    <string>export</string>
+    <key>teamID</key>
+    <string>F6ZAL7ANAD</string>
+    <key>signingStyle</key>
+    <string>automatic</string>
+    <key>uploadSymbols</key>
+    <true/>
+    <key>stripSwiftSymbols</key>
+    <true/>
+</dict>
+</plist>

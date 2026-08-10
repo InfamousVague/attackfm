@@ -36,3 +36,13 @@ for (const stale of ['app_iOS.xcarchive', 'arm64', 'arm64-sim', 'x86_64-sim']) {
 // dies with "Multiple commands produce ... libapp.a". Clearing it just costs
 // the re-copy; the build phase recreates the profile it needs.
 rmSync(join(ROOT, 'src-tauri/gen/apple/Externals'), { recursive: true, force: true });
+
+// gen/apple/assets is the staging copy of the web build that Xcode folder-syncs
+// into the .app. Tauri copies the fresh dist in but never prunes what is
+// already there, so old hashed bundles - and, worse, an old index.html that
+// still points at one - pile up and can ship in place of the current build.
+// (Vite keeps prior bundles in dist too, so the stale index.html has something
+// to resolve to.) Clearing it forces the current dist, and only it, into the
+// bundle. Cheap: the build re-copies immediately.
+rmSync(join(ROOT, 'src-tauri/gen/apple/assets'), { recursive: true, force: true });
+rmSync(join(ROOT, 'dist'), { recursive: true, force: true });

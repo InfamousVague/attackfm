@@ -25,6 +25,7 @@ import {
   Disc3,
   FolderOpen,
   Info,
+  LogOut,
   Mic2,
   MonitorSpeaker,
   Music,
@@ -210,6 +211,7 @@ function Appearance() {
  */
 function General() {
   const { source, musicDir, loading, isDefault, choose, reset, tracks } = useLibrary();
+  const { session, disconnect } = useServerSession();
   // A module-level pref rather than context: the two consumers are plain
   // async functions, so the switch just re-reads on each render.
   const [online, setOnline] = useState(onlineMetadataEnabled);
@@ -245,6 +247,28 @@ function General() {
     </div>
   );
 
+  // Remove the signed-in account from this device. `disconnect` clears the
+  // stored session (so the app is signed out here) and best-effort tells the
+  // server to drop the token — the library, downloads and playlists all stay
+  // on the server, so signing back in restores them.
+  const accountSection = session ? (
+    <div className="prefsSection">
+      <Label>Account</Label>
+      <Text tone="muted" size="sm">
+        Signed in as {session.username} on {session.url.replace(/^https?:\/\//, '')}.
+      </Text>
+      <div className="prefsActions">
+        <Button variant="outline" size="sm" onClick={() => void disconnect()}>
+          <LogOut size={14} /> Log out
+        </Button>
+      </div>
+      <Text tone="muted" size="sm">
+        Removes this account from this device. Your music stays on the server —
+        sign in again to reach it here.
+      </Text>
+    </div>
+  ) : null;
+
   const statsGrid = (
     <div className="prefsSection">
       <Label>Your library</Label>
@@ -273,6 +297,7 @@ function General() {
           </Field>
         </div>
         {onlineSwitch}
+        {accountSection}
       </div>
     );
   }
@@ -313,6 +338,7 @@ function General() {
         )}
       </div>
       {onlineSwitch}
+      {accountSection}
     </div>
   );
 }
@@ -634,13 +660,42 @@ function UninstallButton({
  * channel, not a dependency. Adding one is trusting its owner with code that
  * runs inside the app, and the confirm on Add says exactly that.
  */
-function PluginRepositories() {
-  const { remoteInstalled, reloadRemote } = usePlugins();
+/** A repository's fetched manifest, the reason it could not be read, or a wait. */
+type Feed = RemoteManifest | string | 'loading';
+
+function listingsOf(feed: Feed | undefined): RemotePluginListing[] {
+  return typeof feed === 'object' && feed !== null && 'plugins' in feed ? feed.plugins : [];
+}
+
+/**
+ * Dotted versions, newest wins. Only a STRICTLY higher version counts as an
+ * update: comparing by inequality would nag forever about a repository that
+ * happens to be pinned behind what is installed, and offer a "update" that
+ * silently downgrades.
+ */
+function isNewer(candidate: string, installed: string): boolean {
+  const parts = (v: string) => v.split(/[.\-+]/).map((n) => Number.parseInt(n, 10) || 0);
+  const a = parts(candidate);
+  const b = parts(installed);
+  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+    const left = a[i] ?? 0;
+    const right = b[i] ?? 0;
+    if (left !== right) return left > right;
+  }
+  return false;
+}
+
+/**
+ * The repositories and what they are offering, fetched once for the whole
+ * pane. Lifted out of the sources list because three surfaces need it now -
+ * the update banner, the browse shelf and the sources tab - and three
+ * independent fetches of the same manifests would be three times the traffic
+ * and three chances to disagree about what is available.
+ */
+function useRepoFeeds() {
   const [sources, setSources] = useState<string[]>(readSources);
-  const [adding, setAdding] = useState('');
-  // source URL -> its fetched manifest, error string, or 'loading'.
-  const [feeds, setFeeds] = useState<Map<string, RemoteManifest | string | 'loading'>>(new Map());
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [feeds, setFeeds] = useState<Map<string, Feed>>(new Map());
+  const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -663,21 +718,26 @@ function PluginRepositories() {
       live = false;
       controller.abort();
     };
-  }, [sources]);
+  }, [sources, nonce]);
 
+  return {
+    sources,
+    setSources,
+    feeds,
+    refresh: () => setNonce((n) => n + 1),
+    loading: [...feeds.values()].some((f) => f === 'loading'),
+  };
+}
+
+/** Installing, shared by every surface that offers it. */
+function useInstaller(reloadRemote: () => void) {
+  const [busyId, setBusyId] = useState<string | null>(null);
   const install = async (source: string, listing: RemotePluginListing) => {
     setBusyId(listing.id);
     try {
       await installPlugin(source, listing);
       reloadRemote();
     } catch (err) {
-      // Surfaced inline on the row rather than a toast: the row is where the
-      // user is looking, and the message names the listing already.
-      setFeeds((prev) => {
-        const feed = prev.get(source);
-        if (typeof feed === 'object' && feed !== null && 'plugins' in feed) return prev;
-        return prev;
-      });
       window.alert(
         `Could not install ${listing.name}: ${err instanceof Error ? err.message : err}`,
       );
@@ -685,19 +745,154 @@ function PluginRepositories() {
       setBusyId(null);
     }
   };
+  return { busyId, install };
+}
 
+/**
+ * What is installed but out of date, above everything else. Nothing here
+ * updates on its own - a plugin is code the user chose to run, so a new
+ * version is an offer rather than something that happens to them - which is
+ * exactly why it has to be visible without going looking for it.
+ */
+function PluginUpdates({
+  updates,
+  busyId,
+  onUpdate,
+}: {
+  updates: Array<{ source: string; listing: RemotePluginListing; from: string }>;
+  busyId: string | null;
+  onUpdate: (source: string, listing: RemotePluginListing) => void;
+}) {
+  if (updates.length === 0) return null;
   return (
-    <div className="prefsSection">
-      <Label>Plugin repositories</Label>
-      <Text size="sm" tone="muted">
-        Where the marketplace looks for installable plugins. Your own server
-        hosts one at <code>/plugins</code>.
+    <div className="pluginUpdates">
+      <div className="pluginUpdatesHead">
+        <Label>
+          {updates.length === 1 ? '1 update available' : `${updates.length} updates available`}
+        </Label>
+        <Button
+          variant="solid"
+          size="sm"
+          disabled={busyId !== null}
+          onClick={() => {
+            for (const u of updates) onUpdate(u.source, u.listing);
+          }}
+        >
+          {updates.length === 1 ? 'Update' : 'Update all'}
+        </Button>
+      </div>
+      {updates.map((u) => (
+        <div key={u.listing.id} className="pluginUpdateRow">
+          <div className="pluginRepoRowText">
+            <Text size="sm">{u.listing.name}</Text>
+            <Text size="xs" tone="muted">
+              v{u.from} &rarr; v{u.listing.version}
+            </Text>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busyId === u.listing.id}
+            onClick={() => onUpdate(u.source, u.listing)}
+          >
+            {busyId === u.listing.id ? 'Updating…' : 'Update'}
+          </Button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Everything the repositories offer that is not installed yet. */
+function PluginBrowse({
+  feeds,
+  remoteInstalled,
+  busyId,
+  loading,
+  onInstall,
+}: {
+  feeds: Map<string, Feed>;
+  remoteInstalled: ReadonlyMap<string, { version: string }>;
+  busyId: string | null;
+  loading: boolean;
+  onInstall: (source: string, listing: RemotePluginListing) => void;
+}) {
+  const offered = [...feeds.entries()].flatMap(([source, feed]) =>
+    listingsOf(feed).map((listing) => ({ source, listing })),
+  );
+  const available = offered.filter(({ listing }) => !remoteInstalled.has(listing.id));
+
+  if (available.length === 0) {
+    return (
+      <Text size="sm" tone="subtle">
+        {loading
+          ? 'Looking for plugins…'
+          : offered.length === 0
+            ? 'No repository is offering anything. Add one under Sources.'
+            : 'Everything on offer is already installed.'}
       </Text>
+    );
+  }
+  return (
+    <div className="pluginBrowse">
+      {available.map(({ source, listing }) => (
+        <div key={`${source}/${listing.id}`} className="pluginRepoRow">
+          <div className="pluginRepoRowText">
+            <Text size="sm">
+              {listing.name}{' '}
+              <Text as="span" size="xs" tone="subtle">
+                v{listing.version}
+                {listing.author ? ` · ${listing.author}` : ''}
+              </Text>
+            </Text>
+            <Text size="xs" tone="muted">
+              {listing.description}
+            </Text>
+            <Text size="xs" tone="subtle">
+              {source.replace(/^https?:\/\//, '')}
+            </Text>
+          </div>
+          <Button
+            variant="solid"
+            size="sm"
+            disabled={busyId === listing.id}
+            onClick={() => onInstall(source, listing)}
+          >
+            {busyId === listing.id ? 'Installing…' : 'Install'}
+          </Button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Where plugins come from: the addresses themselves, and whether they answer. */
+function PluginSources({
+  sources,
+  setSources,
+  feeds,
+  onRefresh,
+}: {
+  sources: string[];
+  setSources: (next: string[]) => void;
+  feeds: Map<string, Feed>;
+  onRefresh: () => void;
+}) {
+  const [adding, setAdding] = useState('');
+  return (
+    <div className="pluginSources">
+      <div className="spotifyAccountRow">
+        <Text size="sm" tone="muted">
+          Where the marketplace looks. Your own server hosts one at <code>/plugins</code>.
+        </Text>
+        <Button variant="ghost" size="sm" onClick={onRefresh}>
+          Refresh
+        </Button>
+      </div>
 
       {sources.map((source) => {
         const feed = feeds.get(source);
-        const listings =
-          typeof feed === 'object' && feed !== null && 'plugins' in feed ? feed.plugins : [];
+        const count = listingsOf(feed).length;
         return (
           <div key={source} className="pluginRepo">
             <div className="pluginRepoHead">
@@ -705,10 +900,16 @@ function PluginRepositories() {
                 {source.replace(/^https?:\/\//, '')}
               </Text>
               {feed === 'loading' && <Spinner size="sm" />}
-              {typeof feed === 'string' && feed !== 'loading' && (
+              {typeof feed === 'string' && feed !== 'loading' ? (
                 <Pill size="sm" tone="danger">
                   {feed}
                 </Pill>
+              ) : (
+                feed !== 'loading' && (
+                  <Pill size="sm" tone="neutral">
+                    {count === 1 ? '1 plugin' : `${count} plugins`}
+                  </Pill>
+                )
               )}
               <Button
                 variant="ghost"
@@ -719,52 +920,14 @@ function PluginRepositories() {
                 Remove
               </Button>
             </div>
-            {listings.map((listing) => {
-              const installed = remoteInstalled.get(listing.id);
-              const upToDate = installed?.version === listing.version;
-              return (
-                <div key={listing.id} className="pluginRepoRow">
-                  <div className="pluginRepoRowText">
-                    <Text size="sm">
-                      {listing.name}{' '}
-                      <Text as="span" size="xs" tone="subtle">
-                        v{listing.version}
-                        {listing.author ? ` · ${listing.author}` : ''}
-                      </Text>
-                    </Text>
-                    <Text size="xs" tone="muted">
-                      {listing.description}
-                    </Text>
-                  </div>
-                  {installed && upToDate ? (
-                    <Pill size="sm" tone="success">
-                      Installed
-                    </Pill>
-                  ) : (
-                    <Button
-                      variant={installed ? 'outline' : 'solid'}
-                      size="sm"
-                      disabled={busyId === listing.id}
-                      onClick={() => void install(source, listing)}
-                    >
-                      {busyId === listing.id
-                        ? 'Installing…'
-                        : installed
-                          ? `Update to v${listing.version}`
-                          : 'Install'}
-                    </Button>
-                  )}
-                </div>
-              );
-            })}
-            {Array.isArray(listings) && listings.length === 0 && feed !== 'loading' && typeof feed !== 'string' && (
-              <Text size="xs" tone="subtle">
-                This repository offers nothing yet.
-              </Text>
-            )}
           </div>
         );
       })}
+      {sources.length === 0 && (
+        <Text size="xs" tone="subtle">
+          No repositories yet.
+        </Text>
+      )}
 
       <div className="pluginRepoAdd">
         <Input
@@ -805,46 +968,98 @@ function PluginRepositories() {
  * being toggled owns the selected section.
  */
 function PluginsSettings() {
-  const { all, isEnabled, setEnabled, failures, remoteInstalled } = usePlugins();
+  const { all, isEnabled, setEnabled, failures, remoteInstalled, reloadRemote } = usePlugins();
   // The id, not the object: a plugin pulled mid-session closes its dialog
   // instead of showing a ghost of it.
   const [openId, setOpenId] = useState<string | null>(null);
+  const [tab, setTab] = useState<'browse' | 'sources'>('browse');
   const open = all.find((p) => p.id === openId) ?? null;
   const openFailure = open ? failures.get(open.id) : undefined;
   const openRemote = open ? remoteInstalled.get(open.id) : undefined;
   const enabledCount = all.filter((p) => isEnabled(p.id)).length;
 
+  const { sources, setSources, feeds, refresh, loading } = useRepoFeeds();
+  const { busyId, install } = useInstaller(reloadRemote);
+
+  // Installed plugins a repository is offering a higher version of. Computed
+  // across every source, so a plugin that moved repositories still updates.
+  const updates = useMemo(() => {
+    const found: Array<{ source: string; listing: RemotePluginListing; from: string }> = [];
+    for (const [source, feed] of feeds) {
+      for (const listing of listingsOf(feed)) {
+        const installed = remoteInstalled.get(listing.id);
+        if (installed && isNewer(listing.version, installed.version)) {
+          found.push({ source, listing, from: installed.version });
+        }
+      }
+    }
+    return found;
+  }, [feeds, remoteInstalled]);
+
   return (
     <div className="prefsBody">
-      <Text size="sm" tone="muted">
-        {all.length === 1 ? '1 plugin' : `${all.length} plugins`} · {enabledCount} enabled.
-        Flip one on to add what it carries, off to put it away. Plugins install
-        from the repositories below and run locally once installed.
-      </Text>
-      <div className="pluginMarket">
-        {all.map((p) => (
-          <PluginCard
-            key={p.id}
-            plugin={p}
-            enabled={isEnabled(p.id)}
-            crashed={failures.has(p.id)}
-            // The switch is the user's setting, not the running state: a
-            // crashed plugin stays checked and says so on the card, so one
-            // flip OFF turns it off for good rather than retrying it first.
-            // Either flip clears the crash flag, so off-and-on is the retry.
-            onToggle={(on) => setEnabled(p.id, on)}
-            onOpen={() => setOpenId(p.id)}
-          />
-        ))}
-      </div>
-      <Text tone="subtle" size="xs">
-        Toggles apply immediately; switching a plugin may briefly restart playback.
-        Work a plugin already handed to the app&rsquo;s engine - queued downloads,
-        say - carries on in the background without its controls until it is
-        switched back on.
-      </Text>
+      <PluginUpdates updates={updates} busyId={busyId} onUpdate={(s, l) => void install(s, l)} />
 
-      <PluginRepositories />
+      <SegmentedControl
+        aria-label="Plugins view"
+        fullWidth
+        value={tab}
+        onValueChange={(next) => setTab(next as typeof tab)}
+        options={[
+          { value: 'browse', label: 'Browse' },
+          { value: 'sources', label: 'Sources' },
+        ]}
+      />
+
+      {tab === 'browse' ? (
+        <>
+          <Text size="sm" tone="muted">
+            {all.length === 1 ? '1 plugin' : `${all.length} plugins`} · {enabledCount} enabled.
+            Flip one on to add what it carries, off to put it away. Plugins install
+            from the repositories under Sources and run locally once installed.
+          </Text>
+          <div className="pluginMarket">
+            {all.map((p) => (
+              <PluginCard
+                key={p.id}
+                plugin={p}
+                enabled={isEnabled(p.id)}
+                crashed={failures.has(p.id)}
+                // The switch is the user's setting, not the running state: a
+                // crashed plugin stays checked and says so on the card, so one
+                // flip OFF turns it off for good rather than retrying it first.
+                // Either flip clears the crash flag, so off-and-on is the retry.
+                onToggle={(on) => setEnabled(p.id, on)}
+                onOpen={() => setOpenId(p.id)}
+              />
+            ))}
+          </div>
+          <Text tone="subtle" size="xs">
+            Toggles apply immediately; switching a plugin may briefly restart playback.
+            Work a plugin already handed to the app&rsquo;s engine - queued downloads,
+            say - carries on in the background without its controls until it is
+            switched back on.
+          </Text>
+
+          <div className="prefsSection">
+            <Label>Available</Label>
+            <PluginBrowse
+              feeds={feeds}
+              remoteInstalled={remoteInstalled}
+              busyId={busyId}
+              loading={loading}
+              onInstall={(s, l) => void install(s, l)}
+            />
+          </div>
+        </>
+      ) : (
+        <PluginSources
+          sources={sources}
+          setSources={setSources}
+          feeds={feeds}
+          onRefresh={refresh}
+        />
+      )}
 
 
       {/* The detail dialog, stacked over the settings modal - the kit's layer

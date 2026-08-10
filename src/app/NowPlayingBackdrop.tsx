@@ -483,7 +483,17 @@ function HeroWords({
  * just a number rising and falling sixty times a second, which the stylesheet
  * spends differently depending on the mood the track drew.
  */
-export function NowPlayingBackdrop({ artwork, seed }: { artwork: string; seed: string }) {
+export function NowPlayingBackdrop({
+  artwork,
+  seed,
+  wordsOnly = false,
+}: {
+  artwork: string;
+  seed: string;
+  /** Render only the lyric words, no art wash - for a surface that already
+   *  carries its own cover behind, like the Now Playing sheet. */
+  wordsOnly?: boolean;
+}) {
   const { meter, audible, track, position } = useNowPlayingMotion();
   // The reading lands on the container rather than on the art, so every layer
   // under it - art, the soft copy, the glow - reads the same number.
@@ -545,18 +555,24 @@ export function NowPlayingBackdrop({ artwork, seed }: { artwork: string; seed: s
       ref={stageRef}
       data-mood={mood}
       data-still={reduced || undefined}
+      data-words-only={wordsOnly || undefined}
       aria-hidden="true"
     >
       {/* The drift owns the slow travel, the art under it owns the answer to the
           music. Two layers because both want `translate` and `rotate`, and one
-          element has only one of each to give. */}
-      <div className="npDrift" style={vars}>
-        <div className="npArt" style={cover} />
-        {/* Only `focus` has a use for a second copy, and a blurred layer is not
-            free, so nothing else pays for one. */}
-        {mood === 'focus' && <div className="npArt npArtSoft" style={cover} />}
-      </div>
-      <div className="npGlow" />
+          element has only one of each to give. Skipped in words-only mode - the
+          surface below already wears the cover. */}
+      {!wordsOnly && (
+        <>
+          <div className="npDrift" style={vars}>
+            <div className="npArt" style={cover} />
+            {/* Only `focus` has a use for a second copy, and a blurred layer is
+                not free, so nothing else pays for one. */}
+            {mood === 'focus' && <div className="npArt npArtSoft" style={cover} />}
+          </div>
+          <div className="npGlow" />
+        </>
+      )}
       {/* The words ride inside the masked box, so they share its fade toward
           the list and can never stray over legible content. Motion-reduced
           windows skip them whole: they are nothing BUT motion. */}

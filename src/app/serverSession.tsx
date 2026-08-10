@@ -52,6 +52,9 @@ interface ServerSessionValue {
   settings: ServerSettings;
   updateSettings: (next: Partial<ServerSettings>) => void;
   connect: (url: string, username: string, password: string) => Promise<void>;
+  /** Adopts an already-minted session (the device-pairing / QR path), the same
+   *  as a fresh sign-in but with the token pair already in hand. */
+  applySession: (session: ServerSession) => void;
   disconnect: () => Promise<void>;
   /** Re-mints the stream token, e.g. after media URLs start returning 401. */
   renew: () => Promise<void>;
@@ -190,6 +193,8 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
     [persist],
   );
 
+  const applySession = useCallback((next: ServerSession) => persist(next), [persist]);
+
   const disconnect = useCallback(async () => {
     const live = sessionRef.current;
     persist(null);
@@ -216,8 +221,8 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<ServerSessionValue>(
-    () => ({ session, restoring, settings, updateSettings, connect, disconnect, renew }),
-    [session, restoring, settings, updateSettings, connect, disconnect, renew],
+    () => ({ session, restoring, settings, updateSettings, connect, applySession, disconnect, renew }),
+    [session, restoring, settings, updateSettings, connect, applySession, disconnect, renew],
   );
 
   return (

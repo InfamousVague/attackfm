@@ -3,7 +3,10 @@
 export interface SpotifyStatus {
   connected: boolean;
   displayName: string | null;
+  /** What a Connect right now would use: this listener's, else the server's. */
   clientId: string | null;
+  /** True when the id came from the hub rather than from this listener. */
+  clientIdFromServer?: boolean;
   /** The exact URI the user must register on their Spotify app. */
   redirectUri: string;
 }
@@ -18,6 +21,18 @@ export interface SpotifyAlbum {
   synced: boolean;
 }
 
+/** How far a mirrored collection has got. Server-derived, never asserted here. */
+export type SyncState =
+  | 'new'
+  | 'changed'
+  | 'synced'
+  | 'idle'
+  | 'enumerating'
+  | 'resolving'
+  | 'downloading'
+  | 'partial'
+  | 'error';
+
 export interface SpotifyPlaylist {
   id: string;
   name: string;
@@ -26,10 +41,76 @@ export interface SpotifyPlaylist {
   tracks: number;
   image: string | null;
   snapshotId: string;
-  /** False for private and collaborative playlists, which the public-page importer cannot fetch. */
+  /**
+   * Informational only. The mirror reads playlists as the signed-in user, so
+   * private and collaborative ones sync exactly like public ones.
+   */
   public: boolean;
-  /** "new" (never synced), "changed" (snapshot moved), or "synced". */
-  state: 'new' | 'changed' | 'synced';
+  state: SyncState;
+  /**
+   * Spotify's own list (Discover Weekly, Release Radar, Daily Mix, editorial).
+   * Third-party apps are refused these outright, so they cannot be mirrored.
+   */
+  spotifyOwned?: boolean;
+  /** Why this row cannot be tracked, when it cannot. */
+  unsupportedReason?: string | null;
+  /** True once the server is keeping this collection in step. */
+  watch: boolean;
+  /** The local playlist this mirrors, once one exists. */
+  playlistId: number | null;
+  resolved: number;
+  queued: number;
+  missing: number;
+}
+
+/** One mirrored collection's live progress. */
+export interface SpotifyMirror {
+  key: string;
+  kind: 'playlist' | 'album' | 'liked';
+  name: string;
+  owner: string;
+  image: string | null;
+  playlistId: number | null;
+  watch: boolean;
+  state: SyncState;
+  error: string;
+  total: number;
+  resolved: number;
+  queued: number;
+  missing: number;
+  ambiguous: number;
+  changed: boolean;
+  checkedAt: number;
+  syncedAt: number;
+}
+
+export interface SpotifySyncStatus {
+  phase: 'idle' | 'working';
+  totals: {
+    watched: number;
+    tracks: number;
+    resolved: number;
+    queued: number;
+    missing: number;
+    ambiguous: number;
+  };
+  items: SpotifyMirror[];
+}
+
+/** One entry inside a mirrored collection. */
+export interface SpotifyMirrorItem {
+  uid: string;
+  occurrence: number;
+  position: number;
+  title: string;
+  artist: string;
+  album: string;
+  durationMs: number | null;
+  state: 'pending' | 'resolved' | 'queued' | 'missing' | 'ambiguous' | 'unavailable' | 'ignored';
+  trackId: number | null;
+  method: string;
+  note: string;
+  attempts: number;
 }
 
 export interface SpotifyLibrary {
@@ -65,6 +146,63 @@ export async function spotifyDisconnect(session: ServerSession): Promise<void> {
 
 export async function spotifyLibrary(session: ServerSession): Promise<SpotifyLibrary> {
   return serverRequest<SpotifyLibrary>(session, '/api/spotify/library');
+}
+
+/**
+ * Start (or stop) keeping collections in step. This is the whole subscription:
+ * the server enumerates, matches, downloads what is missing and rebuilds the
+ * local playlist on its own from here.
+ */
+export async function spotifyWatch(
+  session: ServerSession,
+  items: Array<{ key: string; watch: boolean }>,
+): Promise<void> {
+  await serverRequest(session, '/api/spotify/watch', {
+    method: 'POST',
+    body: JSON.stringify({ items }),
+  });
+}
+
+/** Ask for a pass now. Returns once it has started, not once it has finished. */
+export async function spotifySync(
+  session: ServerSession,
+  keys: string[] = [],
+  full = false,
+): Promise<void> {
+  await serverRequest(session, '/api/spotify/sync', {
+    method: 'POST',
+    body: JSON.stringify({ keys, full }),
+  });
+}
+
+/** Where every mirror stands. Read from the server's tables, so it is the same
+ *  on every device and survives a restart. */
+export async function spotifySyncStatus(session: ServerSession): Promise<SpotifySyncStatus> {
+  return serverRequest<SpotifySyncStatus>(session, '/api/spotify/sync');
+}
+
+/** The entries inside one mirror - what makes a partial sync inspectable. */
+export async function spotifyMirrorItems(
+  session: ServerSession,
+  key: string,
+  state?: SpotifyMirrorItem['state'],
+): Promise<{ mirror: SpotifyMirror; items: SpotifyMirrorItem[] }> {
+  const query = state ? `?state=${encodeURIComponent(state)}` : '';
+  return serverRequest(session, `/api/spotify/mirror/${encodeURIComponent(key)}/items${query}`);
+}
+
+/** Clear the backoff on everything this mirror gave up on. */
+export async function spotifyMirrorRetry(session: ServerSession, key: string): Promise<void> {
+  await serverRequest(session, `/api/spotify/mirror/${encodeURIComponent(key)}/retry`, {
+    method: 'POST',
+  });
+}
+
+/** Stop mirroring. The local playlist and the downloaded files stay. */
+export async function spotifyMirrorForget(session: ServerSession, key: string): Promise<void> {
+  await serverRequest(session, `/api/spotify/mirror/${encodeURIComponent(key)}/forget`, {
+    method: 'POST',
+  });
 }
 
 /** Records items whose downloads finished so the next read shows them synced. */

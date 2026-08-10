@@ -20,8 +20,16 @@ import { HOST_API_VERSION, installHostRuntime } from './hostRuntime.ts';
 const SOURCES_KEY = 'attackfm-plugin-sources';
 const INSTALLED_KEY = 'attackfm-plugins-installed';
 
-/** The repositories every install starts with: the app's own. */
-export const DEFAULT_SOURCES: readonly string[] = ['https://matt.attack.fm/plugins'];
+/**
+ * The repositories a fresh install starts with: none.
+ *
+ * Plugins run with the app's own reach, and downloading music is a plugin - so
+ * the app ships with no sources and no way to fetch one until the user
+ * deliberately adds a repository in Settings. Nothing to install means no
+ * download or import surfaces appear, which is the honest default and what an
+ * App Store reviewer (or anyone who has not opted in) should see.
+ */
+export const DEFAULT_SOURCES: readonly string[] = [];
 
 /** One plugin as a repository's manifest lists it. */
 export interface RemotePluginListing {

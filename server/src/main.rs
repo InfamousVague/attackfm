@@ -21,15 +21,20 @@
 
 mod api;
 mod auth;
+mod canvas;
 mod connect;
 mod curator;
 mod db;
 mod discover;
 mod discovery;
+mod friends;
 mod home;
 mod imports;
+mod jams;
+mod pair;
 mod scan;
 mod spotify;
+mod spotify_sync;
 mod search;
 mod stream;
 mod tempo;
@@ -58,11 +63,23 @@ pub struct AppState {
     pub ffmpeg: bool,
     /// The server's public origin (AFM_PUBLIC_URL), for OAuth redirect URIs.
     pub public_url: String,
+    /// The hub's own Spotify app (AFM_SPOTIFY_CLIENT_ID), used when a listener
+    /// has not brought their own. Not a secret: PKCE puts the client id in the
+    /// authorize URL in plain sight, which is why there is no secret at all.
+    pub spotify_client_id: String,
     /// Spotify logins parked between /connect and the browser's /callback.
     pub spotify: Arc<spotify::SpotifyLogins>,
+    /// The playlist-mirror engine's in-memory half. Every durable counter
+    /// lives in the database, so this holds only the in-flight set.
+    pub spotify_sync: Arc<spotify_sync::SpotifySyncState>,
     /// The server-side import queue - links any signed-in device enqueues,
     /// downloaded where the music lives.
     pub imports: Arc<imports::ImportManager>,
+    /// Live one-time device-pairing codes (the QR "link a device" flow).
+    pub pairing: Arc<pair::PairStore>,
+    /// Per-track Spotify Canvas URLs (looping now-playing clip). Inert unless
+    /// AFM_SPOTIFY_SP_DC is set - the review box never has it.
+    pub canvas: Arc<canvas::CanvasCache>,
     /// Held across every "find a free name, then move the file in and index
     /// it" sequence - uploads and imports alike - so two never resolve to the
     /// same destination in the shared library between the check and the move.
@@ -74,8 +91,10 @@ pub struct AppState {
     /// AttackFM Connect: device registry + the authoritative playback session,
     /// so any device can see and drive what's playing on any other.
     pub connect: Arc<connect::ConnectState>,
+    /// Live listening rooms: friends following one host's clock.
+    pub jams: Arc<jams::JamState>,
     /// The curator: the always-running process that learns what this listener
-    /// likes and builds playlists (and the DJ's next pick) from it.
+    /// likes and builds playlists from it.
     pub curator: Arc<curator::CuratorState>,
     /// Per-listener harvest clocks for the discovery pool.
     pub discovery: Arc<discovery::DiscoveryState>,
@@ -142,6 +161,7 @@ async fn main() {
     let quota_gb: i64 = env_or("AFM_QUOTA_GB", "0").parse().unwrap_or(0);
     let scan_minutes: u64 = env_or("AFM_SCAN_MINUTES", "15").parse().unwrap_or(15);
     let public_url = env_or("AFM_PUBLIC_URL", "");
+    let spotify_client_id = env_or("AFM_SPOTIFY_CLIENT_ID", "");
 
     let art_dir = data_dir.join("art");
     let upload_dir = data_dir.join("uploads");
@@ -180,12 +200,17 @@ async fn main() {
         library_quota_bytes: quota_gb.max(0) * 1024 * 1024 * 1024,
         ffmpeg,
         imports: imports::ImportManager::new(&data_dir),
+        pairing: pair::PairStore::new(),
+        canvas: canvas::CanvasCache::new(),
         public_url,
+        spotify_client_id,
         spotify: Arc::new(spotify::SpotifyLogins::default()),
+        spotify_sync: Arc::new(spotify_sync::SpotifySyncState::default()),
         filing: Arc::new(tokio::sync::Mutex::new(())),
         home: home::HomeState::new(),
         discover: discover::DiscoverState::new(),
         connect: connect::ConnectState::new(),
+        jams: jams::JamState::new(),
         curator: curator::CuratorState::new(),
         discovery: discovery::DiscoveryState::new(),
         started: std::time::Instant::now(),
@@ -202,6 +227,10 @@ async fn main() {
     // The curator: enriches the library with tempo and lyric vectors, and
     // rebuilds each listener's playlists from what they actually play.
     curator::spawn(state.clone());
+
+    // The Spotify mirror: keeps watched playlists, albums and saved tracks in
+    // step with their local copies.
+    spotify_sync::spawn(state.clone());
 
     if scan_minutes > 0 {
         let db = db.clone();
@@ -243,6 +272,13 @@ async fn main() {
         .route("/api/auth/register", post(api::register))
         .route("/api/auth/login", post(api::login))
         .route("/api/auth/logout", post(api::logout))
+        // Device pairing: a signed-in device mints a code (start), a fresh one
+        // spends it for a session (claim) - the QR "link a device" flow.
+        .route("/api/pair/start", post(pair::start))
+        .route("/api/pair/claim", post(pair::claim))
+        // Spotify Canvas for the playing track (inert without AFM_SPOTIFY_SP_DC).
+        .route("/api/canvas", get(canvas::canvas))
+        .route("/api/canvas/media/{id}", get(canvas::media))
         .route("/api/me", get(api::me))
         .route("/api/library", get(api::library))
         .route("/api/library/missing", post(api::library_missing))
@@ -265,12 +301,22 @@ async fn main() {
         )
         .route("/api/play-state", get(api::play_states).post(api::set_play_state))
         .route("/api/plays", post(home::record_play))
+        .route("/api/artist-top", get(home::artist_top))
+        .route("/api/friends", get(friends::list))
+        .route("/api/friends/requests", post(friends::request))
+        .route("/api/friends/requests/{id}/accept", post(friends::accept))
+        .route("/api/friends/requests/{id}/decline", post(friends::decline))
+        .route("/api/friends/{user_id}", delete(friends::remove))
+        .route("/api/jams", get(jams::list).post(jams::create))
+        .route("/api/jams/{id}/join", post(jams::join))
+        .route("/api/jams/{id}/leave", post(jams::leave))
+        .route("/api/jams/{id}/state", post(jams::set_state))
         .route("/api/home", get(home::feed))
         .route("/api/discover", get(discover::feed))
         .route("/api/search", get(search::search))
         .route("/api/artist", get(search::artist))
         .route("/api/curator", get(curator::feed))
-        .route("/api/dj/next", get(curator::dj))
+        .route("/api/playlists/{id}/suggestions", get(curator::playlist_suggestions))
         .route("/api/discoveries", get(discovery::feed))
         .route("/api/discoveries/dismiss", post(discovery::dismiss))
         .route("/api/connect", get(connect::connect))
@@ -289,6 +335,14 @@ async fn main() {
         .route("/api/spotify/disconnect", post(spotify::disconnect))
         .route("/api/spotify/library", get(spotify::library))
         .route("/api/spotify/synced", post(spotify::mark_synced))
+        .route("/api/spotify/watch", post(spotify::watch))
+        .route(
+            "/api/spotify/sync",
+            get(spotify::sync_status).post(spotify::sync_now),
+        )
+        .route("/api/spotify/mirror/{key}/items", get(spotify::mirror_items))
+        .route("/api/spotify/mirror/{key}/retry", post(spotify::mirror_retry))
+        .route("/api/spotify/mirror/{key}/forget", post(spotify::mirror_forget))
         .nest_service("/plugins", ServeDir::new(&plugins_dir))
         .fallback(|| async { (StatusCode::NOT_FOUND, "not found") })
         .layer(cors)
@@ -319,7 +373,35 @@ async fn main() {
     }
 }
 
+/// Waits for whichever stop actually arrives.
+///
+/// Only Ctrl-C was handled here, which meant the one signal this server really
+/// receives - systemd's SIGTERM on every `systemctl restart`, so every redeploy
+/// - was never caught. The default action for an unhandled SIGTERM is immediate
+/// termination, so each restart cut every in-flight audio body mid-byte. With
+/// it caught, axum stops accepting and lets the responses already on the wire
+/// finish (bounded by the unit's TimeoutStopSec) instead of dropping them.
 async fn shutdown_signal() {
-    let _ = tokio::signal::ctrl_c().await;
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        match signal(SignalKind::terminate()) {
+            Ok(mut term) => {
+                tokio::select! {
+                    _ = tokio::signal::ctrl_c() => {}
+                    _ = term.recv() => {}
+                }
+            }
+            // No SIGTERM handler available: fall back to the old behaviour
+            // rather than refusing to start.
+            Err(_) => {
+                let _ = tokio::signal::ctrl_c().await;
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
     println!("[attackfm] shutting down");
 }

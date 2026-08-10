@@ -108,6 +108,42 @@ export async function fetchServerInfo(url: string, signal?: AbortSignal): Promis
   return request<ServerInfo>(url, '/api/server', { signal });
 }
 
+/**
+ * The Spotify Canvas clip for a track, or null when there is none (or the
+ * server has no Spotify session configured). Best-effort and quiet: any failure
+ * resolves to null so the now-playing screen just keeps its blurred cover.
+ */
+export async function fetchCanvas(
+  session: ServerSession,
+  title: string,
+  artist: string,
+  signal?: AbortSignal,
+  trackId?: number | null,
+): Promise<string | null> {
+  try {
+    const params: Record<string, string> = { title, artist };
+    // Telling the server which track this is lets it keep the clip beside the
+    // song, so every later play is served from your own library rather than
+    // asking Spotify again.
+    if (typeof trackId === 'number') params.trackId = String(trackId);
+    const reply = await request<{ url: string | null }>(
+      session.url,
+      `/api/canvas?${new URLSearchParams(params).toString()}`,
+      { token: session.token, signal },
+    );
+    const url = reply.url ?? null;
+    if (!url) return null;
+    // A stored clip comes back as a path on this server. It needs the stream
+    // token in the query, because a <video src> cannot send a header.
+    if (url.startsWith('/')) {
+      return `${session.url}${url}?t=${encodeURIComponent(session.streamToken)}`;
+    }
+    return url;
+  } catch {
+    return null;
+  }
+}
+
 interface LoginReply {
   token: string;
   streamToken: string;
@@ -118,6 +154,44 @@ export async function login(url: string, username: string, password: string): Pr
   const reply = await request<LoginReply>(url, '/api/auth/login', {
     method: 'POST',
     body: JSON.stringify({ username, password }),
+  });
+  return {
+    url,
+    token: reply.token,
+    streamToken: reply.streamToken,
+    username: reply.user.username,
+    isAdmin: reply.user.isAdmin,
+  };
+}
+
+/** What `POST /api/pair/start` hands a signed-in device: a code to show. */
+export interface PairCode {
+  code: string;
+  /** Seconds the code stays good for. */
+  expiresIn: number;
+}
+
+/**
+ * Mints a one-time pairing code on the server this session is signed into, so
+ * another device can link without a password. The desktop shows the code (as a
+ * QR and as text); the phone spends it with {@link pairClaim}.
+ */
+export async function pairStart(session: ServerSession): Promise<PairCode> {
+  return request<PairCode>(session.url, '/api/pair/start', {
+    method: 'POST',
+    token: session.token,
+  });
+}
+
+/**
+ * Turns a pairing code into a full session on `url` - the same token pair a
+ * password sign-in would return, for the account that minted the code. Used by
+ * the phone's "log in with a code" path.
+ */
+export async function pairClaim(url: string, code: string): Promise<ServerSession> {
+  const reply = await request<LoginReply>(url, '/api/pair/claim', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
   });
   return {
     url,
@@ -468,6 +542,160 @@ export async function fetchHome(session: ServerSession): Promise<HomeFeed> {
   return request<HomeFeed>(session.url, '/api/home', { token: session.token });
 }
 
+// --- friends ---------------------------------------------------------------
+
+export interface Friend {
+  userId: number;
+  username: string;
+}
+
+/** A pending ask, in whichever direction. `userId` is the OTHER person. */
+export interface FriendRequest {
+  id: number;
+  userId: number;
+  username: string;
+}
+
+export interface FriendsFeed {
+  friends: Friend[];
+  /** Asks aimed at you, waiting on your answer. */
+  incoming: FriendRequest[];
+  /** Asks you sent, waiting on theirs. */
+  outgoing: FriendRequest[];
+}
+
+export async function fetchFriends(session: ServerSession): Promise<FriendsFeed> {
+  const out = await request<Partial<FriendsFeed>>(session.url, '/api/friends', {
+    token: session.token,
+  });
+  return { friends: out.friends ?? [], incoming: out.incoming ?? [], outgoing: out.outgoing ?? [] };
+}
+
+/** Asks someone to be friends, by the name they signed up with. Resolves to
+ *  whether it settled immediately - it does when they had already asked you. */
+export async function sendFriendRequest(
+  session: ServerSession,
+  username: string,
+): Promise<{ friends: boolean }> {
+  const out = await request<{ friends?: boolean }>(session.url, '/api/friends/requests', {
+    token: session.token,
+    method: 'POST',
+    body: JSON.stringify({ username }),
+  });
+  return { friends: out.friends === true };
+}
+
+export async function acceptFriendRequest(session: ServerSession, id: number): Promise<void> {
+  await request(session.url, `/api/friends/requests/${id}/accept`, {
+    token: session.token,
+    method: 'POST',
+  });
+}
+
+/** Turns down an ask aimed at you, or withdraws one you sent. */
+export async function declineFriendRequest(session: ServerSession, id: number): Promise<void> {
+  await request(session.url, `/api/friends/requests/${id}/decline`, {
+    token: session.token,
+    method: 'POST',
+  });
+}
+
+export async function removeFriend(session: ServerSession, userId: number): Promise<void> {
+  await request(session.url, `/api/friends/${userId}`, {
+    token: session.token,
+    method: 'DELETE',
+  });
+}
+
+// --- jams ------------------------------------------------------------------
+
+/** A live listening room. `positionMs` arrives already carried forward to the
+ *  moment it was read, so a follower can seek straight to it. */
+export interface Jam {
+  id: string;
+  hostId: number;
+  hostName: string;
+  members: string[];
+  memberCount: number;
+  trackId: number | null;
+  positionMs: number;
+  playing: boolean;
+  queue: number[];
+  updatedAt: number;
+}
+
+export interface JamsFeed {
+  /** The jam you are in, if any - hosting or following. */
+  current: Jam | null;
+  /** Jams your friends are hosting that you could join. */
+  friends: Jam[];
+}
+
+export async function fetchJams(session: ServerSession): Promise<JamsFeed> {
+  const out = await request<Partial<JamsFeed>>(session.url, '/api/jams', { token: session.token });
+  return { current: out.current ?? null, friends: out.friends ?? [] };
+}
+
+export async function startJam(session: ServerSession): Promise<Jam> {
+  return request<Jam>(session.url, '/api/jams', { token: session.token, method: 'POST' });
+}
+
+export async function joinJam(session: ServerSession, id: string): Promise<Jam> {
+  return request<Jam>(session.url, `/api/jams/${id}/join`, {
+    token: session.token,
+    method: 'POST',
+  });
+}
+
+export async function leaveJam(session: ServerSession, id: string): Promise<void> {
+  await request(session.url, `/api/jams/${id}/leave`, { token: session.token, method: 'POST' });
+}
+
+/** The host's clock, posted as it plays. Members read it and follow. */
+export async function pushJamState(
+  session: ServerSession,
+  id: string,
+  state: { trackId: number | null; positionMs: number; playing: boolean; queue?: number[] },
+): Promise<void> {
+  await request(session.url, `/api/jams/${id}/state`, {
+    token: session.token,
+    method: 'POST',
+    body: JSON.stringify(state),
+  });
+}
+
+/** One artist's most-played songs, all-time: ids + counts, most-played first.
+ * Ids resolve against the synced library like the home feed's shelves do. */
+export async function fetchArtistTop(
+  session: ServerSession,
+  artist: string,
+): Promise<{ id: number; plays: number }[]> {
+  const out = await request<{ top: { id: number; plays: number }[] }>(
+    session.url,
+    `/api/artist-top?name=${encodeURIComponent(artist)}`,
+    { token: session.token },
+  );
+  return out.top ?? [];
+}
+
+/**
+ * What else belongs on one playlist, ranked against the LIST's own character
+ * rather than the listener's. `ai` says whether a model is reading lyrics -
+ * without one the ranking is tempo and genre alone, and the surface hides
+ * itself rather than promise more than it did.
+ */
+export async function fetchPlaylistSuggestions(
+  session: ServerSession,
+  playlistId: string,
+  signal?: AbortSignal,
+): Promise<{ trackIds: number[]; ai: boolean }> {
+  return request<{ trackIds: number[]; ai: boolean }>(
+    session.url,
+    `/api/playlists/${encodeURIComponent(playlistId)}/suggestions`,
+    { token: session.token, signal },
+  );
+}
+
 /** One thing the curator thinks you would like but do not own yet. */
 export interface Discovery {
   id: string;
@@ -539,28 +767,6 @@ export async function fetchCurator(
   signal?: AbortSignal,
 ): Promise<CuratorFeed> {
   return request<CuratorFeed>(session.url, '/api/curator', { token: session.token, signal });
-}
-
-/**
- * The DJ's next pick: what should follow `seed`, and the line that introduces
- * it. `avoid` is what this session has already played, so a long set does not
- * circle back on itself.
- */
-export async function fetchDjNext(
-  session: ServerSession,
-  seed: number | null,
-  avoid: readonly number[],
-  signal?: AbortSignal,
-): Promise<{ trackId: number | null; line: string }> {
-  const params = new URLSearchParams();
-  if (seed != null) params.set('seed', String(seed));
-  // Only the recent tail matters, and a URL has a length.
-  if (avoid.length > 0) params.set('avoid', avoid.slice(-40).join(','));
-  return request<{ trackId: number | null; line: string }>(
-    session.url,
-    `/api/dj/next?${params.toString()}`,
-    { token: session.token, signal },
-  );
 }
 
 /** A suggested chart playlist the user can add through the import pipeline. */

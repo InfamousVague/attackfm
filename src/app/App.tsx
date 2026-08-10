@@ -1,4 +1,5 @@
 import {
+  Button,
   HapticsProvider,
   IconButton,
   LocaleProvider,
@@ -7,11 +8,11 @@ import {
   TitleBar,
   ToastProvider,
 } from '@glacier/react';
-import { ChevronLeft, ChevronRight, Home, LibraryBig, Search, Settings } from '@glacier/icons';
+import { ChevronLeft, ChevronRight, Download, Home, LibraryBig, Search, Settings, Users } from '@glacier/icons';
 import { useEffect, useRef, useState } from 'react';
 import { AppearanceProvider } from './appearance.tsx';
 import { LibraryProvider, useLibrary } from './library.tsx';
-import { ServerSessionProvider, useServerSession } from './serverSession.tsx';
+import { ServerSessionProvider } from './serverSession.tsx';
 import { EqualizerProvider } from './equalizer.tsx';
 import { PlaybackProvider } from './playback.tsx';
 import { PlaybackSyncProvider, useConnect } from './playbackSync.tsx';
@@ -27,17 +28,22 @@ import {
 } from '../plugins/runtime.tsx';
 import { isDesktopApp } from './platform.ts';
 import { onCarPlayPlay } from './carplay.ts';
-import { fetchDjNext, remotePath, trackIdFromPath } from './server.ts';
+import { remotePath, trackIdFromPath } from './server.ts';
 import type { Track } from './tauri.ts';
 import { Player } from './Player.tsx';
 import { ArtistPage } from './ArtistPage.tsx';
 import { PlaylistPage } from './PlaylistPage.tsx';
 import { HomePage } from './HomePage.tsx';
+import { DownloadsPage } from './DownloadsPage.tsx';
 import { SettingsModal } from './SettingsModal.tsx';
 import { PlaylistsProvider } from './playlists.tsx';
 import { LibrarySyncProvider } from './librarySync.tsx';
 import { SongSearch } from './SongSearch.tsx';
 import { LibraryView } from './LibraryView.tsx';
+import { FriendsPage } from './FriendsPage.tsx';
+import { JamProvider } from './jam.tsx';
+import { MobileAuthGate } from './MobileAuthGate.tsx';
+import { useDownloadsOptional } from '../plugins/importsBridge.ts';
 import wordmark from '../assets/attack-white.png';
 
 const APP_NAME = 'AttackFM';
@@ -99,71 +105,6 @@ function CarPlayBridge({ onPlay }: { onPlay: (track: Track, queue: Track[]) => v
       unlisten?.();
     };
   }, []);
-  return null;
-}
-
-/**
- * The DJ: keeps the queue fed with the curator's next pick, and reports the
- * line it would say on the way in.
- *
- * Headless, and below the LibraryProvider because it has to resolve the
- * server's track ids against the synced library. It tops
- * the queue up to two ahead rather than building a whole set: the pick should
- * be made against what is playing NOW, so a set assembled ten songs in advance
- * would be answering a question the listener has already moved past.
- */
-function DjRunner({
-  enabled,
-  current,
-  queue,
-  onPlay,
-  onQueueChange,
-  onLine,
-}: {
-  enabled: boolean;
-  current: Track | null;
-  queue: Track[];
-  onPlay: (track: Track, context?: Track[]) => void;
-  onQueueChange: (queue: Track[]) => void;
-  onLine: (line: string) => void;
-}) {
-  const { tracks } = useLibrary();
-  const { session } = useServerSession();
-  // One request in flight at a time: the effect re-runs on every queue change,
-  // and without this a slow answer would be asked for three times over.
-  const asking = useRef(false);
-
-  useEffect(() => {
-    if (!enabled || !session || asking.current) return;
-    const index = current ? queue.findIndex((t) => t.path === current.path) : -1;
-    const ahead = index >= 0 ? queue.length - 1 - index : 0;
-    if (current && ahead >= 2) return;
-
-    asking.current = true;
-    const seed = current ? trackIdFromPath(current.path) : null;
-    const avoid = queue
-      .map((t) => trackIdFromPath(t.path))
-      .filter((id): id is number => id !== null);
-    void fetchDjNext(session, seed, avoid)
-      .then(({ trackId, line }) => {
-        if (trackId === null) return;
-        const next = tracks.find((t) => t.path === remotePath(trackId));
-        if (!next) return;
-        if (line) onLine(line);
-        // Cold start drops the needle; otherwise the pick waits its turn behind
-        // whatever is playing.
-        if (current) onQueueChange([...queue, next]);
-        else onPlay(next, [next]);
-      })
-      .catch(() => {
-        // An unreachable server just means no next pick this time; the effect
-        // runs again on the next track change.
-      })
-      .finally(() => {
-        asking.current = false;
-      });
-  }, [enabled, current, queue, tracks, session, onPlay, onQueueChange, onLine]);
-
   return null;
 }
 
@@ -238,11 +179,21 @@ function PrimaryNav({
   onSettings: () => void;
 }) {
   const pages = usePluginPages();
+  // Downloads is a plugin surface, not a core one: the tab appears only while an
+  // importer is actually running (it provides the downloads bridge). With no
+  // importer - a fresh install, or anyone who has not added a plugin source -
+  // there is nothing to download, so the tab is absent rather than a dead end.
+  const hasDownloads = useDownloadsOptional() !== null;
   // A tab pointing at a plugin page whose plugin was just switched off reads as
   // Home - the same fallback the content host makes - so the lit item never
   // disagrees with what is actually on screen.
   const onPluginPage = pages.some((pg) => pg.key === tab);
-  const homeActive = tab === 'home' || (tab !== 'library' && !onPluginPage);
+  // Home (the library) is the default: any tab that is not Discovery, Downloads
+  // or a live plugin page falls back to it, so the lit item never disagrees
+  // with what is on screen.
+  const homeActive =
+    tab === 'home' ||
+    (tab !== 'library' && tab !== 'downloads' && tab !== 'friends' && !onPluginPage);
 
   const primaryItems = (
     <>
@@ -258,6 +209,14 @@ function PrimaryNav({
         active={tab === 'library'}
         onClick={() => onTab('library')}
       />
+      {hasDownloads && (
+        <NavBarItem
+          icon={<Download size={18} />}
+          label="Downloads"
+          active={tab === 'downloads'}
+          onClick={() => onTab('downloads')}
+        />
+      )}
       {pages.map((pg) => (
         <NavBarItem
           key={pg.key}
@@ -267,6 +226,12 @@ function PrimaryNav({
           onClick={() => onTab(pg.key)}
         />
       ))}
+      <NavBarItem
+        icon={<Users size={18} />}
+        label="Friends"
+        active={tab === 'friends'}
+        onClick={() => onTab('friends')}
+      />
     </>
   );
 
@@ -297,6 +262,67 @@ function PrimaryNav({
 }
 
 /**
+ * Whether the strip exists, and what it holds.
+ *
+ * A device that has played nothing of its own still needs the transport when
+ * the music is playing SOMEWHERE: Connect makes every signed-in device a remote
+ * for whichever one holds the audio, and a remote with no strip can neither
+ * watch the progress nor take the controls - which is most of the point of
+ * having Connect at all. So the bar appears for a local track OR for the track
+ * another device is playing, and the Player's own remote mode does the rest
+ * (it shows that device's clock and sends commands instead of playing).
+ *
+ * Lives inside the Connect provider because only a child of it can read the
+ * shared session.
+ */
+function PlayerHost({
+  current,
+  queue,
+  onTrackChange,
+  onQueueChange,
+  onOpenArtist,
+  autoplay,
+}: {
+  current: Track | null;
+  queue: Track[];
+  onTrackChange: (track: Track) => void;
+  onQueueChange: (queue: Track[]) => void;
+  /** The Now Playing sheet's artist line opens the artist page through here. */
+  onOpenArtist: (artist: string) => void;
+  autoplay: boolean;
+}) {
+  const connect = useConnect();
+  const { tracks } = useLibrary();
+  const elsewhere =
+    connect.session?.activeDeviceId != null &&
+    connect.session.activeDeviceId !== connect.thisDeviceId;
+  const remoteId = elsewhere ? connect.session?.trackId : null;
+  const remoteTrack =
+    remoteId != null
+      ? (tracks.find((t) => trackIdFromPath(t.path) === remoteId) ?? null)
+      : null;
+  // A local track always wins: this device's own deck is what its transport
+  // drives once it has one.
+  const shown = current ?? remoteTrack;
+  if (!shown) return null;
+  return (
+    <div className="appPlayer">
+      {/* The player walks the queue itself; it only reports where it
+          landed, and `current` follows. */}
+      <Player
+        track={shown}
+        queue={queue}
+        onTrackChange={onTrackChange}
+        onQueueChange={onQueueChange}
+        onOpenArtist={onOpenArtist}
+        // Nothing this device chose to play, so nothing to start.
+        autoplay={current ? autoplay : false}
+      />
+    </div>
+  );
+}
+
+/**
  * A page stacked on top of a tab: an artist, or one playlist opened whole.
  * Both behave the same way in the history - pushed inside whichever tab was
  * current, so Back returns there - which is why they are one type rather than
@@ -315,8 +341,7 @@ type Detail = { kind: 'artist'; artist: string } | { kind: 'playlist'; id: strin
 function AppMain({
   detail,
   tab,
-  djOn,
-  onToggleDj,
+  libraryView,
   onPlay,
   onOpenArtist,
   onOpenPlaylist,
@@ -324,9 +349,8 @@ function AppMain({
 }: {
   detail: Detail | null;
   tab: string;
-  /** Whether the DJ is running - Home carries its switch. */
-  djOn: boolean;
-  onToggleDj: () => void;
+  /** Which face Library wears; flipped by the header's All button. */
+  libraryView: 'summary' | 'all';
   onPlay: (track: Track, context?: Track[]) => void;
   onOpenArtist: (artist: string) => void;
   onOpenPlaylist: (id: string) => void;
@@ -334,10 +358,19 @@ function AppMain({
 }) {
   const pages = usePluginPages();
   const activePage = detail ? null : (pages.find((pg) => pg.key === tab) ?? null);
+  // Downloads only exists while an importer runs; without one, a tab left on
+  // 'downloads' from a past session falls through to Home rather than a page
+  // that should not be here.
+  const hasDownloads = useDownloadsOptional() !== null;
   return (
     <main className="appContent">
       {detail?.kind === 'artist' ? (
-        <ArtistPage artist={detail.artist} onPlay={onPlay} onOpenArtist={onOpenArtist} />
+        <ArtistPage
+          artist={detail.artist}
+          onPlay={onPlay}
+          onOpenArtist={onOpenArtist}
+          onOpenPlaylist={onOpenPlaylist}
+        />
       ) : detail?.kind === 'playlist' ? (
         <PlaylistPage
           id={detail.id}
@@ -348,18 +381,21 @@ function AppMain({
       ) : activePage ? (
         activePage.render({ onPlay, onOpenArtist })
       ) : tab === 'library' ? (
+        // Library: what you HAVE - the shelves and the full song table.
         <LibraryView
+          view={libraryView}
           onPlay={onPlay}
           onOpenArtist={onOpenArtist}
           onOpenPlaylist={onOpenPlaylist}
         />
+      ) : tab === 'friends' ? (
+        // Friends: who you know on this server, and the asks in flight.
+        <FriendsPage />
+      ) : tab === 'downloads' && hasDownloads ? (
+        <DownloadsPage />
       ) : (
-        <HomePage
-          onPlay={onPlay}
-          onOpenArtist={onOpenArtist}
-          djOn={djOn}
-          onToggleDj={onToggleDj}
-        />
+        // Home (the default): the curator's mixes and the "worth adding" finds.
+        <HomePage onPlay={onPlay} onOpenArtist={onOpenArtist} />
       )}
     </main>
   );
@@ -412,6 +448,11 @@ function ConnectPlayRouter({
  */
 export function App() {
   const [searchOpen, setSearchOpen] = useState(false);
+  // Which face the Library shows: its shelves, or every song as one table.
+  // Lives here rather than in the page because the header's "All" button is
+  // the only thing that flips it - the segmented toggle it replaced lived in
+  // the page body and spent a full row on two options.
+  const [libraryView, setLibraryView] = useState<'summary' | 'all'>('summary');
   const [settingsOpen, setSettingsOpen] = useState(false);
   // The track the list handed to the player; null until one is opened.
   const [current, setCurrent] = useState<Track | null>(null);
@@ -420,13 +461,6 @@ export function App() {
   // way a play context should be: re-sorting the table later reorders the
   // table, not the record already spinning.
   const [queue, setQueue] = useState<Track[]>([]);
-  // The DJ: on, and the last thing it said. The line is what makes it a DJ
-  // rather than an autoplay - something introduces the song.
-  const [djOn, setDjOn] = useState(false);
-  const [djLine, setDjLine] = useState('');
-  // Read by toggleDj, which must not close over a stale track.
-  const currentRef = useRef<Track | null>(null);
-  currentRef.current = current;
 
   // Every surface that starts playback comes through here: the track to play
   // and the list it came from. A surface with no list (a lone hit) plays the
@@ -444,24 +478,6 @@ export function App() {
   // a pick to that device and returns true; playFrom then does nothing locally,
   // so the song changes on every device while control stays where it is.
   const connectRouteRef = useRef<((track: Track, context?: Track[]) => boolean) | null>(null);
-
-  const toggleDj = () => {
-    setDjOn((on) => {
-      if (on) {
-        setDjLine('');
-        return false;
-      }
-      // Switching the DJ on hands it the wheel: the queue narrows to whatever
-      // is playing, so what comes next is its pick. Without this the DJ has
-      // nothing to do until an existing queue runs out - and the launch seed
-      // alone puts the whole library in there.
-      setQueue((q) => {
-        const playing = currentRef.current;
-        return playing ? [playing] : q.slice(0, 1);
-      });
-      return true;
-    });
-  };
 
   const playFrom = (track: Track, context?: Track[]) => {
     // Another device is the one playing: hand it the pick rather than seizing
@@ -551,6 +567,11 @@ export function App() {
                 above the plugin registry, which filters server-backed plugins
                 (the importer on a phone) on the live session. */}
             <ServerSessionProvider>
+            {/* The phone's front door: with no local library of its own, a
+                mobile build gates the whole app behind a server sign-in and
+                shows nothing else until one is connected. Desktop keeps its
+                local library and passes straight through. */}
+            <MobileAuthGate>
             {/* Who is running sits above the library while the plugins' own
                 providers mount inside it, so a plugin (the importer, say) can
                 read and rescan the library. */}
@@ -574,6 +595,7 @@ export function App() {
                 playing on any other. Inert (no socket) off a server. Wraps the
                 player, which registers as this device's executor. */}
             <PlaybackSyncProvider>
+            <JamProvider>
             {/* The loudness reading the player publishes and the header moves
                 to. It wraps both, which is the whole reason it exists. */}
             <NowPlayingMotionProvider>
@@ -696,20 +718,48 @@ export function App() {
                   >
                     <ChevronRight size={18} />
                   </IconButton>
-                  <img className="mobileHeader__logo" src={wordmark} alt={APP_NAME} />
+                  {tab === 'library' ? (
+                    <span className="mobileHeader__title">Library</span>
+                  ) : tab === 'downloads' ? (
+                    <span className="mobileHeader__title">Downloads</span>
+                  ) : tab === 'friends' ? (
+                    <span className="mobileHeader__title">Friends</span>
+                  ) : (
+                    <img className="mobileHeader__logo" src={wordmark} alt={APP_NAME} />
+                  )}
                 </span>
-                {/* The one global search on the phone: opens the full-screen
-                    search sheet (SongSearch renders it as such off the desktop).
-                    Distinct from each page's own field - this searches the whole
-                    library from anywhere, the way ⌘K does on the desktop. */}
-                <IconButton
-                  variant="ghost"
-                  size="sm"
-                  aria-label="Search"
-                  onClick={() => setSearchOpen(true)}
-                >
-                  <Search size={20} />
-                </IconButton>
+                <span className="mobileHeader__actions">
+                  {/* The importer's download queue in the header - but kept OFF
+                      Home and Library so those two headers stay clean; the
+                      Downloads tab reaches the queue from anywhere regardless.
+                      Empty (and invisible) when the importer plugin is off. */}
+                  {tab !== 'home' && tab !== 'library' && <PluginSlot id="titlebar-end" />}
+                  {/* Library's view flip: the whole library as one table. A
+                      header button instead of an in-page toggle - the page
+                      opens on its shelves and this is the one other face. */}
+                  {tab === 'library' && (
+                    <Button
+                      variant={libraryView === 'all' ? 'soft' : 'ghost'}
+                      size="sm"
+                      aria-pressed={libraryView === 'all'}
+                      onClick={() => setLibraryView((v) => (v === 'all' ? 'summary' : 'all'))}
+                    >
+                      All
+                    </Button>
+                  )}
+                  {/* The one global search on the phone: opens the full-screen
+                      search sheet (SongSearch renders it as such off the
+                      desktop). Distinct from each page's own field - this
+                      searches the whole library from anywhere, like ⌘K does. */}
+                  <IconButton
+                    variant="ghost"
+                    size="sm"
+                    aria-label="Search"
+                    onClick={() => setSearchOpen(true)}
+                  >
+                    <Search size={20} />
+                  </IconButton>
+                </span>
               </header>
             )}
             <div className="appBody">
@@ -728,8 +778,7 @@ export function App() {
               <AppMain
                 detail={detail}
                 tab={tab}
-                djOn={djOn}
-                onToggleDj={toggleDj}
+                libraryView={libraryView}
                 onPlay={playFrom}
                 onOpenArtist={go}
                 onOpenPlaylist={goPlaylist}
@@ -753,15 +802,6 @@ export function App() {
             )}
             {/* Songs tapped on the car screen start here, queue and all. */}
             <CarPlayBridge onPlay={playFrom} />
-            {/* The DJ, when it is on: keeps the queue one or two picks ahead. */}
-            <DjRunner
-              enabled={djOn}
-              current={current}
-              queue={queue}
-              onPlay={playFrom}
-              onQueueChange={setQueue}
-              onLine={setDjLine}
-            />
             {/* Teaches playFrom to route a pick to whichever device holds audio.
                 Lives here, inside the Connect provider, because only a child of
                 it can read the shared session. */}
@@ -771,27 +811,14 @@ export function App() {
                 thing played and stays for the session - `current` only ever
                 moves from one track to another after that, never back to
                 null, so the deck is never torn down mid-listen. */}
-            {current && (
-              <div className="appPlayer">
-                {/* The player walks the queue itself; it only reports where it
-                    landed, and `current` follows. */}
-                <Player
-                  track={current}
-                  queue={queue}
-                  onTrackChange={setCurrent}
-                  onQueueChange={setQueue}
-                  autoplay={autoplay}
-                />
-              </div>
-            )}
-            {/* What the DJ said on the way into this song. Sits where the
-                indexing pill does, and only while the DJ is on. */}
-            {djOn && djLine && (
-              <div className="djBar" role="status" aria-live="polite">
-                <span className="djBar__badge">DJ</span>
-                <span className="djBar__line">{djLine}</span>
-              </div>
-            )}
+            <PlayerHost
+              current={current}
+              queue={queue}
+              onTrackChange={setCurrent}
+              onQueueChange={setQueue}
+              onOpenArtist={go}
+              autoplay={autoplay}
+            />
             <IndexingStatus />
             {/* Searches the library - titles, artists, albums, genres, lyrics -
                 and plays what is chosen. The palette calls plugin hooks, so it
@@ -804,6 +831,7 @@ export function App() {
             </div>
             </AcquireProvider>
             </NowPlayingMotionProvider>
+            </JamProvider>
             </PlaybackSyncProvider>
             </PlaybackProvider>
             </EqualizerProvider>
@@ -812,6 +840,7 @@ export function App() {
             </PlaylistsProvider>
             </LibraryProvider>
             </PluginsProvider>
+            </MobileAuthGate>
             </ServerSessionProvider>
           </AppearanceProvider>
         </ToastProvider>

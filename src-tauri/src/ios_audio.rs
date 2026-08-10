@@ -65,6 +65,54 @@ pub fn configure_session() {
 #[cfg(not(target_os = "ios"))]
 pub fn configure_session() {}
 
+/// The hardware output level, 0-1: where the phone's own volume buttons sit.
+///
+/// This is NOT the app's fader. The in-app fader scales the graph; this is the
+/// system's, applied after everything the app does, and the only thing that
+/// says how loud the music actually is in the room. The seek bar reads it so
+/// the bar's motion tracks what is being heard rather than what the app asked
+/// for.
+///
+/// `outputVolume` is a plain float property on the shared session - one message
+/// send, no observer object - so the webview polls it rather than the native
+/// side pushing KVO callbacks across the bridge for a purely visual signal.
+#[cfg(target_os = "ios")]
+pub fn output_volume() -> f32 {
+    use objc2::msg_send;
+    use objc2::runtime::{AnyClass, AnyObject};
+
+    unsafe {
+        let Some(class) = AnyClass::get(c"AVAudioSession") else {
+            return 1.0;
+        };
+        let session: *mut AnyObject = msg_send![class, sharedInstance];
+        if session.is_null() {
+            return 1.0;
+        }
+        let volume: f32 = msg_send![session, outputVolume];
+        // A session that has never been active can report 0; treat anything
+        // outside the range as "unknown" and let the bar behave normally.
+        if volume.is_finite() && (0.0..=1.0).contains(&volume) {
+            volume
+        } else {
+            1.0
+        }
+    }
+}
+
+/// Off iOS there is no session to ask, and no separate system fader worth
+/// modelling: the app's own volume is the whole story.
+#[cfg(not(target_os = "ios"))]
+pub fn output_volume() -> f32 {
+    1.0
+}
+
+/// The hardware volume as the webview sees it. Cheap enough to poll.
+#[tauri::command]
+pub fn ios_output_volume() -> f32 {
+    output_volume()
+}
+
 /// The launch-time claim, re-runnable from the webview. iOS drops the session
 /// on interruptions (a call, Siri, another app taking exclusive audio), and a
 /// deactivated session is the difference between playback resuming and the

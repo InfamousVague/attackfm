@@ -1,5 +1,6 @@
 import { IconButton, Modal, Text } from '@glacier/react';
 import { Trash2, X } from '@glacier/icons';
+import { EmptyArt, type EmptyArtName } from './EmptyArt.tsx';
 import type { Track } from './tauri.ts';
 import placeholderArt from '../assets/attack-wave.png';
 
@@ -9,7 +10,12 @@ interface PlaylistModalProps {
   title: string;
   tracks: Track[];
   emptyLabel: string;
+  /** The spot illustration to sit above the empty label, if any. */
+  emptyArt?: EmptyArtName;
   onPlay: (track: Track) => void;
+  /** Opens the artist's page from a row's artist line; the caller closes the
+   *  sheet itself so the page is not buried under it. */
+  onOpenArtist?: (artist: string) => void;
   /** Present only for the user's own playlists: sheds one row. */
   onRemoveTrack?: (path: string) => void;
   /** Present only for the user's own playlists: deletes the list whole. */
@@ -34,14 +40,23 @@ export function PlaylistModal({
   title,
   tracks,
   emptyLabel,
+  emptyArt,
   onPlay,
+  onOpenArtist,
   onRemoveTrack,
   onDelete,
 }: PlaylistModalProps) {
   return (
     <Modal open={open} onClose={onClose} title={title} size="md">
       {tracks.length === 0 ? (
-        <Text tone="muted">{emptyLabel}</Text>
+        emptyArt ? (
+          <div className="emptyState">
+            <EmptyArt name={emptyArt} />
+            <Text tone="muted">{emptyLabel}</Text>
+          </div>
+        ) : (
+          <Text tone="muted">{emptyLabel}</Text>
+        )
       ) : (
         <div className="playlistModalList">
           {tracks.map((track) => (
@@ -57,7 +72,28 @@ export function PlaylistModal({
                 <img className="songArt" src={track.artwork ?? placeholderArt} alt="" loading="lazy" />
                 <span className="playlistModalMeta">
                   <span className="songTitle">{track.title}</span>
-                  <span className="songArtist">{track.artist}</span>
+                  {onOpenArtist ? (
+                    <span
+                      role="link"
+                      tabIndex={0}
+                      className="songArtist songArtistLink"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenArtist(track.artist);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onOpenArtist(track.artist);
+                        }
+                      }}
+                    >
+                      {track.artist}
+                    </span>
+                  ) : (
+                    <span className="songArtist">{track.artist}</span>
+                  )}
                 </span>
                 <span className="songMuted playlistModalTime">{formatDuration(track.duration)}</span>
               </button>

@@ -1,4 +1,4 @@
-import { Button, Input, Modal, ScrollArea, Text } from '@glacier/react';
+import { Button, Input, Modal, ScrollArea } from '@glacier/react';
 import { Heart, History, ListMusic, Plus } from '@glacier/icons';
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { useLibrary } from './library.tsx';
@@ -6,17 +6,24 @@ import { usePlaylists } from './playlists.tsx';
 import { PluginFence, usePlugins } from '../plugins/runtime.tsx';
 import type { PluginPlaylistTile } from '../plugins/types.ts';
 import { PlaylistModal } from './PlaylistModal.tsx';
+import type { EmptyArtName } from './EmptyArt.tsx';
 import type { Track } from './tauri.ts';
 
 /**
- * A 2x2 mosaic of the collection's first four artworks; below four, the given
- * glyph on its own - there is no honest mosaic to make from a handful of
- * covers. Liked and every user playlist wear this same cover.
+ * The collection's cover, seeded from its own songs: a 2x2 split of the first
+ * four DISTINCT artworks (deduped, so an album playlist is not the same cover
+ * four times over). Fewer than four distinct covers, the first one fills the
+ * whole square; none at all, the given glyph. Liked and every user playlist
+ * wear this same cover, at the same size as every other card on the page.
  */
 function MosaicCover({ tracks, fallback, tone }: { tracks: Track[]; fallback: ReactNode; tone: string }) {
-  const arts = tracks.map((t) => t.artwork).filter((a): a is string => a !== null).slice(0, 4);
+  const arts: string[] = [];
+  for (const t of tracks) {
+    if (t.artwork && !arts.includes(t.artwork)) arts.push(t.artwork);
+    if (arts.length === 4) break;
+  }
 
-  if (arts.length < 4) {
+  if (arts.length === 0) {
     return (
       <div className={`tileSquircle ${tone}`} aria-hidden>
         {fallback}
@@ -24,10 +31,18 @@ function MosaicCover({ tracks, fallback, tone }: { tracks: Track[]; fallback: Re
     );
   }
 
+  if (arts.length < 4) {
+    return (
+      <div className="tileSquircle tileCoverFull" aria-hidden>
+        <img src={arts[0]} alt="" loading="lazy" />
+      </div>
+    );
+  }
+
   return (
     <div className="tileSquircle tileLikedGrid" aria-hidden>
       {arts.map((art, i) => (
-        <img key={i} src={art} alt="" />
+        <img key={i} src={art} alt="" loading="lazy" />
       ))}
     </div>
   );
@@ -81,12 +96,15 @@ function PluginTile({ tile, onPlay }: { tile: PluginPlaylistTile; onPlay: (track
 export function PlaylistShowcase({
   onPlay,
   onOpenPlaylist,
+  onOpenArtist,
 }: {
   onPlay: (track: Track, queue: Track[]) => void;
   /** Opens one of the user's own lists as a full page - where it can be
    *  reordered, renamed and deleted. Liked and Recent stay modals: they are
    *  the library's own views, with no order of their own to edit. */
   onOpenPlaylist: (id: string) => void;
+  /** Opens an artist's page from a modal row's artist line. */
+  onOpenArtist?: (artist: string) => void;
 }) {
   const { tracks, favoriteTracks } = useLibrary();
   const { playlists, create, remove, removeTrack } = usePlaylists();
@@ -109,9 +127,9 @@ export function PlaylistShowcase({
   // The strip's own modal now serves only the two library views. A user's list
   // opens as a page instead - it has a running order to edit, which a
   // read-through sheet has nowhere to put.
-  const current =
+  const current: { title: string; tracks: Track[]; empty: string; art?: EmptyArtName } | null =
     open === 'liked'
-      ? { title: 'Liked', tracks: favoriteTracks, empty: 'No liked songs yet. Tap the heart while a song plays.' }
+      ? { title: 'Liked', tracks: favoriteTracks, empty: 'No liked songs yet. Tap the heart while a song plays.', art: 'liked' }
       : open === 'recent'
         ? { title: 'Recent', tracks: recent, empty: 'Nothing here yet.' }
         : null;
@@ -127,20 +145,15 @@ export function PlaylistShowcase({
     create(name).then(onOpenPlaylist, () => setDraftName(name));
   };
 
-  const playlistCount = 2 + playlists.length + pluginTiles.length;
-
   return (
     <>
-      <header className="stripHeader">
-        <div className="stripHeading">
-          <span className="stripTitle">Playlists</span>
-          <Text tone="muted" size="sm">
-            {playlistCount} {playlistCount === 1 ? 'playlist' : 'playlists'} · {tracks.length.toLocaleString()}{' '}
-            {tracks.length === 1 ? 'song' : 'songs'} · {favoriteTracks.length.toLocaleString()} liked
-          </Text>
-        </div>
-        <ScrollArea orientation="horizontal" className="showcaseScroll" hideScrollbar>
-          <div className="showcaseRow">
+      {/* A shelf like every other on the page: the same heading, the same
+          horizontal row - the tiles are just squircles instead of squares.
+          The counts that used to crowd this header live in the stats card. */}
+      <section className="homeShelf">
+        <h2 className="homeShelfTitle">Playlists</h2>
+        <ScrollArea orientation="horizontal" className="homeShelfScroll" hideScrollbar>
+          <div className="homeShelfRow showcaseRow">
             <Tile
               name="Liked"
               cover={<MosaicCover tracks={favoriteTracks} fallback={<Heart size={24} fill="currentColor" />} tone="tileLiked" />}
@@ -188,7 +201,7 @@ export function PlaylistShowcase({
             ))}
           </div>
         </ScrollArea>
-      </header>
+      </section>
       {current && (
         <PlaylistModal
           open={open !== null}
@@ -196,6 +209,15 @@ export function PlaylistShowcase({
           title={current.title}
           tracks={current.tracks}
           emptyLabel={current.empty}
+          emptyArt={current.art}
+          onOpenArtist={
+            onOpenArtist &&
+            ((artist) => {
+              // Close the sheet first so the artist page is not buried under it.
+              setOpen(null);
+              onOpenArtist(artist);
+            })
+          }
           // The open view is the queue: a row plays on through the rest. Neither
           // Liked nor Recent sheds rows here - the heart already edits Liked,
           // and Recent is a window on the library rather than a list.

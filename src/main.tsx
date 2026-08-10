@@ -11,6 +11,11 @@ import '@glacier/tokens/css/tokens.css';
 import '@glacier/react/styles.css';
 import './app/app.css';
 import { App } from './app/App.tsx';
+import { runColdStartMaintenance } from './app/coldStart.ts';
+
+// Before the first provider runs, so nothing reads a feed cache that a killed
+// app was meant to have forgotten. Cheap, synchronous, and a no-op on resume.
+runColdStartMaintenance();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

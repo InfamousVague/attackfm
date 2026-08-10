@@ -13,12 +13,13 @@
  * handlers are where their buttons land - inside the app's own transport,
  * where intent is recorded before anything pauses.
  *
- * On iPhone WebKit's claim is unreliable - audio through a WebAudio graph, which
- * always runs there now, breaks its reflection - so the native
- * MPNowPlayingInfoCenter path in carplay.m takes over and THIS module stays
- * unbound: two claimants means transport buttons firing twice. Everywhere else
- * this module is the claimant. The Player owns that split; everything here just
- * checks for API presence.
+ * This module is the claimant on EVERY platform, the iPhone included. An
+ * earlier build tried the opposite split - native center on iOS, this module
+ * elsewhere - on the theory that the WebAudio graph broke WebKit's claim; the
+ * phone answered with the generic "AttackFM" card (WebKit's starved defaults:
+ * page title, no artwork, ±10s skips) because WebKit held the claim anyway.
+ * carplay.m's native push still runs alongside on iOS: the car's own templates
+ * are fed from it, and it is the fallback for whenever WebKit holds no claim.
  */
 
 export interface MediaSessionControls {

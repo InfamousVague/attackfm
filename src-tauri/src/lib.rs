@@ -208,7 +208,9 @@ fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'stat
         // push without asking which build it is in.
         carplay::carplay_set_library,
         carplay::carplay_now_playing,
+        carplay::set_idle_timer_disabled,
         ios_audio::ios_reactivate_audio,
+        ios_audio::ios_output_volume,
         native_audio::native_audio_ping,
         native_audio::native_audio_load,
         native_audio::native_audio_play,
@@ -226,6 +228,16 @@ fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'stat
         album_art::music_album_art,
         carplay::carplay_set_library,
         carplay::carplay_now_playing,
+        carplay::set_idle_timer_disabled,
+        // NOT ios_reactivate_audio, deliberately. It looks like an oversight -
+        // the real implementation is iOS-only and this is the iOS build - but
+        // registering it here re-activates the audio session on the player's
+        // five-second heartbeat, and re-claiming a live session mid-song pauses
+        // the deck over and over. The frontend's call failing quietly IS the
+        // working behaviour; the graph recovers through the AudioContext resume
+        // on the same pulse. Reviving it needs the heartbeat to stop asking
+        // first (see the pulse in Player.tsx).
+        ios_audio::ios_output_volume,
         native_audio::native_audio_ping,
         native_audio::native_audio_load,
         native_audio::native_audio_play,

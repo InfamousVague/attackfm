@@ -18,10 +18,6 @@
 //!    runs and the names are plain. The recommendations are the maths either
 //!    way - the model is a writer here, not an oracle.
 //!
-//! The DJ (`dj_next`) is the same scoring turned to a single question: given
-//! what is playing right now, what should come next - and what would you say
-//! about it on the way in.
-//!
 //! Nothing here leaves the listener's own server. The catalogue lookup sends a
 //! title and an artist to Deezer to ask a tempo; the words themselves only ever
 //! go to the model the operator pointed at, which is theirs.
@@ -73,10 +69,10 @@ fn ai_url() -> Option<String> {
 
 /// The chat model, and whether there is one at all.
 ///
-/// Deliberately not defaulted: writing playlist names and DJ patter is the
-/// EXPENSIVE half of this, and on a one-core box a chat model that was assumed
-/// rather than configured means every curation cycle and every DJ pick waits
-/// out a long timeout against a model that was never pulled. Embeddings - the
+/// Deliberately not defaulted: writing the playlist names is the EXPENSIVE half
+/// of this, and on a one-core box a chat model that was assumed rather than
+/// configured means every curation cycle waits out a long timeout against a
+/// model that was never pulled. Embeddings - the
 /// half that actually drives the recommendations - run off their own switch
 /// below, so a server can read lyrics without ever generating a word.
 fn ai_chat_model() -> Option<String> {
@@ -115,8 +111,8 @@ pub struct Status {
     pub last_curated: i64,
     /// Whether an embedder is reachable - the half that reads lyrics.
     pub ai: bool,
-    /// Whether a chat model is configured - the half that writes names and
-    /// patter. Off by default, and not needed for the recommendations.
+    /// Whether a chat model is configured - the half that writes the names. Off
+    /// by default, and not needed for the recommendations.
     pub chat: bool,
     /// Whether the embedder answered last time it was asked - the difference
     /// between "lyrics are being read" and "only tempo and genre are".
@@ -623,131 +619,9 @@ async fn discovery_cycle(state: &Arc<AppState>) -> bool {
     worked
 }
 
-// --- the DJ ------------------------------------------------------------------
-
-/// What should follow the track now playing, and a line to introduce it.
-///
-/// The same three-term scoring as the playlists, but anchored on the CURRENT
-/// track rather than a month of history: the next song should feel like it
-/// belongs beside this one. Tempo is weighted hardest here - a DJ's whole job
-/// is not breaking the floor - and anything heard in this session is skipped.
-pub async fn dj_next(
-    state: &Arc<AppState>,
-    user: i64,
-    seed: Option<i64>,
-    avoid: &[i64],
-) -> Option<(i64, String)> {
-    let all = state.db.all_features();
-    if all.is_empty() {
-        return None;
-    }
-    let by_id: HashMap<i64, &TrackFeatures> = all.iter().map(|f| (f.track_id, f)).collect();
-    let skip: HashSet<i64> = avoid.iter().copied().collect();
-
-    // Anchored on the seed when there is one; on the month otherwise, which is
-    // how the DJ starts cold.
-    let anchor = seed.and_then(|s| by_id.get(&s).copied());
-    let taste = match anchor {
-        Some(f) => Taste {
-            centroid: f.lyric_vec.clone(),
-            tempo: f.bpm,
-            genres: {
-                let mut m = HashMap::new();
-                if !f.genre.trim().is_empty() {
-                    m.insert(f.genre.to_lowercase(), 1.0);
-                }
-                m
-            },
-            heard: HashSet::new(),
-        },
-        None => {
-            let since = now_ms() - WINDOW_30D_MS;
-            let top: Vec<i64> =
-                state.db.top_plays(user, since, 40).into_iter().map(|(id, _)| id).collect();
-            taste_from(&top, &by_id)
-        }
-    };
-
-    let mut best: Option<(f32, i64)> = None;
-    for f in &all {
-        if skip.contains(&f.track_id) || Some(f.track_id) == seed {
-            continue;
-        }
-        // The same artist twice in a row is the one thing a DJ never does.
-        if let Some(a) = anchor {
-            if a.artist.eq_ignore_ascii_case(&f.artist) {
-                continue;
-            }
-        }
-        let s = score(f, &taste);
-        if best.map(|(bs, _)| s > bs).unwrap_or(true) {
-            best = Some((s, f.track_id));
-        }
-    }
-    let (_, next_id) = best?;
-
-    let line = dj_line(state, seed, next_id).await;
-    Some((next_id, line))
-}
-
-/// The DJ's word on the way in. The model when there is one, a plain
-/// hand-off when there is not - never nothing, because the point of the
-/// feature is that something introduces the song.
-async fn dj_line(state: &Arc<AppState>, from: Option<i64>, to: i64) -> String {
-    let next = state.db.tracks_for_curation(&[to]).into_iter().next();
-    let Some(next) = next else { return String::new() };
-    let prev = from.and_then(|id| state.db.tracks_for_curation(&[id]).into_iter().next());
-
-    if let (Some(url), Some(model)) = (ai_url(), ai_chat_model()) {
-        let prompt = format!(
-            "You are a radio DJ on a listener's personal station, speaking between songs.\n\
-             {}Now playing next: {} — {}{}.\n\n\
-             Say ONE short sentence introducing it, under 20 words. Warm, plain, \
-             a little wry. No exclamation marks, no emoji, no quotes around your answer.",
-            prev.as_ref()
-                .map(|p| format!("That was: {} — {}.\n", p.artist, p.title))
-                .unwrap_or_default(),
-            next.artist,
-            next.title,
-            if next.genre.trim().is_empty() {
-                String::new()
-            } else {
-                format!(" ({})", next.genre)
-            },
-        );
-        if let Ok(reply) = client(45)
-            .post(format!("{}/v1/chat/completions", url.trim_end_matches('/')))
-            .json(&json!({
-                "model": model,
-                "messages": [{ "role": "user", "content": prompt }],
-                "temperature": 0.9,
-            }))
-            .send()
-            .await
-        {
-            if let Ok(body) = reply.json::<serde_json::Value>().await {
-                if let Some(text) = body.pointer("/choices/0/message/content").and_then(|c| c.as_str())
-                {
-                    let line = text.trim().trim_matches('"').trim();
-                    if !line.is_empty() && line.len() < 240 {
-                        return line.to_string();
-                    }
-                }
-            }
-        }
-    }
-
-    match prev {
-        Some(p) if !p.artist.eq_ignore_ascii_case(&next.artist) => {
-            format!("After {}, here's {} with {}.", p.artist, next.artist, next.title)
-        }
-        _ => format!("Next up: {} — {}.", next.artist, next.title),
-    }
-}
-
 // --- endpoints ---------------------------------------------------------------
 
-use axum::extract::{Query, State};
+use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use crate::auth;
@@ -801,26 +675,49 @@ pub async fn feed(
     })))
 }
 
-#[derive(serde::Deserialize)]
-pub struct DjQuery {
-    /// The track playing now, if any - what the next one should sit beside.
-    pub seed: Option<i64>,
-    /// Comma-separated ids already played this session, so the set does not
-    /// loop back on itself.
-    #[serde(default)]
-    pub avoid: String,
-}
+// --- suggestions for one playlist --------------------------------------------
 
-/// `GET /api/dj/next?seed=&avoid=` - the next track, and what the DJ says.
-pub async fn dj(
+/// `GET /api/playlists/{id}/suggestions` - what else belongs on this list.
+///
+/// Scored against the PLAYLIST rather than the listener: a late-night playlist
+/// should keep being a late-night playlist even if its owner spends the rest of
+/// their week on something loud. So the taste profile here is built from the
+/// list's own tracks - their words, their tempo, their genres - and the library
+/// is ranked against that, minus what is already on it.
+pub async fn playlist_suggestions(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    Query(q): Query<DjQuery>,
+    axum::extract::Path(id): axum::extract::Path<i64>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
-    let avoid: Vec<i64> = q.avoid.split(',').filter_map(|s| s.trim().parse().ok()).collect();
-    match dj_next(&state, caller.id, q.seed, &avoid).await {
-        Some((track_id, line)) => Ok(Json(json!({ "trackId": track_id, "line": line }))),
-        None => Ok(Json(json!({ "trackId": null, "line": "" }))),
+    if state.db.playlist_owner(id) != Some(caller.id) {
+        return Err((StatusCode::NOT_FOUND, "no such playlist".into()));
     }
+
+    let members = state.db.playlist_track_ids(id);
+    let all = state.db.all_features();
+    let by_id: HashMap<i64, &TrackFeatures> = all.iter().map(|f| (f.track_id, f)).collect();
+    let taste = taste_from(&members, &by_id);
+    let on_list: HashSet<i64> = members.iter().copied().collect();
+
+    // Two or three songs is not a character yet; below that the suggestions
+    // would be noise wearing a confident label.
+    let ids = if members.len() < 3 {
+        Vec::new()
+    } else {
+        let ranked: Vec<(f32, &TrackFeatures)> = all
+            .iter()
+            .filter(|f| !on_list.contains(&f.track_id))
+            .map(|f| (score(f, &taste), f))
+            .collect();
+        take_spread(ranked, 10)
+    };
+
+    Ok(Json(json!({
+        "trackIds": ids,
+        // The client only offers this where a model is reading lyrics - without
+        // one the ranking is tempo and genre alone, which is a weaker promise
+        // than "songs that belong here".
+        "ai": ai_url().is_some(),
+    })))
 }

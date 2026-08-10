@@ -101,6 +101,15 @@ pub struct ImportJob {
     /// lands, no path or title matching required.
     #[serde(default)]
     pub track_ids: Vec<i64>,
+    /// Tracks this run found the library already had. Separate from
+    /// `track_ids`, which stays aligned with `files`; an import of something
+    /// wholly owned files nothing yet still resolves to real tracks here.
+    #[serde(default)]
+    pub owned_track_ids: Vec<i64>,
+    /// Set when the sync engine raised this job, so its result can be routed
+    /// back to the mirror entry that asked for it. Empty for a pasted link.
+    #[serde(default)]
+    pub origin: String,
 }
 
 pub struct ImportManager {
@@ -180,6 +189,56 @@ fn now_unix() -> i64 {
 
 fn random_id() -> String {
     format!("srv-{}", auth::random_token().replace(['-', '_'], "").chars().take(16).collect::<String>())
+}
+
+
+/// Translates a link SpotiFLAC will not take into one it will.
+///
+/// SpotiFLAC's primary input must be Spotify, Tidal, Apple Music, SoundCloud,
+/// YouTube or Pandora - Deezer is only ever a DOWNLOAD provider, and handing it
+/// a Deezer link fails outright with INVALID_URL. That matters because this
+/// app's own catalogue surfaces are Deezer-shaped: Deezer is the one service
+/// that answers artist, album and search queries without a key, so the artist
+/// pages and the discovery shelf all produce Deezer links.
+///
+/// Odesli (song.link) maps any one platform's link onto every other's, keylessly,
+/// which is exactly the translation needed. Spotify is preferred - it is
+/// SpotiFLAC's native input - then Tidal, then the streaming sites. Apple is
+/// deliberately NOT in the list: SpotiFLAC accepts the URL but its Apple
+/// metadata provider dies on a redirect, so it would trade one failure for
+/// another.
+async fn spotiflac_input(url: &str) -> Result<String, String> {
+    if !url.to_ascii_lowercase().contains("deezer.") {
+        return Ok(url.to_string());
+    }
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(20))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let reply = client
+        .get("https://api.song.link/v1-alpha.1/links")
+        .query(&[("url", url)])
+        .send()
+        .await
+        .map_err(|e| format!("Could not reach the link resolver: {e}"))?;
+    if !reply.status().is_success() {
+        return Err(format!(
+            "The link resolver refused this Deezer link ({}). SpotiFLAC cannot take Deezer links directly.",
+            reply.status()
+        ));
+    }
+    let body: serde_json::Value =
+        reply.json().await.map_err(|e| format!("Link resolver gave nonsense: {e}"))?;
+    for platform in ["spotify", "tidal", "soundcloud", "youtube"] {
+        if let Some(found) = body
+            .pointer(&format!("/linksByPlatform/{platform}/url"))
+            .and_then(|v| v.as_str())
+        {
+            return Ok(found.to_string());
+        }
+    }
+    Err("No Spotify or Tidal release matches this Deezer link, so there is nothing SpotiFLAC can pull."
+        .to_string())
 }
 
 fn detect_kind(url: &str) -> &'static str {
@@ -449,7 +508,7 @@ pub fn spawn_scheduler(state: Arc<AppState>) {
                 let result = run_job(&run_state, &id, &url, cancel_rx).await;
                 manager.cancels.lock().await.remove(&id);
                 match result {
-                    Ok((count, files, track_ids, skipped)) => {
+                    Ok((count, files, track_ids, skipped, owned)) => {
                         manager
                             .update(&id, |j| {
                                 j.completed = count.max(j.completed);
@@ -463,6 +522,7 @@ pub fn spawn_scheduler(state: Arc<AppState>) {
                                 j.current_index = None;
                                 j.files = files;
                                 j.track_ids = track_ids;
+                                j.owned_track_ids = owned;
                             })
                             .await;
                     }
@@ -478,6 +538,9 @@ pub fn spawn_scheduler(state: Arc<AppState>) {
                     }
                 }
                 manager.flush().await;
+                // Hand the outcome back to the mirror that raised it, if any.
+                // A no-op for an ordinary pasted link.
+                crate::spotify_sync::on_job_finished(&run_state, &id).await;
                 // The slot is freed and the scheduler re-poked by _guard's Drop.
             });
         }
@@ -504,7 +567,7 @@ async fn run_job(
     id: &str,
     url: &str,
     mut cancel_rx: tokio::sync::oneshot::Receiver<()>,
-) -> Result<(u32, Vec<String>, Vec<i64>, u32), String> {
+) -> Result<(u32, Vec<String>, Vec<i64>, u32, Vec<i64>), String> {
     let manager = Arc::clone(&state.imports);
     let staging = manager.staging_root.join(id);
     let _ = std::fs::remove_dir_all(&staging);
@@ -514,7 +577,10 @@ async fn run_job(
         "SpotiFLAC is not installed on the server (pipx install SpotiFLAC on the box, or set AFM_SPOTIFLAC).".to_string()
     })?;
 
-    let mut args: Vec<String> = vec![url.to_string(), staging.display().to_string()];
+    // A Deezer link becomes a Spotify or Tidal one here; anything else passes
+    // through untouched.
+    let input = spotiflac_input(url).await?;
+    let mut args: Vec<String> = vec![input, staging.display().to_string()];
     args.push("--service".to_string());
     args.extend(services());
     args.push("--quality".to_string());
@@ -642,6 +708,9 @@ async fn run_job(
     let mut rels = Vec::new();
     let mut track_ids = Vec::new();
     let mut skipped = 0u32;
+    // Tracks the download produced that the library already had. Kept apart
+    // from `track_ids`, which stays paired one-for-one with `rels`.
+    let mut owned: Vec<i64> = Vec::new();
     let _filing = state.filing.lock().await;
     // The library's current identities, for a tag precheck that makes filing
     // idempotent: a track already present (this album re-imported, or the same
@@ -659,12 +728,29 @@ async fn run_job(
     let track_key = |title: &str, artist: &str| format!("{}\u{1}{}", norm(title), norm(artist));
     let mut have_tracks: std::collections::HashMap<String, Vec<Option<i64>>> =
         std::collections::HashMap::new();
-    for (title, artist, album_artist, album, dur) in state.db.sync_identities() {
-        have.insert(identity_key(&title, &artist, &album));
-        have.insert(identity_key(&title, &album_artist, &album));
-        have_tracks.entry(track_key(&title, &artist)).or_default().push(dur);
+    // The same identities CARRYING their track ids. Recognising that a file is
+    // already here has never been the hard part; saying WHICH track it is, is
+    // what a caller re-importing something it mostly owns actually needs, and
+    // dropping that on the floor is why such a run used to report nothing.
+    let mut id_by_identity: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    let mut id_by_track: std::collections::HashMap<String, Vec<(Option<i64>, i64)>> =
+        std::collections::HashMap::new();
+    for row in state.db.match_index() {
+        let (title, artist, album_artist, album, dur) =
+            (row.title, row.artist, row.album_artist, row.album, row.duration_ms);
+        let k1 = identity_key(&title, &artist, &album);
+        let k2 = identity_key(&title, &album_artist, &album);
+        id_by_identity.entry(k1.clone()).or_insert(row.id);
+        id_by_identity.entry(k2.clone()).or_insert(row.id);
+        have.insert(k1);
+        have.insert(k2);
+        let tk = track_key(&title, &artist);
+        have_tracks.entry(tk.clone()).or_default().push(dur);
+        id_by_track.entry(tk).or_default().push((dur, row.id));
         if norm(&album_artist) != norm(&artist) {
-            have_tracks.entry(track_key(&title, &album_artist)).or_default().push(dur);
+            let tk2 = track_key(&title, &album_artist);
+            have_tracks.entry(tk2.clone()).or_default().push(dur);
+            id_by_track.entry(tk2).or_default().push((dur, row.id));
         }
     }
     // Same 3s tolerance the up-sync precheck (api.rs) allows for tag/encode
@@ -696,6 +782,18 @@ async fn run_job(
                 have.contains(&key) || have_tracks.get(&tkey).is_some_and(|d| dur_close(d, dur));
             if already {
                 skipped += 1;
+                // Report which track it already is. Without this an import of
+                // something wholly owned returns no ids at all, and a caller
+                // building a playlist from the result gets an empty list.
+                if let Some(tid) = id_by_identity.get(&key).copied().or_else(|| {
+                    id_by_track.get(&tkey).and_then(|rows| {
+                        rows.iter()
+                            .find(|(ours, _)| dur_close(std::slice::from_ref(ours), dur))
+                            .map(|(_, id)| *id)
+                    })
+                }) {
+                    owned.push(tid);
+                }
                 continue;
             }
             have.insert(key);
@@ -730,13 +828,14 @@ async fn run_job(
     let _ = std::fs::remove_dir_all(&staging);
 
     if !rels.is_empty() {
-        return Ok((rels.len() as u32, rels, track_ids, skipped));
+        return Ok((rels.len() as u32, rels, track_ids, skipped, owned));
     }
     // Everything that came down was already in the library: a real success -
     // the playlist added nothing new because you already own it all - not the
-    // "downloaded nothing" failure below.
+    // "downloaded nothing" failure below. It now says WHICH tracks those were,
+    // so a mirror can finish resolving from a run that filed no new file.
     if skipped > 0 {
-        return Ok((0, Vec::new(), Vec::new(), skipped));
+        return Ok((0, Vec::new(), Vec::new(), skipped, owned));
     }
 
     let stderr = tail_join(&*stderr_tail.lock().await);
@@ -774,6 +873,58 @@ pub async fn list(
     auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
     let jobs = state.imports.jobs.lock().await.clone();
     Ok(Json(serde_json::json!({ "jobs": jobs })))
+}
+
+/// Raise a job from inside the server rather than from a request - what the
+/// Spotify mirror uses to fetch one track it could not find locally.
+///
+/// Deliberately skips the embed-metadata fetch the HTTP path spawns: the
+/// caller already knows the title and artist from the Web API, and a sync of
+/// three hundred tracks should not also make three hundred scrape requests.
+pub async fn enqueue_internal(
+    state: &Arc<AppState>,
+    url: &str,
+    title: &str,
+    subtitle: &str,
+    origin: &str,
+) -> Result<String, String> {
+    let used = state.db.total_bytes();
+    if state.library_quota_bytes > 0 && used >= state.library_quota_bytes {
+        return Err(format!(
+            "library is at its quota ({})",
+            upload::human_bytes(state.library_quota_bytes)
+        ));
+    }
+    let kind = detect_kind(url);
+    let job = ImportJob {
+        id: random_id(),
+        url: url.to_string(),
+        kind: kind.to_string(),
+        title: title.to_string(),
+        service: "server".to_string(),
+        quality: quality(),
+        total: Some(1),
+        completed: 0,
+        skipped: 0,
+        state: "queued".to_string(),
+        error: None,
+        created_at: now_unix(),
+        artwork_url: None,
+        subtitle: Some(subtitle.to_string()),
+        current_track: None,
+        tracks: Vec::new(),
+        current_index: None,
+        output_dir: state.music_root.display().to_string(),
+        files: Vec::new(),
+        track_ids: Vec::new(),
+        owned_track_ids: Vec::new(),
+        origin: origin.to_string(),
+    };
+    let id = job.id.clone();
+    state.imports.jobs.lock().await.push(job);
+    state.imports.flush().await;
+    state.imports.notify.notify_one();
+    Ok(id)
 }
 
 /// `POST /api/imports` - enqueue a link. Returns the job as first created;
@@ -821,6 +972,8 @@ pub async fn enqueue(
         output_dir: state.music_root.display().to_string(),
         files: Vec::new(),
         track_ids: Vec::new(),
+        owned_track_ids: Vec::new(),
+        origin: String::new(),
     };
     {
         let mut jobs = state.imports.jobs.lock().await;

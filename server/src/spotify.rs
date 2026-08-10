@@ -21,6 +21,7 @@
 //! can be built; without it, connect explains rather than guessing.
 
 use crate::auth;
+use crate::db;
 use crate::AppState;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -78,7 +79,7 @@ fn urlencode(value: &str) -> String {
     out
 }
 
-fn http_client() -> Result<reqwest::Client, (StatusCode, String)> {
+pub fn http_client() -> Result<reqwest::Client, (StatusCode, String)> {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .build()
@@ -115,7 +116,7 @@ async fn exchange_token(
 
 /// A live access token for the user, refreshed (and re-persisted - Spotify
 /// rotates refresh tokens) when the cached one has under a minute left.
-async fn access_token(
+pub async fn access_token(
     state: &AppState,
     user_id: i64,
     force_refresh: bool,
@@ -166,7 +167,7 @@ async fn access_token(
 /// GET one Web API page as JSON. A 401 re-auths once; a 429 sleeps out
 /// Retry-After (capped) and tries again, twice - a big library pages enough
 /// to meet one.
-async fn api_get(
+pub async fn api_get(
     state: &AppState,
     user_id: i64,
     http: &reqwest::Client,
@@ -202,12 +203,355 @@ async fn api_get(
             continue;
         }
         if !status.is_success() {
-            return Err(format!("Spotify API error ({status})"));
+            // Spotify says WHY in the body, and it is usually the whole answer
+            // ("Insufficient client scope", "the user may not be registered").
+            // Throwing it away left a bare status code that could mean four
+            // different things, so it is carried through to the listener.
+            let body = response.text().await.unwrap_or_default();
+            let reason = serde_json::from_str::<serde_json::Value>(&body)
+                .ok()
+                .and_then(|v| {
+                    v.get("error")
+                        .and_then(|e| e.get("message"))
+                        .and_then(|m| m.as_str())
+                        .map(|s| s.to_string())
+                })
+                .unwrap_or_else(|| body.chars().take(200).collect());
+            if status == reqwest::StatusCode::FORBIDDEN {
+                return Err(format!(
+                    "Spotify refused this request (403). {reason} \
+                     Usually the Spotify app has no Web API access, or - while it is in \
+                     Development Mode - the account you logged in with is not listed under \
+                     its User Management."
+                ));
+            }
+            return Err(format!("Spotify API error ({status}). {reason}"));
         }
         return response
             .json::<serde_json::Value>()
             .await
             .map_err(|e| format!("Spotify response unreadable: {e}"));
+    }
+}
+
+// --- track enumeration -----------------------------------------------------
+//
+// The authenticated read the import path never had. The public-page scrape it
+// uses instead can only see public playlists and only recovers titles, which
+// is why private and collaborative playlists were refused outright even though
+// the scopes to read them have been granted all along. Everything below asks
+// the Web API as the user, so a private playlist is an ordinary read - and it
+// comes back with ids, ISRCs and durations, which is what makes matching a
+// track to the library something better than a string compare.
+
+/// Only the fields the mirror stores. Spotify's default track object is huge
+/// and every playlist pages; the projection is roughly a 90% payload cut,
+/// which is the difference between staying inside the rate limit and meeting
+/// a 429 on every large account.
+const TRACK_FIELDS: &str = "next,items(added_at,is_local,track(id,name,duration_ms,is_local,\
+linked_from(id),external_ids(isrc),artists(name),album(name,artists(name))))";
+
+/// Read one track object into a mirror row. `position`/`occurrence` are the
+/// caller's business - it is walking the pages and knows the order.
+fn item_from_track(track: &serde_json::Value, added_at: i64, position: i64) -> db::MirrorItem {
+    let str_at = |v: Option<&serde_json::Value>| {
+        v.and_then(|v| v.as_str()).unwrap_or_default().to_string()
+    };
+    // A relinked track reports the id for THIS market while `linked_from`
+    // carries the one the playlist was built with. Preferring linked_from
+    // keeps the uid stable when the same account is read from another country.
+    let uid = track
+        .get("linked_from")
+        .and_then(|l| l.get("id"))
+        .and_then(|v| v.as_str())
+        .or_else(|| track.get("id").and_then(|v| v.as_str()))
+        .unwrap_or_default()
+        .to_string();
+    let is_local = track.get("is_local").and_then(|v| v.as_bool()).unwrap_or(false);
+    let album = track.get("album");
+    db::MirrorItem {
+        // A local file the user added to a Spotify playlist has no id and can
+        // never be fetched; it is mirrored so the position count stays honest
+        // and immediately parked as unavailable.
+        track_uid: if uid.is_empty() || is_local {
+            format!("local:{position}")
+        } else {
+            uid
+        },
+        occurrence: 0,
+        position,
+        isrc: track
+            .get("external_ids")
+            .and_then(|e| e.get("isrc"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_uppercase(),
+        title: str_at(track.get("name")),
+        artist: str_at(
+            track
+                .get("artists")
+                .and_then(|a| a.as_array())
+                .and_then(|a| a.first())
+                .and_then(|a| a.get("name")),
+        ),
+        album: str_at(album.and_then(|a| a.get("name"))),
+        album_artist: str_at(
+            album
+                .and_then(|a| a.get("artists"))
+                .and_then(|a| a.as_array())
+                .and_then(|a| a.first())
+                .and_then(|a| a.get("name")),
+        ),
+        duration_ms: track.get("duration_ms").and_then(|v| v.as_i64()),
+        added_at,
+        track_id: None,
+        match_method: String::new(),
+        state: if is_local { "unavailable".into() } else { "pending".into() },
+        attempts: 0,
+        next_try_at: 0,
+        job_id: String::new(),
+        note: String::new(),
+    }
+}
+
+fn added_at_ms(item: &serde_json::Value) -> i64 {
+    item.get("added_at")
+        .and_then(|v| v.as_str())
+        .and_then(|s| chrono_ish(s))
+        .unwrap_or(0)
+}
+
+/// Spotify stamps `added_at` as RFC3339 UTC ("2024-03-01T12:00:00Z"). The
+/// server carries no date crate, and the value is only ever used for ordering
+/// and display, so it is parsed by hand rather than pulling one in.
+fn chrono_ish(s: &str) -> Option<i64> {
+    let bytes = s.as_bytes();
+    if bytes.len() < 19 {
+        return None;
+    }
+    let num = |a: usize, b: usize| s.get(a..b)?.parse::<i64>().ok();
+    let (y, mo, d) = (num(0, 4)?, num(5, 7)?, num(8, 10)?);
+    let (h, mi, sec) = (num(11, 13)?, num(14, 16)?, num(17, 19)?);
+    // Days since the epoch by the civil-from-days algorithm, so no leap-year
+    // table is needed.
+    let y2 = if mo <= 2 { y - 1 } else { y };
+    let era = if y2 >= 0 { y2 } else { y2 - 399 } / 400;
+    let yoe = y2 - era * 400;
+    let mp = (mo + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    Some(((days * 86_400) + h * 3_600 + mi * 60 + sec) * 1000)
+}
+
+/// Number repeated tracks so the same song twice in one playlist stays two
+/// distinct mirror rows. The mirror is keyed by (uid, occurrence) precisely so
+/// this case does not collapse.
+fn number_occurrences(items: &mut [db::MirrorItem]) {
+    let mut seen: HashMap<String, i64> = HashMap::new();
+    for item in items.iter_mut() {
+        let n = seen.entry(item.track_uid.clone()).or_insert(0);
+        item.occurrence = *n;
+        *n += 1;
+    }
+}
+
+/// Every track in a collection, in upstream order, fully paged.
+pub async fn fetch_items(
+    state: &AppState,
+    user_id: i64,
+    http: &reqwest::Client,
+    kind: &str,
+    spotify_id: &str,
+) -> Result<Vec<db::MirrorItem>, String> {
+    let mut items = Vec::new();
+    let mut position = 0i64;
+
+    let mut url = match kind {
+        "playlist" => format!(
+            "https://api.spotify.com/v1/playlists/{spotify_id}/tracks?limit=100&additional_types=track&fields={}",
+            urlencode(TRACK_FIELDS)
+        ),
+        "liked" => "https://api.spotify.com/v1/me/tracks?limit=50".to_string(),
+        "album" => format!("https://api.spotify.com/v1/albums/{spotify_id}/tracks?limit=50"),
+        other => return Err(format!("cannot enumerate a {other}")),
+    };
+
+    loop {
+        let page = api_get(state, user_id, http, &url).await?;
+        let empty = Vec::new();
+        let rows = page.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
+        for row in rows {
+            // Playlist and saved-track pages wrap the track; an album's track
+            // list is the track objects themselves.
+            let (track, added) = match kind {
+                "album" => (row, 0),
+                _ => match row.get("track") {
+                    Some(t) if !t.is_null() => (t, added_at_ms(row)),
+                    // A removed or unavailable entry still holds its slot
+                    // upstream, so it holds one here too.
+                    _ => {
+                        let mut ghost = db::MirrorItem {
+                            state: "unavailable".into(),
+                            note: "Spotify no longer carries this track".into(),
+                            ..item_from_track(&serde_json::Value::Null, 0, position)
+                        };
+                        ghost.track_uid = format!("local:{position}");
+                        items.push(ghost);
+                        position += 1;
+                        continue;
+                    }
+                },
+            };
+            items.push(item_from_track(track, added, position));
+            position += 1;
+        }
+        match page.get("next").and_then(|v| v.as_str()) {
+            Some(next) if !next.is_empty() => url = next.to_string(),
+            _ => break,
+        }
+    }
+
+    // An album's track list is "simplified" and carries no ISRC, so the one
+    // identity worth having is missing exactly where a whole record is being
+    // matched. Hydrating costs one request per 50 tracks.
+    if kind == "album" {
+        hydrate_isrcs(state, user_id, http, &mut items).await?;
+        for item in items.iter_mut() {
+            if item.album.is_empty() {
+                item.album = String::new();
+            }
+        }
+    }
+
+    number_occurrences(&mut items);
+    Ok(items)
+}
+
+/// Fill in ISRCs (and album names) for rows that came from a simplified list.
+async fn hydrate_isrcs(
+    state: &AppState,
+    user_id: i64,
+    http: &reqwest::Client,
+    items: &mut [db::MirrorItem],
+) -> Result<(), String> {
+    let ids: Vec<String> = items
+        .iter()
+        .filter(|i| !i.track_uid.starts_with("local:"))
+        .map(|i| i.track_uid.clone())
+        .collect();
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let mut found: HashMap<String, (String, String, String)> = HashMap::new();
+    for chunk in ids.chunks(50) {
+        let url = format!("https://api.spotify.com/v1/tracks?ids={}", chunk.join(","));
+        let page = api_get(state, user_id, http, &url).await?;
+        let empty = Vec::new();
+        for track in page.get("tracks").and_then(|v| v.as_array()).unwrap_or(&empty) {
+            let Some(id) = track.get("id").and_then(|v| v.as_str()) else { continue };
+            let album = track.get("album");
+            found.insert(
+                id.to_string(),
+                (
+                    track
+                        .get("external_ids")
+                        .and_then(|e| e.get("isrc"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_uppercase(),
+                    album
+                        .and_then(|a| a.get("name"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    album
+                        .and_then(|a| a.get("artists"))
+                        .and_then(|a| a.as_array())
+                        .and_then(|a| a.first())
+                        .and_then(|a| a.get("name"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                ),
+            );
+        }
+    }
+    for item in items.iter_mut() {
+        if let Some((isrc, album, album_artist)) = found.get(&item.track_uid) {
+            if item.isrc.is_empty() {
+                item.isrc = isrc.clone();
+            }
+            if item.album.is_empty() {
+                item.album = album.clone();
+            }
+            if item.album_artist.is_empty() {
+                item.album_artist = album_artist.clone();
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The cheap "has it moved?" read - one request, no paging. Watching two
+/// hundred playlists costs two hundred tiny calls a cycle rather than
+/// thousands of pages, and a full enumeration only follows a snapshot that
+/// actually changed.
+pub async fn head_snapshot(
+    state: &AppState,
+    user_id: i64,
+    http: &reqwest::Client,
+    kind: &str,
+    spotify_id: &str,
+) -> Result<String, String> {
+    match kind {
+        "playlist" => {
+            let url = format!(
+                "https://api.spotify.com/v1/playlists/{spotify_id}?fields=snapshot_id,name,owner(id,display_name)"
+            );
+            let value = api_get(state, user_id, http, &url).await?;
+            // Spotify stopped letting third-party apps read its OWN editorial
+            // and algorithmic playlists - Discover Weekly, Release Radar, Daily
+            // Mix, the "Today's Top Hits" sort - which come back 403 however
+            // valid the token is. They arrive in /v1/me/playlists like any
+            // other, so the only honest thing is to name the reason rather than
+            // let a bare 403 read as a broken login.
+            if value
+                .get("owner")
+                .and_then(|o| o.get("id"))
+                .and_then(|v| v.as_str())
+                .is_some_and(is_spotify_owned)
+            {
+                return Err(SPOTIFY_OWNED_NOTE.to_string());
+            }
+            Ok(value
+                .get("snapshot_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string())
+        }
+        // Saved tracks have no snapshot id, so one is synthesized from the
+        // total and the newest addition: either a save or an unsave moves it.
+        "liked" => {
+            let value = api_get(
+                state,
+                user_id,
+                http,
+                "https://api.spotify.com/v1/me/tracks?limit=1",
+            )
+            .await?;
+            let total = value.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
+            let newest = value
+                .get("items")
+                .and_then(|v| v.as_array())
+                .and_then(|a| a.first())
+                .map(added_at_ms)
+                .unwrap_or(0);
+            Ok(format!("{total}:{newest}"))
+        }
+        // An album's contents never change, so its id IS its snapshot.
+        "album" => Ok(spotify_id.to_string()),
+        other => Err(format!("cannot poll a {other}")),
     }
 }
 
@@ -229,18 +573,53 @@ pub async fn status(State(state): State<Arc<AppState>>, headers: HeaderMap) -> R
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
     let account = state.db.spotify_account(caller.id);
     let redirect = redirect_uri(&state).map(|u| json!(u)).unwrap_or(json!(null));
+    let stored = account.as_ref().map(|a| a.client_id.clone()).filter(|c| !c.is_empty());
+    let server_default = {
+        let d = state.spotify_client_id.trim();
+        (!d.is_empty()).then(|| d.to_string())
+    };
     Ok(Json(json!({
         "connected": account.as_ref().map(|a| !a.refresh_token.is_empty()).unwrap_or(false),
         "displayName": account.as_ref().and_then(|a| a.display_name.clone()),
-        "clientId": account.as_ref().map(|a| a.client_id.clone()).filter(|c| !c.is_empty()),
+        // What a Connect right now would actually use, so the client can offer
+        // a bare button instead of an empty field it has to explain.
+        "clientId": stored.clone().or_else(|| server_default.clone()),
+        // True when the hub supplied it, so the UI can say where it came from
+        // rather than looking like it remembered something the user never typed.
+        "clientIdFromServer": stored.is_none() && server_default.is_some(),
         "redirectUri": redirect,
     })))
 }
 
 #[derive(Deserialize)]
 pub struct ConnectBody {
-    #[serde(rename = "clientId")]
+    /// Optional. Left out, the caller's stored id is reused, and failing that
+    /// the server's own - so a hub whose owner configured one needs no typing.
+    #[serde(rename = "clientId", default)]
     pub client_id: String,
+}
+
+/// Which Spotify app to log in against, best first: what the caller just
+/// typed, then what they used last time, then the server's default.
+///
+/// A Client ID is not a secret - PKCE puts it in the authorize URL in plain
+/// sight, which is exactly why there is no client secret to protect - so
+/// keeping one in the service unit costs nothing and turns connecting into a
+/// single button for everyone on the hub.
+fn resolve_client_id(state: &AppState, user_id: i64, typed: &str) -> Option<String> {
+    let typed = typed.trim();
+    if !typed.is_empty() {
+        return Some(typed.to_string());
+    }
+    let stored = state
+        .db
+        .spotify_account(user_id)
+        .map(|a| a.client_id)
+        .filter(|c| !c.is_empty());
+    stored.or_else(|| {
+        let default = state.spotify_client_id.trim();
+        (!default.is_empty()).then(|| default.to_string())
+    })
 }
 
 /// `POST /api/spotify/connect` - parks a login and returns the authorize URL.
@@ -250,10 +629,10 @@ pub async fn connect(
     Json(body): Json<ConnectBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
-    let client_id = body.client_id.trim().to_string();
-    if client_id.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "Enter your Spotify app's Client ID first.".into()));
-    }
+    let client_id = resolve_client_id(&state, caller.id, &body.client_id).ok_or((
+        StatusCode::BAD_REQUEST,
+        "This server has no Spotify Client ID. Enter one, or set AFM_SPOTIFY_CLIENT_ID in the service unit.".to_string(),
+    ))?;
     let redirect = redirect_uri(&state)?;
 
     let mut verifier_bytes = [0u8; 64];
@@ -404,6 +783,21 @@ pub async fn disconnect(State(state): State<Arc<AppState>>, headers: HeaderMap) 
     Ok(Json(json!({ "ok": true })))
 }
 
+/// What a listener is told about a playlist Spotify will not hand over.
+pub const SPOTIFY_OWNED_NOTE: &str =
+    "Spotify does not let other apps read its own playlists (Discover Weekly, Release Radar, \
+     Daily Mix, and its editorial lists), so this one cannot be mirrored. Your own playlists, \
+     and playlists made by other people, work normally.";
+
+/// Whether a playlist belongs to Spotify itself rather than to a person.
+///
+/// Owner id is the reliable signal; the `37i9dQZF1D` id prefix every editorial
+/// playlist carries is kept as a fallback for the listing path, which does not
+/// always have the owner to hand.
+pub fn is_spotify_owned(owner_id: &str) -> bool {
+    owner_id.eq_ignore_ascii_case("spotify")
+}
+
 /// Spotify orders `images` largest first; the second-smallest is the ~300px
 /// variant - crisp on a retina row without paying for the 640px original.
 fn thumb(value: &serde_json::Value) -> Option<String> {
@@ -418,6 +812,15 @@ pub async fn library(State(state): State<Arc<AppState>>, headers: HeaderMap) -> 
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
     let http = http_client()?;
     let synced = state.db.spotify_synced(caller.id);
+    // What the mirror knows, so each row can report real progress rather than
+    // the old client-asserted "synced" flag. Falls back to spotify_synced
+    // below, so nothing already marked on a live box regresses to "new".
+    let mirrors: std::collections::HashMap<String, crate::db::MirrorHead> = state
+        .db
+        .spotify_mirrors(caller.id)
+        .into_iter()
+        .map(|m| (m.key.clone(), m))
+        .collect();
 
     let mut albums = Vec::new();
     let mut url = "https://api.spotify.com/v1/me/albums?limit=50".to_string();
@@ -460,23 +863,68 @@ pub async fn library(State(state): State<Arc<AppState>>, headers: HeaderMap) -> 
                 continue;
             }
             let snapshot_id = item.get("snapshot_id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-            let sync_state = match synced.get(&format!("playlist:{id}")) {
-                None => "new",
-                Some(seen) if *seen == snapshot_id => "synced",
-                Some(_) => "changed",
+            let key = format!("playlist:{id}");
+            let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("Untitled");
+            let owner_id = item
+                .get("owner")
+                .and_then(|o| o.get("id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let owner = item
+                .get("owner")
+                .and_then(|o| o.get("display_name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            // Marked here so the row can say so up front, rather than letting
+            // someone switch it on and collect a 403 a minute later.
+            let spotify_owned = is_spotify_owned(owner_id);
+            let image = thumb(item);
+            // Remember what we just saw, so a watch toggle needs no second
+            // round trip to learn the playlist's name or where it stands.
+            let _ = state.db.spotify_mirror_seed(
+                caller.id,
+                &key,
+                "playlist",
+                &id,
+                name,
+                owner,
+                image.as_deref().unwrap_or(""),
+                &snapshot_id,
+            );
+            let mirror = mirrors.get(&key);
+            let sync_state = match mirror {
+                Some(m) if m.total > 0 => m.state.clone(),
+                // No mirror yet: fall back to the pre-upgrade bookkeeping so a
+                // box that already marked things synced keeps saying so.
+                _ => match synced.get(&key) {
+                    None => "new".to_string(),
+                    Some(seen) if *seen == snapshot_id => "synced".to_string(),
+                    Some(_) => "changed".to_string(),
+                },
             };
             playlists.push(json!({
                 "id": id,
                 "state": sync_state,
-                "name": item.get("name").and_then(|v| v.as_str()).unwrap_or("Untitled"),
-                "owner": item.get("owner").and_then(|o| o.get("display_name")).and_then(|v| v.as_str()).unwrap_or(""),
+                "name": name,
+                "owner": owner,
                 "url": format!("https://open.spotify.com/playlist/{id}"),
                 "tracks": item.get("tracks").and_then(|t| t.get("total")).and_then(|v| v.as_u64()).unwrap_or(0),
-                "image": thumb(item),
-                // Spotify reports null for collaborative playlists; anything
-                // short of an explicit true reads as private here.
+                "image": image,
+                // Informational only now. The authenticated read below does
+                // not care whether a playlist is public, which is the whole
+                // point of the mirror.
                 "public": item.get("public").and_then(|v| v.as_bool()).unwrap_or(false),
                 "snapshotId": snapshot_id,
+                // Spotify's own lists cannot be read by third-party apps at
+                // all; the row disables itself and explains rather than
+                // offering a switch that can only fail.
+                "spotifyOwned": spotify_owned,
+                "unsupportedReason": if spotify_owned { json!(SPOTIFY_OWNED_NOTE) } else { json!(null) },
+                "watch": mirror.map(|m| m.watch).unwrap_or(false),
+                "playlistId": mirror.and_then(|m| m.playlist_id),
+                "resolved": mirror.map(|m| m.resolved).unwrap_or(0),
+                "queued": mirror.map(|m| m.queued).unwrap_or(0),
+                "missing": mirror.map(|m| m.missing).unwrap_or(0),
             }));
         }
         match page.get("next").and_then(|v| v.as_str()) {
@@ -498,6 +946,228 @@ pub struct SyncedItem {
     pub key: String,
     #[serde(default)]
     pub snapshot: String,
+}
+
+// --- the mirror's endpoints ------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct WatchBody {
+    pub items: Vec<WatchItem>,
+}
+
+#[derive(Deserialize)]
+pub struct WatchItem {
+    pub key: String,
+    #[serde(default = "yes")]
+    pub watch: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// `POST /api/spotify/watch` - start (or stop) keeping a collection in step.
+/// This is the whole subscription: everything after it is the server's job.
+pub async fn watch(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<WatchBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let mut watched = 0;
+    for item in &body.items {
+        crate::spotify_sync::watch(&state, caller.id, &item.key, item.watch)
+            .await
+            .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+        // Carry over what the listing already knows, so the row reads with a
+        // real name before its first enumeration finishes.
+        if item.watch {
+            watched += 1;
+        }
+    }
+    Ok(Json(json!({ "ok": true, "watching": watched })))
+}
+
+#[derive(Deserialize)]
+pub struct SyncBody {
+    #[serde(default)]
+    pub keys: Vec<String>,
+    /// Re-enumerate even when the snapshot has not moved - the "something is
+    /// wrong, rebuild it" button.
+    #[serde(default)]
+    pub full: bool,
+}
+
+/// `POST /api/spotify/sync` - run a pass now rather than at the next tick.
+/// Returns immediately; progress is read from `GET /api/spotify/sync`.
+pub async fn sync_now(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<SyncBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let keys: Vec<String> = if body.keys.is_empty() {
+        state
+            .db
+            .spotify_mirrors(caller.id)
+            .into_iter()
+            .filter(|m| m.watch)
+            .map(|m| m.key)
+            .collect()
+    } else {
+        body.keys.clone()
+    };
+    // Off the request thread: a full enumeration is many round trips and the
+    // caller only needs to know it started.
+    let bg = Arc::clone(&state);
+    let full = body.full;
+    let started = keys.len();
+    tokio::spawn(async move {
+        for key in keys {
+            crate::spotify_sync::sync_one(&bg, caller.id, &key, full).await;
+        }
+    });
+    Ok(Json(json!({ "ok": true, "started": started })))
+}
+
+fn mirror_json(m: &crate::db::MirrorHead) -> serde_json::Value {
+    json!({
+        "key": m.key,
+        "kind": m.kind,
+        "name": m.name,
+        "owner": m.owner,
+        "image": if m.image.is_empty() { serde_json::Value::Null } else { json!(m.image) },
+        "playlistId": m.playlist_id,
+        "watch": m.watch,
+        "state": m.state,
+        "error": m.error,
+        "total": m.total,
+        "resolved": m.resolved,
+        "queued": m.queued,
+        "missing": m.missing,
+        "ambiguous": m.ambiguous,
+        "changed": !m.head_snapshot.is_empty() && m.head_snapshot != m.snapshot,
+        "checkedAt": m.checked_at,
+        "syncedAt": m.synced_at,
+    })
+}
+
+/// `GET /api/spotify/sync` - what every mirror is doing. Every number is read
+/// from the database rather than from memory, so it survives a restart and
+/// reads the same on every device.
+pub async fn sync_status(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let mirrors = state.db.spotify_mirrors(caller.id);
+    let mut totals = (0i64, 0i64, 0i64, 0i64, 0i64, 0i64);
+    for m in mirrors.iter().filter(|m| m.watch) {
+        totals.0 += 1;
+        totals.1 += m.total;
+        totals.2 += m.resolved;
+        totals.3 += m.queued;
+        totals.4 += m.missing;
+        totals.5 += m.ambiguous;
+    }
+    let busy = mirrors
+        .iter()
+        .any(|m| matches!(m.state.as_str(), "enumerating" | "resolving" | "downloading"));
+    Ok(Json(json!({
+        "phase": if busy { "working" } else { "idle" },
+        "totals": {
+            "watched": totals.0,
+            "tracks": totals.1,
+            "resolved": totals.2,
+            "queued": totals.3,
+            "missing": totals.4,
+            "ambiguous": totals.5,
+        },
+        "items": mirrors.iter().map(mirror_json).collect::<Vec<_>>(),
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct ItemsQuery {
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// `GET /api/spotify/mirror/{key}/items` - the entry list, in upstream order.
+/// What makes a partial sync inspectable rather than just a number.
+pub async fn mirror_items(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    axum::extract::Path(key): axum::extract::Path<String>,
+    Query(q): Query<ItemsQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let head = state
+        .db
+        .spotify_mirror(caller.id, &key)
+        .ok_or((StatusCode::NOT_FOUND, "not mirrored".to_string()))?;
+    let limit = q.limit.unwrap_or(500).min(2000);
+    let items: Vec<serde_json::Value> = state
+        .db
+        .spotify_items(caller.id, &key)
+        .into_iter()
+        .filter(|i| q.state.is_empty() || i.state == q.state)
+        .take(limit)
+        .map(|i| {
+            json!({
+                "uid": i.track_uid,
+                "occurrence": i.occurrence,
+                "position": i.position,
+                "title": i.title,
+                "artist": i.artist,
+                "album": i.album,
+                "durationMs": i.duration_ms,
+                "state": i.state,
+                "trackId": i.track_id,
+                "method": i.match_method,
+                "note": i.note,
+                "attempts": i.attempts,
+            })
+        })
+        .collect();
+    Ok(Json(json!({ "mirror": mirror_json(&head), "items": items })))
+}
+
+/// `POST /api/spotify/mirror/{key}/retry` - clear the backoff on everything
+/// this mirror gave up on and try again.
+pub async fn mirror_retry(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    axum::extract::Path(key): axum::extract::Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    state
+        .db
+        .spotify_items_retry(caller.id, &key)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let bg = Arc::clone(&state);
+    let bg_key = key.clone();
+    tokio::spawn(async move {
+        crate::spotify_sync::sync_one(&bg, caller.id, &bg_key, false).await;
+    });
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// `POST /api/spotify/mirror/{key}/forget` - stop mirroring and drop the
+/// bookkeeping. The local playlist and every downloaded file stay.
+pub async fn mirror_forget(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    axum::extract::Path(key): axum::extract::Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    state
+        .db
+        .spotify_mirror_forget(caller.id, &key)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(json!({ "ok": true })))
 }
 
 /// `POST /api/spotify/synced` - records finished downloads so the next

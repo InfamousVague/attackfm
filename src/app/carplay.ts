@@ -81,6 +81,19 @@ export async function pushCarPlayNowPlaying(state: CarPlayNowPlaying): Promise<v
   await invoke('carplay_now_playing', JSON.stringify(state));
 }
 
+/** Parks the phone's auto-lock while the full-screen player is up - the
+ * Spotify behavior. The webview draws its own dim veil; this only keeps the
+ * OS lock away. No-op off Tauri, and off iOS inside the binary. */
+export async function setIdleTimerDisabled(disabled: boolean): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    const core = await import('@tauri-apps/api/core');
+    await core.invoke('set_idle_timer_disabled', { disabled });
+  } catch {
+    // An old binary without the command: the screen locks as it always did.
+  }
+}
+
 type Unlisten = () => void;
 
 async function listen(event: string, handler: (payload: unknown) => void): Promise<Unlisten> {

@@ -15,12 +15,16 @@ import {
   Pencil,
   Play,
   Shuffle,
+  Plus,
   Trash2,
   X,
 } from '@glacier/icons';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useLibrary } from './library.tsx';
+import { useServerSession } from './serverSession.tsx';
+import { fetchPlaylistSuggestions, remotePath } from './server.ts';
 import { usePlaylists } from './playlists.tsx';
+import { EmptyArt } from './EmptyArt.tsx';
 import type { Track } from './tauri.ts';
 import placeholderArt from '../assets/attack-wave.png';
 
@@ -58,7 +62,12 @@ function formatTotal(seconds: number): string {
  */
 export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageProps) {
   const { tracks } = useLibrary();
-  const { playlists, rename, remove, removeTrack, reorder } = usePlaylists();
+  const { playlists, rename, remove, removeTrack, reorder, addTrack } = usePlaylists();
+  const { session } = useServerSession();
+  // What else belongs here, from the server's own scoring of this list. Null
+  // until asked; `ai` false means no model is reading lyrics, and the section
+  // stays hidden rather than offer a weaker promise than its heading makes.
+  const [suggested, setSuggested] = useState<{ trackIds: number[]; ai: boolean } | null>(null);
   const playlist = playlists.find((p) => p.id === id);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -70,6 +79,26 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
   }, [playlist, onGone]);
 
   const byPath = useMemo(() => new Map(tracks.map((t) => [t.path, t] as const)), [tracks]);
+
+  // Re-asked whenever the list's contents change: adding a song changes what
+  // belongs next, and a stale row offering what you just added reads as broken.
+  //
+  // Keyed on the id and the member list as STRINGS, never on the playlist
+  // object: the store hands back a fresh object every render, so an object
+  // dependency re-runs this effect constantly - and its cleanup would abort the
+  // request it just made, forever, which is exactly what it did at first.
+  const memberKey = playlist?.paths.join(',') ?? '';
+  const playlistId = playlist?.id;
+  useEffect(() => {
+    if (!session || !playlistId) return;
+    const ctrl = new AbortController();
+    void fetchPlaylistSuggestions(session, playlistId, ctrl.signal)
+      .then(setSuggested)
+      .catch(() => {
+        // An older server, one still reading the library, or a cancelled ask.
+      });
+    return () => ctrl.abort();
+  }, [session, playlistId, memberKey]);
 
   // Paths resolve against the live library, favourites-style: a row whose file
   // is gone simply does not render, and returns if the file does. The id is the
@@ -92,6 +121,13 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
     .map((t) => t.artwork)
     .filter((a): a is string => a !== null)
     .slice(0, 4);
+
+  // The suggestions, resolved against the synced library. Shown only where a
+  // model is reading lyrics, and only once the list has a character to match.
+  const suggestions: Track[] = (suggested?.ai ? (suggested?.trackIds ?? []) : [])
+    .map((tid) => byPath.get(remotePath(tid)))
+    .filter((t): t is Track => t !== undefined)
+    .filter((t) => !playlist.paths.includes(t.path));
 
   const playAll = () => {
     const first = listTracks[0];
@@ -180,7 +216,8 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
       </header>
 
       {rows.length === 0 ? (
-        <div className="playlistEmpty">
+        <div className="playlistEmpty emptyState emptyState--tall">
+          <EmptyArt name="playlist" />
           <Text tone="muted">
             Nothing here yet. Right-click a song in the library — long-press on a phone — and
             choose “Add to playlist”. The song that is playing can be filed from the player too.
@@ -236,6 +273,53 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
               </div>
             )}
           />
+
+        {suggestions.length > 0 && (
+          <section className="playlistSuggest">
+            <h3 className="playlistSuggest__title">Suggested for this playlist</h3>
+            <Text tone="muted" size="sm" className="playlistSuggest__blurb">
+              From your library, matched to what is already here.
+            </Text>
+            <ul className="playlistSuggest__list">
+              {suggestions.map((t) => (
+                <li key={t.path} className="playlistRow playlistSuggest__row">
+                  <button
+                    type="button"
+                    className="playlistRow__main"
+                    onClick={() => onPlay(t, [t, ...listTracks])}
+                  >
+                    <img
+                      className="songArt"
+                      src={t.artwork ?? placeholderArt}
+                      alt=""
+                      loading="lazy"
+                    />
+                    <span className="playlistRow__text">
+                      <span className="songTitle">{t.title}</span>
+                      <span className="songArtist">{t.artist}</span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="songArtist songArtistLink playlistRow__artist"
+                    onClick={() => onOpenArtist(t.artist)}
+                  >
+                    {t.artist}
+                  </button>
+                  <span className="songMuted playlistRow__time">{formatDuration(t.duration)}</span>
+                  <IconButton
+                    variant="ghost"
+                    size="sm"
+                    aria-label={`Add ${t.title} to this playlist`}
+                    onClick={() => addTrack(playlist.id, t.path)}
+                  >
+                    <Plus size={15} />
+                  </IconButton>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         </ScrollArea>
       )}
 

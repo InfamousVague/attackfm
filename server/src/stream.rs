@@ -35,7 +35,7 @@ use tower_http::services::ServeFile;
 /// `canonicalize` on a request that is about to read a file regardless, and the
 /// failure it prevents is serving `/etc/shadow` to anyone who ever manages to
 /// get a `../` into the database.
-fn resolve_in_root(root: &Path, rel: &str) -> Option<PathBuf> {
+pub fn resolve_in_root(root: &Path, rel: &str) -> Option<PathBuf> {
     if rel.is_empty() {
         return None;
     }
@@ -86,7 +86,7 @@ fn caller_from_query(state: &AppState, params: &HashMap<String, String>) -> Resu
 /// A media request may also authenticate the ordinary way. Handy for `curl`
 /// and for any client that can set headers - the query token exists for
 /// `<audio src>`, which cannot.
-fn caller_from_either(
+pub fn caller_from_either(
     state: &AppState,
     headers: &HeaderMap,
     params: &HashMap<String, String>,

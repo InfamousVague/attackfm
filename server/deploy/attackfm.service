@@ -33,6 +33,13 @@ Environment=AFM_SCAN_MINUTES=15
 # Set it to your own domain; without it the Spotify connect endpoint explains.
 # Environment=AFM_PUBLIC_URL=https://music.example.com
 #
+# This hub's Spotify app, so listeners connect with one button instead of
+# pasting an id. Register <AFM_PUBLIC_URL>/api/spotify/callback as a redirect
+# URI on it. NOT a secret - the PKCE flow puts the client id in the authorize
+# URL in the open, and there is no client secret anywhere in this server - so
+# it belongs in configuration rather than in each listener's settings.
+# Environment=AFM_SPOTIFY_CLIENT_ID=your32charclientid
+#
 # The curator's local model, if this box runs one (Ollama, LM Studio, llama.cpp
 # - anything with an OpenAI-compatible API). Two independent switches:
 #
@@ -54,6 +61,10 @@ ExecStart=/opt/attackfm/bin/attackfm-server
 User=attackfm
 Group=attackfm
 Restart=on-failure
+# The server catches SIGTERM and lets in-flight responses finish, but an audio
+# body can be a whole album side - so cap the wait rather than letting a
+# redeploy hang on one listener. Clients resume a cut stream by themselves.
+TimeoutStopSec=10
 RestartSec=2
 
 # The server reads music and writes its own data; nothing else on the box is
