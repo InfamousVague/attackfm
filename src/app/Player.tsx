@@ -72,25 +72,20 @@ import {
 import { BeatWave } from './BeatWave.tsx';
 import { initDockWave } from './dockWave.ts';
 
-/**
- * Kevin MacLeod - 'Funky Chunk' (incompetech.com), CC BY 3.0, streamed from
- * Wikimedia Commons. A stand-in until the station feed is wired up.
- */
-const TRACK_URL =
-  'https://upload.wikimedia.org/wikipedia/commons/a/a2/Funky_Chunk_%28ISRC_USUAN1500054%29.mp3';
-
-/** The track's cover, when the feed carries one. The stand-in does not. */
+/** No artwork for the blank idle stand-in, and the neutral fallback anywhere a
+ *  cover is missing. */
 const TRACK_ART: string | null = null;
 
 /**
- * The demo stream as a Track, for surfaces that want one while nothing from
- * the library is loaded - the lyrics lookup asks by title and artist, and the
- * strip is honestly playing this, not nothing.
+ * A blank stand-in for the surfaces that need a non-null Track while nothing is
+ * loaded - the deck visuals key off `.path`, and publish() wants a shape. It is
+ * deliberately empty and unplayable: an idle device must advertise "nothing,"
+ * not a demo song, and there is no URL here for a stray play to ever start.
  */
-const DEMO_TRACK: Track = {
-  path: TRACK_URL,
-  title: 'Funky Chunk',
-  artist: 'Kevin MacLeod',
+const IDLE_TRACK: Track = {
+  path: '',
+  title: '',
+  artist: '',
   album: '',
   duration: null,
   addedAt: 0,
@@ -479,8 +474,11 @@ export function Player({
   // the width for all eight again.
   const narrowEq = useMediaQuery('(max-width: 600px)');
 
-  // What the element is playing. The demo stream until a library track is opened.
-  const [src, setSrc] = useState(TRACK_URL);
+  // What the element is playing. Empty until a library track is opened - it must
+  // never sit pointed at the demo stream, or a device that has not opened
+  // anything (a fresh launch, or one just handed the active seat on a Connect
+  // switch) would start playing "Funky Chunk" the moment a play command lands.
+  const [src, setSrc] = useState('');
   // The second deck's source: empty until the first crossfade borrows it.
   const [srcB, setSrcB] = useState<string | undefined>(undefined);
   // The playback settings: crossfade length, shuffle manners, what a pause
@@ -908,7 +906,7 @@ export function Player({
   const { publish } = useNowPlayingMotion();
   const coarsePosition = Math.floor(position);
   useEffect(() => {
-    publish({ meter, audible, track: track ?? DEMO_TRACK, position: coarsePosition });
+    publish({ meter, audible, track: track ?? IDLE_TRACK, position: coarsePosition });
   }, [publish, meter, audible, track, coarsePosition]);
 
   // The listening log. One report per listen-through, once the track has
@@ -1497,6 +1495,10 @@ export function Player({
   };
 
   const setPlayingState = (next: boolean) => {
+    // Nothing loaded (a fresh device, or one just handed the active seat on a
+    // Connect switch): there is no source to start. Refuse rather than start the
+    // empty element - the path by which the demo stand-in used to leak out.
+    if (next && !track) return;
     const audio = activeAudio();
     wantPlaying.current = next;
     setPlaying(next);
@@ -2401,7 +2403,7 @@ export function Player({
           carries ACAO for the window origin), so the graph reads real levels.
           A blob would be the one source to leave bare - but blobs are silent
           through WebKit's analyser, so the asset protocol is used instead. */}
-      <audio ref={audioRef} src={src} crossOrigin="anonymous" preload="metadata" />
+      <audio ref={audioRef} src={src || undefined} crossOrigin="anonymous" preload="metadata" />
       {/* The second deck, silent until a crossfade borrows it - then the two
           alternate, whichever is idle catching the next track. Same CORS rule
           as its twin; preload=auto because when it has a src at all, that file
@@ -2532,8 +2534,8 @@ export function Player({
                   song's lines sit clickable over the new song's audio, and no
                   scroll position inherited from a sheet that no longer exists. */}
               <LyricsPanel
-                key={(track ?? DEMO_TRACK).path}
-                track={track ?? DEMO_TRACK}
+                key={(track ?? IDLE_TRACK).path}
+                track={track ?? IDLE_TRACK}
                 position={position}
                 onSeek={commitSeek}
               />
@@ -2652,8 +2654,8 @@ export function Player({
                   {moreView === 'lyrics' && (
                     <div className="lyricsPopover">
                       <LyricsPanel
-                        key={(track ?? DEMO_TRACK).path}
-                        track={track ?? DEMO_TRACK}
+                        key={(track ?? IDLE_TRACK).path}
+                        track={track ?? IDLE_TRACK}
                         position={position}
                         onSeek={commitSeek}
                       />
@@ -3101,8 +3103,8 @@ export function Player({
               </header>
               <div className="npScreen__lyricsBody">
                 <LyricsPanel
-                  key={(track ?? DEMO_TRACK).path}
-                  track={track ?? DEMO_TRACK}
+                  key={(track ?? IDLE_TRACK).path}
+                  track={track ?? IDLE_TRACK}
                   position={position}
                   onSeek={commitSeek}
                 />
