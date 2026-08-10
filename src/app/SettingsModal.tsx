@@ -50,7 +50,7 @@ import {
   type RemotePluginListing,
 } from '../plugins/remote.ts';
 import { BRAND_ACCENTS } from './brandAccents.ts';
-import { useAppearance } from './appearance.tsx';
+import { clampScale, UI_SCALES, useAppearance } from './appearance.tsx';
 import { canPickFolder, isTauri } from './tauri.ts';
 import { useLibrary } from './library.tsx';
 import { onlineMetadataEnabled, setOnlineMetadata } from './netPrefs.ts';
@@ -125,7 +125,7 @@ const THEME_COPY: Record<ThemePreference, { label: string; description: string }
  * GlacierUI docs, each wired to the document root through the appearance store.
  */
 function Appearance() {
-  const { theme, accent, density, update } = useAppearance();
+  const { theme, accent, density, scale, update } = useAppearance();
 
   // The neutral themes wear the brand accent, so their preview cards should too
   // rather than the kit's blue. Paint the brand pink over the accent swatches of
@@ -192,12 +192,36 @@ function Appearance() {
         </div>
       </div>
       <div className="prefsSection">
+        <Label>Size</Label>
+        {/* One control for the whole interface. It moves the root font size,
+            which every rem in the app hangs off - spacing, radii, type, the
+            cards - so everything grows together instead of type swelling
+            inside boxes that stayed put. Steps, not a slider: each of these
+            has been looked at. */}
+        <SegmentedControl
+          aria-label="Interface size"
+          fullWidth
+          value={String(clampScale(scale))}
+          options={UI_SCALES.map((value) => ({
+            value: String(value),
+            label: value === 1 ? 'Default' : `${Math.round(value * 100)}%`,
+          }))}
+          onValueChange={(next) => update({ scale: clampScale(Number(next)) })}
+        />
+        <Text tone="muted" size="sm">
+          Scales the whole interface - text, artwork, controls and spacing alike.
+        </Text>
+      </div>
+      <div className="prefsSection">
         <Label>Spacing</Label>
         <DensitySelector
           aria-label="Spacing"
           value={density}
           onValueChange={(next) => update({ density: next })}
         />
+        <Text tone="muted" size="sm">
+          How tightly things pack together, at whatever size you have chosen.
+        </Text>
       </div>
     </div>
   );

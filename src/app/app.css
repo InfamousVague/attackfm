@@ -95,6 +95,10 @@ img {
   color: var(--glacier-text);
   /* Roughly the floating player's height; the list clears its last rows by it. */
   --app-player-height: 5.75rem;
+  /* How long the strip takes to rise into place on the first song of a session.
+     Shared with the blur scrim behind it, which grows over the same clock so
+     the frost arrives under the plate rather than after it. */
+  --app-player-rise: 0.36s;
   /* The notch, the rounded corners and the home indicator, as four numbers the
      chrome below can spend. Zero everywhere that has no such thing, so the
      desktop layout is untouched by their existence. */
@@ -102,6 +106,27 @@ img {
   --app-safe-bottom: env(safe-area-inset-bottom, 0px);
   --app-safe-left: env(safe-area-inset-left, 0px);
   --app-safe-right: env(safe-area-inset-right, 0px);
+}
+
+/*
+ * Card footprints, on the root because a card can be rendered into a portal
+ * (the Now Playing sheet, a modal) and would otherwise lose them.
+ *
+ * These are named rather than written into each rule because the shelf
+ * skeletons hold a seat at exactly these sizes: ShelfSkeleton reads the same
+ * variables, so a card that is resized takes its own stand-in with it. Every
+ * card's art is `inline-size: 100%; aspect-ratio: 1`, so the footprint is the
+ * art size too, and one number per family is the whole geometry. The last time
+ * these lived in two places the shelves shrank by a third and their skeletons
+ * did not, so a loading page jumped when it settled.
+ */
+:root {
+  /* A song, and the playlist tiles that stand beside it as peers. */
+  --card-track: 6.35rem;
+  /* A mix - the page's hero object, wider than a song. */
+  --card-mix: 8.7rem;
+  /* An artist: a round portrait, narrower than a release. */
+  --card-artist: 5.35rem;
 }
 
 /*
@@ -1038,7 +1063,15 @@ img {
   position: absolute;
   inset-inline: 0;
   inset-block-end: 0;
-  block-size: var(--app-nav-height);
+  /* The band reaches over whatever chrome is down there. With no song it is
+     the nav's own footprint; when the player arrives it grows by the strip's
+     height, so the frost rises with the bar and the content between the two
+     plates dissolves instead of showing through sharp. --app-player-height is
+     0 with nothing playing, so this is one expression for both states - and
+     because the height itself is what changes, the transition below carries
+     the gradient up alongside the strip rather than snapping it into place. */
+  block-size: calc(var(--app-nav-height) + var(--app-player-height));
+  transition: block-size var(--app-player-rise) var(--glacier-ease-out);
   z-index: 2;
   pointer-events: none;
 }
@@ -1076,33 +1109,127 @@ img {
    on the frost, not a second floating slab under the player. Each tab stacks a
    glyph over its name, the way a phone's system tab bar does, and the whole
    band is kept short so it costs the list as little height as possible. */
+/* A rounded card held off the screen's edges by the same margin on all three
+   sides, with the app icon raised out of its centre - and a CHIN: the card runs
+   down over the home indicator's strip, its lower band empty of content, so
+   that dead space carries the nav instead of nothing. The chin's corners sweep
+   wider than the top's, following the curve the phone is already making down
+   there. */
 .appNavBar {
   position: absolute;
-  inset-inline: 0;
-  /* Welded to the sill: the safe area is padding inside the bar, not a gap
-     under it, so the frost runs to the very bottom of the screen. */
-  inset-block-end: 0;
+  inset-inline: var(--app-nav-inset);
+  inset-block-end: var(--app-nav-inset);
   z-index: 4;
-  display: flex;
-  align-items: stretch;
-  /* Top padding gives the tabs a little air under the hairline instead of
-     starting hard against it. Bottom padding is the home-indicator safe area
-     plus breathing room, so the plate runs to the very bottom edge while the
-     tabs sit clear above the indicator rather than crowding it. */
-  padding: var(--glacier-space-2) var(--glacier-space-1)
-    calc(var(--app-safe-bottom) + var(--glacier-space-3));
-  border-radius: 0;
-  /* A dark frosted plate of its own rather than riding transparent on the
-     scrim: glass-thick is a near-opaque dark panel in dark mode (and a light
-     frost in light mode), so the bar reads as a solid base the tabs sit on.
-     The blur frosts whatever scrolls behind it; a hairline top edge keeps the
-     now-filled bar from bleeding into the content above. */
+  /* Border-box, so the tabs centre in the island band and the chin is padding
+     below them rather than height stolen from them. */
+  block-size: calc(var(--app-nav-island-height) + var(--app-nav-chin));
+  padding-block-end: var(--app-nav-chin);
+  /* Three cells: a flexible group each side of a fixed centre, so the raised
+     brand button lands dead-centre whatever each side happens to hold. */
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding-inline: var(--glacier-space-3);
+  /* The chin's corners take a wider sweep than the top's: down at the screen's
+     edge the phone is already curving away, and a corner that opens out to meet
+     it reads as one continuous bottom rather than a card set on top of one. */
+  border-radius: var(--glacier-radius-2xl, 1.75rem) var(--glacier-radius-2xl, 1.75rem)
+    var(--app-nav-chin-radius) var(--app-nav-chin-radius);
+  /* The card: a near-opaque frosted panel, a hairline edge, and a real shadow
+     so it reads as lifted off the content that scrolls behind it. */
   background: var(--glacier-glass-thick);
   backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
   -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  box-shadow: var(--glacier-shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.42));
+  /* The centre button overhangs the top edge, so nothing may clip it. */
+  overflow: visible;
+}
+
+.appNavBar__group {
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  gap: var(--glacier-space-1);
+}
+
+/* A flanking tab: glyph over a small label, lit crimson when it is the page. */
+.appNavBarTab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: var(--glacier-space-1) var(--glacier-space-2);
   border: none;
-  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
-  box-shadow: none;
+  background: none;
+  cursor: pointer;
+  color: var(--glacier-text-subtle);
+  transition: color 0.15s ease;
+}
+
+.appNavBarTab[data-active] {
+  color: var(--glacier-accent-text);
+}
+
+.appNavBarTab__icon {
+  display: grid;
+  place-items: center;
+}
+
+.appNavBarTab__label {
+  font-size: var(--app-nav-label-size);
+  font-weight: 550;
+  line-height: 1;
+}
+
+/* The raised centre: the app icon itself, lifted so it overhangs the island's
+   top edge, ringed in the page background to cut it cleanly from the card, and
+   haloed in the accent so it reads as the prominent home button. */
+.appNavBar__center {
+  justify-self: center;
+  inline-size: 3.5rem;
+  block-size: 3.5rem;
+  margin-block-start: -1.9rem;
+  padding: 0;
+  border: none;
+  /* Circular, filled with the brand pink - the app icon's own dark backdrop is
+     dropped (see the icon's blend below) so the wave sits straight on the
+     colour, the way the reference's centre button does. */
+  border-radius: 50%;
+  background: var(--glacier-accent-solid);
+  overflow: hidden;
+  cursor: pointer;
+  box-shadow:
+    0 0 0 5px var(--glacier-bg),
+    0 9px 22px rgba(0, 0, 0, 0.5);
+  transition: transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease;
+}
+
+.appNavBar__center:active {
+  transform: translateY(1px) scale(0.97);
+}
+
+/* Lit when it is the page: a hair brighter, with a thin ring of the bg around
+   it, so "you are home" reads without changing the shape. */
+.appNavBar__center[data-active] {
+  filter: brightness(1.08);
+  box-shadow:
+    0 0 0 5px var(--glacier-bg),
+    0 0 0 6.5px color-mix(in srgb, var(--glacier-accent-solid) 70%, #fff),
+    0 9px 22px rgba(0, 0, 0, 0.5);
+}
+
+.appNavBar__centerIcon {
+  inline-size: 100%;
+  block-size: 100%;
+  display: block;
+  object-fit: cover;
+  border-radius: inherit;
+  /* The icon is a white wave on a black square; `screen` drops the black to
+     nothing over the pink fill and keeps the wave, so the button reads as one
+     pink disc with the mark on it. */
+  mix-blend-mode: screen;
 }
 
 /* The kit nests its items in an inner container sized to their content; make
@@ -1118,69 +1245,40 @@ img {
 /* A tab: an equal share of the width, glyph over label. Overrides the kit's
    labelled-item row (fixed height, side-by-side, inline padding), which is
    sized for a desktop nav rather than a phone's bottom bar. */
-.appNavBar button,
-.appNavBar a {
-  flex: 1;
-  min-inline-size: 0;
-  inline-size: auto;
-  block-size: var(--app-nav-item-height);
-  flex-direction: column;
-  /* Glyphs hang from a common line rather than each stack centring itself, so
-     an item without a label (a plugin's icon-only button) sits on the same row
-     as the rest instead of floating half a line above them. */
-  justify-content: flex-start;
-  /* Barely any inline padding: with six tabs on a phone, the width belongs to
-     the names - the tabs are already separated by their own spacing. */
-  padding: 0.375rem 0.125rem 0;
-  gap: 0.125rem;
-  border-radius: var(--glacier-radius-md);
-}
-
-/* A button a plugin contributes is not a NavBarItem and brings no label of its
-   own. It still has to name itself for a screen reader, so that name becomes
-   its tab text - every tab reads the same way, whoever supplied it. */
-.appNavBar [class*="_items_"] > button:not([class*="_item_"])::after {
-  content: attr(aria-label);
-  font-size: var(--app-nav-label-size);
-  line-height: 1.1;
-  max-inline-size: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Glyphs sized for the shorter bar - CSS wins over the icons' own width/height
-   attributes. flex:none stops the kit's icon box from being squashed oval when
-   the label sets the row's width. */
-.appNavBar button svg,
-.appNavBar a svg {
-  inline-size: 1.125rem;
-  block-size: 1.125rem;
-  flex: none;
-}
-
-/* The tab's name. Small and tight, since it sits under a glyph that already
-   carries the meaning - it names the destination rather than shouting it. */
-.appNavBar [class*="_label_"] {
-  font-size: var(--app-nav-label-size);
-  line-height: 1.1;
-  max-inline-size: 100%;
-}
-
-/* No plate behind the active tab. Hide the kit's sliding fill entirely and let
-   the active tab announce itself by colour alone: the kit already recolours the
-   whole [data-active] item to the accent (glyph and label together, the glyph
-   following the label's colour), and a card would only fight the bar's own dark
-   plate. Colour is now the entire affordance. */
-.appNavBar [class*="_indicator_"] {
-  display: none;
-}
+/* The old kit-NavBar bar rules (.appNavBar button/a sizing, the _items_/_label_/
+   _indicator_ hashed-class hooks) lived here. The phone bar is custom markup
+   now - a group each side of the raised centre - so those rules are gone; the
+   tab and centre styles above are the whole of it. */
 
 /* How far the bottom nav band pushes the player up. Zero where the band does
    not exist (desktop); measured where it does. :has keys it on the nav's
    actual presence, so no JS and no media query can drift from truth. */
 .appWindow {
   --app-nav-height: 0px;
+  /* The island's own height: the band the tabs live in, not counting the chin
+     below them or the brand button that overhangs their top. */
+  --app-nav-island-height: 4rem;
+  /* What the nav card holds back from the screen's edges - the same margin on
+     the sides and underneath, so the card sits in an even frame rather than
+     floating wide and welded low. Matched to the player plate's own inset (its
+     padding, over an inset-inline of 0), so the two plates line up down both
+     sides instead of stepping in and out. */
+  --app-nav-inset: var(--glacier-space-2);
+  /* The chin: the band of card below the tabs that covers the home indicator's
+     dead strip, so that space carries the nav instead of nothing. */
+  --app-nav-chin: var(--app-safe-bottom);
+  /* The sweep on the chin's bottom corners, echoing the phone's own. */
+  --app-nav-chin-radius: 2.25rem;
+  /* How far the raised brand button's border box rises above the card's top.
+     Derived from the button's own numbers rather than guessed: it is centred in
+     the island under a negative top margin, which lifts it by
+     |margin| - (island - button + |margin|) / 2 = 1.9 - (4 - 3.5 + 1.9) / 2.
+     Keep it in step with .appNavBar__center - the player clears exactly this,
+     and the old hand-written 1.9rem over-reserved by nearly 20px, which is the
+     dead band that used to sit between the two plates. */
+  --app-nav-overhang: 0.7rem;
+  /* What separates the player plate from the raised button above the nav. */
+  --app-nav-gap: var(--glacier-space-2);
   /* One tab's height, named so the bar and the band it occupies cannot drift:
      a glyph, a hairline gap and a small label, with room to tap. */
   --app-nav-item-height: 2.75rem;
@@ -1190,12 +1288,13 @@ img {
 }
 
 .appWindow:has(.appNavBar) {
-  /* The band's footprint: one tab plus the bar's own padding above and below,
-     the lower half of which is the home indicator's safe area. The player and
-     the blur scrim both clear exactly this. */
+  /* The nav's footprint, measured from the very bottom: the brand button's
+     overhang above the card, the tab band, and the chin that carries the card
+     down to the screen's edge. The player and the blur scrim clear exactly
+     this, so nothing tucks under the card or the raised button. */
   --app-nav-height: calc(
-    var(--app-nav-item-height) + var(--glacier-space-1) + var(--glacier-space-3) +
-      var(--app-safe-bottom)
+    var(--app-nav-overhang) + var(--app-nav-island-height) + var(--app-nav-chin) +
+      var(--app-nav-inset)
   );
 }
 
@@ -1475,28 +1574,36 @@ img {
    from env() - the --app-safe-* vars are out of scope here (see .npScreen). */
 .npScreen__lyricsView {
   position: absolute;
-  /* An absolutely positioned child resolves against the PADDING box, so
-     `inset: 0` already starts below the sheet's own top inset - and the
-     padding below then applied the notch inset a second time, which is what
-     held the words a header's height too low. Pulling the panel back up by
-     exactly the sheet's top padding puts it against the top of the screen, so
-     the lyrics claim the header's space and its own padding is the only thing
-     keeping them clear of the notch.
-
-     Left, right and bottom stay on the padding box: the sides keep the
-     sheet's margins, and the bottom is what stops the words running under the
-     controls. */
-  top: calc(-1 * (env(safe-area-inset-top, 0px) + var(--glacier-space-3)));
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 10;
+  /* Big, but deliberately NOT the whole screen. Full-bleed it ran under the
+     notch and its close button went with it, so the panel could be opened and
+     not shut. Inset from every edge instead: the sheet underneath frames it,
+     the header sits well clear of the notch, and the margin around it is
+     itself a way out (tapping it dismisses). */
+  top: 12%;
+  right: var(--glacier-space-4);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--glacier-space-4));
+  left: var(--glacier-space-4);
+  z-index: 11;
   display: flex;
   flex-direction: column;
-  padding: calc(env(safe-area-inset-top, 0px) + var(--glacier-space-3))
-    var(--glacier-space-6, 1.75rem) calc(env(safe-area-inset-bottom, 0px) + var(--glacier-space-5));
-  background: var(--glacier-bg);
+  padding: var(--glacier-space-4);
+  background: var(--glacier-surface);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-xl);
+  box-shadow: var(--glacier-shadow-5);
   animation: npRise 0.24s var(--glacier-ease-out);
+}
+
+/* The catcher behind the panel: a tap anywhere off it closes, which is the
+   gesture people reach for before they look for a button. */
+.npScreen__lyricsScrim {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: rgba(9, 9, 10, 0.5);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  animation: npCanvasIn 0.24s ease both;
 }
 
 .npScreen__lyricsHead {
@@ -1523,6 +1630,153 @@ img {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+}
+
+/* The queue sheet: same frame as the lyrics view (inset from every edge, the
+   margin around it a way out), but the QueuePanel owns the inside so this only
+   positions and dresses the plate. */
+.npScreen__queueView {
+  position: absolute;
+  top: 12%;
+  right: var(--glacier-space-4);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--glacier-space-4));
+  left: var(--glacier-space-4);
+  z-index: 11;
+  display: flex;
+  background: var(--glacier-surface);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-xl);
+  box-shadow: var(--glacier-shadow-5);
+  animation: npRise 0.24s var(--glacier-ease-out);
+  overflow: hidden;
+}
+
+.queuePanel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--glacier-space-4);
+}
+
+.queuePanel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+  flex: none;
+  margin-block-end: var(--glacier-space-3);
+}
+
+.queuePanel__title {
+  font-weight: 650;
+  font-size: 1.05rem;
+}
+
+.queuePanel__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.queueNow {
+  margin-block-end: var(--glacier-space-4);
+}
+
+.queueNow__label,
+.queueUp__label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--glacier-text-muted);
+  margin-block-end: var(--glacier-space-2);
+}
+
+.queueUp__empty {
+  display: block;
+  padding: var(--glacier-space-2) 0;
+}
+
+.queueSortable {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.queueRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  min-width: 0;
+}
+
+.queueRow--now {
+  padding: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-lg);
+  background: color-mix(in oklab, var(--glacier-accent-solid) 14%, transparent);
+}
+
+.queueRow__grip {
+  flex: none;
+  color: var(--glacier-text-muted);
+  opacity: 0.7;
+}
+
+.queueRow__play {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  flex: 1;
+  min-width: 0;
+  padding: var(--glacier-space-1) 0;
+  background: none;
+  border: none;
+  text-align: start;
+  cursor: pointer;
+  color: inherit;
+}
+
+.queueRow__cover {
+  flex: none;
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  border-radius: var(--glacier-radius-md);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--glacier-surface-2, rgba(255, 255, 255, 0.06));
+  color: var(--glacier-text-muted);
+}
+
+.queueRow__cover img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.queueRow__meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.queueRow__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 550;
+}
+
+.queueRow__artist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82rem;
+  color: var(--glacier-text-muted);
 }
 
 .npScreen__play {
@@ -1785,7 +2039,20 @@ img {
   padding-block-end: calc(var(--app-player-height) + var(--app-nav-height, 0px));
   display: flex;
   flex-direction: column;
-  gap: var(--glacier-space-5);
+  /* Between sections: a full step above the title-to-content gap (space-3),
+     so a shelf's heading clearly belongs to the cards BELOW it rather than
+     floating between two groups. */
+  gap: var(--glacier-space-8);
+}
+
+/* The home feed rendered inside another page (the Library wears it): the same
+   stack, the same rhythm, just without the page chrome - THIS wrapper is why
+   its shelves were colliding at zero gap, it had no layout of its own. */
+.homeMixes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-8);
+  min-width: 0;
 }
 
 /* The greeting and the page's actions share a row: the words take the width
@@ -1932,8 +2199,9 @@ img {
 .trackCard {
   flex: none;
   /* Two thirds of the old 9.5rem: more of the shelf visible at a glance,
-     which is what a shelf is for. */
-  inline-size: 6.35rem;
+     which is what a shelf is for. Shared with the skeleton that holds its
+     seat, so the two cannot drift. */
+  inline-size: var(--card-track);
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-1);
@@ -1987,12 +2255,39 @@ img {
 }
 
 .suggestCardCover {
+  position: relative;
   inline-size: 100%;
   aspect-ratio: 1;
   border-radius: var(--glacier-radius-lg);
   overflow: hidden;
   border: var(--glacier-hairline) solid var(--glacier-border-subtle);
   background: var(--glacier-surface-sunken);
+}
+
+/* A small corner tag naming the source, so the page reads as many services at
+   a glance rather than one. Frosted so it sits on any cover art. */
+.suggestCardSource {
+  position: absolute;
+  inset-block-start: var(--glacier-space-1);
+  inset-inline-start: var(--glacier-space-1);
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--glacier-radius-sm);
+  font-size: var(--glacier-font-size-2xs, 0.65rem);
+  font-weight: var(--glacier-font-weight-semibold);
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: color-mix(in srgb, #000 55%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+
+.suggestCardSource--spotify {
+  background: color-mix(in srgb, #1db954 78%, transparent);
+}
+
+.suggestCardSource--deezer {
+  background: color-mix(in srgb, #a238ff 78%, transparent);
 }
 
 .suggestCardCover img {
@@ -2078,7 +2373,8 @@ img {
   padding-block-end: calc(var(--app-player-height) + var(--app-nav-height, 0px));
   display: flex;
   flex-direction: column;
-  gap: var(--glacier-space-5);
+  /* The same section rhythm the home and library pages keep. */
+  gap: var(--glacier-space-8);
 }
 
 .discoverHead {
@@ -2229,7 +2525,7 @@ img {
 .artistCard {
   flex: none;
   /* Two thirds of the old 8rem, matching the square cards' reduction. */
-  inline-size: 5.35rem;
+  inline-size: var(--card-artist);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2272,7 +2568,7 @@ img {
   flex: none;
   /* Two thirds, with the album cards it sits beside - a mosaic of four covers
      is still a cover, and left at full size it dwarfed the shrunken shelf. */
-  inline-size: 8.7rem;
+  inline-size: var(--card-mix);
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-1);
@@ -2391,9 +2687,9 @@ img {
   gap: var(--glacier-space-1);
   flex: 0 0 auto;
   /* The same footprint as every other card on the page (.trackCard): the
-     playlists are peers of the shelves, not a runt row of chips. Moves with
-     it, so the two never drift apart. */
-  width: 6.35rem;
+     playlists are peers of the shelves, not a runt row of chips. The shared
+     variable is what makes "moves with it" true rather than a hope. */
+  width: var(--card-track);
   padding: 0;
   background: none;
   border: none;
@@ -3148,6 +3444,16 @@ body [class*='_panel_']:has(> .dlPanel) {
   flex: none;
   padding: var(--glacier-space-2);
   padding-block-start: 0;
+  /* The strip rises into place with the first song of the session rather than
+     appearing whole. It sits below the nav card (z 2 vs 4), so it climbs out
+     from behind it - and the frost behind it grows on the same clock, so the
+     two arrive together. Mount-only: `current` never returns to null once set,
+     so the node survives every track change after this and the animation does
+     not replay. No fill mode on purpose: the resting style already IS the
+     animation's last frame, so filling buys nothing - and a fill that held the
+     FIRST frame would strand the strip off the bottom of the screen on any
+     render where the animation never got to run. */
+  animation: playerRise var(--app-player-rise) var(--glacier-ease-out);
   /* Lifts the plate clear of the home indicator, which otherwise sits over the
      transport controls on a modern iPhone. */
   padding-block-end: calc(var(--glacier-space-2) + var(--app-safe-bottom));
@@ -3157,12 +3463,33 @@ body [class*='_panel_']:has(> .dlPanel) {
 
 /* With a bottom tab bar in play, the player stands on it rather than the
    window edge - and the bar owns the home indicator's inset, so the player
-   gives that padding up instead of double-counting it. */
+   gives that padding up instead of double-counting it. The two read as two
+   distinct plates, so they want a real gap between them - but only a gap. What
+   used to sit here was a gap plus twenty stray pixels of over-reserved
+   overhang, which read as the player having drifted away from the nav. */
 .appWindow:has(.appNavBar) .appPlayer {
-  /* Lift the player clear of the pill by a full gap, so the two float as two
-     distinct plates rather than a stacked seam. */
-  inset-block-end: calc(var(--app-nav-height) + var(--glacier-space-2));
+  inset-block-end: calc(var(--app-nav-height) + var(--app-nav-gap));
   padding-block-end: var(--glacier-space-2);
+}
+
+/* Far enough down to clear its own height AND the offset it rests at, so it
+   starts wholly off the bottom of the window whichever chrome is below it. */
+@keyframes playerRise {
+  from {
+    transform: translateY(calc(100% + var(--app-nav-height) + var(--app-nav-gap, 0px)));
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .appPlayer {
+    animation: none;
+  }
+  .appNavScrim {
+    transition: none;
+  }
 }
 
 /* Pull the strip's own inline padding in from the kit's default so the cover and
@@ -4322,10 +4649,11 @@ body [class*='_panel_']:has(> .dlPanel) {
 
 /* ── Discover search results ─────────────────────────────────────────────── */
 
-/* A search hit (Spotify/Deezer): a square (round for an artist) cover, title,
-   subtitle, and a corner badge that is the Add affordance for a track and a
-   "search deeper" glyph for an artist. The whole card is one button - a track
-   imports on tap, an artist re-runs the search for its name. */
+/* A search hit: a square (round for an artist) cover, title, subtitle, and a
+   corner badge that says what tapping does. The whole card is one button, and
+   which half of the results it is in decides the verb - a library hit plays or
+   opens the artist's page, a catalogue hit imports or reads the artist's
+   discography. */
 .resultCard {
   position: relative;
   display: flex;
@@ -4412,6 +4740,14 @@ body [class*='_panel_']:has(> .dlPanel) {
 .resultCard__badge[data-state='added'] {
   color: var(--glacier-success, #1d9e75);
   border-color: var(--glacier-success, #1d9e75);
+}
+
+/* A hit you already own: the badge is a play button, not an Add, and fills on
+   hover the way the idle Add does - the tap starts the song rather than
+   fetching it. */
+.resultCard:hover:not(:disabled) .resultCard__badge[data-state='owned'] {
+  background: var(--glacier-accent);
+  color: var(--glacier-on-accent, #fff);
 }
 
 .resultCard__spin {
@@ -5149,6 +5485,29 @@ body [class*='_panel_']:has(> .dlPanel) {
   gap: 2px;
 }
 
+/* ---- The DJ launcher --------------------------------------------------- */
+
+.djLauncher {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.djLauncher__row {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.djLauncher__field {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.djLauncher__line {
+  font-style: italic;
+}
+
 /* ---- Registry: account setup + friends --------------------------------- */
 
 .registrySetup {
@@ -5183,10 +5542,29 @@ body [class*='_panel_']:has(> .dlPanel) {
   gap: var(--glacier-space-2);
 }
 
-.registryFriends__invite {
+.registryFriends__invite,
+.registryFriends__join {
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-2);
+}
+
+.joinServer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-3);
+  border: 1px solid var(--glacier-border);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface);
+}
+
+.joinServer__preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+  flex-wrap: wrap;
 }
 
 .registryFriends__inviteLink {
@@ -5198,6 +5576,21 @@ body [class*='_panel_']:has(> .dlPanel) {
 .registryFriends__inviteLink > :first-child {
   flex: 1;
   min-inline-size: 0;
+}
+
+/* The bare code, for reading aloud or typing into the eight boxes on the other
+   end. Monospace and spaced so the two groups of four read at a glance. */
+.registryFriends__inviteCode {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--glacier-text-muted);
+}
+
+.registryFriends__inviteCode strong {
+  font-family: var(--glacier-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 1.05rem;
+  letter-spacing: 0.12em;
+  color: var(--glacier-text);
 }
 
 /* ---- Plugins: updates, browse, sources --------------------------------- */
@@ -5305,11 +5698,9 @@ body [class*='_panel_']:has(> .dlPanel) {
 }
 
 /* The add affordance rides the cover, so the whole card reads as "tap to get
-   this" without a second row of chrome. */
-/* The floating accent badge on the cover: a plus while the song is still a
-   suggestion, a play glyph once it is downloaded (the whole card plays it). */
-.findCard__add,
-.findCard__play {
+   this" without a second row of chrome. A card only ever shows the plus or its
+   spinner: once the song is in the library it leaves the shelf entirely. */
+.findCard__add {
   position: absolute;
   inset-block-end: var(--glacier-space-2);
   inset-inline-end: var(--glacier-space-2);
@@ -5433,9 +5824,122 @@ body [class*='_panel_']:has(> .dlPanel) {
   gap: 28px;
   padding: max(32px, env(safe-area-inset-top)) 24px max(32px, env(safe-area-inset-bottom));
   overflow-y: auto;
+  /* Clips the art wall, which is deliberately larger than the screen. */
+  overflow-x: hidden;
+  isolation: isolate;
   background:
     radial-gradient(120% 80% at 50% -10%, color-mix(in srgb, var(--glacier-accent) 22%, transparent), transparent 60%),
     var(--glacier-bg, #0b0b0d);
+}
+
+/* ── The art wall ────────────────────────────────────────────────────────────
+   attack.fm's own hero treatment, brought into the app's front door so the site
+   and the first screen read as one thing: four columns of covers drifting in
+   alternating directions, the slab rotated off-square and blurred back until it
+   is texture rather than pictures.
+
+   Oversized on purpose - 172vw x 192vh, centred and rotated - because a
+   rotated rectangle has to be bigger than its own bounding box or the corners
+   come up empty. */
+.artWall {
+  /* Fixed, not absolute: the gate is the scroll container (so the form can
+     scroll out from under the keyboard), and an absolute child this size
+     BECOMES the scroll range - the page could be dragged down through 192vh
+     of empty blur. Pinned to the viewport it paints identically, adds nothing
+     to the scroll extent, and holds still while the form scrolls over it. */
+  position: fixed;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  z-index: 0;
+  inline-size: 172vw;
+  block-size: 192vh;
+  transform: translate(-50%, -50%) rotate(-11deg);
+  display: flex;
+  gap: 16px;
+  filter: blur(7px) saturate(0.9) brightness(0.82);
+  pointer-events: none;
+}
+
+/* The gate's own content rides above both the wall and the veil. Everything in
+   .loginGate is a direct child, so one rule lifts the lot. */
+.loginGate > *:not(.artWall) {
+  position: relative;
+  z-index: 2;
+}
+
+/* The veil, between the art and the words. Its z-index is not decoration: a
+   pseudo-element paints as the FIRST child, so at an equal index the wall -
+   a real element, later in the DOM - would cover it and the art would come
+   through at full strength.
+
+   The stops are attack.fm's own (rgba(9,9,10,·) at .42 / .9 / .996 over a flat
+   .55-.72), written against the theme's background so a light theme veils in
+   its own colour rather than in the site's near-black. Heavy on purpose: the
+   art is a texture to be felt, not a picture to be looked at, and a form has to
+   stay readable over whatever happens to be drifting past. */
+.loginGate::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      125% 95% at 50% 32%,
+      color-mix(in srgb, var(--glacier-bg, #0b0b0d) 42%, transparent),
+      color-mix(in srgb, var(--glacier-bg, #0b0b0d) 90%, transparent) 60%,
+      color-mix(in srgb, var(--glacier-bg, #0b0b0d) 99%, transparent) 100%
+    ),
+    linear-gradient(
+      color-mix(in srgb, var(--glacier-bg, #0b0b0d) 55%, transparent),
+      color-mix(in srgb, var(--glacier-bg, #0b0b0d) 72%, transparent)
+    );
+}
+
+.artWall__col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1 1 0;
+  will-change: transform;
+  animation: artWallUp var(--wall-dur, 60s) linear infinite;
+}
+
+/* Half the columns run the other way, so the wall drifts rather than marches. */
+.artWall__col[data-dir='down'] {
+  animation-name: artWallDown;
+}
+
+.artWall__col img {
+  inline-size: 100%;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  object-fit: cover;
+  display: block;
+}
+
+/* Each column carries its covers twice and travels exactly half its own
+   height, so the second copy arrives where the first began and the loop has no
+   seam. */
+@keyframes artWallUp {
+  to {
+    transform: translateY(-50%);
+  }
+}
+
+@keyframes artWallDown {
+  from {
+    transform: translateY(-50%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artWall__col {
+    animation: none;
+  }
 }
 
 .loginGate__hero {
@@ -5447,10 +5951,32 @@ body [class*='_panel_']:has(> .dlPanel) {
 }
 
 .loginGate__mark {
-  inline-size: 168px;
-  max-inline-size: 60vw;
+  inline-size: 336px;
+  /* The cap rises with it, or the doubling is undone on every phone: 60vw of
+     a 390px screen is 234px, which would have clamped the new size straight
+     back to roughly the old one. */
+  max-inline-size: 85vw;
   height: auto;
   object-fit: contain;
+}
+
+/* The wordmark ships as white artwork, so on a light theme it is white on
+   near-white - invisible. The header's copy of this logo has flipped for that
+   reason for a while; the sign-in one never did, and at twice the size it is
+   twice as much nothing. Same three cases as .mobileHeader__logo: system
+   follows the OS, an explicit theme overrides it either way. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .loginGate__mark {
+    filter: invert(1);
+  }
+}
+
+:root[data-theme='light'] .loginGate__mark {
+  filter: invert(1);
+}
+
+:root[data-theme='dark'] .loginGate__mark {
+  filter: none;
 }
 
 .loginGate__tag {
@@ -5468,6 +5994,20 @@ body [class*='_panel_']:has(> .dlPanel) {
 
 .loginGate__submit {
   margin-top: 4px;
+}
+
+/* The secondary ways off an onboarding step - sign into a server directly, or
+   skip - sat under the main action, quiet, side by side. */
+.loginGate__alts {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--glacier-space-2);
+  flex-wrap: wrap;
+  inline-size: 100%;
+  max-inline-size: 420px;
+  margin-inline: auto;
+  margin-block-start: var(--glacier-space-3);
 }
 
 .loginGate__foot {
@@ -6133,3 +6673,377 @@ button.artistAlbum {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* The bottom-third blur behind the Now Playing controls. A canvas is moving
+   footage of anything at all, so the transport can land on a bright frame and
+   lose its contrast; this rises from nothing at the top of the band to a full
+   blur plus a dark wash at the very bottom. Masked rather than a hard edge,
+   or the blur announces itself as a rectangle across the artwork.
+
+   z-index -1 keeps it in the background layer beside the canvas (later in the
+   DOM, so it paints over it) while every control, being in normal flow, stays
+   above. */
+.npScreen__veil {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  /* Tall enough to reach up past the seek bar and the title, not just the
+     transport - those read against the clip too, and a blur that stopped
+     under them left the words fighting the footage. */
+  block-size: 55%;
+  z-index: -1;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(22px) saturate(1.1);
+  backdrop-filter: blur(22px) saturate(1.1);
+  background: linear-gradient(to bottom, transparent, rgba(9, 9, 10, 0.55));
+  /* The fade takes the whole upper half of the band now, so a taller veil
+     still arrives gradually rather than as a visible seam across the art. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 55%);
+  mask-image: linear-gradient(to bottom, transparent, #000 55%);
+}
+
+/* --- Now Playing without a disc -------------------------------------------
+   The art block carries `flex: 1`, so it was the thing absorbing the sheet's
+   free space and holding the meta and transport down at the bottom. With a
+   Canvas playing that block is gone, and everything collapsed to the top.
+   An auto leading margin puts the free space back above the meta. Harmless
+   when the art IS present: it has already taken the space, so there is none
+   left for this to claim. */
+.npScreen__meta {
+  margin-block-start: auto;
+}
+
+/* The lyric words on this sheet start at the very top. The shared band sits
+   them 12% down, which is right for the desktop hero (whose upper half reads
+   as the title) and wrong here, where the sheet is theirs and the space above
+   is simply empty. Scoped to the words-only variant so the hero keeps its
+   own framing. */
+.nowPlayingBackdrop[data-words-only] .npWords {
+  inset-block-start: 0;
+}
+
+/* ---- Friends, redone: people and places, not rows ----------------------- */
+
+/* A person's mark: gradient from their own handle, initial on top. Sizes are
+   the three jobs it does - chip, card, and the profile strip. */
+.friendAvatar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: rgb(255 255 255 / 0.92);
+  font-weight: 700;
+  user-select: none;
+}
+
+.friendAvatar--sm {
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  font-size: 0.7rem;
+}
+
+.friendAvatar--md {
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  font-size: 1rem;
+}
+
+.friendAvatar--lg {
+  inline-size: 3.5rem;
+  block-size: 3.5rem;
+  font-size: 1.4rem;
+}
+
+/* Who you are: the page opens on a person - your own mark, your handle - with
+   sign-out as a quiet icon rather than a labelled button competing with it. */
+.friendsMe {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+.friendsMe__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.friendsMe__handle {
+  font-size: var(--glacier-font-size-lg);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.friendsMe__caption {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-sm);
+}
+
+/* An ask is a decision, so it gets a card with the accent on its edge - the
+   one place on the page allowed to bid for attention. */
+.requestCards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+}
+
+.requestCard {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-accent-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-accent-soft);
+  /* Never wider than the page: a long handle gives way (ellipsis below), the
+     Accept and decline never leave the screen - the card exists for exactly
+     those two controls. */
+  max-inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.requestCard__handle {
+  font-weight: 600;
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.requestCard__actions {
+  flex: none;
+}
+
+.requestCard__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}
+
+/* Asks still in the air: chips, glanceable and quiet. */
+.friendChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+}
+
+.friendChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-1) var(--glacier-space-3) var(--glacier-space-1)
+    var(--glacier-space-1);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface);
+  font-size: var(--glacier-font-size-sm);
+}
+
+.friendChip__state {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+}
+
+/* The graph itself: a grid of people. Cards, coloured by their owners, with
+   the remove tucked into the corner where it waits without being the point. */
+.friendGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: var(--glacier-space-3);
+}
+
+.friendCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-4) var(--glacier-space-3) var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+  text-align: center;
+}
+
+/* A green ring on the mark while they are around - presence worn where the
+   eye already is, not another line of text. */
+.friendCard[data-online] .friendCard__face {
+  box-shadow:
+    0 0 0 2px var(--glacier-bg),
+    0 0 0 4px oklch(0.72 0.17 150);
+}
+
+.friendCard__handle {
+  font-weight: 650;
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friendCard__meta {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friendCard__remove {
+  position: absolute;
+  inset-block-start: var(--glacier-space-1);
+  inset-inline-end: var(--glacier-space-1);
+  opacity: 0;
+  transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.friendCard:hover .friendCard__remove,
+.friendCard__remove:focus-visible {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .friendCard__remove {
+    opacity: 0.6;
+  }
+}
+
+/* ---- Jams: the live layer ------------------------------------------------ */
+
+/* The room you are in: cover art with a live pulse, who's inside, and the way
+   out. The one card on the page that is happening right now. */
+.jamLive {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-accent-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-glass-regular, var(--glacier-surface));
+}
+
+.jamLive__art {
+  position: relative;
+  flex: none;
+  inline-size: 3.5rem;
+  block-size: 3.5rem;
+  border-radius: var(--glacier-radius-md);
+  overflow: hidden;
+}
+
+.jamLive__art img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.jamLive__pulse {
+  position: absolute;
+  inset-block-end: 4px;
+  inset-inline-end: 4px;
+  inline-size: 10px;
+  block-size: 10px;
+  border-radius: 50%;
+  background: oklch(0.72 0.17 150);
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 0.4);
+  animation: jamPulse 2s ease-in-out infinite;
+}
+
+@keyframes jamPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.8); opacity: 0.6; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jamLive__pulse { animation: none; }
+}
+
+.jamLive__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.jamLive__title {
+  font-weight: 700;
+}
+
+.jamLive__song {
+  font-size: var(--glacier-font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jamLive__meta {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+}
+
+/* Friends' rooms: doors you can walk through, on one wrapping row. */
+.jamRooms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-3);
+}
+
+.jamRoom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-3);
+  inline-size: 10rem;
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+  text-align: center;
+}
+
+.jamRoom__art {
+  position: relative;
+  inline-size: 5rem;
+  block-size: 5rem;
+  border-radius: var(--glacier-radius-md);
+  overflow: visible;
+}
+
+.jamRoom__art img {
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+/* The host's mark rides the corner of what they're playing. */
+.jamRoom__host {
+  position: absolute;
+  inset-block-end: -0.4rem;
+  inset-inline-end: -0.4rem;
+  box-shadow: 0 0 0 2px var(--glacier-bg);
+}
+
+.jamRoom__name {
+  font-weight: 650;
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jamRoom__meta {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+

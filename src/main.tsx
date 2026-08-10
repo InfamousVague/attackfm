@@ -12,10 +12,15 @@ import '@glacier/react/styles.css';
 import './app/app.css';
 import { App } from './app/App.tsx';
 import { runColdStartMaintenance } from './app/coldStart.ts';
+import { initDeepLinks } from './app/deepLink.ts';
 
 // Before the first provider runs, so nothing reads a feed cache that a killed
 // app was meant to have forgotten. Cheap, synchronous, and a no-op on resume.
 runColdStartMaintenance();
+
+// Catch an invite link the app was opened with (or is handed while running) and
+// hold it for Join a server. Fire-and-forget; a no-op off a device.
+void initDeepLinks();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

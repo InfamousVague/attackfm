@@ -8,8 +8,9 @@ import {
   type CatalogRelease,
   type CatalogTrack,
 } from '../../app/server.ts';
+import { useOwned } from '../../app/owned.ts';
 import { useDownloadsOptional } from '../importsBridge.ts';
-import { useAcquire } from '../runtime.tsx';
+import { IMPORTER_PLUGIN_ID, useAcquire } from '../runtime.tsx';
 import type { AcquireTarget } from '../types.ts';
 
 /**
@@ -63,6 +64,7 @@ export function CatalogArtistPage({
   const { session } = useServerSession();
   const downloads = useDownloadsOptional();
   const acquire = useAcquire();
+  const owned = useOwned();
   // A record and a song from this catalogue, as acquire targets: the artist is
   // the page's, the title and URL the row's. Album/track kind decides who can
   // service it (Buy takes both; a downloader takes anything with a URL).
@@ -79,11 +81,11 @@ export function CatalogArtistPage({
     url: t.url,
   });
   // Keep the importer's own download flow (the optimistic tap, matched to the
-  // queue, and - for a song - autoplay once it lands) when it is the only way;
-  // otherwise the chooser offers every handler and runs the picked one.
+  // queue, and - for a song - autoplay once it lands) whenever it can service
+  // the target; only with it off does the chooser come out.
   const runAcquire = (target: AcquireTarget, url: string, key: string, armPlay: boolean) => {
     const hs = acquire.handlersFor(target);
-    if (hs.length === 1 && hs[0]?.pluginId === 'spotify-import') enqueue(url, key, armPlay);
+    if (hs.some((h) => h.pluginId === IMPORTER_PLUGIN_ID)) enqueue(url, key, armPlay);
     else acquire.acquire(target);
   };
   const [artist, setArtist] = useState<CatalogArtist | null>(null);
@@ -106,7 +108,13 @@ export function CatalogArtistPage({
     return () => ctrl.abort();
   }, [session, artistId, artistName]);
 
-  const addState = (url: string, key: string): AddState => {
+  /** A row's Add state. `title` is given for songs, whose presence in the
+   *  library is knowable by name - so a song you already have wears its check
+   *  the first time the page opens, not just after this session downloaded it.
+   *  A release has no such test (owning three of its twelve tracks is not
+   *  owning the record), so it answers from the queue alone. */
+  const addState = (url: string, key: string, title?: string): AddState => {
+    if (title !== undefined && owned.has(artistName, title)) return 'added';
     const job = downloads?.jobs?.find((j) => j.url === url) ?? null;
     if (job?.state === 'done') return 'added';
     if (job?.state === 'queued' || job?.state === 'downloading') return 'adding';
@@ -175,7 +183,7 @@ export function CatalogArtistPage({
   };
 
   const trackRow = (t: CatalogTrack, index: number) => {
-    const state = addState(t.url, t.id);
+    const state = addState(t.url, t.id, t.title);
     return (
       <li key={t.id} className="catalogTrack">
         <span className="catalogTrack__rank">{index + 1}</span>

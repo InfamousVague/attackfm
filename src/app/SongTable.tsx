@@ -6,10 +6,11 @@ import {
   type DataGridRow,
   type DataGridSort,
 } from '@glacier/react';
-import { Clock, ListMusic } from '@glacier/icons';
+import { Clock, ListEnd, ListMusic, ListStart } from '@glacier/icons';
 import { useMemo, useState } from 'react';
 import { useLibrary } from './library.tsx';
 import { AddToPlaylistDialog } from './AddToPlaylist.tsx';
+import { useQueueControls } from './queueControls.tsx';
 import { hasLocalLibrary } from './platform.ts';
 import { useNarrowViewport } from './useNarrowViewport.ts';
 import type { Track } from './tauri.ts';
@@ -123,6 +124,7 @@ export function SongTable({
   // The grid's rows carry the path as their id; the panel wants the track. One
   // index resolves the one back to the other.
   const byPath = useMemo(() => new Map(tracks.map((t) => [t.path, t] as const)), [tracks]);
+  const { playNext, addToQueue, inJam } = useQueueControls();
 
   // A phone has room for the song and its length, and nothing else. Album and
   // the date added are dropped rather than squeezed - the title cell already
@@ -146,18 +148,38 @@ export function SongTable({
                   aria-label={`${row.title as string} actions`}
                   className="songTitleMenuTarget"
                   content={
-                    // One item, not a submenu of every list: the panel it opens
-                    // can search, create and un-add, none of which a nested
-                    // menu of names can do.
-                    <MenuItem
-                      icon={<ListMusic size={15} />}
-                      onSelect={() => {
-                        const track = byPath.get(row.id as string);
-                        if (track) setFiling(track);
-                      }}
-                    >
-                      Add to playlist…
-                    </MenuItem>
+                    <>
+                      <MenuItem
+                        icon={<ListStart size={15} />}
+                        onSelect={() => {
+                          const track = byPath.get(row.id as string);
+                          if (track) playNext(track);
+                        }}
+                      >
+                        Play next
+                      </MenuItem>
+                      <MenuItem
+                        icon={<ListEnd size={15} />}
+                        onSelect={() => {
+                          const track = byPath.get(row.id as string);
+                          if (track) addToQueue(track);
+                        }}
+                      >
+                        {inJam ? 'Add to jam queue' : 'Add to queue'}
+                      </MenuItem>
+                      {/* One item, not a submenu of every list: the panel it opens
+                          can search, create and un-add, none of which a nested
+                          menu of names can do. */}
+                      <MenuItem
+                        icon={<ListMusic size={15} />}
+                        onSelect={() => {
+                          const track = byPath.get(row.id as string);
+                          if (track) setFiling(track);
+                        }}
+                      >
+                        Add to playlist…
+                      </MenuItem>
+                    </>
                   }
                 >
                   <div className="songTitleCell">
@@ -185,7 +207,7 @@ export function SongTable({
             }
           : col,
       ),
-    [onOpenArtist, narrow, byPath],
+    [onOpenArtist, narrow, byPath, playNext, addToQueue, inJam],
   );
 
   const rows: DataGridRow[] = tracks.map((track) => ({

@@ -480,6 +480,12 @@ export function usePluginSettingsSections(): ResolvedSettingsSection[] {
   );
 }
 
+/** The music-import plugin: the one handler that acquires by downloading, and
+ *  so the one the app prefers outright over asking. Surfaces that keep their
+ *  own download flow (the optimistic tap, the queue's progress, autoplay when a
+ *  song lands) check for it by id rather than handing off to the chooser. */
+export const IMPORTER_PLUGIN_ID = 'spotify-import';
+
 /** An acquire handler resolved for the chooser: its id namespaced, its run
  *  wrapped so a throw is logged rather than stranding the surface. */
 export interface ResolvedAcquireHandler {
@@ -542,14 +548,20 @@ function useCollectedAcquireHandlers(): ResolvedAcquireHandler[] {
 
 /** What a surface reads to gate its Add control and fire the action. */
 export interface AcquireValue {
+  /** True when ANY acquire handler is enabled at all (importer, buy, …),
+   *  regardless of a specific target. Surfaces like Discover gate their whole
+   *  presence on this: with no way to acquire anything, there is nothing to
+   *  discover toward. */
+  hasAny: boolean;
   /** True when at least one enabled plugin can service this target. */
   hasHandlers: (target: AcquireTarget) => boolean;
   /** The handlers that can service this target, in registration order. */
   handlersFor: (target: AcquireTarget) => ResolvedAcquireHandler[];
   /**
    * Acquire the target: nothing when no handler can (the surface should have
-   * gated its control on hasHandlers already), the lone handler when exactly
-   * one can, and otherwise a chooser so the user picks.
+   * gated its control on hasHandlers already), the downloader when it can, the
+   * lone handler when exactly one can, and otherwise a chooser so the user
+   * picks.
    */
   acquire: (target: AcquireTarget) => void;
 }
@@ -604,6 +616,15 @@ export function AcquireProvider({ children }: { children: ReactNode }) {
       const list = handlersRef.current.filter((h) => !h.canHandle || h.canHandle(target));
       const only = list[0];
       if (!only) return;
+      // Turning the downloader on IS the answer to "how do you want this?" -
+      // asking again every time is a tap the listener never wants. So when it
+      // can service the target it just runs, and the chooser stays for the case
+      // it cannot (an album on a store, a link it does not understand).
+      const importer = list.find((h) => h.pluginId === IMPORTER_PLUGIN_ID);
+      if (importer) {
+        importer.run(target);
+        return;
+      }
       if (list.length === 1) {
         only.run(target);
         return;
@@ -615,6 +636,7 @@ export function AcquireProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AcquireValue>(
     () => ({
+      hasAny: signature.length > 0,
       hasHandlers: (target) => handlersFor(target).length > 0,
       handlersFor,
       acquire,
@@ -671,6 +693,7 @@ export function AcquireProvider({ children }: { children: ReactNode }) {
 export function useAcquire(): AcquireValue {
   return (
     useContext(AcquireContext) ?? {
+      hasAny: false,
       hasHandlers: () => false,
       handlersFor: () => [],
       acquire: () => {},

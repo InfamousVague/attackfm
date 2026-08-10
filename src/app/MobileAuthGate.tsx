@@ -1,6 +1,6 @@
 import { Banner, Button, Field, Input, Text } from '@glacier/react';
 import { ArrowLeft, Cloud, KeyRound, QrCode, User } from '@glacier/icons';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
   fetchServerInfo,
   normalizeServerUrl,
@@ -9,37 +9,211 @@ import {
   type ServerInfo,
 } from './server.ts';
 import { useServerSession } from './serverSession.tsx';
+import { useRegistry } from './registrySession.tsx';
+import { login as registryLogin, signup as registrySignup } from './registry.ts';
+import { JoinServer } from './JoinServer.tsx';
 import { parsePairPayload } from './pairing.ts';
 import { QrScanner } from './QrScanner.tsx';
 import { isMobile } from './platform.ts';
 import wordmark from '../assets/attack-white.png';
+import { ArtWall } from './ArtWall.tsx';
+
+/** Once the listener chose to skip onboarding, they enter in local mode and are
+ *  not asked again; joining or signing in later lives on the Friends page. */
+const SKIP_KEY = 'attackfm-onboard-skip';
 
 /**
- * The phone's front door.
+ * The phone's front door - identity first.
  *
- * A phone is the listening end of AttackFM - it has no local music folder of
- * its own (see `hasLocalLibrary`), so there is nothing to show until it is
- * pointed at a server. Rather than open on an empty library and bury the one
- * action that matters in Settings, the mobile build gates the whole app behind
- * a sign-in: connect to a server first, then everything else.
+ * The order is the point of the whole re-architecture: a listener makes a
+ * central account BEFORE any server, because an account is who they are and a
+ * server is only where some music happens to live. So a fresh phone opens on
+ * "create your account", not "which server?". From there the paths fan out:
+ * join a server with an invite, sign into one directly (the owner's way), or
+ * skip and use the app locally for now.
  *
- * Desktop is unaffected - it can run on its own library with no server at all,
- * so it never sees this. The gate only stands where a server is the point.
+ * A returning listener with a server session, or one who already chose to skip,
+ * goes straight through - the gate is a first-run step, not a wall that stands
+ * every launch. Desktop, which has its own local library, never sees any of it.
  */
 export function MobileAuthGate({ children }: { children: ReactNode }) {
-  const { session } = useServerSession();
+  const { session: server } = useServerSession();
+  const { session: registry } = useRegistry();
+  const [skipped, setSkipped] = useState(() => {
+    try {
+      return localStorage.getItem(SKIP_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  // Whether to show the direct server sign-in (address + password/QR), reached
+  // from either onboarding step - the owner's way into their own server, and
+  // the path an existing local account still uses.
+  const [connecting, setConnecting] = useState(false);
 
   if (!isMobile) return <>{children}</>;
-  // A stored session is read synchronously, so a returning listener goes
-  // straight to the app. This used to wait on `restoring` and show a splash -
-  // but `restoring` is only ever true when a session was found, so the splash
-  // appeared exactly when the app already had everything it needed to draw,
-  // and it held the launch for a NETWORK round trip (the stream-token
-  // renewal). That renewal now finishes behind the app: the pages it feeds
-  // carry skeletons of their own, so the wait happens shelf by shelf, at full
-  // size, instead of as a blank screen with a spinner on it.
-  if (session) return <>{children}</>;
-  return <ConnectScreen />;
+  // A stored server session is read synchronously, so a returning listener is
+  // in at once, no splash and no onboarding.
+  if (server) return <>{children}</>;
+  // Chose local mode earlier: in, and onboarding never nags again.
+  if (skipped) return <>{children}</>;
+
+  const skip = () => {
+    try {
+      localStorage.setItem(SKIP_KEY, '1');
+    } catch {
+      // Applies for this run; they will just be asked again next launch.
+    }
+    setSkipped(true);
+  };
+
+  if (connecting) return <ConnectScreen onBack={() => setConnecting(false)} />;
+
+  // Identity first: no account yet → make one (or sign in).
+  if (!registry) {
+    return <OnboardAccount onConnectServer={() => setConnecting(true)} onSkip={skip} />;
+  }
+  // Has an identity, no library yet → get one.
+  return <OnboardServer onConnectServer={() => setConnecting(true)} onSkip={skip} />;
+}
+
+/**
+ * Step one: create (or sign into) a central AttackFM account. The first thing
+ * the app asks, because everything else hangs off having an identity.
+ */
+function OnboardAccount({
+  onConnectServer,
+  onSkip,
+}: {
+  onConnectServer: () => void;
+  onSkip: () => void;
+}) {
+  const { apply } = useRegistry();
+  const [mode, setMode] = useState<'create' | 'signin'>('create');
+  const [handle, setHandle] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const ready = handle.trim().length >= 3 && password.length >= 8 && !busy;
+
+  const go = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!ready) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const s = mode === 'create'
+        ? await registrySignup(handle.trim(), password)
+        : await registryLogin(handle.trim(), password);
+      apply(s);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'That did not work.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="loginGate">
+      <ArtWall />
+      <div className="loginGate__hero">
+        <img className="loginGate__mark" src={wordmark} alt="AttackFM" />
+        {/* The front door leads with what the app IS, the way attack.fm does -
+            not with what to do next, which the fields and the button below
+            already say. */}
+        <Text className="loginGate__tag" tone="muted">
+          Lossless audio streaming
+        </Text>
+      </div>
+      <form className="loginGate__form" onSubmit={go}>
+        <Field label="Handle" hint={mode === 'create' ? '3-24 letters, digits, . _ or -' : undefined}>
+          <Input
+            value={handle}
+            onChange={(e) => setHandle(e.currentTarget.value)}
+            placeholder="yourname"
+            aria-label="Handle"
+            leadingIcon={<User size={16} />}
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            autoComplete="username"
+          />
+        </Field>
+        <Field label="Password" hint={mode === 'create' ? 'At least 8 characters.' : undefined}>
+          <Input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.currentTarget.value)}
+            aria-label="Password"
+            leadingIcon={<KeyRound size={16} />}
+            autoComplete={mode === 'create' ? 'new-password' : 'current-password'}
+          />
+        </Field>
+        {error && <Banner tone="danger">{error}</Banner>}
+        <Button type="submit" variant="solid" size="lg" className="loginGate__submit" disabled={!ready}>
+          {busy ? 'Just a moment…' : mode === 'create' ? 'Create account' : 'Sign in'}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="md"
+          onClick={() => {
+            setMode((m) => (m === 'create' ? 'signin' : 'create'));
+            setError(null);
+          }}
+        >
+          {mode === 'create' ? 'I already have an account' : 'Create an account instead'}
+        </Button>
+      </form>
+      <div className="loginGate__alts">
+        <Button variant="ghost" size="sm" onClick={onConnectServer}>
+          Sign into a server directly
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onSkip}>
+          Skip for now
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Step two: with an identity in hand, get a library. Join a server with an
+ * invite, sign into one directly, or skip. Held apart from the account step so
+ * neither screen is a wall of options.
+ */
+function OnboardServer({
+  onConnectServer,
+  onSkip,
+}: {
+  onConnectServer: () => void;
+  onSkip: () => void;
+}) {
+  return (
+    <div className="loginGate">
+      <ArtWall />
+      <div className="loginGate__hero">
+        <img className="loginGate__mark" src={wordmark} alt="AttackFM" />
+        <Text className="loginGate__tag" tone="muted">
+          Now find some music. Join a server you were invited to, or run your own.
+        </Text>
+      </div>
+      <div className="loginGate__form">
+        <JoinServer />
+        <Text tone="subtle" size="sm">
+          No invite yet? Ask a friend who runs a server to send you one, then open their link here.
+        </Text>
+      </div>
+      <div className="loginGate__alts">
+        <Button variant="ghost" size="sm" onClick={onConnectServer}>
+          Sign into a server directly
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onSkip}>
+          Skip for now
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 type Step = 'server' | 'credentials' | 'code';
@@ -52,7 +226,7 @@ type Step = 'server' | 'credentials' | 'code';
  * the phone with a one-time code (scanned or typed) so nobody types a password
  * on a phone keyboard at all.
  */
-function ConnectScreen() {
+function ConnectScreen({ onBack }: { onBack?: () => void }) {
   const [step, setStep] = useState<Step>('server');
   const { connect, applySession } = useServerSession();
 
@@ -107,6 +281,13 @@ function ConnectScreen() {
 
   return (
     <div className="loginGate">
+      <ArtWall />
+      {onBack && step === 'server' && (
+        <button type="button" className="loginGate__back" onClick={onBack}>
+          <ArrowLeft size={15} />
+          <span>Back</span>
+        </button>
+      )}
       <div className="loginGate__hero">
         <img className="loginGate__mark" src={wordmark} alt="AttackFM" />
         <Text className="loginGate__tag" tone="muted">

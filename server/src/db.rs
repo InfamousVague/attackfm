@@ -259,6 +259,19 @@ CREATE TABLE IF NOT EXISTS users (
   created_at   INTEGER NOT NULL
 );
 
+-- The bridge to central identity: a registry account (its id is the token's
+-- `sub`) mapped to the local user row that carries this person's playlists,
+-- favourites and history on THIS server. One row per member. This is how an
+-- invited friend enters under their OWN account instead of the owner's - the
+-- bug this whole re-architecture exists to kill.
+CREATE TABLE IF NOT EXISTS registry_members (
+  registry_sub INTEGER PRIMARY KEY,
+  user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  handle       TEXT NOT NULL DEFAULT '',
+  role         TEXT NOT NULL DEFAULT 'member',   -- 'owner' | 'member'
+  joined_at    INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS tokens (
   token      TEXT PRIMARY KEY,
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -697,6 +710,45 @@ impl Db {
         self.lock()
             .query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0))
             .unwrap_or(0)
+    }
+
+    // --- registry membership -------------------------------------------------
+
+    /// The local user a registry account maps to on this server, if it has
+    /// joined. `(user_id, role)`.
+    pub fn registry_member(&self, sub: i64) -> Option<(i64, String)> {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT user_id, role FROM registry_members WHERE registry_sub = ?1",
+            [sub],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+        .ok()
+        .flatten()
+    }
+
+    /// Bind a registry account to a local user as a member of this server.
+    pub fn add_registry_member(&self, sub: i64, user_id: i64, handle: &str, role: &str) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "INSERT INTO registry_members (registry_sub, user_id, handle, role, joined_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(registry_sub) DO UPDATE SET role = excluded.role, handle = excluded.handle",
+            params![sub, user_id, handle, role, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// Whether this server has any admin at all - false only on a brand-new
+    /// server, where the first person through the door becomes the owner.
+    pub fn has_any_admin(&self) -> bool {
+        let conn = self.lock();
+        conn.query_row("SELECT 1 FROM users WHERE is_admin = 1 LIMIT 1", [], |_| Ok(()))
+            .optional()
+            .ok()
+            .flatten()
+            .is_some()
     }
 
     pub fn create_user(&self, username: &str, pass_hash: &str, is_admin: bool) -> rusqlite::Result<i64> {
@@ -2404,24 +2456,17 @@ impl Db {
 
     // --- discoveries: music not owned yet --------------------------------------
 
-    /// Every "artist|title", lowercased, that this library already holds - the
-    /// filter that keeps a discovery feed from recommending what you own.
-    pub fn owned_keys(&self) -> std::collections::HashSet<String> {
+    /// Every (artist, title) this library holds, raw. Whoever compares them
+    /// owns the folding - the discovery feed matches these against a catalogue
+    /// that spells things differently, and that rule lives with the feed.
+    pub fn owned_names(&self) -> Vec<(String, String)> {
         let conn = self.lock();
-        let Ok(mut stmt) =
-            conn.prepare("SELECT artist, title FROM tracks WHERE deleted = 0")
-        else {
-            return Default::default();
+        let Ok(mut stmt) = conn.prepare("SELECT artist, title FROM tracks WHERE deleted = 0") else {
+            return Vec::new();
         };
-        stmt.query_map([], |r| {
-            Ok(format!(
-                "{}|{}",
-                r.get::<_, String>(0)?.trim().to_lowercase(),
-                r.get::<_, String>(1)?.trim().to_lowercase()
-            ))
-        })
-        .map(|rows| rows.filter_map(Result::ok).collect())
-        .unwrap_or_default()
+        stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
     }
 
     /// Files a harvested candidate. Existing rows keep whatever has already
