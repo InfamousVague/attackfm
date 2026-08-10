@@ -3,6 +3,7 @@ import { ChevronLeft, Search } from '@glacier/icons';
 import { useEffect, useRef } from 'react';
 import type { Track } from './tauri.ts';
 import placeholderArt from '../assets/attack-wave.png';
+import { ImportFromSearch } from './ImportFromSearch.tsx';
 
 // eslint note: SearchField is a plain function, not forwardRef, so the input is
 // reached through the sheet root rather than a ref on the field itself.
@@ -88,10 +89,12 @@ export function MobileSearch({
           className="mobileSearch__field"
           value={query}
           onValueChange={onQueryChange}
-          placeholder="Search songs, artists, albums, lyrics"
-          aria-label="Search songs, artists, albums, lyrics"
+          placeholder="Search, or paste a music link to import"
+          aria-label="Search, or paste a music link to import"
         />
       </header>
+
+      <ImportFromSearch query={query} />
 
       <div className="mobileSearch__results">
         {commands.length > 0 && (

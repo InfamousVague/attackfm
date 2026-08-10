@@ -5,8 +5,10 @@ import { useServerSession } from '../../app/serverSession.tsx';
 import { useLibrary } from '../../app/library.tsx';
 import {
   fetchDiscover,
+  fetchDiscoveries,
   searchCatalog,
   trackIdFromPath,
+  type Discovery,
   type SearchResult,
   type Suggestion,
 } from '../../app/server.ts';
@@ -26,6 +28,12 @@ function suggestionTarget(item: Suggestion): AcquireTarget {
  *  URL for a download. */
 function resultTarget(r: SearchResult): AcquireTarget {
   return { kind: 'track', title: r.title, artist: r.subtitle, url: r.url };
+}
+
+/** An AI pick, as an acquire target: title and artist for a store search, URL
+ *  for a download - the same shape a searched song wears. */
+function discoveryTarget(d: Discovery): AcquireTarget {
+  return { kind: 'track', title: d.title, artist: d.artist, url: d.url };
 }
 
 /**
@@ -172,6 +180,11 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
   const { tracks: libraryTracks } = useLibrary();
   // null while the first fetch is in flight; an array (possibly empty) after.
   const [items, setItems] = useState<Suggestion[] | null>(null);
+  // The server's AI picks: songs you do NOT own, harvested from the artists you
+  // play, each actually read (lyrics embedded, tempo measured) and scored
+  // against your taste. Null until the first fetch answers.
+  const [discoveries, setDiscoveries] = useState<Discovery[] | null>(null);
+  const [discTapped, setDiscTapped] = useState<Record<string, AddState>>({});
   // Cards tapped this session, for the instant before the queue reports the
   // job; the queue's own word (stateFrom) always wins once it has one.
   const [tapped, setTapped] = useState<Record<string, AddState>>({});
@@ -235,6 +248,14 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
       // Unreachable, or an old server without the endpoint: settle to empty so
       // the page shows its empty state rather than spinning forever.
       setItems((prev) => prev ?? []);
+    }
+    // The AI pool grows on the server's own slow clock; a thin answer early is
+    // expected, so a failure just leaves what we had rather than blanking it.
+    try {
+      const feed = await fetchDiscoveries(s);
+      setDiscoveries(feed.items);
+    } catch {
+      setDiscoveries((prev) => prev ?? []);
     }
   }, []);
 
@@ -347,6 +368,41 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
   const soleImporter = (target: AcquireTarget) => {
     const hs = acquire.handlersFor(target);
     return hs.length === 1 && hs[0]?.pluginId === 'spotify-import';
+  };
+
+  /** An AI pick's Add state, the queue's word winning over the optimistic tap. */
+  const discoveryState = (d: Discovery): AddState => {
+    const job = downloads?.jobs?.find((j) => j.url === d.url) ?? null;
+    if (job?.state === 'done') return 'added';
+    if (job?.state === 'queued' || job?.state === 'downloading') return 'adding';
+    return discTapped[d.id] ?? 'idle';
+  };
+  /** Add an AI pick - same path a searched track takes: straight to the queue
+   *  (and armed for autoplay) when the importer is the only way, else the
+   *  chooser. */
+  const addDiscovery = (d: Discovery) => {
+    const target = discoveryTarget(d);
+    if (!acquire.hasHandlers(target)) return;
+    if (!soleImporter(target)) {
+      acquire.acquire(target);
+      return;
+    }
+    if (!downloads) return;
+    const job = downloads.jobs?.find((j) => j.url === d.url) ?? null;
+    if (job && job.state !== 'error') return;
+    setDiscTapped((prev) => ({ ...prev, [d.id]: 'adding' }));
+    void Promise.resolve(downloads.enqueue(d.url))
+      .then((queued) => {
+        setDiscTapped((prev) => ({ ...prev, [d.id]: 'added' }));
+        setPlayWhenAdded(queued.id);
+      })
+      .catch(() => {
+        setDiscTapped((prev) => {
+          const next = { ...prev };
+          delete next[d.id];
+          return next;
+        });
+      });
   };
   const onAddSuggestion = (item: Suggestion) => {
     if (soleImporter(suggestionTarget(item))) add(item);
@@ -486,36 +542,88 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
             })}
           </div>
         )
-      ) : items === null ? (
-        <p className="discoverNote" role="status">
-          Loading suggestions…
-        </p>
-      ) : items.length === 0 ? (
-        <p className="discoverNote">
-          No suggestions right now — check your server connection and try again.
-        </p>
       ) : (
-        sections.map(({ section, items: group }) => (
-          <section key={section} className="discoverSection">
-            <h2 className="discoverSection__title">{section}</h2>
-            <div className="discoverGrid">
-              {group.map((item) => {
-                const d = describe(item);
-                return (
-                  <SuggestionCard
-                    key={item.id}
-                    item={item}
-                    state={d.state}
-                    canAdd={d.canAdd}
-                    progress={d.progress}
-                    onAdd={() => onAddSuggestion(item)}
-                    onOpen={() => setPreview(item)}
-                  />
-                );
-              })}
-            </div>
-          </section>
-        ))
+        <>
+          {/* Picks by your AI: songs you do not own, chosen by your server from
+              what you actually play. Leads the page - it is the reason to open
+              Discover over a chart. */}
+          {discoveries && discoveries.length > 0 && (
+            <section className="discoverSection">
+              <h2 className="discoverSection__title">Picks by your AI</h2>
+              <div className="discoverGrid">
+                {discoveries.slice(0, 18).map((d) => {
+                  const state = discoveryState(d);
+                  const canAdd = acquire.hasHandlers(discoveryTarget(d));
+                  return (
+                    <button
+                      key={d.id}
+                      type="button"
+                      className="resultCard"
+                      data-kind="track"
+                      disabled={!canAdd}
+                      title={canAdd ? undefined : 'No way to add this — enable Music import in Plugins'}
+                      onClick={() => {
+                        const job = downloads?.jobs?.find((j) => j.url === d.url) ?? null;
+                        if (state === 'added') {
+                          const t = importedTrack(job);
+                          if (t) onPlay(t, [t]);
+                        } else if (state === 'adding') {
+                          if (job) setPlayWhenAdded(job.id);
+                        } else {
+                          addDiscovery(d);
+                        }
+                      }}
+                    >
+                      <span className="resultCard__cover" data-kind="track">
+                        {d.cover ? <img src={d.cover} alt="" loading="lazy" /> : <Music size={22} />}
+                      </span>
+                      <span className="resultCard__title">{d.title}</span>
+                      <span className="resultCard__sub">{d.artist}</span>
+                      {d.seed && <span className="resultCard__reason">Because you play {d.seed}</span>}
+                      <span className="resultCard__badge" data-state={state}>
+                        {state === 'added' ? (
+                          <Check size={14} />
+                        ) : state === 'adding' ? (
+                          <span className="resultCard__spin" aria-label="Adding" />
+                        ) : (
+                          <Plus size={14} />
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {items === null && !(discoveries && discoveries.length > 0) ? (
+            <p className="discoverNote" role="status">
+              Loading suggestions…
+            </p>
+          ) : items && items.length > 0 ? (
+            sections.map(({ section, items: group }) => (
+              <section key={section} className="discoverSection">
+                <h2 className="discoverSection__title">{section}</h2>
+                <div className="discoverGrid">
+                  {group.map((item) => {
+                    const d = describe(item);
+                    return (
+                      <SuggestionCard
+                        key={item.id}
+                        item={item}
+                        state={d.state}
+                        canAdd={d.canAdd}
+                        progress={d.progress}
+                        onAdd={() => onAddSuggestion(item)}
+                        onOpen={() => setPreview(item)}
+                      />
+                    );
+                  })}
+                </div>
+              </section>
+            ))
+          ) : null}
+        </>
       )}
 
       {preview && (

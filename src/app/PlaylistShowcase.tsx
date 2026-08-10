@@ -1,5 +1,5 @@
-import { Button, Input, Modal, ScrollArea } from '@glacier/react';
-import { Heart, History, ListMusic, Plus } from '@glacier/icons';
+import { Button, ContextMenu, Input, Modal, MenuItem, ScrollArea, Text } from '@glacier/react';
+import { Heart, History, ListMusic, Plus, Trash2 } from '@glacier/icons';
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { useLibrary } from './library.tsx';
 import { usePlaylists } from './playlists.tsx';
@@ -48,13 +48,41 @@ function MosaicCover({ tracks, fallback, tone }: { tracks: Track[]; fallback: Re
   );
 }
 
-/** One tile: a squircle carrying the iconography, with a plain caption beneath. */
-function Tile({ cover, name, onOpen }: { cover: ReactNode; name: string; onOpen: () => void }) {
-  return (
+/** One tile: a squircle carrying the iconography, with a plain caption beneath.
+ *  A tile that can be deleted wears a context menu - right-click on a desktop,
+ *  long-press on a phone - rather than a delete affordance sitting on the face
+ *  of every playlist waiting to be hit by mistake. The library's own views
+ *  (Liked, Recent) pass no handler and so carry no menu: there is nothing
+ *  there to delete. */
+function Tile({
+  cover,
+  name,
+  onOpen,
+  onDelete,
+}: {
+  cover: ReactNode;
+  name: string;
+  onOpen: () => void;
+  onDelete?: () => void;
+}) {
+  const tile = (
     <button type="button" className="playlistTile" onClick={onOpen}>
       {cover}
       <span className="playlistTileName">{name}</span>
     </button>
+  );
+  if (!onDelete) return tile;
+  return (
+    <ContextMenu
+      aria-label={`${name} actions`}
+      content={
+        <MenuItem icon={<Trash2 size={15} />} onSelect={onDelete}>
+          Delete playlist
+        </MenuItem>
+      }
+    >
+      {tile}
+    </ContextMenu>
   );
 }
 
@@ -113,6 +141,9 @@ export function PlaylistShowcase({
   const [open, setOpen] = useState<string | null>(null);
   // The New Playlist dialog: null closed, otherwise the name being typed.
   const [draftName, setDraftName] = useState<string | null>(null);
+  // The playlist a delete is being confirmed for. Deleting a list is not
+  // undoable, so the menu asks before the store hears about it.
+  const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null);
 
   // Recent stands in as the most recently added until play history is tracked.
   const recent = useMemo(() => [...tracks].sort((a, b) => b.addedAt - a.addedAt).slice(0, 50), [tracks]);
@@ -180,6 +211,7 @@ export function PlaylistShowcase({
                   />
                 }
                 onOpen={() => onOpenPlaylist(playlist.id)}
+                onDelete={() => setDeleting({ id: playlist.id, name: playlist.name })}
               />
             ))}
             <Tile
@@ -202,6 +234,35 @@ export function PlaylistShowcase({
           </div>
         </ScrollArea>
       </section>
+      {deleting && (
+        <Modal
+          open
+          onClose={() => setDeleting(null)}
+          title={`Delete ${deleting.name}?`}
+          size="sm"
+        >
+          <Text tone="muted" size="sm">
+            The songs stay in your library. Only the list goes.
+          </Text>
+          <div className="playlistDeleteActions">
+            <Button variant="ghost" size="sm" onClick={() => setDeleting(null)}>
+              Keep it
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => {
+                remove(deleting.id);
+                setDeleting(null);
+              }}
+            >
+              <Trash2 size={15} />
+              <span>Delete</span>
+            </Button>
+          </div>
+        </Modal>
+      )}
+
       {current && (
         <PlaylistModal
           open={open !== null}

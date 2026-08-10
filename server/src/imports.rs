@@ -27,7 +27,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-const STALL_SECS: u64 = 180;
+// Must stay comfortably above the per-track timeout below: a track allowed
+// 300s to arrive cannot be declared "stalled" at 180s, or the guard kills
+// exactly the slow-but-working download the longer timeout was meant to allow.
+const STALL_SECS: u64 = 420;
 // One at a time. Imports are a rare, human-paced action, and serial filing
 // means two jobs can never race on the same tag-derived destination in the
 // shared music library - the concurrency was never worth that risk.
@@ -51,6 +54,18 @@ fn services() -> Vec<String> {
         .filter(|s| !s.trim().is_empty())
         .map(|s| s.trim().to_string())
         .collect()
+}
+
+/// How long ONE track may take from a provider before SpotiFLAC gives up on
+/// it. The old 120s was tuned for backends answering promptly; when a public
+/// backend is throttling a datacentre address the transfer crawls rather than
+/// refusing, and 120s cut off downloads that would have finished. Raised, and
+/// made settable so the box can be tuned without a rebuild.
+fn per_track_timeout() -> String {
+    std::env::var("AFM_IMPORT_TIMEOUT")
+        .ok()
+        .filter(|s| s.trim().parse::<u32>().is_ok())
+        .unwrap_or_else(|| "300".to_string())
 }
 
 fn quality() -> String {
@@ -591,7 +606,7 @@ async fn run_job(
     args.push("--retries".to_string());
     args.push("2".to_string());
     args.push("--timeout".to_string());
-    args.push("120".to_string());
+    args.push(per_track_timeout());
     // Reliable lossless comes from a configured provider, not the flaky public
     // backends: a self-hosted hifi-api for Tidal, a local API for Qobuz. Both
     // are optional and passed straight through when the operator sets them.

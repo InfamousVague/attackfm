@@ -84,7 +84,7 @@ pub async fn canvas(
         return Ok(Json(json!({ "url": hit })));
     }
 
-    let remote = fetch_canvas(&sp_dc, title, artist).await;
+    let remote = fetch_canvas(&sp_dc, title, artist, &state).await;
 
     // A hit gets kept: fetched once, then owned. Failure to store is not
     // failure to play - the Spotify URL still works for this listen.
@@ -187,8 +187,24 @@ pub async fn media(
 
 /// Runs the Python one-shot, feeding the request (cookie included) on stdin.
 /// Any failure is a quiet `None` - a missing clip must never break playback.
-async fn fetch_canvas(sp_dc: &str, title: &str, artist: &str) -> Option<String> {
-    let req = json!({ "sp_dc": sp_dc, "title": title, "artist": artist }).to_string();
+async fn fetch_canvas(
+    sp_dc: &str,
+    title: &str,
+    artist: &str,
+    state: &AppState,
+) -> Option<String> {
+    // The client secret is optional and only ever used for the track search.
+    // Without it the lookup falls back to the web-player token, which is what
+    // shipped before - so an unconfigured server is no worse off.
+    let client_secret = std::env::var("AFM_SPOTIFY_CLIENT_SECRET").unwrap_or_default();
+    let req = json!({
+        "sp_dc": sp_dc,
+        "title": title,
+        "artist": artist,
+        "client_id": state.spotify_client_id,
+        "client_secret": client_secret,
+    })
+    .to_string();
     let py = std::env::var("AFM_CANVAS_PYTHON").unwrap_or_else(|_| "python3".to_string());
 
     let mut child = tokio::process::Command::new(py)
@@ -311,6 +327,39 @@ def get_token(sp_dc):
     save_cache(cache)
     return tok
 
+def api_token(client_id, client_secret):
+    # A plain client-credentials token, for the SEARCH only.
+    #
+    # The web-player token is minted for open.spotify.com's own pathfinder
+    # calls and is refused (429, "API rate limit exceeded") on the public
+    # /v1 endpoints - measured, not guessed: the same search with an ordinary
+    # token answered instantly while the web token was throttled every time.
+    # So the two jobs get the two different tokens they each want.
+    if not client_id or not client_secret:
+        return None
+    cache = load_cache()
+    now = time.time()
+    if cache.get("api_token") and cache.get("api_token_exp", 0) > now + 60:
+        return cache["api_token"]
+    body = urllib.parse.urlencode({
+        "grant_type": "client_credentials",
+        "client_id": client_id,
+        "client_secret": client_secret,
+    }).encode()
+    try:
+        d = json.load(http("https://accounts.spotify.com/api/token",
+                           headers={"User-Agent": UA,
+                                    "Content-Type": "application/x-www-form-urlencoded"},
+                           data=body))
+    except Exception:
+        return None
+    tok = d.get("access_token")
+    if not tok:
+        return None
+    cache.update(api_token=tok, api_token_exp=now + (d.get("expires_in") or 3600) - 60)
+    save_cache(cache)
+    return tok
+
 def find_track(tok, title, artist):
     q = urllib.parse.quote('track:"%s" artist:"%s"' % (title, artist))
     url = "https://api.spotify.com/v1/search?q=%s&type=track&limit=5" % q
@@ -347,8 +396,16 @@ def main():
         if not sp_dc or not title: out(None)
         tok = get_token(sp_dc)
         if not tok: out(None)
-        tid = find_track(tok, title, artist)
+        # Look the track up with an ordinary API token when one is configured,
+        # falling back to the web token so a server without a client secret
+        # behaves exactly as it did before.
+        search_tok = api_token(req.get("client_id"), req.get("client_secret")) or tok
+        tid = find_track(search_tok, title, artist)
+        if not tid and search_tok is not tok:
+            tid = find_track(tok, title, artist)
         if not tid: out(None)
+        # The canvas query itself MUST use the web-player token; an ordinary
+        # OAuth token is 403'd by pathfinder.
         out(get_canvas(tok, tid))
     except Exception:
         out(None)

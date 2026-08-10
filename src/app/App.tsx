@@ -8,11 +8,12 @@ import {
   TitleBar,
   ToastProvider,
 } from '@glacier/react';
-import { ChevronLeft, ChevronRight, Download, Home, LibraryBig, Search, Settings, Users } from '@glacier/icons';
+import { ChevronLeft, ChevronRight, Compass, Download, LibraryBig, Search, Settings, Users } from '@glacier/icons';
 import { useEffect, useRef, useState } from 'react';
 import { AppearanceProvider } from './appearance.tsx';
 import { LibraryProvider, useLibrary } from './library.tsx';
 import { ServerSessionProvider } from './serverSession.tsx';
+import { RegistrySessionProvider } from './registrySession.tsx';
 import { EqualizerProvider } from './equalizer.tsx';
 import { PlaybackProvider } from './playback.tsx';
 import { PlaybackSyncProvider, useConnect } from './playbackSync.tsx';
@@ -33,13 +34,13 @@ import type { Track } from './tauri.ts';
 import { Player } from './Player.tsx';
 import { ArtistPage } from './ArtistPage.tsx';
 import { PlaylistPage } from './PlaylistPage.tsx';
-import { HomePage } from './HomePage.tsx';
 import { DownloadsPage } from './DownloadsPage.tsx';
 import { SettingsModal } from './SettingsModal.tsx';
 import { PlaylistsProvider } from './playlists.tsx';
 import { LibrarySyncProvider } from './librarySync.tsx';
 import { SongSearch } from './SongSearch.tsx';
 import { LibraryView } from './LibraryView.tsx';
+import { DiscoverPage } from '../plugins/discover/DiscoverPage.tsx';
 import { FriendsPage } from './FriendsPage.tsx';
 import { JamProvider } from './jam.tsx';
 import { MobileAuthGate } from './MobileAuthGate.tsx';
@@ -188,28 +189,37 @@ function PrimaryNav({
   // Home - the same fallback the content host makes - so the lit item never
   // disagrees with what is actually on screen.
   const onPluginPage = pages.some((pg) => pg.key === tab);
-  // Home (the library) is the default: any tab that is not Discovery, Downloads
-  // or a live plugin page falls back to it, so the lit item never disagrees
-  // with what is on screen.
-  const homeActive =
+  // The library is the app's home now: the default tab and the catch for any
+  // tab that is not an explicit destination, so its nav item lights whenever
+  // the library (mixes and all) is what is on screen.
+  const libraryActive =
+    tab === 'library' ||
     tab === 'home' ||
-    (tab !== 'library' && tab !== 'downloads' && tab !== 'friends' && !onPluginPage);
+    (tab !== 'discover' && tab !== 'downloads' && tab !== 'friends' && !onPluginPage);
 
   const primaryItems = (
     <>
-      <NavBarItem
-        icon={<Home size={18} />}
-        label="Home"
-        active={homeActive}
-        onClick={() => onTab('home')}
-      />
+      {/* Library leads: the music you actually own, plus the mixes made from it.
+          Discover sits beside it as the place you go to find what you do NOT
+          have - and only appears with an importer to add through. */}
       <NavBarItem
         icon={<LibraryBig size={18} />}
         label="Library"
-        active={tab === 'library'}
+        active={libraryActive}
         onClick={() => onTab('library')}
       />
       {hasDownloads && (
+        <NavBarItem
+          icon={<Compass size={18} />}
+          label="Discover"
+          active={tab === 'discover'}
+          onClick={() => onTab('discover')}
+        />
+      )}
+      {/* The bar (phone) keeps Downloads inline with the other tabs. The rail
+          (desktop) instead anchors the queue button to its foot, by Settings -
+          see the `end` slot below - so it is not moved here. */}
+      {hasDownloads && variant === 'bar' && (
         <NavBarItem
           icon={<Download size={18} />}
           label="Downloads"
@@ -242,7 +252,17 @@ function PrimaryNav({
         aria-label="Primary"
         className="appNavRail"
         end={
-          <NavBarItem icon={<Settings size={18} />} label="Settings" onClick={onSettings} />
+          <div className="appNavRail__foot">
+            {/* The importer's download queue, anchored to the foot of the rail
+                just above Settings. Empty (and invisible) when no importer is
+                running, so the foot is only ever Settings in that case. */}
+            {hasDownloads && (
+              <div className="appNavRail__downloads">
+                <PluginSlot id="titlebar-end" />
+              </div>
+            )}
+            <NavBarItem icon={<Settings size={18} />} label="Settings" onClick={onSettings} />
+          </div>
         }
       >
         {primaryItems}
@@ -388,14 +408,26 @@ function AppMain({
           onOpenArtist={onOpenArtist}
           onOpenPlaylist={onOpenPlaylist}
         />
+      ) : tab === 'discover' && hasDownloads ? (
+        // Discover: what you do NOT have - the server's curated charts and a
+        // live search across Spotify + Deezer, each a one-tap add. Gated on an
+        // importer being present, so a server with nothing to add through (and
+        // any App-Review build) never surfaces it.
+        <DiscoverPage onPlay={onPlay} onOpenArtist={onOpenArtist} />
       ) : tab === 'friends' ? (
         // Friends: who you know on this server, and the asks in flight.
         <FriendsPage />
       ) : tab === 'downloads' && hasDownloads ? (
         <DownloadsPage />
       ) : (
-        // Home (the default): the curator's mixes and the "worth adding" finds.
-        <HomePage onPlay={onPlay} onOpenArtist={onOpenArtist} />
+        // The default is the Library now, and it carries the personalized mixes
+        // (folded in from the old Home) above the shelves of what you own.
+        <LibraryView
+          view={libraryView}
+          onPlay={onPlay}
+          onOpenArtist={onOpenArtist}
+          onOpenPlaylist={onOpenPlaylist}
+        />
       )}
     </main>
   );
@@ -566,6 +598,11 @@ export function App() {
                 below rather than blend two libraries together. It also sits
                 above the plugin registry, which filters server-backed plugins
                 (the importer on a phone) on the live session. */}
+            {/* Identity is the outer layer: who you are (a central registry
+                account) sits above which library you are playing from (a
+                server session), because an account can exist with no server
+                and a server is reached by an account. */}
+            <RegistrySessionProvider>
             <ServerSessionProvider>
             {/* The phone's front door: with no local library of its own, a
                 mobile build gates the whole app behind a server sign-in and
@@ -842,6 +879,7 @@ export function App() {
             </PluginsProvider>
             </MobileAuthGate>
             </ServerSessionProvider>
+            </RegistrySessionProvider>
           </AppearanceProvider>
         </ToastProvider>
       </HapticsProvider>

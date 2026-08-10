@@ -1,0 +1,25 @@
+[Unit]
+Description=AttackFM identity registry - the central account directory.
+After=network.target
+
+[Service]
+Type=simple
+User=attackfm
+Group=attackfm
+# Loopback only; Caddy fronts registry.attack.fm and terminates TLS.
+Environment=AFM_REGISTRY_BIND=127.0.0.1
+# 8788 is the main music server, 8790 the review instance's backend; the
+# registry sits clear of both at 8795 (Caddy fronts registry.attack.fm to it).
+Environment=AFM_REGISTRY_PORT=8795
+Environment=AFM_REGISTRY_DATA=/opt/attackfm/registry/registry.sqlite3
+ExecStart=/opt/attackfm/bin/attackfm-registry
+Restart=on-failure
+# The registry catches SIGTERM via ctrl_c handling; give it a moment to drain.
+TimeoutStopSec=10
+# Light hardening: it needs only its own data dir writable.
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/attackfm/registry
+
+[Install]
+WantedBy=multi-user.target

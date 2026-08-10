@@ -645,12 +645,19 @@ img {
 }
 
 /* The right-click wrapper the strip's artwork square hands its size to. It
-   stands between the square and whichever view is worn (disc or flat cover),
-   so it passes the square's height straight through. */
+   stands between the square and whichever view is worn (disc or flat cover).
+   It states its OWN square - height from the row, width from its own ratio -
+   rather than asking for 100% of the kit's artwork box, because that box is
+   itself `width:auto` + aspect-ratio waiting on its content: two elements each
+   sizing off the other. Chromium settles that loop square; Safari (the engine
+   every Tauri window runs) can settle it narrow, which showed up as the disc
+   clipped off-centre in the desktop strip. A wrapper with a definite square
+   ends the negotiation in every engine - the kit box just shrink-wraps it. */
 .artViewTarget {
   display: block;
-  width: 100%;
-  height: 100%;
+  block-size: 100%;
+  inline-size: auto;
+  aspect-ratio: 1;
 }
 
 /* The flat view: the cover as the square always used to wear it. Sized here
@@ -1002,6 +1009,23 @@ img {
   flex: none;
   inline-size: 3rem;
   block-size: 3rem;
+}
+
+/* The rail's foot: the download queue button stacked above Settings, both
+   pinned to the bottom by the kit's own `end` region. A column so the two sit
+   one over the other, centred to the rail's icon width. */
+.appNavRail__foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}
+
+/* The importer's trigger is an IconButton, not a NavBarItem, so it centres
+   itself in the 3rem cell the rail gives every button. */
+.appNavRail__downloads {
+  display: flex;
+  justify-content: center;
 }
 
 /* The progressive blur behind the nav. A stack of blur layers, each masked to
@@ -1907,7 +1931,9 @@ img {
    button; the hover lift is the same the playlist tiles wear. */
 .trackCard {
   flex: none;
-  inline-size: 9.5rem;
+  /* Two thirds of the old 9.5rem: more of the shelf visible at a glance,
+     which is what a shelf is for. */
+  inline-size: 6.35rem;
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-1);
@@ -2200,7 +2226,8 @@ img {
    the shape that reads "person" the way a square reads "release". */
 .artistCard {
   flex: none;
-  inline-size: 8rem;
+  /* Two thirds of the old 8rem, matching the square cards' reduction. */
+  inline-size: 5.35rem;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2241,7 +2268,9 @@ img {
    These are the page's hero objects. */
 .mixCard {
   flex: none;
-  inline-size: 13rem;
+  /* Two thirds, with the album cards it sits beside - a mosaic of four covers
+     is still a cover, and left at full size it dwarfed the shrunken shelf. */
+  inline-size: 8.7rem;
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-1);
@@ -2360,8 +2389,9 @@ img {
   gap: var(--glacier-space-1);
   flex: 0 0 auto;
   /* The same footprint as every other card on the page (.trackCard): the
-     playlists are peers of the shelves, not a runt row of chips. */
-  width: 9.5rem;
+     playlists are peers of the shelves, not a runt row of chips. Moves with
+     it, so the two never drift apart. */
+  width: 6.35rem;
   padding: 0;
   background: none;
   border: none;
@@ -2551,6 +2581,18 @@ img {
     inline-size: 100%;
     max-inline-size: none;
   }
+}
+
+/* The downloads queue is a wall of moving progress bars and track lists; read
+   through the kit's frosted-glass popover, whatever scrolls behind it muddies
+   it. So this one panel is opaque - a solid raised surface, blur off - while
+   every other popover keeps the glass. Scoped by the panel that actually holds
+   the queue, so nothing else is affected, and done from the app rather than the
+   plugin so it needs no republish. */
+body [class*='_panel_']:has(> .dlPanel) {
+  background: var(--glacier-surface-raised, var(--glacier-surface)) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 /* The chooser the overflow opens on: three rows, each a doorway to its panel.
@@ -5083,6 +5125,79 @@ img {
   flex: 1;
 }
 
+/* A pasted music link, caught by a search field and handed to the queue.
+   Tinted like the update banner so it reads as "something is happening"
+   rather than as a search result. */
+.searchImport {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3);
+  margin-block-start: var(--glacier-space-2);
+  border: 1px solid var(--glacier-accent-6);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-accent-2);
+}
+
+.searchImport__body {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ---- Registry: account setup + friends --------------------------------- */
+
+.registrySetup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-4);
+}
+
+.registrySetup__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  max-inline-size: 26rem;
+  margin-inline: auto;
+  inline-size: 100%;
+}
+
+.registrySetup__submit {
+  margin-block-start: var(--glacier-space-1);
+}
+
+.registryFriends {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-4);
+}
+
+.registryFriends__me {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+}
+
+.registryFriends__invite {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.registryFriends__inviteLink {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.registryFriends__inviteLink > :first-child {
+  flex: 1;
+  min-inline-size: 0;
+}
+
 /* ---- Plugins: updates, browse, sources --------------------------------- */
 
 /* The update notice sits above the tabs, tinted so it reads as news rather
@@ -5709,7 +5824,7 @@ button.artistAlbum {
   flex-direction: column;
   align-items: flex-start;
   gap: var(--glacier-space-1);
-  inline-size: 8.5rem;
+  inline-size: 5.7rem;
   flex: none;
   background: none;
   border: none;
@@ -5723,8 +5838,8 @@ button.artistAlbum {
 .artistPlaylistCover {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  inline-size: 8.5rem;
-  block-size: 8.5rem;
+  inline-size: 5.7rem;
+  block-size: 5.7rem;
   border-radius: var(--glacier-radius-lg);
   overflow: hidden;
   background: var(--glacier-surface-sunken);
@@ -5993,4 +6108,26 @@ button.artistAlbum {
   inline-size: 100%;
   block-size: 100%;
   object-fit: cover;
+}
+
+/* The delete-playlist confirmation's buttons: pushed to the end so the
+   destructive one is not where a thumb rests by default. */
+.playlistDeleteActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--glacier-space-2);
+  margin-block-start: var(--glacier-space-4);
+}
+
+/* The AI pick's rationale line - "Because you play X" - under the artist on a
+   Discover card. Quiet, and clamped to two lines so a long seed name can't
+   stretch the card. */
+.resultCard__reason {
+  font-size: 0.72rem;
+  line-height: 1.3;
+  color: color-mix(in srgb, var(--glacier-fg, #fff) 55%, transparent);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }

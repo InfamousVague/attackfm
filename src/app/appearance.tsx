@@ -32,7 +32,13 @@ function deepenRamp(steps: string[], amount: number): string[] {
 const DEFAULT_ACCENT = 'attack';
 
 const DEFAULT_APPEARANCE: Appearance = {
-  theme: 'system',
+  // Dark, not the OS preference. A music library is artwork on a dark wall -
+  // the whole surface is built around covers glowing out of near-black, and a
+  // listener whose phone happens to be in light mode should not meet a
+  // different app than everyone else. Light is still one tap away in Settings,
+  // and a listener who has chosen it keeps it: this is only the value a fresh
+  // install starts from.
+  theme: 'dark',
   accent: DEFAULT_ACCENT,
   density: 'comfortable',
 };

@@ -17,6 +17,32 @@ import { createContext, useContext } from 'react';
  * the importer plugin.
  */
 
+const MAGNET_RE = /^magnet:/i;
+
+/**
+ * Whether a pasted string is a music-service link AttackFM can import:
+ * Spotify (URI + web), Apple Music, Tidal, Deezer, YT Music, Qobuz. Magnets
+ * are explicitly excluded.
+ *
+ * Lives on the seam rather than inside the importer because both sides need
+ * it now: the plugin decides whether to offer the palette command, and the
+ * app's own search fields turn a pasted link into an import without the user
+ * having to know which surface handles downloads.
+ */
+export function isMusicImportLink(value: string): boolean {
+  const v = value.trim().toLowerCase();
+  if (!v || MAGNET_RE.test(v)) return false;
+  return (
+    v.startsWith('spotify:') ||
+    /\bopen\.spotify\.com\//.test(v) ||
+    /\bmusic\.apple\.com\//.test(v) ||
+    /\b(?:listen\.)?tidal\.com\//.test(v) ||
+    /\bdeezer\.com\//.test(v) ||
+    /\bmusic\.youtube\.com\//.test(v) ||
+    /\b(?:open|play)\.qobuz\.com\//.test(v)
+  );
+}
+
 /** A queued/running/finished music import, mirroring the Rust `MusicImportJob`. */
 export type MusicImportState = 'queued' | 'downloading' | 'done' | 'error';
 

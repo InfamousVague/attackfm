@@ -41,6 +41,15 @@ const CATALOG: &[(&str, &str)] = &[
     ("37i9dQZF1DX4SBhb3fqCJd", "By genre"), // Are & Be (R&B)
     ("37i9dQZF1DX4dyzvuaRJ0n", "By genre"), // mint (dance/electronic)
     ("37i9dQZF1DWWQRwui0ExPn", "By genre"), // Lorem (indie)
+    // New & rising - what just dropped, and who is on the way up.
+    ("37i9dQZF1DX4JAvHpjipBk", "New releases"), // New Music Friday
+    ("37i9dQZF1DWUa8ZRTfalHk", "New releases"), // Pop Rising
+    ("37i9dQZF1DWWjGdmeTyeJ6", "New releases"), // Fresh Finds
+    // Moods - a run to put on for a whole afternoon.
+    ("37i9dQZF1DX4WYpdgoIcn6", "Moods"), // Chill Hits
+    ("37i9dQZF1DX4sWSpwq3LiO", "Moods"), // Peaceful Piano
+    ("37i9dQZF1DX76Wlfdnj7AP", "Moods"), // Beast Mode
+    ("37i9dQZF1DWTwnEm1IYyoj", "Moods"), // Soft Pop Hits
     // By decade
     ("37i9dQZF1DX4UtSsGT1Sbe", "By decade"), // All Out 80s
     ("37i9dQZF1DXbTxeAdrVG2l", "By decade"), // All Out 90s

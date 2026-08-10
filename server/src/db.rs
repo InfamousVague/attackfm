@@ -576,6 +576,70 @@ CREATE TABLE IF NOT EXISTS friendships (
   PRIMARY KEY (a_id, b_id)
 );
 CREATE INDEX IF NOT EXISTS friendships_b ON friendships(b_id);
+
+-- The registry: identities that outlive any one server.
+--
+-- Everything above this line is about accounts on THIS box. A registry
+-- account is the other thing: a handle a person claims once and carries
+-- between instances, so two people who each run their own AttackFM can find
+-- each other at all. It is deliberately a separate table from `users` - the
+-- same person has a local login AND a handle, and conflating them would mean
+-- your friends list broke every time you moved servers.
+CREATE TABLE IF NOT EXISTS registry_accounts (
+  id         INTEGER PRIMARY KEY,
+  handle     TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  pass_hash  TEXT NOT NULL,
+  -- Where this person's library answers, announced by their own app. Empty
+  -- until they have announced once; a friend with no address can be added
+  -- but not reached.
+  server_url TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  seen_at    INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS registry_tokens (
+  token      TEXT PRIMARY KEY,
+  account_id INTEGER NOT NULL REFERENCES registry_accounts(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS registry_tokens_account ON registry_tokens(account_id);
+
+CREATE TABLE IF NOT EXISTS registry_requests (
+  id         INTEGER PRIMARY KEY,
+  from_id    INTEGER NOT NULL REFERENCES registry_accounts(id) ON DELETE CASCADE,
+  to_id      INTEGER NOT NULL REFERENCES registry_accounts(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  UNIQUE(from_id, to_id)
+);
+CREATE INDEX IF NOT EXISTS registry_requests_to ON registry_requests(to_id);
+
+-- One row per pair, lower id first. `a_shares`/`b_shares` are what each side
+-- has agreed to hand the other, as a comma-separated set of
+-- catalog|playlists|liked|stats - stored per DIRECTION, because sharing is
+-- not symmetric: letting someone into your library is not agreeing to be in
+-- theirs.
+CREATE TABLE IF NOT EXISTS registry_friendships (
+  a_id     INTEGER NOT NULL REFERENCES registry_accounts(id) ON DELETE CASCADE,
+  b_id     INTEGER NOT NULL REFERENCES registry_accounts(id) ON DELETE CASCADE,
+  since    INTEGER NOT NULL,
+  a_shares TEXT NOT NULL DEFAULT '',
+  b_shares TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (a_id, b_id)
+);
+CREATE INDEX IF NOT EXISTS registry_friendships_b ON registry_friendships(b_id);
+
+-- What a person's library looks like from outside, refreshed when their app
+-- announces. Cached here so a friends list can show every friend's numbers
+-- without waking every friend's server.
+CREATE TABLE IF NOT EXISTS registry_stats (
+  account_id INTEGER PRIMARY KEY REFERENCES registry_accounts(id) ON DELETE CASCADE,
+  songs      INTEGER NOT NULL DEFAULT 0,
+  playlists  INTEGER NOT NULL DEFAULT 0,
+  liked      INTEGER NOT NULL DEFAULT 0,
+  artists    INTEGER NOT NULL DEFAULT 0,
+  bytes      INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL DEFAULT 0
+);
 "#;
 
 fn now_ms() -> i64 {

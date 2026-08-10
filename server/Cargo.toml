@@ -1,9 +1,20 @@
+# This package is also the workspace root. The music server, the shared identity
+# crate (the token contract), and the registry service build together so a
+# change to the token format cannot land on one side without the other.
+[workspace]
+members = ["crates/identity", "crates/registry"]
+resolver = "2"
+
 [package]
 name = "attackfm-server"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+# The identity token contract: verify a registry-issued token offline, with no
+# call back to the registry, so a server keeps working when the directory blips.
+afm-identity = { path = "crates/identity" }
+
 axum = { version = "0.8", features = ["multipart", "ws"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "signal", "fs", "io-util", "process"] }
 tower = "0.5"

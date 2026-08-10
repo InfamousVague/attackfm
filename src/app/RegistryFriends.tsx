@@ -1,0 +1,323 @@
+//! Friends, the central-identity way.
+//!
+//! A friend here is a person, not a row on one server: the friendship lives in
+//! the registry, so it holds whichever server either of you is on. This is also
+//! where an account is CREATED - the first thing the app asks of a listener who
+//! has none, and (per the onboarding) the place they are sent to set one up so
+//! a server owner can invite them.
+//!
+//! Two faces, chosen by whether an identity exists:
+//!   - none: create an account (or sign in to an existing one).
+//!   - signed in: the friends graph, adding by handle, and - if you run a
+//!     server - minting an invite link to it.
+
+import { Button, Input, Field, Spinner, Text } from '@glacier/react';
+import { Check, UserPlus, X, LogOut, Link2, Copy } from '@glacier/icons';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { EmptyArt } from './EmptyArt.tsx';
+import { useRegistry } from './registrySession.tsx';
+import { useServerSession } from './serverSession.tsx';
+import {
+  acceptFriendRequest,
+  announce,
+  createInvite,
+  declineFriendRequest,
+  fetchFriends,
+  inviteLink,
+  login,
+  removeFriend,
+  sendFriendRequest,
+  signup,
+  type FriendsFeed,
+} from './registry.ts';
+
+export function RegistryFriends() {
+  const { session, account, apply, signOut } = useRegistry();
+  if (!session || !account) return <AccountSetup onDone={apply} />;
+  return <FriendsGraph token={session.token} me={account.handle} onSignOut={signOut} />;
+}
+
+// --- account setup ----------------------------------------------------------
+
+function AccountSetup({ onDone }: { onDone: (s: import('./registry.ts').RegistrySession) => void }) {
+  const [mode, setMode] = useState<'create' | 'signin'>('create');
+  const [handle, setHandle] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const ready = handle.trim().length >= 3 && password.length >= 8 && !busy;
+
+  const go = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!ready) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const s = mode === 'create' ? await signup(handle.trim(), password) : await login(handle.trim(), password);
+      onDone(s);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'That did not work.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="registrySetup">
+      <div className="emptyState">
+        <EmptyArt name="friends" />
+        <p className="emptyState__text">
+          {mode === 'create'
+            ? 'Create your AttackFM account to add friends and be invited to their servers. One account works everywhere.'
+            : 'Sign in to your AttackFM account.'}
+        </p>
+      </div>
+      <form className="registrySetup__form" onSubmit={go}>
+        <Field label="Handle" hint={mode === 'create' ? '3-24 letters, digits, . _ or -' : undefined}>
+          <Input
+            value={handle}
+            onChange={(e) => setHandle(e.currentTarget.value)}
+            placeholder="yourname"
+            aria-label="Handle"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            autoComplete="username"
+          />
+        </Field>
+        <Field label="Password" hint={mode === 'create' ? 'At least 8 characters.' : undefined}>
+          <Input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.currentTarget.value)}
+            aria-label="Password"
+            autoComplete={mode === 'create' ? 'new-password' : 'current-password'}
+          />
+        </Field>
+        {error && <Text tone="danger" size="sm">{error}</Text>}
+        <Button type="submit" variant="solid" size="lg" disabled={!ready} className="registrySetup__submit">
+          {busy ? 'Just a moment…' : mode === 'create' ? 'Create account' : 'Sign in'}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setMode((m) => (m === 'create' ? 'signin' : 'create'));
+            setError(null);
+          }}
+        >
+          {mode === 'create' ? 'I already have an account' : 'Create an account instead'}
+        </Button>
+      </form>
+    </div>
+  );
+}
+
+// --- the friends graph ------------------------------------------------------
+
+function FriendsGraph({ token, me, onSignOut }: { token: string; me: string; onSignOut: () => void }) {
+  const { session: server } = useServerSession();
+  const [feed, setFeed] = useState<FriendsFeed | null>(null);
+  const [handle, setHandle] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
+  const [invite, setInvite] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      setFeed(await fetchFriends(token));
+    } catch {
+      // Unreachable right now; whatever is on screen stays.
+    }
+  }, [token]);
+
+  useEffect(() => {
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 20_000);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
+
+  // Let friends see where this account's library is and how big, once, when
+  // both an identity and a server are in hand.
+  const announced = useRef(false);
+  useEffect(() => {
+    if (announced.current || !server) return;
+    announced.current = true;
+    void announce(token, { serverUrl: server.url }).catch(() => {
+      announced.current = false;
+    });
+  }, [token, server]);
+
+  const act = async (run: () => Promise<void>, ok?: string) => {
+    setBusy(true);
+    setNote(null);
+    try {
+      await run();
+      if (ok) setNote({ tone: 'ok', text: ok });
+      await refresh();
+    } catch (error) {
+      setNote({ tone: 'bad', text: error instanceof Error ? error.message : 'That did not work.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const add = (e: FormEvent) => {
+    e.preventDefault();
+    const wanted = handle.trim();
+    if (!wanted || busy) return;
+    void act(async () => {
+      const { message } = await sendFriendRequest(token, wanted);
+      setHandle('');
+      setNote({ tone: 'ok', text: message });
+    });
+  };
+
+  const makeInvite = async () => {
+    if (!server) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      const { code } = await createInvite(token, server.url, server.username ? `${server.username}'s AttackFM` : 'AttackFM');
+      setInvite(inviteLink(code));
+      setCopied(false);
+    } catch (error) {
+      setNote({ tone: 'bad', text: error instanceof Error ? error.message : 'Could not make an invite.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const friends = feed?.friends ?? [];
+  const incoming = feed?.incoming ?? [];
+  const outgoing = feed?.outgoing ?? [];
+
+  return (
+    <div className="registryFriends">
+      <div className="registryFriends__me">
+        <Text size="sm" tone="muted">
+          Signed in as <strong>{me}</strong>
+        </Text>
+        <Button variant="ghost" size="sm" onClick={onSignOut}>
+          <LogOut size={14} /> Sign out
+        </Button>
+      </div>
+
+      <form className="friendsAdd" onSubmit={add}>
+        <Input
+          className="friendsAdd__field"
+          value={handle}
+          onChange={(e) => setHandle(e.currentTarget.value)}
+          placeholder="Add a friend by handle"
+          aria-label="Add a friend by handle"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+        />
+        <Button type="submit" variant="solid" size="sm" disabled={busy || handle.trim() === ''}>
+          {busy ? <Spinner size="sm" aria-label="" /> : <UserPlus size={15} />}
+          <span>Add</span>
+        </Button>
+      </form>
+
+      {server && (
+        <div className="registryFriends__invite">
+          <Button variant="outline" size="sm" onClick={() => void makeInvite()} disabled={busy}>
+            <Link2 size={15} /> Invite a friend to your server
+          </Button>
+          {invite && (
+            <div className="registryFriends__inviteLink">
+              <Input readOnly value={invite} aria-label="Invite link" onFocus={(e) => e.currentTarget.select()} />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(invite).then(() => setCopied(true)).catch(() => {});
+                }}
+              >
+                <Copy size={14} /> {copied ? 'Copied' : 'Copy'}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {note && (
+        <p className={`friendsNote friendsNote--${note.tone}`} role="status">
+          {note.text}
+        </p>
+      )}
+
+      {incoming.length > 0 && (
+        <section className="homeShelf">
+          <h2 className="homeShelfTitle">Wants to be friends</h2>
+          <ul className="friendList">
+            {incoming.map((r) => (
+              <li key={r.id} className="friendRow">
+                <span className="friendRow__avatar" aria-hidden>{r.handle.slice(0, 1).toUpperCase()}</span>
+                <span className="friendRow__name">{r.handle}</span>
+                <span className="friendRow__actions">
+                  <Button variant="solid" size="sm" disabled={busy} onClick={() => void act(() => acceptFriendRequest(token, r.id))}>
+                    <Check size={15} /> <span>Accept</span>
+                  </Button>
+                  <Button variant="ghost" size="sm" disabled={busy} aria-label={`Decline ${r.handle}`} onClick={() => void act(() => declineFriendRequest(token, r.id))}>
+                    <X size={15} />
+                  </Button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {outgoing.length > 0 && (
+        <section className="homeShelf">
+          <h2 className="homeShelfTitle">Asked</h2>
+          <ul className="friendList">
+            {outgoing.map((r) => (
+              <li key={r.id} className="friendRow">
+                <span className="friendRow__avatar" aria-hidden>{r.handle.slice(0, 1).toUpperCase()}</span>
+                <span className="friendRow__name">{r.handle}</span>
+                <span className="friendRow__actions">
+                  <Text tone="muted" size="sm">Waiting</Text>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section className="homeShelf">
+        <h2 className="homeShelfTitle">Friends{friends.length > 0 ? ` · ${friends.length}` : ''}</h2>
+        {friends.length === 0 ? (
+          <div className="emptyState">
+            <EmptyArt name="friends" />
+            <p className="emptyState__text">
+              Nobody yet. Add someone by their handle, and they show up here once they say yes.
+            </p>
+          </div>
+        ) : (
+          <ul className="friendList">
+            {friends.map((f) => (
+              <li key={f.id} className="friendRow">
+                <span className="friendRow__avatar" aria-hidden>{f.handle.slice(0, 1).toUpperCase()}</span>
+                <span className="friendRow__name">
+                  {f.handle}
+                  {f.songs > 0 && <span className="jamRow__count"> · {f.songs.toLocaleString()} songs</span>}
+                </span>
+                <span className="friendRow__actions">
+                  <Button variant="ghost" size="sm" disabled={busy} onClick={() => void act(() => removeFriend(token, f.id))}>
+                    Remove
+                  </Button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+}

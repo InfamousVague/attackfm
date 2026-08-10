@@ -1,0 +1,14 @@
+[package]
+name = "afm-identity"
+version = "0.1.0"
+edition = "2021"
+
+# The one thing the registry and every music server must agree on: the shape of
+# an identity token and how to check it. Kept tiny and dependency-light so both
+# sides can pull it in without dragging a web framework along.
+[dependencies]
+ed25519-dalek = { version = "2", default-features = false, features = ["std", "rand_core"] }
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"

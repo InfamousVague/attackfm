@@ -20,9 +20,10 @@ import { ShelfSkeleton } from './ShelfSkeleton.tsx';
 import { PlaylistModal } from './PlaylistModal.tsx';
 import { useAcquire } from '../plugins/runtime.tsx';
 import { EmptyArt } from './EmptyArt.tsx';
-import { useDownloadsOptional } from '../plugins/importsBridge.ts';
+import { isMusicImportLink, useDownloadsOptional } from '../plugins/importsBridge.ts';
 import type { Track } from './tauri.ts';
 import placeholderArt from '../assets/attack-wave.png';
+import { ImportFromSearch } from './ImportFromSearch.tsx';
 
 /**
  * The front door. A greeting, then shelves: the mixes made from the
@@ -121,11 +122,16 @@ function Shelf({ title, children, count }: { title: string; children: React.Reac
 export function HomePage({
   onPlay,
   onOpenArtist,
+  embedded = false,
 }: {
   /** Called with the opened track and the shelf it came from as the queue. */
   onPlay: (track: Track, queue: Track[]) => void;
   /** Opens an artist's page - the Top artists shelf links through here. */
   onOpenArtist: (artist: string) => void;
+  /** Rendered inside another page (the Library tab): drop the greeting and the
+   *  page's own search field - the host carries both - and show just the
+   *  personalized shelves, so the mixes fold into Library above what you own. */
+  embedded?: boolean;
 }) {
   const { tracks, favoriteTracks } = useLibrary();
   const { session } = useServerSession();
@@ -309,7 +315,10 @@ export function HomePage({
   const quiet =
     recent.length === 0 && heavy.length === 0 && mixes.length === 0 && jumpBack.length === 0;
 
-  const searching = query.trim().length > 0;
+  // A pasted link is an instruction, not a search term: no library contains
+  // the text of a URL, so running it as a query could only ever answer "no
+  // results" underneath the import that is already happening.
+  const searching = query.trim().length > 0 && !isMusicImportLink(query);
   const results = useMemo(
     () => (searching ? filterTracks(tracks, query) : []),
     [searching, tracks, query],
@@ -326,30 +335,35 @@ export function HomePage({
   const anySkeleton = skelFeed || skelCurator || skelFound;
 
   return (
-    <div className="homePage">
-      <header className="homeGreeting">
-        <div className="homeGreeting__text">
-          <h1 className="homeGreetingTitle">
-            {greetingFor(hour)}
-            {name ? `, ${name}` : ''}
-          </h1>
-          <Text tone="muted" size="sm">
-            {quiet
-              ? 'Play a few songs and this page starts learning what you like.'
-              : feed?.ai
-                ? 'Mixed for you by your own server.'
-                : 'Made from your listening.'}
-          </Text>
-        </div>
-      </header>
+    <div className={embedded ? 'homeMixes' : 'homePage'}>
+      {!embedded && (
+        <>
+          <header className="homeGreeting">
+            <div className="homeGreeting__text">
+              <h1 className="homeGreetingTitle">
+                {greetingFor(hour)}
+                {name ? `, ${name}` : ''}
+              </h1>
+              <Text tone="muted" size="sm">
+                {quiet
+                  ? 'Play a few songs and this page starts learning what you like.'
+                  : feed?.ai
+                    ? 'Mixed for you by your own server.'
+                    : 'Made from your listening.'}
+              </Text>
+            </div>
+          </header>
 
-      <SearchField
-        className="pageSearch"
-        value={query}
-        onValueChange={setQuery}
-        placeholder="Search your library"
-        aria-label="Search your library"
-      />
+          <SearchField
+            className="pageSearch"
+            value={query}
+            onValueChange={setQuery}
+            placeholder="Search, or paste a music link to import"
+            aria-label="Search, or paste a music link to import"
+          />
+          <ImportFromSearch query={query} />
+        </>
+      )}
 
       {searching ? (
         results.length > 0 ? (

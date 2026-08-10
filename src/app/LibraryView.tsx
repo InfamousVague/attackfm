@@ -5,6 +5,7 @@ import { useLibrary } from './library.tsx';
 import { usePlaylists } from './playlists.tsx';
 import { ShelfSkeleton } from './ShelfSkeleton.tsx';
 import { PlaylistShowcase } from './PlaylistShowcase.tsx';
+import { HomePage } from './HomePage.tsx';
 import { EmptyArt } from './EmptyArt.tsx';
 import { SongTable } from './SongTable.tsx';
 import type { Track } from './tauri.ts';
@@ -329,6 +330,12 @@ export function LibraryView({
         </>
       ) : view === 'summary' ? (
         <>
+          {/* The personalized mixes, folded in from the old Home: what the
+              server made from your listening, above the shelves of what you
+              own. Renders its own shelves and skeletons; empty and silent on a
+              local library with no server to read a history from. */}
+          <HomePage embedded onPlay={onPlay} onOpenArtist={onOpenArtist} />
+
           {/* The library in numbers - one card, before the shelves. */}
           <LibraryStatsCard
             songs={tracks.length}
