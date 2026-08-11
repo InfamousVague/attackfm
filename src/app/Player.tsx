@@ -447,44 +447,12 @@ export function Player({
     if (npDimTimer.current !== null) window.clearTimeout(npDimTimer.current);
     npDimTimer.current = window.setTimeout(() => setNpDimmed(true), 30_000);
   };
-  useEffect(() => {
-    /**
-   * Coming back to the app while music is playing lands on Now Playing.
-   *
-   * This is the lock-screen widget, Control Center, the CarPlay card and the
-   * headphone tap - every "audio spot" that opens the app. There is no API
-   * that says WHICH of them did it, or even that one of them did: iOS hands a
-   * launch from the now-playing artwork to the app exactly like any other
-   * launch. So the signal is the honest proxy - the app came forward and sound
-   * is coming out of it - and the guards below are what keep that from
-   * hijacking an ordinary app switch.
-   *
-   * Two seconds in the background is the floor: a share sheet, a permission
-   * prompt or the app switcher flashing past are all shorter than that, and
-   * none of them should land you in a full-screen player.
-   */
-  const hiddenAt = useRef(0);
-  useEffect(() => {
-    if (!mobileControls) return;
-    const onVisible = () => {
-      if (document.visibilityState === 'hidden') {
-        hiddenAt.current = Date.now();
-        return;
-      }
-      const away = Date.now() - hiddenAt.current;
-      hiddenAt.current = 0;
-      if (away < 2000) return;
-      // Only when this device is the one making the sound: following someone
-      // else's jam, or handing audio to another device, the player here is not
-      // what you came back for.
-      if (!audible || activeElsewhere) return;
-      setNpOpen(true);
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [mobileControls, audible, activeElsewhere]);
-
+  // A bad merge once swallowed the lock-screen effect INTO this callback -
+  // hooks inside an effect body, an invalid-hook crash the moment it ran, and
+  // the whole app went black on play. The lock-screen effect lives further
+  // down now (it needs `audible`, which does not exist yet up here).
   const keepAwake = npOpen && playing;
+  useEffect(() => {
     void setIdleTimerDisabled(keepAwake);
     if (!keepAwake) {
       if (npDimTimer.current !== null) {
@@ -503,7 +471,7 @@ export function Player({
       void setIdleTimerDisabled(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- pokeNpDim only touches refs
-  }, [npOpen, playing]);
+  }, [keepAwake]);
   // Bumped on every seek so the Connect report effect refires (a seek moves the
   // clock without changing play/track). A ref mirrors it for closures.
   const [seekTick, setSeekTick] = useState(0);
@@ -763,6 +731,42 @@ export function Player({
   // keep moving even while silenced; freeze it when muted or on the floor so
   // "nothing coming out" still reads as "nothing moving".
   const audible = playing && !muted && volume > 0;
+
+  /**
+   * Coming back to the app while music is playing lands on Now Playing.
+   *
+   * This is the lock-screen widget, Control Center, the CarPlay card and the
+   * headphone tap - every "audio spot" that opens the app. There is no API
+   * that says WHICH of them did it, or even that one of them did: iOS hands a
+   * launch from the now-playing artwork to the app exactly like any other
+   * launch. So the signal is the honest proxy - the app came forward and sound
+   * is coming out of it - and the guards below are what keep that from
+   * hijacking an ordinary app switch.
+   *
+   * Two seconds in the background is the floor: a share sheet, a permission
+   * prompt or the app switcher flashing past are all shorter than that, and
+   * none of them should land you in a full-screen player.
+   *
+   * `remoteOnly` stands in for activeElsewhere (defined later from it): when
+   * another device holds the audio, this player is not what you came back for.
+   */
+  const npReturnAt = useRef(0);
+  useEffect(() => {
+    if (!mobileControls) return;
+    const onVisible = () => {
+      if (document.visibilityState === 'hidden') {
+        npReturnAt.current = Date.now();
+        return;
+      }
+      const away = Date.now() - npReturnAt.current;
+      npReturnAt.current = 0;
+      if (away < 2000) return;
+      if (!audible || remoteOnly) return;
+      setNpOpen(true);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [mobileControls, audible, remoteOnly]);
   const beat = useBeat({ meter, active: audible, at: progress });
 
   // The phone's own volume, polled while there is something to hear. The

@@ -255,14 +255,6 @@ function PrimaryNav({
           onClick={() => onTab(pg.key)}
         />
       ))}
-      {/* Stats: what the listening added up to. Lives beside Friends - both
-          are reflections of use rather than places music comes from. */}
-      <NavBarItem
-        icon={<ChartNoAxesColumn size={18} />}
-        label="Stats"
-        active={tab === 'stats'}
-        onClick={() => onTab('stats')}
-      />
       <NavBarItem
         icon={<Users size={18} />}
         label="Friends"
@@ -335,14 +327,6 @@ function PrimaryNav({
       </button>
 
       <div className="appNavBar__group appNavBar__group--right">
-        {/* The listening, added up. Ahead of Friends: you check your own
-            numbers more often than anyone else's. */}
-        <BarTab
-          icon={<ChartNoAxesColumn size={20} />}
-          label="Stats"
-          active={tab === 'stats'}
-          onClick={() => onTab('stats')}
-        />
         <BarTab
           icon={<Users size={20} />}
           label="Friends"
@@ -972,6 +956,17 @@ export function App() {
                       spoken line is positioned out of the header's flow (see
                       .mobileHeader .djLauncher) so a returning set cannot make
                       the header taller. */}
+                  {(tab === 'library' || tab === 'home') && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => goTab('stats')}
+                      title="Your listening stats"
+                    >
+                      <ChartNoAxesColumn size={16} />
+                      <span>Stats</span>
+                    </Button>
+                  )}
                   {(tab === 'library' || tab === 'home') && <DjLauncher onPlay={playFrom} />}
                   {/* Library's view flip: the whole library as one table. A
                       header button instead of an in-page toggle - the page

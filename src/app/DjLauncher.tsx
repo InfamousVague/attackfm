@@ -12,7 +12,8 @@
 //! Draws on the server library and the listener's play history, so it only
 //! offers itself when signed into a server with something to play.
 
-import { IconButton, Spinner, Text } from '@glacier/react';
+import {
+  Button, IconButton, Spinner, Text } from '@glacier/react';
 import { Radio } from '@glacier/icons';
 import { useState } from 'react';
 import { useServerSession } from './serverSession.tsx';
@@ -66,16 +67,18 @@ export function DjLauncher({ onPlay }: { onPlay: (track: Track, queue: Track[]) 
 
   return (
     <div className="djLauncher">
-      <IconButton
+      {/* Named, not just an icon: a radio glyph alone read as anything from
+          broadcast to bluetooth. Short, because it shares a header. */}
+      <Button
         variant="ghost"
         size="sm"
         onClick={() => void start()}
         disabled={busy}
-        aria-label={busy ? 'Cueing the DJ' : 'Start the DJ'}
         title={busy ? 'Cueing…' : 'Start the DJ'}
       >
-        {busy ? <Spinner size="sm" aria-label="" /> : <Radio size={18} />}
-      </IconButton>
+        {busy ? <Spinner size="sm" aria-label="Cueing the DJ" /> : <Radio size={16} />}
+        <span>DJ</span>
+      </Button>
       {line && (
         <Text tone="muted" size="sm" className="djLauncher__line">
           🎙 {line}
