@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { useHaptics } from '@glacier/react';
+import { useHaptics, useToast } from '@glacier/react';
 import { useLibrary } from '@attackfm/app/library';
 import { useServerSession } from '@attackfm/app/serverSession';
 import {
@@ -52,6 +52,9 @@ function ServerDownloads({ children }: { children: ReactNode }) {
   const haptic = useHaptics();
   const hapticRef = useRef(haptic);
   hapticRef.current = haptic;
+  const { toast } = useToast();
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
   const [jobs, setJobs] = useState<MusicImportJob[]>([]);
   const rescanRef = useRef(rescan);
   rescanRef.current = rescan;
@@ -68,8 +71,10 @@ function ServerDownloads({ children }: { children: ReactNode }) {
     doneIds.current = new Set(done);
     if (isFresh) {
       // The download you queued minutes ago just landed: worth a real
-      // fanfare in the hand, since the eyes are usually elsewhere by now.
+      // fanfare in the hand AND a line on screen - this fires from a
+      // background poll, so without the toast the buzz points at nothing.
       hapticRef.current('success');
+      toastRef.current({ tone: 'success', message: 'Import finished - added to your library.' });
       void rescanRef.current();
     }
     if (sessionRef.current) void settlePendingSyncs(sessionRef.current, next);

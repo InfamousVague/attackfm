@@ -66,6 +66,7 @@ export function useSwipeBack(
       id = null;
       horizontal = null;
       committed = false;
+      el.removeAttribute('data-swipe-committed');
       el.style.transition = '';
       el.style.transform = '';
     };
@@ -101,7 +102,10 @@ export function useSwipeBack(
       if (past !== committed) {
         committed = past;
         // Firmer going in than backing out: the latch engages, the release
-        // just lets go.
+        // just lets go - and the page's edge shadow deepens with it, so the
+        // click has a visible referent.
+        if (past) el.setAttribute('data-swipe-committed', '');
+        else el.removeAttribute('data-swipe-committed');
         fireNativeHaptic(past ? 'light' : 'selection');
       }
       paint(pulled, false);

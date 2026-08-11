@@ -763,6 +763,17 @@ img {
   user-select: none;
 }
 
+/* The grab's visual half: the platter gives slightly under a held finger,
+   the way real plastic does. Standalone `scale`, so the face's inline
+   rotate transform is untouched. */
+.spinningDisc[data-scratchable] .spinningDisc__face {
+  transition: scale 0.12s var(--glacier-ease-out);
+}
+
+.spinningDisc[data-scratchable]:active .spinningDisc__face {
+  scale: 0.985;
+}
+
 .spinningDisc[data-scratchable]:active {
   cursor: grabbing;
 }
@@ -1272,11 +1283,31 @@ img {
   overflow: visible;
 }
 
+[data-swipe-committed] {
+  box-shadow: -18px 0 42px rgb(0 0 0 / 0.45);
+}
+
 .appNavBar__group {
   display: flex;
   align-items: center;
   justify-content: space-evenly;
   gap: var(--glacier-space-1);
+  /* Room for plugin pages: the group may hold three tabs on a narrow phone,
+     so each tab is allowed to shrink and its label to truncate rather than
+     the bar overflowing the island. */
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.appNavBar__group .appNavBarTab {
+  min-inline-size: 0;
+}
+
+.appNavBar__group .appNavBarTab__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-inline-size: 100%;
 }
 
 /* A flanking tab: glyph over a small label, lit crimson when it is the page. */
@@ -1584,6 +1615,15 @@ img {
   max-inline-size: 100%;
 }
 
+@keyframes artFaceIn {
+  from { opacity: 0; scale: 0.96; }
+  to { opacity: 1; scale: 1; }
+}
+
+.npScreen__coverTarget > * {
+  animation: artFaceIn 0.24s var(--glacier-ease-out);
+}
+
 .npScreen__coverTarget > * {
   inline-size: 100%;
   block-size: 100%;
@@ -1667,6 +1707,43 @@ img {
    colour of it, which at a glance is the same as not saved at all. */
 .npScreen__heart[aria-pressed='true'] {
   color: var(--glacier-accent-text);
+}
+
+/* The heart answering the hand: the success triplet in the thumb was firing
+   against a static glyph - the app's loudest haptic over its flattest visual.
+   Now the glyph pops (standalone `scale`, so nothing else it wears is
+   disturbed) and a ring blooms off it, on the way IN only - the same rule the
+   haptic itself follows: keeping a song is the celebration, letting one go is
+   not. */
+@keyframes heartPop {
+  0% { scale: 1; }
+  30% { scale: 1.28; }
+  55% { scale: 0.92; }
+  100% { scale: 1; }
+}
+
+@keyframes heartRing {
+  from { scale: 0.4; opacity: 0.5; }
+  to { scale: 1.7; opacity: 0; }
+}
+
+.npScreen__heart[aria-pressed='true'] svg {
+  animation: heartPop 0.36s var(--glacier-ease-out);
+}
+
+.npScreen__heart {
+  position: relative;
+}
+
+.npScreen__heart[aria-pressed='true']::after {
+  content: '';
+  position: absolute;
+  inset: 15%;
+  border-radius: 50%;
+  border: 2px solid var(--glacier-accent-text);
+  pointer-events: none;
+  opacity: 0;
+  animation: heartRing 0.45s var(--glacier-ease-out);
 }
 
 .npScreen__scrub {
@@ -2357,6 +2434,11 @@ img.artPop:not([data-loading]) {
   img.artPop:not([data-loading]),
   [data-tile-pop]:not([data-tile-loading]) > img,
   [data-tile-pop]:not([data-tile-loading]) svg {
+    animation: none;
+  }
+  .npScreen__heart[aria-pressed='true'] svg,
+  .npScreen__heart[aria-pressed='true']::after,
+  .npScreen__coverTarget > * {
     animation: none;
   }
 }

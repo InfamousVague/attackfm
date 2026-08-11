@@ -263,7 +263,11 @@ export function SpinningDisc({
     };
   }, []);
 
-  /** Banks turned degrees and clicks off a detent when one is due. */
+  /** Banks turned degrees and clicks off a detent when one is due. Each
+   *  click also glints the hub - brightness only, so neither the hub's own
+   *  transform nor the face's rotation is disturbed - which is what lets the
+   *  eye count the ratchet the thumb is feeling. */
+  const hubRef = useRef<HTMLSpanElement>(null);
   const clickDetents = (degrees: number, spacing: number) => {
     detent.current += Math.abs(degrees);
     if (detent.current < spacing) return;
@@ -272,6 +276,10 @@ export function SpinningDisc({
     if (now - detentAt.current < 35) return;
     detentAt.current = now;
     fireNativeHaptic('selection');
+    hubRef.current?.animate(
+      [{ filter: 'brightness(1.7)' }, { filter: 'brightness(1)' }],
+      { duration: 130, easing: 'ease-out' },
+    );
   };
 
   /** The pointer's angle around the disc's centre, in degrees. */
@@ -387,7 +395,7 @@ export function SpinningDisc({
           spectral hairlines and the glint on the hub plastic are reflections,
           and reflections hold still while the disc turns under them. */}
       <span className="spinningDisc__sheen" />
-      <span className="spinningDisc__hub" />
+      <span ref={hubRef} className="spinningDisc__hub" />
     </div>
   );
 }
