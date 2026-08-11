@@ -93,7 +93,7 @@ function MixCover({ tracks }: { tracks: Track[] }) {
   const arts = mosaicArts(tracks.map((t) => t.artwork));
   // Under four covers the glyph stands in, and a glyph never loads - the tile
   // hook watches exactly the urls the grid below will draw.
-  const loaded = useTileArt(arts.length < 4 ? [] : arts);
+  const { loaded, hostRef } = useTileArt(arts.length < 4 ? [] : arts);
   if (arts.length < 4) {
     return (
       <div className="mixCardCover mixCardCover--glyph" aria-hidden>
@@ -102,7 +102,7 @@ function MixCover({ tracks }: { tracks: Track[] }) {
     );
   }
   return (
-    <div className="mixCardCover" aria-hidden data-tile-pop="" data-tile-loading={!loaded || undefined}>
+    <div ref={hostRef} className="mixCardCover" aria-hidden data-tile-pop="" data-tile-loading={!loaded || undefined}>
       {arts.map((art, i) => (
         <img key={i} src={art} alt="" loading="lazy" />
       ))}

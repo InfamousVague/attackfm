@@ -26,11 +26,23 @@ import placeholderArt from '../assets/attack-wave.png';
 // --- the felt half --------------------------------------------------------
 
 let lastTick = 0;
+let lastReport = 0;
+let burstCount = 0;
 
-/** At most one soft tick per 140ms - bursts collapse, storms cannot form. */
+/**
+ * At most one soft tick per 140ms, and at most eight per burst - so a shelf
+ * filling in patters for about a second and then trusts the eye, and a long
+ * scroll through a lazy-loading table cannot tick the whole way down. A
+ * report gap under a second is the same burst continuing; a real pause
+ * starts a fresh one, so the next page's fill patters again.
+ */
 export function reportArtReveal(): void {
   const now = performance.now();
+  if (now - lastReport > 900) burstCount = 0;
+  lastReport = now;
+  if (burstCount >= 8) return;
   if (now - lastTick < 140) return;
+  burstCount += 1;
   lastTick = now;
   fireNativeHaptic('selection');
 }
@@ -135,12 +147,42 @@ export function useCardArt(artwork: string | null): {
  * `data-loading` from this, and its imgs stay hidden under the shimmer until
  * the tile reveals whole.
  */
-export function useTileArt(urls: readonly (string | null)[]): boolean {
+export function useTileArt(urls: readonly (string | null)[]): {
+  loaded: boolean;
+  /** Attach to the tile's wrapper: preloading waits until it nears the
+   *  viewport, so a shelf of fifty playlists does not fetch two hundred
+   *  covers at mount - the laziness the plain imgs used to have, kept. */
+  hostRef: (el: Element | null) => void;
+} {
   const real = urls.filter((u): u is string => !!u);
   // Identity for the effect: the tile re-arms only when its art actually
   // changes, not when the caller rebuilds the array each render.
   const key = real.join('\n');
   const [loaded, setLoaded] = useState(real.length === 0);
+  const [host, setHost] = useState<Element | null>(null);
+  const [near, setNear] = useState(false);
+  useEffect(() => {
+    if (near) return;
+    // No host attached (a call site that forgot the ref) falls back to
+    // eager after a beat - a tile that never loads is worse than one that
+    // loads early.
+    if (!host) {
+      const t = window.setTimeout(() => setNear(true), 300);
+      return () => window.clearTimeout(t);
+    }
+    if (typeof IntersectionObserver === 'undefined') {
+      setNear(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) setNear(true);
+      },
+      { rootMargin: '200px' },
+    );
+    io.observe(host);
+    return () => io.disconnect();
+  }, [host, near]);
   useEffect(() => {
     const wanted = key ? key.split('\n') : [];
     if (wanted.length === 0) {
@@ -148,6 +190,7 @@ export function useTileArt(urls: readonly (string | null)[]): boolean {
       return;
     }
     setLoaded(false);
+    if (!near) return;
     let live = true;
     let left = wanted.length;
     const done = () => {
@@ -176,8 +219,8 @@ export function useTileArt(urls: readonly (string | null)[]): boolean {
         img.onerror = null;
       }
     };
-  }, [key]);
-  return loaded;
+  }, [key, near]);
+  return { loaded, hostRef: setHost };
 }
 
 /** The 640px variants of a track list's first distinct covers - what the

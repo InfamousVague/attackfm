@@ -253,7 +253,7 @@ function Glyph({
   // refine, and the hook order has to survive that. A mosaic skeletons and
   // reveals as one artwork; a single cover is a row thumb, so the 160 variant.
   const four = shape === 'mosaic' ? mosaicArts(covers ?? []) : [];
-  const tiled = useTileArt(four);
+  const { loaded: tiled, hostRef: tileRef } = useTileArt(four);
   const sized = shape === 'mosaic' || shape === 'tile' ? null : artSized(cover ?? null, 160);
   const art = useArtLoad(sized, '');
   if (shape === 'mosaic') {
@@ -261,6 +261,7 @@ function Glyph({
       <span className="searchRow__glyph" data-shape="mosaic">
         {four.length > 0 ? (
           <span
+            ref={tileRef}
             className="searchMosaic"
             data-n={four.length}
             data-tile-pop=""
@@ -1409,7 +1410,7 @@ function TopCard({
   // Hooks sit before the null gate: React needs them called on every render,
   // whatever kind this card resolves to. The hero cover is big, so 640.
   const mosaic = item.t === 'playlist' ? mosaicArts(coversOf(item.playlist, tracks)) : [];
-  const tiled = useTileArt(mosaic);
+  const { loaded: tiled, hostRef: tileRef } = useTileArt(mosaic);
   const sized = artSized(face?.cover ?? null, 640);
   const art = useArtLoad(sized, '');
   if (!face) return null;
@@ -1428,6 +1429,7 @@ function TopCard({
       <span className="searchTopCard__art" data-shape={face.shape}>
         {mosaic.length > 0 ? (
           <span
+            ref={tileRef}
             className="searchMosaic"
             data-n={mosaic.length}
             data-tile-pop=""

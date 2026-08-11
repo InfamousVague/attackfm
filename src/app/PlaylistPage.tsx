@@ -129,7 +129,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
   // back to a single cover with the ordinary single-image reveal. Both hooks
   // sit above the early return, as hooks must.
   const covers = useMemo(() => mosaicArts(rows.map((r) => r.track.artwork)), [rows]);
-  const coversLoaded = useTileArt(covers.length >= 4 ? covers : []);
+  const { loaded: coversLoaded, hostRef: coversRef } = useTileArt(covers.length >= 4 ? covers : []);
   // The single-cover img wears no class of its own, so the hook contributes
   // only the pop and the skeleton attribute.
   const singleCover = useArtLoad(covers.length >= 4 ? null : (covers[0] ?? null), '');
@@ -183,6 +183,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
         <div className="playlistHead__cover" aria-hidden>
           {covers.length >= 4 ? (
             <div
+              ref={coversRef}
               className="tileSquircle tileLikedGrid playlistHead__mosaic"
               data-tile-pop=""
               data-tile-loading={!coversLoaded || undefined}
