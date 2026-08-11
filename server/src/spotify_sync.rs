@@ -510,7 +510,7 @@ async fn enqueue_missing(state: &Arc<AppState>, user_id: i64, key: &str) -> Resu
         } else {
             format!("{} — {}", item.title, item.artist)
         };
-        match imports::enqueue_internal(state, &url, &label, "Spotify sync", key).await {
+        match imports::enqueue_internal(state, &url, &label, "Spotify sync", key, user_id).await {
             Ok(job_id) => {
                 let _ = state.db.spotify_item_set(
                     user_id,

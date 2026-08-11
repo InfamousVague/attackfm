@@ -32,6 +32,7 @@ import {
   Palette,
   Play,
   Settings,
+  Sparkles,
   Timer,
   X,
 } from '@glacier/icons';
@@ -58,6 +59,7 @@ import { usePlayback, type SleepTimer } from './playback.tsx';
 import { usePlugins, usePluginSettingsSections } from '../plugins/runtime.tsx';
 import { AboutSettings } from './AboutSettings.tsx';
 import { DevicesSettings } from './DevicesSettings.tsx';
+import { CuratorSettings } from './CuratorSettings.tsx';
 import { useConnect } from './playbackSync.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { ServerSettings } from './ServerSettings.tsx';
@@ -1236,6 +1238,17 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       content: <ServerSettings />,
       summary: session ? session.url.replace(/^https?:\/\//, '') : 'Not connected',
       tint: 'blue',
+      group: 1,
+    },
+    // The machine that listens along: the collector's ledger and switch, the
+    // recent pulls, and how far the enrichment has read the library.
+    {
+      id: 'curator',
+      label: 'Curator',
+      icon: <Sparkles size={16} />,
+      content: <CuratorSettings />,
+      summary: session ? 'Autonomous downloads and mixes' : 'Needs a server',
+      tint: 'purple',
       group: 1,
     },
     {

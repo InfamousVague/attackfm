@@ -126,12 +126,24 @@ const WORDS_PER_LINE = 16;
 const STACK_FILL = 0.82;
 
 /**
- * Roughly how wide a capital is, as a share of the font size, in the stack's
- * heavy uppercase. Used to cap a long word by the stage's WIDTH as well as
- * its height: whichever bound bites first is the one that sizes the word, so
+ * How wide a capital is, as a share of the font size, in the stack's heavy
+ * uppercase. Used to cap a long word by the stage's WIDTH as well as its
+ * height: whichever bound bites first is the one that sizes the word, so
  * nothing runs off the side either.
+ *
+ * MEASURED, not guessed. This was 0.62, which is about right for an average
+ * Latin lowercase and far too narrow for Inter's 800-weight caps with the
+ * stack's letter-spacing on top - so words were sized to a width they then
+ * overran, and `.npStackWord`'s overflow clipped their right-hand ends. Real
+ * ratios at that weight: ILL 0.49, POLICE 0.63, EVERYTHING 0.68, KARMA 0.80,
+ * WOMAN 0.88, MOM 0.91. Hence 0.95 - it covers every real word measured, and
+ * the only things past it (MMM, WWW) are not words.
+ *
+ * It is a CEILING, so raising it does not shrink the type generally: the
+ * height share still wins for everything that was already fitting, and only
+ * the words that were overrunning come down.
  */
-const CAP_ASPECT = 0.62;
+const CAP_ASPECT = 0.95;
 
 /**
  * The four ways a line can take the air - COMPOSITIONS, not costumes: each

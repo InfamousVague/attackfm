@@ -47,6 +47,12 @@ interface LibraryContextValue {
   reset: () => Promise<void>;
   /** Every track found under the music folder, refreshed on each scan. */
   tracks: Track[];
+  /**
+   * Tracks the collector downloaded that nobody has adopted yet - held OFF the
+   * main shelves so the library stays what its people chose, and shown only on
+   * the owning account's "For you" surface. Always empty for a local library.
+   */
+  forYou: Track[];
   /** The favourited tracks that are present in the current library, newest first. */
   favoriteTracks: Track[];
   /** Whether a track (by path) is favourited. */
@@ -235,6 +241,8 @@ function LocalLibrary({ children }: { children: ReactNode }) {
       loading: resolving,
       isDefault: custom === null,
       tracks,
+      // A local folder has no collector: everything in it was put there.
+      forYou: [],
       favoriteTracks,
       isFavorite: (path: string) => favorites.includes(path),
       toggleFavorite: (path: string) =>
@@ -352,10 +360,22 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
     };
   }, [session]);
 
-  const tracks = useMemo(
+  const mapped = useMemo(
     // Newest first, matching the order the table opens on for a local library.
     () => remote.map((r) => toTrack(session, r)).sort((a, b) => b.addedAt - a.addedAt),
     [remote, session],
+  );
+  // The quarantine line: collector downloads stay off the main shelves until
+  // someone adopts them (a listen-through or a heart flips curatorPromoted).
+  // Split here, once, so every surface downstream - table, search, shelves,
+  // CarPlay - inherits the rule without knowing it exists.
+  const tracks = useMemo(
+    () => mapped.filter((t) => t.curatorUserId == null || t.curatorPromoted),
+    [mapped],
+  );
+  const forYou = useMemo(
+    () => mapped.filter((t) => t.curatorUserId != null && !t.curatorPromoted),
+    [mapped],
   );
 
   // The car screen mirrors whatever this device has synced: every delta and
@@ -379,6 +399,7 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
       loading: false,
       isDefault: false,
       tracks,
+      forYou,
       favoriteTracks,
       isFavorite: (path: string) => {
         const id = trackIdFromPath(path);
@@ -410,7 +431,7 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
       choose: async () => {},
       reset: async () => {},
     };
-  }, [session, tracks, favorites, syncing, synced, sync, error]);
+  }, [session, tracks, forYou, favorites, syncing, synced, sync, error]);
 
   return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;
 }

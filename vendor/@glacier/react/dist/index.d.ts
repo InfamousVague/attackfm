@@ -1439,6 +1439,77 @@ interface AnalyserMixSource {
      */
     fadeLevel(level: number, seconds: number): void;
 }
+/**
+ * The scratch surface: a hand on the platter, heard.
+ *
+ * A media element cannot play backwards, and seeking it repeatedly is a
+ * decoder restart, not a scrub - so this is built the way a tape machine is.
+ * A worklet sits in the graph just ahead of the deck and keeps a ring of the
+ * last little while of everything that actually played. `hold` freezes the
+ * tape and hands the output to a read head; `move` tells the head where the
+ * hand is, and the head chases it - through a critically-damped spring, so
+ * sixty pointer events a second read as one continuous motion rather than a
+ * zipper - sounding the ring at whatever velocity the chase requires,
+ * forwards or backwards, silent when the hand rests. `release` hands the
+ * chain back to the live element.
+ *
+ * The capture point is ahead of the deck on purpose: the deck is where brakes
+ * and spin-ups bend the signal, so the tape holds the song at true speed no
+ * matter what the transport was doing to it.
+ *
+ * The caller owns the element: pause it when it calls `hold` (the tape
+ * freezes either way, but a playing element would keep buying audio nobody
+ * hears), and seek-then-play on `release` using the offset it returns.
+ */
+interface AnalyserScrub {
+    /**
+     * True once the engine is standing: the worklet module loaded and the ring
+     * is recording. False where AudioWorklet is missing, in which case every
+     * other call is a safe no-op and `release` answers 0 - callers keep their
+     * seek-only fallback.
+     */
+    ready(): boolean;
+    /**
+     * Grab the platter: freeze the tape and take over the chain's output.
+     * `atSeconds` is where the song stands - the head's anchor, and what maps
+     * both tapes onto the song's own clock.
+     */
+    hold(atSeconds: number): void;
+    /**
+     * Where the hand is, in seconds of song relative to the grab - negative is
+     * back, positive forward. With the whole song loaded the head roams the
+     * entire track; on the ring alone it can only reach what has played, and
+     * parks at the tape's edge rather than reading fiction.
+     */
+    move(offsetSeconds: number): void;
+    /** Where the head actually is right now, seconds relative to the grab. */
+    offset(): number;
+    /** Loudness of what the scrub is sounding, 0..1-ish - a liveness signal. */
+    level(): number;
+    /** Let go: hand the chain back to the element. Returns the settled offset,
+     *  which is where the caller should land its seek. */
+    release(): number;
+    /**
+     * Forget the ring. Call across every seek - its map onto the song's clock
+     * broke with the jump. The whole-song tape is indexed absolutely and
+     * survives; only `eject` drops it.
+     */
+    clear(): void;
+    /**
+     * Hand the engine the WHOLE song: mono PCM at `rate` covering `duration`
+     * seconds from the top of the track. From then on the head roams the entire
+     * file, both directions, the way a tape machine's does - this is what turns
+     * "scratch what has played" into "scrub the record". The buffer is
+     * transferred, not copied; the caller's copy is gone after this.
+     */
+    load(pcm: Float32Array, rate: number, duration: number): void;
+    /** Whether a whole-song tape is loaded. */
+    loaded(): boolean;
+    /** A new source: drop the song tape AND the ring. */
+    eject(): void;
+    /** Dev: logs the engine's internals to the console, one line. */
+    probe(): void;
+}
 interface AnalyserMeter {
     /** Current loudness, 0..1. Safe to call at any rate. */
     meter: LoudnessMeter;
@@ -1520,6 +1591,10 @@ interface AnalyserMeter {
      * line of a fixed length has no speed of its own to hold.
      */
     resetSpeed(speed?: number): void;
+    /** The scratch surface - see `AnalyserScrub`. Always present; where the
+     * platform has no AudioWorklet it reports `ready() === false` and every
+     * call is a safe no-op. */
+    scrub: AnalyserScrub;
     /** The centre frequency (Hz) of each EQ band, low to high, index-aligned with
      * `setEqGains`. */
     eqFrequencies: readonly number[];

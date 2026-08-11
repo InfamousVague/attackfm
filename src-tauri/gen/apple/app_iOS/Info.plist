@@ -15,9 +15,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.6</string>
+	<string>0.3.4</string>
 	<key>CFBundleVersion</key>
-	<string>0.1.6</string>
+	<string>0.3.4</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -81,5 +81,18 @@
 	<string>public.app-category.music</string>
 	<key>NSCameraUsageDescription</key>
 	<string>AttackFM uses the camera only to scan QR codes: signing in from another device you own, and adding a friend from their code.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.mattssoftware.attackfm</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>attackfm</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

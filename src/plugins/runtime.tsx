@@ -339,7 +339,7 @@ export function PluginSlot({ id }: { id: PluginSlotId }) {
   );
 }
 
-/** A palette row as the runtime hands it to SongSearch: id already namespaced. */
+/** A palette row as the runtime hands it to the search page: id already namespaced. */
 export interface PaletteCommandRow {
   id: string;
   label: string;

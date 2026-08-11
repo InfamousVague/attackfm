@@ -1,0 +1,560 @@
+/* ── Stats ─────────────────────────────────────────────────────────────────
+   Your listening in numbers: headline tiles, two bar charts, the top-N lists,
+   and the sound profile. The page wears .homePage for its scroll and gutters;
+   everything here is the furniture inside it. Charts are plain divs on the
+   app's own tokens - two bar charts do not earn a library. */
+
+/* The range chips, in the search page's chip idiom but their own class: the
+   search set changes with the query, this set never does, and a shared class
+   would couple two rows that only look alike today. */
+.statsChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+}
+
+.statsChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  padding: var(--glacier-space-1) var(--glacier-space-3);
+  border-radius: var(--glacier-radius-full);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text-muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 550;
+  cursor: pointer;
+  transition: background var(--glacier-duration-fast) var(--glacier-ease-out),
+    color var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.statsChip:hover {
+  color: var(--glacier-text);
+}
+
+.statsChip[data-on] {
+  background: var(--glacier-accent-solid);
+  border-color: transparent;
+  color: var(--glacier-accent-contrast, #fff);
+}
+
+/* Page-level notes: signed out, an older server, or a ledger with nothing in
+   it yet. Centered in the page's empty middle, because a corner apology reads
+   as a broken page. */
+.statsNote {
+  margin: auto;
+  padding: var(--glacier-space-6);
+  text-align: center;
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-sm);
+  max-inline-size: 26rem;
+}
+
+/* A section's own quiet note - the chart exists, this range just has nothing
+   for it. */
+.statsQuiet {
+  margin: 0;
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-sm);
+}
+
+.statsSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  min-inline-size: 0;
+}
+
+.statsSection__title {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  margin: 0;
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 650;
+  color: var(--glacier-text-muted);
+}
+
+.statsSection__glyph {
+  display: grid;
+  place-items: center;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  border-radius: var(--glacier-radius-sm);
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-accent-text);
+}
+
+/* ── Headline tiles ────────────────────────────────────────────────────────
+   The numbers worth saying first. A responsive grid rather than a row: six
+   tiles forced into one phone-width line would be confetti. */
+.statsTiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: var(--glacier-space-2);
+}
+
+.statsTile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  padding: var(--glacier-space-3) var(--glacier-space-4);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-sunken);
+  min-inline-size: 0;
+}
+
+.statsTile__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border-radius: 34%;
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+}
+
+.statsTile__value {
+  font-size: 1.25rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.statsTile__label {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+/* While the summary is in flight the tiles hold their seats and breathe -
+   the same footprint, so the swap to numbers moves nothing. */
+@keyframes statsGhost {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.statsTile[data-ghost] {
+  min-block-size: 5.75rem;
+  animation: statsGhost 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .statsTile[data-ghost] {
+    animation: none;
+  }
+}
+
+/* The first-listens line: one sentence, filed under the tiles it belongs
+   with rather than promoted to a tile that would just repeat it. */
+.statsFirsts {
+  margin: 0;
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+}
+
+/* ── The clock ─────────────────────────────────────────────────────────────
+   24 columns, midnight to midnight. Fills scale to the busiest hour, sit on
+   sunken rails, and round only their data end - the baseline is the truth
+   the bars stand on. The peak hour names itself; the axis names four. */
+.statsClock {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  gap: 2px;
+  align-items: end;
+  /* Room for the peak's label above the tallest bar. */
+  padding-block-start: var(--glacier-space-4);
+}
+
+.statsClock__col {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  min-inline-size: 0;
+}
+
+.statsClock__peak {
+  position: absolute;
+  inset-block-start: calc(-1 * var(--glacier-space-4));
+  inset-inline-start: 50%;
+  translate: -50%;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-accent-text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.statsClock__rail {
+  display: flex;
+  align-items: flex-end;
+  block-size: 5.5rem;
+  border-radius: var(--glacier-radius-sm);
+  background: var(--glacier-surface-sunken);
+  overflow: hidden;
+}
+
+.statsClock__fill {
+  inline-size: 100%;
+  min-block-size: 2px;
+  background: var(--glacier-accent-solid);
+  border-start-start-radius: 0.25rem;
+  border-start-end-radius: 0.25rem;
+}
+
+/* Every column carries a label slot so the rails all stand on one line;
+   only four of the slots say anything. */
+.statsClock__hour {
+  block-size: 1rem;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* ── Day by day ────────────────────────────────────────────────────────────
+   The same bars, smaller and denser: a texture of the last month, not a
+   chart to read values off - the hover title carries the exact number. */
+.statsDays {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.statsDays__row {
+  display: flex;
+  gap: 2px;
+  align-items: flex-end;
+  block-size: 3rem;
+}
+
+.statsDays__col {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  block-size: 100%;
+  border-radius: var(--glacier-radius-sm);
+  background: var(--glacier-surface-sunken);
+  overflow: hidden;
+  min-inline-size: 0;
+}
+
+.statsDays__fill {
+  inline-size: 100%;
+  min-block-size: 2px;
+  background: var(--glacier-accent-solid);
+  border-start-start-radius: 0.25rem;
+  border-start-end-radius: 0.25rem;
+}
+
+.statsDays__edges {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+/* ── Top lists ─────────────────────────────────────────────────────────────
+   Rank, cover, name, numbers. People are round and songs are square - the
+   same shape grammar the search page speaks. */
+.statsRows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.statsRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  min-inline-size: 0;
+}
+
+.statsRow__rank {
+  flex: none;
+  inline-size: 1.25rem;
+  text-align: center;
+  font-size: var(--glacier-font-size-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--glacier-text-muted);
+}
+
+.statsRow__art {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text-muted);
+  overflow: hidden;
+}
+
+.statsRow__art[data-shape='circle'] {
+  border-radius: var(--glacier-radius-full);
+}
+
+.statsRow__art img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.statsRow__body {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The name is the door - a real button when there is somewhere to go, and
+   the same words as plain text when the song has left the library. */
+.statsRow__name {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 550;
+  text-align: start;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.statsRow__name:hover {
+  color: var(--glacier-accent-text);
+}
+
+.statsRow__name[data-plain] {
+  cursor: default;
+}
+
+.statsRow__sub {
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statsRow__meta {
+  flex: none;
+  font-size: var(--glacier-font-size-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--glacier-text-muted);
+}
+
+/* ── Albums and genres ─────────────────────────────────────────────────────
+   Two smaller columns side by side; on a phone they stack, at the same width
+   the rest of the app folds its pairs. */
+.statsSplit {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--glacier-space-6);
+  align-items: start;
+}
+
+@media (max-width: 52rem) {
+  .statsSplit {
+    grid-template-columns: 1fr;
+  }
+}
+
+.statsSmallRows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.statsSmallRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  min-inline-size: 0;
+}
+
+.statsSmallRow__body {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.statsSmallRow__name {
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statsSmallRow__sub {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statsSmallRow__meta {
+  flex: none;
+  font-size: var(--glacier-font-size-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--glacier-text-muted);
+}
+
+/* A genre's share of the top genre, as a hairline meter under its name -
+   a proportion at a glance without a number to read. */
+.statsGenreRail {
+  display: block;
+  block-size: 0.25rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface-sunken);
+  overflow: hidden;
+}
+
+.statsGenreFill {
+  display: block;
+  block-size: 100%;
+  min-inline-size: 2px;
+  background: var(--glacier-accent-solid);
+  border-radius: inherit;
+}
+
+/* ── Your sound ────────────────────────────────────────────────────────────
+   The average character of what got played: a tempo, then two 0..1 fills.
+   Only rendered when the server has analysed enough to say. */
+.statsSound {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-6);
+  flex-wrap: wrap;
+}
+
+.statsTempo {
+  display: flex;
+  align-items: baseline;
+  gap: var(--glacier-space-1);
+}
+
+.statsTempo__value {
+  font-size: 1.5rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.statsTempo__label {
+  font-size: var(--glacier-font-size-xs);
+  font-weight: 600;
+  color: var(--glacier-text-muted);
+}
+
+.statsMeter {
+  flex: 1;
+  min-inline-size: 10rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.statsMeter__label {
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+}
+
+.statsMeter__rail {
+  display: block;
+  block-size: 0.375rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface-sunken);
+  overflow: hidden;
+}
+
+.statsMeter__fill {
+  display: block;
+  block-size: 100%;
+  min-inline-size: 2px;
+  background: var(--glacier-accent-solid);
+  border-radius: inherit;
+}
+
+/* ── Home strip ────────────────────────────────────────────────────────────
+   Three of the week's numbers on the Home page, each a door to the full
+   page. The strip renders nothing at all when there is nothing to say -
+   a zero-minute week is not worth a row of zeros. */
+.statsMinis {
+  display: flex;
+  gap: var(--glacier-space-2);
+  flex-wrap: wrap;
+}
+
+.statsMini {
+  flex: 1;
+  min-inline-size: 9rem;
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-sunken);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: background var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.statsMini:hover {
+  background: var(--glacier-surface-hover, var(--glacier-surface));
+}
+
+.statsMini__icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2rem;
+  block-size: 2rem;
+  border-radius: 34%;
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+}
+
+.statsMini__body {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  min-inline-size: 0;
+}
+
+.statsMini__value {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statsMini__label {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}

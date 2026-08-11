@@ -56,6 +56,15 @@ const LIST_LEN: usize = 30;
 /// At most this many by one artist in a list, so a favourite cannot fill it.
 const PER_ARTIST_CAP: usize = 2;
 
+/// "shoegaze" -> "Shoegaze", for list names built from folded tags.
+fn title_case(word: &str) -> String {
+    let mut chars = word.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -63,7 +72,7 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-fn ai_url() -> Option<String> {
+pub(crate) fn ai_url() -> Option<String> {
     std::env::var("AFM_AI_URL").ok().filter(|s| !s.trim().is_empty())
 }
 
@@ -75,7 +84,7 @@ fn ai_url() -> Option<String> {
 /// model that was never pulled. Embeddings - the
 /// half that actually drives the recommendations - run off their own switch
 /// below, so a server can read lyrics without ever generating a word.
-fn ai_chat_model() -> Option<String> {
+pub(crate) fn ai_chat_model() -> Option<String> {
     std::env::var("AFM_AI_MODEL").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
@@ -471,7 +480,9 @@ async fn curate_cycle(state: &Arc<AppState>) {
         // Everything they have NOT been playing lately, scored against them.
         let fresh: Vec<(f32, &TrackFeatures)> = all
             .iter()
-            .filter(|f| !taste.heard.contains(&f.track_id))
+            // Quarantined = a collector audition nobody has adopted: not part
+            // of the library yet, so it seeds and fills no list.
+            .filter(|f| !taste.heard.contains(&f.track_id) && !f.quarantined)
             .map(|f| (score(f, &taste), f))
             .collect();
         if fresh.len() < 8 {
@@ -542,6 +553,114 @@ async fn curate_cycle(state: &Arc<AppState>) {
                 ("Same wavelength".into(), "Songs about what your songs are about.".into())
             });
             let _ = state.db.put_curated(user, "lyrical-echo", &n, &b, &echo_ids);
+        }
+
+        // --- the families beyond the core three -----------------------------
+        //
+        // The rest of the standing shelf. Plain names on purpose: each list
+        // says exactly what its maths did, and the model's naming budget stays
+        // spent on the three above.
+
+        // Fresh finds: what arrived this week, in arrival order - chronology
+        // IS the ranking for a list whose point is newness. Adopted collector
+        // pulls land here beside anyone's imports.
+        let arrivals = state.db.recent_track_ids(now_ms() - 7 * 24 * 60 * 60 * 1000, LIST_LEN as i64);
+        if arrivals.len() >= 8 {
+            let _ = state.db.put_curated(
+                user,
+                "fresh-finds",
+                "Fresh finds",
+                "New in the library this week.",
+                &arrivals,
+            );
+        }
+
+        // The mood lists, from the analyser's audio character (features.rs).
+        // Whole library including what you play on repeat - a mood list is
+        // something to put ON, not a discovery engine - ranked to taste so
+        // the top of each list is still yours.
+        let pool: Vec<&TrackFeatures> = all.iter().filter(|f| !f.quarantined).collect();
+        let moods: [(&str, &str, &str, fn(&TrackFeatures) -> bool); 4] = [
+            ("mood-chill", "Chill", "Low energy, easy pace.", |f| {
+                f.energy.is_some_and(|e| e <= 0.4) && f.bpm.is_none_or(|b| b < 105.0)
+            }),
+            ("mood-workout", "Workout", "Fast and loud.", |f| {
+                f.energy.is_some_and(|e| e >= 0.6) && f.bpm.is_some_and(|b| b >= 115.0)
+            }),
+            ("mood-late-night", "Late night", "Dim, slow, close.", |f| {
+                f.brightness.is_some_and(|b| b <= 0.35) && f.energy.is_none_or(|e| e <= 0.5)
+            }),
+            ("mood-focus", "Focus", "Steady and unobtrusive.", |f| {
+                f.energy.is_some_and(|e| (0.2..=0.55).contains(&e))
+                    && f.brightness.is_none_or(|b| b <= 0.55)
+            }),
+        ];
+        for (slug, name, blurb, fits) in moods {
+            let ranked: Vec<(f32, &TrackFeatures)> =
+                pool.iter().filter(|f| fits(f)).map(|f| (score(f, &taste), *f)).collect();
+            let ids = take_spread(ranked, LIST_LEN);
+            if ids.len() >= 8 {
+                let _ = state.db.put_curated(user, slug, name, blurb, &ids);
+            }
+        }
+
+        // Daily mixes: one per neighbourhood of what you play. The clusters
+        // are the top genre words of your rotation (tags split on commas, so
+        // "Shoegaze, Alternative" feeds both camps), each mix drawn from what
+        // you have NOT been playing lately - a mix that mirrors the last week
+        // back is a playlist you already made yourself.
+        let mut camps: HashMap<String, f32> = HashMap::new();
+        for (tag, share) in &taste.genres {
+            for part in tag.split(',') {
+                let g = part.trim().to_string();
+                if !g.is_empty() {
+                    *camps.entry(g).or_insert(0.0) += share;
+                }
+            }
+        }
+        let mut top_camps: Vec<(String, f32)> = camps.into_iter().collect();
+        top_camps.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        for (n, (camp, _)) in top_camps.iter().take(3).enumerate() {
+            let ranked: Vec<(f32, &TrackFeatures)> = fresh
+                .iter()
+                .filter(|(_, f)| f.genre.to_lowercase().contains(camp.as_str()))
+                .cloned()
+                .collect();
+            let ids = take_spread(ranked, LIST_LEN);
+            if ids.len() >= 8 {
+                let title = title_case(camp);
+                let _ = state.db.put_curated(
+                    user,
+                    &format!("mix-{}", n + 1),
+                    &format!("{title} mix"),
+                    &format!("A daily mix from your {title} neighbourhood."),
+                    &ids,
+                );
+            }
+        }
+
+        // The decade station: where your rotation lives in time, heard tracks
+        // welcome - a station is a place, not a surprise.
+        let mut years: Vec<i64> =
+            top.iter().filter_map(|id| by_id.get(id)).filter_map(|f| f.year).collect();
+        years.sort_unstable();
+        if let Some(&mid) = years.get(years.len() / 2) {
+            let d0 = (mid / 10) * 10;
+            let ranked: Vec<(f32, &TrackFeatures)> = pool
+                .iter()
+                .filter(|f| f.year.is_some_and(|y| (d0..d0 + 10).contains(&y)))
+                .map(|f| (score(f, &taste), *f))
+                .collect();
+            let ids = take_spread(ranked, LIST_LEN);
+            if ids.len() >= 8 {
+                let _ = state.db.put_curated(
+                    user,
+                    "station-decade",
+                    &format!("{d0}s station"),
+                    &format!("The {d0}s, as your library holds them."),
+                    &ids,
+                );
+            }
         }
     }
 

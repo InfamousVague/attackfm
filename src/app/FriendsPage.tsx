@@ -1,5 +1,4 @@
 import { Button } from '@glacier/react';
-import { Radio } from '@glacier/icons';
 import { useJam } from './jam.tsx';
 import { useLibrary } from './library.tsx';
 import { useServerSession } from './serverSession.tsx';
@@ -98,19 +97,6 @@ export function FriendsPage() {
             </div>
           )}
         </section>
-      )}
-
-      {/* Not in a room and nobody live: the start affordance stands alone,
-          quiet, above the graph - starting a jam is the page's verb even when
-          nothing is happening yet. */}
-      {session && !jam.current && liveRooms.length === 0 && (
-        <div className="jamIdle">
-          <Button variant="soft" size="sm" onClick={() => void jam.start()}>
-            <Radio size={15} />
-            <span>Start a jam</span>
-          </Button>
-          <span className="jamIdle__hint">Friends can join and hear what you hear.</span>
-        </div>
       )}
 
       <RegistryFriends />

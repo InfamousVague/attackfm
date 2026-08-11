@@ -1,5 +1,5 @@
 import { Text } from '@glacier/react';
-import { ChevronLeft, Check, Disc3, Music, Plus, User } from '@glacier/icons';
+import { ChevronLeft, Check, Disc3, Music, Plus, User, X } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { useServerSession } from '../../app/serverSession.tsx';
 import {
@@ -9,6 +9,7 @@ import {
   type CatalogTrack,
 } from '../../app/server.ts';
 import { useOwned } from '../../app/owned.ts';
+import { PROBE_URL, resolveImportable } from '../../app/resolveImport.ts';
 import { useDownloadsOptional } from '../importsBridge.ts';
 import { IMPORTER_PLUGIN_ID, useAcquire } from '../runtime.tsx';
 import type { AcquireTarget } from '../types.ts';
@@ -88,11 +89,66 @@ export function CatalogArtistPage({
     if (hs.some((h) => h.pluginId === IMPORTER_PLUGIN_ID)) enqueue(url, key, armPlay);
     else acquire.acquire(target);
   };
+
+  /**
+   * Pull something whose own link the importer will not take.
+   *
+   * This whole page is Deezer, and the importer refuses a Deezer link as
+   * primary input, so a tap finds the same record or song on Spotify by name
+   * and hands over that instead. Rows whose link is already importable skip
+   * the lookup entirely.
+   */
+  const runResolved = async (
+    kind: 'album' | 'track',
+    title: string,
+    url: string,
+    key: string,
+    importable: boolean,
+    armPlay: boolean,
+  ) => {
+    const target: AcquireTarget = { kind, title, artist: artistName, url };
+    if (importable) {
+      runAcquire(target, url, key, armPlay);
+      return;
+    }
+    if (!session) return;
+    setTapped((prev) => ({ ...prev, [key]: 'adding' }));
+    let found = null;
+    try {
+      found = await resolveImportable(session, kind, artistName, title);
+    } catch {
+      // Offline, or the catalogue refused - same outcome as "not there".
+    }
+    if (!found) {
+      setMissing((prev) => ({ ...prev, [key]: true }));
+      setTapped((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      // Long enough to read, then the row is a live offer again so the tap
+      // doubles as the retry.
+      window.setTimeout(
+        () =>
+          setMissing((prev) => {
+            const next = { ...prev };
+            delete next[key];
+            return next;
+          }),
+        4000,
+      );
+      return;
+    }
+    runAcquire({ ...target, title: found.title, url: found.url }, found.url, key, armPlay);
+  };
   const [artist, setArtist] = useState<CatalogArtist | null>(null);
   const [failed, setFailed] = useState(false);
   // Taps, so a button answers before the queue has caught up. The queue's own
   // word wins once it has one - see addState.
   const [tapped, setTapped] = useState<Record<string, AddState>>({});
+  // Rows whose Spotify lookup came back empty, so the page can say so on the
+  // row rather than appearing to have ignored the tap.
+  const [missing, setMissing] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!session) return;
@@ -100,6 +156,7 @@ export function CatalogArtistPage({
     setArtist(null);
     setFailed(false);
     setTapped({});
+    setMissing({});
     void fetchCatalogArtist(session, artistId, artistName, ctrl.signal)
       .then(setArtist)
       .catch(() => {
@@ -154,19 +211,27 @@ export function CatalogArtistPage({
 
   const releaseCard = (r: CatalogRelease) => {
     const state = addState(r.url, r.id);
+    const gone = missing[r.id] === true;
+    // A record whose own link the importer will not take is still addable -
+    // the tap looks it up on Spotify first. So the only thing that disables a
+    // card is having no acquire handler at all.
+    const canAdd = acquire.hasHandlers({ ...releaseTarget(r), url: PROBE_URL });
     return (
       <button
         key={r.id}
         type="button"
         className="resultCard"
         data-kind="release"
-        disabled={state !== 'idle' || !acquire.hasHandlers(releaseTarget(r))}
+        data-missing={gone || undefined}
+        disabled={state !== 'idle' || !canAdd || gone}
         title={
-          acquire.hasHandlers(releaseTarget(r))
-            ? undefined
-            : 'No way to add this — enable Music import or Buy in Plugins'
+          gone
+            ? `${r.title} is not on Spotify to import`
+            : canAdd
+              ? undefined
+              : 'No way to add this — enable Music import or Buy in Plugins'
         }
-        onClick={() => runAcquire(releaseTarget(r), r.url, r.id, false)}
+        onClick={() => void runResolved('album', r.title, r.url, r.id, r.importable, false)}
       >
         <span className="resultCard__cover" data-kind="release">
           {r.cover ? <img src={r.cover} alt="" loading="lazy" /> : <Disc3 size={22} />}
@@ -175,15 +240,19 @@ export function CatalogArtistPage({
         <span className="resultCard__sub">
           {[r.year, r.trackCount ? `${r.trackCount} tracks` : null].filter(Boolean).join(' · ')}
         </span>
-        <span className="resultCard__badge" data-state={state}>
-          {addGlyph(state)}
-        </span>
+        {(canAdd || state !== 'idle') && (
+          <span className="resultCard__badge" data-state={gone ? 'missing' : state}>
+            {gone ? <X size={14} /> : addGlyph(state)}
+          </span>
+        )}
       </button>
     );
   };
 
   const trackRow = (t: CatalogTrack, index: number) => {
     const state = addState(t.url, t.id, t.title);
+    const gone = missing[t.id] === true;
+    const canAdd = acquire.hasHandlers({ ...trackTarget(t), url: PROBE_URL });
     return (
       <li key={t.id} className="catalogTrack">
         <span className="catalogTrack__rank">{index + 1}</span>
@@ -199,17 +268,19 @@ export function CatalogArtistPage({
         <button
           type="button"
           className="catalogTrack__add"
-          data-state={state}
-          disabled={state !== 'idle' || !acquire.hasHandlers(trackTarget(t))}
-          aria-label={`Add ${t.title}`}
+          data-state={gone ? 'missing' : state}
+          disabled={state !== 'idle' || !canAdd || gone}
+          aria-label={gone ? `${t.title} is not on Spotify` : `Add ${t.title}`}
           title={
-            acquire.hasHandlers(trackTarget(t))
-              ? undefined
-              : 'No way to add this — enable Music import or Buy in Plugins'
+            gone
+              ? `${t.title} is not on Spotify to import`
+              : canAdd
+                ? undefined
+                : 'No way to add this — enable Music import or Buy in Plugins'
           }
-          onClick={() => runAcquire(trackTarget(t), t.url, t.id, true)}
+          onClick={() => void runResolved('track', t.title, t.url, t.id, t.importable, true)}
         >
-          {addGlyph(state)}
+          {gone ? <X size={14} /> : addGlyph(state)}
         </button>
       </li>
     );
@@ -289,9 +360,11 @@ export function CatalogArtistPage({
 
           {artist.albums.length === 0 && artist.singles.length === 0 && (
             <p className="discoverNote">
-              No releases listed for {artist.name} in the public catalogue.
+              The catalogue lists no releases for {artist.name}.
             </p>
           )}
+
+
 
           {artist.related.length > 0 && (
             <section className="discoverSection">

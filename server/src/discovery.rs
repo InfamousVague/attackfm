@@ -565,11 +565,46 @@ async fn new_music_lists(state: &Arc<AppState>, user: i64) -> Vec<serde_json::Va
                 refreshing: true,
             });
         let bg = Arc::clone(state);
+        // What the shelf held before this rebuild, so only genuinely NEW work
+        // interrupts anyone: a daily refresh that reassembles the same
+        // playlists is housekeeping, not news.
+        let before: Vec<String> = cache
+            .get(&user)
+            .map(|e| {
+                e.playlists
+                    .iter()
+                    .filter_map(|p| p.get("title").and_then(|t| t.as_str()).map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
         tokio::spawn(async move {
             let built = build_new_music(&bg, user).await;
             let mut cache = bg.discovery.new_music.lock().await;
             match built {
                 Some(pls) if !pls.is_empty() => {
+                    let fresh: Vec<&str> = pls
+                        .iter()
+                        .filter_map(|p| p.get("title").and_then(|t| t.as_str()))
+                        .filter(|t| !before.iter().any(|b| b == t))
+                        .collect();
+                    if !fresh.is_empty() {
+                        let body = if fresh.len() == 1 {
+                            format!("\u{201c}{}\u{201d} is ready to hear.", fresh[0])
+                        } else {
+                            format!(
+                                "\u{201c}{}\u{201d} and {} more are ready to hear.",
+                                fresh[0],
+                                fresh.len() - 1
+                            )
+                        };
+                        crate::push::notify(
+                            &bg,
+                            user,
+                            crate::push::Kind::Curated,
+                            "Your curator has been busy".into(),
+                            body,
+                        );
+                    }
                     cache.insert(
                         user,
                         CachedNewMusic { playlists: pls, built_at: std::time::Instant::now(), refreshing: false },

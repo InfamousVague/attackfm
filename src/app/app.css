@@ -19,6 +19,36 @@ body {
   background: var(--glacier-bg);
 }
 
+/*
+ * Filled icons, everywhere.
+ *
+ * Glacier's icons are outlines that stroke in `currentColor` and leave their
+ * interior empty. Its `IconBackfill` atom is the kit's answer to wanting them
+ * solid: it stacks a second copy of the glyph behind the outline, filled and
+ * stroked in the SAME resolved color at 33% opacity, so a muted icon fills
+ * muted and an accent icon fills accent - the fill is never a color of its own.
+ *
+ * This is that recipe as one rule instead of a wrapper around each of the ~190
+ * glyphs the app draws. The reason is not just churn: `IconBackfill` is a span
+ * that pads the glyph by 2px on every side, and a great many of these icons are
+ * flex children carrying their own margins and `flex: none`, or are handed to a
+ * kit component as an `icon` prop where no wrapper of ours can reach them. A
+ * rule on the glyph itself fills all of them and moves none of them.
+ *
+ * `color-mix` rather than `fill-opacity` on purpose: a few glyphs fill parts of
+ * themselves outright (the dot inside a marker, say). Those carry their own
+ * `fill` attribute, which this never overrides, so they stay solid - where an
+ * inherited `fill-opacity` would have faded them to a third along with
+ * everything else.
+ *
+ * The `.lucide` hook is Glacier's icon internals showing through - the package
+ * proxies lucide today and says so. When the kit's own pack lands, this is the
+ * one selector to repoint.
+ */
+svg.lucide {
+  fill: color-mix(in srgb, currentColor 33%, transparent);
+}
+
 /* The shell owns the viewport and never adds a window scrollbar. */
 #root {
   height: 100vh;
@@ -123,10 +153,15 @@ img {
 :root {
   /* A song, and the playlist tiles that stand beside it as peers. */
   --card-track: 6.35rem;
-  /* A mix - the page's hero object, wider than a song. */
-  --card-mix: 8.7rem;
-  /* An artist: a round portrait, narrower than a release. */
-  --card-artist: 5.35rem;
+  /* A mix. Sized as a song card and a playlist tile are, rather than the wider
+     hero it used to be: the mixes sit between the playlists and the shelves,
+     and three different widths down one page read as three different kinds of
+     thing when they are all just "something to play". */
+  --card-mix: var(--card-track);
+  /* An artist: a round portrait. Wider than it used to be - a circle reads
+     smaller than a square of the same measure, so matching the release cards
+     numerically made the faces look shrunken beside them. */
+  --card-artist: 6.5rem;
 }
 
 /*
@@ -198,11 +233,22 @@ img {
   gap: var(--glacier-space-1);
 }
 
-/* Nothing playing: no strip, so nothing to clear. Every surface pads its
-   bottom by --app-player-height, so zeroing it here is the whole change - and
-   it is written as its own rule AFTER the mobile override below so it wins on
-   a phone too, where the strip is 9rem when it exists at all. */
-.appWindow[data-player='off'] {
+/* No strip down there: nothing to clear. Every surface pads its bottom by
+   --app-player-height, so zeroing it here is the whole change - and it is
+   written as its own rule AFTER the mobile override below so it wins on a
+   phone too, where the strip is 9rem when it exists at all.
+   
+   The question is asked of the DOM (does a strip exist?) rather than of a
+   flag, because the two can disagree and did: the flag tracked THIS device's
+   deck, while the strip also mounts for a track playing on another device.
+   Listening on the phone therefore collapsed every bottom clearance in the
+   desktop window to zero while a 97px strip sat there - which is how the nav
+   rail came to run underneath it, and the last row of every list with it.
+   Keyed to the element itself, the reservation cannot drift from the thing it
+   reserves for. Same specificity as the attribute selector it replaces
+   (:has() and :not() take their argument's), so it still beats the mobile
+   override below. */
+.appWindow:not(:has(.appPlayer)) {
   --app-player-height: 0rem;
 }
 
@@ -367,7 +413,10 @@ img {
      than as `padding` because every way positions absolutely - and an
      absolutely positioned child lays out against the padding box, so padding
      on this element would be padding the ways simply ignore. */
-  inset-block: 12% 30%;
+  /* Nudged down: the band read high against the hero, because the type is
+     optically centred by its CAPS while the box is centred by its em - so a
+     column of uppercase sits above where the arithmetic says the middle is. */
+  inset-block: 18% 25%;
   /* The trailing inset is the PAGE's gutter, not a number of its own: the
      heading above and the song table below both hold `space-4` off the
      window, so the words' right edge lands on the same line they do. */
@@ -391,6 +440,10 @@ img {
   white-space: nowrap;
   font-weight: 650;
   letter-spacing: 0.08em;
+  /* Tracking hangs 0.08em of empty advance PAST the last glyph, and the stage
+     clips overflow - so a right-aligned word lost the edge of its final letter.
+     The pad pulls the glyphs back inside the clip by exactly that overhang. */
+  padding-inline-end: 0.12em;
   text-transform: lowercase;
   color: #fff;
   opacity: 0;
@@ -699,6 +752,21 @@ img {
    across the whole disc face with a clear hub and spindle hole punched
    through it. The square the strip reserves for art gives the disc its size;
    this only makes it round and makes it turn. */
+/* A disc you can put a hand on. `touch-action: none` is not optional: without
+   it the browser claims the drag as a page scroll after a few pixels and the
+   scratch dies mid-turn. The grab cursor is the only hint it needs - the disc
+   already looks like a thing that turns. */
+.spinningDisc[data-scratchable] {
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.spinningDisc[data-scratchable]:active {
+  cursor: grabbing;
+}
+
 .spinningDisc {
   position: relative;
   width: 100%;
@@ -1267,8 +1335,17 @@ img {
   /* The chin: the band of card below the tabs that covers the home indicator's
      dead strip, so that space carries the nav instead of nothing. */
   --app-nav-chin: var(--app-safe-bottom);
-  /* The sweep on the chin's bottom corners, echoing the phone's own. */
-  --app-nav-chin-radius: 2.25rem;
+  /* The iPhone's own screen corner. In px, not rem: it is the physical curve of
+     the glass and does not move when the interface-size setting does. ~55pt is
+     the modern Pro; a few points either way is invisible behind a corner this
+     large. */
+  --app-screen-radius: 55px;
+  /* The chin's bottom corners. Not a taste value - two rounded rectangles stay
+     concentric when the inner one's radius is the outer's MINUS the gap between
+     them, so a card held --app-nav-inset off the screen wants exactly this to
+     run parallel to the glass instead of cutting across it. Flat 2.25rem read
+     too tight against the curve. */
+  --app-nav-chin-radius: calc(var(--app-screen-radius) - var(--app-nav-inset));
   /* How far the raised brand button's border box rises above the card's top.
      Derived from the button's own numbers rather than guessed: it is centred in
      the island under a negative top margin, which lifts it by
@@ -1525,6 +1602,13 @@ img {
 
 .npScreen__heart {
   flex: none;
+}
+
+/* Saved reads as accent, matching the strip's own heart and the kit's rule for
+   any toggle that is on. Filled-but-grey is the shape of "saved" without the
+   colour of it, which at a glance is the same as not saved at all. */
+.npScreen__heart[aria-pressed='true'] {
+  color: var(--glacier-accent-text);
 }
 
 .npScreen__scrub {
@@ -2179,6 +2263,8 @@ img {
 
 .homeShelfTitle {
   margin: 0;
+  display: flex;
+  align-items: baseline;
   font-size: 1.05rem;
   font-weight: 600;
 }
@@ -2302,7 +2388,7 @@ img {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--glacier-accent);
+  color: var(--glacier-accent-text);
 }
 
 .suggestCardTitle {
@@ -2334,7 +2420,7 @@ img {
   border-radius: var(--glacier-radius-full);
   border: var(--glacier-hairline) solid var(--glacier-border-accent, var(--glacier-border));
   background: var(--glacier-accent-soft, var(--glacier-surface-sunken));
-  color: var(--glacier-accent);
+  color: var(--glacier-accent-text);
   font: inherit;
   font-size: 0.8125rem;
   font-weight: 550;
@@ -2343,7 +2429,7 @@ img {
 }
 
 .suggestAddBtn:hover:not(:disabled) {
-  background: var(--glacier-accent);
+  background: var(--glacier-accent-solid);
   color: var(--glacier-on-accent, #fff);
 }
 
@@ -2355,8 +2441,8 @@ img {
 }
 
 .suggestAddBtn[data-state='added'] {
-  color: var(--glacier-success, #1d9e75);
-  border-color: var(--glacier-success, #1d9e75);
+  color: var(--glacier-success-text);
+  border-color: var(--glacier-success-text);
   background: transparent;
   cursor: default;
 }
@@ -2392,7 +2478,7 @@ img {
   flex: none;
   border-radius: var(--glacier-radius-lg);
   background: var(--glacier-accent-soft, var(--glacier-surface-sunken));
-  color: var(--glacier-accent);
+  color: var(--glacier-accent-text);
 }
 
 .discoverHead__text {
@@ -2609,7 +2695,7 @@ img {
   align-items: center;
   justify-content: center;
   background: var(--glacier-surface-sunken);
-  color: var(--glacier-accent);
+  color: var(--glacier-accent-text);
 }
 
 .mixCardTitle {
@@ -3116,6 +3202,40 @@ body [class*='_panel_']:has(> .dlPanel) {
    it is the screen rather than a panel on it - and its own body scrolls under
    the sticky header. The bottom pad is the floating player's height, so the
    last rows can rise clear of it rather than staying trapped underneath. */
+/* On the artist page the song table is a SECTION of a page that already
+   scrolls, not the page itself - so it must not bring its own scroller. Two
+   scrollers stacked is the thing that feels broken under a thumb: the inner one
+   swallows the gesture until it hits its end, the page only starts moving after
+   that, and flicking back up stops halfway for the same reason.
+   
+   The Library's "All" view is the opposite case and keeps its own scroller:
+   there the table IS the page, filling the window under a sticky header. */
+.artistPage .libraryBody {
+  /* Not a flex column here: nothing on this page wants to fill a height, and
+     `min-height: 0` is what let the table be squeezed to a scrollable box in
+     the first place. */
+  display: block;
+  min-block-size: auto;
+}
+
+.artistPage .songTable {
+  block-size: auto;
+  /* !important because the kit's grid writes `max-height: 100%` as an INLINE
+     style, and an inline style outranks any selector. This is the one way a
+     stylesheet can answer it. */
+  max-block-size: none !important;
+  /* BOTH axes, and the x one clipped rather than visible. `overflow-y: visible`
+     alone does nothing: a `visible` paired with anything that is not `visible`
+     or `clip` computes back to `auto`, so the longhand silently kept the
+     scroller. `clip` on x keeps a wide table from bleeding sideways while
+     letting y genuinely go visible. */
+  overflow-x: clip;
+  overflow-y: visible;
+  /* The page already reserves the player and nav clearance at its foot; the
+     table repeating it would strand a screen of blank space mid-page. */
+  padding-block-end: 0;
+}
+
 .songTable {
   height: 100%;
   border: none;
@@ -3402,30 +3522,293 @@ body [class*='_panel_']:has(> .dlPanel) {
   padding: var(--glacier-space-2);
 }
 
+/* The discography grid. This was a sideways shelf of what you own; it is now
+   the whole body of work, so it wraps and is read rather than skimmed past. */
+.artistDisc {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+  gap: var(--glacier-space-4) var(--glacier-space-3);
+}
+
+/* Sits in the heading, saying how much of the discography is actually yours. */
+.artistDiscCount {
+  margin-inline-start: var(--glacier-space-2);
+  color: var(--glacier-text-subtle);
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
 .artistAlbum {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
+  gap: var(--glacier-space-1);
+  min-inline-size: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+/* A record you can neither play nor pull is still part of the story - it just
+   does not pretend to be a control. */
+.artistAlbum:disabled {
+  cursor: default;
+}
+
+.artistAlbum:disabled .artistAlbumArt {
+  opacity: 0.55;
+}
+
+.artistAlbumArt {
+  position: relative;
+  inline-size: 100%;
+  aspect-ratio: 1;
+  display: block;
+  border-radius: var(--glacier-radius-md);
+  overflow: hidden;
+  background: var(--glacier-surface-sunken);
+  transition: transform var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.artistAlbum:hover:not(:disabled) .artistAlbumArt,
+.artistAlbum:focus-visible .artistAlbumArt {
+  transform: translateY(-2px);
+}
+
+.artistAlbumCover--glyph {
+  display: grid;
+  place-items: center;
+  color: var(--glacier-text-subtle);
+}
+
+/* Owned gets a mark; an addable record gets an offer. Anything else is left
+   unbadged rather than wearing a glyph that means "no". */
+.artistAlbumBadge {
+  position: absolute;
+  inset-block-end: var(--glacier-space-1);
+  inset-inline-end: var(--glacier-space-1);
+  display: grid;
+  place-items: center;
+  inline-size: 1.375rem;
+  block-size: 1.375rem;
+  border-radius: var(--glacier-radius-full);
+  background: rgb(0 0 0 / 0.6);
+  color: #fff;
+  backdrop-filter: blur(6px);
+}
+
+.artistAlbumBadge[data-have] {
+  background: var(--glacier-success-solid, #1d9e75);
+}
+
+.artistAlbumBadge[data-busy] {
+  background: var(--glacier-accent-solid);
+}
+
+.artistAlbumBadge[data-missing] {
+  background: var(--glacier-danger-solid, #b4423a);
+}
+
+/* Spins while the record is being looked up on Spotify - the search is a
+   network round trip, and a button that sat still through it would read as one
+   that had not registered the tap. */
+.artistAlbumSpin {
+  inline-size: 0.75rem;
+  block-size: 0.75rem;
+  border: 2px solid rgb(255 255 255 / 0.35);
+  border-top-color: #fff;
+  border-radius: var(--glacier-radius-full);
+  animation: artistAlbumSpin 0.7s linear infinite;
+}
+
+@keyframes artistAlbumSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artistAlbumSpin {
+    animation-duration: 2.4s;
+  }
+}
+
+/* A record mid-flight or just added is not a dimmed one - the state IS the
+   point, so it reads at full strength like an owned record does. */
+.artistAlbum[data-state] .artistAlbumArt {
+  opacity: 1;
+}
+
+.artistAlbum[data-state='added'] .artistAlbumName,
+.artistAlbum[data-state='finding'] .artistAlbumName {
+  color: var(--glacier-text);
+}
+
+/* --- the curator settings pane ------------------------------------------- */
+
+.curatorLedger {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  margin-block: var(--glacier-space-2);
+}
+
+.curatorLedger__rail {
+  block-size: 0.5rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface-sunken);
+  overflow: hidden;
+}
+
+.curatorLedger__fill {
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--glacier-accent-solid);
+  transition: inline-size 0.4s var(--glacier-ease-out);
+}
+
+/* Full is a state worth a colour change: the machine has stopped. */
+.curatorLedger__fill[data-full] {
+  background: var(--glacier-danger-solid, #b4423a);
+}
+
+.curatorLedger__label {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.curatorWarn {
+  color: var(--glacier-danger-text, #e08a82);
+}
+
+.curatorPulls {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.curatorPull {
+  display: flex;
   align-items: center;
   gap: var(--glacier-space-2);
-  flex: 0 0 auto;
-  width: 5rem;
+  padding: var(--glacier-space-1) 0;
+}
+
+.curatorPull__glyph {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text-subtle);
+}
+
+.curatorPull[data-state='promoted'] .curatorPull__glyph {
+  color: var(--glacier-success-text, #7fd8b0);
+}
+
+.curatorPull[data-state='failed'] .curatorPull__glyph {
+  color: var(--glacier-danger-text, #e08a82);
+}
+
+.curatorPull__text {
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.curatorPull__title {
+  font-size: var(--glacier-font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The model's one line about WHY - the part that makes an autonomous pull
+   feel chosen rather than random. */
+.curatorPull__reason {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.curatorPull__when {
+  margin-inline-start: auto;
+  flex: none;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-subtle);
+}
+
+/* --- the collector's audition shelf ------------------------------------- */
+
+.forYouGlyph {
+  margin-inline-end: var(--glacier-space-2);
+  color: var(--glacier-accent-text);
+}
+
+/* The one loud thing the collector ever says: its budget is full and it has
+   stopped. A message, not an alarm - nothing is broken or lost. */
+.forYouHalted {
+  margin: 0 0 var(--glacier-space-2);
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-accent-soft, var(--glacier-surface-sunken));
+  color: var(--glacier-accent-text);
+}
+
+/* One line under the discography, not a caption on every sleeping card. */
+.artistDiscNote {
+  margin: 0;
+  color: var(--glacier-text-subtle);
+}
+
+.artistAlbumSub {
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--glacier-text-subtle);
+  font-size: var(--glacier-font-size-xs);
+  font-variant-numeric: tabular-nums;
 }
 
 .artistAlbumCover {
-  width: 5rem;
-  height: 5rem;
+  inline-size: 100%;
+  block-size: 100%;
   border-radius: var(--glacier-radius-md);
   object-fit: cover;
   background: var(--glacier-surface-sunken);
 }
 
 .artistAlbumName {
-  max-width: 100%;
-  color: var(--glacier-text-muted);
-  font-size: var(--glacier-font-size-xs);
+  max-inline-size: 100%;
+  margin-block-start: var(--glacier-space-1);
+  color: var(--glacier-text);
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 550;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Yours reads at full strength; the rest of the discography sits back a step so
+   the shelf you own is still findable inside the body of work. */
+.artistAlbum:not([data-have]) .artistAlbumName {
+  color: var(--glacier-text-muted);
+  font-weight: 500;
 }
 
 .songIndex {
@@ -3553,10 +3936,14 @@ body [class*='_panel_']:has(> .dlPanel) {
     );
   }
   /* The words span the page: full width in from the gutter, and top to bottom
-     clear of the header above and the floating player below. */
+     clear of the header above and the floating chrome below. That trailing
+     clearance is the player AND the nav - the same pair every page pads its
+     last row by - because the two stack down there and reserving only the
+     player left the words running behind the nav island. The nav's own height
+     carries the safe area, so it is not added again. */
   .npWords {
     inset-block: calc(env(safe-area-inset-top, 0px) + 3.5rem)
-      calc(env(safe-area-inset-bottom, 0px) + var(--app-player-height, 9rem));
+      calc(var(--app-player-height, 9rem) + var(--app-nav-height, 0px));
     inset-inline: var(--glacier-space-4);
   }
 
@@ -3570,9 +3957,27 @@ body [class*='_panel_']:has(> .dlPanel) {
     z-index: -1;
     opacity: 0.5;
   }
+  /* How much of the sheet's bottom belongs to the controls: the title row, the
+     scrubber, the transport and the actions, plus the gaps between them and
+     the sheet's own bottom padding. Measured off the live sheet - the title
+     row's top edge sits 304px above the sheet's bottom at a 16px root - and
+     written in rem so it grows with the interface-size setting exactly as the
+     controls it is clearing do. The safe area is added separately: that is
+     device geometry and does not scale with anything.
+
+     At 5rem the words ran a full 190px past the title row and down into the
+     transport, which is what "too low into the controls" was. */
   .npScreen .npWords {
-    inset-block: calc(env(safe-area-inset-top, 0px) + 4rem)
-      calc(env(safe-area-inset-bottom, 0px) + 5rem);
+    /* The band the words lay themselves out in, sized to the open square
+       between the header and the controls.
+
+       The 6rem is the only knob for where they SIT: raise it and the words
+       move down, lower it and they climb. The space comes off the TOP on
+       purpose - taking it off the bottom instead would walk them back into the
+       title row and the transport, which is the clearance the 19.5rem below
+       exists to hold (see the note there). */
+    inset-block: calc(env(safe-area-inset-top, 0px) + 6rem)
+      calc(env(safe-area-inset-bottom, 0px) + 19.5rem);
     inset-inline: var(--glacier-space-6);
   }
 
@@ -4252,7 +4657,7 @@ body [class*='_panel_']:has(> .dlPanel) {
 }
 
 .deviceRow[data-active] {
-  color: var(--glacier-accent);
+  color: var(--glacier-accent-text);
 }
 
 .deviceRow__icon {
@@ -4281,13 +4686,13 @@ body [class*='_panel_']:has(> .dlPanel) {
 }
 
 .deviceRow[data-active] .deviceRow__state {
-  color: var(--glacier-accent);
+  color: var(--glacier-accent-text);
 }
 
 .deviceRow__check {
   flex: none;
   display: flex;
-  color: var(--glacier-accent);
+  color: var(--glacier-accent-text);
 }
 
 /* ---- Playlists: the page, and the add-to-playlist panel ---------------- */
@@ -4683,7 +5088,7 @@ body [class*='_panel_']:has(> .dlPanel) {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--glacier-accent);
+  color: var(--glacier-accent-text);
 }
 
 .resultCard__cover[data-kind='artist'] {
@@ -4727,26 +5132,26 @@ body [class*='_panel_']:has(> .dlPanel) {
   border-radius: var(--glacier-radius-full);
   background: var(--glacier-surface, rgba(0, 0, 0, 0.55));
   border: var(--glacier-hairline) solid var(--glacier-border-subtle);
-  color: var(--glacier-accent);
+  color: var(--glacier-accent-text);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
 
 .resultCard:hover:not(:disabled) .resultCard__badge[data-state='idle'] {
-  background: var(--glacier-accent);
+  background: var(--glacier-accent-solid);
   color: var(--glacier-on-accent, #fff);
 }
 
 .resultCard__badge[data-state='added'] {
-  color: var(--glacier-success, #1d9e75);
-  border-color: var(--glacier-success, #1d9e75);
+  color: var(--glacier-success-text);
+  border-color: var(--glacier-success-text);
 }
 
 /* A hit you already own: the badge is a play button, not an Add, and fills on
    hover the way the idle Add does - the tap starts the song rather than
    fetching it. */
 .resultCard:hover:not(:disabled) .resultCard__badge[data-state='owned'] {
-  background: var(--glacier-accent);
+  background: var(--glacier-accent-solid);
   color: var(--glacier-on-accent, #fff);
 }
 
@@ -4755,7 +5160,7 @@ body [class*='_panel_']:has(> .dlPanel) {
   block-size: 0.85rem;
   border-radius: 50%;
   border: 2px solid var(--glacier-border);
-  border-top-color: var(--glacier-accent);
+  border-top-color: var(--glacier-accent-solid);
   animation: resultCardSpin 0.7s linear infinite;
 }
 
@@ -4869,7 +5274,7 @@ body [class*='_panel_']:has(> .dlPanel) {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--glacier-accent);
+  color: var(--glacier-accent-text);
   border: var(--glacier-hairline) solid var(--glacier-border-subtle);
 }
 
@@ -5048,6 +5453,14 @@ body [class*='_panel_']:has(> .dlPanel) {
   white-space: nowrap;
 }
 
+/* Your own play count, on a song you own, inside the catalogue's list. */
+.catalogTrack__plays {
+  flex: none;
+  color: var(--glacier-text-subtle);
+  font-size: var(--glacier-font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
 .catalogTrack__time {
   flex: none;
   color: var(--glacier-text-muted);
@@ -5076,6 +5489,29 @@ body [class*='_panel_']:has(> .dlPanel) {
 .catalogTrack__add[data-state='added'] {
   color: var(--glacier-accent-solid);
   border-color: var(--glacier-accent-border);
+}
+
+/* The Spotify lookup came back empty. Distinct from disabled, which means
+   "nothing here can fetch this" rather than "this record is not there". */
+.catalogTrack__add[data-state='missing'] {
+  color: var(--glacier-danger-text, #e08a82);
+  border-color: var(--glacier-danger-border, #7a2f29);
+}
+
+/* A song you already own plays from its own row, so its title is a control
+   rather than a label. */
+.catalogTrack__title--play {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.catalogTrack__title--play:hover {
+  text-decoration: underline;
 }
 
 .catalogTrack__add:disabled {
@@ -5191,7 +5627,7 @@ body [class*='_panel_']:has(> .dlPanel) {
   flex: none;
   border-radius: var(--glacier-radius-lg);
   background: var(--glacier-accent-soft, var(--glacier-surface-sunken));
-  color: var(--glacier-accent-solid, var(--glacier-accent));
+  color: var(--glacier-accent-solid);
 }
 
 .serverHero__meta {
@@ -5308,7 +5744,7 @@ body [class*='_panel_']:has(> .dlPanel) {
   flex: none;
   border-radius: var(--glacier-radius-lg);
   background: var(--glacier-accent-soft, var(--glacier-surface-sunken));
-  color: var(--glacier-accent-solid, var(--glacier-accent));
+  color: var(--glacier-accent-solid);
 }
 
 .deviceIdentity__meta {
@@ -5493,19 +5929,734 @@ body [class*='_panel_']:has(> .dlPanel) {
   gap: var(--glacier-space-2);
 }
 
-.djLauncher__row {
-  display: flex;
+/* The DJ is an icon in the app header. Its spoken line and any error are the
+   only parts with width, and a header that grows a line of italic text when a
+   set starts is a header that jumps - so in that context the wrapper is a plain
+   inline box and the text hangs out of the flow, under the header, where it can
+   say its piece without moving anything. */
+.mobileHeader .djLauncher {
+  position: relative;
+  display: inline-flex;
+  flex-direction: row;
   align-items: center;
-  gap: var(--glacier-space-2);
 }
 
-.djLauncher__field {
-  flex: 1;
-  min-inline-size: 0;
+.mobileHeader .djLauncher__line,
+.mobileHeader .djLauncher > p {
+  position: absolute;
+  inset-block-start: calc(100% + var(--glacier-space-1));
+  inset-inline-end: 0;
+  z-index: 5;
+  max-inline-size: 70vw;
+  padding: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-glass-thick, var(--glacier-surface));
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  backdrop-filter: blur(var(--glacier-blur-lg));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-lg));
+  box-shadow: var(--glacier-shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.42));
+  text-align: end;
+}
+
+/* The library page's own action row: the download queue's icon, sitting above
+   the shelves and pinned to the trailing edge so it reads as page chrome
+   rather than as the first item of the first shelf. */
+/* The library page's action row: the download queue's icon on the left, the DJ
+   taking everything after it. Aligned to the top rather than centred, so the
+   DJ's spoken line can hang below its button without dragging the icon down
+   with it. */
+.libraryActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--glacier-space-1);
 }
 
 .djLauncher__line {
   font-style: italic;
+}
+
+
+/* ── Search, the page ────────────────────────────────────────────────────────
+   A destination like Library: a field, chips that narrow what came back, and
+   sections you can scroll and return to. It was a modal, which is right for a
+   command palette and wrong for results people want to read. */
+.searchPage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-4);
+}
+
+/* The filter row. Chips rather than a segmented control: the set changes with
+   the query (a chip that would show nothing is not offered), and a segmented
+   control that grows and shrinks under the thumb is a moving target. */
+.searchFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+}
+
+.searchChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  padding: var(--glacier-space-1) var(--glacier-space-3);
+  border-radius: var(--glacier-radius-full);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text-muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 550;
+  cursor: pointer;
+  transition: background var(--glacier-duration-fast) var(--glacier-ease-out),
+    color var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.searchChip__glyph {
+  display: grid;
+  place-items: center;
+}
+
+.searchChip:hover {
+  color: var(--glacier-text);
+}
+
+.searchChip[data-on] {
+  background: var(--glacier-accent-solid);
+  border-color: transparent;
+  color: var(--glacier-accent-contrast, #fff);
+}
+
+.searchSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+/* A heading that says what these are AND how many, with the same glyph its
+   filter chip wears - so the chip and the section it reveals are visibly the
+   same thing. */
+.searchSection__title {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  margin: 0;
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 650;
+  color: var(--glacier-text-muted);
+}
+
+.searchSection__glyph {
+  display: grid;
+  place-items: center;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  border-radius: var(--glacier-radius-sm);
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-accent-text);
+}
+
+.searchSection__count {
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--glacier-text-subtle);
+}
+
+.searchRows {
+  display: flex;
+  flex-direction: column;
+}
+
+.searchNote {
+  margin: 0;
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-sm);
+}
+
+/* One result. A button where tapping does something, a plain row where it is
+   there to be read - a friend, a playlist, a catalogue hit you add elsewhere. */
+.searchRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  inline-size: 100%;
+  padding: var(--glacier-space-2);
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.searchRow[data-static] {
+  cursor: default;
+}
+
+/* The cursor and the pointer land on the same highlight: arrowing from the
+   field never focuses a row (the field keeps the caret), so `data-active` is
+   what "you are here" looks like, and hover sets it too. */
+.searchRow:hover:not([data-static]),
+.searchRow:focus-visible,
+.searchRow[data-active] {
+  background: var(--glacier-surface-raised, var(--glacier-hover));
+}
+
+.searchRow[data-active] {
+  box-shadow: inset 2px 0 0 var(--glacier-accent-solid);
+}
+
+.searchRow__glyph {
+  flex: none;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: var(--glacier-radius-sm);
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text-subtle);
+}
+
+/* The shape system. Eight kinds of thing share one page, so the silhouette has
+   to say what a row is before a word of it is read: people are circles, songs
+   and albums are squares, a playlist is a soft-cornered mosaic of what is
+   inside it, and a genre is a tinted tile with no artwork at all. */
+.searchRow__glyph[data-shape='circle'] {
+  border-radius: var(--glacier-radius-full);
+}
+
+.searchRow__glyph[data-shape='mosaic'] {
+  border-radius: var(--glacier-radius-md);
+}
+
+.searchRow__glyph[data-shape='tile'] {
+  border-radius: var(--glacier-radius-md);
+  background: linear-gradient(
+    140deg,
+    hsl(var(--searchTileHue, 280) 62% 52%),
+    hsl(calc(var(--searchTileHue, 280) + 42) 58% 38%)
+  );
+  color: #fff;
+}
+
+.searchRow__glyph img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+/* Two by two, and gracefully fewer: one cover fills the square, two split it
+   down the middle, three leave the fourth cell empty rather than stretching. */
+.searchMosaic {
+  inline-size: 100%;
+  block-size: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  background: var(--glacier-surface-sunken);
+}
+
+.searchMosaic[data-n='1'] {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+.searchMosaic[data-n='2'] {
+  grid-template-rows: 1fr;
+}
+
+.searchMosaic img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.searchRow__text {
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.searchRow__title,
+.searchRow__sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.searchRow__title {
+  font-size: 0.9375rem;
+  font-weight: 550;
+}
+
+.searchRow__sub {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  font-size: 0.8125rem;
+  color: var(--glacier-text-muted);
+}
+
+/* A lyric hit shows the line it matched, in the voice of a quotation - it is
+   the only row whose subtitle answers "why is this here" rather than "what is
+   this". */
+.searchRow__sub[data-lyric] {
+  color: var(--glacier-text-subtle);
+  font-style: italic;
+}
+
+.searchRow__lyric {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Badges. Small, quiet, and only where they say something the title cannot. */
+.searchQuality,
+.searchSource {
+  flex: none;
+  padding-inline: 0.375rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text-subtle);
+  font-size: 0.625rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  line-height: 1.4;
+}
+
+.searchSource--spotify {
+  color: #1db954;
+}
+
+.searchSource--deezer {
+  color: #a238ff;
+}
+
+.searchRow__end {
+  margin-inline-start: auto;
+  flex: none;
+  color: var(--glacier-text-subtle);
+}
+
+.searchRow__end[data-ok] {
+  color: var(--glacier-success-text);
+}
+
+/* The inline acquire. A catalogue row IS its own Add button - the whole row
+   fires the importer - so this is a label for what the row does, not a second
+   control competing with it. */
+.searchAdd {
+  margin-inline-start: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem var(--glacier-space-2);
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-soft, var(--glacier-surface-sunken));
+  color: var(--glacier-accent-text);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.searchAdd[data-busy] {
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text-muted);
+}
+
+.searchAdd[data-missing] {
+  background: var(--glacier-danger-soft, var(--glacier-surface-sunken));
+  color: var(--glacier-danger-text, #e08a82);
+}
+
+.searchAdd .artistAlbumSpin {
+  border-color: currentColor;
+  border-top-color: transparent;
+}
+
+/* A song row carries its two queue verbs on the end. They are siblings of the
+   row rather than children of it: a button inside a button is not a thing, and
+   the row itself has to stay one press. */
+.searchRowSeat {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.searchRowSeat > .searchRow {
+  padding-inline-end: 4.5rem;
+}
+
+.searchRow__verbs {
+  position: absolute;
+  inset-inline-end: var(--glacier-space-2);
+  display: flex;
+  gap: 0.125rem;
+  opacity: 0;
+  transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.searchRowSeat:hover .searchRow__verbs,
+.searchRowSeat:focus-within .searchRow__verbs,
+.searchRowSeat:has(.searchRow[data-active]) .searchRow__verbs {
+  opacity: 1;
+}
+
+.searchVerb {
+  display: grid;
+  place-items: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border: none;
+  border-radius: var(--glacier-radius-sm);
+  background: none;
+  color: var(--glacier-text-muted);
+  cursor: pointer;
+}
+
+.searchVerb:hover {
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text);
+}
+
+/* ---- The Top result ----------------------------------------------------- */
+
+/* The page's most confident answer, beside the songs it beat. One row on a
+   wide window, stacked on a narrow one - the hero first either way, because it
+   is the thing most searches are actually for. */
+.searchTop {
+  display: grid;
+  grid-template-columns: minmax(15rem, 20rem) 1fr;
+  gap: var(--glacier-space-4);
+  align-items: start;
+}
+
+.searchTop__hero,
+.searchTop__songs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  min-inline-size: 0;
+}
+
+@media (max-width: 52rem) {
+  .searchTop {
+    grid-template-columns: 1fr;
+  }
+}
+
+.searchTopCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--glacier-space-1);
+  padding: var(--glacier-space-4);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-sunken);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: background var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.searchTopCard:hover,
+.searchTopCard:focus-visible,
+.searchTopCard[data-active] {
+  background: var(--glacier-surface-raised, var(--glacier-hover));
+}
+
+.searchTopCard[data-active] {
+  border-color: var(--glacier-accent-solid);
+}
+
+.searchTopCard__art {
+  inline-size: 6rem;
+  block-size: 6rem;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  margin-block-end: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface);
+  color: var(--glacier-text-subtle);
+  box-shadow: var(--glacier-shadow-md, 0 6px 20px rgb(0 0 0 / 0.18));
+}
+
+.searchTopCard__art[data-shape='circle'] {
+  border-radius: var(--glacier-radius-full);
+}
+
+.searchTopCard__art img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.searchTopCard__title {
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.searchTopCard__sub {
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+}
+
+.searchTopCard__verb {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-block-start: var(--glacier-space-2);
+  padding: 0.25rem var(--glacier-space-3);
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-accent-contrast, #fff);
+  font-size: 0.8125rem;
+  font-weight: 650;
+}
+
+/* ---- The empty page ----------------------------------------------------- */
+
+/* What you opened last time. A scrolling row rather than a grid: it is a
+   shortcut, and a shortcut that pushes the rest of the page down has stopped
+   being one. */
+.searchRecents {
+  display: flex;
+  gap: var(--glacier-space-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-block-end: var(--glacier-space-1);
+}
+
+.searchRecents::-webkit-scrollbar {
+  display: none;
+}
+
+.searchRecent {
+  position: relative;
+  flex: none;
+  inline-size: 7.5rem;
+}
+
+.searchRecent__body {
+  inline-size: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: var(--glacier-space-2);
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.searchRecent__body:hover,
+.searchRecent__body:focus-visible {
+  background: var(--glacier-surface-sunken);
+}
+
+.searchRecent__art {
+  inline-size: 100%;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  margin-block-end: var(--glacier-space-1);
+  border-radius: var(--glacier-radius-sm);
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text-subtle);
+}
+
+.searchRecent__art[data-round] {
+  border-radius: var(--glacier-radius-full);
+}
+
+.searchRecent__art img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.searchRecent__title,
+.searchRecent__sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.searchRecent__title {
+  font-size: 0.8125rem;
+  font-weight: 550;
+}
+
+.searchRecent__sub {
+  font-size: 0.75rem;
+  color: var(--glacier-text-muted);
+}
+
+/* The forget button only appears on the tile it belongs to, so a row of twenty
+   is not a row of twenty crosses. */
+.searchRecent__forget {
+  position: absolute;
+  inset-block-start: var(--glacier-space-3);
+  inset-inline-end: var(--glacier-space-3);
+  display: grid;
+  place-items: center;
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  border: none;
+  border-radius: var(--glacier-radius-full);
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.searchRecent:hover .searchRecent__forget,
+.searchRecent:focus-within .searchRecent__forget {
+  opacity: 1;
+}
+
+/* The genres your own library is made of, as somewhere to start. Each keeps
+   one colour, derived from its name, so the wall is stable between visits. */
+/* Browse takes whatever the page has left. A wall that stops a third of the way
+   down reads as a page that failed to load rather than a place to start, so the
+   section grows and its rows share the height between them. `1 0 auto` and not
+   `1`: it may grow into spare room, but a tall wall on a short window must
+   overflow into the scroll rather than being squeezed. */
+#searchResults,
+.searchSection--browse {
+  flex: 1 0 auto;
+  min-block-size: 0;
+}
+
+.searchBrowse {
+  display: grid;
+  /* Two up, however many rows that takes - the count of genres is what varies,
+     not the width. */
+  grid-template-columns: repeat(2, 1fr);
+  /* The floor keeps a tile readable when there are more genres than the window
+     has room for; above it, the rows divide whatever is going. */
+  grid-auto-rows: minmax(5.5rem, 1fr);
+  gap: var(--glacier-space-2);
+  flex: 1;
+  min-block-size: 0;
+}
+
+.searchGenre {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0.125rem;
+  min-block-size: 5rem;
+  padding: var(--glacier-space-3);
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  background: linear-gradient(
+    140deg,
+    hsl(var(--searchTileHue, 280) 62% 48%),
+    hsl(calc(var(--searchTileHue, 280) + 42) 56% 32%)
+  );
+  color: #fff;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+/* A corner of real artwork, tilted into the tile - enough to say this is your
+   music rather than a colour swatch, not enough to fight the label. */
+.searchGenre__art {
+  position: absolute;
+  inset-block-start: -0.75rem;
+  inset-inline-end: -0.75rem;
+  inline-size: 3.75rem;
+  block-size: 3.75rem;
+  border-radius: var(--glacier-radius-sm);
+  object-fit: cover;
+  transform: rotate(22deg);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.28);
+}
+
+.searchGenre__name {
+  position: relative;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+}
+
+.searchGenre__count {
+  position: relative;
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+
+/* ---- Chips and See all -------------------------------------------------- */
+
+.searchChipWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+/* Between the scopes and the kinds: one row, two questions. */
+.searchChipRule {
+  inline-size: var(--glacier-hairline);
+  block-size: 1.125rem;
+  background: var(--glacier-border-subtle);
+}
+
+.searchSeeAll {
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--glacier-accent-text);
+  font: inherit;
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+/* Two auto margins in one flex line would split the free space and strand the
+   count in the middle: when a count is already holding the end of the heading,
+   the See all just sits beside it. */
+.searchSection__count ~ .searchSeeAll {
+  margin-inline-start: var(--glacier-space-3);
+}
+
+.searchSeeAll:hover {
+  text-decoration: underline;
+}
+
+#searchResults {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-5);
 }
 
 /* ---- Registry: account setup + friends --------------------------------- */
@@ -5828,7 +6979,7 @@ body [class*='_panel_']:has(> .dlPanel) {
   overflow-x: hidden;
   isolation: isolate;
   background:
-    radial-gradient(120% 80% at 50% -10%, color-mix(in srgb, var(--glacier-accent) 22%, transparent), transparent 60%),
+    radial-gradient(120% 80% at 50% -10%, color-mix(in srgb, var(--glacier-accent-solid) 22%, transparent), transparent 60%),
     var(--glacier-bg, #0b0b0d);
 }
 
@@ -6062,7 +7213,7 @@ body [class*='_panel_']:has(> .dlPanel) {
 .qrScanner__frame {
   position: absolute;
   inset: 16%;
-  border: 3px solid color-mix(in srgb, var(--glacier-accent) 85%, white);
+  border: 3px solid color-mix(in srgb, var(--glacier-accent-solid) 85%, white);
   border-radius: 14px;
   box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.25);
 }

@@ -57,6 +57,8 @@ import npPlaceholderArt from '../assets/attack-wave.png';
 import { NowPlayingBackdrop } from './NowPlayingBackdrop.tsx';
 import { loadAudioUrl, reactivateAudioSession, systemOutputVolume, type Track } from './tauri.ts';
 import { fetchCanvas, isRemotePath, reportPlay, trackIdFromPath } from './server.ts';
+import { createListenReporter, type ListenSnapshot } from './listens.ts';
+import { loadScrubTape } from './scrubTape.ts';
 import { useConnect } from './playbackSync.tsx';
 import { DeviceList, DevicePicker, useDevicesAvailable } from './DevicePicker.tsx';
 import { AddToPlaylistDialog } from './AddToPlaylist.tsx';
@@ -446,7 +448,43 @@ export function Player({
     npDimTimer.current = window.setTimeout(() => setNpDimmed(true), 30_000);
   };
   useEffect(() => {
-    const keepAwake = npOpen && playing;
+    /**
+   * Coming back to the app while music is playing lands on Now Playing.
+   *
+   * This is the lock-screen widget, Control Center, the CarPlay card and the
+   * headphone tap - every "audio spot" that opens the app. There is no API
+   * that says WHICH of them did it, or even that one of them did: iOS hands a
+   * launch from the now-playing artwork to the app exactly like any other
+   * launch. So the signal is the honest proxy - the app came forward and sound
+   * is coming out of it - and the guards below are what keep that from
+   * hijacking an ordinary app switch.
+   *
+   * Two seconds in the background is the floor: a share sheet, a permission
+   * prompt or the app switcher flashing past are all shorter than that, and
+   * none of them should land you in a full-screen player.
+   */
+  const hiddenAt = useRef(0);
+  useEffect(() => {
+    if (!mobileControls) return;
+    const onVisible = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt.current = Date.now();
+        return;
+      }
+      const away = Date.now() - hiddenAt.current;
+      hiddenAt.current = 0;
+      if (away < 2000) return;
+      // Only when this device is the one making the sound: following someone
+      // else's jam, or handing audio to another device, the player here is not
+      // what you came back for.
+      if (!audible || activeElsewhere) return;
+      setNpOpen(true);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [mobileControls, audible, activeElsewhere]);
+
+  const keepAwake = npOpen && playing;
     void setIdleTimerDisabled(keepAwake);
     if (!keepAwake) {
       if (npDimTimer.current !== null) {
@@ -683,6 +721,11 @@ export function Player({
       analyserRef.current.setEqGains(eqGainsRef.current);
       analyserRef.current.setDynamics(playbackRef.current.nightMode);
       analyserRef.current.setMono(playbackRef.current.mono);
+      // Dev-only: the graph on the window, so a driven browser can assert
+      // what a person would otherwise have to hear.
+      if (import.meta.env.DEV) {
+        (window as unknown as { __afmMeter?: AnalyserMeter }).__afmMeter = analyserRef.current;
+      }
     }
     // A context built off the play gesture starts suspended; wake it here, on a
     // real click, or the analyser (and playback through it) stays silent.
@@ -837,6 +880,12 @@ export function Player({
       if (el !== activeAudio()) return;
       if (!wantPlaying.current) return;
       if (el.ended || windingDown.current) return;
+      // A hand on the platter paused this element itself - the scratch engine
+      // is sounding in its place, and the transport still means "playing".
+      // Without this the branch below reads the scratch's own pause as a
+      // person's and drops the intent, so letting go would leave the song
+      // stopped under a bar that just watched you scrub it.
+      if (scratchHeld.current) return;
       // Only the suspension window counts as the system's doing: iOS pauses a
       // playing element within moments of the app leaving the foreground. A
       // pause landing later - or while visible - is a person's (the lock
@@ -920,6 +969,30 @@ export function Player({
   const { session: playSession } = useServerSession();
   const playSessionRef = useRef(playSession);
   playSessionRef.current = playSession;
+
+  // The EVENT log rides beside the play counter below: the counter keeps the
+  // legacy shelves (artist top songs) fed, while events - with their length,
+  // completion and skip verdicts - feed the stats page and the curator's
+  // self-tuning. Same honesty rules, same privacy switch. The reporter samples
+  // this snapshot once a second and owns all the bookkeeping.
+  const listenSnapRef = useRef<ListenSnapshot>({
+    track: null,
+    audible: false,
+    duration: 0,
+    session: null,
+    record: false,
+  });
+  listenSnapRef.current = {
+    track,
+    audible: audible && !scrubbing.current,
+    duration,
+    session: playSession,
+    record: playbackRef.current.saveHistory,
+  };
+  useEffect(() => {
+    const reporter = createListenReporter(() => listenSnapRef.current);
+    return reporter.dispose;
+  }, []);
 
   // The Canvas clip for whatever is open. Cleared on every change first, so a
   // previous song's clip is never left playing over a new one; a null answer -
@@ -1315,10 +1388,9 @@ export function Player({
   // built there is suspended on WebKit and the meter reads silence, so the seek
   // bar shows no intensity. Priming here means the graph is live before playback.
   useEffect(() => {
-    const prime = () => {
-      ensureMeter();
-      claimDecks();
-    };
+    // Only the meter here. Claiming the decks used to happen on this gesture
+    // too, and it cost the lock screen: see claimDecks below.
+    const prime = () => ensureMeter();
     window.addEventListener('pointerdown', prime, { once: true });
     window.addEventListener('keydown', prime, { once: true });
     return () => {
@@ -1350,18 +1422,28 @@ export function Player({
    * it was found, and the permission stays claimed.
    */
   const claimDecks = () => {
-    for (const el of [audioRef.current, audioBRef.current]) {
+    const decks = [audioRef.current, audioBRef.current];
+    // Nothing may be sounding. A play() on an element - even a sourceless one -
+    // makes WebKit hand it the OS now-playing session, and it does not hand it
+    // back: claiming the IDLE deck while the other one was mid-song took the
+    // lock screen and the Dynamic Island away from the song that was actually
+    // playing and gave them to an empty element with no title, no artist and no
+    // art. That is the whole reason this is mount-only now.
+    if (decks.some((el) => el && !el.paused)) return;
+    for (const el of decks) {
       if (!el || el.currentSrc) continue;
       void el.play()?.catch(() => {});
       el.pause();
     }
   };
 
-  // The decks are created by the very tap that opened the first song, so the
-  // claim goes in on the frame they appear. A LAYOUT effect, not a passive
-  // one: for a discrete event like a click React commits inside the event's own
-  // task, so this still runs while the gesture counts - where a useEffect would
-  // land after the window has shut.
+  // ONCE, on mount. The decks are created by the very tap that opened the first
+  // song, so the claim goes in on the frame they appear - a LAYOUT effect, not
+  // a passive one, because for a discrete event like a click React commits
+  // inside the event's own task and this still runs while the gesture counts.
+  //
+  // Do not add another call site. At mount nothing is playing and there is no
+  // now-playing card to lose; at any later moment there usually is.
   useLayoutEffect(() => {
     claimDecks();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on mount
@@ -1401,6 +1483,10 @@ export function Player({
       // Aborted again here, not just at the effect's top: a blend can begin in
       // the gap the await opened, off the old track's last timeupdates.
       abortCrossfadeRef.current();
+      // A new source is a new timeline: the old song's tape and ring must
+      // not be scrubbable into the new one.
+      scrubTapeFor.current = null;
+      analyserRef.current?.scrub.eject();
       pendingPlay.current = autoplayRef.current || engaged.current;
       setActiveSrc(url);
     })();
@@ -2046,6 +2132,222 @@ export function Player({
     setNpOpen(true);
   };
 
+  // ── Scratching ───────────────────────────────────────────────────────────
+  //
+  // A hand on the disc IS the transport, the way a TP-7's reel or a record
+  // under a needle is: touching it freezes the music where it stands, turning
+  // it sounds the song at exactly the speed of the turn - forwards, backwards,
+  // silent when the hand rests - and letting go plays on from wherever the
+  // hand left it.
+  //
+  // The sound comes from the kit's scratch engine (`meter.scrub`), a tape
+  // loop in the audio graph that has been recording everything played. On
+  // grab the element is paused - raw, no brake ceremony; the finger stop IS
+  // the brake - and the engine's read head chases the hand across that tape.
+  // This is what the element itself can never do: it cannot play backwards,
+  // and seeking it repeatedly is a decoder restart per write, which is why
+  // the old throttled-currentTime scratch stuttered at normal pitch instead
+  // of sounding like a hand on a record.
+  //
+  // The tape only holds what has PLAYED, which is exactly vinyl's own rule:
+  // you scratch the groove under the needle. Winding forward past the grab
+  // point has no tape to sound, so it walks the bar silently and the release
+  // seeks there - a jog, same as the scrubber.
+  //
+  // Falls back to the old seek-preview scratch wherever the engine cannot
+  // stand: no worklet, the music sounding on another device (a remote's disc
+  // moves that device's song by seeks over the wire), or a brake mid-fall.
+  const scratchPos = useRef(0);
+  const lastScratchWrite = useRef(0);
+  /** An audible, engine-backed scratch is in progress. */
+  const scratchLive = useRef(false);
+  /** We paused the element ourselves for the hold; the element's pause
+   *  listener must read the stop as ours, not as a person's. */
+  const scratchHeld = useRef(false);
+  /** The song was rolling when the hand landed, so release resumes it. */
+  const scratchRolling = useRef(false);
+  /** Song time at the grab; the engine's offsets are relative to this. */
+  const scratchAnchor = useRef(0);
+  /** Where the hand has asked to be, seconds relative to the anchor. */
+  const scratchTarget = useRef(0);
+  /** Which track's whole-song tape is loaded or loading - one fetch per
+   *  track, however many grabs. */
+  const scrubTapeFor = useRef<string | null>(null);
+
+  /**
+   * Fetch-and-fold the whole song for the engine, once per track, off the
+   * first moment scratching becomes plausible (the screen with the disc
+   * opening, or a hand landing on it). Until it lands the ring carries the
+   * scratch; after it, the head roams the entire file.
+   */
+  const armScrubTape = () => {
+    const t = track;
+    const scrub = analyserRef.current?.scrub;
+    if (!t || !scrub?.ready() || scrubTapeFor.current === t.path) return;
+    scrubTapeFor.current = t.path;
+    void loadScrubTape(t, playSessionRef.current).then((tape) => {
+      if (!tape || scrubTapeFor.current !== t.path) return;
+      analyserRef.current?.scrub.load(tape.pcm, tape.rate, tape.duration);
+    });
+  };
+
+  // The disc coming on screen is the moment scratching becomes plausible, and
+  // the tape takes a few seconds to fetch and fold - so it is armed here, not
+  // only on the first grab, and is usually loaded before a hand arrives.
+  useEffect(() => {
+    if (npOpen) armScrubTape();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- armed per open/track; the armer latches per track itself
+  }, [npOpen, track]);
+
+  /** The hand lands on the platter. Decides ONCE whether this scratch is the
+   *  audible kind, and if so freezes the music under the finger. */
+  const onScratchBegin = () => {
+    const audio = activeAudio();
+    if (!audio || scrubbing.current) return;
+    scrubbing.current = true;
+    scratchPos.current = audio.currentTime || 0;
+    const scrub = analyserRef.current?.scrub;
+    const live = !!scrub && scrub.ready() && !activeElsewhere && !windingDown.current;
+    scratchLive.current = live;
+    if (!live || !scrub) return;
+    scratchAnchor.current = scratchPos.current;
+    scratchTarget.current = 0;
+    scratchRolling.current = !audio.paused;
+    scrub.hold(scratchAnchor.current);
+    armScrubTape();
+    if (!audio.paused) {
+      // Freeze, not pause: intent stays "playing" (the guard in the pause
+      // listener is what keeps it), any deck ramp in flight is orphaned, and
+      // the element stops buying audio nobody will hear. The engine's 5ms
+      // voice fade is the de-click; there is no brake because a hand landing
+      // on a record stops it dead.
+      scratchHeld.current = true;
+      rampToken.current += 1;
+      audio.pause();
+    }
+  };
+
+  const onScratch = (deltaSeconds: number) => {
+    const audio = activeAudio();
+    if (!audio) return;
+    // A move with no begin (the disc grabbed before the engine existed, or a
+    // stale capture): fall into the legacy path below from where the song is.
+    if (!scrubbing.current) {
+      scratchPos.current = audio.currentTime || 0;
+      scrubbing.current = true;
+      scratchLive.current = false;
+    }
+    const limit = duration || audio.duration || 0;
+    if (scratchLive.current) {
+      const scrub = analyserRef.current?.scrub;
+      // The hand's position, capped to the song. The engine parks at its own
+      // tape's edges besides.
+      scratchTarget.current = Math.max(
+        -scratchAnchor.current,
+        Math.min(
+          limit > 0 ? limit - scratchAnchor.current : Number.POSITIVE_INFINITY,
+          scratchTarget.current + deltaSeconds,
+        ),
+      );
+      scrub?.move(scratchTarget.current);
+      // The bar follows what is heard: the head's actual whereabouts, which
+      // lag the hand by the spring's ~30ms. Only where the head cannot go -
+      // forward of the grab with no whole-song tape yet - does the hand's own
+      // position carry the story, as a silent jog.
+      const shown =
+        scratchTarget.current > 0 && !scrub?.loaded()
+          ? scratchTarget.current
+          : (scrub?.offset() ?? scratchTarget.current);
+      scratchPos.current = Math.max(
+        0,
+        limit > 0 ? Math.min(limit, scratchAnchor.current + shown) : scratchAnchor.current + shown,
+      );
+      setPosition(scratchPos.current);
+      return;
+    }
+    // Legacy scratch: the seek-preview. Twelve decoder restarts a second is
+    // the most that reads as movement without stuttering; it cannot sound a
+    // direction, only a place.
+    scratchPos.current = Math.max(
+      0,
+      limit > 0 ? Math.min(limit, scratchPos.current + deltaSeconds) : scratchPos.current + deltaSeconds,
+    );
+    setPosition(scratchPos.current);
+    const now = performance.now();
+    if (now - lastScratchWrite.current < 80) return;
+    lastScratchWrite.current = now;
+    try {
+      audio.currentTime = scratchPos.current;
+    } catch {
+      // A source mid-load refuses the write; the next move tries again.
+    }
+  };
+
+  /** The hand came off: land the position properly, with all the bookkeeping a
+   *  seek owes (the hub, the crossfade, the stall watch), and - for the
+   *  audible scratch - put the music back the way the hand found it. */
+  const onScratchEnd = () => {
+    if (!scrubbing.current) return;
+    if (!scratchLive.current) {
+      commitSeek(scratchPos.current);
+      return;
+    }
+    scratchLive.current = false;
+    const scrub = analyserRef.current?.scrub;
+    // What was heard is where we land: the settled head. Only a silent
+    // forward jog (no whole-song tape yet) uses the hand's own position.
+    const settled = scrub ? scrub.release() : 0;
+    const offset =
+      scratchTarget.current > 0 && !scrub?.loaded() ? scratchTarget.current : settled;
+    const audio = activeAudio();
+    const limit = duration || audio?.duration || 0;
+    const to = Math.max(
+      0,
+      limit > 0 ? Math.min(limit, scratchAnchor.current + offset) : scratchAnchor.current + offset,
+    );
+    const moved = Math.abs(to - scratchAnchor.current) > 0.15;
+    if (scratchRolling.current) {
+      // The motor catches the platter FIRST, then the jump lands as a seek on
+      // a playing element - the same order and machinery as the scrub bar,
+      // whose seeks are the battle-tested ones. The other order (seek the
+      // paused element, then play) lost forward seeks on real streams: a
+      // paused element asked to jump into unbuffered territory could resume
+      // from the anchor as if nothing happened.
+      scratchHeld.current = false;
+      scratchRolling.current = false;
+      if (!moved) {
+        scrubbing.current = false;
+        setPosition(scratchAnchor.current);
+        setPlayingState(true);
+        return;
+      }
+      ensureMeter();
+      rampToken.current += 1;
+      windingDown.current = false;
+      // Silent through the catch: commitSeek's mute-through-seek owns the
+      // unmute (its seeked handler fades in), and the spin-up runs under it
+      // so the fade lands mid-climb - the platter catching, then the needle.
+      analyserRef.current?.setVolume(0);
+      void audio?.play().catch(() => {
+        wantPlaying.current = false;
+        setPlaying(false);
+      });
+      commitSeek(to);
+      analyserRef.current?.resetSpeed(RATE_FLOOR);
+      rampDeck(1, SPIN_UP_MS);
+      return;
+    }
+    scratchHeld.current = false;
+    if (moved) {
+      commitSeek(to);
+    } else {
+      // A grab-and-release that went nowhere owes no seek - a seek is a
+      // refetch on a stream - just its scrubbing flag back.
+      scrubbing.current = false;
+      setPosition(scratchAnchor.current);
+    }
+  };
+
   const commitSeek = (to: number) => {
     scrubbing.current = false;
     setPosition(to);
@@ -2066,6 +2368,11 @@ export function Player({
     // the position it claims. A flush is a discontinuity, but so is the seek
     // itself, and one cut is what the ear was just promised.
     analyserRef.current?.resetSpeed(1);
+    // The scratch tape forgets across the jump for the same reason the deck
+    // does: its ring maps offsets onto the element's timeline, and a seek
+    // breaks that map - a scratch after one would sound the song from before
+    // the jump as if it belonged here.
+    analyserRef.current?.scrub.clear();
     const audio = activeAudio();
     if (!audio) return;
     // Muted through the element's own seek (see seekMuted): the graph goes
@@ -2457,6 +2764,8 @@ export function Player({
               <SpinningDisc
                 art={dispArtwork}
                 spinning={activeElsewhere ? dispPlaying : audible}
+                // A dry buffer spins the platter up rather than stalling it.
+                spooling={buffering}
                 beat={beat}
                 // The platter and the sound share a motor: the disc brakes and
                 // catches up over the same stretch the audio does, whichever
@@ -2890,7 +3199,12 @@ export function Player({
                 <SpinningDisc
                   art={dispArtwork}
                   spinning={activeElsewhere ? dispPlaying : audible}
+                  spooling={buffering}
                   beat={beat}
+                  onScratchStart={onScratchBegin}
+                  onScratch={onScratch}
+                  onScratchEnd={onScratchEnd}
+                  
                   spinUpMs={
                     playback.pauseStyle === 'turntable'
                       ? SPIN_UP_MS

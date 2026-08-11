@@ -145,10 +145,13 @@ pub struct ImportJob {
     /// back to the mirror entry that asked for it. Empty for a pasted link.
     #[serde(default)]
     pub origin: String,
-    /// The account that enqueued this, so a playlist import can file its
-    /// playlist under the right user. 0 for internal single-track fetches.
+    /// Who queued this. The download queue is shared - one box, one library -
+    /// but a PLAYLIST import has to land on somebody's account, so the job
+    /// carries the caller who raised it. Defaulted for jobs persisted before
+    /// this field existed: they finish without making a playlist rather than
+    /// making one for user 0.
     #[serde(default)]
-    pub user_id: i64,
+    pub owner: i64,
 }
 
 pub struct ImportManager {
@@ -564,9 +567,6 @@ pub fn spawn_scheduler(state: Arc<AppState>) {
                                 j.owned_track_ids = owned;
                             })
                             .await;
-                        // A playlist import assembles a library playlist for the
-                        // user from what it just filed plus what it already owned.
-                        build_playlist_from_import(&run_state, &id).await;
                     }
                     Err(err) => {
                         manager
@@ -580,6 +580,43 @@ pub fn spawn_scheduler(state: Arc<AppState>) {
                     }
                 }
                 manager.flush().await;
+                // Music landed: the one push a download queue owes its
+                // owner. After the flush so the job reads as done to anyone
+                // the tap wakes, and only for real arrivals - a job that
+                // found every track already owned landed nothing.
+                {
+                    let job = {
+                        let jobs = run_state.imports.jobs.lock().await;
+                        jobs.iter().find(|j| j.id == id).cloned()
+                    };
+                    if let Some(j) = job {
+                        if j.owner > 0 && j.state == "done" && !j.track_ids.is_empty() {
+                            let n = j.track_ids.len();
+                            let body = if n == 1 {
+                                if j.title.is_empty() {
+                                    "1 song is in your library.".to_string()
+                                } else {
+                                    format!("\u{201c}{}\u{201d} is in your library.", j.title)
+                                }
+                            } else {
+                                format!("{n} songs are in your library.")
+                            };
+                            crate::push::notify(
+                                &run_state,
+                                j.owner,
+                                crate::push::Kind::Drops,
+                                "New music".into(),
+                                body,
+                            );
+                        }
+                    }
+                }
+                // A playlist link asked for a PLAYLIST, not a pile of songs.
+                // Nothing here used to make one, so importing a Spotify list
+                // filed forty tracks in the library and left the listener to
+                // rebuild the list by hand - which is most of the reason to
+                // import a list at all.
+                file_into_playlist(&run_state, &id).await;
                 // Hand the outcome back to the mirror that raised it, if any.
                 // A no-op for an ordinary pasted link.
                 crate::spotify_sync::on_job_finished(&run_state, &id).await;
@@ -587,6 +624,65 @@ pub fn spawn_scheduler(state: Arc<AppState>) {
             });
         }
     });
+}
+
+/// A finished playlist import becomes a playlist.
+///
+/// The queue's job is to get files onto the disk; nothing after it turned those
+/// files back into the LIST they came from, so importing a Spotify playlist
+/// filed the songs in the library and stopped there. This is the missing step.
+///
+/// Only for playlist links, and only for a job that knows who raised it - the
+/// download queue is shared across a box, but a playlist belongs to an account.
+///
+/// The membership is `track_ids` (what this run filed) followed by
+/// `owned_track_ids` (what it found you already had). Both matter: an import of
+/// a list you half-own would otherwise produce a playlist with the other half
+/// missing. The ORDER is the download's, not the source's - the queue never
+/// learns the original running order, and a playlist in roughly the right shape
+/// beats no playlist at all.
+///
+/// Re-importing the same link reuses the playlist it made rather than stacking
+/// a second one beside it with the same name.
+async fn file_into_playlist(state: &Arc<AppState>, job_id: &str) {
+    let job = {
+        let jobs = state.imports.jobs.lock().await;
+        let Some(j) = jobs.iter().find(|j| j.id == job_id) else { return };
+        j.clone()
+    };
+    if job.kind != "playlist" || job.owner <= 0 || job.state != "done" {
+        return;
+    }
+    let mut ids: Vec<i64> = Vec::with_capacity(job.track_ids.len() + job.owned_track_ids.len());
+    for id in job.track_ids.iter().chain(job.owned_track_ids.iter()) {
+        if !ids.contains(id) {
+            ids.push(*id);
+        }
+    }
+    if ids.is_empty() {
+        return;
+    }
+    let name = if job.title.trim().is_empty() { "Imported playlist" } else { job.title.trim() };
+    // The same link imported twice should refill one list, not make two.
+    let existing = state
+        .db
+        .playlists(job.owner)
+        .into_iter()
+        .find(|(_, n, _, _)| n == name)
+        .map(|(id, _, _, _)| id);
+    let playlist_id = match existing {
+        Some(id) => id,
+        None => match state.db.create_playlist(job.owner, name) {
+            Ok(id) => id,
+            Err(e) => {
+                eprintln!("[imports] could not make a playlist for {name:?}: {e}");
+                return;
+            }
+        },
+    };
+    if let Err(e) = state.db.set_playlist_tracks(playlist_id, &ids) {
+        eprintln!("[imports] could not fill playlist {name:?}: {e}");
+    }
 }
 
 /// Frees an in-flight slot and wakes the scheduler when a job task ends -
@@ -913,39 +1009,6 @@ fn tail_join(lines: &[String]) -> String {
     lines[start..].join("\n").trim().to_string()
 }
 
-/// After a `playlist`-kind import finishes, assemble a library playlist for the
-/// user who asked - from the tracks it just filed plus the ones it found the
-/// library already owned. Best-effort: a failure here never fails the import.
-///
-/// Order is the order the tracks were filed, which is close to but not exactly
-/// the source playlist's order (SpotiFLAC names files by album track number),
-/// and a re-import creates a fresh playlist rather than touching an existing one.
-async fn build_playlist_from_import(state: &Arc<AppState>, id: &str) {
-    let (kind, title, user_id, mut ids) = {
-        let jobs = state.imports.jobs.lock().await;
-        let Some(j) = jobs.iter().find(|j| j.id == id) else { return };
-        let mut ids = j.track_ids.clone();
-        ids.extend(j.owned_track_ids.iter().copied());
-        (j.kind.clone(), j.title.trim().to_string(), j.user_id, ids)
-    };
-    if kind != "playlist" || user_id <= 0 || ids.is_empty() {
-        return;
-    }
-    // Preserve first-seen order, drop repeats.
-    let mut seen = std::collections::HashSet::new();
-    ids.retain(|t| seen.insert(*t));
-    // The background embed fetch usually resolves the real playlist name before
-    // the download finishes; fall back to a plain label if it never did.
-    let name = if title.is_empty() || title.eq_ignore_ascii_case("Spotify playlist") {
-        "Imported playlist".to_string()
-    } else {
-        title
-    };
-    if let Ok(pid) = state.db.create_playlist(user_id, &name) {
-        let _ = state.db.set_playlist_tracks(pid, &ids);
-    }
-}
-
 // --- API ---------------------------------------------------------------------
 
 type ApiError = (StatusCode, String);
@@ -977,6 +1040,7 @@ pub async fn enqueue_internal(
     title: &str,
     subtitle: &str,
     origin: &str,
+    owner_id: i64,
 ) -> Result<String, String> {
     let used = state.db.total_bytes();
     if state.library_quota_bytes > 0 && used >= state.library_quota_bytes {
@@ -1009,7 +1073,7 @@ pub async fn enqueue_internal(
         track_ids: Vec::new(),
         owned_track_ids: Vec::new(),
         origin: origin.to_string(),
-        user_id: 0,
+        owner: owner_id,
     };
     let id = job.id.clone();
     state.imports.jobs.lock().await.push(job);
@@ -1065,7 +1129,7 @@ pub async fn enqueue(
         track_ids: Vec::new(),
         owned_track_ids: Vec::new(),
         origin: String::new(),
-        user_id: caller.id,
+        owner: caller.id,
     };
     {
         let mut jobs = state.imports.jobs.lock().await;

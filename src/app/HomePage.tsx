@@ -1,6 +1,5 @@
-import { ContextMenu, MenuItem, Pill, ScrollArea, SearchField, Text } from '@glacier/react';
-import { ListEnd, ListStart, Sparkles } from '@glacier/icons';
-import { useQueueControls } from './queueControls.tsx';
+import { Pill, ScrollArea, SearchField, Text } from '@glacier/react';
+import { Sparkles } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
 import { useServerSession } from './serverSession.tsx';
@@ -20,7 +19,7 @@ import { isMusicImportLink } from '../plugins/importsBridge.ts';
 import type { Track } from './tauri.ts';
 import placeholderArt from '../assets/attack-wave.png';
 import { ImportFromSearch } from './ImportFromSearch.tsx';
-import { DjLauncher } from './DjLauncher.tsx';
+import { TrackMenu } from './TrackMenu.tsx';
 
 /**
  * The front door. A greeting, then shelves: the mixes made from the
@@ -45,38 +44,27 @@ function greetingFor(hour: number): string {
 
 /** One square track card on a shelf. */
 function TrackCard({ track, onOpen }: { track: Track; onOpen: () => void }) {
-  const { playNext, addToQueue, inJam } = useQueueControls();
   return (
-    <ContextMenu
-      aria-label={`${track.title} actions`}
-      content={
-        <>
-          <MenuItem icon={<ListStart size={15} />} onSelect={() => playNext(track)}>
-            Play next
-          </MenuItem>
-          <MenuItem icon={<ListEnd size={15} />} onSelect={() => addToQueue(track)}>
-            {inJam ? 'Add to jam queue' : 'Add to queue'}
-          </MenuItem>
-        </>
-      }
-    >
+    <TrackMenu track={track}>
       <button type="button" className="trackCard" onClick={onOpen}>
         <img className="trackCardArt" src={track.artwork ?? placeholderArt} alt="" loading="lazy" />
         <span className="trackCardTitle">{track.title}</span>
         <span className="trackCardArtist">{track.artist}</span>
       </button>
-    </ContextMenu>
+    </TrackMenu>
   );
 }
 
 /** An album card: cover over the album name and artist. Jump-back-in wears it. */
 function AlbumCard({ track, onOpen }: { track: Track; onOpen: () => void }) {
   return (
-    <button type="button" className="trackCard" onClick={onOpen}>
-      <img className="trackCardArt" src={track.artwork ?? placeholderArt} alt="" loading="lazy" />
-      <span className="trackCardTitle">{track.album || track.title}</span>
-      <span className="trackCardArtist">{track.artist}</span>
-    </button>
+    <TrackMenu track={track}>
+      <button type="button" className="trackCard" onClick={onOpen}>
+        <img className="trackCardArt" src={track.artwork ?? placeholderArt} alt="" loading="lazy" />
+        <span className="trackCardTitle">{track.album || track.title}</span>
+        <span className="trackCardArtist">{track.artist}</span>
+      </button>
+    </TrackMenu>
   );
 }
 
@@ -347,10 +335,8 @@ export function HomePage({
         )
       ) : (
         <>
-      {/* The DJ: a continuous set of your own library, steerable by a vibe,
-          played straight from here. Lives above the mixes on the main surface
-          (embedded and standalone alike). */}
-      <DjLauncher onPlay={onPlay} />
+      {/* The DJ moved up to the library page's action row, beside the
+          download queue - see LibraryView. */}
       {/* "Worth adding" (curator finds from outside the library) lives on the
           Discover page now — a library surface should show what you HAVE. */}
 

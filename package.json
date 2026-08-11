@@ -18,7 +18,8 @@
     "android:build": "tauri android build",
     "server": "cargo run --manifest-path server/Cargo.toml",
     "redeploy": "node scripts/redeploy.mjs",
-    "redeploy:setup": "node scripts/redeploy.mjs setup"
+    "redeploy:setup": "node scripts/redeploy.mjs setup",
+    "bundle:home": "node scripts/home-bundle.mjs"
   },
   "dependencies": {
     "@glacier/icons": "file:./vendor/@glacier/icons",

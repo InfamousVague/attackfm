@@ -1,10 +1,16 @@
-import { ScrollArea } from '@glacier/react';
+import { IconButton, ScrollArea } from '@glacier/react';
+import { Download } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLibrary } from './library.tsx';
 import { usePlaylists } from './playlists.tsx';
 import { ShelfSkeleton } from './ShelfSkeleton.tsx';
 import { PlaylistShowcase } from './PlaylistShowcase.tsx';
+import { ForYouShelf } from './ForYouShelf.tsx';
+import { HomeStatsCards } from './HomeStatsCards.tsx';
 import { HomePage } from './HomePage.tsx';
+import { DjLauncher } from './DjLauncher.tsx';
+import { TrackMenu } from './TrackMenu.tsx';
+import { isDesktopApp } from './platform.ts';
 import { EmptyArt } from './EmptyArt.tsx';
 import { SongTable } from './SongTable.tsx';
 import type { Track } from './tauri.ts';
@@ -126,11 +132,13 @@ function TrackCard({
   const { src, loaded, onLoad, onError } = useCardArt(track.artwork);
   const idle = !loaded || undefined;
   return (
-    <button type="button" className="trackCard" onClick={onOpen}>
-      <img className="trackCardArt" src={src} alt="" loading="lazy" data-loading={idle} onLoad={onLoad} onError={onError} />
-      <span className="trackCardTitle" data-loading={idle}>{loaded ? track.title : NBSP}</span>
-      <CardArtist artist={track.artist} idle={idle} loaded={loaded} onOpenArtist={onOpenArtist} />
-    </button>
+    <TrackMenu track={track}>
+      <button type="button" className="trackCard" onClick={onOpen}>
+        <img className="trackCardArt" src={src} alt="" loading="lazy" data-loading={idle} onLoad={onLoad} onError={onError} />
+        <span className="trackCardTitle" data-loading={idle}>{loaded ? track.title : NBSP}</span>
+        <CardArtist artist={track.artist} idle={idle} loaded={loaded} onOpenArtist={onOpenArtist} />
+      </button>
+    </TrackMenu>
   );
 }
 
@@ -147,11 +155,13 @@ function AlbumCard({
   const { src, loaded, onLoad, onError } = useCardArt(track.artwork);
   const idle = !loaded || undefined;
   return (
-    <button type="button" className="trackCard" onClick={onOpen}>
-      <img className="trackCardArt" src={src} alt="" loading="lazy" data-loading={idle} onLoad={onLoad} onError={onError} />
-      <span className="trackCardTitle" data-loading={idle}>{loaded ? track.album || track.title : NBSP}</span>
-      <CardArtist artist={track.artist} idle={idle} loaded={loaded} onOpenArtist={onOpenArtist} />
-    </button>
+    <TrackMenu track={track}>
+      <button type="button" className="trackCard" onClick={onOpen}>
+        <img className="trackCardArt" src={src} alt="" loading="lazy" data-loading={idle} onLoad={onLoad} onError={onError} />
+        <span className="trackCardTitle" data-loading={idle}>{loaded ? track.album || track.title : NBSP}</span>
+        <CardArtist artist={track.artist} idle={idle} loaded={loaded} onOpenArtist={onOpenArtist} />
+      </button>
+    </TrackMenu>
   );
 }
 
@@ -172,29 +182,47 @@ export function LibraryView({
   onPlay,
   onOpenArtist,
   onOpenPlaylist,
+  onOpenDownloads,
+  onOpenStats,
 }: {
+  /** Opens the stats page - the mini cards' one destination. */
+  onOpenStats?: () => void;
   /** Which face the page wears: the shelves, or every song as one table.
    *  Flipped by the app header's "All" button - the page just renders it. */
   view: 'summary' | 'all';
   onPlay: (track: Track, context?: Track[]) => void;
   onOpenArtist: (artist: string) => void;
   onOpenPlaylist: (id: string) => void;
+  /** Opens the download queue. Absent when no importer is running, and the
+   *  icon goes with it - there is nothing to queue without one. */
+  onOpenDownloads?: () => void;
 }) {
-  const { tracks, favoriteTracks } = useLibrary();
+  const { tracks, favoriteTracks, scanning } = useLibrary();
   const { playlists } = usePlaylists();
 
   // A library that is empty AT MOUNT is either truly empty or still on its
-  // way; hold the page as skeletons for a beat so it assembles once, whole,
-  // instead of shelf by shelf. A library seeded from cache skips this ENTIRELY
-  // - content beats placeholders every time it exists.
+  // way; hold the page as skeletons so it assembles once, whole, instead of
+  // shelf by shelf. A library seeded from cache skips this ENTIRELY - content
+  // beats placeholders every time it exists.
+  //
+  // The hold follows the LIBRARY, not a clock. It used to be a flat one-second
+  // timer, which is what flashed "no music in your library yet": the timer
+  // expired on its own schedule, and if the sync had not landed by then the
+  // page rendered its empty state for a beat before the tracks arrived and
+  // replaced it. `scanning` is the honest signal - the library saying it is
+  // still fetching AND has nothing to show yet - so the skeletons now stand
+  // exactly as long as there is nothing to stand in for.
   const emptyAtMount = useRef(tracks.length === 0);
-  const [held, setHeld] = useState(emptyAtMount.current);
+  // The ceiling, so a server that never answers cannot leave the page in
+  // skeletons for the rest of the session. Long enough not to fire during any
+  // sync that is genuinely working.
+  const [gaveUp, setGaveUp] = useState(false);
   useEffect(() => {
-    if (!held) return;
-    const t = window.setTimeout(() => setHeld(false), 1000);
+    if (!emptyAtMount.current) return;
+    const t = window.setTimeout(() => setGaveUp(true), 15000);
     return () => window.clearTimeout(t);
-  }, [held]);
-  const warming = held;
+  }, []);
+  const warming = tracks.length === 0 && scanning && !gaveUp;
 
   // Newest first, the shelf's own play queue.
   const recentlyAdded = useMemo(
@@ -238,6 +266,25 @@ export function LibraryView({
 
   return (
     <div className="homePage libraryPage">
+      {/* The desktop's copy of the action row. Everywhere else these two live
+          in the app header (see App.tsx) - but the desktop has no such header,
+          it has a title bar and a rail, so the page keeps them. */}
+      {isDesktopApp && (
+        <div className="libraryActions">
+          {onOpenDownloads && (
+            <IconButton
+              variant="ghost"
+              size="sm"
+              aria-label="Downloads"
+              title="Downloads"
+              onClick={onOpenDownloads}
+            >
+              <Download size={18} />
+            </IconButton>
+          )}
+          <DjLauncher onPlay={onPlay} />
+        </div>
+      )}
       {view === 'summary' && warming ? (
         <>
           {/* The first-launch skeleton pass: every surface the page will hold,
@@ -254,6 +301,14 @@ export function LibraryView({
               library's working surface, so it sits where the thumb lands
               first, above the read-only shelves. */}
           <PlaylistShowcase onPlay={onPlay} onOpenPlaylist={onOpenPlaylist} onOpenArtist={onOpenArtist} />
+
+          {/* This week's listening at a glance, linking into the full page.
+              Renders nothing until there is a week to speak of. */}
+          {onOpenStats && <HomeStatsCards onOpenStats={onOpenStats} />}
+
+          {/* What the collector fetched for you, awaiting adoption - kept out
+              of every other shelf until a listen-through or a heart claims it. */}
+          <ForYouShelf onPlay={onPlay} />
 
           {/* The personalized mixes, folded in from the old Home: what the
               server made from your listening. They sit BELOW the stats and the

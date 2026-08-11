@@ -8,7 +8,9 @@ export default defineConfig({
   base: './',
   plugins: [react()],
   server: {
-    port: 5240,
+    // The launcher may assign a port (a second session's preview); 5240 is
+    // the standing default the Tauri shell and docs expect.
+    port: Number(process.env.PORT) || 5240,
     strictPort: true,
   },
   clearScreen: false,
