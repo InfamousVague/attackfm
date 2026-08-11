@@ -30,7 +30,10 @@ serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 # Scrapes public Spotify embed pages for import cover art / titles / totals.
 # json feature: the Spotify account layer reads the Web API as JSON.
-reqwest = { version = "0.12", features = ["json"] }
+# rustls, not the default native-tls: native-tls resolves to the system stack on
+# macOS/iOS but to OpenSSL on Android, which will not cross-compile without a
+# vendored build. rustls is pure Rust and links the same on every target.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "http2", "charset"] }
 tauri-plugin-deep-link = "2.4.9"
 
 # Desktop-only crates. A phone has no traffic lights to position, and decorum
