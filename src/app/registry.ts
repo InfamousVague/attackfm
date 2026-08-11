@@ -79,7 +79,17 @@ export async function refresh(token: string): Promise<RegistrySession> {
  *  so friends see numbers and can reach it without waking it. */
 export async function announce(
   token: string,
-  info: { serverUrl?: string; songs?: number; playlists?: number; artists?: number },
+  info: {
+    serverUrl?: string;
+    songs?: number;
+    playlists?: number;
+    artists?: number;
+    /** The listening glance - sent only while sharing is ON. Absence lets the
+     *  registry's copy go stale, which is how sharing turns off: by silence. */
+    weekMinutes?: number;
+    weekTopArtist?: string;
+    streakDays?: number;
+  },
 ): Promise<void> {
   await call('/v1/announce', { method: 'POST', token, body: JSON.stringify(info) });
 }
@@ -94,6 +104,11 @@ export interface RegistryFriend {
   songs: number;
   playlists: number;
   artists: number;
+  /** The listening glance, null when they do not share (or stopped - the
+   *  registry hides anything older than a week). Absent from old registries. */
+  weekMinutes?: number | null;
+  weekTopArtist?: string | null;
+  streakDays?: number | null;
 }
 
 export interface RegistryRequest {

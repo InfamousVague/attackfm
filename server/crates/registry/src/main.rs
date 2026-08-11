@@ -324,9 +324,16 @@ async fn refresh(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiR
 // --- friends ----------------------------------------------------------------
 
 fn friend_json(f: &db::Friend) -> Value {
+    // The listening glance shows only while it is FRESH - eight days covers a
+    // weekly announcer with slack. Someone who stops sharing simply stops
+    // announcing, and this is where their numbers quietly disappear.
+    let fresh = f.listened_at > 0 && now_secs() - f.listened_at < 8 * 24 * 60 * 60;
     json!({
         "id": f.id, "handle": f.handle, "serverUrl": f.server_url,
         "seenAt": f.seen_at, "songs": f.songs, "playlists": f.playlists, "artists": f.artists,
+        "weekMinutes": if fresh { Value::from(f.week_minutes) } else { Value::Null },
+        "weekTopArtist": if fresh && !f.week_top_artist.is_empty() { Value::from(f.week_top_artist.clone()) } else { Value::Null },
+        "streakDays": if fresh { Value::from(f.streak_days) } else { Value::Null },
     })
 }
 
@@ -436,6 +443,15 @@ struct AnnounceBody {
     playlists: i64,
     #[serde(default)]
     artists: i64,
+    /// The listening glance - present only while the sender's owner has
+    /// sharing ON. Absent keeps whatever was last shared (which then goes
+    /// stale on its own; the friends view stops showing week-old numbers).
+    #[serde(default, rename = "weekMinutes")]
+    week_minutes: Option<i64>,
+    #[serde(default, rename = "weekTopArtist")]
+    week_top_artist: Option<String>,
+    #[serde(default, rename = "streakDays")]
+    streak_days: Option<i64>,
 }
 
 /// `POST /v1/announce` - the app tells the registry where its library answers
@@ -451,6 +467,15 @@ async fn announce(
         state.db.set_server_url(who.sub, body.server_url.trim());
     }
     state.db.set_stats(who.sub, body.songs, body.playlists, body.artists, now);
+    if let Some(minutes) = body.week_minutes {
+        state.db.set_listening(
+            who.sub,
+            minutes.max(0),
+            body.week_top_artist.as_deref().unwrap_or("").trim(),
+            body.streak_days.unwrap_or(0).max(0),
+            now,
+        );
+    }
     state.db.touch_seen(who.sub, now);
     Ok(Json(json!({ "ok": true })))
 }

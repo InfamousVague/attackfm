@@ -33,6 +33,11 @@ pub struct Friend {
     pub songs: i64,
     pub playlists: i64,
     pub artists: i64,
+    /// The listening glance - zeros/empty when never shared or gone stale.
+    pub week_minutes: i64,
+    pub week_top_artist: String,
+    pub streak_days: i64,
+    pub listened_at: i64,
 }
 
 /// A friend request in flight, from the answering side's point of view.
@@ -70,7 +75,26 @@ impl Db {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.execute_batch(SCHEMA)?;
-        Ok(Self { conn: Mutex::new(conn) })
+
+        // Columns that postdate the deployed registry.sqlite3 - CREATE IF NOT
+        // EXISTS never retrofits a column, so each is checked and added here.
+        {
+            let have: Vec<String> = conn
+                .prepare("SELECT name FROM pragma_table_info('stats')")?
+                .query_map([], |r| r.get(0))?
+                .filter_map(Result::ok)
+                .collect();
+            for (name, decl) in [
+                ("week_minutes", "week_minutes INTEGER NOT NULL DEFAULT 0"),
+                ("week_top_artist", "week_top_artist TEXT NOT NULL DEFAULT ''"),
+                ("streak_days", "streak_days INTEGER NOT NULL DEFAULT 0"),
+                ("listened_at", "listened_at INTEGER NOT NULL DEFAULT 0"),
+            ] {
+                if !have.iter().any(|c| c == name) {
+                    conn.execute(&format!("ALTER TABLE stats ADD COLUMN {decl}"), [])?;
+                }
+            }
+        }        Ok(Self { conn: Mutex::new(conn) })
     }
 
     /// The registry's own signing secret, persisted so tokens survive a restart.
@@ -257,7 +281,9 @@ impl Db {
         let c = self.conn.lock().unwrap();
         let mut stmt = match c.prepare(
             "SELECT a.id, a.handle, a.server_url, a.seen_at,
-                    COALESCE(s.songs,0), COALESCE(s.playlists,0), COALESCE(s.artists,0)
+                    COALESCE(s.songs,0), COALESCE(s.playlists,0), COALESCE(s.artists,0),
+                    COALESCE(s.week_minutes,0), COALESCE(s.week_top_artist,''),
+                    COALESCE(s.streak_days,0), COALESCE(s.listened_at,0)
                FROM friendships f
                JOIN accounts a ON a.id = CASE WHEN f.a_id = ?1 THEN f.b_id ELSE f.a_id END
                LEFT JOIN stats s ON s.account_id = a.id
@@ -276,6 +302,10 @@ impl Db {
                 songs: r.get(4)?,
                 playlists: r.get(5)?,
                 artists: r.get(6)?,
+                week_minutes: r.get(7)?,
+                week_top_artist: r.get(8)?,
+                streak_days: r.get(9)?,
+                listened_at: r.get(10)?,
             })
         });
         rows.map(|it| it.filter_map(Result::ok).collect()).unwrap_or_default()
@@ -319,6 +349,23 @@ impl Db {
                songs = excluded.songs, playlists = excluded.playlists,
                artists = excluded.artists, updated_at = excluded.updated_at",
             (id, songs, playlists, artists, now),
+        );
+    }
+
+    /// The listening glance, written only when the app announces one - which
+    /// it does only while its owner shares. See the stats table comment for
+    /// how sharing OFF works (silence, then staleness).
+    pub fn set_listening(&self, id: i64, minutes: i64, top_artist: &str, streak: i64, now: i64) {
+        let c = self.conn.lock().unwrap();
+        let _ = c.execute(
+            "INSERT INTO stats (account_id, week_minutes, week_top_artist, streak_days, listened_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(account_id) DO UPDATE SET
+               week_minutes = excluded.week_minutes,
+               week_top_artist = excluded.week_top_artist,
+               streak_days = excluded.streak_days,
+               listened_at = excluded.listened_at",
+            (id, minutes, top_artist, streak, now),
         );
     }
 
@@ -505,6 +552,14 @@ CREATE TABLE IF NOT EXISTS stats (
   playlists  INTEGER NOT NULL DEFAULT 0,
   liked      INTEGER NOT NULL DEFAULT 0,
   artists    INTEGER NOT NULL DEFAULT 0,
-  updated_at INTEGER NOT NULL DEFAULT 0
+  updated_at INTEGER NOT NULL DEFAULT 0,
+  -- The listening glance, announced by the app only while its owner has
+  -- sharing switched ON. Sharing off simply stops the announcements: the
+  -- numbers go stale and the friends view stops showing them past a week -
+  -- revocation by silence, no delete round-trip required.
+  week_minutes    INTEGER NOT NULL DEFAULT 0,
+  week_top_artist TEXT NOT NULL DEFAULT '',
+  streak_days     INTEGER NOT NULL DEFAULT 0,
+  listened_at     INTEGER NOT NULL DEFAULT 0
 );
 "#;

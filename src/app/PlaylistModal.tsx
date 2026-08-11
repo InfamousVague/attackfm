@@ -1,5 +1,6 @@
 import { IconButton, Modal, Text } from '@glacier/react';
-import { Trash2, X } from '@glacier/icons';
+import {
+  ListPlus, Trash2, X } from '@glacier/icons';
 import { EmptyArt, type EmptyArtName } from './EmptyArt.tsx';
 import type { Track } from './tauri.ts';
 import placeholderArt from '../assets/attack-wave.png';
@@ -20,6 +21,12 @@ interface PlaylistModalProps {
   onRemoveTrack?: (path: string) => void;
   /** Present only for the user's own playlists: deletes the list whole. */
   onDelete?: () => void;
+  /**
+   * Present for lists the user does NOT own - a curator mix. Saves a copy as
+   * a real playlist of theirs: the fork-on-edit rule, made a button. The
+   * curator's own line keeps regenerating; the copy is theirs to edit.
+   */
+  onSaveCopy?: () => void;
 }
 
 function formatDuration(seconds: number | null): string {
@@ -45,6 +52,7 @@ export function PlaylistModal({
   onOpenArtist,
   onRemoveTrack,
   onDelete,
+  onSaveCopy,
 }: PlaylistModalProps) {
   return (
     <Modal open={open} onClose={onClose} title={title} size="md">
@@ -110,6 +118,12 @@ export function PlaylistModal({
             </div>
           ))}
         </div>
+      )}
+      {onSaveCopy && (
+        <button type="button" className="playlistSaveCopy" onClick={onSaveCopy}>
+          <ListPlus size={15} />
+          Save as my playlist
+        </button>
       )}
       {onDelete && (
         <button type="button" className="playlistDelete" onClick={onDelete}>
