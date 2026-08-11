@@ -46,6 +46,7 @@ mod spotify_sync;
 mod search;
 mod stream;
 mod tempo;
+mod tools;
 mod upload;
 
 use axum::http::{header, HeaderValue, Method, StatusCode};
@@ -330,6 +331,17 @@ async fn main() {
         .route("/api/library", get(api::library))
         .route("/api/library/missing", post(api::library_missing))
         .route("/api/library/search", get(library_search::search))
+        // Library housekeeping (tools.rs): tag editing, cover replacement,
+        // duplicate handling, disk accounting, portable exports.
+        .route("/api/tracks/{id}/tags", post(tools::write_tags))
+        .route("/api/art/candidates", get(tools::art_candidates))
+        .route("/api/album-art", post(tools::set_album_art))
+        .route("/api/library/duplicates", get(tools::duplicates))
+        .route("/api/library/duplicates/resolve", post(tools::resolve_duplicates))
+        .route("/api/storage", get(tools::storage))
+        .route("/api/export/backup", get(tools::export_backup))
+        .route("/api/playlists/{id}/export.m3u", get(tools::export_m3u))
+        .route("/api/playlists/import", post(tools::import_playlist))
         .route("/api/imports", get(imports::list).post(imports::enqueue))
         .route("/api/imports/clear", post(imports::clear))
         .route(

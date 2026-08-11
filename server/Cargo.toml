@@ -47,7 +47,9 @@ futures-util = "0.3"
 # The import queue's Spotify embed metadata fetch. rustls, so the Linux
 # cross-compile stays free of an OpenSSL sysroot.
 # http2: APNs speaks nothing else.
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "http2"] }
+# stream: the library-tools art download caps an untrusted body at 10MB by
+# reading it chunkwise instead of trusting Content-Length.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "http2", "stream"] }
 
 [profile.release]
 lto = true

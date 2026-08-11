@@ -21,6 +21,11 @@ const AUDIO_EXTENSIONS: &[&str] = &[
     "wv", "alac",
 ];
 
+/// Where the duplicate resolver quarantines dropped files, inside the music
+/// root. The walk must skip it, or everything "deleted" this way would be
+/// re-imported on the next pass.
+pub const TRASH_DIR: &str = ".attackfm-trash";
+
 /// Where a scan has got to, for the status endpoint.
 #[derive(Default)]
 pub struct ScanProgress {
@@ -70,6 +75,11 @@ fn walk(root: &Path) -> Vec<(PathBuf, String)> {
                 continue;
             }
             if meta.is_dir() {
+                // The quarantine holds files a person deliberately removed
+                // from the library; walking it would resurrect them.
+                if path.file_name().and_then(|n| n.to_str()) == Some(TRASH_DIR) {
+                    continue;
+                }
                 stack.push(path);
             } else if meta.is_file() && is_audio(&path) {
                 if let Ok(rel) = path.strip_prefix(root) {

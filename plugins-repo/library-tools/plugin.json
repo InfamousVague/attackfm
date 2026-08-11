@@ -1,0 +1,14 @@
+{
+  "id": "library-tools",
+  "name": "Library tools",
+  "version": "0.1.0",
+  "description": "A toolbox of library janitor tools: fix album art, repair tags, merge duplicates, see where the disk went, and back up your playlists.",
+  "author": "AttackFM",
+  "tags": [
+    "Tools",
+    "Maintenance"
+  ],
+  "entry": "plugin.ts",
+  "requiresServer": true,
+  "public": true
+}
