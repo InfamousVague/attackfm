@@ -42,6 +42,7 @@ import { PlaylistsProvider } from './playlists.tsx';
 import { LibrarySyncProvider } from './librarySync.tsx';
 import { SearchPage } from './SearchPage.tsx';
 import { StatsPage } from './StatsPage.tsx';
+import { ListeningShareBridge } from './listeningShare.tsx';
 import { DjLauncher } from './DjLauncher.tsx';
 import { LibraryView } from './LibraryView.tsx';
 import { useSwipeBack } from './useSwipeBack.ts';
@@ -1035,6 +1036,9 @@ export function App() {
             )}
             {/* Songs tapped on the car screen start here, queue and all. */}
             <CarPlayBridge onPlay={playFrom} />
+            {/* Pushes the weekly listening glance to the registry while the
+                stats page's share switch is on. Headless; opt-in. */}
+            <ListeningShareBridge />
             {/* Teaches playFrom to route a pick to whichever device holds audio.
                 Lives here, inside the Connect provider, because only a child of
                 it can read the shared session. */}

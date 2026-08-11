@@ -2,6 +2,7 @@ import { Pill, ScrollArea, SearchField, Text } from '@glacier/react';
 import { Sparkles } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
+import { usePlaylists } from './playlists.tsx';
 import { useServerSession } from './serverSession.tsx';
 import {
   fetchCurator,
@@ -134,6 +135,7 @@ export function HomePage({
   embedded?: boolean;
 }) {
   const { tracks, favoriteTracks } = useLibrary();
+  const { create: createPlaylist } = usePlaylists();
   const { session } = useServerSession();
   // Every feed seeds from the last launch's answer, so the shelves paint at
   // full size on the first frame and the refresh below swaps content in place
@@ -481,6 +483,15 @@ export function HomePage({
           tracks={openMix.tracks}
           emptyLabel="This mix came up empty."
           emptyArt="search"
+          // Fork-on-edit: the curator's list stays the curator's and keeps
+          // regenerating; saving takes a frozen copy that is yours to edit.
+          onSaveCopy={() => {
+            void createPlaylist(
+              openMix.title,
+              openMix.tracks.map((t) => t.path),
+            );
+            setOpenMix(null);
+          }}
           onPlay={(t) => onPlay(t, openMix.tracks)}
           onOpenArtist={(artist) => {
             // Close the sheet first so the artist page is not buried under it.

@@ -558,3 +558,66 @@ button.statsRow__name:hover {
   font-size: var(--glacier-font-size-xs);
   color: var(--glacier-text-muted);
 }
+
+/* --- friends this week ----------------------------------------------------
+   The leaderboard rows share the small-row anatomy: a name, a bar scaled to
+   the week's biggest listener, and the glance beside it. Your own row is
+   accented - you are the one comparing. */
+.statsFriendsNote {
+  margin: 0;
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+}
+
+.statsFriends {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.statsFriendRow {
+  display: grid;
+  grid-template-columns: minmax(5.5rem, auto) 1fr auto;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+.statsFriendRow__who {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statsFriendRow[data-me] .statsFriendRow__who {
+  color: var(--glacier-accent-text);
+}
+
+.statsFriendRow__rail {
+  block-size: 0.5rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface-sunken);
+  overflow: hidden;
+}
+
+.statsFriendRow__fill {
+  display: block;
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--glacier-accent-soft, var(--glacier-surface-raised));
+}
+
+.statsFriendRow[data-me] .statsFriendRow__fill {
+  background: var(--glacier-accent-solid);
+}
+
+.statsFriendRow__meta {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-subtle);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

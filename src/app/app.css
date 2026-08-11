@@ -3158,6 +3158,7 @@ body [class*='_panel_']:has(> .dlPanel) {
 
 /* The way out of a playlist entirely: quiet until hovered, then plainly a
    deletion. Sits under the list, clear of the rows it removes. */
+.playlistSaveCopy,
 .playlistDelete {
   display: flex;
   align-items: center;
@@ -3172,6 +3173,13 @@ body [class*='_panel_']:has(> .dlPanel) {
   font-size: var(--glacier-font-size-sm);
   cursor: pointer;
 }
+
+/* Saving a copy is the constructive sibling of delete: same seat, accent
+   rather than danger, because it makes something instead of unmaking it. */
+.playlistSaveCopy {
+  color: var(--glacier-accent-text);
+}
+
 
 .playlistDelete:hover,
 .playlistDelete:focus-visible {
