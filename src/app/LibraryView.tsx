@@ -1,5 +1,5 @@
-import { IconButton, ScrollArea } from '@glacier/react';
-import { Download } from '@glacier/icons';
+import { Button, IconButton, ScrollArea } from '@glacier/react';
+import { ChartNoAxesColumn, Download } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLibrary } from './library.tsx';
 import { usePlaylists } from './playlists.tsx';
@@ -281,6 +281,12 @@ export function LibraryView({
             >
               <Download size={18} />
             </IconButton>
+          )}
+          {onOpenStats && (
+            <Button variant="ghost" size="sm" onClick={onOpenStats} title="Your listening stats">
+              <ChartNoAxesColumn size={16} />
+              <span>Stats</span>
+            </Button>
           )}
           <DjLauncher onPlay={onPlay} />
         </div>
