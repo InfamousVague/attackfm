@@ -1,3 +1,4 @@
+import { artSized } from './server.ts';
 import { Button, ContextMenu, Input, Modal, MenuItem, ScrollArea, Text } from '@glacier/react';
 import { Heart, History, ListMusic, Plus, Trash2 } from '@glacier/icons';
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
@@ -34,7 +35,7 @@ function MosaicCover({ tracks, fallback, tone }: { tracks: Track[]; fallback: Re
   if (arts.length < 4) {
     return (
       <div className="tileSquircle tileCoverFull" aria-hidden>
-        <img src={arts[0]} alt="" loading="lazy" />
+        <img src={artSized(arts[0] ?? null, 640) ?? undefined} alt="" loading="lazy" />
       </div>
     );
   }
@@ -42,7 +43,7 @@ function MosaicCover({ tracks, fallback, tone }: { tracks: Track[]; fallback: Re
   return (
     <div className="tileSquircle tileLikedGrid" aria-hidden>
       {arts.map((art, i) => (
-        <img key={i} src={art} alt="" loading="lazy" />
+        <img key={i} src={artSized(art, 640)!} alt="" loading="lazy" />
       ))}
     </div>
   );

@@ -15,6 +15,7 @@ import {
   logout as serverLogout,
   normalizeServerUrl,
   refreshStreamToken,
+  streamTokenExpiresAt,
   streamUrl,
   trackIdFromPath,
   transcodeUrl,
@@ -141,14 +142,25 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
     return () => setRemoteAudioResolver(null);
   }, []);
 
-  // A stored session is trusted enough to render from at once, but its stream
-  // token may have aged out while the app was closed - so one renewal is
-  // attempted on launch. A failure here is not a sign-out: the box may simply
-  // be unreachable from wherever the phone woke up, and the cached library is
-  // still worth showing.
+  // A stored session is trusted enough to render from at once, and its stream
+  // token is KEPT unless it is close to aging out. Renewing eagerly here used
+  // to be the app's single most expensive habit: the token rides every art
+  // and stream URL's query string, so a fresh token on every launch changed
+  // every URL and busted the browser's entire HTTP cache - the whole visible
+  // library's covers re-downloaded each time the app opened (and repainted
+  // mid-launch when the new token landed). The token lives seven days; only
+  // when under two remain is it re-minted, so URLs stay byte-stable across
+  // launches and `immutable` art actually gets to be immutable. A failure is
+  // not a sign-out: the box may simply be unreachable from wherever the phone
+  // woke up, and the cached library is still worth showing.
   useEffect(() => {
     const stored = readSession();
     if (!stored) {
+      setRestoring(false);
+      return;
+    }
+    const remaining = streamTokenExpiresAt(stored.streamToken) - Date.now();
+    if (remaining > 48 * 60 * 60 * 1000) {
       setRestoring(false);
       return;
     }
@@ -201,9 +213,16 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
     if (live) await serverLogout(live);
   }, [persist]);
 
+  // Latched to once a minute: renewal is the answer to an EXPIRED token, and
+  // a token minted seconds ago cannot be expired - so a wall of covers all
+  // erroring at once (server down, wifi drop) collapses into one /api/me
+  // instead of a stampede.
+  const lastRenew = useRef(0);
   const renew = useCallback(async () => {
     const live = sessionRef.current;
     if (!live) return;
+    if (Date.now() - lastRenew.current < 60_000) return;
+    lastRenew.current = Date.now();
     const streamToken = await refreshStreamToken(live);
     persist({ ...live, streamToken });
   }, [persist]);

@@ -11,6 +11,7 @@ import {
 } from './tauri.ts';
 import {
   fetchRemoteFavorites,
+  hydrateCachedIndex,
   loadCachedIndex,
   requestScan,
   setRemoteFavorite,
@@ -286,8 +287,14 @@ function LocalLibrary({ children }: { children: ReactNode }) {
  * relaunch renders before the network answers.
  */
 function RemoteLibrary({ session, children }: { session: ServerSession; children: ReactNode }) {
-  // Seeded synchronously from the cache, so the first paint already has rows.
+  // Seeded from the in-memory index (instant within a run); the disk copy in
+  // IndexedDB arrives via hydrate below, still ahead of the first network
+  // answer, so a relaunch renders the library before the server is asked.
   const [remote, setRemote] = useState<RemoteTrack[]>(() => loadCachedIndex(session.url).tracks);
+  // Blocks the first sync until the disk index has been read: syncing first
+  // would ask "everything since rev 0" and re-download the whole library on
+  // every launch, which is exactly what the cache exists to prevent.
+  const [hydrated, setHydrated] = useState(false);
   const [syncing, setSyncing] = useState(true);
   const [synced, setSynced] = useState(0);
   const [favorites, setFavorites] = useState<number[]>([]);
@@ -308,13 +315,18 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
         setError(null);
       }
       try {
-        const tracks = await syncLibrary(session, {
+        const { tracks, changed } = await syncLibrary(session, {
           onProgress: (count) => {
             if (alive()) setSynced(count);
           },
         });
         if (!alive()) return;
-        setRemote(tracks);
+        // A quiet pass keeps the old array identity, so nothing under the
+        // library context re-renders and CarPlay is not re-pushed - the
+        // heartbeat's usual answer becomes free. The one exception: the very
+        // first pass adopts the hydrated rows even when the server has
+        // nothing newer, because state and index may have loaded separately.
+        setRemote((prev) => (changed || prev.length !== tracks.length ? tracks : prev));
       } catch (err) {
         if (!alive()) return;
         if (options.silent) return;
@@ -329,19 +341,32 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
   );
 
   useEffect(() => {
-    void sync();
-  }, [sync]);
+    let live = true;
+    void hydrateCachedIndex(session.url).then((index) => {
+      if (!live) return;
+      if (index.tracks.length > 0) setRemote(index.tracks);
+      setHydrated(true);
+    });
+    return () => {
+      live = false;
+    };
+  }, [session.url]);
+
+  useEffect(() => {
+    if (hydrated) void sync();
+  }, [hydrated, sync]);
 
   // The heartbeat that keeps every signed-in device converging on the same
   // library without anyone pressing rescan: a delta poll, so a settled library
   // costs one tiny request and an upload landing anywhere shows up everywhere
   // within the half minute.
   useEffect(() => {
+    if (!hydrated) return;
     const interval = window.setInterval(() => {
       void sync({ silent: true });
     }, 30_000);
     return () => window.clearInterval(interval);
-  }, [sync]);
+  }, [hydrated, sync]);
 
   // Favourites live on the server, so they follow the account between devices.
   useEffect(() => {

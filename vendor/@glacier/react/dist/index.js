@@ -13283,6 +13283,15 @@ class GlacierScrubDeck extends AudioWorkletProcessor {
         this.tape = null;
         this.tapeDur = 0;
         this.filled = 0;
+        // Eject is a track change, and a held voice on a new source is never
+        // right: a hold that outlives its song would mute every song after it
+        // (the mix only ever comes back via release, and the release for this
+        // hold may never arrive - the sheet closed mid-scratch, the skip
+        // landed under a held finger). Dropping the hold here makes eject a
+        // full reset of the scratch surface, which is what it always meant.
+        this.mixTarget = 0;
+        this.vel = 0;
+        this.target = this.pos;
       } else if (m.t === 'probe') {
         this.port.postMessage({
           t: 'probed',

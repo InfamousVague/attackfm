@@ -2,6 +2,8 @@ import { Button, IconButton, ScrollArea } from '@glacier/react';
 import { ChartNoAxesColumn, Download } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLibrary } from './library.tsx';
+import { useServerSession } from './serverSession.tsx';
+import { artSized } from './server.ts';
 import { usePlaylists } from './playlists.tsx';
 import { ShelfSkeleton } from './ShelfSkeleton.tsx';
 import { PlaylistShowcase } from './PlaylistShowcase.tsx';
@@ -54,9 +56,13 @@ function useCardArt(artwork: string | null): {
   onLoad: () => void;
   onError: () => void;
 } {
-  const wanted = artwork ?? placeholderArt;
+  // Cards draw covers at a couple hundred CSS pixels; the 640 variant covers
+  // 3x displays while costing a fraction of the original embedded picture
+  // (often megabytes). Servers without variants serve the original unchanged.
+  const wanted = artSized(artwork, 640) ?? placeholderArt;
   const [src, setSrc] = useState(wanted);
   const [loaded, setLoaded] = useState(false);
+  const { renew } = useServerSession();
   useEffect(() => {
     setSrc(wanted);
     setLoaded(false);
@@ -68,10 +74,17 @@ function useCardArt(artwork: string | null): {
     loaded,
     onLoad: () => setLoaded(true),
     // A dead cover URL swaps to the placeholder once (which then loads and
-    // reveals); if the placeholder itself is what failed, just reveal.
+    // reveals); if the placeholder itself is what failed, just reveal. Server
+    // art failing usually means the stream token in its URL has aged out, so
+    // one renewal is asked for - latched to once a minute in the provider, a
+    // wall of failing covers costs one /api/me, and the refreshed session
+    // re-renders every card with working URLs.
     onError: () => {
       if (src === placeholderArt) setLoaded(true);
-      else setSrc(placeholderArt);
+      else {
+        if (artwork && /[?&]t=/.test(artwork)) void renew().catch(() => {});
+        setSrc(placeholderArt);
+      }
     },
   };
 }
