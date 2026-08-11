@@ -66,6 +66,43 @@ export function fireNativeHaptic(kind: HapticKind = 'light'): void {
  *  engine (Android web) / no-op (desktop). */
 export const hapticsImpl = nativeHaptics ? fireNativeHaptic : undefined;
 
+/**
+ * The tier below the kit's seven kinds: UIImpactFeedbackGenerator's `soft`
+ * style, the gentlest thing the Taptic Engine says. Texture, not events -
+ * the fine ratchet between the disc's real detents, the patter of items
+ * landing on a page. Same gates as everything else.
+ */
+export function fireMicroTick(): void {
+  if (!nativeHaptics) return;
+  if (!hapticsPref()) return;
+  void plugin()
+    .then((h) => h.impactFeedback('soft'))
+    .catch(() => {
+      // Silence, as ever.
+    });
+}
+
+// One patter per page arrival, however many components ask: mounting a page
+// mounts its shelves too, and five drumrolls at once is a shudder, not a wave.
+let lastPatter = 0;
+
+/**
+ * The felt half of a page's ripple-in: a short soft drumroll timed to the
+ * entrance wave, so the items can be felt hitting the page. Ticks ride
+ * timeouts rather than the animation events - the wave is CSS, and taking a
+ * dependency on animation bookkeeping for a quarter-second flourish would
+ * cost more than it pays.
+ */
+export function ripplePatter(): void {
+  if (!nativeHaptics || !hapticsPref()) return;
+  const now = performance.now();
+  if (now - lastPatter < 700) return;
+  lastPatter = now;
+  for (let i = 0; i < 5; i += 1) {
+    window.setTimeout(fireMicroTick, 60 + i * 70);
+  }
+}
+
 // --- the preference -------------------------------------------------------
 
 const PREF_KEY = 'attackfm-haptics';
