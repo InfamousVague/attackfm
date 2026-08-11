@@ -2,9 +2,16 @@
 # AttackFM home-hub installer (macOS).
 #
 # For the Mac that IS the music server - the one with the library drive
-# attached. Run it from inside an unpacked bundle (next to the attackfm-server
-# binary this script installs); re-running is the normal way to update, and it
-# keeps the answers you gave last time as defaults.
+# attached. Two ways to run it, and re-running either is the normal way to
+# update (it keeps the answers you gave last time as defaults):
+#
+#   - from a git checkout:  git pull && bash server/home-install.sh
+#     Builds the server right here (needs the Rust toolchain once:
+#     `curl https://sh.rustup.rs -sSf | sh`), so a push from the dev Mac is
+#     the whole deploy - nothing to carry over.
+#   - from an unpacked bundle (dist-home tarball, next to a prebuilt
+#     attackfm-server binary): installs that binary, no toolchain needed.
+#     This is the fallback for a box without Rust.
 #
 # What it does, in order:
 #   1. installs the bundled binary to ~/Library/Application Support/AttackFM
@@ -27,7 +34,25 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 bold() { printf '\033[1m%s\033[0m\n' "$1"; }
 say()  { printf '  %s\n' "$1"; }
 
-[ -f "$HERE/attackfm-server" ] || { echo "No attackfm-server binary next to this script - run it from inside the unpacked bundle."; exit 1; }
+# Where the binary comes from: a prebuilt one beside this script (bundle
+# mode), or a fresh build of the checkout this script lives in (repo mode).
+if [ -f "$HERE/attackfm-server" ]; then
+  BIN_SRC="$HERE/attackfm-server"
+elif [ -f "$HERE/Cargo.toml" ]; then
+  command -v cargo >/dev/null 2>&1 || {
+    echo "This is a repo checkout, so the server builds here - but cargo is missing."
+    echo "One-time setup:  curl https://sh.rustup.rs -sSf | sh   (then re-run this script)"
+    exit 1
+  }
+  bold "Building the server from this checkout"
+  (cd "$HERE" && cargo build --release)
+  BIN_SRC="$HERE/target/release/attackfm-server"
+  [ -f "$BIN_SRC" ] || { echo "Build finished but no binary at $BIN_SRC."; exit 1; }
+else
+  echo "No attackfm-server binary next to this script and no Cargo.toml either -"
+  echo "run from a repo checkout's server/ directory or an unpacked bundle."
+  exit 1
+fi
 
 # --- previous answers become defaults -------------------------------------
 # The plist is the memory: a re-run reads what it set last time, so updating
@@ -75,7 +100,7 @@ bold "Installing"
 mkdir -p "$(dirname "$BIN_DST")" "$LOG_DIR"
 # Stop first so the copy never races a running process.
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
-cp "$HERE/attackfm-server" "$BIN_DST"
+cp "$BIN_SRC" "$BIN_DST"
 chmod +x "$BIN_DST"
 xattr -d com.apple.quarantine "$BIN_DST" 2>/dev/null || true
 say "binary -> $BIN_DST"
