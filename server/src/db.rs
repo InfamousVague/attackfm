@@ -3704,6 +3704,225 @@ impl Db {
         )
         .unwrap_or((0, 0))
     }
+
+    // --- library tools (tools.rs) -------------------------------------------
+
+    /// Every live row, full shape - the duplicate finder clusters these in
+    /// memory rather than teaching SQL the normalisation rules.
+    pub fn all_live_tracks(&self) -> Vec<Track> {
+        let conn = self.lock();
+        let sql = format!(
+            "SELECT {} FROM tracks WHERE deleted = 0 ORDER BY id",
+            Self::TRACK_COLS
+        );
+        let Ok(mut stmt) = conn.prepare(&sql) else {
+            return Vec::new();
+        };
+        stmt.query_map([], Self::read_track)
+            .map(|r| r.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// The files of one album: (id, rel_path) for every live track whose
+    /// album and album artist match, case-insensitively.
+    pub fn album_files(&self, album: &str, album_artist: &str) -> Vec<(i64, String)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT id, rel_path FROM tracks
+              WHERE deleted = 0 AND lower(album) = lower(?1) AND lower(album_artist) = lower(?2)
+              ORDER BY disc_no, track_no, id",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![album, album_artist], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map(|r| r.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Re-points every per-user reference from each dropped track to the kept
+    /// one, skipping any move that would collide with a unique key (a listener
+    /// who had favourited both copies keeps one favourite, not an error).
+    /// The leftovers such a skip strands are deleted - their meaning has moved.
+    pub fn repoint_track_refs(&self, keep: i64, drops: &[i64]) -> rusqlite::Result<()> {
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        for &drop in drops {
+            // (user_id, track_id) primary keys: OR IGNORE skips the user who
+            // already references the kept id, then the stranded row goes.
+            tx.execute(
+                "UPDATE OR IGNORE favorites SET track_id = ?1 WHERE track_id = ?2",
+                params![keep, drop],
+            )?;
+            tx.execute("DELETE FROM favorites WHERE track_id = ?1", params![drop])?;
+            tx.execute(
+                "UPDATE OR IGNORE play_state SET track_id = ?1 WHERE track_id = ?2",
+                params![keep, drop],
+            )?;
+            tx.execute("DELETE FROM play_state WHERE track_id = ?1", params![drop])?;
+            // No unique key involves track_id on these three.
+            tx.execute(
+                "UPDATE playlist_tracks SET track_id = ?1 WHERE track_id = ?2",
+                params![keep, drop],
+            )?;
+            tx.execute(
+                "UPDATE plays SET track_id = ?1 WHERE track_id = ?2",
+                params![keep, drop],
+            )?;
+            tx.execute(
+                "UPDATE listen_events SET track_id = ?1 WHERE track_id = ?2",
+                params![keep, drop],
+            )?;
+        }
+        tx.commit()
+    }
+
+    /// Tombstones a set of rows under one rev, so the next delta sync's
+    /// removed[] carries them - the same shape tombstone_missing produces.
+    pub fn tombstone_tracks(&self, ids: &[i64], rev: i64) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        for id in ids {
+            conn.execute(
+                "UPDATE tracks SET deleted = 1, rev = ?2 WHERE id = ?1",
+                params![id, rev],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Disk by artist: (artist, bytes, tracks), heaviest first.
+    pub fn storage_by_artist(&self, limit: i64) -> Vec<(String, i64, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT artist, COALESCE(SUM(size_bytes), 0), COUNT(*) FROM tracks
+              WHERE deleted = 0 GROUP BY artist ORDER BY 2 DESC LIMIT ?1",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![limit], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .map(|r| r.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Disk by album: (album, album_artist, bytes, tracks), heaviest first.
+    pub fn storage_by_album(&self, limit: i64) -> Vec<(String, String, i64, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT album, album_artist, COALESCE(SUM(size_bytes), 0), COUNT(*) FROM tracks
+              WHERE deleted = 0 GROUP BY album, album_artist ORDER BY 3 DESC LIMIT ?1",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![limit], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .map(|r| r.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Disk by codec: (codec, bytes, tracks), heaviest first.
+    pub fn storage_by_codec(&self) -> Vec<(String, i64, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT codec, COALESCE(SUM(size_bytes), 0), COUNT(*) FROM tracks
+              WHERE deleted = 0 GROUP BY codec ORDER BY 2 DESC",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .map(|r| r.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// The biggest albums nobody listens to: (album, album_artist, bytes,
+    /// listens) for albums with at most `max_plays` listen events, largest
+    /// first. Listens are counted through track ids, so a retagged album
+    /// keeps its history.
+    pub fn rarely_played_albums(&self, max_plays: i64, limit: i64) -> Vec<(String, String, i64, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT t.album, t.album_artist, COALESCE(SUM(t.size_bytes), 0) AS bytes,
+                    (SELECT COUNT(*) FROM listen_events le
+                      JOIN tracks lt ON lt.id = le.track_id
+                     WHERE lt.album = t.album AND lt.album_artist = t.album_artist) AS plays
+               FROM tracks t
+              WHERE t.deleted = 0 AND t.album != ''
+              GROUP BY t.album, t.album_artist
+             HAVING plays <= ?1
+              ORDER BY bytes DESC LIMIT ?2",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![max_plays, limit], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })
+        .map(|r| r.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    /// One user's playlists with the identity of every track, for the backup
+    /// export: (name, [(rel_path, title, artist, album)]) in playlist order.
+    pub fn export_playlists(&self, user_id: i64) -> Vec<(String, Vec<(String, String, String, String)>)> {
+        let conn = self.lock();
+        let Ok(mut heads) =
+            conn.prepare("SELECT id, name FROM playlists WHERE user_id = ?1 ORDER BY name")
+        else {
+            return Vec::new();
+        };
+        let lists: Vec<(i64, String)> = heads
+            .query_map(params![user_id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map(|r| r.filter_map(Result::ok).collect())
+            .unwrap_or_default();
+        drop(heads);
+        let Ok(mut items) = conn.prepare(
+            "SELECT t.rel_path, t.title, t.artist, t.album
+               FROM playlist_tracks pt JOIN tracks t ON t.id = pt.track_id
+              WHERE pt.playlist_id = ?1 AND t.deleted = 0 ORDER BY pt.position",
+        ) else {
+            return Vec::new();
+        };
+        lists
+            .into_iter()
+            .map(|(id, name)| {
+                let tracks: Vec<(String, String, String, String)> = items
+                    .query_map(params![id], |r| {
+                        Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+                    })
+                    .map(|r| r.filter_map(Result::ok).collect())
+                    .unwrap_or_default();
+                (name, tracks)
+            })
+            .collect()
+    }
+
+    /// One user's favourites as library-relative paths, oldest heart first.
+    pub fn favorite_paths(&self, user_id: i64) -> Vec<String> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT t.rel_path FROM favorites f JOIN tracks t ON t.id = f.track_id
+              WHERE f.user_id = ?1 AND t.deleted = 0 ORDER BY f.added_at",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id], |r| r.get(0))
+            .map(|r| r.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// One playlist's rows as an M3U needs them: (title, artist, duration_ms,
+    /// rel_path) in playlist order.
+    pub fn playlist_export_rows(&self, playlist_id: i64) -> Vec<(String, String, Option<i64>, String)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT t.title, t.artist, t.duration_ms, t.rel_path
+               FROM playlist_tracks pt JOIN tracks t ON t.id = pt.track_id
+              WHERE pt.playlist_id = ?1 AND t.deleted = 0 ORDER BY pt.position",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![playlist_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })
+        .map(|r| r.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
 }
 
 /// A track as the curator reads it, for looking up and for describing.
