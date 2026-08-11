@@ -2483,8 +2483,17 @@ img.artPop:not([data-loading]) {
   }
 }
 
-.homeShelfRow > *,
-.showcaseGrid > * {
+/* The wave lands on BOXES. A card wrapped in a context menu arrives inside
+   the kit's display:contents target - a wrapper with no box, which inherits
+   the nth-child --ripple-i just fine but cannot animate anything. So the
+   animation goes to the direct child when it IS a box, and one level down
+   to the real card when the child is the boxless wrapper. Without this,
+   only unwrapped items rippled - which in practice meant almost nothing,
+   since every track card and deletable playlist tile wears a menu. */
+.homeShelfRow > :not([class*='contextTarget']),
+.homeShelfRow > [class*='contextTarget'] > *,
+.showcaseGrid > :not([class*='contextTarget']),
+.showcaseGrid > [class*='contextTarget'] > * {
   animation: rippleIn 0.32s var(--glacier-ease-out) backwards;
   animation-delay: calc(var(--shelf-i, 0) * 60ms + var(--ripple-i, 0) * 26ms);
 }
@@ -2541,8 +2550,10 @@ img.artPop:not([data-loading]) {
 .homePage > section:nth-child(8) { --shelf-i: 7; }
 
 @media (prefers-reduced-motion: reduce) {
-  .homeShelfRow > *,
-  .showcaseGrid > * {
+  .homeShelfRow > :not([class*='contextTarget']),
+  .homeShelfRow > [class*='contextTarget'] > *,
+  .showcaseGrid > :not([class*='contextTarget']),
+  .showcaseGrid > [class*='contextTarget'] > * {
     animation: none;
   }
 }
