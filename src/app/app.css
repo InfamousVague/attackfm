@@ -901,30 +901,47 @@ img {
   height: 34%;
   transform: translate(-50%, -50%);
   border-radius: 50%;
+  /* The frost is REAL now: the hub blurs the print behind it the way ground
+     plastic actually does, and the painted whites ride on top as body. The
+     mask keeps the spindle hole optically clear - masking the element masks
+     its backdrop effect too, so the hole stays a hole, not fogged glass. */
+  -webkit-backdrop-filter: blur(6px) saturate(1.05);
+  backdrop-filter: blur(6px) saturate(1.05);
+  -webkit-mask-image: radial-gradient(
+    circle closest-side at 50%,
+    transparent 0 29%,
+    black 33% 100%
+  );
+  mask-image: radial-gradient(
+    circle closest-side at 50%,
+    transparent 0 29%,
+    black 33% 100%
+  );
   background:
     /* The still, off-centre glint plastic always carries. */
     radial-gradient(
       circle at 32% 28%,
-      rgb(255 255 255 / 0.1),
-      rgb(255 255 255 / 0.02) 55%,
+      rgb(255 255 255 / 0.12),
+      rgb(255 255 255 / 0.03) 55%,
       transparent 70%
     ),
-    /* The frost, and the ridges standing up out of it: clear through the
-       hole, a quiet inner lip, then three highlight/shadow pairs spaced
-       through the clamping band, on the rim's own whites. */
+    /* The body of the frost, and the ridges barely standing out of it: the
+       blur above does the frosting, so the paint's job is body and the
+       clamping rings are a suggestion - moulded into the glass, not drawn
+       on it. */
     radial-gradient(
       circle closest-side at 50%,
       transparent 0 30%,
-      rgb(255 255 255 / 0.05) 33% 40%,
-      rgb(255 255 255 / 0.16) 42% 44%,
-      rgb(0 0 0 / 0.1) 45% 46.5%,
-      rgb(255 255 255 / 0.07) 49% 55%,
-      rgb(255 255 255 / 0.16) 57% 59%,
-      rgb(0 0 0 / 0.1) 60% 61.5%,
-      rgb(255 255 255 / 0.07) 64% 72%,
-      rgb(255 255 255 / 0.16) 74% 76%,
-      rgb(0 0 0 / 0.1) 77% 78.5%,
-      rgb(255 255 255 / 0.07) 81% 100%
+      rgb(255 255 255 / 0.09) 33% 40%,
+      rgb(255 255 255 / 0.14) 42% 44%,
+      rgb(0 0 0 / 0.05) 45% 46.5%,
+      rgb(255 255 255 / 0.1) 49% 55%,
+      rgb(255 255 255 / 0.14) 57% 59%,
+      rgb(0 0 0 / 0.05) 60% 61.5%,
+      rgb(255 255 255 / 0.1) 64% 72%,
+      rgb(255 255 255 / 0.14) 74% 76%,
+      rgb(0 0 0 / 0.05) 77% 78.5%,
+      rgb(255 255 255 / 0.1) 81% 100%
     );
 }
 
@@ -2439,6 +2456,93 @@ img.artPop:not([data-loading]) {
   .npScreen__heart[aria-pressed='true'] svg,
   .npScreen__heart[aria-pressed='true']::after,
   .npScreen__coverTarget > * {
+    animation: none;
+  }
+}
+
+/* --- The ripple-in ----------------------------------------------------------
+   A page does not pop into being; it ARRIVES. Every card in a shelf rises a
+   dozen pixels into place, each a beat after its neighbour, and each shelf a
+   beat after the one above - a wave washing down and across the page. The
+   companion drumroll from haptics.ts (ripplePatter) is timed to the same
+   window, so the items can be felt hitting the page. `backwards` fill holds
+   late items invisible until their turn; the indices are nth-child, so the
+   whole choreography is stylesheet-only and every surface wearing the two
+   container classes gets it for free. Capped at twelve items and eight
+   shelves - beyond that the wave has already passed. */
+@keyframes rippleIn {
+  from {
+    opacity: 0;
+    translate: 0 12px;
+    scale: 0.97;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+    scale: 1;
+  }
+}
+
+.homeShelfRow > *,
+.showcaseGrid > * {
+  animation: rippleIn 0.32s var(--glacier-ease-out) backwards;
+  animation-delay: calc(var(--shelf-i, 0) * 60ms + var(--ripple-i, 0) * 26ms);
+}
+
+.homeShelfRow > :nth-child(1),
+.showcaseGrid > :nth-child(1) { --ripple-i: 0; }
+.homeShelfRow > :nth-child(2),
+.showcaseGrid > :nth-child(2) { --ripple-i: 1; }
+.homeShelfRow > :nth-child(3),
+.showcaseGrid > :nth-child(3) { --ripple-i: 2; }
+.homeShelfRow > :nth-child(4),
+.showcaseGrid > :nth-child(4) { --ripple-i: 3; }
+.homeShelfRow > :nth-child(5),
+.showcaseGrid > :nth-child(5) { --ripple-i: 4; }
+.homeShelfRow > :nth-child(6),
+.showcaseGrid > :nth-child(6) { --ripple-i: 5; }
+.homeShelfRow > :nth-child(7),
+.showcaseGrid > :nth-child(7) { --ripple-i: 6; }
+.homeShelfRow > :nth-child(8),
+.showcaseGrid > :nth-child(8) { --ripple-i: 7; }
+.homeShelfRow > :nth-child(9),
+.showcaseGrid > :nth-child(9) { --ripple-i: 8; }
+.homeShelfRow > :nth-child(10),
+.showcaseGrid > :nth-child(10) { --ripple-i: 9; }
+.homeShelfRow > :nth-child(11),
+.showcaseGrid > :nth-child(11) { --ripple-i: 10; }
+.homeShelfRow > :nth-child(12),
+.showcaseGrid > :nth-child(12) { --ripple-i: 11; }
+
+/* The shelf tier of the wave: sections inherit --shelf-i to their rows. */
+.homeMixes > section:nth-child(1) { --shelf-i: 0; }
+.homeMixes > section:nth-child(2) { --shelf-i: 1; }
+.homeMixes > section:nth-child(3) { --shelf-i: 2; }
+.homeMixes > section:nth-child(4) { --shelf-i: 3; }
+.homeMixes > section:nth-child(5) { --shelf-i: 4; }
+.homeMixes > section:nth-child(6) { --shelf-i: 5; }
+.homeMixes > section:nth-child(7) { --shelf-i: 6; }
+.homeMixes > section:nth-child(8) { --shelf-i: 7; }
+.libraryPage > section:nth-child(1),
+.homePage > section:nth-child(1) { --shelf-i: 0; }
+.libraryPage > section:nth-child(2),
+.homePage > section:nth-child(2) { --shelf-i: 1; }
+.libraryPage > section:nth-child(3),
+.homePage > section:nth-child(3) { --shelf-i: 2; }
+.libraryPage > section:nth-child(4),
+.homePage > section:nth-child(4) { --shelf-i: 3; }
+.libraryPage > section:nth-child(5),
+.homePage > section:nth-child(5) { --shelf-i: 4; }
+.libraryPage > section:nth-child(6),
+.homePage > section:nth-child(6) { --shelf-i: 5; }
+.libraryPage > section:nth-child(7),
+.homePage > section:nth-child(7) { --shelf-i: 6; }
+.libraryPage > section:nth-child(8),
+.homePage > section:nth-child(8) { --shelf-i: 7; }
+
+@media (prefers-reduced-motion: reduce) {
+  .homeShelfRow > *,
+  .showcaseGrid > * {
     animation: none;
   }
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import stationMark from '../assets/attack-wave.png';
 import { BeatWave, type BeatWaveBeat } from './BeatWave.tsx';
-import { fireNativeHaptic } from './haptics.ts';
+import { fireMicroTick, fireNativeHaptic } from './haptics.ts';
 
 /** One revolution every six seconds - the pace the old CSS keyframes set. */
 const FULL_DEG_PER_SEC = 360 / 6;
@@ -263,23 +263,38 @@ export function SpinningDisc({
     };
   }, []);
 
-  /** Banks turned degrees and clicks off a detent when one is due. Each
-   *  click also glints the hub - brightness only, so neither the hub's own
-   *  transform nor the face's rotation is disturbed - which is what lets the
-   *  eye count the ratchet the thumb is feeling. */
+  /** Banks turned degrees and speaks the ratchet in two voices: a micro
+   *  tick (the Taptic Engine's soft style) every third of the spacing - the
+   *  fine tooth-texture of the wheel - and the full selection click at each
+   *  real detent, which also glints the hub so the eye can count what the
+   *  thumb feels. Micro ticks are texture, so only the clicks get light.
+   *  One floor guards both voices: past ~28 events a second the Engine
+   *  smears them together anyway, so the budget goes to the freshest. */
   const hubRef = useRef<HTMLSpanElement>(null);
+  const microDetent = useRef(0);
   const clickDetents = (degrees: number, spacing: number) => {
-    detent.current += Math.abs(degrees);
-    if (detent.current < spacing) return;
-    detent.current %= spacing;
+    const turned = Math.abs(degrees);
     const now = performance.now();
-    if (now - detentAt.current < 35) return;
-    detentAt.current = now;
-    fireNativeHaptic('selection');
-    hubRef.current?.animate(
-      [{ filter: 'brightness(1.7)' }, { filter: 'brightness(1)' }],
-      { duration: 130, easing: 'ease-out' },
-    );
+    detent.current += turned;
+    microDetent.current += turned;
+    if (detent.current >= spacing) {
+      detent.current %= spacing;
+      microDetent.current = 0;
+      if (now - detentAt.current < 35) return;
+      detentAt.current = now;
+      fireNativeHaptic('selection');
+      hubRef.current?.animate(
+        [{ filter: 'brightness(1.7)' }, { filter: 'brightness(1)' }],
+        { duration: 130, easing: 'ease-out' },
+      );
+      return;
+    }
+    if (microDetent.current >= spacing / 3) {
+      microDetent.current %= spacing / 3;
+      if (now - detentAt.current < 35) return;
+      detentAt.current = now;
+      fireMicroTick();
+    }
   };
 
   /** The pointer's angle around the disc's centre, in degrees. */
@@ -302,6 +317,7 @@ export function SpinningDisc({
     // The grab, in the hand: firm - the music just stopped under a finger.
     fireNativeHaptic('medium');
     detent.current = 0;
+    microDetent.current = 0;
     lastTouchAngle.current = a;
     swing.current = { vel: 0, at: performance.now() };
     // Capture, so a finger that slides off the disc mid-drag keeps scratching

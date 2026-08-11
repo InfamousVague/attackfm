@@ -3,6 +3,7 @@ import { ChartNoAxesColumn, Sparkles } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
 import { mosaicArts, useCardArt, useTileArt } from './artLoad.ts';
+import { ripplePatter } from './haptics.ts';
 import { usePlaylists } from './playlists.tsx';
 import { useServerSession } from './serverSession.tsx';
 import {
@@ -164,6 +165,13 @@ export function HomePage({
   // Every feed seeds from the last launch's answer, so the shelves paint at
   // full size on the first frame and the refresh below swaps content in place
   // - the page must never assemble itself in front of the listener twice.
+  // Standalone, the page patters its own arrival; embedded, the Library
+  // page already did (and ripplePatter dedupes regardless).
+  useEffect(() => {
+    if (!embedded) ripplePatter();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, at arrival
+  }, []);
+
   const [feed, setFeed] = useState<HomeFeed | null>(() => readFeedCache<HomeFeed>(session, 'home'));
   // What the always-running curator has built for this listener, and how far
   // its reading of the library has got. Polled on the same rhythm as the feed.

@@ -3,6 +3,7 @@ import { Download } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLibrary } from './library.tsx';
 import { useCardArt } from './artLoad.ts';
+import { ripplePatter } from './haptics.ts';
 import { usePlaylists } from './playlists.tsx';
 import { ShelfSkeleton } from './ShelfSkeleton.tsx';
 import { PlaylistShowcase } from './PlaylistShowcase.tsx';
@@ -177,6 +178,12 @@ export function LibraryView({
   // replaced it. `scanning` is the honest signal - the library saying it is
   // still fetching AND has nothing to show yet - so the skeletons now stand
   // exactly as long as there is nothing to stand in for.
+  // The page's arrival, felt: a soft drumroll under the ripple-in wave.
+  // Deduped inside ripplePatter, so the embedded Home below cannot double it.
+  useEffect(() => {
+    ripplePatter();
+  }, []);
+
   const emptyAtMount = useRef(tracks.length === 0);
   // The ceiling, so a server that never answers cannot leave the page in
   // skeletons for the rest of the session. Long enough not to fire during any
