@@ -1,5 +1,5 @@
-import { Pill, ScrollArea, SearchField, Text } from '@glacier/react';
-import { Sparkles } from '@glacier/icons';
+import { Button, Pill, ScrollArea, SearchField, Text } from '@glacier/react';
+import { ChartNoAxesColumn, Sparkles } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
 import { mosaicArts, useCardArt, useTileArt } from './artLoad.ts';
@@ -119,12 +119,21 @@ interface ResolvedMix {
 }
 
 /** A shelf: a heading and a horizontal run of cards. Renders nothing when
- * it has nothing - an empty rail is clutter, not information. */
-function Shelf({ title, children, count }: { title: string; children: React.ReactNode; count: number }) {
+ * it has nothing - an empty rail is clutter, not information. A shelf can
+ * carry one action on the heading's right - a door related to what the rail
+ * shows, sitting where the eye finishes reading the title. */
+function Shelf({ title, children, count, action }: { title: string; children: React.ReactNode; count: number; action?: React.ReactNode }) {
   if (count === 0) return null;
   return (
     <section className="homeShelf">
-      <h2 className="homeShelfTitle">{title}</h2>
+      {action ? (
+        <div className="homeShelfHead">
+          <h2 className="homeShelfTitle">{title}</h2>
+          {action}
+        </div>
+      ) : (
+        <h2 className="homeShelfTitle">{title}</h2>
+      )}
       <ScrollArea orientation="horizontal" className="homeShelfScroll" hideScrollbar>
         <div className="homeShelfRow">{children}</div>
       </ScrollArea>
@@ -135,12 +144,15 @@ function Shelf({ title, children, count }: { title: string; children: React.Reac
 export function HomePage({
   onPlay,
   onOpenArtist,
+  onOpenStats,
   embedded = false,
 }: {
   /** Called with the opened track and the shelf it came from as the queue. */
   onPlay: (track: Track, queue: Track[]) => void;
   /** Opens an artist's page - the Top artists shelf links through here. */
   onOpenArtist: (artist: string) => void;
+  /** Opens the stats page - the Top artists shelf's header door. */
+  onOpenStats?: () => void;
   /** Rendered inside another page (the Library tab): drop the greeting and the
    *  page's own search field - the host carries both - and show just the
    *  personalized shelves, so the mixes fold into Library above what you own. */
@@ -427,7 +439,21 @@ export function HomePage({
       {skelFeed ? (
         <ShelfSkeleton title="Your top artists" kind="artist" />
       ) : (
-      <Shelf title="Your top artists" count={topArtists.length}>
+      <Shelf
+        title="Your top artists"
+        count={topArtists.length}
+        // The stats door lives where the listening is summarized: these
+        // artists ARE the top of the stats page, so "view all" sits beside
+        // them rather than as a lone header button floating over everything.
+        action={
+          onOpenStats && (
+            <Button variant="ghost" size="sm" onClick={onOpenStats}>
+              <ChartNoAxesColumn size={14} />
+              <span>View all stats</span>
+            </Button>
+          )
+        }
+      >
         {topArtists.map((a) => (
           <ArtistCard key={a.name} name={a.name} cover={a.cover} onOpen={() => onOpenArtist(a.name)} />
         ))}

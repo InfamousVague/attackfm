@@ -28,6 +28,18 @@ fileGroups: [../../src]
 configs:
   debug: debug
   release: release
+# HAND-ADDED: Swift halves of Tauri mobile plugins. `tauri ios init` normally
+# stages these itself, but this project predates any plugin with real iOS
+# code, so they are vendored here instead: `.tauri/tauri-api` is copied from
+# the tauri crate's mobile/ios-api (keep in step with the tauri version in
+# Cargo.lock), and each plugin package beside it from the plugin crate's ios/
+# directory (its Package.swift expects ../.tauri/tauri-api, which is exactly
+# where it now is). Without this the Rust side's ios_plugin_binding resolves
+# to nothing, the plugin silently no-ops, and - concretely - the Taptic
+# Engine never fires. After editing, run `xcodegen generate` here.
+packages:
+  tauri-plugin-haptics:
+    path: tauri-plugin-haptics
 settingGroups:
   app:
     base:
@@ -133,6 +145,9 @@ targets:
       - sdk: Security.framework
       - sdk: UIKit.framework
       - sdk: WebKit.framework
+      # The plugin Swift packages declared above; linking them is what makes
+      # their @_cdecl init symbols real.
+      - package: tauri-plugin-haptics
     preBuildScripts:
       - script: npm run -- tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths "${FRAMEWORK_SEARCH_PATHS:?}" --header-search-paths "${HEADER_SEARCH_PATHS:?}" --gcc-preprocessor-definitions "${GCC_PREPROCESSOR_DEFINITIONS:-}" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}
         name: Build Rust Code

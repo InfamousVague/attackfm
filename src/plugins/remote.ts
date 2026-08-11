@@ -29,7 +29,9 @@ const INSTALLED_KEY = 'attackfm-plugins-installed';
  * download or import surfaces appear, which is the honest default and what an
  * App Store reviewer (or anyone who has not opted in) should see.
  */
-export const DEFAULT_SOURCES: readonly string[] = [];
+// The official public repository. Baked in so a fresh install's marketplace
+// is stocked rather than empty; removable in Settings like any added source.
+export const DEFAULT_SOURCES: readonly string[] = ['https://plugins.attack.fm'];
 
 /** One plugin as a repository's manifest lists it. */
 export interface RemotePluginListing {

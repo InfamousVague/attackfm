@@ -1,5 +1,5 @@
 import { Button, IconButton, ScrollArea } from '@glacier/react';
-import { ChartNoAxesColumn, Download } from '@glacier/icons';
+import { Download } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLibrary } from './library.tsx';
 import { useCardArt } from './artLoad.ts';
@@ -247,12 +247,6 @@ export function LibraryView({
               <Download size={18} />
             </IconButton>
           )}
-          {onOpenStats && (
-            <Button variant="ghost" size="sm" onClick={onOpenStats} title="Your listening stats">
-              <ChartNoAxesColumn size={16} />
-              <span>Stats</span>
-            </Button>
-          )}
           <DjLauncher onPlay={onPlay} />
         </div>
       )}
@@ -286,7 +280,7 @@ export function LibraryView({
               playlists now - the page should open on your own library, not on
               a shelf that is empty until a history exists. Renders its own
               shelves and skeletons, and nothing at all on a local library. */}
-          <HomePage embedded onPlay={onPlay} onOpenArtist={onOpenArtist} />
+          <HomePage embedded onPlay={onPlay} onOpenArtist={onOpenArtist} onOpenStats={onOpenStats} />
 
           {recentlyAdded.length === 0 &&
             favoriteTracks.length === 0 &&

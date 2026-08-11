@@ -962,17 +962,8 @@ export function App() {
                       spoken line is positioned out of the header's flow (see
                       .mobileHeader .djLauncher) so a returning set cannot make
                       the header taller. */}
-                  {(tab === 'library' || tab === 'home') && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => goTab('stats')}
-                      title="Your listening stats"
-                    >
-                      <ChartNoAxesColumn size={16} />
-                      <span>Stats</span>
-                    </Button>
-                  )}
+                  {/* Stats' door moved down beside "Your top artists" -
+                      the shelf that IS the top of the stats page. */}
                   {(tab === 'library' || tab === 'home') && <DjLauncher onPlay={playFrom} />}
                   {/* Library's view flip: the whole library as one table. A
                       header button instead of an in-page toggle - the page
