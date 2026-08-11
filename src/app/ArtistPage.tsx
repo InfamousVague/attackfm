@@ -63,9 +63,10 @@ function CatalogArt({ src }: { src: string }) {
 function PlaylistTile({ featured }: { featured: Track[] }) {
   const arts = mosaicArts(featured.map((t) => t.artwork));
   const urls = arts.length >= 4 ? arts : [arts[0] ?? placeholderArt];
-  const loaded = useTileArt(urls);
+  const { loaded, hostRef } = useTileArt(urls);
   return (
     <span
+      ref={hostRef}
       className="artistPlaylistCover"
       aria-hidden="true"
       data-tile-pop=""

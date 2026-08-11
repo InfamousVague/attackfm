@@ -918,11 +918,12 @@ img {
 }
 
 /* The border, done cleverly rather than drawn: a whisper of the same
-   spectrum the rim's sheen splits, carved to a hairline at the hub's edge
-   and screened over it - so the hub's boundary CATCHES light the way the
-   disc's outer edge does instead of being outlined. The frost gradient
-   above ends at the same radius, which is what keeps this reading as an
-   edge treatment and not a ring floating on glass. */
+   spectrum the rim's sheen splits, carved to a hairline at the hub's edge -
+   so the hub's boundary CATCHES light the way the disc's outer edge does
+   instead of being outlined. The screen blend composites within the hub's
+   own stacking context (its transform isolates it), which is exactly the
+   surface wanted: the spectrum lightens the frost it sits on, and never
+   fights whatever print or clip is behind the disc. */
 .spinningDisc__hub::before {
   content: '';
   position: absolute;
@@ -2302,13 +2303,17 @@ img[data-loading],
    wrapper attribute) - which is exactly the moment the bytes landed. The
    soft haptic tick that accompanies a burst of these is fired from
    artLoad.ts, so what the eye sees pop the thumb feels patter. */
+/* The standalone `scale` property, NOT transform: several covers already
+   wear a transform (the search genre tiles sit at 22deg), and a keyframe
+   that wrote transform would strip it for the pop's duration and snap it
+   back. `scale` composes with any of them. */
 @keyframes artPop {
   from {
-    transform: scale(0.94);
+    scale: 0.94;
     opacity: 0.25;
   }
   to {
-    transform: scale(1);
+    scale: 1;
     opacity: 1;
   }
 }

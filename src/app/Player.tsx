@@ -407,7 +407,6 @@ export function Player({
   // preferences.
   const [artView, setArtView] = useState<ArtView>(readArtView);
   const chooseArtView = (next: ArtView) => {
-    fireNativeHaptic('selection');
     setArtView(next);
     try {
       localStorage.setItem(ART_VIEW_KEY, next);
@@ -609,8 +608,10 @@ export function Player({
     const current = liveRef.current.track;
     if (!audio || !current || remoteOnlyRef.current) return;
     if (resumeCount.current >= MAX_RELOADS_PER_TRACK) {
-      // Out of attempts: stop claiming to play - and say so in the pocket,
-      // where a silent stop otherwise goes unnoticed for a whole commute.
+      // Out of attempts: stop claiming to play - and say so in the hand.
+      // (Foreground only: iOS parks the Taptic Engine for backgrounded
+      // apps, so a pocketed stop stays silent. The lock screen's frozen
+      // play state is that case's messenger.)
       fireNativeHaptic('warning');
       pendingPlay.current = false;
       wantPlaying.current = false;

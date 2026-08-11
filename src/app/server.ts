@@ -361,6 +361,10 @@ export function artUrl(session: ServerSession, artId: string): string {
  */
 export function artSized(url: string | null, px: 160 | 640): string | null {
   if (!url) return null;
+  // Only server art has variants. A local track's cover is a blob: object
+  // URL, and a query string BREAKS one - the blob store keys on the full
+  // serialized URL - so anything that is not http(s) passes through whole.
+  if (!/^https?:/i.test(url)) return url;
   return `${url}${url.includes('?') ? '&' : '?'}size=${px}`;
 }
 

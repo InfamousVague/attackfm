@@ -21,7 +21,7 @@ function MosaicCover({ tracks, fallback, tone }: { tracks: Track[]; fallback: Re
   const arts = mosaicArts(tracks.map((t) => t.artwork));
   // The tile skeletons until every cover it will actually draw has answered -
   // the whole 2x2, or just the first when fewer than four fill the square.
-  const loaded = useTileArt(arts.length >= 4 ? arts : arts.slice(0, 1));
+  const { loaded, hostRef } = useTileArt(arts.length >= 4 ? arts : arts.slice(0, 1));
 
   if (arts.length === 0) {
     return (
@@ -33,14 +33,14 @@ function MosaicCover({ tracks, fallback, tone }: { tracks: Track[]; fallback: Re
 
   if (arts.length < 4) {
     return (
-      <div className="tileSquircle tileCoverFull" aria-hidden data-tile-pop="" data-tile-loading={!loaded || undefined}>
+      <div ref={hostRef} className="tileSquircle tileCoverFull" aria-hidden data-tile-pop="" data-tile-loading={!loaded || undefined}>
         <img src={arts[0]} alt="" loading="lazy" />
       </div>
     );
   }
 
   return (
-    <div className="tileSquircle tileLikedGrid" aria-hidden data-tile-pop="" data-tile-loading={!loaded || undefined}>
+    <div ref={hostRef} className="tileSquircle tileLikedGrid" aria-hidden data-tile-pop="" data-tile-loading={!loaded || undefined}>
       {arts.map((art, i) => (
         <img key={i} src={art} alt="" loading="lazy" />
       ))}
