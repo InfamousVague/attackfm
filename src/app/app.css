@@ -7601,11 +7601,21 @@ button.artistAlbum {
 /* --- Spotify Canvas: the looping clip behind the now-playing controls -------
    Drawn after .npScreen__bg at the same negative layer, so it covers the
    blurred cover but stays behind every control. Dimmed a touch so the white
-   title, times and transport read over a bright frame. */
-.npScreen__canvas {
+   title, times and transport read over a bright frame.
+
+   The wrapper is the artwork-style chooser's press target and carries the
+   layer geometry; being negative-z it still catches presses on the sheet's
+   open space, because everything drawn over it there (veil, backdrop words)
+   is pointer-events: none. */
+.npScreen__canvasWrap {
+  /* The kit's chooser target is display: contents until told otherwise -
+     without a real box here the video falls into the sheet's flex flow. */
+  display: block;
   position: absolute;
   inset: 0;
   z-index: -1;
+}
+.npScreen__canvas {
   inline-size: 100%;
   block-size: 100%;
   object-fit: cover;

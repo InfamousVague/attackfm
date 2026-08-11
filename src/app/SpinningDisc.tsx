@@ -20,6 +20,27 @@ const SPOOL_RATE = 2.8;
  *  SPOOL_RATE takes a bit over a second, long enough to read as a ramp. */
 const SPOOL_UP_MS = 420;
 
+/**
+ * The flick: release the platter while it is moving fast and it FREEWHEELS -
+ * it keeps the speed your hand gave it and runs back down to playing speed on
+ * constant-ratio friction, the way a thrown platter actually dies off. The
+ * song rides the throw through the same onScratch conversion the hand uses,
+ * so a flick is audible for exactly as long as it is visible.
+ */
+/** Release speed (as a share of playing speed) below which a release is just
+ *  a release - the hand was placing the platter, not throwing it. */
+const FLICK_MIN = 2;
+/** And the most a throw is allowed to carry - past this the art is a smear
+ *  and the song a chipmunk chirp; nobody is served. */
+const FLICK_MAX = 9;
+/** The friction's time constant. A full-strength throw settles in ~2.5s. */
+const FLICK_TAU = 0.55;
+/** A hand that stopped moving this long before lifting was holding still -
+ *  that is a stop, not a throw. */
+const FLICK_FRESH_MS = 120;
+/** Close enough to playing speed to hand the platter back to the transport. */
+const FLICK_SETTLED = 0.08;
+
 /** And coming back down to playing speed, which is a drop rather than a ramp:
  *  the disc catches the track the moment there is one, the way a transport
  *  clamps to speed when the read head locks. */
@@ -110,14 +131,29 @@ export function SpinningDisc({
   // how a scratch turns into a fight.
   const scratching = useRef(false);
   const lastTouchAngle = useRef(0);
+  // The platter is coasting on a throw: the motor neither drives nor brakes,
+  // friction alone brings it back to playing speed.
+  const freewheel = useRef(false);
+  // Whether the Player believes a scratch is in progress. One session spans
+  // the drag AND the freewheel it launches - the Player never learns the
+  // difference between a hand still on the platter and a platter still moving.
+  const sessionOpen = useRef(false);
+  // The hand's recent angular velocity (deg/s) and when it last moved - what
+  // the release reads to decide throw-or-stop.
+  const swing = useRef({ vel: 0, at: 0 });
+  // The loop's starter, kept here so a flick can wake a parked loop (a paused
+  // player's loop has exited; the throw needs it running again).
+  const kick = useRef<(() => void) | null>(null);
 
   // Read by the running loop through a ref, so a ramp-length change (the user
   // switching pause style mid-song) applies without restarting the loop.
-  const params = useRef({ spinning, spooling, spinUpMs, spinDownMs });
-  params.current = { spinning, spooling, spinUpMs, spinDownMs };
+  const params = useRef({ spinning, spooling, spinUpMs, spinDownMs, onScratch, onScratchEnd });
+  params.current = { spinning, spooling, spinUpMs, spinDownMs, onScratch, onScratchEnd };
 
   useEffect(() => {
-    // Stillness asked for is stillness given: the disc holds its face.
+    // Stillness asked for is stillness given: the disc holds its face. (This
+    // also disables the flick: with no loop there is nothing to freewheel, and
+    // the release path knows to fall back to a plain stop.)
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
     cancelAnimationFrame(frame.current);
     last.current = performance.now();
@@ -148,7 +184,28 @@ export function SpinningDisc({
         frame.current = requestAnimationFrame(tick);
         return;
       }
-      if (velocity.current > 0) {
+      if (freewheel.current) {
+        // Thrown. No motor, no brake - just friction, dying off by a constant
+        // ratio per unit time, which is what a real platter does. Backspins
+        // pass through zero on their way back up to forward speed.
+        velocity.current = 1 + (velocity.current - 1) * Math.exp(-dt / FLICK_TAU);
+        angle.current = (angle.current + velocity.current * FULL_DEG_PER_SEC * dt) % 360;
+        faceRef.current?.style.setProperty('transform', `rotate(${angle.current.toFixed(2)}deg)`);
+        // The song rides the throw: the same conversion the hand's drag uses,
+        // one revolution to six seconds, so speed IS playback rate.
+        params.current.onScratch?.(velocity.current * dt);
+        if (Math.abs(velocity.current - 1) < FLICK_SETTLED) {
+          // Back at playing speed: hand the platter to the transport and close
+          // the scratch session the throw kept open.
+          freewheel.current = false;
+          velocity.current = 1;
+          sessionOpen.current = false;
+          params.current.onScratchEnd?.();
+        }
+        frame.current = requestAnimationFrame(tick);
+        return;
+      }
+      if (velocity.current !== 0) {
         angle.current = (angle.current + velocity.current * FULL_DEG_PER_SEC * dt) % 360;
         faceRef.current?.style.setProperty('transform', `rotate(${angle.current.toFixed(2)}deg)`);
       }
@@ -157,12 +214,38 @@ export function SpinningDisc({
       if (velocity.current === 0 && target === 0) return;
       frame.current = requestAnimationFrame(tick);
     };
-    frame.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame.current);
+    const run = () => {
+      cancelAnimationFrame(frame.current);
+      last.current = performance.now();
+      frame.current = requestAnimationFrame(tick);
+    };
+    // A flick can arrive while the loop is parked (paused player); this is how
+    // the release restarts it.
+    kick.current = run;
+    run();
+    return () => {
+      cancelAnimationFrame(frame.current);
+      kick.current = null;
+    };
     // `spooling` restarts the loop as well as `spinning`: a disc parked at a
     // standstill has ended its loop, and a track that starts loading has to be
     // able to set it turning again.
   }, [spinning, spooling]);
+
+  // The disc can leave the screen mid-gesture - the sheet swiped away under a
+  // held finger, a skip landing mid-freewheel. Its pointerup dies with it, and
+  // a scratch session nobody closes leaves the engine holding the music muted
+  // for every song after. Unmount closes the books.
+  useEffect(() => {
+    return () => {
+      if (sessionOpen.current) {
+        sessionOpen.current = false;
+        freewheel.current = false;
+        scratching.current = false;
+        params.current.onScratchEnd?.();
+      }
+    };
+  }, []);
 
   /** The pointer's angle around the disc's centre, in degrees. */
   const angleAt = (e: { clientX: number; clientY: number }): number | null => {
@@ -177,13 +260,26 @@ export function SpinningDisc({
     if (!onScratch) return;
     const a = angleAt(e);
     if (a === null) return;
+    // Catching a thrown platter: the hand takes over from the freewheel, and
+    // the scratch session it was riding simply continues under the new grip.
+    freewheel.current = false;
     scratching.current = true;
     lastTouchAngle.current = a;
+    swing.current = { vel: 0, at: performance.now() };
     // Capture, so a finger that slides off the disc mid-drag keeps scratching
-    // rather than handing the gesture to whatever it slid onto.
-    e.currentTarget.setPointerCapture(e.pointerId);
+    // rather than handing the gesture to whatever it slid onto. Guarded: a
+    // synthetic event has no live pointer to capture, and that is fine.
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Nothing to capture; the drag still works, it just will not survive
+      // the pointer leaving the disc.
+    }
     e.preventDefault();
-    onScratchStart?.();
+    if (!sessionOpen.current) {
+      sessionOpen.current = true;
+      onScratchStart?.();
+    }
   };
 
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -198,6 +294,12 @@ export function SpinningDisc({
     lastTouchAngle.current = a;
     angle.current = (angle.current + delta) % 360;
     faceRef.current?.style.setProperty('transform', `rotate(${angle.current.toFixed(2)}deg)`);
+    // The hand's speed, smoothed just enough to shrug off pointer jitter but
+    // still die within a frame or two of the hand stopping - the release reads
+    // this to tell a throw from a stop.
+    const now = performance.now();
+    const gap = Math.max(0.004, (now - swing.current.at) / 1000);
+    swing.current = { vel: swing.current.vel * 0.6 + (delta / gap) * 0.4, at: now };
     // The disc's own rate is the conversion: FULL_DEG_PER_SEC of turn is one
     // second of song, so turning it at its free-running speed plays at 1x.
     onScratch(delta / FULL_DEG_PER_SEC);
@@ -209,6 +311,19 @@ export function SpinningDisc({
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
+    // A throw or a stop? Fresh movement at real speed freewheels; anything
+    // else is the hand putting the platter down. The freewheel keeps the
+    // scratch session open and feeds the same onScratch stream the drag did,
+    // so to the Player a flick IS a drag - one that happens to be decaying.
+    const fresh = performance.now() - swing.current.at < FLICK_FRESH_MS;
+    const share = swing.current.vel / FULL_DEG_PER_SEC;
+    if (fresh && Math.abs(share) >= FLICK_MIN && kick.current) {
+      velocity.current = Math.max(-FLICK_MAX, Math.min(FLICK_MAX, share));
+      freewheel.current = true;
+      kick.current();
+      return;
+    }
+    sessionOpen.current = false;
     onScratchEnd?.();
   };
 

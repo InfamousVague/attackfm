@@ -20,8 +20,17 @@ import {
  * Polled rather than socketed. A jam is a song at a time - four seconds of
  * drift on a join is inaudible once the follower carries the position forward
  * itself, and a poll cannot leave a room wedged the way a dropped socket can.
+ *
+ * The pace depends on being IN one. Four seconds is for followers, who ride
+ * the host's clock. Outside a room the poll only exists to notice a friend
+ * starting a jam - a half-minute lag on that invitation is nothing, and the
+ * fast poll from every signed-in device was the single chattiest thing the
+ * app did: 21,600 requests a day each, radio held warm, for an event that
+ * almost never happens. Hidden (the phone pocketed, the tab backgrounded) it
+ * does not poll at all; coming back refreshes at once.
  */
-const POLL_MS = 4000;
+const POLL_IN_JAM_MS = 4000;
+const POLL_IDLE_MS = 30_000;
 
 interface JamValue {
   /** The room, or null when not in one. */
@@ -67,11 +76,26 @@ export function JamProvider({ children }: { children: ReactNode }) {
     }
   }, [session]);
 
+  const inJam = current !== null;
   useEffect(() => {
     void refresh();
-    const timer = window.setInterval(() => void refresh(), POLL_MS);
-    return () => window.clearInterval(timer);
-  }, [refresh]);
+    const timer = window.setInterval(
+      () => {
+        if (document.visibilityState === 'hidden') return;
+        void refresh();
+      },
+      inJam ? POLL_IN_JAM_MS : POLL_IDLE_MS,
+    );
+    // Waking catches up immediately instead of waiting out the interval.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [refresh, inJam]);
 
   const hosting = current !== null && session !== null && isHost(current, session.username);
 

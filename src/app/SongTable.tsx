@@ -14,6 +14,7 @@ import { useQueueControls } from './queueControls.tsx';
 import { hasLocalLibrary } from './platform.ts';
 import { useNarrowViewport } from './useNarrowViewport.ts';
 import type { Track } from './tauri.ts';
+import { artSized } from './server.ts';
 import placeholderArt from '../assets/attack-wave.png';
 
 // mm:ss, with the leading minutes never zero-padded (3:59, not 03:59).
@@ -60,7 +61,7 @@ const COLUMNS: DataGridColumn[] = [
     sortValue: (row) => String(row.title).toLowerCase(),
     render: (row) => (
       <div className="songTitleCell">
-        <img className="songArt" src={(row.artwork as string) || placeholderArt} alt="" loading="lazy" />
+        <img className="songArt" src={artSized(row.artwork as string, 160) || placeholderArt} alt="" loading="lazy" />
         <div className="songTitleText">
           <span className="songTitle">{row.title as string}</span>
           <span className="songArtist">{row.artist as string}</span>
@@ -183,7 +184,7 @@ export function SongTable({
                   }
                 >
                   <div className="songTitleCell">
-                    <img className="songArt" src={(row.artwork as string) || placeholderArt} alt="" loading="lazy" />
+                    <img className="songArt" src={artSized(row.artwork as string, 160) || placeholderArt} alt="" loading="lazy" />
                     <div className="songTitleText">
                       <span className="songTitle">{row.title as string}</span>
                       {onOpenArtist ? (

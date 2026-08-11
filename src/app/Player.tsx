@@ -21,6 +21,7 @@ import {
   ChevronDown,
   ChevronLeft,
   Disc3,
+  EyeOff,
   EllipsisVertical,
   Heart,
   Image as ImageIcon,
@@ -180,8 +181,12 @@ const SPIN_UP_FADE_MS = 90;
  */
 const CATCH_FLUSH_MS = 45;
 
-/** How the strip's artwork square is worn: as a turning CD or the flat cover. */
-type ArtView = 'cd' | 'cover';
+/** How the artwork is worn: a turning CD, the flat cover, or - on the big
+ *  sheet - nothing at all, letting the canvas and the words have the room.
+ *  The mini strip ignores 'hidden' and shows the cover: its square is also
+ *  the tap target that lifts this sheet, and a hole in the strip reads as a
+ *  layout bug, not a preference. */
+type ArtView = 'cd' | 'cover' | 'hidden';
 
 const ART_VIEW_KEY = 'attackfm-art-view';
 
@@ -189,7 +194,8 @@ const ART_VIEW_KEY = 'attackfm-art-view';
 // there rather than blanking the square.
 function readArtView(): ArtView {
   try {
-    return localStorage.getItem(ART_VIEW_KEY) === 'cover' ? 'cover' : 'cd';
+    const stored = localStorage.getItem(ART_VIEW_KEY);
+    return stored === 'cover' || stored === 'hidden' ? stored : 'cd';
   } catch {
     return 'cd';
   }
@@ -400,6 +406,34 @@ export function Player({
       // Storage unavailable - the choice still applies for this session.
     }
   };
+  // One menu, three doorways: the strip's square, the sheet's art, and the
+  // Canvas clip itself all open this same chooser, so the setting stays one
+  // setting no matter where the press lands.
+  const npArtMenu = (
+    <>
+      <MenuItem
+        icon={<Disc3 size={15} />}
+        shortcut={artView === 'cd' ? <Check size={14} /> : undefined}
+        onSelect={() => chooseArtView('cd')}
+      >
+        Spinning CD
+      </MenuItem>
+      <MenuItem
+        icon={<ImageIcon size={15} />}
+        shortcut={artView === 'cover' ? <Check size={14} /> : undefined}
+        onSelect={() => chooseArtView('cover')}
+      >
+        Album cover
+      </MenuItem>
+      <MenuItem
+        icon={<EyeOff size={15} />}
+        shortcut={artView === 'hidden' ? <Check size={14} /> : undefined}
+        onSelect={() => chooseArtView('hidden')}
+      >
+        Hidden
+      </MenuItem>
+    </>
+  );
 
   // The EQ gains ride the graph's filters; kept in a ref so a freshly built
   // meter can be seeded with them without waiting for a render.
@@ -970,9 +1004,11 @@ export function Player({
   // seconds, and must not count as a listen. A new track resets the tally;
   // repeat-one restarts it, so every spin is logged. Server only - local
   // listening has no account to write history against.
-  const { session: playSession } = useServerSession();
+  const { session: playSession, renew: renewSession } = useServerSession();
   const playSessionRef = useRef(playSession);
   playSessionRef.current = playSession;
+  const renewSessionRef = useRef(renewSession);
+  renewSessionRef.current = renewSession;
 
   // The EVENT log rides beside the play counter below: the counter keeps the
   // legacy shelves (artist top songs) fed, while events - with their length,
@@ -1317,7 +1353,19 @@ export function Player({
         const networkish =
           code === MediaError.MEDIA_ERR_NETWORK || code === MediaError.MEDIA_ERR_ABORTED;
         const remote = !!liveRef.current.track && isRemotePath(liveRef.current.track.path);
-        if (networkish && remote && resumeCount.current < MAX_RELOADS_PER_TRACK) {
+        // A 401 from an aged stream token does not always read as a network
+        // error - the element may report the not-a-media-file answer as an
+        // unsupported source. On a remote track that shape gets the same
+        // recovery, because resumeInPlace re-resolves the URL and the renewal
+        // below may be exactly what fixes it; a genuinely broken file still
+        // stops for good once the ladder runs out.
+        const renewable =
+          networkish || (remote && code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED);
+        if (renewable && remote && resumeCount.current < MAX_RELOADS_PER_TRACK) {
+          // Re-mint the stream token before the retry resolves its URL. Cheap
+          // insurance: it is latched to once a minute inside the provider, and
+          // an expired token is the one cause a plain reload can never heal.
+          void renewSessionRef.current().catch(() => {});
           setBuffering(true);
           window.clearTimeout(recoverTimer.current);
           recoverTimer.current = window.setTimeout(
@@ -1469,7 +1517,9 @@ export function Player({
       adoptedPath.current = null;
       return;
     }
-    // Any fade still in flight is about tracks that are no longer next.
+    // Any fade still in flight is about tracks that are no longer next, and
+    // a warm deck prefetched for the old track holds a file that is not.
+    prefetched.current = null;
     abortCrossfadeRef.current();
     // A new track gets a fresh set of recovery attempts, and any episode armed
     // against the previous one is void.
@@ -1488,7 +1538,17 @@ export function Player({
       // the gap the await opened, off the old track's last timeupdates.
       abortCrossfadeRef.current();
       // A new source is a new timeline: the old song's tape and ring must
-      // not be scrubbable into the new one.
+      // not be scrubbable into the new one. And if a hand is still ON the old
+      // song - a skip pressed mid-scratch - the session ends here, or the
+      // engine's hold outlives its track and mutes everything after it. The
+      // release is deliberately before the eject; both are idempotent.
+      if (scratchLive.current || scrubbing.current || scratchHeld.current) {
+        analyserRef.current?.scrub.release();
+        scratchLive.current = false;
+        scratchHeld.current = false;
+        scratchRolling.current = false;
+        scrubbing.current = false;
+      }
       scrubTapeFor.current = null;
       analyserRef.current?.scrub.eject();
       pendingPlay.current = autoplayRef.current || engaged.current;
@@ -1988,6 +2048,60 @@ export function Player({
     })();
   };
 
+  /**
+   * With the crossfade off - the default - the second deck used to sit idle
+   * and every track ended into a cold load: resolve, connect, buffer, then
+   * play, a multi-second hole on cellular against lossless files. This is the
+   * load-only half of a crossfade: inside the last seconds the coming track's
+   * file is pointed at the idle deck (preload="auto") so the bytes arrive
+   * while the current song is still playing, and the ended path adopts the
+   * warm deck instead of advancing cold. No blend, no early start - the deck
+   * just holds a buffered file until the moment it is wanted.
+   *
+   * Like a crossfade flight, the pick is recorded ONCE: shuffle re-picks at
+   * random per call, so asking again at the end would buffer one track and
+   * play another. Remote tracks only - a local file loads in a frame, and
+   * prefetching it would leak the object URL the load effect knows to revoke.
+   */
+  const prefetched = useRef<{ forPath: string; next: Track; url: string } | null>(null);
+  const prefetchBusy = useRef(false);
+  /** How many seconds before the end the idle deck starts warming. */
+  const PREFETCH_LEAD_S = 12;
+
+  const prefetchTick = (el: HTMLAudioElement) => {
+    const current = track;
+    if (!current || prefetchBusy.current) return;
+    if (prefetched.current?.forPath === current.path) return;
+    if (remoteOnlyRef.current) return;
+    if (!playing || windingDown.current || scrubbing.current) return;
+    // These ends do not advance, so there is nothing to warm.
+    if (repeat === 'one') return;
+    if (playbackRef.current.sleep === 'end-of-track') return;
+    const duration = el.duration;
+    if (!Number.isFinite(duration) || duration < PREFETCH_LEAD_S + 4) return;
+    const remaining = duration - el.currentTime;
+    if (remaining > PREFETCH_LEAD_S || remaining <= 0.5) return;
+    const next = pickNext(1, repeat === 'all');
+    if (next === null || next === 'rewind' || next.path === current.path) return;
+    if (!isRemotePath(next.path)) return;
+    prefetchBusy.current = true;
+    void (async () => {
+      try {
+        const url = await loadAudioUrl(next.path);
+        if (!url) return;
+        // The world may have moved while the URL resolved: a new track, a
+        // blend claiming the idle deck, or a load already in flight all mean
+        // this deck is not ours to point anywhere.
+        if (liveRef.current.track?.path !== current.path) return;
+        if (xfadeRef.current || pendingPlay.current) return;
+        prefetched.current = { forPath: current.path, next, url };
+        setIdleSrc(url);
+      } finally {
+        prefetchBusy.current = false;
+      }
+    })();
+  };
+
   /** Watches the active deck's clock and opens the blend inside the window. */
   const crossfadeTick = (el: HTMLAudioElement) => {
     if (xfadeRef.current) return;
@@ -1996,7 +2110,10 @@ export function Player({
     // blend begun off them would fade the user's fresh pick down to nothing.
     if (pendingPlay.current) return;
     const settings = playbackRef.current;
-    if (settings.crossfade <= 0) return;
+    if (settings.crossfade <= 0) {
+      prefetchTick(el);
+      return;
+    }
     if (!analyserRef.current) return;
     if (!playing || windingDown.current || scrubbing.current) return;
     if (repeat === 'one') return;
@@ -2080,6 +2197,54 @@ export function Player({
     if (repeat === 'one' || (repeat === 'all' && (!track || queue.length === 0))) {
       rewindAndPlay();
       return;
+    }
+    // A warm deck from the prefetch above: adopt it the way a crossfade
+    // handover does - flip the decks, start the buffered file, hand the track
+    // up with the adopted note - instead of advancing into a cold load. Any
+    // doubt (deck holds something else, errored, not buffered enough to start
+    // this instant) falls through to the plain advance, which still works.
+    const warm = prefetched.current;
+    if (warm && warm.forPath === track?.path) {
+      prefetched.current = null;
+      const idle = idleAudio();
+      if (idle && idle.src === warm.url && !idle.error && idle.readyState >= 3) {
+        activeIsB.current = !activeIsB.current;
+        const nowActive = activeAudio()!;
+        // A hard track boundary, same as a plain load: the old song's tape
+        // must not be scrubbable into the new one, and a hand still on the
+        // old song lets go here. Idempotent, mirrors the load effect.
+        if (scratchLive.current || scrubbing.current || scratchHeld.current) {
+          analyserRef.current?.scrub.release();
+          scratchLive.current = false;
+          scratchHeld.current = false;
+          scratchRolling.current = false;
+          scrubbing.current = false;
+        }
+        scrubTapeFor.current = null;
+        analyserRef.current?.scrub.eject();
+        clearStall();
+        lastGoodPos.current = 0;
+        try {
+          nowActive.currentTime = 0;
+        } catch {
+          // A source that refuses the seek starts from wherever it stands.
+        }
+        seatOf(nowActive)?.setLevel(1);
+        applyVolume();
+        setPosition(0);
+        setDuration(nowActive.duration || 0);
+        wantPlaying.current = true;
+        setPlaying(true);
+        void nowActive.play().catch(() => {
+          // A deck that will not start is an honest stop, same as canplay's.
+          wantPlaying.current = false;
+          setPlaying(false);
+        });
+        adoptedPath.current = warm.next.path;
+        recentRef.current = [...recentRef.current.slice(-19), warm.next.path];
+        onTrackChange?.(warm.next);
+        return;
+      }
     }
     advance(1, repeat === 'all');
   };
@@ -2745,24 +2910,7 @@ export function Player({
           <ContextMenu
             aria-label="Artwork style"
             className="artViewTarget"
-            content={
-              <>
-                <MenuItem
-                  icon={<Disc3 size={15} />}
-                  shortcut={artView === 'cd' ? <Check size={14} /> : undefined}
-                  onSelect={() => chooseArtView('cd')}
-                >
-                  Spinning CD
-                </MenuItem>
-                <MenuItem
-                  icon={<ImageIcon size={15} />}
-                  shortcut={artView === 'cover' ? <Check size={14} /> : undefined}
-                  onSelect={() => chooseArtView('cover')}
-                >
-                  Album cover
-                </MenuItem>
-              </>
-            }
+            content={npArtMenu}
           >
             {artView === 'cd' ? (
               <SpinningDisc
@@ -3119,19 +3267,37 @@ export function Player({
           {/* The Spotify Canvas, when the track has one: a muted loop over this
               sheet's blurred cover, keyed on its URL so a new clip restarts
               cleanly. Absent - the common case - it is simply not rendered and
-              the cover shows instead. */}
-          {npCanvas && (
-            <video
-              key={npCanvas}
-              className="npScreen__canvas"
-              src={npCanvas}
-              autoPlay
-              loop
-              muted
-              playsInline
-              aria-hidden="true"
+              the cover shows instead. Wrapped in the same artwork-style
+              chooser the art carries, so a press-and-hold on the clip itself
+              offers the switch - the one that matters most here, since
+              'hidden' leaves the clip as the only thing to press. */}
+          {npCanvas ? (
+            <ContextMenu
+              aria-label="Artwork style"
+              className="npScreen__canvasWrap"
+              content={npArtMenu}
+            >
+              <video
+                key={npCanvas}
+                className="npScreen__canvas"
+                src={npCanvas}
+                autoPlay
+                loop
+                muted
+                playsInline
+                aria-hidden="true"
+              />
+            </ContextMenu>
+          ) : artView === 'hidden' ? (
+            // No clip and no art: the sheet's open middle still answers the
+            // press-and-hold, so 'hidden' is never a state you need the mini
+            // strip to climb back out of.
+            <ContextMenu
+              aria-label="Artwork style"
+              className="npScreen__canvasWrap"
+              content={npArtMenu}
             />
-          )}
+          ) : null}
           {/* The lyric words run the full height of the sheet, behind the
               controls. Drawn AFTER the clip on purpose: a canvas is a backdrop,
               not a cover, and the words are the thing worth reading over it. */}
@@ -3169,35 +3335,20 @@ export function Player({
             )}
           </header>
 
-          {/* A track with a Canvas has moving art already; a spinning disc on
-              top of it is two pieces of artwork fighting for the same screen.
-              The clip takes over and this stands down. */}
-          {!npCanvas && (
+          {/* The artwork, per the chosen face - and no longer standing down
+              for a Canvas: the disc turns OVER the clip now, because the
+              platter is an instrument (scratch, flick) and an instrument that
+              vanishes when a video shows up is a broken promise. Anyone who
+              prefers the clip unobstructed picks Hidden - the third face. */}
+          {artView !== 'hidden' && (
           <div className="npScreen__art">
             {/* The hero art follows the same artView the mini-strip does, so the
                 choice is one setting in two places. A press (long-press on
-                touch) opens the chooser - flat squircle cover or turning CD. */}
+                touch) opens the chooser. */}
             <ContextMenu
               aria-label="Artwork style"
               className="npScreen__coverTarget"
-              content={
-                <>
-                  <MenuItem
-                    icon={<Disc3 size={15} />}
-                    shortcut={artView === 'cd' ? <Check size={14} /> : undefined}
-                    onSelect={() => chooseArtView('cd')}
-                  >
-                    Spinning CD
-                  </MenuItem>
-                  <MenuItem
-                    icon={<ImageIcon size={15} />}
-                    shortcut={artView === 'cover' ? <Check size={14} /> : undefined}
-                    onSelect={() => chooseArtView('cover')}
-                  >
-                    Album cover
-                  </MenuItem>
-                </>
-              }
+              content={npArtMenu}
             >
               {artView === 'cd' ? (
                 <SpinningDisc

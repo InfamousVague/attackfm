@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
 import { usePlaylists } from './playlists.tsx';
 import { useServerSession } from './serverSession.tsx';
-import {
+import { artSized,
   fetchCurator,
   fetchHome,
   trackIdFromPath,
@@ -48,7 +48,7 @@ function TrackCard({ track, onOpen }: { track: Track; onOpen: () => void }) {
   return (
     <TrackMenu track={track}>
       <button type="button" className="trackCard" onClick={onOpen}>
-        <img className="trackCardArt" src={track.artwork ?? placeholderArt} alt="" loading="lazy" />
+        <img className="trackCardArt" src={artSized(track.artwork, 640) ?? placeholderArt} alt="" loading="lazy" />
         <span className="trackCardTitle">{track.title}</span>
         <span className="trackCardArtist">{track.artist}</span>
       </button>
@@ -61,7 +61,7 @@ function AlbumCard({ track, onOpen }: { track: Track; onOpen: () => void }) {
   return (
     <TrackMenu track={track}>
       <button type="button" className="trackCard" onClick={onOpen}>
-        <img className="trackCardArt" src={track.artwork ?? placeholderArt} alt="" loading="lazy" />
+        <img className="trackCardArt" src={artSized(track.artwork, 640) ?? placeholderArt} alt="" loading="lazy" />
         <span className="trackCardTitle">{track.album || track.title}</span>
         <span className="trackCardArtist">{track.artist}</span>
       </button>
@@ -73,7 +73,7 @@ function AlbumCard({ track, onOpen }: { track: Track; onOpen: () => void }) {
 function ArtistCard({ name, cover, onOpen }: { name: string; cover: string | null; onOpen: () => void }) {
   return (
     <button type="button" className="artistCard" onClick={onOpen}>
-      <img className="artistCardArt" src={cover ?? placeholderArt} alt="" loading="lazy" />
+      <img className="artistCardArt" src={artSized(cover, 640) ?? placeholderArt} alt="" loading="lazy" />
       <span className="artistCardName">{name}</span>
     </button>
   );
@@ -92,7 +92,7 @@ function MixCover({ tracks }: { tracks: Track[] }) {
   return (
     <div className="mixCardCover" aria-hidden>
       {arts.map((art, i) => (
-        <img key={i} src={art} alt="" loading="lazy" />
+        <img key={i} src={artSized(art, 640)!} alt="" loading="lazy" />
       ))}
     </div>
   );

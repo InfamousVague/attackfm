@@ -351,6 +351,31 @@ export function artUrl(session: ServerSession, artId: string): string {
 }
 
 /**
+ * A downscaled variant of an art URL, for the surfaces that draw covers small
+ * - table thumbs, shelf cards - where fetching the full embedded picture
+ * (often megabytes) for a hundred-pixel square is most of the art bill. The
+ * server keeps `{id}@{size}.jpg` beside the original; a server that predates
+ * the variants ignores the unknown parameter and serves the original, so this
+ * needs no capability check. 160 suits thumbs, 640 suits cards; the Now
+ * Playing hero and the lock screen keep the full-size original.
+ */
+export function artSized(url: string | null, px: 160 | 640): string | null {
+  if (!url) return null;
+  return `${url}${url.includes('?') ? '&' : '?'}size=${px}`;
+}
+
+/**
+ * When the stream token embedded in every media URL runs out, in epoch
+ * milliseconds. The token's shape is `user.epoch.expiry.sig`; anything
+ * unreadable counts as already expired, which safely routes callers into the
+ * renewal path.
+ */
+export function streamTokenExpiresAt(token: string): number {
+  const expiry = Number(token.split('.')[2]);
+  return Number.isFinite(expiry) ? expiry * 1000 : 0;
+}
+
+/**
  * Turns a server row into the Track the rest of the app already understands.
  *
  * `path` becomes the `afm://` URI, which is what keeps every path-keyed
@@ -397,28 +422,126 @@ function cacheKey(url: string): string {
   return `${CACHE_PREFIX}${url}`;
 }
 
-export function loadCachedIndex(url: string): CachedIndex {
+// The index lives in three places, cheapest first:
+//
+//  - a module-level Map, so every sync pass inside one run reads memory - the
+//    heartbeat must never depend on persistence working;
+//  - IndexedDB, whose quota holds libraries localStorage cannot. The old
+//    localStorage copy hit WKWebView's ~5MB ceiling somewhere around 1,500
+//    lyric-bearing tracks, after which the save failed SILENTLY, rev never
+//    persisted, and every launch - and, worse, every 30-second heartbeat -
+//    re-downloaded the entire library JSON. That was most of "the app got
+//    slow once the library got big";
+//  - the legacy localStorage key, read once for migration and then deleted,
+//    which also hands its quota back to the small caches that still live
+//    there (sessions, feed cards, search recents).
+const memIndex = new Map<string, CachedIndex>();
+
+const IDB_NAME = 'attackfm';
+const IDB_STORE = 'remoteIndex';
+
+function openIndexDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(IDB_STORE)) {
+        req.result.createObjectStore(IDB_STORE);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error ?? new Error('indexedDB open failed'));
+  });
+}
+
+async function idbRead(url: string): Promise<CachedIndex | null> {
+  const db = await openIndexDb();
   try {
-    const raw = localStorage.getItem(cacheKey(url));
-    if (!raw) return { rev: 0, tracks: [] };
-    const parsed = JSON.parse(raw) as Partial<CachedIndex>;
-    if (typeof parsed.rev !== 'number' || !Array.isArray(parsed.tracks)) return { rev: 0, tracks: [] };
-    return { rev: parsed.rev, tracks: parsed.tracks };
-  } catch {
-    return { rev: 0, tracks: [] };
+    return await new Promise((resolve, reject) => {
+      const req = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).get(url);
+      req.onsuccess = () => {
+        const parsed = req.result as Partial<CachedIndex> | undefined;
+        resolve(
+          parsed && typeof parsed.rev === 'number' && Array.isArray(parsed.tracks)
+            ? { rev: parsed.rev, tracks: parsed.tracks }
+            : null,
+        );
+      };
+      req.onerror = () => reject(req.error ?? new Error('indexedDB read failed'));
+    });
+  } finally {
+    db.close();
   }
+}
+
+async function idbWrite(url: string, index: CachedIndex | null): Promise<void> {
+  const db = await openIndexDb();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const store = db.transaction(IDB_STORE, 'readwrite').objectStore(IDB_STORE);
+      const req = index ? store.put(index, url) : store.delete(url);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error ?? new Error('indexedDB write failed'));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+/** The in-memory index; whatever hydrate() has seeded, or empty. */
+export function loadCachedIndex(url: string): CachedIndex {
+  return memIndex.get(url) ?? { rev: 0, tracks: [] };
+}
+
+/**
+ * Fills the in-memory index from disk - IndexedDB, or the legacy localStorage
+ * copy once, migrating it - and returns it. Call before the first sync so the
+ * first delta asks "since rev N", not "everything".
+ */
+export async function hydrateCachedIndex(url: string): Promise<CachedIndex> {
+  const inMemory = memIndex.get(url);
+  if (inMemory) return inMemory;
+  let index: CachedIndex | null = null;
+  try {
+    index = await idbRead(url);
+  } catch {
+    // A store that will not open costs the fast start, not the library.
+  }
+  if (index) {
+    // IndexedDB is authoritative now; a legacy localStorage copy left behind
+    // (a migration interrupted mid-write) is just quota spent twice.
+    try {
+      localStorage.removeItem(cacheKey(url));
+    } catch {
+      // Not worth anything if it will not go.
+    }
+  }
+  if (!index) {
+    try {
+      const raw = localStorage.getItem(cacheKey(url));
+      const parsed = raw ? (JSON.parse(raw) as Partial<CachedIndex>) : null;
+      if (parsed && typeof parsed.rev === 'number' && Array.isArray(parsed.tracks)) {
+        index = { rev: parsed.rev, tracks: parsed.tracks };
+        void idbWrite(url, index).then(() => localStorage.removeItem(cacheKey(url))).catch(() => {});
+      }
+    } catch {
+      // Unreadable legacy cache: start from zero, same as a fresh install.
+    }
+  }
+  const settled = index ?? { rev: 0, tracks: [] };
+  memIndex.set(url, settled);
+  return settled;
 }
 
 export function saveCachedIndex(url: string, index: CachedIndex): void {
-  try {
-    localStorage.setItem(cacheKey(url), JSON.stringify(index));
-  } catch {
-    // A library too big for the storage quota still works; it just re-syncs
-    // from scratch next launch instead of opening instantly.
-  }
+  memIndex.set(url, index);
+  void idbWrite(url, index).catch(() => {
+    // Persistence failing still leaves the memory copy carrying this run.
+  });
 }
 
 export function clearCachedIndex(url: string): void {
+  memIndex.delete(url);
+  void idbWrite(url, null).catch(() => {});
   try {
     localStorage.removeItem(cacheKey(url));
   } catch {
@@ -439,15 +562,17 @@ export async function syncLibrary(
     signal?: AbortSignal;
     onProgress?: (count: number) => void;
   } = {},
-): Promise<RemoteTrack[]> {
+): Promise<{ tracks: RemoteTrack[]; changed: boolean }> {
   const cached = loadCachedIndex(session.url);
   const byId = new Map(cached.tracks.map((t) => [t.id, t] as const));
   let rev = cached.rev;
+  let changed = false;
 
   // Bounded rather than `while (true)`: a server that kept answering `more`
   // would otherwise spin here forever.
   for (let page = 0; page < 200; page += 1) {
     const delta = await fetchLibraryDelta(session, rev, options.signal);
+    if (delta.tracks.length > 0 || delta.removed.length > 0) changed = true;
     for (const track of delta.tracks) byId.set(track.id, track);
     for (const id of delta.removed) byId.delete(id);
     rev = delta.rev;
@@ -456,8 +581,10 @@ export async function syncLibrary(
   }
 
   const tracks = [...byId.values()];
-  saveCachedIndex(session.url, { rev, tracks });
-  return tracks;
+  // The settled case - the heartbeat's usual answer - writes nothing and lets
+  // the caller skip its own re-render; a whole quiet pass costs one request.
+  if (changed || rev !== cached.rev) saveCachedIndex(session.url, { rev, tracks });
+  return { tracks, changed };
 }
 
 // --- listening state ------------------------------------------------------
