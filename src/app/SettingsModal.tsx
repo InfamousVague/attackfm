@@ -39,6 +39,7 @@ import {
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import pkg from '../../package.json';
+import { fireNativeHaptic, setHapticsPref, useHapticsPref } from './haptics.ts';
 import type { Plugin } from '../plugins/types.ts';
 import {
   addSource,
@@ -415,6 +416,7 @@ function SleepCountdown({ sleep }: { sleep: SleepTimer }) {
  */
 function PlaybackSettings() {
   const pb = usePlayback();
+  const hapticsOn = useHapticsPref();
 
   const sleepValue =
     pb.sleep === null ? 'off' : pb.sleep === 'end-of-track' ? 'end' : String(pb.sleep.minutes);
@@ -529,6 +531,23 @@ function PlaybackSettings() {
         <Text tone="muted" size="sm">
           Lets the fader push past 100% for quiet recordings. Off caps it at unity - kinder to
           ears and speakers.
+        </Text>
+      </div>
+      <div className="prefsSection">
+        <Label>Feel</Label>
+        <Switch
+          label="Haptics"
+          checked={hapticsOn}
+          onCheckedChange={(on) => {
+            setHapticsPref(on);
+            // A goodbye you can feel; nothing when turning ON from off,
+            // because the provider has not re-enabled yet this frame.
+            if (on) window.setTimeout(() => fireNativeHaptic('light'), 50);
+          }}
+        />
+        <Text tone="muted" size="sm">
+          Ticks and taps from the Taptic Engine as you press, play, and spin the disc - and a
+          soft pulse as shelves load in.
         </Text>
       </div>
       <div className="prefsSection">

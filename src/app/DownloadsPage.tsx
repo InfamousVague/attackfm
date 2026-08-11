@@ -2,6 +2,8 @@ import { Button, ProgressBar, Spinner } from '@glacier/react';
 import { Check, Pause, Play, RotateCcw, Trash2, X } from '@glacier/icons';
 import { useDownloadsOptional, type MusicImportJob } from '../plugins/importsBridge.ts';
 import { EmptyArt } from './EmptyArt.tsx';
+import { artSized } from './server.ts';
+import { useArtLoad } from './artLoad.ts';
 import placeholderArt from '../assets/attack-wave.png';
 
 /**
@@ -55,9 +57,13 @@ function JobCard({
 }) {
   const active = job.state === 'queued' || job.state === 'downloading';
   const total = job.total ?? 0;
+  // The card draws its cover at thumb size, so ask for the 160 variant; the
+  // skeleton shimmer holds the square while it downloads alongside the songs.
+  const artSrc = artSized(job.artworkUrl, 160) ?? placeholderArt;
+  const art = useArtLoad(artSrc, 'dlCard__art');
   return (
     <li className="dlCard">
-      <img className="dlCard__art" src={job.artworkUrl ?? placeholderArt} alt="" loading="lazy" />
+      <img {...art} src={artSrc} alt="" loading="lazy" />
       <div className="dlCard__body">
         <div className="dlCard__top">
           <span className="dlCard__title">{job.title}</span>

@@ -18,7 +18,8 @@ import { Switch } from '@glacier/react';
 import { useRegistry } from './registrySession.tsx';
 import { fetchFriends, type RegistryFriend } from './registry.ts';
 import { setSharing, useSharing } from './listeningShare.tsx';
-import { trackIdFromPath } from './server.ts';
+import { artSized, trackIdFromPath } from './server.ts';
+import { useArtLoad } from './artLoad.ts';
 import {
   fetchStatsSummary,
   fmtMinutes,
@@ -102,6 +103,28 @@ function Tile({ icon, value, label }: { icon: ReactNode; value: string; label: s
       <span className="statsTile__value">{value}</span>
       <span className="statsTile__label">{label}</span>
     </div>
+  );
+}
+
+/** A rank row's cover. The rows render inside maps, where hooks cannot live,
+ *  so the art - skeleton, pop, and the 160 thumb variant - keeps a component
+ *  of its own. The fallback glyph is the caller's: a person for artists, a
+ *  note for songs. */
+function RowArt({
+  artwork,
+  shape,
+  glyph,
+}: {
+  artwork: string | null;
+  shape: 'circle' | 'square';
+  glyph: ReactNode;
+}) {
+  const src = artSized(artwork, 160);
+  const art = useArtLoad(src, '');
+  return (
+    <span className="statsRow__art" data-shape={shape}>
+      {artwork ? <img {...art} src={src ?? undefined} alt="" loading="lazy" /> : glyph}
+    </span>
   );
 }
 
@@ -352,13 +375,7 @@ export function StatsPage({
               return (
                 <li key={`${row.artist}:${i}`} className="statsRow">
                   <span className="statsRow__rank">{i + 1}</span>
-                  <span className="statsRow__art" data-shape="circle">
-                    {cover ? (
-                      <img src={cover} alt="" loading="lazy" />
-                    ) : (
-                      <User size={16} aria-hidden />
-                    )}
-                  </span>
+                  <RowArt artwork={cover} shape="circle" glyph={<User size={16} aria-hidden />} />
                   <span className="statsRow__body">
                     <button
                       type="button"
@@ -390,13 +407,7 @@ export function StatsPage({
               return (
                 <li key={`${row.trackId}:${i}`} className="statsRow">
                   <span className="statsRow__rank">{i + 1}</span>
-                  <span className="statsRow__art" data-shape="square">
-                    {mine?.artwork ? (
-                      <img src={mine.artwork} alt="" loading="lazy" />
-                    ) : (
-                      <Music size={16} aria-hidden />
-                    )}
-                  </span>
+                  <RowArt artwork={mine?.artwork ?? null} shape="square" glyph={<Music size={16} aria-hidden />} />
                   <span className="statsRow__body">
                     {mine ? (
                       <button

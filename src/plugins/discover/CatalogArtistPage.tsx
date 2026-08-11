@@ -9,6 +9,7 @@ import {
   type CatalogTrack,
 } from '../../app/server.ts';
 import { useOwned } from '../../app/owned.ts';
+import { useArtLoad } from '../../app/artLoad.ts';
 import { PROBE_URL, resolveImportable } from '../../app/resolveImport.ts';
 import { useDownloadsOptional } from '../importsBridge.ts';
 import { IMPORTER_PLUGIN_ID, useAcquire } from '../runtime.tsx';
@@ -41,6 +42,15 @@ function fansLabel(n: number): string {
 function trackTime(seconds: number | null): string {
   if (seconds == null || !Number.isFinite(seconds)) return '';
   return `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, '0')}`;
+}
+
+/** A catalogue cover or portrait <img>, wearing the shared skeleton/pulse.
+ *  Its own component because rows and release cards render through map
+ *  callbacks, where a hook cannot live. External catalogue art, so the URL
+ *  is used as-is - no server size variants to ask for. */
+function CatalogArt({ src, className, lazy }: { src: string; className?: string; lazy?: boolean }) {
+  const art = useArtLoad(src, className ?? '');
+  return <img {...art} src={src} alt="" loading={lazy ? 'lazy' : undefined} />;
 }
 
 export function CatalogArtistPage({
@@ -234,7 +244,7 @@ export function CatalogArtistPage({
         onClick={() => void runResolved('album', r.title, r.url, r.id, r.importable, false)}
       >
         <span className="resultCard__cover" data-kind="release">
-          {r.cover ? <img src={r.cover} alt="" loading="lazy" /> : <Disc3 size={22} />}
+          {r.cover ? <CatalogArt src={r.cover} lazy /> : <Disc3 size={22} />}
         </span>
         <span className="resultCard__title">{r.title}</span>
         <span className="resultCard__sub">
@@ -257,7 +267,7 @@ export function CatalogArtistPage({
       <li key={t.id} className="catalogTrack">
         <span className="catalogTrack__rank">{index + 1}</span>
         {t.cover ? (
-          <img className="catalogTrack__art" src={t.cover} alt="" loading="lazy" />
+          <CatalogArt src={t.cover} className="catalogTrack__art" lazy />
         ) : (
           <span className="catalogTrack__art catalogTrack__art--glyph" aria-hidden>
             <Music size={16} />
@@ -306,7 +316,7 @@ export function CatalogArtistPage({
           <header className="catalogArtist__head">
             <span className="catalogArtist__portrait">
               {artist.picture ? (
-                <img src={artist.picture} alt="" />
+                <CatalogArt src={artist.picture} />
               ) : (
                 <User size={32} aria-hidden />
               )}
@@ -379,7 +389,7 @@ export function CatalogArtistPage({
                     onClick={() => onOpenArtist(r.id, r.name)}
                   >
                     <span className="resultCard__cover" data-kind="artist">
-                      {r.picture ? <img src={r.picture} alt="" loading="lazy" /> : <User size={22} />}
+                      {r.picture ? <CatalogArt src={r.picture} lazy /> : <User size={22} />}
                     </span>
                     <span className="resultCard__title">{r.name}</span>
                     <span className="resultCard__sub">Artist</span>

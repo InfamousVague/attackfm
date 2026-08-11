@@ -875,9 +875,13 @@ img {
   opacity: 0.5;
 }
 
-/* The clear plastic hub: the print is already ghosted out under it by the
-   face's mask, so this only adds what plastic adds - a light ring at its
-   edge and a still, off-centre glint. */
+/* The frosted hub: the same material as the rim's frost - the two ends of
+   the disc wear one plastic - with the clamping ring a real disc carries
+   moulded in as a few concentric ridges. Each ridge is a highlight ring over
+   a shadow ring, which is how a raised circle reads under one light. The
+   spindle hole itself stays CLEAR: the frost starts outside it, so the
+   strip's glass still shows through the middle. Like the rim, all of it
+   holds still while the print turns underneath - it is material, not label. */
 .spinningDisc__hub {
   position: absolute;
   top: 50%;
@@ -886,18 +890,71 @@ img {
   height: 34%;
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  border: 1px solid rgb(255 255 255 / 0.16);
-  background: radial-gradient(
-    circle at 32% 28%,
-    rgb(255 255 255 / 0.12),
-    rgb(255 255 255 / 0.03) 55%,
-    transparent 72%
-  );
+  background:
+    /* The still, off-centre glint plastic always carries. */
+    radial-gradient(
+      circle at 32% 28%,
+      rgb(255 255 255 / 0.1),
+      rgb(255 255 255 / 0.02) 55%,
+      transparent 70%
+    ),
+    /* The frost, and the ridges standing up out of it: clear through the
+       hole, a quiet inner lip, then three highlight/shadow pairs spaced
+       through the clamping band, on the rim's own whites. */
+    radial-gradient(
+      circle closest-side at 50%,
+      transparent 0 30%,
+      rgb(255 255 255 / 0.05) 33% 40%,
+      rgb(255 255 255 / 0.16) 42% 44%,
+      rgb(0 0 0 / 0.1) 45% 46.5%,
+      rgb(255 255 255 / 0.07) 49% 55%,
+      rgb(255 255 255 / 0.16) 57% 59%,
+      rgb(0 0 0 / 0.1) 60% 61.5%,
+      rgb(255 255 255 / 0.07) 64% 72%,
+      rgb(255 255 255 / 0.16) 74% 76%,
+      rgb(0 0 0 / 0.1) 77% 78.5%,
+      rgb(255 255 255 / 0.07) 81% 100%
+    );
 }
 
-/* The spindle hole, suggested rather than punched: with the hub fully clear
-   there is nothing left to punch through, so a faint ring marks where the
-   plastic ends and the hole begins. */
+/* The border, done cleverly rather than drawn: a whisper of the same
+   spectrum the rim's sheen splits, carved to a hairline at the hub's edge
+   and screened over it - so the hub's boundary CATCHES light the way the
+   disc's outer edge does instead of being outlined. The frost gradient
+   above ends at the same radius, which is what keeps this reading as an
+   edge treatment and not a ring floating on glass. */
+.spinningDisc__hub::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: repeating-conic-gradient(
+    from 15deg,
+    oklch(0.86 0.05 25) 0deg,
+    oklch(0.89 0.04 95) 20deg,
+    oklch(0.89 0.05 155) 40deg,
+    oklch(0.87 0.04 215) 60deg,
+    oklch(0.84 0.05 285) 85deg,
+    oklch(0.85 0.05 345) 105deg,
+    oklch(0.86 0.05 385) 120deg
+  );
+  -webkit-mask-image: radial-gradient(
+    circle closest-side at 50%,
+    transparent 0 calc(100% - 2.5px),
+    black calc(100% - 1.5px) 100%
+  );
+  mask-image: radial-gradient(
+    circle closest-side at 50%,
+    transparent 0 calc(100% - 2.5px),
+    black calc(100% - 1.5px) 100%
+  );
+  mix-blend-mode: screen;
+  opacity: 0.6;
+}
+
+/* The spindle hole, suggested rather than punched: the frost above already
+   leaves the middle clear, so one faint ring marks where the plastic ends
+   and the hole begins. */
 .spinningDisc__hub::after {
   content: '';
   position: absolute;
@@ -907,7 +964,7 @@ img {
   height: 28%;
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  border: 1px solid rgb(255 255 255 / 0.11);
+  border: 1px solid rgb(255 255 255 / 0.13);
 }
 
 /* Reduced motion is honoured in SpinningDisc itself - the component never
@@ -2211,6 +2268,11 @@ img {
   }
 }
 
+/* Any cover image can wear the sheen now, not just the shelf cards - list
+   thumbs, mosaics, hero portraits. The wrapper form (`data-tile-loading`) is
+   for tiles drawn from SEVERAL covers, which skeleton and reveal as one. */
+img[data-loading],
+[data-tile-loading],
 .trackCardArt[data-loading],
 .artistCardArt[data-loading],
 .trackCardTitle[data-loading],
@@ -2225,6 +2287,39 @@ img {
   );
   background-size: 200% 100%;
   animation: skelSheen 1.25s ease-in-out infinite;
+}
+
+/* A loading tile hides its covers under the sheen; they all step out
+   together on the reveal. The sheen needs the tile's own background gone so
+   the gradient reads on the squircle itself. */
+[data-tile-loading] > img,
+[data-tile-loading] svg {
+  visibility: hidden;
+}
+
+/* The arrival: a small settle from just-below scale as the skeleton lifts.
+   Runs when the element STOPS matching [data-loading] (or the tile its
+   wrapper attribute) - which is exactly the moment the bytes landed. The
+   soft haptic tick that accompanies a burst of these is fired from
+   artLoad.ts, so what the eye sees pop the thumb feels patter. */
+@keyframes artPop {
+  from {
+    transform: scale(0.94);
+    opacity: 0.25;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+img.artPop:not([data-loading]) {
+  animation: artPop 0.34s var(--glacier-ease-out, ease-out);
+}
+
+[data-tile-pop]:not([data-tile-loading]) > img,
+[data-tile-pop]:not([data-tile-loading]) svg {
+  animation: artPop 0.34s var(--glacier-ease-out, ease-out);
 }
 
 /* The text sheens are short bars, not full-width - a skeleton, not a fill. */
@@ -2245,11 +2340,18 @@ img {
 
 /* Stillness asked for is stillness given: hold the sheen, drop the motion. */
 @media (prefers-reduced-motion: reduce) {
+  img[data-loading],
+  [data-tile-loading],
   .trackCardArt[data-loading],
   .artistCardArt[data-loading],
   .trackCardTitle[data-loading],
   .trackCardArtist[data-loading],
   .artistCardName[data-loading] {
+    animation: none;
+  }
+  img.artPop:not([data-loading]),
+  [data-tile-pop]:not([data-tile-loading]) > img,
+  [data-tile-pop]:not([data-tile-loading]) svg {
     animation: none;
   }
 }

@@ -11,6 +11,7 @@ import {
   type Discovery,
   type Suggestion,
 } from '../../app/server.ts';
+import { useArtLoad } from '../../app/artLoad.ts';
 import type { AcquireTarget, PluginPageProps } from '../types.ts';
 import { IMPORTER_PLUGIN_ID, useAcquire } from '../runtime.tsx';
 import { useDownloadsOptional } from '../importsBridge.ts';
@@ -69,6 +70,15 @@ function stateFrom(job: MusicImportJob | null, tapped: AddState | undefined): Ad
   // The queue has no (live) job; a just-tapped card shows immediately rather
   // than waiting a poll cycle for the job to appear.
   return tapped ?? 'idle';
+}
+
+/** A bare cover <img> inside a card's cover frame, wearing the shared
+ *  skeleton/pulse. Its own component because most of these covers render
+ *  inside map callbacks, where a hook cannot live. External catalogue art,
+ *  so the URL is used as-is - no server size variants to ask for. */
+function CoverArt({ src, lazy }: { src: string; lazy?: boolean }) {
+  const art = useArtLoad(src, '');
+  return <img {...art} src={src} alt="" loading={lazy ? 'lazy' : undefined} />;
 }
 
 function AddButton({
@@ -132,7 +142,7 @@ function SuggestionCard({
       <button type="button" className="suggestCardBody" onClick={onOpen}>
         <div className="suggestCardCover">
           {item.cover ? (
-            <img src={item.cover} alt="" loading="lazy" />
+            <CoverArt src={item.cover} lazy />
           ) : (
             <div className="suggestCardCover--glyph" aria-hidden>
               <ListMusic size={26} />
@@ -422,7 +432,7 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
                   }}
                 >
                   <span className="resultCard__cover" data-kind="track">
-                    {d.cover ? <img src={d.cover} alt="" loading="lazy" /> : <Music size={22} />}
+                    {d.cover ? <CoverArt src={d.cover} lazy /> : <Music size={22} />}
                   </span>
                   <span className="resultCard__title">{d.title}</span>
                   <span className="resultCard__sub">{d.artist}</span>
@@ -477,7 +487,7 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
             <div className="discoverPreview__head">
               <div className="suggestCardCover discoverPreview__cover">
                 {preview.cover ? (
-                  <img src={preview.cover} alt="" />
+                  <CoverArt src={preview.cover} />
                 ) : (
                   <div className="suggestCardCover--glyph" aria-hidden>
                     <ListMusic size={26} />

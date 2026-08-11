@@ -46,6 +46,7 @@ import { ListeningShareBridge } from './listeningShare.tsx';
 import { DjLauncher } from './DjLauncher.tsx';
 import { LibraryView } from './LibraryView.tsx';
 import { useSwipeBack } from './useSwipeBack.ts';
+import { hapticsImpl, useHapticsPref } from './haptics.ts';
 import { DiscoverPage } from '../plugins/discover/DiscoverPage.tsx';
 import { FriendsPage } from './FriendsPage.tsx';
 import { JamProvider } from './jam.tsx';
@@ -734,6 +735,7 @@ export function App() {
   // otherwise the whole screen would slide and then think better of it.
   const bodyRef = useRef<HTMLDivElement>(null);
   useSwipeBack(bodyRef, back, nav.index > 0);
+  const hapticsOn = useHapticsPref();
   const forward = () => setNav((s) => (s.index < s.stack.length - 1 ? { ...s, index: s.index + 1 } : s));
 
   // The chord the field advertises: Cmd/Ctrl+K opens search from anywhere.
@@ -750,7 +752,11 @@ export function App() {
 
   return (
     <LocaleProvider locale="en">
-      <HapticsProvider enabled={false}>
+      {/* Presses tick through the delegated listener; the semantic moments
+          (disc physics, transport, reveals) fire through useHaptics. On the
+          phone the impl crosses to the real Taptic Engine; on desktop there
+          is no impl and no motor, and the provider is inert. */}
+      <HapticsProvider enabled={hapticsOn} impl={hapticsImpl}>
         <ToastProvider>
           <AppearanceProvider>
             {/* Which server (if any) is connected sits above the library,

@@ -9,6 +9,8 @@
 
 import { IconButton, SortableList, Text } from '@glacier/react';
 import { ChevronDown, Music, X } from '@glacier/icons';
+import { artSized } from './server.ts';
+import { useArtLoad } from './artLoad.ts';
 import type { Track } from './tauri.ts';
 
 interface QueueRow {
@@ -112,9 +114,13 @@ export function QueuePanel({
 }
 
 function Cover({ track }: { track: Track }) {
+  // Queue rows draw the cover at thumb size, so the 160 variant carries it;
+  // the skeleton shimmer holds the square until the bytes arrive.
+  const src = artSized(track.artwork, 160);
+  const art = useArtLoad(src, '');
   return (
     <span className="queueRow__cover" aria-hidden>
-      {track.artwork ? <img src={track.artwork} alt="" loading="lazy" /> : <Music size={16} />}
+      {track.artwork ? <img {...art} src={src ?? undefined} alt="" loading="lazy" /> : <Music size={16} />}
     </span>
   );
 }

@@ -2,11 +2,30 @@ import { ScrollArea, Text } from '@glacier/react';
 import { Sparkles } from '@glacier/icons';
 import { useEffect, useMemo, useState } from 'react';
 import { useLibrary } from './library.tsx';
+import { useCardArt } from './artLoad.ts';
 import { useServerSession } from './serverSession.tsx';
 import { fetchCollectorStatus, type CollectorStatus } from './server.ts';
 import { TrackMenu } from './TrackMenu.tsx';
 import type { Track } from './tauri.ts';
-import placeholderArt from '../assets/attack-wave.png';
+
+/** Blank line the skeleton holds so the card keeps its exact height. */
+const NBSP = ' ';
+
+/** One audition card: the house track card, skeleton, pop and all. Wrapped in
+ *  the same menu as everywhere for queueing it behind whatever is on. */
+function ForYouCard({ track, onOpen }: { track: Track; onOpen: () => void }) {
+  const { src, loaded, onLoad, onError } = useCardArt(track.artwork);
+  const idle = !loaded || undefined;
+  return (
+    <TrackMenu track={track}>
+      <button type="button" className="trackCard" onClick={onOpen}>
+        <img className="trackCardArt artPop" src={src} alt="" loading="lazy" data-loading={idle} onLoad={onLoad} onError={onError} />
+        <span className="trackCardTitle" data-loading={idle}>{loaded ? track.title : NBSP}</span>
+        <span className="trackCardArtist" data-loading={idle}>{loaded ? track.artist : NBSP}</span>
+      </button>
+    </TrackMenu>
+  );
+}
 
 /**
  * The collector's audition shelf: music the curator downloaded FOR you that you
@@ -79,20 +98,8 @@ export function ForYouShelf({
         <ScrollArea orientation="horizontal" className="homeShelfScroll" hideScrollbar>
           <div className="homeShelfRow">
             {mine.map((t) => (
-              // Playing it through IS the adoption; the same menu as everywhere
-              // for queueing it behind whatever is on.
-              <TrackMenu key={t.path} track={t}>
-                <button type="button" className="trackCard" onClick={() => onPlay(t, mine)}>
-                  <img
-                    className="trackCardArt"
-                    src={t.artwork ?? placeholderArt}
-                    alt=""
-                    loading="lazy"
-                  />
-                  <span className="trackCardTitle">{t.title}</span>
-                  <span className="trackCardArtist">{t.artist}</span>
-                </button>
-              </TrackMenu>
+              // Playing it through IS the adoption.
+              <ForYouCard key={t.path} track={t} onOpen={() => onPlay(t, mine)} />
             ))}
           </div>
         </ScrollArea>

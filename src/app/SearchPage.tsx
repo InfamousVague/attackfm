@@ -48,7 +48,8 @@ import {
 import { useOwned } from './owned.ts';
 import { useSearchRecents, type Recent } from './searchRecents.ts';
 import { fetchFriends, type RegistryFriend } from './registry.ts';
-import { searchCatalog, type SearchResult } from './server.ts';
+import { artSized, searchCatalog, type SearchResult } from './server.ts';
+import { mosaicArts, useArtLoad, useTileArt } from './artLoad.ts';
 import { TrackMenu } from './TrackMenu.tsx';
 import { EmptyArt } from './EmptyArt.tsx';
 import type { Track } from './tauri.ts';
@@ -248,12 +249,23 @@ function Glyph({
   /** Seeds the tile's gradient, so one genre keeps one colour. */
   tint?: string;
 }) {
+  // Both loaders run for every shape - a glyph can change face as results
+  // refine, and the hook order has to survive that. A mosaic skeletons and
+  // reveals as one artwork; a single cover is a row thumb, so the 160 variant.
+  const four = shape === 'mosaic' ? mosaicArts(covers ?? []) : [];
+  const tiled = useTileArt(four);
+  const sized = shape === 'mosaic' || shape === 'tile' ? null : artSized(cover ?? null, 160);
+  const art = useArtLoad(sized, '');
   if (shape === 'mosaic') {
-    const four = (covers ?? []).slice(0, 4);
     return (
       <span className="searchRow__glyph" data-shape="mosaic">
         {four.length > 0 ? (
-          <span className="searchMosaic" data-n={four.length}>
+          <span
+            className="searchMosaic"
+            data-n={four.length}
+            data-tile-pop=""
+            data-tile-loading={!tiled || undefined}
+          >
             {four.map((c, i) => (
               <img key={`${c}:${i}`} src={c} alt="" loading="lazy" />
             ))}
@@ -273,9 +285,17 @@ function Glyph({
   }
   return (
     <span className="searchRow__glyph" data-shape={shape}>
-      {cover ? <img src={cover} alt="" loading="lazy" /> : fallback}
+      {sized ? <img {...art} src={sized} alt="" loading="lazy" /> : fallback}
     </span>
   );
+}
+
+/** A Browse tile's cover, split out of the map so each tile owns its own
+ *  skeleton hook. Tiles are grid-sized, so the 640 variant. */
+function GenreArt({ src }: { src: string }) {
+  const sized = artSized(src, 640);
+  const art = useArtLoad(sized, 'searchGenre__art');
+  return <img {...art} src={sized ?? undefined} alt="" loading="lazy" />;
 }
 
 /** What a song row says under its title: normally the artist, but when the
@@ -1236,9 +1256,7 @@ export function SearchPage({
                       style={hueOf(g.name)}
                       onClick={() => setQuery(`genre:"${g.name}"`)}
                     >
-                      {g.covers[0] && (
-                        <img className="searchGenre__art" src={g.covers[0]} alt="" loading="lazy" />
-                      )}
+                      {g.covers[0] && <GenreArt src={g.covers[0]} />}
                       <span className="searchGenre__name">{g.name}</span>
                       <span className="searchGenre__count">
                         {g.count === 1 ? '1 song' : `${g.count} songs`}
@@ -1388,9 +1406,14 @@ function TopCard({
         return null;
     }
   })();
+  // Hooks sit before the null gate: React needs them called on every render,
+  // whatever kind this card resolves to. The hero cover is big, so 640.
+  const mosaic = item.t === 'playlist' ? mosaicArts(coversOf(item.playlist, tracks)) : [];
+  const tiled = useTileArt(mosaic);
+  const sized = artSized(face?.cover ?? null, 640);
+  const art = useArtLoad(sized, '');
   if (!face) return null;
 
-  const mosaic = item.t === 'playlist' ? coversOf(item.playlist, tracks) : [];
   return (
     <button
       type="button"
@@ -1404,13 +1427,18 @@ function TopCard({
     >
       <span className="searchTopCard__art" data-shape={face.shape}>
         {mosaic.length > 0 ? (
-          <span className="searchMosaic" data-n={mosaic.length}>
+          <span
+            className="searchMosaic"
+            data-n={mosaic.length}
+            data-tile-pop=""
+            data-tile-loading={!tiled || undefined}
+          >
             {mosaic.map((c, i) => (
               <img key={`${c}:${i}`} src={c} alt="" loading="lazy" />
             ))}
           </span>
-        ) : face.cover ? (
-          <img src={face.cover} alt="" loading="lazy" />
+        ) : sized ? (
+          <img {...art} src={sized} alt="" loading="lazy" />
         ) : (
           face.fallback
         )}
@@ -1468,12 +1496,17 @@ function RecentTile({
     }
   }, [playlists, recent, tracks]);
 
+  // Recents draw small tiles, so the 160 variant; a null cover (nothing in
+  // the library to resolve it from anymore) keeps the kind's glyph below.
+  const sized = artSized(cover, 160);
+  const art = useArtLoad(sized, '');
+
   return (
     <div className="searchRecent">
       <button type="button" className="searchRecent__body" onClick={onOpen}>
         <span className="searchRecent__art" data-round={recent.kind === 'artist' || undefined}>
           {cover ? (
-            <img src={cover} alt="" loading="lazy" />
+            <img {...art} src={sized ?? undefined} alt="" loading="lazy" />
           ) : recent.kind === 'artist' ? (
             <User size={22} />
           ) : recent.kind === 'playlist' ? (

@@ -58,6 +58,7 @@ import npPlaceholderArt from '../assets/attack-wave.png';
 import { NowPlayingBackdrop } from './NowPlayingBackdrop.tsx';
 import { loadAudioUrl, reactivateAudioSession, systemOutputVolume, type Track } from './tauri.ts';
 import { fetchCanvas, isRemotePath, reportPlay, trackIdFromPath } from './server.ts';
+import { fireNativeHaptic } from './haptics.ts';
 import { createListenReporter, type ListenSnapshot } from './listens.ts';
 import { loadScrubTape } from './scrubTape.ts';
 import { useConnect } from './playbackSync.tsx';
@@ -384,6 +385,13 @@ export function Player({
   const listLoading = libraryLoading || scanning;
   // The heart reflects and toggles the current track's place in favourites.
   const favorite = track ? isFavorite(track.path) : false;
+  // Hearting a song answers in the hand - the success triplet, only on the
+  // way IN. Un-hearting stays silent: taking something back is not a fanfare.
+  const toggleFavoriteFelt = () => {
+    if (!track) return;
+    if (!favorite) fireNativeHaptic('success');
+    toggleFavorite(track.path);
+  };
 
   // The artwork read fresh from the library rather than off the snapshot: a
   // rescan revokes every previous pass's object URLs, so a queue held across
@@ -399,6 +407,7 @@ export function Player({
   // preferences.
   const [artView, setArtView] = useState<ArtView>(readArtView);
   const chooseArtView = (next: ArtView) => {
+    fireNativeHaptic('selection');
     setArtView(next);
     try {
       localStorage.setItem(ART_VIEW_KEY, next);
@@ -600,7 +609,9 @@ export function Player({
     const current = liveRef.current.track;
     if (!audio || !current || remoteOnlyRef.current) return;
     if (resumeCount.current >= MAX_RELOADS_PER_TRACK) {
-      // Out of attempts: stop claiming to play.
+      // Out of attempts: stop claiming to play - and say so in the pocket,
+      // where a silent stop otherwise goes unnoticed for a whole commute.
+      fireNativeHaptic('warning');
       pendingPlay.current = false;
       wantPlaying.current = false;
       setPlaying(false);
@@ -1377,6 +1388,8 @@ export function Player({
           );
           return;
         }
+        // The same honest stop as the ladder running out, felt the same way.
+        if (wantPlaying.current) fireNativeHaptic('warning');
         pendingPlay.current = false;
         wantPlaying.current = false;
         setPlaying(false);
@@ -2298,6 +2311,9 @@ export function Player({
     if (!track) return;
     const el = event.target as HTMLElement;
     if (el.closest('button, a, input, [role="slider"], [role="menu"], [role="menuitem"]')) return;
+    // The sheet has weight; lifting it should too. (The strip's dead space is
+    // not a button, so the delegated press tick never covers this tap.)
+    fireNativeHaptic('light');
     setNpOpen(true);
   };
 
@@ -2969,7 +2985,7 @@ export function Player({
         repeat={repeat}
         onRepeatChange={setRepeat}
         favorite={favorite}
-        onFavoriteChange={() => track && toggleFavorite(track.path)}
+        onFavoriteChange={toggleFavoriteFelt}
         // The mic sits just right of the heart, in the strip's leading rail:
         // the heart is how you feel about the song, the mic is the song's own
         // words. Synced lines light with playback and a press seeks to that
@@ -3418,7 +3434,7 @@ export function Player({
               aria-label={favorite ? 'Remove from favourites' : 'Add to favourites'}
               aria-pressed={favorite}
               className="npScreen__heart"
-              onClick={() => track && toggleFavorite(track.path)}
+              onClick={toggleFavoriteFelt}
             >
               <Heart size={22} fill={favorite ? 'currentColor' : 'none'} />
             </IconButton>
