@@ -348,7 +348,14 @@ export function HomePage({
       <Shelf title="From your curator" count={curated.length}>
         {curated.map((mix) => (
           <button key={mix.id} type="button" className="mixCard" onClick={() => setOpenMix(mix)}>
-            <MixCover tracks={mix.tracks} />
+            <span className="mixCardCoverWrap">
+              <MixCover tracks={mix.tracks} />
+              {mix.flavor === 'ai' && (
+                <Pill size="sm" tone="accent" className="mixCardBadge">
+                  AI
+                </Pill>
+              )}
+            </span>
             <span className="mixCardTitle">{mix.title}</span>
             <span className="mixCardBlurb">{mix.blurb}</span>
           </button>
@@ -373,15 +380,18 @@ export function HomePage({
       <Shelf title="Made for you" count={mixes.length}>
         {mixes.map((mix) => (
           <button key={mix.id} type="button" className="mixCard" onClick={() => setOpenMix(mix)}>
-            <MixCover tracks={mix.tracks} />
-            <span className="mixCardTitle">
-              {mix.title}
+            {/* The AI mark rides the artwork, not the title - a long name
+                needs the whole line to say what it is, and a badge that
+                shares it was the first thing a truncation had to eat. */}
+            <span className="mixCardCoverWrap">
+              <MixCover tracks={mix.tracks} />
               {mix.flavor === 'ai' && (
                 <Pill size="sm" tone="accent" className="mixCardBadge">
                   AI
                 </Pill>
               )}
             </span>
+            <span className="mixCardTitle">{mix.title}</span>
             <span className="mixCardBlurb">{mix.blurb}</span>
           </button>
         ))}

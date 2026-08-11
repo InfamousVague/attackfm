@@ -2699,18 +2699,31 @@ img {
 }
 
 .mixCardTitle {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-1);
+  max-inline-size: 100%;
   margin-block-start: var(--glacier-space-1);
   font-size: 0.95rem;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
+  /* A plain block with an honest ellipsis: as a flex row sharing space with
+     the AI pill, long names clipped mid-letter with no sign of the cut. The
+     pill lives on the artwork now. */
+  text-overflow: ellipsis;
+}
+
+/* Anchors the pill to the artwork's corner - the same seat the source pill
+   takes on a Discover card. */
+.mixCardCoverWrap {
+  position: relative;
+  display: block;
+  inline-size: 100%;
 }
 
 .mixCardBadge {
-  flex: none;
+  position: absolute;
+  inset-block-start: var(--glacier-space-2);
+  inset-inline-end: var(--glacier-space-2);
+  box-shadow: 0 1px 6px rgb(0 0 0 / 0.35);
 }
 
 .mixCardBlurb {
