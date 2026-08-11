@@ -145,6 +145,10 @@ pub struct ImportJob {
     /// back to the mirror entry that asked for it. Empty for a pasted link.
     #[serde(default)]
     pub origin: String,
+    /// The account that enqueued this, so a playlist import can file its
+    /// playlist under the right user. 0 for internal single-track fetches.
+    #[serde(default)]
+    pub user_id: i64,
 }
 
 pub struct ImportManager {
@@ -560,6 +564,9 @@ pub fn spawn_scheduler(state: Arc<AppState>) {
                                 j.owned_track_ids = owned;
                             })
                             .await;
+                        // A playlist import assembles a library playlist for the
+                        // user from what it just filed plus what it already owned.
+                        build_playlist_from_import(&run_state, &id).await;
                     }
                     Err(err) => {
                         manager
@@ -906,6 +913,39 @@ fn tail_join(lines: &[String]) -> String {
     lines[start..].join("\n").trim().to_string()
 }
 
+/// After a `playlist`-kind import finishes, assemble a library playlist for the
+/// user who asked - from the tracks it just filed plus the ones it found the
+/// library already owned. Best-effort: a failure here never fails the import.
+///
+/// Order is the order the tracks were filed, which is close to but not exactly
+/// the source playlist's order (SpotiFLAC names files by album track number),
+/// and a re-import creates a fresh playlist rather than touching an existing one.
+async fn build_playlist_from_import(state: &Arc<AppState>, id: &str) {
+    let (kind, title, user_id, mut ids) = {
+        let jobs = state.imports.jobs.lock().await;
+        let Some(j) = jobs.iter().find(|j| j.id == id) else { return };
+        let mut ids = j.track_ids.clone();
+        ids.extend(j.owned_track_ids.iter().copied());
+        (j.kind.clone(), j.title.trim().to_string(), j.user_id, ids)
+    };
+    if kind != "playlist" || user_id <= 0 || ids.is_empty() {
+        return;
+    }
+    // Preserve first-seen order, drop repeats.
+    let mut seen = std::collections::HashSet::new();
+    ids.retain(|t| seen.insert(*t));
+    // The background embed fetch usually resolves the real playlist name before
+    // the download finishes; fall back to a plain label if it never did.
+    let name = if title.is_empty() || title.eq_ignore_ascii_case("Spotify playlist") {
+        "Imported playlist".to_string()
+    } else {
+        title
+    };
+    if let Ok(pid) = state.db.create_playlist(user_id, &name) {
+        let _ = state.db.set_playlist_tracks(pid, &ids);
+    }
+}
+
 // --- API ---------------------------------------------------------------------
 
 type ApiError = (StatusCode, String);
@@ -969,6 +1009,7 @@ pub async fn enqueue_internal(
         track_ids: Vec::new(),
         owned_track_ids: Vec::new(),
         origin: origin.to_string(),
+        user_id: 0,
     };
     let id = job.id.clone();
     state.imports.jobs.lock().await.push(job);
@@ -985,7 +1026,7 @@ pub async fn enqueue(
     headers: HeaderMap,
     Json(body): Json<EnqueueBody>,
 ) -> Result<Json<ImportJob>, ApiError> {
-    auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
     let url = body.url.trim().to_string();
     if url.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "a link to import is required".into()));
@@ -1024,6 +1065,7 @@ pub async fn enqueue(
         track_ids: Vec::new(),
         owned_track_ids: Vec::new(),
         origin: String::new(),
+        user_id: caller.id,
     };
     {
         let mut jobs = state.imports.jobs.lock().await;
