@@ -374,6 +374,11 @@ pub async fn set_favorite(
         .db
         .set_favorite(caller.id, track_id, body.favorite)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    // Adoption: a heart on a collector download is deliberate approval - it
+    // skips the audition entirely and joins the library at once.
+    if body.favorite {
+        state.db.promote_curator_track(track_id);
+    }
     Ok(Json(json!({ "ok": true })))
 }
 

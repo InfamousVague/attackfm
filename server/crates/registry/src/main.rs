@@ -465,11 +465,36 @@ struct CreateInviteBody {
     server_name: String,
     #[serde(default)]
     role: String,
+    /// Mint a code that never expires and is never used up - for a review
+    /// note, or anywhere a link has to keep working for whoever arrives.
+    #[serde(default)]
+    standing: bool,
 }
 
 /// The alphabet invite codes are drawn from: uppercase letters and digits with
 /// the look-alikes removed (no 0/O, 1/I/L, U), so a code reads cleanly aloud and
 /// drops into the app's segmented code boxes without a "was that an O or a zero?"
+/// An invite with no expiry is a STANDING invite: it never lapses AND it is
+/// not consumed by being redeemed, so one code can admit a queue of people
+/// rather than the first of them. That is what an App Store review note needs -
+/// a reviewer may come to it days later, and more than one may come.
+///
+/// The sentinel is `expires_at == 0` rather than a new column, because this
+/// database is created by one `execute_batch(SCHEMA)` and nothing else: a new
+/// TABLE would land on the deployed file and a new COLUMN silently would not.
+/// The redemption check already read 0 as "never expires"; this only widens it
+/// to mean "and never spent" too.
+pub fn is_standing(expires_at: i64) -> bool {
+    expires_at == 0
+}
+
+/// Six characters, from a 30-letter unambiguous alphabet: 729 million codes,
+/// which is plenty for a server a handful of people are ever invited to, and
+/// short enough to read down a phone line. Single-use and expiring in a week,
+/// so the shorter code is not the thing standing between a stranger and the
+/// library - see the invite-ownership note in the registry's docs.
+const INVITE_CODE_LEN: usize = 6;
+
 const INVITE_ALPHABET: &[u8] = b"23456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 /// An 8-character invite code. ~39 bits of entropy over a single-use invite that
@@ -478,7 +503,7 @@ const INVITE_ALPHABET: &[u8] = b"23456789ABCDEFGHJKMNPQRSTVWXYZ";
 fn invite_code() -> String {
     use rand::Rng;
     let mut rng = rand::thread_rng();
-    (0..8)
+    (0..INVITE_CODE_LEN)
         .map(|_| INVITE_ALPHABET[rng.gen_range(0..INVITE_ALPHABET.len())] as char)
         .collect()
 }
@@ -496,8 +521,9 @@ async fn create_invite(
     }
     let role = if body.role.trim().is_empty() { "member" } else { body.role.trim() };
     let code = invite_code();
-    // A week to use it.
-    let expires = now_secs() + 7 * 24 * 3600;
+    // A week to use it - or no expiry at all, which is also what marks it as
+    // standing (see is_standing).
+    let expires = if body.standing { 0 } else { now_secs() + 7 * 24 * 3600 };
     state
         .db
         .create_invite(&code, body.server_url.trim(), body.server_name.trim(), who.sub, role, expires, now_secs())
@@ -512,14 +538,16 @@ async fn invite_preview(
     axum::extract::Path(code): axum::extract::Path<String>,
 ) -> ApiResult {
     let inv = state.db.invite(&code).ok_or((StatusCode::NOT_FOUND, "That invite is not valid.".into()))?;
-    let expired = inv.expires_at != 0 && now_secs() >= inv.expires_at;
+    let standing = is_standing(inv.expires_at);
+    let expired = !standing && now_secs() >= inv.expires_at;
     let from = state.db.account_by_id(inv.created_by).map(|a| a.handle).unwrap_or_default();
     Ok(Json(json!({
         "serverUrl": inv.server_url,
         "serverName": inv.server_name,
         "from": from,
-        "spent": inv.redeemed_by.is_some(),
+        "spent": !standing && inv.redeemed_by.is_some(),
         "expired": expired,
+        "standing": standing,
     })))
 }
 
@@ -596,29 +624,36 @@ async fn invite_landing(
              withdrawn.</p>",
         );
     };
-    if inv.redeemed_by.is_some() {
+    // A standing invite is never used up and never lapses, so neither of the
+    // two dead-ends below applies to it. Without this the SECOND person to
+    // follow a review link would be told the code had been used - by the first.
+    let standing = is_standing(inv.expires_at);
+    if !standing && inv.redeemed_by.is_some() {
         return invite_page(
             "Invite already used",
             "<h1>That invite has already been used</h1><p>Ask whoever sent it for another.</p>",
         );
     }
-    if inv.expires_at != 0 && now_secs() >= inv.expires_at {
+    if !standing && now_secs() >= inv.expires_at {
         return invite_page(
             "Invite expired",
             "<h1>That invite has expired</h1><p>Ask whoever sent it for another.</p>",
         );
     }
     let from = state.db.account_by_id(inv.created_by).map(|a| a.handle).unwrap_or_default();
+    // An invite nobody signed is not from a person - it is the door to a
+    // server. A standing one with no author is exactly that (a review note,
+    // say), so it says so rather than claiming "Someone" invited you.
     let who = if from.is_empty() {
-        "Someone".to_string()
+        "You have been invited to a music library on AttackFM.".to_string()
     } else {
-        format!("<strong>{}</strong>", esc(&from))
+        format!("<strong>{}</strong> invited you to their music library on AttackFM.", esc(&from))
     };
     invite_page(
         "You're invited",
         &format!(
             "<h1>Join {name}</h1>\
-             <p>{who} invited you to their music library on AttackFM.</p>\
+             <p>{who}</p>\
              <a class=\"open\" href=\"attackfm://i/{safe}\">Open in AttackFM</a>\
              <p class=\"hint\" style=\"margin-top:1.5rem\">No app yet, or the button did nothing? \
              Enter this code in AttackFM under Join a server:</p>\
@@ -637,13 +672,14 @@ async fn redeem_invite(
 ) -> ApiResult {
     let who = caller(&state, &headers)?;
     let inv = state.db.invite(&code).ok_or((StatusCode::NOT_FOUND, "That invite is not valid.".into()))?;
-    if inv.redeemed_by.is_some() {
+    let standing = is_standing(inv.expires_at);
+    if !standing && inv.redeemed_by.is_some() {
         return Err((StatusCode::GONE, "That invite has already been used.".into()));
     }
-    if inv.expires_at != 0 && now_secs() >= inv.expires_at {
+    if !standing && now_secs() >= inv.expires_at {
         return Err((StatusCode::GONE, "That invite has expired.".into()));
     }
-    state.db.redeem_invite(&code, who.sub, &inv.server_url, &inv.role, now_secs());
+    state.db.redeem_invite(&code, who.sub, &inv.server_url, &inv.role, now_secs(), standing);
     Ok(Json(json!({
         "serverUrl": inv.server_url,
         "serverName": inv.server_name,

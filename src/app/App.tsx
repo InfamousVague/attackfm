@@ -8,7 +8,7 @@ import {
   TitleBar,
   ToastProvider,
 } from '@glacier/react';
-import { ChevronLeft, ChevronRight, Compass, Download, LibraryBig, Search, Settings, Users } from '@glacier/icons';
+import { ChartNoAxesColumn, ChevronLeft, ChevronRight, Compass, Download, LibraryBig, Search, Settings, Users } from '@glacier/icons';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AppearanceProvider } from './appearance.tsx';
 import { LibraryProvider, useLibrary } from './library.tsx';
@@ -40,8 +40,11 @@ import { DownloadsPage } from './DownloadsPage.tsx';
 import { SettingsModal } from './SettingsModal.tsx';
 import { PlaylistsProvider } from './playlists.tsx';
 import { LibrarySyncProvider } from './librarySync.tsx';
-import { SongSearch } from './SongSearch.tsx';
+import { SearchPage } from './SearchPage.tsx';
+import { StatsPage } from './StatsPage.tsx';
+import { DjLauncher } from './DjLauncher.tsx';
 import { LibraryView } from './LibraryView.tsx';
+import { useSwipeBack } from './useSwipeBack.ts';
 import { DiscoverPage } from '../plugins/discover/DiscoverPage.tsx';
 import { FriendsPage } from './FriendsPage.tsx';
 import { JamProvider } from './jam.tsx';
@@ -202,7 +205,12 @@ function PrimaryNav({
   const libraryActive =
     tab === 'library' ||
     tab === 'home' ||
-    (tab !== 'discover' && tab !== 'downloads' && tab !== 'friends' && !onPluginPage);
+    (tab !== 'discover' &&
+      tab !== 'downloads' &&
+      tab !== 'friends' &&
+      tab !== 'search' &&
+      tab !== 'stats' &&
+      !onPluginPage);
 
   const primaryItems = (
     <>
@@ -223,17 +231,20 @@ function PrimaryNav({
           onClick={() => onTab('discover')}
         />
       )}
-      {/* The bar (phone) keeps Downloads inline with the other tabs. The rail
-          (desktop) instead anchors the queue button to its foot, by Settings -
-          see the `end` slot below - so it is not moved here. */}
-      {hasDownloads && variant === 'bar' && (
-        <NavBarItem
-          icon={<Download size={18} />}
-          label="Downloads"
-          active={tab === 'downloads'}
-          onClick={() => onTab('downloads')}
-        />
-      )}
+      {/* Downloads is NOT a nav destination. On the phone it is an icon on the
+          library page (where the music it is fetching ends up); on the desktop
+          the rail anchors the queue button to its foot, by Settings - see the
+          `end` slot below. A queue you visit occasionally does not deserve a
+          permanent seat in a bar of four. */}
+      {/* Search is a destination like Library and Discover: results you can
+          scroll, narrow and come back to, which a sheet over the page fought
+          on all three counts. */}
+      <NavBarItem
+        icon={<Search size={18} />}
+        label="Search"
+        active={tab === 'search'}
+        onClick={() => onTab('search')}
+      />
       {pages.map((pg) => (
         <NavBarItem
           key={pg.key}
@@ -243,6 +254,14 @@ function PrimaryNav({
           onClick={() => onTab(pg.key)}
         />
       ))}
+      {/* Stats: what the listening added up to. Lives beside Friends - both
+          are reflections of use rather than places music comes from. */}
+      <NavBarItem
+        icon={<ChartNoAxesColumn size={18} />}
+        label="Stats"
+        active={tab === 'stats'}
+        onClick={() => onTab('stats')}
+      />
       <NavBarItem
         icon={<Users size={18} />}
         label="Friends"
@@ -285,6 +304,13 @@ function PrimaryNav({
   return (
     <nav className="appNavBar" aria-label="Primary">
       <div className="appNavBar__group appNavBar__group--left">
+        {/* A destination, so it lights like one. */}
+        <BarTab
+          icon={<Search size={20} />}
+          label="Search"
+          active={tab === 'search'}
+          onClick={() => onTab('search')}
+        />
         {canDiscover && (
           <BarTab
             icon={<Compass size={20} />}
@@ -293,12 +319,6 @@ function PrimaryNav({
             onClick={() => onTab('discover')}
           />
         )}
-        <BarTab
-          icon={<Users size={20} />}
-          label="Friends"
-          active={tab === 'friends'}
-          onClick={() => onTab('friends')}
-        />
       </div>
 
       {/* The brand, raised: the app icon, protruding above the island, home. */}
@@ -314,14 +334,22 @@ function PrimaryNav({
       </button>
 
       <div className="appNavBar__group appNavBar__group--right">
-        {hasDownloads && (
-          <BarTab
-            icon={<Download size={20} />}
-            label="Downloads"
-            active={tab === 'downloads'}
-            onClick={() => onTab('downloads')}
-          />
-        )}
+        {/* The listening, added up. Ahead of Friends: you check your own
+            numbers more often than anyone else's. */}
+        <BarTab
+          icon={<ChartNoAxesColumn size={20} />}
+          label="Stats"
+          active={tab === 'stats'}
+          onClick={() => onTab('stats')}
+        />
+        <BarTab
+          icon={<Users size={20} />}
+          label="Friends"
+          active={tab === 'friends'}
+          onClick={() => onTab('friends')}
+        />
+        {/* Downloads is an icon on the library page now - see LibraryView - so
+            the bar stays four destinations around the brand. */}
         <BarTab icon={<Settings size={20} />} label="Settings" onClick={onSettings} />
       </div>
     </nav>
@@ -440,7 +468,12 @@ function AppMain({
   onOpenArtist,
   onOpenPlaylist,
   onCloseDetail,
+  onOpenDownloads,
+  onOpenStats,
+  swipeRef,
 }: {
+  /** The edge-swipe back gesture drags this element; App owns the hook. */
+  swipeRef?: React.Ref<HTMLElement>;
   detail: Detail | null;
   tab: string;
   /** Which face Library wears; flipped by the header's All button. */
@@ -449,6 +482,10 @@ function AppMain({
   onOpenArtist: (artist: string) => void;
   onOpenPlaylist: (id: string) => void;
   onCloseDetail: () => void;
+  /** The library page's own queue icon opens the downloads surface. */
+  onOpenDownloads: () => void;
+  /** The stats mini-cards' destination. */
+  onOpenStats: () => void;
 }) {
   const pages = usePluginPages();
   const activePage = detail ? null : (pages.find((pg) => pg.key === tab) ?? null);
@@ -460,7 +497,7 @@ function AppMain({
   // matching the nav gate; the plugin-free App-Review build has neither.
   const canDiscover = hasDownloads || useAcquire().hasAny;
   return (
-    <main className="appContent">
+    <main className="appContent" ref={swipeRef}>
       {detail?.kind === 'artist' ? (
         <ArtistPage
           artist={detail.artist}
@@ -484,6 +521,8 @@ function AppMain({
           onPlay={onPlay}
           onOpenArtist={onOpenArtist}
           onOpenPlaylist={onOpenPlaylist}
+          onOpenDownloads={hasDownloads ? onOpenDownloads : undefined}
+          onOpenStats={onOpenStats}
         />
       ) : tab === 'discover' && canDiscover ? (
         // Discover: what you do NOT have - the server's curated charts and a
@@ -491,6 +530,23 @@ function AppMain({
         // acquire handler (import or buy), so a build with no way to add through
         // (the plugin-free App-Review server) never surfaces it.
         <DiscoverPage onPlay={onPlay} onOpenArtist={onOpenArtist} />
+      ) : tab === 'search' ? (
+        // Search: everything you own, everyone you know, and what you could
+        // add - one query across all of them. Inside a plugin hook scope
+        // because it asks plugins for commands (a pasted link is an action,
+        // not a query); the scope's remount on a changed plugin set is what
+        // keeps that hook order legal.
+        <PluginHookScope>
+          <SearchPage
+            onPlay={onPlay}
+            onOpenArtist={onOpenArtist}
+            onOpenPlaylist={onOpenPlaylist}
+          />
+        </PluginHookScope>
+      ) : tab === 'stats' ? (
+        // Stats: the listening, added up - fed by the same event log the
+        // curator tunes itself on.
+        <StatsPage onPlay={onPlay} onOpenArtist={onOpenArtist} />
       ) : tab === 'friends' ? (
         // Friends: who you know on this server, and the asks in flight.
         <FriendsPage />
@@ -504,6 +560,8 @@ function AppMain({
           onPlay={onPlay}
           onOpenArtist={onOpenArtist}
           onOpenPlaylist={onOpenPlaylist}
+          onOpenDownloads={hasDownloads ? onOpenDownloads : undefined}
+          onOpenStats={onOpenStats}
         />
       )}
     </main>
@@ -556,7 +614,6 @@ function ConnectPlayRouter({
  * providers and, for now, a single centered placeholder screen.
  */
 export function App() {
-  const [searchOpen, setSearchOpen] = useState(false);
   // Which face the Library shows: its shelves, or every song as one table.
   // Lives here rather than in the page because the header's "All" button is
   // the only thing that flips it - the segmented toggle it replaced lived in
@@ -681,6 +738,17 @@ export function App() {
    *  the core 'home'/'library' and any plugin page key. */
   const goTab = (next: string) => push({ tab: next, detail: null });
   const back = () => setNav((s) => (s.index > 0 ? { ...s, index: s.index - 1 } : s));
+  // The phone's edge-swipe back: a drag in from the left walks the same stack
+  // the header arrows do, with the page following the thumb. Touch-only and
+  // edge-only (the hook guards both), and enabled only when there is anywhere
+  // to go back TO - with the stack at its root the edge belongs to the page.
+  const swipeRef = useRef<HTMLElement | null>(null);
+  useSwipeBack(swipeRef, back, !DESKTOP && nav.index > 0);
+  // The phone's back gesture: a drag in from the left edge, with the page
+  // following the thumb. Only armed when there is somewhere to go back TO -
+  // otherwise the whole screen would slide and then think better of it.
+  const bodyRef = useRef<HTMLDivElement>(null);
+  useSwipeBack(bodyRef, back, nav.index > 0);
   const forward = () => setNav((s) => (s.index < s.stack.length - 1 ? { ...s, index: s.index + 1 } : s));
 
   // The chord the field advertises: Cmd/Ctrl+K opens search from anywhere.
@@ -688,7 +756,7 @@ export function App() {
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'k') {
         event.preventDefault();
-        setSearchOpen(true);
+        goTab('search');
       }
     };
     window.addEventListener('keydown', onKey);
@@ -754,11 +822,14 @@ export function App() {
                 below - onto this deck's queue, or, when following a jam, into
                 the room the host folds it into. */}
             <QueueControlsBridge localPlayNext={playNext} localAddToQueue={addToQueue}>
-            {/* data-player tells the CSS whether a strip is down there:
-                every bottom clearance in the app is spent from
-                --app-player-height, so collapsing that one variable to 0
-                gives the list its rows back without a rule per surface. */}
-            <div className="appWindow" data-player={current ? 'on' : 'off'}>
+            {/* Every bottom clearance in the app is spent from
+                --app-player-height, and app.css collapses that one variable to
+                0 when no strip is mounted, which gives the lists their rows
+                back without a rule per surface. It asks the DOM for the strip
+                rather than taking a flag from here: `current` is only THIS
+                device's deck, and the strip also shows for a track playing on
+                another one. */}
+            <div className="appWindow">
             {/* The playing track's cover, blurred and faded, behind the top of
                 the WINDOW - a desktop flourish, where there is room for the
                 album to sit behind a header without crowding anything.
@@ -886,17 +957,31 @@ export function App() {
                   )}
                 </span>
                 <span className="mobileHeader__actions">
-                  {/* The importer's download queue in the header - but kept OFF
-                      Home and Library so those two headers stay clean; the
-                      Downloads tab reaches the queue from anywhere regardless.
-                      Empty (and invisible) when the importer plugin is off. */}
-                  {tab !== 'home' && tab !== 'library' && <PluginSlot id="titlebar-end" />}
+                  {/* The importer's download queue, in the header on every tab
+                      including Library - it used to be kept off Library to keep
+                      that header clean, which only moved it into the page body
+                      where it read as content rather than chrome. Empty (and
+                      invisible) when the importer plugin is off. */}
+                  <PluginSlot id="titlebar-end" />
+                  {/* The DJ sits beside it on the library surface: press it and
+                      be played to. BOTH tab names, because the app opens on
+                      'home' and only becomes 'library' once the brand button is
+                      tapped - they are the same screen, and keying on one of
+                      them means the control is missing on first launch. Its
+                      spoken line is positioned out of the header's flow (see
+                      .mobileHeader .djLauncher) so a returning set cannot make
+                      the header taller. */}
+                  {(tab === 'library' || tab === 'home') && <DjLauncher onPlay={playFrom} />}
                   {/* Library's view flip: the whole library as one table. A
                       header button instead of an in-page toggle - the page
                       opens on its shelves and this is the one other face. */}
                   {tab === 'library' && (
                     <Button
-                      variant={libraryView === 'all' ? 'soft' : 'ghost'}
+                      // Soft rather than ghost when off: a ghost button in a
+                      // header with nothing beside it reads as a stray word,
+                      // not a control. It keeps a surface in both states and
+                      // says which one it is in with the accent.
+                      variant={libraryView === 'all' ? 'solid' : 'soft'}
                       size="sm"
                       aria-pressed={libraryView === 'all'}
                       onClick={() => setLibraryView((v) => (v === 'all' ? 'summary' : 'all'))}
@@ -904,22 +989,10 @@ export function App() {
                       All
                     </Button>
                   )}
-                  {/* The one global search on the phone: opens the full-screen
-                      search sheet (SongSearch renders it as such off the
-                      desktop). Distinct from each page's own field - this
-                      searches the whole library from anywhere, like ⌘K does. */}
-                  <IconButton
-                    variant="ghost"
-                    size="sm"
-                    aria-label="Search"
-                    onClick={() => setSearchOpen(true)}
-                  >
-                    <Search size={20} />
-                  </IconButton>
                 </span>
               </header>
             )}
-            <div className="appBody">
+            <div className="appBody" ref={bodyRef}>
               {/* Desktop's primary navigation: a slim icon rail beside the
                   content. The phone gets the bottom tab bar below instead -
                   same items, the shape each platform holds naturally. Both are
@@ -933,6 +1006,7 @@ export function App() {
                 />
               )}
               <AppMain
+                swipeRef={swipeRef}
                 detail={detail}
                 tab={tab}
                 libraryView={libraryView}
@@ -940,6 +1014,8 @@ export function App() {
                 onOpenArtist={go}
                 onOpenPlaylist={goPlaylist}
                 onCloseDetail={closeDetail}
+                onOpenDownloads={() => goTab('downloads')}
+                onOpenStats={() => goTab('stats')}
               />
             </div>
             {/* The phone's primary navigation: a full-width icon bar along the
@@ -977,13 +1053,6 @@ export function App() {
               autoplay={autoplay}
             />
             <IndexingStatus />
-            {/* Searches the library - titles, artists, albums, genres, lyrics -
-                and plays what is chosen. The palette calls plugin hooks, so it
-                lives under a scope that remounts it when the running set
-                changes - that remount is what keeps hook order legal. */}
-            <PluginHookScope>
-              <SongSearch open={searchOpen} onOpenChange={setSearchOpen} onPlay={playFrom} />
-            </PluginHookScope>
             <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
             </div>
             </QueueControlsBridge>

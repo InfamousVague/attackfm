@@ -44,3 +44,4 @@ src-tauri/gen/android/.gradle
 *.ape
 *.wv
 https:*/
+dist-home/

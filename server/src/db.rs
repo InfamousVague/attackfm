@@ -57,6 +57,14 @@ pub struct Track {
     #[serde(rename = "artId")]
     pub art_id: Option<String>,
     pub rev: i64,
+    /// Set when the COLLECTOR downloaded this track rather than a person: the
+    /// account it was fetched for. Such a track auditions on that account's
+    /// For-you shelf until `curator_promoted` - a completed listen or a heart
+    /// - moves it into the library proper. Null for everything a person added.
+    #[serde(rename = "curatorUserId")]
+    pub curator_user_id: Option<i64>,
+    #[serde(rename = "curatorPromoted")]
+    pub curator_promoted: bool,
 }
 
 /// What the scanner has learned about one file, before it becomes a row.
@@ -397,7 +405,16 @@ CREATE TABLE IF NOT EXISTS track_features (
   -- it keeps the database a plain file anyone can copy.
   lyric_vec  BLOB,
   vec_dims   INTEGER NOT NULL DEFAULT 0,
-  checked_at INTEGER NOT NULL DEFAULT 0
+  checked_at INTEGER NOT NULL DEFAULT 0,
+  -- The audio analyser's half (features.rs): character measured off the file
+  -- itself, on its own clock - `analyzed_at` of 0 is "not measured yet", the
+  -- way `checked_at` works for the enricher above. Nullable so the curator's
+  -- inserts stay valid. On a database that predates them these four arrive
+  -- via migrate(), since IF NOT EXISTS skips a table that already exists.
+  energy      REAL,
+  brightness  REAL,
+  loudness    REAL,
+  analyzed_at INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS features_checked ON track_features(checked_at);
 
@@ -653,6 +670,159 @@ CREATE TABLE IF NOT EXISTS registry_stats (
   bytes      INTEGER NOT NULL DEFAULT 0,
   updated_at INTEGER NOT NULL DEFAULT 0
 );
+
+-- A device that has asked to be told things: one row per (listener, token).
+-- The token is APNs's, opaque here, and rotates on the device's own schedule -
+-- so it is the key rather than a device id, and a rotated token simply
+-- registers again alongside the old one. APNs tells us when a token is dead
+-- (410 Gone); `retire_push_token` is what deletes it, so nothing here has to
+-- guess at liveness.
+CREATE TABLE IF NOT EXISTS push_devices (
+  user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token     TEXT    NOT NULL,
+  platform  TEXT    NOT NULL DEFAULT 'ios',
+  label     TEXT    NOT NULL DEFAULT '',
+  added_at  INTEGER NOT NULL,
+  PRIMARY KEY (user_id, token)
+);
+
+-- What each listener wants to hear about. A row per (listener, kind) rather
+-- than a column per kind, because a new kind of notification must be able to
+-- land on a deployed database - see the note above about columns.
+--
+-- ABSENT means on. Notifications a listener has never expressed a view about
+-- should work; only an explicit 0 silences one. That way adding a kind does
+-- not require back-filling every existing listener to make it function.
+CREATE TABLE IF NOT EXISTS push_prefs (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind    TEXT    NOT NULL,      -- 'curated' | 'drops' | 'friends' | 'digest'
+  enabled INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (user_id, kind)
+);
+
+-- When each kind last went out to each listener. The digest reads it to know
+-- whether a few days have passed, and every kind reads it to avoid sending the
+-- same thing twice when a trigger fires repeatedly.
+CREATE TABLE IF NOT EXISTS push_sent (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind    TEXT    NOT NULL,
+  sent_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, kind)
+);
+
+-- The library's full-text index: an external-content FTS5 mirror of `tracks`,
+-- so a search reads the index and joins back for the row. External content
+-- rather than a copy because the lyrics column alone would double the file.
+-- The triggers keep it in step with every write, tombstones included - a
+-- tombstone is an UPDATE here, so the row stays indexed and every search
+-- filters deleted = 0 on the way out, like every other read.
+CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(
+  title, artist, album_artist, album, genre, lyrics,
+  content='tracks', content_rowid='id'
+);
+CREATE TRIGGER IF NOT EXISTS tracks_fts_ai AFTER INSERT ON tracks BEGIN
+  INSERT INTO tracks_fts (rowid, title, artist, album_artist, album, genre, lyrics)
+  VALUES (new.id, new.title, new.artist, new.album_artist, new.album, new.genre, new.lyrics);
+END;
+CREATE TRIGGER IF NOT EXISTS tracks_fts_ad AFTER DELETE ON tracks BEGIN
+  INSERT INTO tracks_fts (tracks_fts, rowid, title, artist, album_artist, album, genre, lyrics)
+  VALUES ('delete', old.id, old.title, old.artist, old.album_artist, old.album, old.genre, old.lyrics);
+END;
+CREATE TRIGGER IF NOT EXISTS tracks_fts_au AFTER UPDATE ON tracks BEGIN
+  INSERT INTO tracks_fts (tracks_fts, rowid, title, artist, album_artist, album, genre, lyrics)
+  VALUES ('delete', old.id, old.title, old.artist, old.album_artist, old.album, old.genre, old.lyrics);
+  INSERT INTO tracks_fts (rowid, title, artist, album_artist, album, genre, lyrics)
+  VALUES (new.id, new.title, new.artist, new.album_artist, new.album, new.genre, new.lyrics);
+END;
+
+-- What each listener searched for and actually opened, kept on the server so
+-- every device shows the same short memory. Denormalised on purpose: kind+key
+-- name the thing (a local track, an external album, an artist page), and
+-- title, subtitle, cover and url are enough to draw it - the server only
+-- remembers, it never interprets.
+CREATE TABLE IF NOT EXISTS search_recents (
+  user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind     TEXT    NOT NULL,
+  key      TEXT    NOT NULL,
+  title    TEXT    NOT NULL,
+  subtitle TEXT    NOT NULL DEFAULT '',
+  cover    TEXT    NOT NULL DEFAULT '',
+  url      TEXT    NOT NULL DEFAULT '',
+  at       INTEGER NOT NULL,
+  PRIMARY KEY (user_id, kind, key)
+);
+CREATE INDEX IF NOT EXISTS search_recents_time ON search_recents(user_id, at DESC);
+
+-- What actually got listened to, event by event: one row per playback the
+-- client reports, append-only. Deliberately denormalised - title, artist,
+-- album and genre are snapshotted from the track at insert time, and track_id
+-- carries NO foreign key - because a listening history must outlive the
+-- library it was heard from: tracks get retagged, evicted for quota, and
+-- re-imported under new ids, and none of that should subtract minutes from
+-- last year. `plays` above is the home feed's cheap signal ("this counted");
+-- this is the full account ("how long, finished or skipped, from where"),
+-- which is what the stats surface reads.
+CREATE TABLE IF NOT EXISTS listen_events (
+  id          INTEGER PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  track_id    INTEGER NOT NULL,
+  title       TEXT NOT NULL,
+  artist      TEXT NOT NULL,
+  album       TEXT NOT NULL,
+  genre       TEXT NOT NULL DEFAULT '',
+  started_at  INTEGER NOT NULL,
+  ms_listened INTEGER NOT NULL,
+  duration_ms INTEGER,
+  completed   INTEGER NOT NULL,
+  skipped     INTEGER NOT NULL,
+  context     TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS listen_events_user_time ON listen_events(user_id, started_at DESC);
+-- Probed by the "new to you" count's NOT EXISTS, which asks "had this user
+-- ever played THIS track" - the same lookup shape plays_user_track serves.
+CREATE INDEX IF NOT EXISTS listen_events_user_track ON listen_events(user_id, track_id);
+
+-- The collector's ledger (collector.rs): every autonomous download it has
+-- raised, from the moment it chose one through landing, adoption or failure.
+-- One row per (user, catalogue id) forever - the UNIQUE is also the memory
+-- that stops the same candidate being bought twice.
+CREATE TABLE IF NOT EXISTS curator_pulls (
+  id         INTEGER PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  ext_id     TEXT NOT NULL,
+  kind       TEXT NOT NULL DEFAULT 'track',
+  title      TEXT NOT NULL,
+  artist     TEXT NOT NULL,
+  url        TEXT NOT NULL,
+  -- Why the curator chose it - the model's one line when there is a model,
+  -- the seed artist's when there is not.
+  reason     TEXT NOT NULL DEFAULT '',
+  score      REAL NOT NULL DEFAULT 0,
+  job_id     TEXT NOT NULL DEFAULT '',
+  -- queued | landed | promoted | failed
+  state      TEXT NOT NULL DEFAULT 'queued',
+  bytes      INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  UNIQUE (user_id, ext_id)
+);
+CREATE INDEX IF NOT EXISTS curator_pulls_user_time ON curator_pulls(user_id, created_at DESC);
+
+-- Which library rows a landed pull became - what lets an adoption find its
+-- pull, and a pull report its real size.
+CREATE TABLE IF NOT EXISTS curator_pull_tracks (
+  pull_id  INTEGER NOT NULL REFERENCES curator_pulls(id) ON DELETE CASCADE,
+  track_id INTEGER NOT NULL,
+  PRIMARY KEY (pull_id, track_id)
+);
+
+-- The collector's per-listener dials. A row appears the first time a dial is
+-- touched or tuned; absence means the defaults (enabled, exploration 0.5).
+CREATE TABLE IF NOT EXISTS collector_state (
+  user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  exploration REAL NOT NULL DEFAULT 0.5,
+  tuned_at    INTEGER NOT NULL DEFAULT 0
+);
 "#;
 
 fn now_ms() -> i64 {
@@ -666,9 +836,80 @@ impl Db {
     pub fn open(path: &Path) -> rusqlite::Result<Self> {
         let conn = Connection::open(path)?;
         conn.execute_batch(SCHEMA)?;
+        Self::migrate(&conn)?;
+        Self::backfill_search_index(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
+    }
+
+    /// Adds columns that postdate a deployed database's tables. The SCHEMA
+    /// above is all IF NOT EXISTS, so a table that already exists keeps its
+    /// old shape and a column added there lands only on fresh databases; each
+    /// one is checked against what the table actually has, so re-running on
+    /// every boot costs a pragma read and nothing else.
+    fn migrate(conn: &Connection) -> rusqlite::Result<()> {
+        let have: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('track_features')")?
+            .query_map([], |r| r.get(0))?
+            .filter_map(Result::ok)
+            .collect();
+        // The audio analyser's columns (features.rs), riding the curator's
+        // table: nullable, with analyzed_at = 0 standing for "not measured
+        // yet", so every existing row simply reads as unanalysed.
+        for (name, decl) in [
+            ("energy", "energy REAL"),
+            ("brightness", "brightness REAL"),
+            ("loudness", "loudness REAL"),
+            ("analyzed_at", "analyzed_at INTEGER NOT NULL DEFAULT 0"),
+        ] {
+            if !have.iter().any(|c| c == name) {
+                conn.execute(&format!("ALTER TABLE track_features ADD COLUMN {decl}"), [])?;
+            }
+        }
+        // The collector's attribution on tracks themselves (collector.rs):
+        // who a download was fetched for, and whether anyone has adopted it.
+        // On the tracks table because the quarantine travels with the row -
+        // the delta sync carries it to every client with no second query.
+        let have: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('tracks')")?
+            .query_map([], |r| r.get(0))?
+            .filter_map(Result::ok)
+            .collect();
+        for (name, decl) in [
+            ("curator_user_id", "curator_user_id INTEGER"),
+            ("curator_promoted", "curator_promoted INTEGER NOT NULL DEFAULT 0"),
+        ] {
+            if !have.iter().any(|c| c == name) {
+                conn.execute(&format!("ALTER TABLE tracks ADD COLUMN {decl}"), [])?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Fills the search index from `tracks` when it is empty and the library
+    /// is not - the one boot where this server lands on a database that
+    /// predates the index. The triggers keep it current from then on, but
+    /// they only see writes made after they exist.
+    fn backfill_search_index(conn: &Connection) -> rusqlite::Result<()> {
+        // Not COUNT(*) on tracks_fts itself: an external-content FTS table
+        // answers that from the CONTENT table, so it reads as full the moment
+        // `tracks` has rows, indexed or not. The docsize shadow table holds
+        // one row per document actually indexed - exactly the question.
+        let indexed: i64 =
+            conn.query_row("SELECT COUNT(*) FROM tracks_fts_docsize", [], |r| r.get(0))?;
+        if indexed > 0 {
+            return Ok(());
+        }
+        // Tombstones included, matching what the triggers maintain: a
+        // tombstone is an UPDATE to `tracks`, so its row stays indexed and
+        // the search queries filter deleted = 0 on the way out.
+        conn.execute(
+            "INSERT INTO tracks_fts (rowid, title, artist, album_artist, album, genre, lyrics)
+             SELECT id, title, artist, album_artist, album, genre, lyrics FROM tracks",
+            [],
+        )?;
+        Ok(())
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Connection> {
@@ -1000,12 +1241,15 @@ impl Db {
             added_at: row.get(19)?,
             art_id: row.get(20)?,
             rev: row.get(21)?,
+            curator_user_id: row.get(22)?,
+            curator_promoted: row.get::<_, i64>(23)? != 0,
         })
     }
 
     const TRACK_COLS: &'static str = "id, title, artist, album_artist, album, track_no, disc_no, \
          year, genre, lyrics, deleted, duration_ms, codec, lossless, sample_rate, bit_depth, \
-         channels, bitrate, size_bytes, added_at, art_id, rev";
+         channels, bitrate, size_bytes, added_at, art_id, rev, curator_user_id, \
+         COALESCE(curator_promoted, 0)";
 
     /// Everything stamped above `since`, live rows and tombstones alike. The
     /// tombstones come back as bare ids so a client can drop them.
@@ -2336,7 +2580,9 @@ impl Db {
     pub fn all_features(&self) -> Vec<TrackFeatures> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
-            "SELECT f.track_id, f.bpm, f.lyric_vec, f.vec_dims, t.genre, t.artist
+            "SELECT f.track_id, f.bpm, f.lyric_vec, f.vec_dims, t.genre, t.artist,
+                     f.energy, f.brightness, t.year,
+                     (t.curator_user_id IS NOT NULL AND COALESCE(t.curator_promoted, 0) = 0)
              FROM track_features f JOIN tracks t ON t.id = f.track_id AND t.deleted = 0",
         ) else {
             return Vec::new();
@@ -2355,6 +2601,10 @@ impl Db {
                 lyric_vec: vec,
                 genre: r.get(4)?,
                 artist: r.get(5)?,
+                energy: r.get(6)?,
+                brightness: r.get(7)?,
+                year: r.get(8)?,
+                quarantined: r.get::<_, i64>(9)? != 0,
             })
         })
         .map(|rows| rows.filter_map(Result::ok).collect())
@@ -2455,6 +2705,129 @@ impl Db {
     }
 
     // --- discoveries: music not owned yet --------------------------------------
+
+    // --- push notifications -------------------------------------------------
+
+    /// Remember a device that wants to be told things. Re-registering the same
+    /// token just refreshes its label and timestamp - a device that reinstalls
+    /// or re-signs-in should not accumulate rows.
+    pub fn add_push_token(&self, user_id: i64, token: &str, platform: &str, label: &str) {
+        let conn = self.lock();
+        let _ = conn.execute(
+            "INSERT INTO push_devices (user_id, token, platform, label, added_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(user_id, token) DO UPDATE SET label = excluded.label, added_at = excluded.added_at",
+            rusqlite::params![user_id, token, platform, label, now_ms()],
+        );
+    }
+
+    /// Forget a device - a sign-out, or a listener switching notifications off
+    /// on that device specifically.
+    pub fn remove_push_token(&self, user_id: i64, token: &str) {
+        let conn = self.lock();
+        let _ = conn.execute(
+            "DELETE FROM push_devices WHERE user_id = ?1 AND token = ?2",
+            rusqlite::params![user_id, token],
+        );
+    }
+
+    /// Drop a token APNs has told us is dead (410 Gone), whoever it belonged
+    /// to. Keyed on the token alone: the point is that it is not deliverable
+    /// anywhere, and a stale row would be retried on every send forever.
+    pub fn retire_push_token(&self, token: &str) {
+        let conn = self.lock();
+        let _ = conn.execute("DELETE FROM push_devices WHERE token = ?1", rusqlite::params![token]);
+    }
+
+    /// Every device to send a given listener's notifications to.
+    pub fn push_tokens(&self, user_id: i64) -> Vec<String> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare("SELECT token FROM push_devices WHERE user_id = ?1") else {
+            return Vec::new();
+        };
+        stmt.query_map(rusqlite::params![user_id], |r| r.get::<_, String>(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Whether this listener wants this kind. Absent means yes - see the
+    /// schema note: a kind nobody has an opinion about should still work.
+    pub fn push_wants(&self, user_id: i64, kind: &str) -> bool {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT enabled FROM push_prefs WHERE user_id = ?1 AND kind = ?2",
+            rusqlite::params![user_id, kind],
+            |r| r.get::<_, i64>(0),
+        )
+        .map(|v| v != 0)
+        .unwrap_or(true)
+    }
+
+    /// Every explicit preference this listener has set, for the settings pane.
+    pub fn push_prefs(&self, user_id: i64) -> Vec<(String, bool)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare("SELECT kind, enabled FROM push_prefs WHERE user_id = ?1")
+        else {
+            return Vec::new();
+        };
+        stmt.query_map(rusqlite::params![user_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? != 0))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    pub fn set_push_pref(&self, user_id: i64, kind: &str, enabled: bool) {
+        let conn = self.lock();
+        let _ = conn.execute(
+            "INSERT INTO push_prefs (user_id, kind, enabled) VALUES (?1, ?2, ?3)
+             ON CONFLICT(user_id, kind) DO UPDATE SET enabled = excluded.enabled",
+            rusqlite::params![user_id, kind, i64::from(enabled)],
+        );
+    }
+
+    /// When this kind last went out to this listener, epoch millis, or 0.
+    pub fn push_last_sent(&self, user_id: i64, kind: &str) -> i64 {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT sent_at FROM push_sent WHERE user_id = ?1 AND kind = ?2",
+            rusqlite::params![user_id, kind],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap_or(0)
+    }
+
+    pub fn mark_push_sent(&self, user_id: i64, kind: &str) {
+        let conn = self.lock();
+        let _ = conn.execute(
+            "INSERT INTO push_sent (user_id, kind, sent_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(user_id, kind) DO UPDATE SET sent_at = excluded.sent_at",
+            rusqlite::params![user_id, kind, now_ms()],
+        );
+    }
+
+    /// Every listener with at least one device registered - who the digest
+    /// sweep walks.
+    pub fn push_audience(&self) -> Vec<i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare("SELECT DISTINCT user_id FROM push_devices") else {
+            return Vec::new();
+        };
+        stmt.query_map([], |r| r.get::<_, i64>(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// How many live tracks landed after a moment - what a digest is made of.
+    pub fn tracks_added_since(&self, since_ms: i64) -> i64 {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT COUNT(*) FROM tracks WHERE deleted = 0 AND added_at > ?1",
+            rusqlite::params![since_ms],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap_or(0)
+    }
 
     /// Every (artist, title) this library holds, raw. Whoever compares them
     /// owns the folding - the discovery feed matches these against a catalogue
@@ -2592,6 +2965,745 @@ impl Db {
             one("SELECT COUNT(*) FROM discoveries WHERE user_id = ?1 AND checked_at > 0"),
         )
     }
+
+    // --- library search ---------------------------------------------------
+
+    /// The tracks a library search matches, best first. `q` arrives already
+    /// folded into FTS5 MATCH syntax (library_search.rs owns that); an
+    /// expression FTS cannot parse simply reads as no rows, the same as every
+    /// other defensive read here.
+    ///
+    /// The bm25 weights hand the title the lead, artists close behind, then
+    /// album, genre, and lyrics trailing - a song is found by what it is
+    /// called before what it says. The CTE is MATERIALIZED on purpose: left
+    /// to itself the planner flattens it into the outer query, where bm25()
+    /// is no longer sitting directly on its FTS table and SQLite refuses it.
+    pub fn search_tracks(&self, q: &str, limit: i64) -> Vec<Track> {
+        let conn = self.lock();
+        let sql = format!(
+            "WITH hits AS MATERIALIZED (
+                 SELECT rowid AS fts_id, bm25(tracks_fts, 4.0, 3.0, 3.0, 2.0, 1.0, 0.5) AS rank
+                   FROM tracks_fts WHERE tracks_fts MATCH ?1
+             )
+             SELECT {} FROM tracks JOIN hits f ON f.fts_id = tracks.id
+             WHERE deleted = 0 ORDER BY f.rank LIMIT ?2",
+            Self::TRACK_COLS
+        );
+        let Ok(mut stmt) = conn.prepare(&sql) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![q, limit], Self::read_track)
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// The albums a library search matches, each group ranked by its
+    /// best-scoring track. The count is the album's real size rather than how
+    /// many rows happened to match, and the cover id prefers a member track
+    /// that actually carries art.
+    pub fn search_albums(&self, q: &str, limit: i64) -> Vec<AlbumHit> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "WITH hits AS MATERIALIZED (
+                 SELECT rowid AS fts_id, bm25(tracks_fts, 4.0, 3.0, 3.0, 2.0, 1.0, 0.5) AS rank
+                   FROM tracks_fts WHERE tracks_fts MATCH ?1
+             )
+             SELECT t.album, t.album_artist, MAX(t.year),
+                    (SELECT COUNT(*) FROM tracks c
+                      WHERE c.deleted = 0 AND c.album = t.album AND c.album_artist = t.album_artist),
+                    COALESCE(MIN(CASE WHEN t.art_id IS NOT NULL THEN t.id END), MIN(t.id)),
+                    MIN(f.rank) AS best
+               FROM tracks t JOIN hits f ON f.fts_id = t.id
+              WHERE t.deleted = 0 AND t.album <> ''
+              GROUP BY t.album, t.album_artist
+              ORDER BY best LIMIT ?2",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![q, limit], |r| {
+            Ok(AlbumHit {
+                album: r.get(0)?,
+                album_artist: r.get(1)?,
+                year: r.get(2)?,
+                track_count: r.get(3)?,
+                cover_id: r.get(4)?,
+            })
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    // --- search recents ---------------------------------------------------
+
+    /// What this listener searched for and opened, newest first.
+    pub fn recents(&self, user_id: i64, limit: i64) -> Vec<RecentRow> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT kind, key, title, subtitle, cover, url, at
+               FROM search_recents WHERE user_id = ?1 ORDER BY at DESC LIMIT ?2",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, limit], |r| {
+            Ok(RecentRow {
+                kind: r.get(0)?,
+                key: r.get(1)?,
+                title: r.get(2)?,
+                subtitle: r.get(3)?,
+                cover: r.get(4)?,
+                url: r.get(5)?,
+                at: r.get(6)?,
+            })
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    /// Records one opened result, bumping it to the top when it was already
+    /// there - and prunes the tail past the newest forty while the write is
+    /// here anyway, so the list can never grow without bound.
+    pub fn touch_recent(
+        &self,
+        user_id: i64,
+        kind: &str,
+        key: &str,
+        title: &str,
+        subtitle: &str,
+        cover: &str,
+        url: &str,
+    ) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "INSERT INTO search_recents (user_id, kind, key, title, subtitle, cover, url, at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(user_id, kind, key) DO UPDATE SET
+                 title = excluded.title, subtitle = excluded.subtitle,
+                 cover = excluded.cover, url = excluded.url, at = excluded.at",
+            params![user_id, kind, key, title, subtitle, cover, url, now_ms()],
+        )?;
+        conn.execute(
+            "DELETE FROM search_recents WHERE user_id = ?1 AND (kind, key) NOT IN (
+                 SELECT kind, key FROM search_recents WHERE user_id = ?1
+                  ORDER BY at DESC LIMIT 40)",
+            params![user_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn remove_recent(&self, user_id: i64, kind: &str, key: &str) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "DELETE FROM search_recents WHERE user_id = ?1 AND kind = ?2 AND key = ?3",
+            params![user_id, kind, key],
+        )?;
+        Ok(())
+    }
+
+    pub fn clear_recents(&self, user_id: i64) -> rusqlite::Result<()> {
+        self.lock()
+            .execute("DELETE FROM search_recents WHERE user_id = ?1", params![user_id])?;
+        Ok(())
+    }
+
+    // --- the listening log --------------------------------------------------
+
+    /// The tags a listen event snapshots, straight off the track row. No
+    /// deleted filter on purpose: the listen happened while the file was
+    /// here, and an eviction between play and report must not erase the
+    /// history - a tombstone still knows what it was called.
+    pub fn track_tags(&self, id: i64) -> Option<(String, String, String, String)> {
+        self.lock()
+            .query_row(
+                "SELECT title, artist, album, genre FROM tracks WHERE id = ?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .optional()
+            .ok()
+            .flatten()
+    }
+
+    /// Files one listen event, snapshot and all.
+    pub fn insert_listen(
+        &self,
+        user_id: i64,
+        track_id: i64,
+        tags: &(String, String, String, String),
+        started_at: i64,
+        ms_listened: i64,
+        duration_ms: Option<i64>,
+        completed: bool,
+        skipped: bool,
+        context: &str,
+    ) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO listen_events (user_id, track_id, title, artist, album, genre,
+                                        started_at, ms_listened, duration_ms, completed, skipped, context)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            params![
+                user_id,
+                track_id,
+                tags.0,
+                tags.1,
+                tags.2,
+                tags.3,
+                started_at,
+                ms_listened,
+                duration_ms,
+                completed as i64,
+                skipped as i64,
+                context
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// One row of totals over a listening window. A "play" throughout these
+    /// stats is Spotify's sense of one: the track finished, or it ran at
+    /// least thirty seconds - a three-second skip is an event but not a play.
+    pub fn listen_totals(&self, user_id: i64, since: i64) -> ListenTotals {
+        self.lock()
+            .query_row(
+                "SELECT COUNT(*),
+                        COALESCE(SUM(completed = 1 OR ms_listened >= 30000), 0),
+                        COALESCE(SUM(ms_listened), 0),
+                        COUNT(DISTINCT track_id),
+                        COUNT(DISTINCT artist),
+                        COALESCE(SUM(completed), 0),
+                        COALESCE(SUM(skipped), 0)
+                   FROM listen_events WHERE user_id = ?1 AND started_at >= ?2",
+                params![user_id, since],
+                |r| {
+                    Ok(ListenTotals {
+                        events: r.get(0)?,
+                        plays: r.get(1)?,
+                        ms: r.get(2)?,
+                        unique_tracks: r.get(3)?,
+                        unique_artists: r.get(4)?,
+                        completed: r.get(5)?,
+                        skipped: r.get(6)?,
+                    })
+                },
+            )
+            .unwrap_or_default()
+    }
+
+    /// Who got listened to most, by minutes: `(artist, plays, ms, cover)`.
+    /// The cover is a live track by that artist that actually carries art -
+    /// the client builds `/api/art/{id}` from it - or None once the artist
+    /// has left the library, which the snapshot columns exist to survive.
+    pub fn top_listen_artists(
+        &self,
+        user_id: i64,
+        since: i64,
+        limit: i64,
+    ) -> Vec<(String, i64, i64, Option<i64>)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT e.artist,
+                    COALESCE(SUM(e.completed = 1 OR e.ms_listened >= 30000), 0),
+                    COALESCE(SUM(e.ms_listened), 0) AS ms,
+                    (SELECT t.id FROM tracks t
+                      WHERE t.deleted = 0 AND t.art_id IS NOT NULL
+                        AND (t.artist = e.artist OR t.album_artist = e.artist)
+                      LIMIT 1)
+               FROM listen_events e
+              WHERE e.user_id = ?1 AND e.started_at >= ?2 AND e.artist <> ''
+              GROUP BY e.artist ORDER BY ms DESC LIMIT ?3",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, since, limit], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    /// The most-played tracks: `(track_id, title, artist, plays, ms)`. Rows
+    /// group on the id, so a retag mid-window is still one track; MAX just
+    /// picks one of its snapshots to name it by.
+    pub fn top_listen_tracks(
+        &self,
+        user_id: i64,
+        since: i64,
+        limit: i64,
+    ) -> Vec<(i64, String, String, i64, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT e.track_id, MAX(e.title), MAX(e.artist),
+                    COALESCE(SUM(e.completed = 1 OR e.ms_listened >= 30000), 0) AS plays,
+                    COALESCE(SUM(e.ms_listened), 0) AS ms
+               FROM listen_events e
+              WHERE e.user_id = ?1 AND e.started_at >= ?2
+              GROUP BY e.track_id ORDER BY plays DESC, ms DESC LIMIT ?3",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, since, limit], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    /// The most-listened albums, by minutes: `(album, artist, plays, ms)`.
+    /// The artist leg is whichever artist appears most within that album's
+    /// events, because compilations disagree with themselves about who the
+    /// album belongs to.
+    pub fn top_listen_albums(
+        &self,
+        user_id: i64,
+        since: i64,
+        limit: i64,
+    ) -> Vec<(String, String, i64, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT e.album,
+                    COALESCE((SELECT e2.artist FROM listen_events e2
+                       WHERE e2.user_id = ?1 AND e2.started_at >= ?2 AND e2.album = e.album
+                       GROUP BY e2.artist ORDER BY COUNT(*) DESC LIMIT 1), ''),
+                    COALESCE(SUM(e.completed = 1 OR e.ms_listened >= 30000), 0),
+                    COALESCE(SUM(e.ms_listened), 0) AS ms
+               FROM listen_events e
+              WHERE e.user_id = ?1 AND e.started_at >= ?2 AND e.album <> ''
+              GROUP BY e.album ORDER BY ms DESC LIMIT ?3",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, since, limit], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    /// Milliseconds listened per raw genre TAG. The tags are comma-joined
+    /// strings as they came off the files; splitting them into genres is the
+    /// caller's business (listens.rs), not SQL's.
+    pub fn listen_genre_ms(&self, user_id: i64, since: i64) -> Vec<(String, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT genre, COALESCE(SUM(ms_listened), 0)
+               FROM listen_events
+              WHERE user_id = ?1 AND started_at >= ?2 AND genre <> ''
+              GROUP BY genre",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, since], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Milliseconds listened per local hour of day, an event counted whole
+    /// against the hour it STARTED in. `tz_min` is the client's
+    /// getTimezoneOffset(): the minutes to subtract from UTC to reach the
+    /// listener's wall clock.
+    pub fn listen_clock(&self, user_id: i64, since: i64, tz_min: i64) -> [i64; 24] {
+        let mut clock = [0i64; 24];
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT ((started_at - ?3 * 60000) / 3600000) % 24, COALESCE(SUM(ms_listened), 0)
+               FROM listen_events WHERE user_id = ?1 AND started_at >= ?2
+              GROUP BY 1",
+        ) else {
+            return clock;
+        };
+        let rows = stmt
+            .query_map(params![user_id, since, tz_min], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+            })
+            .map(|rows| rows.filter_map(Result::ok).collect::<Vec<_>>())
+            .unwrap_or_default();
+        for (hour, ms) in rows {
+            if (0..24).contains(&hour) {
+                clock[hour as usize] = ms;
+            }
+        }
+        clock
+    }
+
+    /// Milliseconds listened per local day, as `(days since epoch, ms)`,
+    /// oldest first. SQL only buckets; the caller densifies the series and
+    /// turns day numbers into dates.
+    pub fn listen_day_ms(&self, user_id: i64, since: i64, tz_min: i64) -> Vec<(i64, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT (started_at - ?3 * 60000) / 86400000, COALESCE(SUM(ms_listened), 0)
+               FROM listen_events WHERE user_id = ?1 AND started_at >= ?2
+              GROUP BY 1 ORDER BY 1",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, since, tz_min], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Every distinct local day carrying at least one COMPLETED listen,
+    /// newest first, as days since epoch - what the streak is counted over.
+    pub fn completed_listen_days(&self, user_id: i64, tz_min: i64) -> Vec<i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT DISTINCT (started_at - ?2 * 60000) / 86400000
+               FROM listen_events WHERE user_id = ?1 AND completed = 1
+              ORDER BY 1 DESC",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, tz_min], |r| r.get(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// How many events in the window belong to tracks this user had never
+    /// played before the window opened - the "new to you" count.
+    pub fn first_listen_count(&self, user_id: i64, since: i64) -> i64 {
+        self.lock()
+            .query_row(
+                "SELECT COUNT(*) FROM listen_events e
+                  WHERE e.user_id = ?1 AND e.started_at >= ?2
+                    AND NOT EXISTS (SELECT 1 FROM listen_events p
+                                     WHERE p.user_id = ?1 AND p.track_id = e.track_id
+                                       AND p.started_at < ?2)",
+                params![user_id, since],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
+    }
+
+    /// The average character of what this listener actually played, weighted
+    /// by plays: `(tracks measured, energy, brightness, bpm)`. Only tracks
+    /// the analyser has really measured count - `analyzed_at > 0` and not the
+    /// gave-up sentinel (see features.rs), whose zeros would read as a taste
+    /// for silence. A track listened to but never played to the thirty-second
+    /// bar still weighs one, so the averages stay defined. The bpm leg
+    /// averages whatever the shared column holds - the curator's measurement
+    /// or the analyser's - over the tracks that have one.
+    pub fn listen_sound(&self, user_id: i64, since: i64) -> (i64, f64, f64, Option<f64>) {
+        self.lock()
+            .query_row(
+                "WITH listened AS (
+                     SELECT track_id,
+                            MAX(COALESCE(SUM(completed = 1 OR ms_listened >= 30000), 0), 1) AS w
+                       FROM listen_events WHERE user_id = ?1 AND started_at >= ?2
+                      GROUP BY track_id
+                 )
+                 SELECT COUNT(*),
+                        COALESCE(SUM(f.energy * l.w) / SUM(l.w), 0),
+                        COALESCE(SUM(f.brightness * l.w) / SUM(l.w), 0),
+                        SUM(CASE WHEN f.bpm IS NOT NULL THEN f.bpm * l.w END) * 1.0 /
+                            SUM(CASE WHEN f.bpm IS NOT NULL THEN l.w END)
+                   FROM listened l JOIN track_features f ON f.track_id = l.track_id
+                  WHERE f.analyzed_at > 0 AND f.energy IS NOT NULL AND f.loudness > -69.5",
+                params![user_id, since],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap_or((0, 0.0, 0.0, None))
+    }
+
+    // --- audio character ----------------------------------------------------
+
+    /// The next live track the audio analyser has not measured, newest first
+    /// so a fresh import gets its character while anyone still cares:
+    /// `(id, rel_path, duration_ms, already has a bpm)`. The predicate is the
+    /// analyser's own stamp, not `checked_at` - that one belongs to the
+    /// curator's enricher, and the two must not fight over whose turn it is.
+    pub fn next_unanalyzed_track(&self) -> Option<(i64, String, Option<i64>, bool)> {
+        self.lock()
+            .query_row(
+                "SELECT t.id, t.rel_path, t.duration_ms, f.bpm IS NOT NULL
+                   FROM tracks t LEFT JOIN track_features f ON f.track_id = t.id
+                  WHERE t.deleted = 0 AND COALESCE(f.analyzed_at, 0) = 0
+                  ORDER BY t.added_at DESC LIMIT 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .optional()
+            .ok()
+            .flatten()
+    }
+
+    /// Records what the analyser measured, without disturbing the curator's
+    /// half of the row: an existing tempo always wins over the analyser's
+    /// (and keeps its bpm_source), a vector is never touched, and a fresh row
+    /// leaves checked_at at 0 so the enricher still gets its turn.
+    pub fn save_audio_features(
+        &self,
+        track_id: i64,
+        bpm: Option<f64>,
+        energy: f64,
+        brightness: f64,
+        loudness: f64,
+    ) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO track_features (track_id, bpm, bpm_source, energy, brightness, loudness, analyzed_at)
+             VALUES (?1, ?2, CASE WHEN ?2 IS NULL THEN '' ELSE 'dsp' END, ?3, ?4, ?5, ?6)
+             ON CONFLICT(track_id) DO UPDATE SET
+               bpm         = COALESCE(track_features.bpm, excluded.bpm),
+               bpm_source  = CASE WHEN track_features.bpm IS NULL AND excluded.bpm IS NOT NULL
+                                  THEN 'dsp' ELSE track_features.bpm_source END,
+               energy      = excluded.energy,
+               brightness  = excluded.brightness,
+               loudness    = excluded.loudness,
+               analyzed_at = excluded.analyzed_at",
+            params![track_id, bpm, energy, brightness, loudness, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// How far the audio analyser has got: (live tracks measured, live
+    /// tracks). The gave-up sentinel counts as measured here - the number is
+    /// progress toward done, and a track that will never analyse is done.
+    pub fn audio_feature_counts(&self) -> (i64, i64) {
+        let conn = self.lock();
+        let one = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap_or(0) };
+        (
+            one("SELECT COUNT(*) FROM track_features f JOIN tracks t ON t.id = f.track_id AND t.deleted = 0 WHERE f.analyzed_at > 0"),
+            one("SELECT COUNT(*) FROM tracks WHERE deleted = 0"),
+        )
+    }
+
+    // --- the collector ------------------------------------------------------
+
+    /// The listener's dials, defaults standing in for an absent row.
+    pub fn collector_state(&self, user_id: i64) -> (bool, f64) {
+        self.lock()
+            .query_row(
+                "SELECT enabled, exploration FROM collector_state WHERE user_id = ?1",
+                params![user_id],
+                |r| Ok((r.get::<_, i64>(0)? != 0, r.get(1)?)),
+            )
+            .unwrap_or((true, 0.5))
+    }
+
+    pub fn set_collector_enabled(&self, user_id: i64, enabled: bool) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO collector_state (user_id, enabled) VALUES (?1, ?2)
+             ON CONFLICT(user_id) DO UPDATE SET enabled = excluded.enabled",
+            params![user_id, enabled as i64],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_collector_exploration(&self, user_id: i64, exploration: f64) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO collector_state (user_id, exploration, tuned_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(user_id) DO UPDATE SET exploration = excluded.exploration, tuned_at = excluded.tuned_at",
+            params![user_id, exploration, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// What the budget meters: bytes of collector music nobody has adopted.
+    /// Global, not per-user - it is one disk.
+    pub fn collector_ledger_bytes(&self) -> i64 {
+        self.lock()
+            .query_row(
+                "SELECT COALESCE(SUM(size_bytes), 0) FROM tracks
+                 WHERE deleted = 0 AND curator_user_id IS NOT NULL AND COALESCE(curator_promoted, 0) = 0",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
+    }
+
+    /// Remembers a pull the moment it is chosen. Err on a duplicate (user,
+    /// ext_id) is the dedupe working, not a failure.
+    pub fn record_pull(
+        &self,
+        user_id: i64,
+        ext_id: &str,
+        kind: &str,
+        title: &str,
+        artist: &str,
+        url: &str,
+        reason: &str,
+        score: f64,
+        job_id: &str,
+    ) -> rusqlite::Result<i64> {
+        let conn = self.lock();
+        conn.execute(
+            "INSERT INTO curator_pulls (user_id, ext_id, kind, title, artist, url, reason, score, job_id, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![user_id, ext_id, kind, title, artist, url, reason, score, job_id, now_ms()],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Everything ever pulled for this user, for the "would buying this be
+    /// buying it twice" check - failed pulls included, deliberately: a link
+    /// that failed once fails again, and retrying forever is a loop.
+    pub fn pulled_ext_ids(&self, user_id: i64) -> std::collections::HashSet<String> {
+        let conn = self.lock();
+        let mut stmt = match conn.prepare("SELECT ext_id FROM curator_pulls WHERE user_id = ?1") {
+            Ok(s) => s,
+            Err(_) => return Default::default(),
+        };
+        stmt.query_map(params![user_id], |r| r.get::<_, String>(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Pulls whose import is still out - what the landing check walks.
+    pub fn open_pulls(&self) -> Vec<(i64, i64, String)> {
+        let conn = self.lock();
+        let mut stmt = match conn
+            .prepare("SELECT id, user_id, job_id FROM curator_pulls WHERE state = 'queued' AND job_id != ''")
+        {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// A pull's import landed: stamp the tracks it became as this listener's
+    /// auditions, remember which they were, and settle the pull's real size.
+    /// Only rows nobody already owns take the stamp - an import that resolved
+    /// to a track a person had added stays theirs.
+    pub fn land_pull(&self, pull_id: i64, user_id: i64, track_ids: &[i64]) -> rusqlite::Result<()> {
+        let rev = self.current_rev() + 1;
+        let conn = self.lock();
+        let mut bytes = 0i64;
+        for id in track_ids {
+            let changed = conn.execute(
+                "UPDATE tracks SET curator_user_id = ?1, curator_promoted = 0, rev = ?2
+                 WHERE id = ?3 AND curator_user_id IS NULL AND added_at > ?4",
+                params![user_id, rev, id, now_ms() - 60 * 60 * 1000],
+            )?;
+            if changed > 0 {
+                conn.execute(
+                    "INSERT OR IGNORE INTO curator_pull_tracks (pull_id, track_id) VALUES (?1, ?2)",
+                    params![pull_id, id],
+                )?;
+                bytes += conn
+                    .query_row("SELECT size_bytes FROM tracks WHERE id = ?1", params![id], |r| r.get(0))
+                    .unwrap_or(0);
+            }
+        }
+        conn.execute(
+            "UPDATE curator_pulls SET state = 'landed', bytes = ?1 WHERE id = ?2",
+            params![bytes, pull_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn fail_pull(&self, pull_id: i64) -> rusqlite::Result<()> {
+        self.lock()
+            .execute("UPDATE curator_pulls SET state = 'failed' WHERE id = ?1", params![pull_id])?;
+        Ok(())
+    }
+
+    /// Adoption: a completed listen or a heart on an auditioning track moves it
+    /// into the library proper, whoever did the listening - wanted is wanted.
+    /// The rev bump is what carries the change to every synced client.
+    pub fn promote_curator_track(&self, track_id: i64) -> bool {
+        let rev = self.current_rev() + 1;
+        let conn = self.lock();
+        let changed = conn
+            .execute(
+                "UPDATE tracks SET curator_promoted = 1, rev = ?1
+                 WHERE id = ?2 AND curator_user_id IS NOT NULL AND COALESCE(curator_promoted, 0) = 0",
+                params![rev, track_id],
+            )
+            .unwrap_or(0);
+        if changed > 0 {
+            // A pull all of whose tracks are adopted reads as promoted.
+            let _ = conn.execute(
+                "UPDATE curator_pulls SET state = 'promoted' WHERE state = 'landed' AND id IN (
+                   SELECT pt.pull_id FROM curator_pull_tracks pt WHERE pt.track_id = ?1
+                 ) AND NOT EXISTS (
+                   SELECT 1 FROM curator_pull_tracks pt2
+                   JOIN tracks t ON t.id = pt2.track_id
+                   WHERE pt2.pull_id IN (SELECT pull_id FROM curator_pull_tracks WHERE track_id = ?1)
+                     AND COALESCE(t.curator_promoted, 0) = 0 AND t.deleted = 0
+                 )",
+                params![track_id],
+            );
+        }
+        changed > 0
+    }
+
+    /// The recent-pulls list the settings pane shows, newest first.
+    pub fn recent_pulls(&self, user_id: i64, limit: i64) -> Vec<(String, String, String, String, i64, String)> {
+        let conn = self.lock();
+        let mut stmt = match conn.prepare(
+            "SELECT title, artist, kind, state, created_at, reason
+             FROM curator_pulls WHERE user_id = ?1 ORDER BY created_at DESC LIMIT ?2",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        stmt.query_map(params![user_id, limit], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    /// What arrived lately: live, non-quarantined rows, newest first - the
+    /// Fresh-finds list is this, in arrival order.
+    pub fn recent_track_ids(&self, since_ms: i64, limit: i64) -> Vec<i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT id FROM tracks
+             WHERE deleted = 0 AND added_at >= ?1
+               AND (curator_user_id IS NULL OR COALESCE(curator_promoted, 0) = 1)
+             ORDER BY added_at DESC LIMIT ?2",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![since_ms, limit], |r| r.get(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// A queued pull whose job the queue no longer remembers, once it is old
+    /// enough that no answer is coming.
+    pub fn fail_pull_if_stale(&self, pull_id: i64, created_before_ms: i64) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "UPDATE curator_pulls SET state = 'failed'
+             WHERE id = ?1 AND state = 'queued' AND created_at < ?2",
+            params![pull_id, created_before_ms],
+        )?;
+        Ok(())
+    }
+
+    pub fn pull_id_for(&self, user_id: i64, ext_id: &str) -> rusqlite::Result<i64> {
+        self.lock().query_row(
+            "SELECT id FROM curator_pulls WHERE user_id = ?1 AND ext_id = ?2",
+            params![user_id, ext_id],
+            |r| r.get(0),
+        )
+    }
+
+    /// Whether a tuning pass is due - true when the dial has not moved since
+    /// `before_ms`. The set itself stamps tuned_at, closing the loop.
+    pub fn collector_tune_due(&self, user_id: i64, before_ms: i64) -> bool {
+        self.lock()
+            .query_row(
+                "SELECT tuned_at FROM collector_state WHERE user_id = ?1",
+                params![user_id],
+                |r| r.get::<_, i64>(0),
+            )
+            .map(|t| t < before_ms)
+            .unwrap_or(true)
+    }
+
+    /// How the exploration dial reads its own scoreboard: of the pulls that
+    /// landed at least this long ago, how many were adopted?
+    pub fn pull_adoption(&self, user_id: i64, landed_before_ms: i64) -> (i64, i64) {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT COALESCE(SUM(state = 'promoted'), 0), COUNT(*) FROM curator_pulls
+             WHERE user_id = ?1 AND state IN ('landed', 'promoted') AND created_at < ?2",
+            params![user_id, landed_before_ms],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap_or((0, 0))
+    }
 }
 
 /// A track as the curator reads it, for looking up and for describing.
@@ -2616,6 +3728,14 @@ pub struct TrackFeatures {
     pub lyric_vec: Option<Vec<f32>>,
     pub genre: String,
     pub artist: String,
+    /// The analyser's audio character (features.rs), None until measured.
+    pub energy: Option<f64>,
+    pub brightness: Option<f64>,
+    /// The tag's release year, for the decade stations.
+    pub year: Option<i64>,
+    /// Collector quarantine: an unadopted audition must not seed anyone's
+    /// mixes - it is not part of the library yet.
+    pub quarantined: bool,
 }
 
 /// One playlist the curator built.
@@ -2625,6 +3745,45 @@ pub struct CuratedList {
     pub blurb: String,
     pub track_ids: Vec<i64>,
     pub built_at: i64,
+}
+
+/// One album a library search surfaced, aggregated from the tracks that
+/// matched inside it.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AlbumHit {
+    pub album: String,
+    #[serde(rename = "albumArtist")]
+    pub album_artist: String,
+    pub year: Option<i64>,
+    #[serde(rename = "trackCount")]
+    pub track_count: i64,
+    /// One member track's id - what the client builds `/api/art/{id}` from.
+    #[serde(rename = "coverId")]
+    pub cover_id: i64,
+}
+
+/// The one-row totals behind a stats summary window.
+#[derive(Default)]
+pub struct ListenTotals {
+    pub events: i64,
+    pub plays: i64,
+    pub ms: i64,
+    pub unique_tracks: i64,
+    pub unique_artists: i64,
+    pub completed: i64,
+    pub skipped: i64,
+}
+
+/// One remembered search result, as the API hands it back.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RecentRow {
+    pub kind: String,
+    pub key: String,
+    pub title: String,
+    pub subtitle: String,
+    pub cover: String,
+    pub url: String,
+    pub at: i64,
 }
 
 /// One candidate from the wider catalogue.

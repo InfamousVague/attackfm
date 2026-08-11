@@ -1,12 +1,18 @@
-//! The DJ, on the client: set a vibe (or don't), and the server hands back a
-//! continuous set of the listener's OWN tracks with a spoken line opening each
-//! run. This turns that into playback - the whole set becomes the queue, and the
-//! opening line is shown while it spins.
+//! The DJ, on the client: one button, no brief. The server hands back a
+//! continuous set drawn from what the listener actually plays, with a spoken
+//! line opening each run; this turns that into playback - the whole set becomes
+//! the queue, and the opening line is shown while it spins.
+//!
+//! There was a vibe field here. It asked the listener to have an idea before
+//! they could hear anything, which is the opposite of what a DJ button is for:
+//! the point is to press it and be played to. The server's own taste model is a
+//! better answer than most people's first typed word, and it already mixes the
+//! less-played corners of a library in rather than looping the same favourites.
 //!
 //! Draws on the server library and the listener's play history, so it only
 //! offers itself when signed into a server with something to play.
 
-import { Button, Input, Spinner, Text } from '@glacier/react';
+import { IconButton, Spinner, Text } from '@glacier/react';
 import { Radio } from '@glacier/icons';
 import { useState } from 'react';
 import { useServerSession } from './serverSession.tsx';
@@ -17,7 +23,6 @@ import type { Track } from './tauri.ts';
 export function DjLauncher({ onPlay }: { onPlay: (track: Track, queue: Track[]) => void }) {
   const { session } = useServerSession();
   const { tracks } = useLibrary();
-  const [seed, setSeed] = useState('');
   const [busy, setBusy] = useState(false);
   const [line, setLine] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +35,7 @@ export function DjLauncher({ onPlay }: { onPlay: (track: Track, queue: Track[]) 
     setBusy(true);
     setError(null);
     try {
-      const set = await fetchDj(session, seed);
+      const set = await fetchDj(session);
       // The set comes back as track ids; resolve them against the library and
       // flatten every run into one queue, in the order the DJ chose.
       const byId = new Map<number, Track>();
@@ -61,22 +66,16 @@ export function DjLauncher({ onPlay }: { onPlay: (track: Track, queue: Track[]) 
 
   return (
     <div className="djLauncher">
-      <div className="djLauncher__row">
-        <Input
-          className="djLauncher__field"
-          value={seed}
-          onChange={(e) => setSeed(e.currentTarget.value)}
-          placeholder="Start the DJ — set a vibe, or just hit play"
-          aria-label="DJ vibe"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') void start();
-          }}
-        />
-        <Button variant="solid" size="sm" onClick={() => void start()} disabled={busy}>
-          {busy ? <Spinner size="sm" aria-label="" /> : <Radio size={15} />}
-          <span>{busy ? 'Cueing…' : 'DJ'}</span>
-        </Button>
-      </div>
+      <IconButton
+        variant="ghost"
+        size="sm"
+        onClick={() => void start()}
+        disabled={busy}
+        aria-label={busy ? 'Cueing the DJ' : 'Start the DJ'}
+        title={busy ? 'Cueing…' : 'Start the DJ'}
+      >
+        {busy ? <Spinner size="sm" aria-label="" /> : <Radio size={18} />}
+      </IconButton>
       {line && (
         <Text tone="muted" size="sm" className="djLauncher__line">
           🎙 {line}

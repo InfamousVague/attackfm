@@ -29,6 +29,9 @@ rand = "0.8"
 hmac = "0.12"
 sha2 = "0.10"
 base64 = "0.22"
+# Signs the ES256 JWT that authenticates this server to APNs, straight from
+# the .p8 Apple issues. No other auth path here uses it.
+jsonwebtoken = "9"
 # Tag reading for the scanner: FLAC/ALAC/MP3/M4A/OGG/Opus/WAV/AIFF in one crate,
 # including embedded cover art and the stream properties the lossless badge needs.
 lofty = "0.22"
@@ -39,7 +42,8 @@ rustfft = "6"
 futures-util = "0.3"
 # The import queue's Spotify embed metadata fetch. rustls, so the Linux
 # cross-compile stays free of an OpenSSL sysroot.
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+# http2: APNs speaks nothing else.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "http2"] }
 
 [profile.release]
 lto = true

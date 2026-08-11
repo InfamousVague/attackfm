@@ -64,8 +64,8 @@ export function titleKey(title: string): string {
 
 /** Whether two artist strings name the same act, allowing one to carry extra
  *  billed names ("Drake" vs "Drake, Future"). Whole words only, so "Q" never
- *  matches "Queen". */
-function sameArtist(a: string, b: string): boolean {
+ *  matches "Queen". Both sides must already be through `fold`. */
+export function sameArtist(a: string, b: string): boolean {
   if (!a || !b) return false;
   return a === b || ` ${a} `.includes(` ${b} `) || ` ${b} `.includes(` ${a} `);
 }

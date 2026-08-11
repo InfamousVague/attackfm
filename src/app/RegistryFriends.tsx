@@ -312,8 +312,12 @@ function FriendsGraph({ token, me, onSignOut }: { token: string; me: string; onS
           {inviteCode && (
             <p className="registryFriends__inviteCode">
               Code to read out or type in:{' '}
+              {/* Split down the middle rather than at a fixed 4, so a code of
+                  any length reads as two even halves instead of a short group
+                  and a long tail. */}
               <strong>
-                {inviteCode.slice(0, 4)} {inviteCode.slice(4)}
+                {inviteCode.slice(0, Math.ceil(inviteCode.length / 2))}{' '}
+                {inviteCode.slice(Math.ceil(inviteCode.length / 2))}
               </strong>
             </p>
           )}

@@ -7,7 +7,7 @@
 //! lead download service, fills the list out and stands in whole when Spotify's
 //! anonymous token is unavailable (they tighten it from time to time). Results
 //! are deduped by kind+title+artist and capped, so the client gets one clean,
-//! importable list with tracks ahead of artists.
+//! importable list with tracks ahead of albums, and albums ahead of artists.
 
 use crate::auth;
 use crate::AppState;
@@ -26,17 +26,18 @@ pub struct SearchQuery {
     pub q: String,
 }
 
-/// One external result: a track to import, or an artist to search deeper.
+/// One external result: a track to import, an album holding many, or an
+/// artist to search deeper.
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchResult {
     /// Stable id for React keys: the source and its native id.
     pub id: String,
-    /// "track" or "artist".
+    /// "track", "album" or "artist".
     pub kind: String,
-    /// Track title, or the artist's name.
+    /// Track or album title, or the artist's name.
     pub title: String,
-    /// The artist under a track; "Artist" under an artist row.
+    /// The artist under a track or album; "Artist" under an artist row.
     pub subtitle: String,
     pub cover: Option<String>,
     /// The link handed to `POST /api/imports`. Present for tracks; artist rows
@@ -44,6 +45,10 @@ pub struct SearchResult {
     pub url: String,
     /// "spotify" or "deezer".
     pub source: String,
+    /// Whether `url` is something the importer can take as primary input. An
+    /// album row from Deezer is worth showing and cannot be added; the client
+    /// reads this to decide whether its Add control is live.
+    pub importable: bool,
 }
 
 const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
@@ -112,7 +117,7 @@ async fn spotify_search(q: &str) -> Vec<SearchResult> {
     let resp = client()
         .get("https://api.spotify.com/v1/search")
         .bearer_auth(&token)
-        .query(&[("type", "track,artist"), ("limit", "8"), ("q", q)])
+        .query(&[("type", "track,artist,album"), ("limit", "8"), ("q", q)])
         .send()
         .await;
     let Ok(resp) = resp else { return Vec::new() };
@@ -140,10 +145,39 @@ async fn spotify_search(q: &str) -> Vec<SearchResult> {
             }
             out.push(SearchResult {
                 id: format!("spotify:track:{id}"),
+                importable: importable(&url),
                 kind: "track".into(),
                 title,
                 subtitle: artist,
                 cover: it.pointer("/album/images/0/url").and_then(|x| x.as_str()).map(String::from),
+                url,
+                source: "spotify".into(),
+            });
+        }
+    }
+    if let Some(items) = v.pointer("/albums/items").and_then(|x| x.as_array()) {
+        for it in items {
+            let title = it.get("name").and_then(|x| x.as_str()).unwrap_or_default().to_string();
+            let url = it
+                .pointer("/external_urls/spotify")
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string();
+            if title.is_empty() || url.is_empty() {
+                continue;
+            }
+            let id = it.get("id").and_then(|x| x.as_str()).unwrap_or_default();
+            out.push(SearchResult {
+                id: format!("spotify:album:{id}"),
+                importable: importable(&url),
+                kind: "album".into(),
+                title,
+                subtitle: it
+                    .pointer("/artists/0/name")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                cover: it.pointer("/images/0/url").and_then(|x| x.as_str()).map(String::from),
                 url,
                 source: "spotify".into(),
             });
@@ -158,6 +192,7 @@ async fn spotify_search(q: &str) -> Vec<SearchResult> {
             let id = it.get("id").and_then(|x| x.as_str()).unwrap_or_default();
             out.push(SearchResult {
                 id: format!("spotify:artist:{id}"),
+                importable: false,
                 kind: "artist".into(),
                 title: name,
                 subtitle: "Artist".into(),
@@ -194,6 +229,7 @@ async fn deezer_search(q: &str) -> Vec<SearchResult> {
                     }
                     out.push(SearchResult {
                         id: format!("deezer:track:{id}"),
+                        importable: importable(&url),
                         kind: "track".into(),
                         title,
                         subtitle: it
@@ -234,6 +270,7 @@ async fn deezer_search(q: &str) -> Vec<SearchResult> {
                     let id = it.get("id").and_then(|x| x.as_u64()).unwrap_or_default();
                     out.push(SearchResult {
                         id: format!("deezer:artist:{id}"),
+                        importable: false,
                         kind: "artist".into(),
                         title: name,
                         subtitle: "Artist".into(),
@@ -245,7 +282,47 @@ async fn deezer_search(q: &str) -> Vec<SearchResult> {
             }
         }
     }
+
+    if let Ok(resp) = client()
+        .get("https://api.deezer.com/search/album")
+        .query(&[("q", q), ("limit", "6")])
+        .send()
+        .await
+    {
+        if let Ok(v) = resp.json::<Value>().await {
+            if let Some(items) = v.get("data").and_then(|x| x.as_array()) {
+                for it in items {
+                    let title = it.get("title").and_then(|x| x.as_str()).unwrap_or_default().to_string();
+                    let url = it.get("link").and_then(|x| x.as_str()).unwrap_or_default().to_string();
+                    if title.is_empty() || url.is_empty() {
+                        continue;
+                    }
+                    let id = it.get("id").and_then(|x| x.as_u64()).unwrap_or_default();
+                    out.push(SearchResult {
+                        id: format!("deezer:album:{id}"),
+                        importable: importable(&url),
+                        kind: "album".into(),
+                        title,
+                        subtitle: it
+                            .pointer("/artist/name")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or_default()
+                            .to_string(),
+                        cover: it.get("cover_medium").and_then(|x| x.as_str()).map(String::from),
+                        url,
+                        source: "deezer".into(),
+                    });
+                }
+            }
+        }
+    }
     out
+}
+
+/// Whether the importer can take this link as primary input. Spotify only:
+/// everything else is a source it may reach for internally, never an input.
+fn importable(url: &str) -> bool {
+    url.contains("open.spotify.com/") || url.starts_with("spotify:")
 }
 
 // --- Handler -----------------------------------------------------------------
@@ -256,7 +333,7 @@ async fn deezer_search(q: &str) -> Vec<SearchResult> {
 /// Spotify from a box where the web player's token endpoint (`spotify_search`
 /// below) is blocked. Derived from the spotiflac shim -
 /// `<home>/.local/bin/spotiflac` -> `<home>/.local/pipx/venvs/spotiflac/bin/python3`.
-fn spotiflac_python() -> Option<std::path::PathBuf> {
+pub(crate) fn spotiflac_python() -> Option<std::path::PathBuf> {
     if let Ok(p) = std::env::var("AFM_SPOTIFLAC_PYTHON") {
         let pb = std::path::PathBuf::from(p);
         if pb.exists() {
@@ -277,21 +354,27 @@ fn spotiflac_python() -> Option<std::path::PathBuf> {
 }
 
 /// The one-shot searcher: SpotiFLAC's Spotify client, invoked in its own venv,
-/// printing the tracks as JSON on stdout. Kept tiny and defensive - any import
-/// or network failure prints an empty list and exits clean, so the Rust side
-/// never has to tell "broke" from "found nothing".
+/// printing the tracks and albums as JSON on stdout. Kept tiny and defensive -
+/// any import or network failure prints an empty list and exits clean, so the
+/// Rust side never has to tell "broke" from "found nothing". Newer SpotiFLACs
+/// only ship the synchronous `search`, so that stands in when `search_async`
+/// is not there; both return albums alongside tracks, and a version that
+/// returns tracks alone simply yields no album rows.
 const SPOTIFLAC_SEARCH_PY: &str = r#"
 import sys, asyncio, json
 try:
     from SpotiFLAC.providers.spotify_metadata import SpotifyMetadataClient
 except Exception:
-    print(json.dumps({"tracks": []})); sys.exit(0)
+    print(json.dumps({"tracks": [], "albums": []})); sys.exit(0)
 q = sys.argv[1] if len(sys.argv) > 1 else ""
 m = SpotifyMetadataClient()
 async def go():
-    out = {"tracks": []}
+    out = {"tracks": [], "albums": []}
     try:
-        r = await m.search_async(q, limit=8)
+        if hasattr(m, "search_async"):
+            r = await m.search_async(q, limit=8)
+        else:
+            r = await asyncio.to_thread(m.search, q, 8)
     except Exception:
         print(json.dumps(out)); return
     for t in (r.get("tracks") or [])[:8]:
@@ -307,6 +390,20 @@ async def go():
             "cover": d.get("cover") or d.get("cover_url"),
             "url": url,
         })
+    for a in (r.get("albums") or [])[:6]:
+        d = a if isinstance(a, dict) else getattr(a, "__dict__", {})
+        url = d.get("external_url") or ""
+        aid = d.get("id") or ""
+        title = d.get("name") or d.get("title") or ""
+        if not url or not aid or not title:
+            continue
+        out["albums"].append({
+            "id": aid,
+            "title": title,
+            "artist": str(d.get("artists") or ""),
+            "cover": d.get("cover_url") or d.get("cover"),
+            "url": url,
+        })
     print(json.dumps(out))
 asyncio.run(go())
 "#;
@@ -316,7 +413,7 @@ asyncio.run(go())
 /// download - unlike the Deezer links the fallback carries, which SpotiFLAC
 /// refuses as input. Empty on any failure (no venv, a timeout, a Spotify
 /// hiccup), leaving the Deezer fill to stand in exactly as before.
-async fn spotiflac_search(state: &Arc<AppState>, q: &str) -> Vec<SearchResult> {
+pub(crate) async fn spotiflac_search(state: &Arc<AppState>, q: &str) -> Vec<SearchResult> {
     let Some(py) = spotiflac_python() else {
         return Vec::new();
     };
@@ -347,10 +444,29 @@ async fn spotiflac_search(state: &Arc<AppState>, q: &str) -> Vec<SearchResult> {
         }
         out.push(SearchResult {
             id: format!("spotify:track:{id}"),
+            importable: importable(url),
             kind: "track".into(),
             title: title.to_string(),
             subtitle: t.get("artist").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
             cover: t.get("cover").and_then(|x| x.as_str()).map(String::from),
+            url: url.to_string(),
+            source: "spotify".into(),
+        });
+    }
+    for a in parsed.get("albums").and_then(|a| a.as_array()).into_iter().flatten() {
+        let id = a.get("id").and_then(|x| x.as_str()).unwrap_or_default();
+        let url = a.get("url").and_then(|x| x.as_str()).unwrap_or_default();
+        let title = a.get("title").and_then(|x| x.as_str()).unwrap_or_default();
+        if id.is_empty() || url.is_empty() || title.is_empty() {
+            continue;
+        }
+        out.push(SearchResult {
+            id: format!("spotify:album:{id}"),
+            importable: importable(url),
+            kind: "album".into(),
+            title: title.to_string(),
+            subtitle: a.get("artist").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
+            cover: a.get("cover").and_then(|x| x.as_str()).map(String::from),
             url: url.to_string(),
             source: "spotify".into(),
         });
@@ -375,16 +491,44 @@ pub async fn search(
 
     let mut results: Vec<SearchResult> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
+    let mut albums = 0;
     for r in spotify.into_iter().chain(deezer.into_iter()) {
+        // A row with an Add button must carry a link the importer can actually
+        // take. SpotiFLAC refuses a deezer.com track URL as PRIMARY input - it
+        // uses Deezer as a download source, not as something you hand it - so a
+        // Deezer track row was an Add that always failed, latterly with
+        // Deezer's own 429 on top of the refusal. An offer that cannot be
+        // honoured is worse than no offer.
+        //
+        // ARTIST rows are kept whatever their source: they navigate rather than
+        // import, and Deezer is what makes artist browsing work at all.
+        if r.kind == "track" && !importable(&r.url) {
+            continue;
+        }
+        // Album rows arrive from both sources; ten is plenty of shelf, and
+        // capping them here rather than at the truncate below keeps a wide
+        // album catalogue from squeezing the artists out entirely.
+        if r.kind == "album" && albums >= 10 {
+            continue;
+        }
         let key = format!("{}|{}|{}", r.kind, r.title.to_lowercase(), r.subtitle.to_lowercase());
         if seen.insert(key) {
+            if r.kind == "album" {
+                albums += 1;
+            }
             results.push(r);
         }
     }
-    // Tracks (importable in a tap) ahead of artists; the sort is stable, so the
-    // Spotify-then-Deezer order within each kind is kept.
-    results.sort_by_key(|r| u8::from(r.kind != "track"));
-    results.truncate(30);
+    // Tracks (importable in a tap) ahead of albums, and albums ahead of
+    // artists; the sort is stable, so the Spotify-then-Deezer order within
+    // each kind is kept. The overall cap grew from 30 alongside the new album
+    // kind, so albums do not arrive at the artists' expense.
+    results.sort_by_key(|r| match r.kind.as_str() {
+        "track" => 0u8,
+        "album" => 1,
+        _ => 2,
+    });
+    results.truncate(40);
 
     Ok(Json(json!({ "results": results })))
 }
@@ -425,6 +569,10 @@ pub struct CatalogRelease {
     /// The link `POST /api/imports` takes - the importer reads `/album/` and
     /// pulls the whole record.
     pub url: String,
+    /// Whether that link is one the importer can actually take as primary
+    /// input. False is the common case for a Deezer discography; the row still
+    /// belongs on the page, it just cannot wear a live Add button.
+    pub importable: bool,
 }
 
 /// One of the artist's best-known tracks, importable on its own.
@@ -437,6 +585,8 @@ pub struct CatalogTrack {
     pub url: String,
     /// Seconds.
     pub duration: Option<u64>,
+    /// As `CatalogRelease::importable`.
+    pub importable: bool,
 }
 
 /// A neighbour on the same shelf, for reading onward.
@@ -510,6 +660,7 @@ fn release_from(it: &Value) -> Option<CatalogRelease> {
     let id = it.get("id").and_then(|x| x.as_u64()).unwrap_or_default();
     Some(CatalogRelease {
         id: format!("deezer:album:{id}"),
+        importable: importable(&url),
         title,
         cover: it
             .get("cover_medium")
@@ -603,6 +754,7 @@ pub async fn artist(
                     let id = it.get("id").and_then(|x| x.as_u64()).unwrap_or_default();
                     top_tracks.push(CatalogTrack {
                         id: format!("deezer:track:{id}"),
+                        importable: importable(url),
                         title: title.to_string(),
                         cover: it.pointer("/album/cover_medium").and_then(|x| x.as_str()).map(String::from),
                         url: url.to_string(),
@@ -632,6 +784,15 @@ pub async fn artist(
             }
         }
     }
+
+    // These were filtered by `importable`, which deleted the WHOLE discography
+    // every time: the releases come from Deezer and `importable` only accepts
+    // Spotify links, so albums, singles and top songs all came back empty and
+    // the page told every artist alive that nothing of theirs could be added.
+    // A discography is something you READ - that a given record cannot be
+    // pulled today is a fact about the Add button, not a reason to deny the
+    // record exists. Each row now carries `importable` and the client gates its
+    // own control on it.
 
     let detail = ArtistDetail {
         id: format!("deezer:artist:{dz}"),

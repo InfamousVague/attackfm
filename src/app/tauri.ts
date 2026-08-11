@@ -159,6 +159,15 @@ export interface Track {
   sampleRate?: number | null;
   bitDepth?: number | null;
   sizeBytes?: number;
+  /**
+   * Set when the CURATOR downloaded this track rather than a person: the id of
+   * the account it was fetched for. Such a track sits on that account's
+   * "For you" shelf until `curatorPromoted` - a full listen-through or a heart
+   * - moves it into the library proper. Absent for everything a person added,
+   * and from servers that predate the collector.
+   */
+  curatorUserId?: number | null;
+  curatorPromoted?: boolean;
 }
 
 // The file extensions treated as audio when walking the library folder.

@@ -302,6 +302,9 @@ export interface RemoteTrack {
   addedAt: number;
   artId: string | null;
   rev: number;
+  /** Collector attribution - see Track. Optional: older servers never send it. */
+  curatorUserId?: number | null;
+  curatorPromoted?: boolean;
 }
 
 export interface LibraryDelta {
@@ -371,6 +374,8 @@ export function toTrack(session: ServerSession, remote: RemoteTrack): Track {
     sampleRate: remote.sampleRate,
     bitDepth: remote.bitDepth,
     sizeBytes: remote.sizeBytes,
+    curatorUserId: remote.curatorUserId ?? null,
+    curatorPromoted: remote.curatorPromoted ?? false,
   };
 }
 
@@ -789,6 +794,57 @@ export async function fetchPlaylistSuggestions(
   );
 }
 
+/**
+ * The collector: the curator's buying arm. Status of the autonomous downloads -
+ * what it has pulled, how much of its budget is spent, and whether it has had
+ * to stop. `userId` is the caller's own id, which is how the client matches
+ * `Track.curatorUserId` rows to "mine" without storing ids in the session.
+ */
+export interface CollectorStatus {
+  userId: number;
+  enabled: boolean;
+  /** Why pulls are stopped: 'cap' when the budget is spent, null when running. */
+  halted: 'cap' | null;
+  /** Bytes of collector music nobody has adopted yet - what the cap meters. */
+  ledgerBytes: number;
+  capBytes: number;
+  /** The self-tuning dial, 0..1 - how far afield the picks reach right now. */
+  exploration: number;
+  /** Whether this box can actually import (the downloader tool is present). */
+  importable: boolean;
+  recent: {
+    title: string;
+    artist: string;
+    kind: 'track' | 'album';
+    state: 'queued' | 'landed' | 'promoted' | 'failed';
+    at: number;
+    /** Why the curator chose it, when the model wrote one. */
+    reason: string;
+  }[];
+}
+
+export async function fetchCollectorStatus(
+  session: ServerSession,
+  signal?: AbortSignal,
+): Promise<CollectorStatus> {
+  return request<CollectorStatus>(session.url, '/api/curator/pulls', {
+    token: session.token,
+    signal,
+  });
+}
+
+/** Flip the collector for this account (and, as admin, resize the budget). */
+export async function setCollectorSettings(
+  session: ServerSession,
+  settings: { enabled?: boolean; capBytes?: number },
+): Promise<void> {
+  await request(session.url, '/api/curator/pulls/settings', {
+    method: 'POST',
+    token: session.token,
+    body: JSON.stringify(settings),
+  });
+}
+
 /** One thing the curator thinks you would like but do not own yet. */
 export interface Discovery {
   id: string;
@@ -888,16 +944,23 @@ export async function fetchDiscover(session: ServerSession): Promise<Suggestion[
 }
 
 /** One external catalogue hit (Spotify/Deezer), from `GET /api/search`. A
- *  track carries an importable `url`; an artist is a name to search deeper. */
+ *  track or album carries an importable `url`; an artist is a name to search
+ *  deeper. */
 export interface SearchResult {
   id: string;
-  kind: 'track' | 'artist';
+  kind: 'track' | 'artist' | 'album';
   title: string;
   subtitle: string;
   cover: string | null;
-  /** The link to hand the importer (present for tracks). */
+  /** The link to hand the importer (present for tracks and albums). */
   url: string;
   source: string;
+  /**
+   * Whether `url` is something the importer can take as PRIMARY input, which
+   * today means a Spotify link. A Deezer album is worth showing and cannot be
+   * pulled, so the row renders either way and only its Add control reads this.
+   */
+  importable: boolean;
 }
 
 /** Search Spotify and other public sources for new artists and songs. */
@@ -914,6 +977,71 @@ export async function searchCatalog(
   return reply.results;
 }
 
+/**
+ * One thing the user opened from search before, as the server remembers it.
+ *
+ * Deliberately a flat, self-describing row rather than a reference: a recent
+ * has to render as a card the moment the page opens, before the library has
+ * synced and whether or not the thing still exists. `key` is what makes it
+ * unique within its kind - a track path, an artist name, a playlist id - and
+ * is what a tap resolves against when the library does have it.
+ */
+export interface Recent {
+  kind: 'track' | 'artist' | 'album' | 'playlist' | 'genre' | 'catalog';
+  key: string;
+  title: string;
+  subtitle: string;
+  cover: string | null;
+  url: string;
+  /** When it was last opened, epoch milliseconds. */
+  at: number;
+}
+
+/** What this account has opened from search lately, newest first. */
+export async function fetchRecents(
+  session: ServerSession,
+  signal?: AbortSignal,
+): Promise<Recent[]> {
+  const reply = await request<{ recents: Recent[] }>(session.url, '/api/recents', {
+    token: session.token,
+    signal,
+  });
+  return reply.recents;
+}
+
+/** Remember one - or bump it to the front, if it is already there. */
+export async function touchRecent(
+  session: ServerSession,
+  recent: Omit<Recent, 'at'>,
+): Promise<void> {
+  await request(session.url, '/api/recents', {
+    method: 'POST',
+    token: session.token,
+    body: JSON.stringify(recent),
+  });
+}
+
+/** Forget one. */
+export async function removeRecent(
+  session: ServerSession,
+  kind: string,
+  key: string,
+): Promise<void> {
+  await request(session.url, '/api/recents/remove', {
+    method: 'POST',
+    token: session.token,
+    body: JSON.stringify({ kind, key }),
+  });
+}
+
+/** Forget all of them. */
+export async function clearRecents(session: ServerSession): Promise<void> {
+  await request(session.url, '/api/recents/clear', {
+    method: 'POST',
+    token: session.token,
+  });
+}
+
 /** One release on an artist's page: an album, EP, single or compilation. Its
  *  `url` is an album link the importer takes whole. */
 export interface CatalogRelease {
@@ -924,6 +1052,10 @@ export interface CatalogRelease {
   trackCount: number | null;
   kind: string;
   url: string;
+  /** As `SearchResult.importable`. A whole discography arrives from Deezer, so
+   *  this is usually false - which is a fact about the Add button, not about
+   *  whether the record belongs on the page. */
+  importable: boolean;
 }
 
 /** One of an artist's best-known tracks, importable on its own. */
@@ -934,6 +1066,8 @@ export interface CatalogTrack {
   url: string;
   /** Seconds. */
   duration: number | null;
+  /** As `SearchResult.importable`. */
+  importable: boolean;
 }
 
 /** An artist's profile and discography, from `GET /api/artist`. */

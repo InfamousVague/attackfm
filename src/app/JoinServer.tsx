@@ -77,10 +77,10 @@ export function JoinServer() {
 
   return (
     <div className="joinServer">
-      <Field label="Have an invite?" hint="Enter the 8-character code a friend sent you.">
+      <Field label="Have an invite?" hint="Enter the 6-character code a friend sent you.">
         <OtpField
-          length={8}
-          groupSize={4}
+          length={6}
+          groupSize={3}
           type="alphanumeric"
           value={value}
           aria-label="Invite code"

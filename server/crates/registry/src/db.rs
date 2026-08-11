@@ -367,12 +367,25 @@ impl Db {
     }
 
     /// Mark an invite spent and attach the account to the server as a member.
-    pub fn redeem_invite(&self, code: &str, account_id: i64, server_url: &str, role: &str, now: i64) {
+    /// Spend an invite. `standing` invites are not spent: the membership is
+    /// granted and the code stays live for the next person, which is what makes
+    /// one code servable to a queue of reviewers rather than the first of them.
+    pub fn redeem_invite(
+        &self,
+        code: &str,
+        account_id: i64,
+        server_url: &str,
+        role: &str,
+        now: i64,
+        standing: bool,
+    ) {
         let c = self.conn.lock().unwrap();
-        let _ = c.execute(
-            "UPDATE invites SET redeemed_by = ?2, redeemed_at = ?3 WHERE code = ?1",
-            (code, account_id, now),
-        );
+        if !standing {
+            let _ = c.execute(
+                "UPDATE invites SET redeemed_by = ?2, redeemed_at = ?3 WHERE code = ?1",
+                (code, account_id, now),
+            );
+        }
         let _ = c.execute(
             "INSERT INTO memberships (account_id, server_url, role, state, since)
              VALUES (?1, ?2, ?3, 'active', ?4)

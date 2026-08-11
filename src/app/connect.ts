@@ -260,7 +260,25 @@ export class ConnectSocket {
       window.clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    this.ws?.close();
+    const ws = this.ws;
     this.ws = null;
+    if (!ws) return;
+    // Closing a socket that is still shaking hands is legal, but every browser
+    // logs "WebSocket is closed before the connection is established" for it -
+    // an error-level line for an ordinary teardown. React StrictMode makes that
+    // guaranteed in dev: it mounts, unmounts and remounts every effect, so the
+    // first socket is ALWAYS closed mid-handshake. The noise is not harmless -
+    // it looks exactly like a transport failure, which is a real afternoon lost
+    // to blaming the tunnel. So let the handshake land and close on the far
+    // side of it, with the handlers detached first so this dead socket can
+    // neither deliver a frame nor trigger a reconnect on its way out.
+    ws.onmessage = null;
+    ws.onerror = null;
+    ws.onclose = null;
+    if (ws.readyState === WebSocket.CONNECTING) ws.onopen = () => ws.close();
+    else {
+      ws.onopen = null;
+      ws.close();
+    }
   }
 }

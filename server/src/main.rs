@@ -22,17 +22,23 @@
 mod api;
 mod auth;
 mod canvas;
+mod collector;
 mod connect;
 mod curator;
 mod db;
 mod discover;
 mod discovery;
 mod dj;
+mod features;
 mod friends;
 mod home;
 mod imports;
 mod jams;
+mod library_search;
+mod listens;
 mod pair;
+mod push;
+mod recents;
 mod registry_auth;
 mod scan;
 mod spotify;
@@ -74,6 +80,9 @@ pub struct AppState {
     /// Its public key, fetched once and cached, for verifying identity tokens
     /// offline. `None` until fetched (boot, or the first sign-in that needs it).
     pub registry_verifier: Arc<tokio::sync::Mutex<Option<afm_identity::Verifier2>>>,
+    /// The push sender, or None on a server with no Apple key configured -
+    /// which is most of them. See push.rs: the pipeline runs either way.
+    pub apns: Option<push::Apns>,
     /// Spotify logins parked between /connect and the browser's /callback.
     pub spotify: Arc<spotify::SpotifyLogins>,
     /// The playlist-mirror engine's in-memory half. Every durable counter
@@ -214,6 +223,7 @@ async fn main() {
         spotify_client_id,
         registry_url,
         registry_verifier: Arc::new(tokio::sync::Mutex::new(None)),
+        apns: push::Apns::from_env(),
         spotify: Arc::new(spotify::SpotifyLogins::default()),
         spotify_sync: Arc::new(spotify_sync::SpotifySyncState::default()),
         filing: Arc::new(tokio::sync::Mutex::new(())),
@@ -229,6 +239,9 @@ async fn main() {
     // Fetch the registry's public key so identity sign-in verifies offline.
     // Non-fatal if the registry is down: it retries on first use.
     tokio::spawn(registry_auth::prime_verifier(state.clone()));
+    // The digest's hourly walk. Costs a handful of queries against nobody
+    // until a device registers, and sends nothing without an APNs key.
+    tokio::spawn(push::digest_sweep(state.clone()));
 
     // Index what is already there before taking requests, in the background so
     // a large library does not hold the port closed.
@@ -241,6 +254,13 @@ async fn main() {
     // The curator: enriches the library with tempo and lyric vectors, and
     // rebuilds each listener's playlists from what they actually play.
     curator::spawn(state.clone());
+    // The buying arm rides beside the curator: same taste, real money - er,
+    // real disk. See collector.rs for the honesty rules.
+    collector::spawn(state.clone());
+
+    // The audio analyser: measures each file's loudness and brightness (and a
+    // tempo where the curator has none), one polite track at a time.
+    features::spawn(state.clone());
 
     // The Spotify mirror: keeps watched playlists, albums and saved tracks in
     // step with their local copies.
@@ -303,6 +323,7 @@ async fn main() {
         .route("/api/me", get(api::me))
         .route("/api/library", get(api::library))
         .route("/api/library/missing", post(api::library_missing))
+        .route("/api/library/search", get(library_search::search))
         .route("/api/imports", get(imports::list).post(imports::enqueue))
         .route("/api/imports/clear", post(imports::clear))
         .route(
@@ -313,6 +334,7 @@ async fn main() {
         .route("/api/imports/{id}/retry", post(imports::retry))
         .route("/api/scan", get(api::scan_status).post(api::scan_now))
         .route("/api/stats", get(api::stats))
+        .route("/api/stats/summary", get(listens::summary))
         .route("/api/favorites", get(api::favorites))
         .route("/api/favorites/{id}", put(api::set_favorite))
         .route("/api/playlists", get(api::playlists).post(api::create_playlist))
@@ -322,6 +344,7 @@ async fn main() {
         )
         .route("/api/play-state", get(api::play_states).post(api::set_play_state))
         .route("/api/plays", post(home::record_play))
+        .route("/api/listens", post(listens::record))
         .route("/api/artist-top", get(home::artist_top))
         .route("/api/friends", get(friends::list))
         .route("/api/friends/requests", post(friends::request))
@@ -335,10 +358,19 @@ async fn main() {
         .route("/api/jams/{id}/queue", post(jams::add_to_queue))
         .route("/api/home", get(home::feed))
         .route("/api/discover", get(discover::feed))
+        .route("/api/push/register", post(push::register))
+        .route("/api/push/unregister", post(push::unregister))
+        .route("/api/push/prefs", get(push::prefs).post(push::set_pref))
         .route("/api/search", get(search::search))
+        .route("/api/recents", get(recents::list).post(recents::add))
+        .route("/api/recents/remove", post(recents::remove))
+        .route("/api/recents/clear", post(recents::clear))
         .route("/api/artist", get(search::artist))
         .route("/api/curator", get(curator::feed))
+        .route("/api/curator/pulls", get(collector::status))
+        .route("/api/curator/pulls/settings", post(collector::settings))
         .route("/api/dj", get(dj::station))
+        .route("/api/features/status", get(features::status))
         .route("/api/playlists/{id}/suggestions", get(curator::playlist_suggestions))
         .route("/api/discoveries", get(discovery::feed))
         .route("/api/new-music", get(discovery::new_music))

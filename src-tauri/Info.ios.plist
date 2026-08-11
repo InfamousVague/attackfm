@@ -22,6 +22,28 @@
 		<string>audio</string>
 	</array>
 
+	<!-- The custom URL scheme invite links open the app through:
+	     registry.attack.fm/i/<code>'s "Open in AttackFM" button points at
+	     attackfm://i/<code>, and JoinServer reads the code off it. This MUST
+	     live here, not in gen/apple/app_iOS/Info.plist: `tauri ios build`
+	     regenerates that file and drops manual keys, so a scheme added there
+	     silently never ships (which is exactly why the button used to do
+	     nothing). This merge file survives, so the scheme is always in the
+	     built app. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.mattssoftware.attackfm</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>attackfm</string>
+			</array>
+		</dict>
+	</array>
+
 	<!-- iOS 26+ TRAPS any app that never adopted the scene lifecycle
 	     (EXC_BREAKPOINT in __UIApplicationEvaluateRuntimeIssueForNoScene-
 	     LifecycleAdoption) - fatal on the iOS 27 runtime, a warning on 26,
