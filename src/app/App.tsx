@@ -295,6 +295,22 @@ function PrimaryNav({
   // two flanking groups are a shape the kit's even row cannot make. The centre
   // is home (the library, where the mixes live); the groups hold the rest,
   // split so the brand button sits dead-centre whatever each side holds.
+  //
+  // Plugin pages take bar seats too - a page with no door on the phone is a
+  // page that does not exist there. They deal out alternately, left side
+  // first (it starts a tab lighter than the right), so the brand stays
+  // centred as pages arrive; the tabs themselves shrink to make room.
+  const pluginLeft = pages.filter((_, i) => i % 2 === 0);
+  const pluginRight = pages.filter((_, i) => i % 2 === 1);
+  const barPage = (pg: (typeof pages)[number]) => (
+    <BarTab
+      key={pg.key}
+      icon={pg.icon}
+      label={pg.label}
+      active={tab === pg.key}
+      onClick={() => onTab(pg.key)}
+    />
+  );
   return (
     <nav className="appNavBar" aria-label="Primary">
       <div className="appNavBar__group appNavBar__group--left">
@@ -313,6 +329,7 @@ function PrimaryNav({
             onClick={() => onTab('discover')}
           />
         )}
+        {pluginLeft.map(barPage)}
       </div>
 
       {/* The brand, raised: the app icon, protruding above the island, home. */}
@@ -328,14 +345,14 @@ function PrimaryNav({
       </button>
 
       <div className="appNavBar__group appNavBar__group--right">
+        {pluginRight.map(barPage)}
         <BarTab
           icon={<Users size={20} />}
           label="Friends"
           active={tab === 'friends'}
           onClick={() => onTab('friends')}
         />
-        {/* Downloads is an icon on the library page now - see LibraryView - so
-            the bar stays four destinations around the brand. */}
+        {/* Downloads is an icon on the library page now - see LibraryView. */}
         <BarTab icon={<Settings size={20} />} label="Settings" onClick={onSettings} />
       </div>
     </nav>

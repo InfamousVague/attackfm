@@ -584,6 +584,27 @@ export function Player({
   const RETRY_BACKOFF_MS = [400, 1500, 4000];
   const MAX_RELOADS_PER_TRACK = 3;
 
+  /** The warning buzz's visible half: whichever transport is on screen - the
+   *  sheet's or the strip's - takes a short sideways jolt when playback gives
+   *  up, so a stop the pocket felt is also a stop the glance explains. WAAPI
+   *  rather than a class so re-triggering needs no bookkeeping; honours
+   *  reduced motion by simply not moving. */
+  const joltTransport = () => {
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    for (const el of document.querySelectorAll('.npScreen__transport, .playerBarShell')) {
+      (el as HTMLElement).animate(
+        [
+          { transform: 'translateX(0)' },
+          { transform: 'translateX(-4px)' },
+          { transform: 'translateX(4px)' },
+          { transform: 'translateX(-2px)' },
+          { transform: 'translateX(0)' },
+        ],
+        { duration: 380, easing: 'ease-out' },
+      );
+    }
+  };
+
   /** Forget an episode. Called wherever the listener's intent changes, so a
    *  timer can never fire against a deck they have already moved on from. */
   const clearStall = () => {
@@ -613,6 +634,7 @@ export function Player({
       // apps, so a pocketed stop stays silent. The lock screen's frozen
       // play state is that case's messenger.)
       fireNativeHaptic('warning');
+      joltTransport();
       pendingPlay.current = false;
       wantPlaying.current = false;
       setPlaying(false);
@@ -1390,7 +1412,10 @@ export function Player({
           return;
         }
         // The same honest stop as the ladder running out, felt the same way.
-        if (wantPlaying.current) fireNativeHaptic('warning');
+        if (wantPlaying.current) {
+          fireNativeHaptic('warning');
+          joltTransport();
+        }
         pendingPlay.current = false;
         wantPlaying.current = false;
         setPlaying(false);
