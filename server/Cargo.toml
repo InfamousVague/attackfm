@@ -18,7 +18,7 @@ afm-identity = { path = "crates/identity" }
 axum = { version = "0.8", features = ["multipart", "ws"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "signal", "fs", "io-util", "process"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "fs"] }
+tower-http = { version = "0.6", features = ["cors", "fs", "compression-gzip"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -36,6 +36,10 @@ jsonwebtoken = "9"
 # including embedded cover art and the stream properties the lossless badge needs.
 lofty = "0.22"
 mime_guess = "2"
+# Downscales cover art once per requested size (stream.rs): the originals are
+# whatever 1-3 MB picture the tags carried, and a 100px grid cell needs none of
+# it. Decoders match the four formats scan.rs ever stores; output is JPEG.
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
 # The curator's tempo analysis: a spectral-flux onset envelope needs an FFT, and
 # this one is pure Rust so the Linux cross-compile stays a single binary.
 rustfft = "6"

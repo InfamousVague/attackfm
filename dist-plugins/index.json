@@ -5,17 +5,17 @@
     {
       "id": "spotify-import",
       "name": "Music import",
-      "version": "1.3.2",
+      "version": "1.3.3",
       "description": "Downloads pasted Spotify, Apple Music, Tidal, Deezer, YT Music, and Qobuz links into the library.",
       "author": "AttackFM",
       "tags": [
         "Importer",
         "Downloads"
       ],
-      "entry": "spotify-import-1.3.2.js",
+      "entry": "spotify-import-1.3.3.js",
       "api": 1,
-      "bytes": 71039,
-      "sha256": "59953b53786d55a54f3f8a381bf566b52760fdd70d68374c9cee2f19a22c3881",
+      "bytes": 71298,
+      "sha256": "cd4f296c28e73ddbb5885ccb286c8307a42b7ab2be7ac5fcae0e4d1e99c87ed4",
       "requiresServer": true
     }
   ]

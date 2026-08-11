@@ -66,6 +66,9 @@ function ServerDownloads({ children }: { children: ReactNode }) {
     if (sessionRef.current) void settlePendingSyncs(sessionRef.current, next);
   }, []);
 
+  // Whether anything is actually in flight decides the pace below.
+  const active = jobs.some((j) => j.state === 'queued' || j.state === 'downloading');
+
   useEffect(() => {
     if (!session) return;
     let alive = true;
@@ -80,12 +83,24 @@ function ServerDownloads({ children }: { children: ReactNode }) {
     void poll();
     // Faster while something is in flight, idle otherwise - imports take
     // minutes, and a settled queue does not need watching every few seconds.
-    const interval = window.setInterval(poll, 5000);
+    // (The comment used to claim this; now the interval actually does it.)
+    // Hidden, it does not poll at all. A fresh job never waits out the idle
+    // minute: enqueue seeds it into state at once, which flips `active` and
+    // re-arms this at the fast pace.
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      void poll();
+    }, active ? 5000 : 60_000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void poll();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       alive = false;
       window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [session, apply]);
+  }, [session, apply, active]);
 
   const value = useMemo<DownloadsContextValue>(() => {
     const ordered = [...jobs].sort((a, b) => {

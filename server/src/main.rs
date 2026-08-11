@@ -55,6 +55,8 @@ use db::Db;
 use scan::ScanProgress;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tower_http::compression::predicate::{NotForContentType, Predicate, SizeAbove};
+use tower_http::compression::CompressionLayer;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 
@@ -64,6 +66,9 @@ pub struct AppState {
     pub art_dir: PathBuf,
     pub upload_dir: PathBuf,
     pub stream_secret: Vec<u8>,
+    /// Recently verified stream tokens, so a wall of cover art does not
+    /// serialize one epoch lookup per image behind the database Mutex.
+    pub stream_tokens: auth::StreamTokenCache,
     pub progress: Arc<ScanProgress>,
     pub server_name: String,
     pub library_quota_bytes: i64,
@@ -212,6 +217,7 @@ async fn main() {
         art_dir: art_dir.clone(),
         upload_dir,
         stream_secret,
+        stream_tokens: auth::StreamTokenCache::default(),
         progress: progress.clone(),
         server_name,
         library_quota_bytes: quota_gb.max(0) * 1024 * 1024 * 1024,
@@ -401,6 +407,17 @@ async fn main() {
         .route("/api/spotify/mirror/{key}/forget", post(spotify::mirror_forget))
         .nest_service("/plugins", ServeDir::new(&plugins_dir))
         .fallback(|| async { (StatusCode::NOT_FOUND, "not found") })
+        // Gzip for the JSON (a full /api/library of a large library is
+        // megabytes of very compressible text - lyrics, paths, titles - and
+        // this cuts it roughly 4x for every client at once). Media stays
+        // untouched: FLAC and JPEG do not compress, and the streams' Range
+        // handling must never sit behind an encoder.
+        .layer(CompressionLayer::new().compress_when(
+            SizeAbove::new(1024)
+                .and(NotForContentType::new("audio/"))
+                .and(NotForContentType::new("video/"))
+                .and(NotForContentType::new("image/")),
+        ))
         .layer(cors)
         .with_state(state);
 

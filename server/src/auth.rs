@@ -116,6 +116,94 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
+// --- validated-token cache --------------------------------------------------
+
+/// How long a stream token's verification is trusted before the database is
+/// asked again. The signature and expiry are checked on every request either
+/// way (they cost nothing); what this window defers is the epoch re-read - so
+/// it is exactly how long a revoked device can keep fetching media bytes.
+const TOKEN_CACHE_TTL_MS: i64 = 60 * 1000;
+
+/// A hard ceiling on cached tokens. A library page fires one media request per
+/// cover but every device holds only a handful of distinct tokens, so this is
+/// generous; blowing past it means something is minting garbage, and the sane
+/// answer is to start over rather than grow.
+const TOKEN_CACHE_MAX: usize = 4096;
+
+/// Remembers recently verified stream tokens so a page of fifty covers does
+/// not queue fifty epoch lookups behind the one global database Mutex - which
+/// is shared with the scanner and the curator, and on a busy box is exactly
+/// where art requests were stalling.
+#[derive(Default)]
+pub struct StreamTokenCache {
+    /// token -> (user id, trust it until this many ms since the epoch).
+    map: std::sync::Mutex<std::collections::HashMap<String, (i64, i64)>>,
+}
+
+impl StreamTokenCache {
+    fn now_ms() -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0)
+    }
+
+    fn get(&self, token: &str) -> Option<i64> {
+        let map = self.map.lock().unwrap_or_else(|e| e.into_inner());
+        map.get(token)
+            .filter(|(_, until)| Self::now_ms() < *until)
+            .map(|(user_id, _)| *user_id)
+    }
+
+    fn put(&self, token: &str, user_id: i64) {
+        let mut map = self.map.lock().unwrap_or_else(|e| e.into_inner());
+        if map.len() >= TOKEN_CACHE_MAX {
+            map.clear();
+        }
+        map.insert(token.to_string(), (user_id, Self::now_ms() + TOKEN_CACHE_TTL_MS));
+    }
+
+    /// Forgets every cached token a user holds. Called on revoke, so the admin
+    /// action takes effect now rather than when the TTL runs out.
+    pub fn purge_user(&self, user_id: i64) {
+        let mut map = self.map.lock().unwrap_or_else(|e| e.into_inner());
+        map.retain(|_, (uid, _)| *uid != user_id);
+    }
+}
+
+/// `verify_stream_token`, minus the per-request database hit.
+///
+/// The HMAC and the embedded expiry are still checked every single time - a
+/// forged or lapsed token never reaches the cache lookup. Only the epoch
+/// consultation (the revocation check, the one part that needs the database)
+/// is reused for up to a minute.
+pub fn verify_stream_token_cached(
+    db: &Db,
+    secret: &[u8],
+    cache: &StreamTokenCache,
+    token: &str,
+) -> Option<i64> {
+    // Signature and expiry first, unconditionally: a cache hit must never
+    // outlive the token itself or bless bytes we did not sign.
+    let mut parts = token.rsplitn(2, '.');
+    let signature = parts.next()?;
+    let payload = parts.next()?;
+    if !constant_time_eq(signature.as_bytes(), sign(secret, payload).as_bytes()) {
+        return None;
+    }
+    let expiry: i64 = payload.split('.').nth(2)?.parse().ok()?;
+    if now_secs() >= expiry {
+        return None;
+    }
+
+    if let Some(user_id) = cache.get(token) {
+        return Some(user_id);
+    }
+    let user_id = verify_stream_token(db, secret, token)?;
+    cache.put(token, user_id);
+    Some(user_id)
+}
+
 // --- passwords ------------------------------------------------------------
 
 pub fn hash_password(password: &str) -> Result<String, String> {

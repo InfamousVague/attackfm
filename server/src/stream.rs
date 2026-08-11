@@ -78,9 +78,14 @@ fn audio_mime(path: &Path) -> &'static str {
 }
 
 /// Checks the `t=` stream token on a media request.
+///
+/// Through the verified-token cache: a page of album covers is fifty of these
+/// arriving at once, and without the cache each one took its turn on the
+/// global database Mutex just to re-read an epoch that changes once a year.
 fn caller_from_query(state: &AppState, params: &HashMap<String, String>) -> Result<i64, StatusCode> {
     let token = params.get("t").ok_or(StatusCode::UNAUTHORIZED)?;
-    auth::verify_stream_token(&state.db, &state.stream_secret, token).ok_or(StatusCode::UNAUTHORIZED)
+    auth::verify_stream_token_cached(&state.db, &state.stream_secret, &state.stream_tokens, token)
+        .ok_or(StatusCode::UNAUTHORIZED)
 }
 
 /// A media request may also authenticate the ordinary way. Handy for `curl`
@@ -138,10 +143,99 @@ pub async fn stream(
     Ok(response)
 }
 
-/// `GET /api/art/:artId` - a cached cover.
+/// The widths `?size=` will pre-scale a cover to. Two is enough: one for a
+/// grid cell, one for a now-playing screen. Any other value - or none - serves
+/// the stored original, so a bad parameter degrades to what always worked.
+const ART_SIZES: &[u32] = &[160, 640];
+
+/// The `size` parameter, if it names a size this server actually offers.
+fn requested_art_size(params: &HashMap<String, String>) -> Option<u32> {
+    let size = params.get("size")?.parse::<u32>().ok()?;
+    ART_SIZES.contains(&size).then_some(size)
+}
+
+/// Where a downscaled variant lives: beside the original, named by the same
+/// content hash plus its size. `art_path` can never return it - ids carry no
+/// `@` - so variants are invisible to every original-art lookup.
+fn art_variant_path(art_dir: &Path, art_id: &str, size: u32) -> PathBuf {
+    art_dir.join(format!("{art_id}@{size}.jpg"))
+}
+
+/// Whether any entry in `If-None-Match` names one of our validators.
+fn if_none_match(headers: &HeaderMap, candidates: &[&str]) -> bool {
+    let Some(raw) = headers.get(header::IF_NONE_MATCH).and_then(|v| v.to_str().ok()) else {
+        return false;
+    };
+    raw.split(',').map(str::trim).any(|entry| {
+        if entry == "*" {
+            return true;
+        }
+        // Weak comparison is the right one for GET revalidation, and a cached
+        // entity either is this content hash or is not.
+        let entry = entry.strip_prefix("W/").unwrap_or(entry).trim_matches('"');
+        candidates.iter().any(|c| *c == entry)
+    })
+}
+
+/// Builds the `size`-wide JPEG variant of `original` at `dest`, once.
+///
+/// Blocking work (a full decode of a possibly multi-megabyte image), so it
+/// runs on the blocking pool. Returns true when `dest` exists and is servable
+/// afterwards. Written to a temp file and renamed into place: two first
+/// requests may race here, and the loser's rename simply replaces the winner's
+/// identical bytes - nobody ever reads a half-written file.
+fn build_art_variant(original: &Path, dest: &Path, size: u32) -> bool {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
+
+    let Ok(bytes) = std::fs::read(original) else { return false };
+    let Ok(img) = image::load_from_memory(&bytes) else { return false };
+    // resize() preserves aspect ratio within a size x size box and never
+    // upscales past sense: a small original is simply re-encoded, so the
+    // decode happens once instead of on every request for this size.
+    let scaled = if img.width() > size || img.height() > size {
+        img.resize(size, size, image::imageops::FilterType::Triangle)
+    } else {
+        img
+    }
+    // JPEG has no alpha; covers have no meaningful alpha either.
+    .into_rgb8();
+
+    let mut out = Vec::new();
+    if image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 82)
+        .encode_image(&scaled)
+        .is_err()
+    {
+        return false;
+    }
+
+    let tmp = dest.with_file_name(format!(
+        "{}.tmp-{}-{}",
+        dest.file_name().and_then(|n| n.to_str()).unwrap_or("variant.jpg"),
+        std::process::id(),
+        TMP_SEQ.fetch_add(1, Ordering::Relaxed),
+    ));
+    if std::fs::write(&tmp, &out).is_err() {
+        let _ = std::fs::remove_file(&tmp);
+        return false;
+    }
+    if std::fs::rename(&tmp, dest).is_err() {
+        let _ = std::fs::remove_file(&tmp);
+        // A failed rename can still mean a concurrent builder won; serve
+        // whatever is there if anything is.
+        return dest.is_file();
+    }
+    true
+}
+
+/// `GET /api/art/:artId?size=` - a cached cover, optionally pre-scaled.
 ///
 /// Immutable by construction: the id IS the content hash, so a cover can be
 /// cached in the client forever and a changed cover is simply a different URL.
+/// That makes the caching story unusually clean - the id doubles as a perfect
+/// `ETag`, an `If-None-Match` hit is a 304 with no disk touched, and a
+/// `?size=160` variant is derived once, cached beside the original, and is
+/// just as immutable as its source.
 pub async fn art(
     State(state): State<Arc<AppState>>,
     AxumPath(art_id): AxumPath<String>,
@@ -151,16 +245,70 @@ pub async fn art(
 ) -> Result<Response, StatusCode> {
     caller_from_either(&state, &headers, &params)?;
 
-    let path = scan::art_path(&state.art_dir, &art_id).ok_or(StatusCode::NOT_FOUND)?;
+    // Resolving through art_path also validates the id's alphabet - nothing
+    // below builds a path or a header from an id this did not accept.
+    let original = scan::art_path(&state.art_dir, &art_id).ok_or(StatusCode::NOT_FOUND)?;
+
+    let size = requested_art_size(&params);
+    let original_etag = format!("\"{art_id}\"");
+    let variant_etag = size.map(|s| format!("\"{art_id}@{s}\""));
+
+    // A client may hold either representation under this URL: the variant
+    // when scaling worked, the original when a request ever fell back. Both
+    // derive from the same immutable bytes, so either validator is current.
+    let candidates: Vec<&str> = [Some(original_etag.as_str()), variant_etag.as_deref()]
+        .into_iter()
+        .flatten()
+        .map(|tag| tag.trim_matches('"'))
+        .collect();
+    if if_none_match(&headers, &candidates) {
+        let etag = variant_etag.as_deref().unwrap_or(&original_etag);
+        return Ok((
+            StatusCode::NOT_MODIFIED,
+            [
+                (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+                (header::ETAG, etag),
+            ],
+        )
+            .into_response());
+    }
+
+    // Pick the file to serve: the cached variant, building it on first ask;
+    // the original whenever that cannot work.
+    let (path, etag) = match size {
+        Some(size) => {
+            let variant = art_variant_path(&state.art_dir, &art_id, size);
+            let ready = variant.is_file() || {
+                let original = original.clone();
+                let dest = variant.clone();
+                tokio::task::spawn_blocking(move || build_art_variant(&original, &dest, size))
+                    .await
+                    .unwrap_or(false)
+            };
+            if ready {
+                (variant, variant_etag.unwrap_or(original_etag))
+            } else {
+                // Undecodable original (odd format): serve it as-is, under its
+                // own validator so a later fix is still a different tag.
+                (original, original_etag)
+            }
+        }
+        None => (original, original_etag),
+    };
+
     let mut response = ServeFile::new(&path)
         .oneshot(request)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .into_response();
-    response.headers_mut().insert(
+    let response_headers = response.headers_mut();
+    response_headers.insert(
         header::CACHE_CONTROL,
         "public, max-age=31536000, immutable".parse().unwrap(),
     );
+    if let Ok(value) = etag.parse() {
+        response_headers.insert(header::ETAG, value);
+    }
     Ok(response)
 }
 

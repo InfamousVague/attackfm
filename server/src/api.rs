@@ -527,6 +527,8 @@ pub async fn delete_user(
         .db
         .delete_user(user_id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    // A deleted account's media tokens must die with it, not a minute later.
+    state.stream_tokens.purge_user(user_id);
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -548,5 +550,8 @@ pub async fn revoke_streams(
         .db
         .delete_tokens_for_user(user_id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    // The verified-token cache would otherwise honour the old epoch for up to
+    // its TTL - purge it so the revoke means now.
+    state.stream_tokens.purge_user(user_id);
     Ok(Json(json!({ "ok": true })))
 }
