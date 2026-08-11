@@ -1,5 +1,5 @@
 import { mosaicArts, useTileArt } from './artLoad.ts';
-import { Button, ContextMenu, Input, Modal, MenuItem, ScrollArea, Text } from '@glacier/react';
+import { Button, ContextMenu, Input, Modal, MenuItem, Text } from '@glacier/react';
 import { Heart, History, ListMusic, Plus, Trash2 } from '@glacier/icons';
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { useLibrary } from './library.tsx';
@@ -183,8 +183,11 @@ export function PlaylistShowcase({
           The counts that used to crowd this header live in the stats card. */}
       <section className="homeShelf">
         <h2 className="homeShelfTitle">Playlists</h2>
-        <ScrollArea orientation="horizontal" className="homeShelfScroll" hideScrollbar>
-          <div className="homeShelfRow showcaseRow">
+        {/* A grid, not a rail: every playlist on screen at once, wrapping
+            into as many columns as the width holds. Only past five rows'
+            worth does it scroll - the cap keeps a hundred playlists from
+            burying the shelves below. */}
+        <div className="showcaseGrid">
             <Tile
               name="Liked"
               cover={<MosaicCover tracks={favoriteTracks} fallback={<Heart size={24} fill="currentColor" />} tone="tileLiked" />}
@@ -231,8 +234,7 @@ export function PlaylistShowcase({
                 <PluginTile tile={tile} onPlay={onPlay} />
               </PluginFence>
             ))}
-          </div>
-        </ScrollArea>
+        </div>
       </section>
       {deleting && (
         <Modal

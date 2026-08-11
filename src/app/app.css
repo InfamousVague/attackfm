@@ -2361,6 +2361,19 @@ img.artPop:not([data-loading]) {
   }
 }
 
+/* A shelf heading carrying an action on its right: title leads, the door
+   trails, baseline-aligned, the row keeping the title's usual margins. */
+.homeShelfHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+}
+
+.homeShelfHead .homeShelfTitle {
+  margin: 0;
+}
+
 .homeShelf {
   display: flex;
   flex-direction: column;
@@ -2886,6 +2899,20 @@ img.artPop:not([data-loading]) {
 
 /* A tile is a bare button: the squircle does the talking, the caption is a
    quiet line beneath it - no card frame around either. */
+/* The showcase laid out as a grid: fixed-width tracks (the shared card
+   width, same as the rails), wrapping to fill, all playlists visible. The
+   block cap is five rows of tile + caption; past that the grid scrolls
+   inside itself rather than pushing the library's shelves off the page. */
+.showcaseGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, var(--card-track));
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+  max-block-size: calc(5 * (var(--card-track) + 2.1rem) + 4 * var(--glacier-space-3));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .playlistTile {
   display: flex;
   flex-direction: column;

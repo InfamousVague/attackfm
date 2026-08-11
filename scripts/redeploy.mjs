@@ -229,6 +229,21 @@ function deployPlugins(env) {
   );
   if (result.status !== 0) fail('plugin publish failed.');
   ssh(env, 'chown -R attackfm:attackfm /opt/attackfm/data/plugins');
+  // The public repository rides the same publish: only the plugins marked
+  // `"public": true` land on plugins.attack.fm (the build already filtered
+  // them into dist-plugins-public/), so the private set never leaves matt's.
+  step('Publishing to plugins.attack.fm');
+  const pub = spawnSync(
+    'sshpass',
+    [
+      '-e', 'rsync', '-az', '--delete',
+      '-e', 'ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20',
+      `${ROOT}/dist-plugins-public/`,
+      `${env.AFM_DEPLOY_USER}@${env.AFM_DEPLOY_HOST}:/opt/attackfm-plugins/`,
+    ],
+    { stdio: 'inherit', env: { ...process.env, SSHPASS: env.AFM_DEPLOY_PASS } },
+  );
+  if (pub.status !== 0) fail('public plugin publish failed.');
   const check = ssh(
     env,
     'curl -fsS --max-time 10 http://127.0.0.1:8788/plugins/index.json | head -c 120 || echo UNREACHABLE',

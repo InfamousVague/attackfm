@@ -28,6 +28,11 @@ import { fileURLToPath } from 'node:url';
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const REPO = join(ROOT, 'plugins-repo');
 const OUT = join(ROOT, 'dist-plugins');
+// The public repository (plugins.attack.fm) carries only plugins whose
+// plugin.json declares `"public": true` - the official, lawyer-calm set.
+// Everything builds into OUT; the public subset is COPIED here with its own
+// manifest, so the two repos can never disagree about a bundle's bytes.
+const OUT_PUBLIC = join(ROOT, 'dist-plugins-public');
 
 /** Built bundles speak host API 1; the app refuses anything newer than its own. */
 const HOST_API = 1;
@@ -107,6 +112,8 @@ function hostShimPlugin(names) {
 
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
+rmSync(OUT_PUBLIC, { recursive: true, force: true });
+mkdirSync(OUT_PUBLIC, { recursive: true });
 
 const listings = [];
 for (const entry of readdirSync(REPO, { withFileTypes: true })) {
@@ -144,6 +151,7 @@ for (const entry of readdirSync(REPO, { withFileTypes: true })) {
     ...(meta.desktopOnly ? { desktopOnly: true } : {}),
     ...(meta.serverBacked ? { serverBacked: true } : {}),
     ...(meta.requiresServer ? { requiresServer: true } : {}),
+    ...(meta.public ? { public: true } : {}),
   });
   console.log(`built ${outFile} (${(code.length / 1024).toFixed(0)} KB)`);
 }
@@ -153,3 +161,13 @@ writeFileSync(
   JSON.stringify({ api: HOST_API, name: 'AttackFM plugins', plugins: listings }, null, 2),
 );
 console.log(`manifest: ${listings.length} plugin(s) -> dist-plugins/index.json`);
+
+const publicListings = listings.filter((l) => l.public);
+for (const l of publicListings) {
+  writeFileSync(join(OUT_PUBLIC, l.entry), readFileSync(join(OUT, l.entry)));
+}
+writeFileSync(
+  join(OUT_PUBLIC, 'index.json'),
+  JSON.stringify({ api: HOST_API, name: 'AttackFM plugins', plugins: publicListings }, null, 2),
+);
+console.log(`public manifest: ${publicListings.length} plugin(s) -> dist-plugins-public/index.json`);

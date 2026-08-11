@@ -135,8 +135,13 @@ export function SpinningDisc({
   // The platter is coasting on a throw: the motor neither drives nor brakes,
   // friction alone brings it back to playing speed.
   const freewheel = useRef(false);
-  // Degrees of EXCESS rotation since the last freewheel detent tick.
+  // Degrees of rotation banked toward the next detent click, and when the
+  // last click fired. The disc is a jog wheel now: every DETENT_DEG of turn
+  // is one mechanical click under the finger, whether the hand is dragging
+  // or the platter is freewheeling - with a floor between clicks so a hard
+  // spin reads as a fast ratchet rather than one long buzz.
   const detent = useRef(0);
+  const detentAt = useRef(0);
   // Whether the Player believes a scratch is in progress. One session spans
   // the drag AND the freewheel it launches - the Player never learns the
   // difference between a hand still on the platter and a platter still moving.
@@ -194,16 +199,11 @@ export function SpinningDisc({
         velocity.current = 1 + (velocity.current - 1) * Math.exp(-dt / FLICK_TAU);
         angle.current = (angle.current + velocity.current * FULL_DEG_PER_SEC * dt) % 360;
         faceRef.current?.style.setProperty('transform', `rotate(${angle.current.toFixed(2)}deg)`);
-        // Detents under the thumb: a selection tick each half-turn past
-        // normal speed, keyed to ROTATION rather than time, so the clicks
-        // slow exactly as the platter does - deceleration you can feel
-        // without looking. Quiet inside the last stretch (the extra spin
-        // beyond play speed is what is being counted, not the spin itself).
-        detent.current += Math.abs(velocity.current - 1) * FULL_DEG_PER_SEC * dt;
-        if (detent.current >= 180) {
-          detent.current %= 180;
-          fireNativeHaptic('selection');
-        }
+        // Detents under the thumb: the wheel clicks off every quarter turn
+        // it actually makes, so the ratchet's rhythm IS the platter's speed
+        // - fast out of the hand, stretching out as friction wins. The
+        // session closing below is what ends the clicking at play speed.
+        clickDetents(velocity.current * FULL_DEG_PER_SEC * dt, 90);
         // The song rides the throw: the same conversion the hand's drag uses,
         // one revolution to six seconds, so speed IS playback rate.
         params.current.onScratch?.(velocity.current * dt);
@@ -263,6 +263,17 @@ export function SpinningDisc({
     };
   }, []);
 
+  /** Banks turned degrees and clicks off a detent when one is due. */
+  const clickDetents = (degrees: number, spacing: number) => {
+    detent.current += Math.abs(degrees);
+    if (detent.current < spacing) return;
+    detent.current %= spacing;
+    const now = performance.now();
+    if (now - detentAt.current < 35) return;
+    detentAt.current = now;
+    fireNativeHaptic('selection');
+  };
+
   /** The pointer's angle around the disc's centre, in degrees. */
   const angleAt = (e: { clientX: number; clientY: number }): number | null => {
     const box = faceRef.current?.parentElement?.getBoundingClientRect();
@@ -282,6 +293,7 @@ export function SpinningDisc({
     scratching.current = true;
     // The grab, in the hand: firm - the music just stopped under a finger.
     fireNativeHaptic('medium');
+    detent.current = 0;
     lastTouchAngle.current = a;
     swing.current = { vel: 0, at: performance.now() };
     // Capture, so a finger that slides off the disc mid-drag keeps scratching
@@ -312,6 +324,10 @@ export function SpinningDisc({
     lastTouchAngle.current = a;
     angle.current = (angle.current + delta) % 360;
     faceRef.current?.style.setProperty('transform', `rotate(${angle.current.toFixed(2)}deg)`);
+    // The scrub ratchet: a click every thirty degrees of drag, the way a jog
+    // wheel steps. Feeling the wheel'd steps is what makes fine scrubbing
+    // controllable without watching the seek bar.
+    clickDetents(delta, 30);
     // The hand's speed, smoothed just enough to shrug off pointer jitter but
     // still die within a frame or two of the hand stopping - the release reads
     // this to tell a throw from a stop.
@@ -338,7 +354,6 @@ export function SpinningDisc({
     if (fresh && Math.abs(share) >= FLICK_MIN && kick.current) {
       velocity.current = Math.max(-FLICK_MAX, Math.min(FLICK_MAX, share));
       freewheel.current = true;
-      detent.current = 0;
       // The throw leaves the hand: heavy for a hard fling, medium for a
       // gentler one - the release weighs what the wrist put in.
       fireNativeHaptic(Math.abs(velocity.current) > FLICK_MAX * 0.6 ? 'heavy' : 'medium');

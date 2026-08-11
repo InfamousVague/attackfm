@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { fireNativeHaptic } from './haptics.ts';
 
 /**
  * The phone's back gesture: a drag in from the left edge walks the nav stack
@@ -45,6 +46,11 @@ export function useSwipeBack(
     // Null until the drag has proven itself horizontal; false once it has
     // proven itself vertical, and then we stay out of the way for good.
     let horizontal: boolean | null = null;
+    // Whether the drag currently stands past the commit point. The crossing
+    // is a mechanical click - the page latching into "will go back" - and it
+    // re-arms if the thumb retreats, so easing back and forth over the
+    // threshold feels like working a detent, which is exactly what it is.
+    let committed = false;
 
     const move = (x: number) => Math.max(0, x - startX);
 
@@ -59,6 +65,7 @@ export function useSwipeBack(
     const clear = () => {
       id = null;
       horizontal = null;
+      committed = false;
       el.style.transition = '';
       el.style.transform = '';
     };
@@ -89,7 +96,15 @@ export function useSwipeBack(
       if (!horizontal) return;
       // Ours now: stop the page scrolling under the drag.
       e.preventDefault();
-      paint(move(e.clientX), false);
+      const pulled = move(e.clientX);
+      const past = pulled >= COMMIT;
+      if (past !== committed) {
+        committed = past;
+        // Firmer going in than backing out: the latch engages, the release
+        // just lets go.
+        fireNativeHaptic(past ? 'light' : 'selection');
+      }
+      paint(pulled, false);
     };
 
     const onUp = (e: PointerEvent) => {
