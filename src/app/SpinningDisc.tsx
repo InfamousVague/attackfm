@@ -1,6 +1,7 @@
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import stationMark from '../assets/attack-wave.png';
 import { BeatWave, type BeatWaveBeat } from './BeatWave.tsx';
+import { fireNativeHaptic } from './haptics.ts';
 
 /** One revolution every six seconds - the pace the old CSS keyframes set. */
 const FULL_DEG_PER_SEC = 360 / 6;
@@ -134,6 +135,8 @@ export function SpinningDisc({
   // The platter is coasting on a throw: the motor neither drives nor brakes,
   // friction alone brings it back to playing speed.
   const freewheel = useRef(false);
+  // Degrees of EXCESS rotation since the last freewheel detent tick.
+  const detent = useRef(0);
   // Whether the Player believes a scratch is in progress. One session spans
   // the drag AND the freewheel it launches - the Player never learns the
   // difference between a hand still on the platter and a platter still moving.
@@ -191,6 +194,16 @@ export function SpinningDisc({
         velocity.current = 1 + (velocity.current - 1) * Math.exp(-dt / FLICK_TAU);
         angle.current = (angle.current + velocity.current * FULL_DEG_PER_SEC * dt) % 360;
         faceRef.current?.style.setProperty('transform', `rotate(${angle.current.toFixed(2)}deg)`);
+        // Detents under the thumb: a selection tick each half-turn past
+        // normal speed, keyed to ROTATION rather than time, so the clicks
+        // slow exactly as the platter does - deceleration you can feel
+        // without looking. Quiet inside the last stretch (the extra spin
+        // beyond play speed is what is being counted, not the spin itself).
+        detent.current += Math.abs(velocity.current - 1) * FULL_DEG_PER_SEC * dt;
+        if (detent.current >= 180) {
+          detent.current %= 180;
+          fireNativeHaptic('selection');
+        }
         // The song rides the throw: the same conversion the hand's drag uses,
         // one revolution to six seconds, so speed IS playback rate.
         params.current.onScratch?.(velocity.current * dt);
@@ -200,6 +213,9 @@ export function SpinningDisc({
           freewheel.current = false;
           velocity.current = 1;
           sessionOpen.current = false;
+          detent.current = 0;
+          // The platter re-engaging the motor: a soft landing after the ride.
+          fireNativeHaptic('light');
           params.current.onScratchEnd?.();
         }
         frame.current = requestAnimationFrame(tick);
@@ -264,6 +280,8 @@ export function SpinningDisc({
     // the scratch session it was riding simply continues under the new grip.
     freewheel.current = false;
     scratching.current = true;
+    // The grab, in the hand: firm - the music just stopped under a finger.
+    fireNativeHaptic('medium');
     lastTouchAngle.current = a;
     swing.current = { vel: 0, at: performance.now() };
     // Capture, so a finger that slides off the disc mid-drag keeps scratching
@@ -320,10 +338,16 @@ export function SpinningDisc({
     if (fresh && Math.abs(share) >= FLICK_MIN && kick.current) {
       velocity.current = Math.max(-FLICK_MAX, Math.min(FLICK_MAX, share));
       freewheel.current = true;
+      detent.current = 0;
+      // The throw leaves the hand: heavy for a hard fling, medium for a
+      // gentler one - the release weighs what the wrist put in.
+      fireNativeHaptic(Math.abs(velocity.current) > FLICK_MAX * 0.6 ? 'heavy' : 'medium');
       kick.current();
       return;
     }
     sessionOpen.current = false;
+    // The hand setting the platter down: the lightest touch there is.
+    fireNativeHaptic('light');
     onScratchEnd?.();
   };
 

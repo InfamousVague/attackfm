@@ -11,6 +11,7 @@
     "core:window:allow-start-dragging",
     "opener:default",
     "deep-link:default",
+    "haptics:default",
     "dialog:allow-open",
     "fs:allow-mkdir",
     "fs:allow-exists",

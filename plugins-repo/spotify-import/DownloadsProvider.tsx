@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { useHaptics } from '@glacier/react';
 import { useLibrary } from '@attackfm/app/library';
 import { useServerSession } from '@attackfm/app/serverSession';
 import {
@@ -48,6 +49,9 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
 function ServerDownloads({ children }: { children: ReactNode }) {
   const { session } = useServerSession();
   const { rescan } = useLibrary();
+  const haptic = useHaptics();
+  const hapticRef = useRef(haptic);
+  hapticRef.current = haptic;
   const [jobs, setJobs] = useState<MusicImportJob[]>([]);
   const rescanRef = useRef(rescan);
   rescanRef.current = rescan;
@@ -62,7 +66,12 @@ function ServerDownloads({ children }: { children: ReactNode }) {
     const isFresh = seeded.current && done.some((id) => !doneIds.current.has(id));
     seeded.current = true;
     doneIds.current = new Set(done);
-    if (isFresh) void rescanRef.current();
+    if (isFresh) {
+      // The download you queued minutes ago just landed: worth a real
+      // fanfare in the hand, since the eyes are usually elsewhere by now.
+      hapticRef.current('success');
+      void rescanRef.current();
+    }
     if (sessionRef.current) void settlePendingSyncs(sessionRef.current, next);
   }, []);
 

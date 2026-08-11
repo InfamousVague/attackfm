@@ -2,6 +2,8 @@ import { IconButton, Modal, Text } from '@glacier/react';
 import {
   ListPlus, Trash2, X } from '@glacier/icons';
 import { EmptyArt, type EmptyArtName } from './EmptyArt.tsx';
+import { useArtLoad } from './artLoad.ts';
+import { artSized } from './server.ts';
 import type { Track } from './tauri.ts';
 import placeholderArt from '../assets/attack-wave.png';
 
@@ -33,6 +35,15 @@ function formatDuration(seconds: number | null): string {
   if (seconds == null || !Number.isFinite(seconds)) return '--:--';
   const total = Math.round(seconds);
   return `${Math.floor(total / 60)}:${(total % 60).toString().padStart(2, '0')}`;
+}
+
+/** One row's cover thumb: skeleton while the bytes come, pop on arrival. A
+ *  component of its own so the hook lives outside the map that draws the
+ *  rows. */
+function RowArt({ artwork }: { artwork: string | null }) {
+  const src = artSized(artwork, 160) ?? placeholderArt;
+  const art = useArtLoad(src, 'songArt');
+  return <img {...art} src={src} alt="" loading="lazy" />;
 }
 
 /**
@@ -77,7 +88,7 @@ export function PlaylistModal({
                   onClose();
                 }}
               >
-                <img className="songArt" src={track.artwork ?? placeholderArt} alt="" loading="lazy" />
+                <RowArt artwork={track.artwork} />
                 <span className="playlistModalMeta">
                   <span className="songTitle">{track.title}</span>
                   {onOpenArtist ? (

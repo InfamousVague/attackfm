@@ -8,8 +8,10 @@ import { IMPORTER_PLUGIN_ID, useAcquire } from '../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
 import type { AcquireTarget } from '../plugins/types.ts';
 import { fetchAlbumArt } from './albumArt.ts';
+import { mosaicArts, useArtLoad, useTileArt } from './artLoad.ts';
 import { PROBE_URL, importable, resolveImportable } from './resolveImport.ts';
 import {
+  artSized,
   fetchArtistTop,
   fetchCatalogArtist,
   remotePath,
@@ -36,6 +38,44 @@ function fmtDuration(seconds: number | null): string {
   if (seconds == null || !Number.isFinite(seconds)) return '--:--';
   const total = Math.round(seconds);
   return `${Math.floor(total / 60)}:${(total % 60).toString().padStart(2, '0')}`;
+}
+
+/** A record's cover in the discography grid: skeleton while the bytes come,
+ *  pop on arrival. A component of its own so the hook lives outside the map
+ *  that draws the grid. */
+function DiscCover({ src }: { src: string }) {
+  const sized = artSized(src, 640) ?? src;
+  const art = useArtLoad(sized, 'artistAlbumCover');
+  return <img {...art} src={sized} alt="" loading="lazy" />;
+}
+
+/** A popular row's thumbnail: the same treatment at list size. */
+function CatalogArt({ src }: { src: string }) {
+  const sized = artSized(src, 160) ?? src;
+  const art = useArtLoad(sized, 'catalogTrack__art');
+  return <img {...art} src={sized} alt="" loading="lazy" />;
+}
+
+/** A playlist card's stacked covers, loading as ONE artwork: the tile holds
+ *  its shimmer until every cover has answered, then reveals whole. Four
+ *  distinct covers or a single one - two or three would leave holes in the
+ *  quadrant grid. */
+function PlaylistTile({ featured }: { featured: Track[] }) {
+  const arts = mosaicArts(featured.map((t) => t.artwork));
+  const urls = arts.length >= 4 ? arts : [arts[0] ?? placeholderArt];
+  const loaded = useTileArt(urls);
+  return (
+    <span
+      className="artistPlaylistCover"
+      aria-hidden="true"
+      data-tile-pop=""
+      data-tile-loading={!loaded || undefined}
+    >
+      {urls.map((u, i) => (
+        <img key={i} src={u} alt="" loading="lazy" />
+      ))}
+    </span>
+  );
 }
 
 /**
@@ -241,10 +281,14 @@ export function ArtistPage({ artist, onPlay, onOpenArtist, onOpenPlaylist }: Art
   const ownedRecords = discography.records.filter((r) => r.owned).length;
 
   const heroArt =
-    profile?.picture ??
-    (albums[0] && (hiRes[albums[0].name] ?? albums[0].artwork)) ??
-    theirs.find((t) => t.artwork)?.artwork ??
-    placeholderArt;
+    artSized(
+      profile?.picture ??
+        (albums[0] && (hiRes[albums[0].name] ?? albums[0].artwork)) ??
+        theirs.find((t) => t.artwork)?.artwork ??
+        null,
+      640,
+    ) ?? placeholderArt;
+  const heroLoad = useArtLoad(heroArt, 'artistHero__art');
 
   // Play-through order for the hero buttons: albums in shelf order, discs in
   // track order - the same order the page presents.
@@ -433,7 +477,7 @@ export function ArtistPage({ artist, onPlay, onOpenArtist, onOpenPlaylist }: Art
       >
         <span className="artistAlbumArt">
           {cover ? (
-            <img className="artistAlbumCover" src={cover} alt="" loading="lazy" />
+            <DiscCover src={cover} />
           ) : (
             <span className="artistAlbumCover artistAlbumCover--glyph" aria-hidden>
               <Disc3 size={26} />
@@ -491,7 +535,7 @@ export function ArtistPage({ artist, onPlay, onOpenArtist, onOpenPlaylist }: Art
   return (
     <div className="homePage artistPage">
       <header className="artistHero">
-        <img className="artistHero__art" src={heroArt} alt="" />
+        <img {...heroLoad} src={heroArt} alt="" />
         <div className="artistHero__text">
           <h1 className="artistHero__name">{artist}</h1>
           <Text tone="muted" size="sm">
@@ -565,7 +609,7 @@ export function ArtistPage({ artist, onPlay, onOpenArtist, onOpenPlaylist }: Art
                 <li key={t.id} className="catalogTrack">
                   <span className="catalogTrack__rank">{index + 1}</span>
                   {t.cover ? (
-                    <img className="catalogTrack__art" src={t.cover} alt="" loading="lazy" />
+                    <CatalogArt src={t.cover} />
                   ) : (
                     <span className="catalogTrack__art catalogTrack__art--glyph" aria-hidden>
                       <Music size={16} />
@@ -690,13 +734,7 @@ export function ArtistPage({ artist, onPlay, onOpenArtist, onOpenPlaylist }: Art
                   className="artistPlaylist"
                   onClick={() => onOpenPlaylist?.(playlist.id)}
                 >
-                  <span className="artistPlaylistCover" aria-hidden="true">
-                    {(featured.length >= 4 ? featured.slice(0, 4) : [featured[0]!]).map(
-                      (t, i) => (
-                        <img key={i} src={t.artwork ?? placeholderArt} alt="" loading="lazy" />
-                      ),
-                    )}
-                  </span>
+                  <PlaylistTile featured={featured} />
                   <span className="artistPlaylistName">{playlist.name}</span>
                   <span className="artistPlaylistCount">
                     {featured.length} {featured.length === 1 ? 'song' : 'songs'} of theirs

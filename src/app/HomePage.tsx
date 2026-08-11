@@ -2,9 +2,10 @@ import { Pill, ScrollArea, SearchField, Text } from '@glacier/react';
 import { Sparkles } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
+import { mosaicArts, useCardArt, useTileArt } from './artLoad.ts';
 import { usePlaylists } from './playlists.tsx';
 import { useServerSession } from './serverSession.tsx';
-import { artSized,
+import {
   fetchCurator,
   fetchHome,
   trackIdFromPath,
@@ -18,7 +19,6 @@ import { PlaylistModal } from './PlaylistModal.tsx';
 import { EmptyArt } from './EmptyArt.tsx';
 import { isMusicImportLink } from '../plugins/importsBridge.ts';
 import type { Track } from './tauri.ts';
-import placeholderArt from '../assets/attack-wave.png';
 import { ImportFromSearch } from './ImportFromSearch.tsx';
 import { TrackMenu } from './TrackMenu.tsx';
 
@@ -43,14 +43,19 @@ function greetingFor(hour: number): string {
   return 'Good evening';
 }
 
+/** Blank line the skeleton holds so the card keeps its exact height. */
+const NBSP = ' ';
+
 /** One square track card on a shelf. */
 function TrackCard({ track, onOpen }: { track: Track; onOpen: () => void }) {
+  const { src, loaded, onLoad, onError } = useCardArt(track.artwork);
+  const idle = !loaded || undefined;
   return (
     <TrackMenu track={track}>
       <button type="button" className="trackCard" onClick={onOpen}>
-        <img className="trackCardArt" src={artSized(track.artwork, 640) ?? placeholderArt} alt="" loading="lazy" />
-        <span className="trackCardTitle">{track.title}</span>
-        <span className="trackCardArtist">{track.artist}</span>
+        <img className="trackCardArt artPop" src={src} alt="" loading="lazy" data-loading={idle} onLoad={onLoad} onError={onError} />
+        <span className="trackCardTitle" data-loading={idle}>{loaded ? track.title : NBSP}</span>
+        <span className="trackCardArtist" data-loading={idle}>{loaded ? track.artist : NBSP}</span>
       </button>
     </TrackMenu>
   );
@@ -58,12 +63,14 @@ function TrackCard({ track, onOpen }: { track: Track; onOpen: () => void }) {
 
 /** An album card: cover over the album name and artist. Jump-back-in wears it. */
 function AlbumCard({ track, onOpen }: { track: Track; onOpen: () => void }) {
+  const { src, loaded, onLoad, onError } = useCardArt(track.artwork);
+  const idle = !loaded || undefined;
   return (
     <TrackMenu track={track}>
       <button type="button" className="trackCard" onClick={onOpen}>
-        <img className="trackCardArt" src={artSized(track.artwork, 640) ?? placeholderArt} alt="" loading="lazy" />
-        <span className="trackCardTitle">{track.album || track.title}</span>
-        <span className="trackCardArtist">{track.artist}</span>
+        <img className="trackCardArt artPop" src={src} alt="" loading="lazy" data-loading={idle} onLoad={onLoad} onError={onError} />
+        <span className="trackCardTitle" data-loading={idle}>{loaded ? track.album || track.title : NBSP}</span>
+        <span className="trackCardArtist" data-loading={idle}>{loaded ? track.artist : NBSP}</span>
       </button>
     </TrackMenu>
   );
@@ -71,17 +78,22 @@ function AlbumCard({ track, onOpen }: { track: Track; onOpen: () => void }) {
 
 /** An artist card: a round cover over the name, linking into the artist page. */
 function ArtistCard({ name, cover, onOpen }: { name: string; cover: string | null; onOpen: () => void }) {
+  const { src, loaded, onLoad, onError } = useCardArt(cover);
+  const idle = !loaded || undefined;
   return (
     <button type="button" className="artistCard" onClick={onOpen}>
-      <img className="artistCardArt" src={artSized(cover, 640) ?? placeholderArt} alt="" loading="lazy" />
-      <span className="artistCardName">{name}</span>
+      <img className="artistCardArt artPop" src={src} alt="" loading="lazy" data-loading={idle} onLoad={onLoad} onError={onError} />
+      <span className="artistCardName" data-loading={idle}>{loaded ? name : NBSP}</span>
     </button>
   );
 }
 
 /** A mix's cover: the 2x2 mosaic of its first artworks, glyph fallback. */
 function MixCover({ tracks }: { tracks: Track[] }) {
-  const arts = tracks.map((t) => t.artwork).filter((a): a is string => a !== null).slice(0, 4);
+  const arts = mosaicArts(tracks.map((t) => t.artwork));
+  // Under four covers the glyph stands in, and a glyph never loads - the tile
+  // hook watches exactly the urls the grid below will draw.
+  const loaded = useTileArt(arts.length < 4 ? [] : arts);
   if (arts.length < 4) {
     return (
       <div className="mixCardCover mixCardCover--glyph" aria-hidden>
@@ -90,9 +102,9 @@ function MixCover({ tracks }: { tracks: Track[] }) {
     );
   }
   return (
-    <div className="mixCardCover" aria-hidden>
+    <div className="mixCardCover" aria-hidden data-tile-pop="" data-tile-loading={!loaded || undefined}>
       {arts.map((art, i) => (
-        <img key={i} src={artSized(art, 640)!} alt="" loading="lazy" />
+        <img key={i} src={art} alt="" loading="lazy" />
       ))}
     </div>
   );

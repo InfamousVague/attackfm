@@ -22,7 +22,8 @@ import {
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useLibrary } from './library.tsx';
 import { useServerSession } from './serverSession.tsx';
-import { fetchPlaylistSuggestions, remotePath } from './server.ts';
+import { mosaicArts, useArtLoad, useTileArt } from './artLoad.ts';
+import { artSized, fetchPlaylistSuggestions, remotePath } from './server.ts';
 import { usePlaylists } from './playlists.tsx';
 import { EmptyArt } from './EmptyArt.tsx';
 import type { Track } from './tauri.ts';
@@ -49,6 +50,15 @@ function formatTotal(seconds: number): string {
   if (mins < 60) return `${mins} min`;
   const hours = Math.floor(mins / 60);
   return `${hours} hr ${mins % 60} min`;
+}
+
+/** One row's cover thumb: skeleton while the bytes come, pop on arrival. A
+ *  component of its own so the hook lives outside the render callbacks that
+ *  draw the rows. */
+function RowArt({ artwork }: { artwork: string | null }) {
+  const src = artSized(artwork, 160) ?? placeholderArt;
+  const art = useArtLoad(src, 'songArt');
+  return <img {...art} src={src} alt="" loading="lazy" />;
 }
 
 /**
@@ -113,14 +123,21 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
       .filter((r): r is { id: string; track: Track } => r !== null);
   }, [playlist, byPath]);
 
+  // The header's artwork: the list's first distinct covers, sized and deduped
+  // by mosaicArts. Four make the quadrant mosaic and load as ONE artwork -
+  // the tile keeps its shimmer until every cover has answered - fewer fall
+  // back to a single cover with the ordinary single-image reveal. Both hooks
+  // sit above the early return, as hooks must.
+  const covers = useMemo(() => mosaicArts(rows.map((r) => r.track.artwork)), [rows]);
+  const coversLoaded = useTileArt(covers.length >= 4 ? covers : []);
+  // The single-cover img wears no class of its own, so the hook contributes
+  // only the pop and the skeleton attribute.
+  const singleCover = useArtLoad(covers.length >= 4 ? null : (covers[0] ?? null), '');
+
   if (!playlist) return null;
 
   const listTracks = rows.map((r) => r.track);
   const totalSeconds = listTracks.reduce((sum, t) => sum + (t.duration ?? 0), 0);
-  const covers = listTracks
-    .map((t) => t.artwork)
-    .filter((a): a is string => a !== null)
-    .slice(0, 4);
 
   // The suggestions, resolved against the synced library. Shown only where a
   // model is reading lyrics, and only once the list has a character to match.
@@ -165,14 +182,22 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
       <header className="playlistHead">
         <div className="playlistHead__cover" aria-hidden>
           {covers.length >= 4 ? (
-            <div className="tileSquircle tileLikedGrid playlistHead__mosaic">
+            <div
+              className="tileSquircle tileLikedGrid playlistHead__mosaic"
+              data-tile-pop=""
+              data-tile-loading={!coversLoaded || undefined}
+            >
               {covers.map((art, i) => (
                 <img key={i} src={art} alt="" />
               ))}
             </div>
           ) : (
             <div className="tileSquircle tileRecent playlistHead__mosaic">
-              {covers[0] ? <img src={covers[0]} alt="" /> : <ListMusic size={28} />}
+              {covers[0] ? (
+                <img {...singleCover} src={covers[0]} alt="" />
+              ) : (
+                <ListMusic size={28} />
+              )}
             </div>
           )}
         </div>
@@ -239,12 +264,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                   className="playlistRow__main"
                   onClick={() => onPlay(row.track, listTracks)}
                 >
-                  <img
-                    className="songArt"
-                    src={row.track.artwork ?? placeholderArt}
-                    alt=""
-                    loading="lazy"
-                  />
+                  <RowArt artwork={row.track.artwork} />
                   <span className="playlistRow__text">
                     <span className="songTitle">{row.track.title}</span>
                     <span className="songArtist">{row.track.artist}</span>
@@ -288,12 +308,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                     className="playlistRow__main"
                     onClick={() => onPlay(t, [t, ...listTracks])}
                   >
-                    <img
-                      className="songArt"
-                      src={t.artwork ?? placeholderArt}
-                      alt=""
-                      loading="lazy"
-                    />
+                    <RowArt artwork={t.artwork} />
                     <span className="playlistRow__text">
                       <span className="songTitle">{t.title}</span>
                       <span className="songArtist">{t.artist}</span>

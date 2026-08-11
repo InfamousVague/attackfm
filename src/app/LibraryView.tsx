@@ -2,8 +2,7 @@ import { Button, IconButton, ScrollArea } from '@glacier/react';
 import { ChartNoAxesColumn, Download } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLibrary } from './library.tsx';
-import { useServerSession } from './serverSession.tsx';
-import { artSized } from './server.ts';
+import { useCardArt } from './artLoad.ts';
 import { usePlaylists } from './playlists.tsx';
 import { ShelfSkeleton } from './ShelfSkeleton.tsx';
 import { PlaylistShowcase } from './PlaylistShowcase.tsx';
@@ -41,53 +40,6 @@ function Shelf({ title, count, children }: { title: string; count: number; child
 
 /** Blank line the skeleton holds so the card keeps its exact height. */
 const NBSP = ' ';
-
-/**
- * A card's artwork, resolving. Returns the src to draw and whether it has
- * arrived - the card shows a shimmer over the art and its text until then, so
- * covers fade in together instead of popping and shoving the row as they
- * trickle over the network. Revealed on the image's load; a bad URL falls back
- * to the placeholder once; and a safety timeout reveals a hung request rather
- * than shimmering forever.
- */
-function useCardArt(artwork: string | null): {
-  src: string;
-  loaded: boolean;
-  onLoad: () => void;
-  onError: () => void;
-} {
-  // Cards draw covers at a couple hundred CSS pixels; the 640 variant covers
-  // 3x displays while costing a fraction of the original embedded picture
-  // (often megabytes). Servers without variants serve the original unchanged.
-  const wanted = artSized(artwork, 640) ?? placeholderArt;
-  const [src, setSrc] = useState(wanted);
-  const [loaded, setLoaded] = useState(false);
-  const { renew } = useServerSession();
-  useEffect(() => {
-    setSrc(wanted);
-    setLoaded(false);
-    const timer = window.setTimeout(() => setLoaded(true), 20000);
-    return () => window.clearTimeout(timer);
-  }, [wanted]);
-  return {
-    src,
-    loaded,
-    onLoad: () => setLoaded(true),
-    // A dead cover URL swaps to the placeholder once (which then loads and
-    // reveals); if the placeholder itself is what failed, just reveal. Server
-    // art failing usually means the stream token in its URL has aged out, so
-    // one renewal is asked for - latched to once a minute in the provider, a
-    // wall of failing covers costs one /api/me, and the refreshed session
-    // re-renders every card with working URLs.
-    onError: () => {
-      if (src === placeholderArt) setLoaded(true);
-      else {
-        if (artwork && /[?&]t=/.test(artwork)) void renew().catch(() => {});
-        setSrc(placeholderArt);
-      }
-    },
-  };
-}
 
 /** The artist line on a card: tappable into the artist's page when a handler
  *  is given. A span wearing link manners, because the card around it is
@@ -147,7 +99,7 @@ function TrackCard({
   return (
     <TrackMenu track={track}>
       <button type="button" className="trackCard" onClick={onOpen}>
-        <img className="trackCardArt" src={src} alt="" loading="lazy" data-loading={idle} onLoad={onLoad} onError={onError} />
+        <img className="trackCardArt artPop" src={src} alt="" loading="lazy" data-loading={idle} onLoad={onLoad} onError={onError} />
         <span className="trackCardTitle" data-loading={idle}>{loaded ? track.title : NBSP}</span>
         <CardArtist artist={track.artist} idle={idle} loaded={loaded} onOpenArtist={onOpenArtist} />
       </button>
@@ -170,7 +122,7 @@ function AlbumCard({
   return (
     <TrackMenu track={track}>
       <button type="button" className="trackCard" onClick={onOpen}>
-        <img className="trackCardArt" src={src} alt="" loading="lazy" data-loading={idle} onLoad={onLoad} onError={onError} />
+        <img className="trackCardArt artPop" src={src} alt="" loading="lazy" data-loading={idle} onLoad={onLoad} onError={onError} />
         <span className="trackCardTitle" data-loading={idle}>{loaded ? track.album || track.title : NBSP}</span>
         <CardArtist artist={track.artist} idle={idle} loaded={loaded} onOpenArtist={onOpenArtist} />
       </button>
@@ -184,7 +136,7 @@ function ArtistCard({ name, cover, onOpen }: { name: string; cover: string | nul
   const idle = !loaded || undefined;
   return (
     <button type="button" className="artistCard" onClick={onOpen}>
-      <img className="artistCardArt" src={src} alt="" loading="lazy" data-loading={idle} onLoad={onLoad} onError={onError} />
+      <img className="artistCardArt artPop" src={src} alt="" loading="lazy" data-loading={idle} onLoad={onLoad} onError={onError} />
       <span className="artistCardName" data-loading={idle}>{loaded ? name : NBSP}</span>
     </button>
   );

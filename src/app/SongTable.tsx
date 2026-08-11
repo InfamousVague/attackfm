@@ -15,6 +15,7 @@ import { hasLocalLibrary } from './platform.ts';
 import { useNarrowViewport } from './useNarrowViewport.ts';
 import type { Track } from './tauri.ts';
 import { artSized } from './server.ts';
+import { useArtLoad } from './artLoad.ts';
 import placeholderArt from '../assets/attack-wave.png';
 
 // mm:ss, with the leading minutes never zero-padded (3:59, not 03:59).
@@ -39,6 +40,15 @@ function gridCompare(a: string | number, b: string | number): number {
   return String(a).localeCompare(String(b));
 }
 
+// The title cell's thumb, pulled into its own component because a DataGrid
+// cell is a render callback where hooks cannot live. It owns the row's sizing
+// too: a ~40px thumb wants the 160 variant, never the full embedded picture.
+function SongArt({ artwork }: { artwork: string | null }) {
+  const src = artSized(artwork, 160) || placeholderArt;
+  const art = useArtLoad(src, 'songArt');
+  return <img {...art} src={src} alt="" loading="lazy" />;
+}
+
 // The columns that come off on a narrow screen, in the order they would be
 // missed least: an album name the title cell half-implies, and a date that is
 // already the sort.
@@ -61,7 +71,7 @@ const COLUMNS: DataGridColumn[] = [
     sortValue: (row) => String(row.title).toLowerCase(),
     render: (row) => (
       <div className="songTitleCell">
-        <img className="songArt" src={artSized(row.artwork as string, 160) || placeholderArt} alt="" loading="lazy" />
+        <SongArt artwork={row.artwork as string | null} />
         <div className="songTitleText">
           <span className="songTitle">{row.title as string}</span>
           <span className="songArtist">{row.artist as string}</span>
@@ -184,7 +194,7 @@ export function SongTable({
                   }
                 >
                   <div className="songTitleCell">
-                    <img className="songArt" src={artSized(row.artwork as string, 160) || placeholderArt} alt="" loading="lazy" />
+                    <SongArt artwork={row.artwork as string | null} />
                     <div className="songTitleText">
                       <span className="songTitle">{row.title as string}</span>
                       {onOpenArtist ? (
