@@ -47,7 +47,7 @@ import { StatsPage } from './StatsPage.tsx';
 import { ListeningShareBridge } from './listeningShare.tsx';
 import { LibraryView } from './LibraryView.tsx';
 import { useSwipeBack } from './useSwipeBack.ts';
-import { hapticsImpl, useHapticsPref } from './haptics.ts';
+import { hapticsImpl } from './haptics.ts';
 import { DiscoverPage } from '../plugins/discover/DiscoverPage.tsx';
 import { FriendsPage } from './FriendsPage.tsx';
 import { JamProvider } from './jam.tsx';
@@ -55,7 +55,6 @@ import { MobileAuthGate } from './MobileAuthGate.tsx';
 import { NavMoreMenu } from './NavMoreMenu.tsx';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
 import wordmark from '../assets/attack-white.png';
-import appIcon from '../assets/attack-icon.svg';
 
 const APP_NAME = 'AttackFM';
 
@@ -341,7 +340,9 @@ function PrimaryNav({
         )}
       </div>
 
-      {/* The brand, raised: the app icon, protruding above the island, home. */}
+      {/* The raised centre, home: the library, where the music you own lives.
+          A library glyph rather than the app mark, so the button says where it
+          goes. */}
       <button
         type="button"
         className="appNavBar__center"
@@ -350,7 +351,7 @@ function PrimaryNav({
         data-active={libraryActive || undefined}
         onClick={() => onTab('library')}
       >
-        <img className="appNavBar__centerIcon" src={appIcon} alt="" />
+        <LibraryBig className="appNavBar__centerIcon" size={26} aria-hidden="true" />
       </button>
 
       <div className="appNavBar__group appNavBar__group--right">
@@ -811,7 +812,6 @@ export function App() {
   // otherwise the whole screen would slide and then think better of it.
   const bodyRef = useRef<HTMLDivElement>(null);
   useSwipeBack(bodyRef, back, nav.index > 0);
-  const hapticsOn = useHapticsPref();
   const forward = () => setNav((s) => (s.index < s.stack.length - 1 ? { ...s, index: s.index + 1 } : s));
 
   // The chord the field advertises: Cmd/Ctrl+K opens search from anywhere.
@@ -828,11 +828,13 @@ export function App() {
 
   return (
     <LocaleProvider locale="en">
-      {/* Presses tick through the delegated listener; the semantic moments
-          (disc physics, transport, reveals) fire through useHaptics. On the
-          phone the impl crosses to the real Taptic Engine; on desktop there
-          is no impl and no motor, and the provider is inert. */}
-      <HapticsProvider enabled={hapticsOn} impl={hapticsImpl}>
+      {/* The provider's delegated per-press tick is OFF: a buzz on every tap
+          and on cards rippling in read as force feedback, not feel. The
+          semantic moments that stay (favourite, transport, disc physics,
+          swipe-back) fire fireNativeHaptic directly, gated by the haptics
+          preference - so `enabled={false}` silences only the tap/scroll tick,
+          not those. The impl stays for any kit surface that asks via useHaptics. */}
+      <HapticsProvider enabled={false} impl={hapticsImpl}>
         <ToastProvider>
           <AppearanceProvider>
             {/* Which server (if any) is connected sits above the library,

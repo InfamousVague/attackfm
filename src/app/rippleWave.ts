@@ -1,25 +1,21 @@
 import { useEffect, type RefObject } from 'react';
-import { fireMicroTick } from './haptics.ts';
 
 /**
  * The scroll-driven wave: cards ripple into place as they ENTER THE VIEW -
- * at page open, while scrolling down, even sliding a shelf sideways - and
- * each landing is felt as a soft tick. This replaced a mount-time nth-child
- * wave that only ever played once (and mostly into a screen nobody had
- * scrolled to yet): the observer makes the entrance happen exactly when the
- * item and the eye actually meet.
+ * at page open, while scrolling down, even sliding a shelf sideways. This
+ * replaced a mount-time nth-child wave that only ever played once (and mostly
+ * into a screen nobody had scrolled to yet): the observer makes the entrance
+ * happen exactly when the item and the eye actually meet. Purely visual - no
+ * haptic rides it (a tick as each card scrolled in felt like force feedback).
  *
  * Mechanics: one IntersectionObserver per page. Items are hidden the moment
  * they are registered (data-ripple-seen, before first paint of the page's
  * animation frame) and revealed when they first intersect (data-rippled).
  * Everything intersecting in the same beat forms a BATCH: the batch gets
- * staggered delays - that is the wave - and its landings tick along the
- * stagger, floored so a flung scrollbar patters instead of buzzing. Each
- * item ripples once per page visit; the observer lets it go on arrival.
+ * staggered delays - that is the wave. Each item ripples once per page visit;
+ * the observer lets it go on arrival.
  *
- * Reduced motion: nothing is ever hidden and nothing moves - the ticks
- * still speak, since the Taptic Engine is that setting's substitute for
- * motion, not another source of it.
+ * Reduced motion: nothing is ever hidden and nothing moves.
  */
 
 /** The boxes that ride the wave - concrete card classes, because the menu
@@ -41,22 +37,11 @@ const RIPPLE_SELECTOR = [
   '.catalogTrack',
 ].join(', ');
 
-/** Landing ticks never come closer than this, whatever the scroll does. */
-const TICK_FLOOR_MS = 70;
 /** The stagger between neighbours in one arriving batch. */
 const STEP_MS = 35;
 /** Delays cap out here: a huge first screenful still finishes its wave
  *  within half a second rather than trickling. */
 const MAX_STEPS = 14;
-
-let lastTick = 0;
-
-function landingTick(): void {
-  const now = performance.now();
-  if (now - lastTick < TICK_FLOOR_MS) return;
-  lastTick = now;
-  fireMicroTick();
-}
 
 export function useRippleWave(root: RefObject<HTMLElement | null>): void {
   useEffect(() => {
@@ -78,10 +63,6 @@ export function useRippleWave(root: RefObject<HTMLElement | null>): void {
         const step = Math.min(i, MAX_STEPS);
         el.style.setProperty('--ripple-d', `${step * STEP_MS}ms`);
         el.setAttribute('data-rippled', '');
-        // The thud rides the same stagger the eye sees. Timeouts rather than
-        // animation events: the wave must patter even under reduced motion,
-        // where there is no animation to listen to.
-        window.setTimeout(landingTick, step * STEP_MS);
       });
     };
 

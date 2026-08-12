@@ -1,20 +1,15 @@
 import { useEffect, useState } from 'react';
 import { artSized } from './server.ts';
 import { useServerSession } from './serverSession.tsx';
-import { fireNativeHaptic } from './haptics.ts';
 import placeholderArt from '../assets/attack-wave.png';
 
 /**
  * Art that ARRIVES rather than pops: the shared machinery behind every cover
  * in the app. A surface holds its skeleton shimmer while the image is still
- * on the wire, then reveals with the pulse animation - and the reveal is felt
- * as well as seen: a soft selection tick from the Taptic Engine rides each
- * burst of loads, so a shelf filling in patters gently under the thumb.
+ * on the wire, then reveals with the pulse animation - a purely visual pop,
+ * no haptic (a tick per cover loading in felt like force feedback).
  *
- * Three pieces:
- *   - reportArtReveal(): the coalescing tick. Loads land in bursts; a tick
- *     per image would be a buzz-storm, so at most one fires per short window
- *     and the pop animation carries the rest of the rhythm visually.
+ * Two pieces:
  *   - useArtLoad(src): one image. Returns the props an <img> needs to wear
  *     the skeleton (`data-loading`), pop in (`artPop` class), and report.
  *   - useTileArt(urls): a mosaic. Playlist tiles and mix covers draw up to
@@ -22,30 +17,6 @@ import placeholderArt from '../assets/attack-wave.png';
  *     every image having answered, so a tile never shows three covers and a
  *     hole while the fourth loads.
  */
-
-// --- the felt half --------------------------------------------------------
-
-let lastTick = 0;
-let lastReport = 0;
-let burstCount = 0;
-
-/**
- * At most one soft tick per 140ms, and at most eight per burst - so a shelf
- * filling in patters for about a second and then trusts the eye, and a long
- * scroll through a lazy-loading table cannot tick the whole way down. A
- * report gap under a second is the same burst continuing; a real pause
- * starts a fresh one, so the next page's fill patters again.
- */
-export function reportArtReveal(): void {
-  const now = performance.now();
-  if (now - lastReport > 900) burstCount = 0;
-  lastReport = now;
-  if (burstCount >= 8) return;
-  if (now - lastTick < 140) return;
-  burstCount += 1;
-  lastTick = now;
-  fireNativeHaptic('selection');
-}
 
 // --- one image ------------------------------------------------------------
 
@@ -78,10 +49,7 @@ export function useArtLoad(src: string | null | undefined, className: string): A
   return {
     className: `${className} artPop`,
     'data-loading': waiting || undefined,
-    onLoad: () => {
-      setLoaded(true);
-      reportArtReveal();
-    },
+    onLoad: () => setLoaded(true),
     // An error ends the skeleton too: whatever the img falls back to (its
     // alt, a glyph behind it) is the final answer, not a thing to shimmer at.
     onError: () => setLoaded(true),
@@ -118,10 +86,7 @@ export function useCardArt(artwork: string | null): {
   return {
     src,
     loaded,
-    onLoad: () => {
-      setLoaded(true);
-      reportArtReveal();
-    },
+    onLoad: () => setLoaded(true),
     // A dead cover URL swaps to the placeholder once (which then loads and
     // reveals); if the placeholder itself is what failed, just reveal. Server
     // art failing usually means the stream token in its URL has aged out, so
@@ -195,10 +160,7 @@ export function useTileArt(urls: readonly (string | null)[]): {
     let left = wanted.length;
     const done = () => {
       left -= 1;
-      if (live && left <= 0) {
-        setLoaded(true);
-        reportArtReveal();
-      }
+      if (live && left <= 0) setLoaded(true);
     };
     const images = wanted.map((u) => {
       const img = new Image();

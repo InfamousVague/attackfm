@@ -1269,9 +1269,9 @@ img {
   position: absolute;
   inset-inline: var(--app-nav-inset);
   /* Float the whole pill clear of the home indicator rather than draping a
-     dead chin over it: nav-inset off the safe-area edge, so the tabs fill a
-     tight pill and the indicator shows on the page below it. */
-  inset-block-end: calc(var(--app-nav-inset) + var(--app-safe-bottom));
+     dead chin over it, but sit it low - see --app-nav-bottom, which the player
+     clears by the same amount. */
+  inset-block-end: var(--app-nav-bottom);
   z-index: 4;
   /* Border-box, so the tabs centre in the island band and the chin is padding
      below them rather than height stolen from them. */
@@ -1432,9 +1432,10 @@ img {
   margin-block-start: -1.9rem;
   padding: 0;
   border: none;
-  /* Circular, filled with the brand pink - the app icon's own dark backdrop is
-     dropped (see the icon's blend below) so the wave sits straight on the
-     colour, the way the reference's centre button does. */
+  /* Circular, filled with the brand pink, with the library glyph centred on
+     it in white. */
+  display: grid;
+  place-items: center;
   border-radius: 50%;
   background: var(--glacier-accent-solid);
   overflow: hidden;
@@ -1460,15 +1461,8 @@ img {
 }
 
 .appNavBar__centerIcon {
-  inline-size: 100%;
-  block-size: 100%;
-  display: block;
-  object-fit: cover;
-  border-radius: inherit;
-  /* The icon is a white wave on a black square; `screen` drops the black to
-     nothing over the pink fill and keeps the wave, so the button reads as one
-     pink disc with the mark on it. */
-  mix-blend-mode: screen;
+  /* A stroked glyph in white, sitting straight on the pink disc. */
+  color: #fff;
 }
 
 /* The kit nests its items in an inner container sized to their content; make
@@ -1503,6 +1497,13 @@ img {
      padding, over an inset-inline of 0), so the two plates line up down both
      sides instead of stepping in and out. */
   --app-nav-inset: var(--glacier-space-2);
+  /* How far the whole pill floats off the very bottom of the screen: the side
+     inset plus only HALF the home-indicator safe area, so the bar sits low and
+     near the thumb instead of hovering a full indicator's height above it. One
+     source of truth - it drives the pill's own position AND the clearance the
+     player keeps above it, so the two never drift. No safe area (desktop, older
+     phones) leaves just the inset. */
+  --app-nav-bottom: calc(var(--app-nav-inset) + var(--app-safe-bottom) * 0.5);
   /* No chin: the pill floats above the home indicator (see .appNavBar's
      inset-block-end) rather than reaching down over it, so there is no dead
      band of card below the tabs. Kept at 0 so every formula that referenced
@@ -1543,8 +1544,7 @@ img {
      down to the screen's edge. The player and the blur scrim clear exactly
      this, so nothing tucks under the card or the raised button. */
   --app-nav-height: calc(
-    var(--app-nav-overhang) + var(--app-nav-island-height) + var(--app-nav-inset) +
-      var(--app-safe-bottom)
+    var(--app-nav-overhang) + var(--app-nav-island-height) + var(--app-nav-bottom)
   );
 }
 
