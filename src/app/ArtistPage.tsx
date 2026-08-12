@@ -21,6 +21,7 @@ import {
 } from './server.ts';
 import { titleKey, useOwned } from './owned.ts';
 import { SongTable } from './SongTable.tsx';
+import { TrackMenu } from './TrackMenu.tsx';
 import type { Track } from './tauri.ts';
 import placeholderArt from '../assets/attack-wave.png';
 
@@ -606,7 +607,10 @@ export function ArtistPage({ artist, onPlay, onOpenArtist, onOpenPlaylist }: Art
               const state = adding[t.id];
               const mine = t.mine;
               const plays = mine ? playsFor(mine.path) : null;
-              return (
+              // A row you OWN is a song and wears the song menu; a row that is
+              // still only in the catalogue is an offer, and there is nothing
+              // to queue or file yet.
+              const row = (
                 <li key={t.id} className="catalogTrack">
                   <span className="catalogTrack__rank">{index + 1}</span>
                   {t.cover ? (
@@ -694,6 +698,13 @@ export function ArtistPage({ artist, onPlay, onOpenArtist, onOpenPlaylist }: Art
                     </button>
                   )}
                 </li>
+              );
+              return mine ? (
+                <TrackMenu key={t.id} track={mine} className="catalogTrackMenu">
+                  {row}
+                </TrackMenu>
+              ) : (
+                row
               );
             })}
           </ol>

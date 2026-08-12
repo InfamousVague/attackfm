@@ -26,6 +26,7 @@ import { mosaicArts, useArtLoad, useTileArt } from './artLoad.ts';
 import { artSized, fetchPlaylistSuggestions, remotePath } from './server.ts';
 import { usePlaylists } from './playlists.tsx';
 import { EmptyArt } from './EmptyArt.tsx';
+import { TrackMenu } from './TrackMenu.tsx';
 import type { Track } from './tauri.ts';
 import placeholderArt from '../assets/attack-wave.png';
 
@@ -259,6 +260,10 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
             getLabel={(row) => row.track.title}
             onReorder={(next) => reorder(playlist.id, next.map((r) => r.id))}
             renderItem={(row) => (
+              /* Every song wears the same menu wherever it is drawn: queue it,
+                 file it, keep it on this device. A song is the same song in a
+                 playlist as it is on a shelf. */
+              <TrackMenu track={row.track} className="playlistRowMenu">
               <div className="playlistRow">
                 <button
                   type="button"
@@ -292,6 +297,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                   <X size={15} />
                 </IconButton>
               </div>
+              </TrackMenu>
             )}
           />
 

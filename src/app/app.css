@@ -9834,3 +9834,13 @@ button.artistAlbum {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* The song menu is a wrapper, not a box: it must not become a layout element
+   between a list and its rows, or the row loses its grid/flex parent and the
+   sortable list loses its drag target. `contents` keeps the row exactly where
+   it was and only adds the long-press/right-click behaviour. */
+.playlistRowMenu,
+.queueRowMenu,
+.catalogTrackMenu {
+  display: contents;
+}
