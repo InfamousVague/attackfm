@@ -9477,3 +9477,50 @@ button.artistAlbum {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ---- The endless station ------------------------------------------------ */
+
+/* On-air, at the top of the queue: what it came from, the two dials, and the
+   way out. Tinted so it reads as a live thing rather than another queue row. */
+.radioBar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-3);
+  margin-block-end: var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-accent-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-accent-soft);
+}
+
+.radioBar__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+}
+
+.radioBar__title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  font-weight: 650;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A dial reads as its two ends and the travel between them. */
+.radioBar__dial {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.radioBar__dial > :nth-child(2) {
+  flex: 1;
+  min-inline-size: 0;
+}

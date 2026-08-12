@@ -7,10 +7,11 @@
 //! anything already played has left the line. Reordering resolves through the
 //! kit's SortableList, which carries both drag and full keyboard reordering.
 
-import { IconButton, SortableList, Text } from '@glacier/react';
-import { ChevronDown, Music, X } from '@glacier/icons';
+import { Button, IconButton, Slider, SortableList, Text } from '@glacier/react';
+import { ChevronDown, Music, Radio, X } from '@glacier/icons';
 import { artSized } from './server.ts';
 import { useArtLoad } from './artLoad.ts';
+import { useRadioOptional } from './radio.tsx';
 import type { Track } from './tauri.ts';
 
 interface QueueRow {
@@ -43,6 +44,10 @@ export function QueuePanel({
   const upcoming = curIdx >= 0 ? queue.slice(curIdx + 1) : [];
   const rows: QueueRow[] = upcoming.map((t) => ({ id: t.path, track: t }));
 
+  // The station, when one is on: the queue is where "what's next" is read, so
+  // it is where the dial belongs.
+  const radio = useRadioOptional();
+
   const reorder = (next: QueueRow[]) => onQueueChange([...head, ...next.map((r) => r.track)]);
   const remove = (path: string) => onQueueChange(queue.filter((t) => t.path !== path));
 
@@ -56,6 +61,51 @@ export function QueuePanel({
       </header>
 
       <div className="queuePanel__body">
+        {/* On air: what it was seeded from, the two knobs, and the way out.
+            The list below keeps filling itself for as long as this is here. */}
+        {radio?.on && (
+          <div className="radioBar">
+            <div className="radioBar__head">
+              <span className="radioBar__title">
+                <Radio size={15} />
+                {radio.seed ? `Radio from ${radio.seed.title}` : 'Radio'}
+              </span>
+              <Button variant="ghost" size="sm" onClick={radio.stop}>
+                Stop
+              </Button>
+            </div>
+            <label className="radioBar__dial">
+              <span>Calmer</span>
+              <Slider
+                aria-label="Energy"
+                min={-1}
+                max={1}
+                step={0.1}
+                value={radio.dial.energy}
+                onValueChange={(v) => radio.setDial({ energy: v })}
+              />
+              <span>Harder</span>
+            </label>
+            <label className="radioBar__dial">
+              <span>Deep cuts</span>
+              <Slider
+                aria-label="Familiarity"
+                min={0}
+                max={1}
+                step={0.1}
+                value={radio.dial.familiar}
+                onValueChange={(v) => radio.setDial({ familiar: v })}
+              />
+              <span>Favourites</span>
+            </label>
+            {radio.filling && (
+              <Text size="xs" tone="subtle">
+                Finding the next few…
+              </Text>
+            )}
+          </div>
+        )}
+
         {current && (
           <div className="queueNow">
             <span className="queueNow__label">Now playing</span>

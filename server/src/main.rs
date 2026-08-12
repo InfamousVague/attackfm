@@ -21,6 +21,7 @@
 //! | `AFM_PUBLIC_URL` | *(empty)* | The public origin, e.g. `https://matt.attack.fm` - needed for the Spotify OAuth redirect. |
 
 mod api;
+mod audiobooks;
 mod auth;
 mod canvas;
 mod collector;
@@ -39,6 +40,7 @@ mod library_search;
 mod listens;
 mod pair;
 mod push;
+mod radio;
 mod recents;
 mod registry_auth;
 mod rewind;
@@ -120,6 +122,8 @@ pub struct AppState {
     /// The curator: the always-running process that learns what this listener
     /// likes and builds playlists from it.
     pub curator: Arc<curator::CuratorState>,
+    /// The audiobook download queue - small, serial, in-memory (audiobooks.rs).
+    pub audiobooks: Arc<audiobooks::BookQueue>,
     /// Per-listener harvest clocks for the discovery pool.
     pub discovery: Arc<discovery::DiscoveryState>,
     /// When this process came up - the uptime the stats endpoint reports.
@@ -248,6 +252,7 @@ async fn main() {
         connect: connect::ConnectState::new(),
         jams: jams::JamState::new(),
         curator: curator::CuratorState::new(),
+        audiobooks: Arc::new(audiobooks::BookQueue::default()),
         discovery: discovery::DiscoveryState::new(),
         started: std::time::Instant::now(),
     });
@@ -403,6 +408,7 @@ async fn main() {
         .route("/api/new-music", get(discovery::new_music))
         .route("/api/discoveries/dismiss", post(discovery::dismiss))
         .route("/api/related", get(discovery::related))
+        .route("/api/radio", get(radio::radio))
         .route("/api/rewind", get(rewind::rewind))
         .route("/api/connect", get(connect::connect))
         .route("/api/users", get(api::list_users))
@@ -428,6 +434,9 @@ async fn main() {
         .route("/api/spotify/mirror/{key}/items", get(spotify::mirror_items))
         .route("/api/spotify/mirror/{key}/retry", post(spotify::mirror_retry))
         .route("/api/spotify/mirror/{key}/forget", post(spotify::mirror_forget))
+        .route("/api/audiobooks/search", get(audiobooks::search))
+        .route("/api/audiobooks/import", post(audiobooks::import))
+        .route("/api/audiobooks/jobs", get(audiobooks::jobs))
         .nest_service("/plugins", ServeDir::new(&plugins_dir))
         .nest_service(
             "/api/assets",
