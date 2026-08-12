@@ -94,15 +94,28 @@ function ArtistCard({ name, cover, onOpen }: { name: string; cover: string | nul
  *  genre - or the curator's own faces for AI-made lists), else the 2x2
  *  mosaic of its first artworks, glyph fallback. */
 function MixCover({ tracks, art }: { tracks: Track[]; art?: string | null }) {
+  // A served object that fails to arrive (old server, missing piece) steps
+  // the cover back down to the mosaic rather than leaving a broken image.
+  const [dead, setDead] = useState(false);
+  const object = !dead && art ? art : null;
   const arts = mosaicArts(tracks.map((t) => t.artwork));
   // Under four covers the glyph stands in, and a glyph never loads - the tile
   // hook watches exactly the urls the grid below will draw.
-  const { loaded, hostRef } = useTileArt(art || arts.length < 4 ? [] : arts);
-  const served = useArtLoad(art ?? null, '');
-  if (art) {
+  const { loaded, hostRef } = useTileArt(object || arts.length < 4 ? [] : arts);
+  const served = useArtLoad(object, '');
+  if (object) {
     return (
       <div className="mixCardCover mixCardCover--object" aria-hidden>
-        <img {...served} src={art} alt="" loading="lazy" />
+        <img
+          {...served}
+          src={object}
+          alt=""
+          loading="lazy"
+          onError={() => {
+            served.onError();
+            setDead(true);
+          }}
+        />
       </div>
     );
   }

@@ -259,10 +259,12 @@ function Glyph({
   const sized = shape === 'mosaic' || shape === 'tile' ? null : artSized(cover ?? null, 160);
   const art = useArtLoad(sized, '');
   // A genre with a generated object wears it over the gradient; the tint
-  // stays beneath as the loading face and the fallback for unmapped genres.
+  // stays beneath as the loading face and the fallback for unmapped genres -
+  // and for a served object that fails to arrive.
   const { session: glyphServer } = useServerSession();
+  const [tileDead, setTileDead] = useState(false);
   const tileSlug = shape === 'tile' && tint ? genreArtwork(tint) : null;
-  const tileSrc = tileSlug && glyphServer ? artworkUrl(glyphServer, tileSlug) : null;
+  const tileSrc = tileSlug && glyphServer && !tileDead ? artworkUrl(glyphServer, tileSlug) : null;
   const tileLoad = useArtLoad(tileSrc, '');
   if (shape === 'mosaic') {
     return (
@@ -288,7 +290,20 @@ function Glyph({
   if (shape === 'tile') {
     return (
       <span className="searchRow__glyph" data-shape="tile" style={hueOf(tint ?? '')}>
-        {tileSrc ? <img {...tileLoad} src={tileSrc} alt="" loading="lazy" /> : fallback}
+        {tileSrc ? (
+          <img
+            {...tileLoad}
+            src={tileSrc}
+            alt=""
+            loading="lazy"
+            onError={() => {
+              tileLoad.onError();
+              setTileDead(true);
+            }}
+          />
+        ) : (
+          fallback
+        )}
       </span>
     );
   }
@@ -302,11 +317,28 @@ function Glyph({
 /** A Browse tile's cover, split out of the map so each tile owns its own
  *  skeleton hook. Tiles are grid-sized, so the 640 variant. `raw` is a served
  *  generated object: no size variants, and it IS the tile face rather than
- *  the corner card the library cover plays. */
-function GenreArt({ src, raw }: { src: string; raw?: boolean }) {
-  const sized = raw ? src : artSized(src, 640);
-  const art = useArtLoad(sized, raw ? 'searchGenre__objectArt' : 'searchGenre__art');
-  return <img {...art} src={sized ?? undefined} alt="" loading="lazy" />;
+ *  the corner card the library cover plays. A served object that fails (an
+ *  old server, a missing piece) steps down to the library cover rather than
+ *  leaving a broken image on the tile. */
+function GenreArt({ src, raw, fallback }: { src: string; raw?: boolean; fallback?: string | null }) {
+  const [dead, setDead] = useState(false);
+  const object = raw && !dead;
+  const active = raw && dead ? (fallback ?? null) : src;
+  const sized = active === null ? null : object ? active : artSized(active, 640);
+  const art = useArtLoad(sized, object ? 'searchGenre__objectArt' : 'searchGenre__art');
+  if (sized === null) return null;
+  return (
+    <img
+      {...art}
+      src={sized}
+      alt=""
+      loading="lazy"
+      onError={() => {
+        art.onError();
+        if (object) setDead(true);
+      }}
+    />
+  );
 }
 
 /** What a song row says under its title: normally the artist, but when the
@@ -1278,7 +1310,7 @@ export function SearchPage({
                       onClick={() => setQuery(`genre:"${g.name}"`)}
                     >
                       {generated ? (
-                        <GenreArt src={artworkUrl(server!, generated)} raw />
+                        <GenreArt src={artworkUrl(server!, generated)} raw fallback={g.covers[0] ?? null} />
                       ) : (
                         g.covers[0] && <GenreArt src={g.covers[0]} />
                       )}
