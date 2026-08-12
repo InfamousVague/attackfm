@@ -2,7 +2,8 @@ import { Button, Pill, ScrollArea, SearchField, Text } from '@glacier/react';
 import { ChartNoAxesColumn, Sparkles } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
-import { mosaicArts, useCardArt, useTileArt } from './artLoad.ts';
+import { mosaicArts, useArtLoad, useCardArt, useTileArt } from './artLoad.ts';
+import { artworkUrl, mixArtwork } from './artwork.ts';
 import { useRippleWave } from './rippleWave.ts';
 import { usePlaylists } from './playlists.tsx';
 import { useServerSession } from './serverSession.tsx';
@@ -89,12 +90,22 @@ function ArtistCard({ name, cover, onOpen }: { name: string; cover: string | nul
   );
 }
 
-/** A mix's cover: the 2x2 mosaic of its first artworks, glyph fallback. */
-function MixCover({ tracks }: { tracks: Track[] }) {
+/** A mix's cover: the generated object its name earns (a decade, a mood, a
+ *  genre - or the curator's own faces for AI-made lists), else the 2x2
+ *  mosaic of its first artworks, glyph fallback. */
+function MixCover({ tracks, art }: { tracks: Track[]; art?: string | null }) {
   const arts = mosaicArts(tracks.map((t) => t.artwork));
   // Under four covers the glyph stands in, and a glyph never loads - the tile
   // hook watches exactly the urls the grid below will draw.
-  const { loaded, hostRef } = useTileArt(arts.length < 4 ? [] : arts);
+  const { loaded, hostRef } = useTileArt(art || arts.length < 4 ? [] : arts);
+  const served = useArtLoad(art ?? null, '');
+  if (art) {
+    return (
+      <div className="mixCardCover mixCardCover--object" aria-hidden>
+        <img {...served} src={art} alt="" loading="lazy" />
+      </div>
+    );
+  }
   if (arts.length < 4) {
     return (
       <div className="mixCardCover mixCardCover--glyph" aria-hidden>
@@ -117,6 +128,16 @@ interface ResolvedMix {
   blurb: string;
   flavor: 'ai' | 'heuristic';
   tracks: Track[];
+}
+
+/** The served URL for the object a mix's name earns, or null for the mosaic. */
+function mixArt(
+  session: { url: string },
+  title: string,
+  opts: { id: string; curated?: boolean; flavor?: 'ai' | 'heuristic' },
+): string | null {
+  const slug = mixArtwork(title, opts);
+  return slug ? artworkUrl(session, slug) : null;
 }
 
 /** A shelf: a heading and a horizontal run of cards. Renders nothing when
@@ -379,7 +400,10 @@ export function HomePage({
         {curated.map((mix) => (
           <button key={mix.id} type="button" className="mixCard" onClick={() => setOpenMix(mix)}>
             <span className="mixCardCoverWrap">
-              <MixCover tracks={mix.tracks} />
+              <MixCover
+                tracks={mix.tracks}
+                art={session ? mixArt(session, mix.title, { id: mix.id, curated: true }) : null}
+              />
               {mix.flavor === 'ai' && (
                 <Pill size="sm" tone="accent" className="mixCardBadge">
                   AI
@@ -414,7 +438,10 @@ export function HomePage({
                 needs the whole line to say what it is, and a badge that
                 shares it was the first thing a truncation had to eat. */}
             <span className="mixCardCoverWrap">
-              <MixCover tracks={mix.tracks} />
+              <MixCover
+                tracks={mix.tracks}
+                art={session ? mixArt(session, mix.title, { id: mix.id, flavor: mix.flavor }) : null}
+              />
               {mix.flavor === 'ai' && (
                 <Pill size="sm" tone="accent" className="mixCardBadge">
                   AI

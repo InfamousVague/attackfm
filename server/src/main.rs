@@ -17,6 +17,7 @@
 //! | `AFM_QUOTA_GB` | `0` | A ceiling on the library, in gigabytes. 0 means no ceiling. |
 //! | `AFM_SCAN_MINUTES` | `15` | How often to re-walk the music folder. 0 turns the timer off. |
 //! | `AFM_PLUGINS_DIR` | `<data>/plugins` | The plugin repository served at `/plugins`. |
+//! | `AFM_ASSETS_DIR` | `<data>/assets` | Drop folder for generated artwork, served at `/api/assets` (checkout set beneath). |
 //! | `AFM_PUBLIC_URL` | *(empty)* | The public origin, e.g. `https://matt.attack.fm` - needed for the Spotify OAuth redirect. |
 
 mod api;
@@ -193,7 +194,14 @@ async fn main() {
     // unauthenticated - a plugin repo is a distribution channel, and the app
     // fetches it before anyone signs in.
     let plugins_dir = PathBuf::from(env_or("AFM_PLUGINS_DIR", &data_dir.join("plugins").display().to_string()));
-    for dir in [&data_dir, &art_dir, &upload_dir, &music_root, &plugins_dir] {
+    // The generated artwork the app's surfaces wear (genre tiles, mix covers,
+    // empty states). AFM_ASSETS_DIR is the drop folder and wins; the set that
+    // ships with the checkout stands beneath it as a fallback, so a bare
+    // install still has every face. Unauthenticated like /plugins - cosmetic,
+    // fetched before anyone signs in.
+    let assets_dir = PathBuf::from(env_or("AFM_ASSETS_DIR", &data_dir.join("assets").display().to_string()));
+    let assets_baked = PathBuf::from(env_or("AFM_ASSETS_BAKED", "server/assets/artwork"));
+    for dir in [&data_dir, &art_dir, &upload_dir, &music_root, &plugins_dir, &assets_dir] {
         if let Err(e) = std::fs::create_dir_all(dir) {
             eprintln!("[attackfm] cannot create {}: {e}", dir.display());
             std::process::exit(1);
@@ -418,6 +426,10 @@ async fn main() {
         .route("/api/spotify/mirror/{key}/retry", post(spotify::mirror_retry))
         .route("/api/spotify/mirror/{key}/forget", post(spotify::mirror_forget))
         .nest_service("/plugins", ServeDir::new(&plugins_dir))
+        .nest_service(
+            "/api/assets",
+            ServeDir::new(&assets_dir).fallback(ServeDir::new(&assets_baked)),
+        )
         .fallback(|| async { (StatusCode::NOT_FOUND, "not found") })
         // Gzip for the JSON (a full /api/library of a large library is
         // megabytes of very compressible text - lyrics, paths, titles - and

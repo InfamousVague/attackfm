@@ -128,6 +128,7 @@ cat > "$PLIST" <<PLIST
     <key>AFM_AI_URL</key><string>$DEF_AI_URL</string>
     <key>AFM_AI_MODEL</key><string>$DEF_MODEL</string>
     <key>AFM_AI_EMBED_MODEL</key><string>$DEF_EMBED</string>
+    <key>AFM_ASSETS_BAKED</key><string>$HERE/assets/artwork</string>
   </dict>
 </dict></plist>
 PLIST

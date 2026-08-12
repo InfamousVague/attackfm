@@ -33,6 +33,7 @@ import { usePlaylists, type Playlist } from './playlists.tsx';
 import { useQueueControls } from './queueControls.tsx';
 import { useRegistry } from './registrySession.tsx';
 import { useServerSession } from './serverSession.tsx';
+import { artworkUrl, genreArtwork } from './artwork.ts';
 import { IMPORTER_PLUGIN_ID, usePluginCommands, useAcquire } from '../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
 import { PROBE_URL, importable, resolveImportable } from './resolveImport.ts';
@@ -257,6 +258,12 @@ function Glyph({
   const { loaded: tiled, hostRef: tileRef } = useTileArt(four);
   const sized = shape === 'mosaic' || shape === 'tile' ? null : artSized(cover ?? null, 160);
   const art = useArtLoad(sized, '');
+  // A genre with a generated object wears it over the gradient; the tint
+  // stays beneath as the loading face and the fallback for unmapped genres.
+  const { session: glyphServer } = useServerSession();
+  const tileSlug = shape === 'tile' && tint ? genreArtwork(tint) : null;
+  const tileSrc = tileSlug && glyphServer ? artworkUrl(glyphServer, tileSlug) : null;
+  const tileLoad = useArtLoad(tileSrc, '');
   if (shape === 'mosaic') {
     return (
       <span className="searchRow__glyph" data-shape="mosaic">
@@ -281,7 +288,7 @@ function Glyph({
   if (shape === 'tile') {
     return (
       <span className="searchRow__glyph" data-shape="tile" style={hueOf(tint ?? '')}>
-        {fallback}
+        {tileSrc ? <img {...tileLoad} src={tileSrc} alt="" loading="lazy" /> : fallback}
       </span>
     );
   }
@@ -293,10 +300,12 @@ function Glyph({
 }
 
 /** A Browse tile's cover, split out of the map so each tile owns its own
- *  skeleton hook. Tiles are grid-sized, so the 640 variant. */
-function GenreArt({ src }: { src: string }) {
-  const sized = artSized(src, 640);
-  const art = useArtLoad(sized, 'searchGenre__art');
+ *  skeleton hook. Tiles are grid-sized, so the 640 variant. `raw` is a served
+ *  generated object: no size variants, and it IS the tile face rather than
+ *  the corner card the library cover plays. */
+function GenreArt({ src, raw }: { src: string; raw?: boolean }) {
+  const sized = raw ? src : artSized(src, 640);
+  const art = useArtLoad(sized, raw ? 'searchGenre__objectArt' : 'searchGenre__art');
   return <img {...art} src={sized ?? undefined} alt="" loading="lazy" />;
 }
 
@@ -1256,7 +1265,11 @@ export function SearchPage({
                   Browse
                 </Heading>
                 <div className="searchBrowse">
-                  {browse.map((g) => (
+                  {browse.map((g) => {
+                    // The generated genre object leads; a genre the set does
+                    // not cover keeps its own library cover over the tint.
+                    const generated = server ? genreArtwork(g.name) : null;
+                    return (
                     <button
                       key={g.name}
                       type="button"
@@ -1264,13 +1277,18 @@ export function SearchPage({
                       style={hueOf(g.name)}
                       onClick={() => setQuery(`genre:"${g.name}"`)}
                     >
-                      {g.covers[0] && <GenreArt src={g.covers[0]} />}
+                      {generated ? (
+                        <GenreArt src={artworkUrl(server!, generated)} raw />
+                      ) : (
+                        g.covers[0] && <GenreArt src={g.covers[0]} />
+                      )}
                       <span className="searchGenre__name">{g.name}</span>
                       <span className="searchGenre__count">
                         {g.count === 1 ? '1 song' : `${g.count} songs`}
                       </span>
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
             )}
