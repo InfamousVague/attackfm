@@ -34,6 +34,7 @@ import {
   Settings,
   Sparkles,
   Timer,
+  Trash2,
   X,
 } from '@glacier/icons';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -683,7 +684,7 @@ function UninstallButton({
   const { reloadRemote } = usePlugins();
   return (
     <Button
-      variant="ghost"
+      variant="danger"
       onClick={() => {
         uninstallPlugin(pluginId);
         reloadRemote();
@@ -691,7 +692,7 @@ function UninstallButton({
       }}
       aria-label={`Uninstall ${name}`}
     >
-      Uninstall
+      <Trash2 size={15} /> <span>Uninstall</span>
     </Button>
   );
 }
