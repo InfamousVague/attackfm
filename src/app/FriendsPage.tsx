@@ -1,6 +1,7 @@
 import { Button, Input, Text } from '@glacier/react';
 import { Radio } from '@glacier/icons';
 import { useState } from 'react';
+import { nearbySupported, useNearby } from './nearby.ts';
 import { useJam } from './jam.tsx';
 import { useLibrary } from './library.tsx';
 import { useServerSession } from './serverSession.tsx';
@@ -21,6 +22,66 @@ import placeholderArt from '../assets/attack-wave.png';
  * server connected. It leads the page because it is the page's one LIVE thing:
  * a friend's room you can walk into right now beats a directory of names.
  */
+/**
+ * Who else is in the room, over Bluetooth and peer-to-peer Wi-Fi - so it
+ * works in a car, where nobody shares a network and the person beside you
+ * may not be a friend yet.
+ *
+ * Deliberately a switch rather than a default: this broadcasts a handle to
+ * anyone running the app within earshot, which is fine when you are trying
+ * to start a jam and nobody's business the rest of the time.
+ */
+function NearbyListeners({
+  handle,
+  code,
+  onJoin,
+}: {
+  handle: string;
+  code: string | null;
+  onJoin: (code: string) => void;
+}) {
+  const nearby = useNearby(handle, code);
+  if (!nearbySupported()) return null;
+  return (
+    <section className="nearby">
+      <div className="nearby__head">
+        <span className="nearby__title">
+          <Radio size={15} /> Nearby
+        </span>
+        <Button variant={nearby.on ? 'solid' : 'outline'} size="sm" onClick={nearby.on ? nearby.stop : nearby.start}>
+          {nearby.on ? 'Stop looking' : 'Find people near me'}
+        </Button>
+      </div>
+      {nearby.on && (
+        nearby.peers.length === 0 ? (
+          <Text size="sm" tone="muted">
+            Looking… they need this switched on too. {code ? 'Your jam’s code is going out with it.' : 'Start a jam and its code goes out with it.'}
+          </Text>
+        ) : (
+          <div className="nearbyList">
+            {nearby.peers.map((peer) => (
+              <div key={peer.handle} className="nearbyRow">
+                <FriendAvatar handle={peer.handle} size="sm" />
+                <span className="nearbyRow__text">
+                  <span className="nearbyRow__handle">{peer.handle}</span>
+                  <span className="nearbyRow__sub">
+                    {peer.code ? 'Playing something you can join' : 'Nearby'}
+                  </span>
+                </span>
+                {peer.code && (
+                  <Button variant="solid" size="sm" onClick={() => onJoin(peer.code!)}>
+                    Join
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        )
+      )}
+    </section>
+  );
+}
+
 /** The code box: six characters, however they were typed. */
 function JoinJamByCode({ onJoin }: { onJoin: (code: string) => void }) {
   const [code, setCode] = useState('');
@@ -162,6 +223,16 @@ export function FriendsPage() {
       {/* Someone in the car reads out six characters and you are in their
           room. No shared wifi, no friend request first, nothing to scan. */}
       {session && !jam.current && <JoinJamByCode onJoin={(code) => void jam.join(code)} />}
+
+      {/* The same thing without the reading aloud, where the phones can find
+          each other directly. Off until asked, and only in the app. */}
+      {session && (
+        <NearbyListeners
+          handle={session.username ?? 'listener'}
+          code={jam.hosting ? (jam.current?.id ?? null) : null}
+          onJoin={(code) => void jam.join(code)}
+        />
+      )}
 
       <RegistryFriends />
     </div>
