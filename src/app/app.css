@@ -1519,9 +1519,11 @@ img {
 }
 
 /* ── Liked & All songs: the library's two whole-collection views ────────────
-   A pair of chips above the playlist grid. Wide rather than square because
-   the name is the thing being read, and exactly two across so the row says
-   how many there are without a heading having to. */
+   Built like the Browse tiles on the search page, because they answer the same
+   kind of question - here is a slice of the library, go and look at it - and
+   two surfaces answering the same question should not be two different shapes.
+   Same bold hue gradient, same object bled across the face, same name-over-count
+   at the foot. Half the row each, so the pair reads as a pair. */
 .libShelf {
   margin-block-end: var(--glacier-space-4);
 }
@@ -1533,48 +1535,64 @@ img {
 }
 
 .libChip {
+  position: relative;
+  overflow: hidden;
   display: flex;
-  align-items: center;
-  gap: var(--glacier-space-2);
-  min-inline-size: 0;
-  padding: var(--glacier-space-2);
-  padding-inline-end: var(--glacier-space-3);
-  border-radius: var(--glacier-radius-lg);
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
-  background: var(--glacier-surface-raised);
-  color: inherit;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0.125rem;
+  min-block-size: 5rem;
+  padding: var(--glacier-space-3);
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  background: linear-gradient(
+    140deg,
+    hsl(var(--libChipHue, 280) 62% 48%),
+    hsl(calc(var(--libChipHue, 280) + 42) 56% 32%)
+  );
+  color: #fff;
   font: inherit;
   text-align: start;
   cursor: pointer;
-  transition:
-    background var(--glacier-duration-fast) var(--glacier-ease-out),
-    transform var(--glacier-duration-fast) var(--glacier-ease-out);
-}
-
-.libChip:hover {
-  background: var(--glacier-hover);
+  transition: transform var(--glacier-duration-fast) var(--glacier-ease-out);
 }
 
 .libChip:active {
   transform: scale(0.985);
 }
 
-/* contain, not cover: these are objects photographed against nothing, and
-   cropping one to fill a square would cut the shape that identifies it. */
+/* The object, worn as the tile's face rather than sat beside the words:
+   multiply so it tints INTO the gradient the way a Browse tile's does, and
+   contain so a shape photographed against nothing keeps its silhouette
+   instead of being cropped to fill. It leans to the trailing edge, leaving
+   the leading half for the words to sit clear. */
 .libChip__art {
-  flex: none;
-  inline-size: 2.75rem;
-  block-size: 2.75rem;
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: -6%;
+  inline-size: 62%;
+  block-size: 100%;
   object-fit: contain;
+  mix-blend-mode: multiply;
+  opacity: 0.95;
+  pointer-events: none;
+  /* See .searchGenre__objectArt: a child that is already round has no square
+     corners to flash past the parent's radius mid-entrance-animation. */
+  border-radius: inherit;
 }
 
 .libChip__name {
-  min-inline-size: 0;
-  font-size: var(--glacier-font-size-sm);
-  font-weight: 650;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  position: relative;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+}
+
+.libChip__count {
+  position: relative;
+  z-index: 1;
+  font-size: 0.75rem;
+  opacity: 0.85;
 }
 
 /* ── The phone's now-playing row ────────────────────────────────────────────

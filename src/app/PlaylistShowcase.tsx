@@ -1,7 +1,7 @@
 import { mosaicArts, useTileArt } from './artLoad.ts';
 import { Button, ContextMenu, Input, Modal, MenuItem, Text } from '@glacier/react';
 import { History, ListMusic, Plus, Trash2 } from '@glacier/icons';
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { useLibrary } from './library.tsx';
 import { usePlaylists } from './playlists.tsx';
 import { PluginFence, usePlugins } from '../plugins/runtime.tsx';
@@ -116,6 +116,12 @@ function PluginTile({ tile, onPlay }: { tile: PluginPlaylistTile; onPlay: (track
   );
 }
 
+/** "1 song" / "12 songs" - the line the Browse tiles use, so a chip built to
+ *  look like one also counts like one. */
+function songCount(n: number): string {
+  return n === 1 ? '1 song' : `${n} songs`;
+}
+
 /**
  * The playlist strip above the library table: Liked and Recent, then the
  * user's own playlists, then the New Playlist tile that creates one, then
@@ -140,7 +146,7 @@ export function PlaylistShowcase({
   /** Opens an artist's page from a modal row's artist line. */
   onOpenArtist?: (artist: string) => void;
 }) {
-  const { tracks } = useLibrary();
+  const { tracks, favoriteTracks } = useLibrary();
   const { playlists, create, remove, removeTrack } = usePlaylists();
   const { enabled } = usePlugins();
   // 'liked' | 'recent' | a user playlist's id.
@@ -192,13 +198,30 @@ export function PlaylistShowcase({
           says "there are exactly two of these" at a glance. */}
       <section className="homeShelf libShelf">
         <div className="libChips">
-          <button type="button" className="libChip" onClick={() => onOpenSongs('liked')}>
-            <img className="libChip__art" src={likedChip} alt="" />
+          {/* Built like the Browse tiles on search: a bold gradient face, the
+              object bled across it, the name and its count sitting on top. The
+              hue is fixed per chip rather than hashed from the name - there are
+              two of these forever, and each one already has a colour of its own
+              in the picture it wears. */}
+          <button
+            type="button"
+            className="libChip"
+            style={{ '--libChipHue': 338 } as CSSProperties}
+            onClick={() => onOpenSongs('liked')}
+          >
+            <img className="libChip__art" src={likedChip} alt="" loading="lazy" />
             <span className="libChip__name">Liked</span>
+            <span className="libChip__count">{songCount(favoriteTracks.length)}</span>
           </button>
-          <button type="button" className="libChip" onClick={() => onOpenSongs('all')}>
-            <img className="libChip__art" src={allSongsChip} alt="" />
+          <button
+            type="button"
+            className="libChip"
+            style={{ '--libChipHue': 214 } as CSSProperties}
+            onClick={() => onOpenSongs('all')}
+          >
+            <img className="libChip__art" src={allSongsChip} alt="" loading="lazy" />
             <span className="libChip__name">All songs</span>
+            <span className="libChip__count">{songCount(tracks.length)}</span>
           </button>
         </div>
       </section>
