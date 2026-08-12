@@ -110,9 +110,12 @@ function JobCard({
   const active = job.state === 'queued' || job.state === 'downloading';
   const total = job.total ?? 0;
   // A fifty-song playlist used to dump fifty rows onto the page whether or
-  // not anyone was reading them. The list opens on ask - and opens itself
-  // while the job runs, which is exactly when the songs are worth watching.
-  const [open, setOpen] = useState(job.state === 'downloading');
+  // not anyone was reading them. The list opens on ask and on ask only -
+  // including while the job runs, since a queue of several playlists all
+  // unrolled is the wall this page exists to avoid. The card's own progress
+  // (the bar, the percentage, the song coming down now) says enough without
+  // it, and the count on the toggle makes opening an informed choice.
+  const [open, setOpen] = useState(false);
   const pct = total > 0 ? Math.round((job.completed / total) * 100) : null;
   // The card draws its cover at thumb size, so ask for the 160 variant; the
   // skeleton shimmer holds the square while it downloads alongside the songs.
