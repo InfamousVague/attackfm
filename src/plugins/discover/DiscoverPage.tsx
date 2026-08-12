@@ -1,10 +1,11 @@
 import { Modal, Text } from '@glacier/react';
-import { Check, Compass, ListMusic, Music, Plus } from '@glacier/icons';
+import { Check, Compass, ListMusic, Music, Play, Plus, Sparkles } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRippleWave } from '../../app/rippleWave.ts';
 import { useServerSession } from '../../app/serverSession.tsx';
 import { useLibrary } from '../../app/library.tsx';
 import { useOwned } from '../../app/owned.ts';
+import type { Track } from '../../app/tauri.ts';
 import {
   fetchDiscover,
   fetchDiscoveries,
@@ -182,6 +183,53 @@ function groupBySection(items: readonly Suggestion[]): { section: string; items:
   return order.map((section) => ({ section, items: bySection.get(section)! }));
 }
 
+/**
+ * A group of songs behaving like a playlist on this page: the AI's fresh
+ * finds, one seed artist's trail, or what just landed in the library. Two
+ * kinds because the two lives differ - owned rows play right now, discovery
+ * rows are still out in the world and carry an Add.
+ */
+interface SongSet {
+  key: string;
+  title: string;
+  blurb: string;
+  kind: 'owned' | 'discoveries';
+  tracks?: Track[];
+  discoveries?: Discovery[];
+  /** Up to four covers for the mosaic; empty means wear the glyph. */
+  covers: string[];
+}
+
+/** The first four covers a set can actually show. */
+function mosaicOf(urls: Array<string | null | undefined>): string[] {
+  const out: string[] = [];
+  for (const url of urls) {
+    if (url && !out.includes(url)) out.push(url);
+    if (out.length === 4) break;
+  }
+  return out;
+}
+
+/** A set's cover: a 2x2 mosaic of what is inside, or one cover writ large. */
+function SetMosaic({ covers, size }: { covers: string[]; size?: 'hero' }) {
+  const first = covers[0];
+  if (!first) {
+    return (
+      <div className="suggestCardCover--glyph" aria-hidden>
+        <Sparkles size={size === 'hero' ? 34 : 26} />
+      </div>
+    );
+  }
+  if (covers.length < 4) return <CoverArt src={first} lazy />;
+  return (
+    <span className="discoverMosaic" aria-hidden>
+      {covers.map((c) => (
+        <CoverArt key={c} src={c} lazy />
+      ))}
+    </span>
+  );
+}
+
 // Only the play door is used. Artists deliberately do NOT go through
 // onOpenArtist: that opens the LIBRARY's artist page, and on Discover an artist
 // means their catalogue - the discography you can add from - so every artist row
@@ -194,7 +242,7 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
   const { session } = useServerSession();
   const downloads = useDownloadsOptional();
   const acquire = useAcquire();
-  const { tracks: libraryTracks } = useLibrary();
+  const { tracks: libraryTracks, forYou } = useLibrary();
   const owned = useOwned();
   // null while the first fetch is in flight; an array (possibly empty) after.
   const [items, setItems] = useState<Suggestion[] | null>(null);
@@ -207,6 +255,8 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
   // job; the queue's own word (stateFrom) always wins once it has one.
   const [tapped, setTapped] = useState<Record<string, AddState>>({});
   const [preview, setPreview] = useState<Suggestion | null>(null);
+  // The set whose track list is open - the page's own playlists read in full.
+  const [openSet, setOpenSet] = useState<SongSet | null>(null);
   // The import job whose arrival should start playback: tapping a song is
   // "get me this and play it", so the tap remembers the job and an effect
   // below watches for its tracks to land in the synced library. One at a time,
@@ -259,6 +309,73 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
   }, [refresh]);
 
   const sections = useMemo(() => groupBySection(items ?? []), [items]);
+
+  // The page's playlists: what just landed in the library, what the curator
+  // already fetched, and the AI's finds grouped by the artist they hang off -
+  // sets to open and move through, not a wall of single-song cards.
+  const sets = useMemo<SongSet[]>(() => {
+    const out: SongSet[] = [];
+    const freshWindow = 30 * 24 * 60 * 60 * 1000;
+    // libraryTracks arrive newest-first, so the slice IS the newest.
+    const fresh = libraryTracks.filter((t) => Date.now() - t.addedAt < freshWindow).slice(0, 40);
+    if (fresh.length >= 3) {
+      out.push({
+        key: 'new-in-library',
+        title: 'New in your library',
+        blurb: `${fresh.length} songs that just landed`,
+        kind: 'owned',
+        tracks: fresh,
+        covers: mosaicOf(fresh.map((t) => t.artwork)),
+      });
+    }
+    if (forYou.length >= 3) {
+      out.push({
+        key: 'fetched-for-you',
+        title: 'Fetched for you',
+        blurb: `${forYou.length} songs your curator pulled in`,
+        kind: 'owned',
+        tracks: forYou,
+        covers: mosaicOf(forYou.map((t) => t.artwork)),
+      });
+    }
+    const bySeed = new Map<string, Discovery[]>();
+    for (const d of discoveries ?? []) {
+      if (!d.seed) continue;
+      const bucket = bySeed.get(d.seed) ?? [];
+      bucket.push(d);
+      bySeed.set(d.seed, bucket);
+    }
+    for (const [seed, list] of bySeed) {
+      if (list.length < 3) continue;
+      out.push({
+        key: `seed-${seed}`,
+        title: `Because you play ${seed}`,
+        blurb: `${list.length} new songs down that road`,
+        kind: 'discoveries',
+        discoveries: list,
+        covers: mosaicOf(list.map((d) => d.cover)),
+      });
+    }
+    return out;
+  }, [libraryTracks, forYou, discoveries]);
+
+  // The hero: the AI's freshest finds as one big set leading the page. With
+  // no discoveries yet, the newest of the other sets stands in - the page
+  // still opens on a place to go.
+  const hero = useMemo<SongSet | null>(() => {
+    if (discoveries && discoveries.length >= 3) {
+      return {
+        key: 'fresh-finds',
+        title: 'Fresh finds',
+        blurb: `${Math.min(discoveries.length, 25)} new songs picked from what you play`,
+        kind: 'discoveries',
+        discoveries: discoveries.slice(0, 25),
+        covers: mosaicOf(discoveries.map((d) => d.cover)),
+      };
+    }
+    return sets[0] ?? null;
+  }, [discoveries, sets]);
+  const shelfSets = sets.filter((s) => s.key !== hero?.key);
 
   const add = (item: Suggestion) => {
     if (!downloads) return;
@@ -406,54 +523,43 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
         </div>
       </header>
 
-      {/* Picks by your AI: songs you do not own, chosen by your server from
-          what you actually play. Leads the page - it is the reason to open
-          Discover over a chart. */}
-      {discoveries && discoveries.length > 0 && (
+      {/* The hero: the AI's freshest finds as one place to walk into, leading
+          the page the way the live jam leads Friends - the newest thing, big. */}
+      {hero && (
+        <button type="button" className="discoverHero" onClick={() => setOpenSet(hero)}>
+          <span className="discoverHero__art">
+            <SetMosaic covers={hero.covers} size="hero" />
+          </span>
+          <span className="discoverHero__scrim" aria-hidden />
+          <span className="discoverHero__text">
+            <span className="discoverHero__kicker">
+              <Sparkles size={13} /> {hero.kind === 'discoveries' ? 'Made by your AI' : 'From your library'}
+            </span>
+            <span className="discoverHero__title">{hero.title}</span>
+            <span className="discoverHero__blurb">{hero.blurb}</span>
+          </span>
+        </button>
+      )}
+
+      {/* The page's playlists: new songs grouped into places to go - a seed
+          artist's trail, the curator's own pulls, what just landed - instead
+          of a wall of single-song suggestions. */}
+      {shelfSets.length > 0 && (
         <section className="discoverSection">
-          <h2 className="discoverSection__title">Picks by your AI</h2>
-          <div className="discoverGrid">
-            {discoveries.slice(0, 18).map((d) => {
-              const state = discoveryState(d);
-              const canAdd = acquire.hasHandlers(discoveryTarget(d));
-              return (
-                <button
-                  key={d.id}
-                  type="button"
-                  className="resultCard"
-                  data-kind="track"
-                  disabled={!canAdd}
-                  title={canAdd ? undefined : 'No way to add this — enable Music import in Plugins'}
-                  onClick={() => {
-                    const job = downloads?.jobs?.find((j) => j.url === d.url) ?? null;
-                    if (state === 'added') {
-                      const t = importedTrack(job) ?? owned.find(d.artist, d.title);
-                      if (t) onPlay(t, [t]);
-                    } else if (state === 'adding') {
-                      if (job) setPlayWhenAdded(job.id);
-                    } else {
-                      addDiscovery(d);
-                    }
-                  }}
-                >
-                  <span className="resultCard__cover" data-kind="track">
-                    {d.cover ? <CoverArt src={d.cover} lazy /> : <Music size={22} />}
+          <h2 className="discoverSection__title">New for you</h2>
+          <div className="discoverGrid discoverGrid--sets">
+            {shelfSets.map((set) => (
+              <button key={set.key} type="button" className="discoverSetCard" onClick={() => setOpenSet(set)}>
+                <span className="suggestCardCover discoverSetCard__cover">
+                  <SetMosaic covers={set.covers} />
+                  <span className="discoverSetCard__count">
+                    {(set.tracks ?? set.discoveries ?? []).length}
                   </span>
-                  <span className="resultCard__title">{d.title}</span>
-                  <span className="resultCard__sub">{d.artist}</span>
-                  {d.seed && <span className="resultCard__reason">Because you play {d.seed}</span>}
-                  <span className="resultCard__badge" data-state={state}>
-                    {state === 'added' ? (
-                      <Check size={14} />
-                    ) : state === 'adding' ? (
-                      <span className="resultCard__spin" aria-label="Adding" />
-                    ) : (
-                      <Plus size={14} />
-                    )}
-                  </span>
-                </button>
-              );
-            })}
+                </span>
+                <span className="suggestCardTitle">{set.title}</span>
+                <span className="suggestCardBlurb">{set.blurb}</span>
+              </button>
+            ))}
           </div>
         </section>
       )}
@@ -463,28 +569,148 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
           Loading suggestions…
         </p>
       ) : items && items.length > 0 ? (
-        sections.map(({ section, items: group }) => (
-          <section key={section} className="discoverSection">
-            <h2 className="discoverSection__title">{section}</h2>
-            <div className="discoverGrid">
-              {group.map((item) => {
-                const d = describe(item);
-                return (
-                  <SuggestionCard
-                    key={item.id}
-                    item={item}
-                    state={d.state}
-                    canAdd={d.canAdd}
-                    progress={d.progress}
-                    onAdd={() => onAddSuggestion(item)}
-                    onOpen={() => setPreview(item)}
-                  />
-                );
-              })}
-            </div>
-          </section>
-        ))
+        sections.map(({ section, items: group }) => {
+          // Each section leads with its first chart writ large - a featured
+          // card wearing its cover as a backdrop - and the rest keep the grid.
+          const featured = group[0];
+          const featuredCover = featured?.cover ?? null;
+          const showHero = group.length >= 4 && featuredCover !== null;
+          const gridItems = showHero ? group.slice(1) : group;
+          const featuredState = showHero && featured ? describe(featured) : null;
+          return (
+            <section key={section} className="discoverSection">
+              <h2 className="discoverSection__title">{section}</h2>
+              {featured && featuredCover && featuredState && (
+                <div className="discoverHero discoverHero--suggestion">
+                  <button type="button" className="discoverHero__body" onClick={() => setPreview(featured)}>
+                    <span className="discoverHero__art">
+                      <CoverArt src={featuredCover} lazy />
+                    </span>
+                    <span className="discoverHero__scrim" aria-hidden />
+                    <span className="discoverHero__text">
+                      <span className="discoverHero__kicker">Featured</span>
+                      <span className="discoverHero__title">{featured.title}</span>
+                      <span className="discoverHero__blurb">{featured.blurb}</span>
+                    </span>
+                  </button>
+                  <span className="discoverHero__action">
+                    <AddButton
+                      item={featured}
+                      state={featuredState.state}
+                      canAdd={featuredState.canAdd}
+                      progress={featuredState.progress}
+                      onAdd={() => onAddSuggestion(featured)}
+                    />
+                  </span>
+                </div>
+              )}
+              <div className="discoverGrid">
+                {gridItems.map((item) => {
+                  const d = describe(item);
+                  return (
+                    <SuggestionCard
+                      key={item.id}
+                      item={item}
+                      state={d.state}
+                      canAdd={d.canAdd}
+                      progress={d.progress}
+                      onAdd={() => onAddSuggestion(item)}
+                      onOpen={() => setPreview(item)}
+                    />
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })
       ) : null}
+
+      {/* A set, read in full: owned rows play right now (the row IS the
+          playlist entry), discovery rows carry the same add-then-play the
+          old grid cards had - just with the company they came with. */}
+      {openSet && (
+        <Modal open onClose={() => setOpenSet(null)} title={openSet.title} size="md">
+          <div className="discoverSetList">
+            <Text tone="muted" size="sm">
+              {openSet.blurb}
+            </Text>
+            {openSet.kind === 'owned'
+              ? openSet.tracks!.map((t) => (
+                  <button
+                    key={t.path}
+                    type="button"
+                    className="discoverSetRow"
+                    onClick={() => {
+                      setOpenSet(null);
+                      onPlay(t, openSet.tracks!);
+                    }}
+                  >
+                    <span className="discoverSetRow__cover">
+                      {t.artwork ? <CoverArt src={t.artwork} lazy /> : <Music size={16} />}
+                    </span>
+                    <span className="discoverSetRow__text">
+                      <span className="discoverSetRow__title">{t.title}</span>
+                      <span className="discoverSetRow__sub">{t.artist}</span>
+                    </span>
+                    <span className="discoverSetRow__go" aria-hidden>
+                      <Play size={14} />
+                    </span>
+                  </button>
+                ))
+              : openSet.discoveries!.map((d) => {
+                  const state = discoveryState(d);
+                  const canAdd = acquire.hasHandlers(discoveryTarget(d));
+                  return (
+                    <button
+                      key={d.id}
+                      type="button"
+                      className="discoverSetRow"
+                      disabled={state === 'idle' && !canAdd}
+                      title={
+                        state === 'idle' && !canAdd
+                          ? 'No way to add this — enable Music import in Plugins'
+                          : undefined
+                      }
+                      onClick={() => {
+                        const job = downloads?.jobs?.find((j) => j.url === d.url) ?? null;
+                        if (state === 'added') {
+                          const t = importedTrack(job) ?? owned.find(d.artist, d.title);
+                          if (t) {
+                            setOpenSet(null);
+                            onPlay(t, [t]);
+                          }
+                        } else if (state === 'adding') {
+                          if (job) setPlayWhenAdded(job.id);
+                        } else {
+                          addDiscovery(d);
+                        }
+                      }}
+                    >
+                      <span className="discoverSetRow__cover">
+                        {d.cover ? <CoverArt src={d.cover} lazy /> : <Music size={16} />}
+                      </span>
+                      <span className="discoverSetRow__text">
+                        <span className="discoverSetRow__title">{d.title}</span>
+                        <span className="discoverSetRow__sub">
+                          {d.artist}
+                          {d.seed ? ` · because you play ${d.seed}` : ''}
+                        </span>
+                      </span>
+                      <span className="discoverSetRow__badge" data-state={state}>
+                        {state === 'added' ? (
+                          <Check size={14} />
+                        ) : state === 'adding' ? (
+                          <span className="resultCard__spin" aria-label="Adding" />
+                        ) : (
+                          <Plus size={14} />
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+          </div>
+        </Modal>
+      )}
 
       {preview && (
         <Modal open onClose={() => setPreview(null)} title={preview.title} size="md">

@@ -2792,6 +2792,291 @@ img.artPop:not([data-loading]) {
   inline-size: auto;
 }
 
+/* Set cards get more room than chart tiles: a mosaic needs the width to read
+   as four covers, not four thumbnails. */
+.discoverGrid--sets {
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+}
+
+/* ---- Discover: heroes and sets ----------------------------------------- */
+
+/* The big card: a place to walk into, wearing its music as a backdrop with
+   the words resting on a scrim. One per page top (the AI's fresh finds) and
+   one leading each chart section. */
+.discoverHero {
+  position: relative;
+  display: block;
+  inline-size: 100%;
+  min-block-size: 10rem;
+  aspect-ratio: 5 / 2;
+  max-block-size: 15rem;
+  border-radius: var(--glacier-radius-xl, 1rem);
+  overflow: hidden;
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  background: var(--glacier-surface-sunken);
+  text-align: start;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  transition:
+    transform var(--glacier-duration-fast) var(--glacier-ease-out),
+    box-shadow var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.discoverHero:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.35);
+}
+
+.discoverHero__art {
+  position: absolute;
+  inset: 0;
+}
+
+.discoverHero__art img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.discoverHero__art .suggestCardCover--glyph {
+  position: absolute;
+  inset: 0;
+}
+
+.discoverHero__scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgb(0 0 0 / 0.78) 0%, rgb(0 0 0 / 0.35) 45%, transparent 75%);
+  pointer-events: none;
+}
+
+.discoverHero__text {
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-end: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--glacier-space-4);
+  max-inline-size: 100%;
+  color: #fff;
+}
+
+.discoverHero__kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: var(--glacier-font-size-2xs, 0.65rem);
+  font-weight: var(--glacier-font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, #fff 78%, transparent);
+}
+
+.discoverHero__title {
+  font-size: 1.35rem;
+  font-weight: 750;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+}
+
+.discoverHero__blurb {
+  font-size: var(--glacier-font-size-sm);
+  color: color-mix(in srgb, #fff 72%, transparent);
+}
+
+/* A featured chart: the same hero, but the Add is its own control riding the
+   corner - a sibling of the open-preview body, never nested inside it. */
+.discoverHero--suggestion {
+  cursor: default;
+}
+
+.discoverHero--suggestion:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.discoverHero__body {
+  position: absolute;
+  inset: 0;
+  display: block;
+  inline-size: 100%;
+  text-align: start;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  transition: transform var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.discoverHero__action {
+  position: absolute;
+  inset-block-end: var(--glacier-space-3);
+  inset-inline-end: var(--glacier-space-3);
+}
+
+/* The featured card's words stop short of the Add riding its corner. */
+.discoverHero--suggestion .discoverHero__text {
+  padding-inline-end: 7.5rem;
+}
+
+/* Four covers as one: the set's face. */
+.discoverMosaic {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 1px;
+}
+
+.discoverMosaic img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+/* A set card: shaped like the chart tiles so the page stays one family, with
+   a count worn where the chart tiles wear their source tag. */
+.discoverSetCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  text-align: start;
+  cursor: pointer;
+  /* A plain press target, not a chrome button. */
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+}
+
+.discoverSetCard__cover {
+  position: relative;
+}
+
+.discoverSetCard__count {
+  position: absolute;
+  inset-block-end: var(--glacier-space-1);
+  inset-inline-end: var(--glacier-space-1);
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--glacier-radius-full);
+  font-size: var(--glacier-font-size-2xs, 0.65rem);
+  font-weight: var(--glacier-font-weight-semibold);
+  color: #fff;
+  background: color-mix(in srgb, #000 55%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+
+/* A set, read in full inside the modal: rows that play (owned) or add
+   (discoveries), each wearing its cover. */
+.discoverSetList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.discoverSetList > :first-child {
+  margin-block-end: var(--glacier-space-2);
+}
+
+.discoverSetRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+  text-align: start;
+  cursor: pointer;
+  background: none;
+  border: none;
+  font: inherit;
+  color: inherit;
+}
+
+.discoverSetRow:hover:not(:disabled) {
+  background: var(--glacier-surface);
+}
+
+.discoverSetRow:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.discoverSetRow__cover {
+  flex: none;
+  inline-size: 2.4rem;
+  block-size: 2.4rem;
+  border-radius: var(--glacier-radius-sm);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-accent-text);
+}
+
+.discoverSetRow__cover img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.discoverSetRow__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.discoverSetRow__title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.discoverSetRow__sub {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.discoverSetRow__go,
+.discoverSetRow__badge {
+  flex: none;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface, rgba(0, 0, 0, 0.55));
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  color: var(--glacier-accent-text);
+}
+
+.discoverSetRow:hover:not(:disabled) .discoverSetRow__go,
+.discoverSetRow:hover:not(:disabled) .discoverSetRow__badge[data-state='idle'] {
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-on-accent, #fff);
+}
+
+.discoverSetRow__badge[data-state='added'] {
+  color: var(--glacier-success-text);
+  border-color: var(--glacier-success-text);
+}
+
 /* The cover-and-titles half of a card is one button into the preview: a plain
    press target wearing the card's own layout, with the same hover lift the
    track cards use so it reads as openable. */
