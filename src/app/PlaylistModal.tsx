@@ -1,4 +1,5 @@
 import { IconButton, Modal, Text } from '@glacier/react';
+import { TrackMenu } from './TrackMenu.tsx';
 import {
   ListPlus, Trash2, X } from '@glacier/icons';
 import { EmptyArt, type EmptyArtName } from './EmptyArt.tsx';
@@ -79,7 +80,8 @@ export function PlaylistModal({
       ) : (
         <div className="playlistModalList">
           {tracks.map((track) => (
-            <div key={track.path} className="playlistModalItem">
+            <TrackMenu key={track.path} track={track} className="playlistModalMenu">
+            <div className="playlistModalItem">
               <button
                 type="button"
                 className="playlistModalRow"
@@ -127,6 +129,7 @@ export function PlaylistModal({
                 </IconButton>
               )}
             </div>
+            </TrackMenu>
           ))}
         </div>
       )}
