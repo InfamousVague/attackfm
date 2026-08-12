@@ -852,6 +852,8 @@ export interface Jam {
   positionMs: number;
   playing: boolean;
   queue: number[];
+  /** Who asked for a track, by track id: "added by Kayla" on the row. */
+  addedBy?: Record<string, string>;
   updatedAt: number;
 }
 

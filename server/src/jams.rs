@@ -58,6 +58,11 @@ pub struct Jam {
     /// which then flows back out to the room. One-way (member -> host) by
     /// design, so there is never a merge to reconcile.
     pub additions: Vec<i64>,
+    /// Who asked for each track, by track id, for as long as the jam lives.
+    /// A jam is other people's taste arriving in your queue - saying whose is
+    /// most of the point, and the host's own state posts carry only ids, so
+    /// the attribution has to live here rather than ride the queue.
+    pub added_by: HashMap<i64, String>,
     /// When position_ms was true. Members extrapolate forward from here.
     pub updated_at: i64,
     pub created_at: i64,
@@ -83,6 +88,7 @@ impl Jam {
             "positionMs": self.position_ms + drift,
             "playing": self.playing,
             "queue": self.queue,
+            "addedBy": self.added_by,
             "updatedAt": self.updated_at,
         })
     }
@@ -141,6 +147,7 @@ pub async fn create(State(state): State<Arc<AppState>>, headers: HeaderMap) -> A
         playing: false,
         queue: Vec::new(),
         additions: Vec::new(),
+        added_by: HashMap::new(),
         updated_at: now_ms(),
         created_at: now_ms(),
     };
@@ -294,6 +301,12 @@ pub async fn add_to_queue(
     }
     if !jam.queue.contains(&body.track_id) && !jam.additions.contains(&body.track_id) {
         jam.additions.push(body.track_id);
+    }
+    // Whoever asked owns the credit, even if the host already had it queued:
+    // the room should read "Kayla wanted this" either way.
+    let name = jam.members.get(&caller.id).cloned().unwrap_or_default();
+    if !name.is_empty() {
+        jam.added_by.insert(body.track_id, name);
     }
     Ok(Json(json!({ "ok": true })))
 }
