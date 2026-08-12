@@ -1482,6 +1482,7 @@ img {
 }
 
 .appContent {
+  position: relative;
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -7406,6 +7407,27 @@ body [class*='_panel_']:has(> .dlPanel) {
   font-size: 1.05rem;
   letter-spacing: 0.12em;
   color: var(--glacier-text);
+}
+
+/* The header's shadow over scrolled content: a black gradient pinned to the
+   top of the content area, opacity driven from the page's scrollTop by
+   TopScrim (0 parked at the top, 1 a few dozen pixels in) - so content
+   dissolves into the header's edge the way the bottom nav's scrim dissolves
+   it below, and a page at rest shows no chrome at all. */
+.appTopScrim {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  block-size: 3.25rem;
+  z-index: 5;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(
+    to bottom,
+    rgb(0 0 0 / 0.92),
+    rgb(0 0 0 / 0.5) 45%,
+    transparent
+  );
 }
 
 /* ---- The plugin fan ----------------------------------------------------- */
