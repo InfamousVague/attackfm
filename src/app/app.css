@@ -2461,15 +2461,12 @@ img.artPop:not([data-loading]) {
 }
 
 /* --- The ripple-in ----------------------------------------------------------
-   A page does not pop into being; it ARRIVES. Every card in a shelf rises a
-   dozen pixels into place, each a beat after its neighbour, and each shelf a
-   beat after the one above - a wave washing down and across the page. The
-   companion drumroll from haptics.ts (ripplePatter) is timed to the same
-   window, so the items can be felt hitting the page. `backwards` fill holds
-   late items invisible until their turn; the indices are nth-child, so the
-   whole choreography is stylesheet-only and every surface wearing the two
-   container classes gets it for free. Capped at twelve items and eight
-   shelves - beyond that the wave has already passed. */
+   Scroll-driven: rippleWave.ts watches every card and reveals it the first
+   time it meets the view - at page open, scrolling down, or sliding a shelf
+   sideways - assigning each arriving batch staggered delays (the wave) and
+   ticking the Taptic Engine along the same stagger (the landings). Cards are
+   hidden from registration until their entrance; reduced motion never hides
+   and never moves, and the ticks still speak. */
 @keyframes rippleIn {
   from {
     opacity: 0;
@@ -2483,77 +2480,20 @@ img.artPop:not([data-loading]) {
   }
 }
 
-/* The wave lands on BOXES. A card wrapped in a context menu arrives inside
-   the kit's display:contents target - a wrapper with no box, which inherits
-   the nth-child --ripple-i just fine but cannot animate anything. So the
-   animation goes to the direct child when it IS a box, and one level down
-   to the real card when the child is the boxless wrapper. Without this,
-   only unwrapped items rippled - which in practice meant almost nothing,
-   since every track card and deletable playlist tile wears a menu. */
-.homeShelfRow > :not([class*='contextTarget']),
-.homeShelfRow > [class*='contextTarget'] > *,
-.showcaseGrid > :not([class*='contextTarget']),
-.showcaseGrid > [class*='contextTarget'] > * {
-  animation: rippleIn 0.32s var(--glacier-ease-out) backwards;
-  animation-delay: calc(var(--shelf-i, 0) * 60ms + var(--ripple-i, 0) * 26ms);
+[data-ripple-seen]:not([data-rippled]) {
+  opacity: 0;
 }
 
-.homeShelfRow > :nth-child(1),
-.showcaseGrid > :nth-child(1) { --ripple-i: 0; }
-.homeShelfRow > :nth-child(2),
-.showcaseGrid > :nth-child(2) { --ripple-i: 1; }
-.homeShelfRow > :nth-child(3),
-.showcaseGrid > :nth-child(3) { --ripple-i: 2; }
-.homeShelfRow > :nth-child(4),
-.showcaseGrid > :nth-child(4) { --ripple-i: 3; }
-.homeShelfRow > :nth-child(5),
-.showcaseGrid > :nth-child(5) { --ripple-i: 4; }
-.homeShelfRow > :nth-child(6),
-.showcaseGrid > :nth-child(6) { --ripple-i: 5; }
-.homeShelfRow > :nth-child(7),
-.showcaseGrid > :nth-child(7) { --ripple-i: 6; }
-.homeShelfRow > :nth-child(8),
-.showcaseGrid > :nth-child(8) { --ripple-i: 7; }
-.homeShelfRow > :nth-child(9),
-.showcaseGrid > :nth-child(9) { --ripple-i: 8; }
-.homeShelfRow > :nth-child(10),
-.showcaseGrid > :nth-child(10) { --ripple-i: 9; }
-.homeShelfRow > :nth-child(11),
-.showcaseGrid > :nth-child(11) { --ripple-i: 10; }
-.homeShelfRow > :nth-child(12),
-.showcaseGrid > :nth-child(12) { --ripple-i: 11; }
-
-/* The shelf tier of the wave: sections inherit --shelf-i to their rows. */
-.homeMixes > section:nth-child(1) { --shelf-i: 0; }
-.homeMixes > section:nth-child(2) { --shelf-i: 1; }
-.homeMixes > section:nth-child(3) { --shelf-i: 2; }
-.homeMixes > section:nth-child(4) { --shelf-i: 3; }
-.homeMixes > section:nth-child(5) { --shelf-i: 4; }
-.homeMixes > section:nth-child(6) { --shelf-i: 5; }
-.homeMixes > section:nth-child(7) { --shelf-i: 6; }
-.homeMixes > section:nth-child(8) { --shelf-i: 7; }
-.libraryPage > section:nth-child(1),
-.homePage > section:nth-child(1) { --shelf-i: 0; }
-.libraryPage > section:nth-child(2),
-.homePage > section:nth-child(2) { --shelf-i: 1; }
-.libraryPage > section:nth-child(3),
-.homePage > section:nth-child(3) { --shelf-i: 2; }
-.libraryPage > section:nth-child(4),
-.homePage > section:nth-child(4) { --shelf-i: 3; }
-.libraryPage > section:nth-child(5),
-.homePage > section:nth-child(5) { --shelf-i: 4; }
-.libraryPage > section:nth-child(6),
-.homePage > section:nth-child(6) { --shelf-i: 5; }
-.libraryPage > section:nth-child(7),
-.homePage > section:nth-child(7) { --shelf-i: 6; }
-.libraryPage > section:nth-child(8),
-.homePage > section:nth-child(8) { --shelf-i: 7; }
+[data-rippled] {
+  animation: rippleIn 0.43s var(--glacier-ease-out) backwards;
+  animation-delay: var(--ripple-d, 0ms);
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .homeShelfRow > :not([class*='contextTarget']),
-  .homeShelfRow > [class*='contextTarget'] > *,
-  .showcaseGrid > :not([class*='contextTarget']),
-  .showcaseGrid > [class*='contextTarget'] > * {
+  [data-ripple-seen]:not([data-rippled]) {
+    opacity: 1;
+  }
+  [data-rippled] {
     animation: none;
   }
 }

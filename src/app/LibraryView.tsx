@@ -3,7 +3,7 @@ import { Download } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLibrary } from './library.tsx';
 import { useCardArt } from './artLoad.ts';
-import { ripplePatter } from './haptics.ts';
+import { useRippleWave } from './rippleWave.ts';
 import { usePlaylists } from './playlists.tsx';
 import { ShelfSkeleton } from './ShelfSkeleton.tsx';
 import { PlaylistShowcase } from './PlaylistShowcase.tsx';
@@ -178,11 +178,11 @@ export function LibraryView({
   // replaced it. `scanning` is the honest signal - the library saying it is
   // still fetching AND has nothing to show yet - so the skeletons now stand
   // exactly as long as there is nothing to stand in for.
-  // The page's arrival, felt: a soft drumroll under the ripple-in wave.
-  // Deduped inside ripplePatter, so the embedded Home below cannot double it.
-  useEffect(() => {
-    ripplePatter();
-  }, []);
+  // The entrance wave: cards ripple in as they meet the view, each landing
+  // with a soft tick - see rippleWave.ts. Watching the page root covers the
+  // shelves, the playlist grid, and the embedded Home below all at once.
+  const rippleRoot = useRef<HTMLDivElement>(null);
+  useRippleWave(rippleRoot);
 
   const emptyAtMount = useRef(tracks.length === 0);
   // The ceiling, so a server that never answers cannot leave the page in
@@ -237,7 +237,7 @@ export function LibraryView({
   }, [tracks]);
 
   return (
-    <div className="homePage libraryPage">
+    <div className="homePage libraryPage" ref={rippleRoot}>
       {/* The desktop's copy of the action row. Everywhere else these two live
           in the app header (see App.tsx) - but the desktop has no such header,
           it has a title bar and a rail, so the page keeps them. */}
