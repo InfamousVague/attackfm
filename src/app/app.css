@@ -9867,3 +9867,35 @@ button.artistAlbum {
 .queueRow[data-static] {
   cursor: default;
 }
+
+/* ---- Joining a jam by code --------------------------------------------- */
+
+/* The code on the host's own card: a control, because its job is to be
+   copied, and monospaced because it is about to be read out loud. */
+.jamLive__code {
+  margin-inline-start: var(--glacier-space-2);
+  padding: 0.05rem 0.45rem;
+  border: var(--glacier-hairline) solid var(--glacier-accent-border);
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+  font-family: var(--glacier-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: var(--glacier-font-size-2xs, 0.65rem);
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+/* The other end of it: six characters and you are in the room. */
+.jamJoin {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  flex-wrap: wrap;
+}
+
+.jamJoin__field {
+  flex: 1;
+  min-inline-size: 0;
+  font-family: var(--glacier-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  letter-spacing: 0.1em;
+}
