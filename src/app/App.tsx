@@ -52,7 +52,7 @@ import { DiscoverPage } from '../plugins/discover/DiscoverPage.tsx';
 import { FriendsPage } from './FriendsPage.tsx';
 import { JamProvider } from './jam.tsx';
 import { MobileAuthGate } from './MobileAuthGate.tsx';
-import { PluginFan } from './PluginFan.tsx';
+import { PluginsBarButton } from './PluginsBarButton.tsx';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
 import wordmark from '../assets/attack-white.png';
 import appIcon from '../assets/attack-icon.svg';
@@ -253,15 +253,24 @@ function PrimaryNav({
         active={tab === 'search'}
         onClick={() => onTab('search')}
       />
-      {/* Plugin pages left the nav for the fan (PluginFan): the draggable
-          edge button that holds one door per plugin page. The bar keeps its
-          core five whatever the plugin count. */}
+      {/* Plugin pages ride the rail as their own items on the desktop, which
+          has the vertical room; the phone bar folds them into its Plugins
+          button (cascading up out of the bar) instead. */}
       <NavBarItem
         icon={<Users size={18} />}
         label="Friends"
         active={tab === 'friends'}
         onClick={() => onTab('friends')}
       />
+      {pages.map((pg) => (
+        <NavBarItem
+          key={pg.key}
+          icon={pg.icon}
+          label={pg.label}
+          active={tab === pg.key}
+          onClick={() => onTab(pg.key)}
+        />
+      ))}
     </>
   );
 
@@ -306,9 +315,9 @@ function PrimaryNav({
   // is home (the library, where the mixes live); the groups hold the rest,
   // split so the brand button sits dead-centre whatever each side holds.
   //
-  // Plugin pages do NOT take bar seats: they live in the fan (PluginFan), the
-  // draggable edge button - so the bar stays five thumb-sized tabs however
-  // many plugins are on.
+  // Plugin pages do NOT take their own bar seats: they gather behind the one
+  // Plugins button in the right group (PluginsBarButton), which cascades them
+  // up out of the bar - so the core tabs stay put however many plugins are on.
   return (
     <nav className="appNavBar" aria-label="Primary">
       <div className="appNavBar__group appNavBar__group--left">
@@ -348,9 +357,12 @@ function PrimaryNav({
           active={tab === 'friends'}
           onClick={() => onTab('friends')}
         />
-        {/* Downloads is an icon on the library page now - see LibraryView. */}
-        <BarTab icon={<Settings size={20} />} label="Settings" onClick={onSettings} />
+        {/* The plugins' door on the phone: their pages cascade up out of the
+            bar. Absent until an enabled plugin contributes a page. */}
+        <PluginsBarButton tab={tab} onTab={onTab} />
       </div>
+      {/* Settings left the bar for the header's top-right (mobileHeader), so
+          this side holds two tabs like the other - three was a crowd. */}
     </nav>
   );
 }
@@ -1064,6 +1076,18 @@ export function App() {
                       All
                     </Button>
                   )}
+                  {/* Settings, moved off the crowded tab bar to the top-right of
+                      every page: the gear that opens the modal, and with it the
+                      server connection. Always present, so Home, Discover and
+                      the rest all reach it here. */}
+                  <IconButton
+                    variant="ghost"
+                    size="sm"
+                    aria-label="Settings"
+                    onClick={() => setSettingsOpen(true)}
+                  >
+                    <Settings size={18} />
+                  </IconButton>
                 </span>
               </header>
             )}
@@ -1108,10 +1132,9 @@ export function App() {
                 onSettings={() => setSettingsOpen(true)}
               />
             )}
-            {/* The plugins' own door: the draggable edge button fanning out
-                one button per plugin page, on every platform. Fixed-position,
-                so it rides above the content wherever it is parked. */}
-            <PluginFan tab={tab} onTab={goTab} />
+            {/* The plugins' door now lives ON the nav: a rail item per page on
+                the desktop, and the phone bar's Plugins button (cascading up
+                out of the bar) - see PrimaryNav. */}
             {/* Songs tapped on the car screen start here, queue and all. */}
             <CarPlayBridge onPlay={playFrom} />
             {/* Pushes the weekly listening glance to the registry while the
