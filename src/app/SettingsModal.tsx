@@ -141,6 +141,14 @@ function Appearance() {
     accentSoft: brandRamp[scheme][2]!,
   });
   const NEUTRAL = ['system', 'light', 'dark'];
+  // The three the app actually offers: Automatic leading, then the two hands
+  // it can be forced into. The tinted presets (dawn/boreal/ember) stay in
+  // themePresets - they still work, and an accent still recolours everything -
+  // they just are not choices here any more. A listener already sitting on one
+  // keeps seeing its card until they switch away, so the group never shows
+  // nothing selected.
+  const OFFERED = ['system', 'light', 'dark'];
+  const shown = THEME_PRESETS.filter((p) => OFFERED.includes(p.id) || p.id === theme);
 
   return (
     <div className="prefsBody">
@@ -149,7 +157,8 @@ function Appearance() {
         <ThemeSelector
           aria-label="Theme"
           value={theme}
-          options={THEME_PRESETS.map((preset) => {
+          leadFirst
+          options={shown.map((preset) => {
             const neutral = NEUTRAL.includes(preset.id);
             return {
               value: preset.id,
