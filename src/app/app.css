@@ -1268,10 +1268,11 @@ img {
 .appNavBar {
   position: absolute;
   inset-inline: var(--app-nav-inset);
-  /* Float the whole pill clear of the home indicator rather than draping a
-     dead chin over it, but sit it low - see --app-nav-bottom, which the player
-     clears by the same amount. */
-  inset-block-end: var(--app-nav-bottom);
+  /* Reach down to the screen's edge and drape a chin over the home-indicator
+     strip, so the card contours to the bottom of the glass rather than floating
+     above it. Held --app-nav-inset off the physical edge, which the bottom
+     corners' wider radius then runs concentric with. */
+  inset-block-end: var(--app-nav-inset);
   z-index: 4;
   /* Border-box, so the tabs centre in the island band and the chin is padding
      below them rather than height stolen from them. */
@@ -1289,7 +1290,8 @@ img {
   /* The chin's corners take a wider sweep than the top's: down at the screen's
      edge the phone is already curving away, and a corner that opens out to meet
      it reads as one continuous bottom rather than a card set on top of one. */
-  border-radius: var(--glacier-radius-2xl, 1.75rem);
+  border-radius: var(--glacier-radius-2xl, 1.75rem) var(--glacier-radius-2xl, 1.75rem)
+    var(--app-nav-chin-radius) var(--app-nav-chin-radius);
   /* The card: a near-opaque frosted panel, a hairline edge, and a real shadow
      so it reads as lifted off the content that scrolls behind it. */
   background: var(--glacier-glass-thick);
@@ -1340,6 +1342,19 @@ img {
 .appNavBarTab__icon {
   display: grid;
   place-items: center;
+  /* A circular footprint, empty until selected - so lighting it fills a disc of
+     the accent under the glyph rather than shifting the row when it lights. */
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  border-radius: 999px;
+  transition: background-color 0.16s var(--glacier-ease-out, ease), color 0.16s ease;
+}
+
+/* The selected tab: its glyph rides a filled disc of the accent, white on the
+   colour; the label below keeps the accent tint. */
+.appNavBarTab[data-active] .appNavBarTab__icon {
+  background: var(--glacier-accent-solid);
+  color: #fff;
 }
 
 .appNavBarTab__label {
@@ -1470,18 +1485,10 @@ body .appNavMore.appNavMore[class*='_panel_'] {
      padding, over an inset-inline of 0), so the two plates line up down both
      sides instead of stepping in and out. */
   --app-nav-inset: var(--glacier-space-2);
-  /* How far the whole pill floats off the very bottom of the screen: the side
-     inset plus only HALF the home-indicator safe area, so the bar sits low and
-     near the thumb instead of hovering a full indicator's height above it. One
-     source of truth - it drives the pill's own position AND the clearance the
-     player keeps above it, so the two never drift. No safe area (desktop, older
-     phones) leaves just the inset. */
-  --app-nav-bottom: calc(var(--app-nav-inset) + var(--app-safe-bottom) * 0.5);
-  /* No chin: the pill floats above the home indicator (see .appNavBar's
-     inset-block-end) rather than reaching down over it, so there is no dead
-     band of card below the tabs. Kept at 0 so every formula that referenced
-     it still resolves. */
-  --app-nav-chin: 0px;
+  /* The chin: the band of card below the tabs that drapes over the home
+     indicator's strip, so that space carries the nav - contoured to the
+     screen's bottom by --app-nav-chin-radius - instead of nothing. */
+  --app-nav-chin: var(--app-safe-bottom);
   /* The iPhone's own screen corner. In px, not rem: it is the physical curve of
      the glass and does not move when the interface-size setting does. ~55pt is
      the modern Pro; a few points either way is invisible behind a corner this
@@ -1514,7 +1521,8 @@ body .appNavMore.appNavMore[class*='_panel_'] {
      down to the screen's edge. The player and the blur scrim clear exactly
      this, so nothing tucks under the card or the raised button. */
   --app-nav-height: calc(
-    var(--app-nav-overhang) + var(--app-nav-island-height) + var(--app-nav-bottom)
+    var(--app-nav-overhang) + var(--app-nav-island-height) + var(--app-nav-chin) +
+      var(--app-nav-inset)
   );
 }
 
