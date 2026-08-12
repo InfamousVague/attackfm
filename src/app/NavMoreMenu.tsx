@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Popover } from '@glacier/react';
 import { ChartNoAxesColumn, Download, EllipsisVertical, Settings } from '@glacier/icons';
-import { usePluginPages } from '../plugins/runtime.tsx';
+import { useHasDownloadQueue, usePluginPages } from '../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
 
 /**
@@ -28,6 +28,14 @@ export function NavMoreMenu({
   const pages = usePluginPages();
   const dl = useDownloadsOptional();
   const dlActive = dl?.active.length ?? 0;
+  // The page is worth offering the moment ANYTHING can download - the music
+  // importer through its bridge, or any plugin that contributes a queue. Read
+  // off the declarations rather than the live queues: asking every source what
+  // it is carrying means calling its hook, and a menu must not mount a plugin
+  // hook scope just to decide whether to draw a row. The consequence is that
+  // the count beside the label is the importer's alone; books in flight open
+  // the page, they just do not number it.
+  const hasQueue = useHasDownloadQueue();
   const [open, setOpen] = useState(false);
 
   // The ⋮ lights when what is on screen lives in this menu.
@@ -92,7 +100,7 @@ export function NavMoreMenu({
           <span className="appNavBarPlugins__itemLabel">Stats</span>
         </button>
 
-        {dl && (
+        {hasQueue && (
           <button
             type="button"
             role="menuitem"

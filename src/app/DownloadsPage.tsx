@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button, ProgressBar, Spinner } from '@glacier/react';
 import {
+  BookAudio,
   Check,
   CheckCheck,
   ChevronDown,
@@ -19,18 +20,29 @@ import {
   X,
 } from '@glacier/icons';
 import { useDownloadsOptional, type MusicImportJob } from '../plugins/importsBridge.ts';
+import {
+  PluginHookScope,
+  usePluginDownloadSources,
+  type ResolvedDownloadSource,
+} from '../plugins/runtime.tsx';
+import type { DownloadItem } from '../plugins/types.ts';
 import { EmptyArt } from './EmptyArt.tsx';
 import { artSized } from './server.ts';
 import { useArtLoad } from './artLoad.ts';
 import placeholderArt from '../assets/attack-wave.png';
 
 /**
- * The Downloads page: the import queue as a destination, not a popover.
+ * The Downloads page: every queue in the app, as a destination.
  *
  * A queue is something you WATCH - fifty songs arriving over ten minutes - and
- * a panel that closes when you look away is the wrong container for it. The
- * page reads the shared downloads bridge (filled by the importer plugin), so
- * it stands empty and points at Plugins when no importer is on.
+ * a panel that closes when you look away is the wrong container for it.
+ *
+ * It is also PLURAL now. Songs come down through the importer, books through
+ * LibriVox or Audible, and whatever a future plugin pulls will come down its
+ * own way - but "what is downloading right now" is one question, so it gets
+ * one answer in one place. Each source hands over a queue (see
+ * PluginDownloadSource in plugins/types.ts) and the page renders them all as
+ * the same card; a plugin no longer keeps a private list inside its own page.
  *
  * Three things carry the design. A status strip answers "what is happening"
  * in one glance, before any card is read. The queue is then SPLIT by state -
@@ -40,53 +52,63 @@ import placeholderArt from '../assets/attack-wave.png';
  * so the page scans as a row of icons at arm's length.
  */
 
-/** One song's place in its album/playlist import, derived the same way the
- *  importer popover derives it - the two surfaces must never disagree. */
-type TrackState = 'done' | 'downloading' | 'error' | 'queued';
+/** An item with the source it came from riding along, which is what the page
+ *  actually sorts, counts and renders. */
+interface Row {
+  /** `${source.key}:${item.id}` - unique once two sources both call a job '1'. */
+  key: string;
+  item: DownloadItem;
+  source: ResolvedDownloadSource;
+}
 
-function trackState(job: MusicImportJob, index: number): TrackState {
-  if (job.state === 'done') return 'done';
-  if (index < job.completed) return 'done';
-  if (job.currentIndex === index) return job.state === 'error' ? 'error' : 'downloading';
+/** One part's place in its job, derived the same way the importer popover
+ *  derives it - the two surfaces must never disagree. */
+type PartState = 'done' | 'downloading' | 'error' | 'queued';
+
+function partState(item: DownloadItem, index: number): PartState {
+  if (item.state === 'done') return 'done';
+  if (index < (item.completed ?? 0)) return 'done';
+  if (item.currentIndex === index) return item.state === 'error' ? 'error' : 'downloading';
   return 'queued';
 }
 
-function TrackIcon({ state }: { state: TrackState }) {
+function PartIcon({ state }: { state: PartState }) {
   if (state === 'done') return <Check size={13} />;
   if (state === 'downloading') return <Spinner size="sm" aria-label="" />;
   if (state === 'error') return <X size={13} />;
   return <span className="dlTrack__dot" />;
 }
 
-/** What a job IS, as a glyph: a playlist, a record, an artist, a song. The
- *  first thing worth knowing about a card, and the cheapest to read. */
+/** What a job IS, as a glyph: a playlist, a record, an artist, a book, a song.
+ *  The first thing worth knowing about a card, and the cheapest to read. */
 function KindIcon({ kind }: { kind: string }) {
   const k = kind.toLowerCase();
   if (k === 'playlist') return <ListMusic size={12} />;
   if (k === 'album') return <Disc3 size={12} />;
   if (k === 'artist') return <User size={12} />;
+  if (k === 'book' || k === 'audiobook') return <BookAudio size={12} />;
   return <Music size={12} />;
 }
 
 /** The job's state as a badge on its artwork corner - spinner, check or
  *  cross where every other card in the app wears its verdict, no words. */
-function StateBadge({ job }: { job: MusicImportJob }) {
-  if (job.state === 'done')
+function StateBadge({ item }: { item: DownloadItem }) {
+  if (item.state === 'done')
     return (
       <span className="dlCard__badge" data-state="done" title="Done">
         <Check size={11} />
       </span>
     );
-  if (job.state === 'error')
+  if (item.state === 'error')
     return (
       <span className="dlCard__badge" data-state="error" title="Failed">
         <X size={11} />
       </span>
     );
-  if (job.state === 'downloading')
+  if (item.state === 'downloading')
     return (
-      <span className="dlCard__badge" data-state="downloading" title="Downloading">
-        <Spinner size="sm" aria-label="Downloading" />
+      <span className="dlCard__badge" data-state="downloading" title={item.stage ?? 'Downloading'}>
+        <Spinner size="sm" aria-label={item.stage ?? 'Downloading'} />
       </span>
     );
   return (
@@ -96,68 +118,66 @@ function StateBadge({ job }: { job: MusicImportJob }) {
   );
 }
 
-function JobCard({
-  job,
-  onRemove,
-  onRetry,
-  onCancel,
-}: {
-  job: MusicImportJob;
-  onRemove: () => void;
-  onRetry: () => void;
-  onCancel: () => void;
-}) {
-  const active = job.state === 'queued' || job.state === 'downloading';
-  const total = job.total ?? 0;
+function JobCard({ row, showSource }: { row: Row; showSource: boolean }) {
+  const { item, source } = row;
+  const active = item.state === 'queued' || item.state === 'downloading';
+  const total = item.total ?? 0;
+  const parts = item.parts ?? [];
   // A fifty-song playlist used to dump fifty rows onto the page whether or
   // not anyone was reading them. The list opens on ask and on ask only -
   // including while the job runs, since a queue of several playlists all
   // unrolled is the wall this page exists to avoid. The card's own progress
-  // (the bar, the percentage, the song coming down now) says enough without
+  // (the bar, the percentage, the part coming down now) says enough without
   // it, and the count on the toggle makes opening an informed choice.
   const [open, setOpen] = useState(false);
-  const pct = total > 0 ? Math.round((job.completed / total) * 100) : null;
+  const pct = total > 0 ? Math.round(((item.completed ?? 0) / total) * 100) : null;
   // The card draws its cover at thumb size, so ask for the 160 variant; the
   // skeleton shimmer holds the square while it downloads alongside the songs.
-  const artSrc = artSized(job.artworkUrl, 160) ?? placeholderArt;
+  const artSrc = artSized(item.artworkUrl ?? null, 160) ?? placeholderArt;
   const art = useArtLoad(artSrc, 'dlCard__art');
   return (
-    <li className="dlCard" data-state={job.state}>
+    <li className="dlCard" data-state={item.state}>
       <span className="dlCard__artWrap">
         <img {...art} src={artSrc} alt="" loading="lazy" />
-        <StateBadge job={job} />
+        <StateBadge item={item} />
       </span>
       <div className="dlCard__body">
-        <span className="dlCard__title">{job.title}</span>
+        <span className="dlCard__title">{item.title}</span>
         <span className="dlCard__meta">
-          <span className="dlChip dlChip--kind" title={job.kind}>
-            <KindIcon kind={job.kind} />
-            {job.kind}
-          </span>
-          {job.service && (
-            <span className={`dlChip dlChip--src dlChip--${job.service.toLowerCase()}`} title={job.service}>
-              {job.service}
+          {/* Who is pulling this, shown only once there is more than one
+              answer - with a single source on the page the chip would say the
+              same word on every card and mean nothing. */}
+          {showSource && (
+            <span className="dlChip dlChip--source" title={`${source.label} download`}>
+              {source.icon}
+              {source.label}
+            </span>
+          )}
+          {item.kind && (
+            <span className="dlChip dlChip--kind" title={item.kind}>
+              <KindIcon kind={item.kind} />
+              {item.kind}
             </span>
           )}
           {total > 0 && (
-            <span className="dlChip" title={`${job.completed} of ${total} songs`}>
+            <span className="dlChip" title={`${item.completed ?? 0} of ${total}`}>
               <Music size={11} />
-              {job.completed}/{total}
+              {item.completed ?? 0}/{total}
             </span>
           )}
-          {job.state === 'done' && !!job.skipped && (
-            <span className="dlChip" title={`${job.skipped} already in library`}>
+          {item.state === 'done' && item.note && (
+            <span className="dlChip" title={item.note}>
               <CheckCheck size={11} />
-              {job.skipped}
+              {item.note}
             </span>
           )}
         </span>
-        {job.subtitle && <span className="dlCard__sub">{job.subtitle}</span>}
+        {item.subtitle && <span className="dlCard__sub">{item.subtitle}</span>}
         {active && (
           <span className="dlCard__progress">
             <ProgressBar
               className="dlCard__bar"
-              value={job.completed}
+              value={item.completed ?? 0}
               max={total || 1}
               indeterminate={total === 0}
               tone="accent"
@@ -167,20 +187,23 @@ function JobCard({
             {pct !== null && <span className="dlCard__pct">{pct}%</span>}
           </span>
         )}
-        {job.state === 'downloading' && job.currentTrack && (
+        {/* What it is doing right now: the part in flight, or - when a source
+            works on one file and has stages instead of parts - the stage, so a
+            long decrypt never reads as a stalled bar. */}
+        {item.state === 'downloading' && (item.current || item.stage) && (
           <span className="dlCard__track">
-            <Spinner size="sm" aria-label="" /> {job.currentTrack}
+            <Spinner size="sm" aria-label="" /> {item.current ?? item.stage}
           </span>
         )}
-        {job.state === 'error' && job.error && (
+        {item.state === 'error' && item.error && (
           <span className="dlCard__error">
-            <TriangleAlert size={11} /> {job.error}
+            <TriangleAlert size={11} /> {item.error}
           </span>
         )}
-        {/* The whole album/playlist, song by song - what has landed, what is
-            coming down right now, what still waits - behind a disclosure so a
-            long list is an offer rather than an imposition. */}
-        {job.tracks.length > 0 && (
+        {/* The whole album/playlist/book, part by part - what has landed, what
+            is coming down right now, what still waits - behind a disclosure so
+            a long list is an offer rather than an imposition. */}
+        {parts.length > 0 && (
           <>
             <button
               type="button"
@@ -189,16 +212,16 @@ function JobCard({
               onClick={() => setOpen((v) => !v)}
             >
               <ChevronDown size={13} className="dlCard__chev" data-open={open || undefined} />
-              {open ? 'Hide songs' : `${job.tracks.length} songs`}
+              {open ? 'Hide list' : `${parts.length} ${parts.length === 1 ? 'part' : 'parts'}`}
             </button>
             {open && (
               <ol className="dlTracks">
-                {job.tracks.map((title, i) => {
-                  const st = trackState(job, i);
+                {parts.map((title, i) => {
+                  const st = partState(item, i);
                   return (
                     <li key={i} className={`dlTrack dlTrack--${st}`}>
                       <span className="dlTrack__icon">
-                        <TrackIcon state={st} />
+                        <PartIcon state={st} />
                       </span>
                       <span className="dlTrack__title">{title}</span>
                     </li>
@@ -209,21 +232,25 @@ function JobCard({
           </>
         )}
       </div>
+      {/* Verbs a source did not hand over simply do not render: a book queue
+          that cannot cancel shows no cancel, rather than a button that lies. */}
       <div className="dlCard__actions">
-        {job.state === 'error' && (
-          <button type="button" className="dlCard__act" aria-label="Retry" title="Retry" onClick={onRetry}>
+        {item.state === 'error' && item.retry && (
+          <button type="button" className="dlCard__act" aria-label="Retry" title="Retry" onClick={item.retry}>
             <RotateCcw size={16} />
           </button>
         )}
-        {active ? (
-          <button type="button" className="dlCard__act" aria-label="Cancel" title="Cancel" onClick={onCancel}>
-            <X size={16} />
-          </button>
-        ) : (
-          <button type="button" className="dlCard__act" aria-label="Remove" title="Remove" onClick={onRemove}>
-            <Trash2 size={16} />
-          </button>
-        )}
+        {active
+          ? item.cancel && (
+              <button type="button" className="dlCard__act" aria-label="Cancel" title="Cancel" onClick={item.cancel}>
+                <X size={16} />
+              </button>
+            )
+          : item.remove && (
+              <button type="button" className="dlCard__act" aria-label="Remove" title="Remove" onClick={item.remove}>
+                <Trash2 size={16} />
+              </button>
+            )}
       </div>
     </li>
   );
@@ -256,15 +283,15 @@ function Stat({
 function Section({
   icon,
   title,
-  jobs,
-  children,
+  rows,
+  showSource,
 }: {
   icon: React.ReactNode;
   title: string;
-  jobs: MusicImportJob[];
-  children: (job: MusicImportJob) => React.ReactNode;
+  rows: Row[];
+  showSource: boolean;
 }) {
-  if (jobs.length === 0) return null;
+  if (rows.length === 0) return null;
   return (
     <section className="dlSection">
       <h2 className="dlSection__title">
@@ -272,51 +299,117 @@ function Section({
           {icon}
         </span>
         {title}
-        <span className="dlSection__count">{jobs.length}</span>
+        <span className="dlSection__count">{rows.length}</span>
       </h2>
-      <ul className="dlList downloadsList">{jobs.map((job) => children(job))}</ul>
+      <ul className="dlList downloadsList">
+        {rows.map((row) => (
+          <JobCard key={row.key} row={row} showSource={showSource} />
+        ))}
+      </ul>
     </section>
   );
 }
 
-export function DownloadsPage() {
+/**
+ * The music importer as a source like any other.
+ *
+ * It reaches the page through the downloads bridge rather than the plugin
+ * contribution, because the bridge predates it and half the app enqueues
+ * through it - but the page must not know that, so the difference is flattened
+ * here and nowhere else.
+ */
+function useMusicSource(): ResolvedDownloadSource | null {
   const downloads = useDownloadsOptional();
+  return useMemo(() => {
+    if (!downloads) return null;
+    const { jobs, paused, setPaused, clearFinished, remove, retry, cancel } = downloads;
+    return {
+      key: 'core:music',
+      pluginId: 'spotify-import',
+      label: 'Music',
+      icon: <Music size={11} />,
+      items: jobs.map(
+        (job: MusicImportJob): DownloadItem => ({
+          id: job.id,
+          title: job.title,
+          subtitle: job.subtitle,
+          kind: job.kind,
+          artworkUrl: job.artworkUrl,
+          state: job.state,
+          error: job.error,
+          note: job.skipped ? `${job.skipped} already yours` : null,
+          completed: job.completed,
+          total: job.total,
+          current: job.currentTrack,
+          parts: job.tracks,
+          currentIndex: job.currentIndex,
+          createdAt: job.createdAt,
+          retry: () => retry(job.id),
+          cancel: () => cancel(job.id),
+          remove: () => remove(job.id),
+        }),
+      ),
+      paused,
+      setPaused,
+      clearFinished,
+    };
+  }, [downloads]);
+}
 
-  if (!downloads) {
+function DownloadsBoard() {
+  const music = useMusicSource();
+  const pluginSources = usePluginDownloadSources();
+  const sources = useMemo(
+    () => (music ? [music, ...pluginSources] : pluginSources),
+    [music, pluginSources],
+  );
+
+  // Newest first across every queue, so two sources working at once interleave
+  // by when their work started rather than by which plugin loaded first. A
+  // source that does not date its items keeps its own order at the back.
+  const rows: Row[] = useMemo(
+    () =>
+      sources
+        .flatMap((source) =>
+          source.items.map((item) => ({ key: `${source.key}:${item.id}`, item, source })),
+        )
+        .sort((a, b) => (b.item.createdAt ?? 0) - (a.item.createdAt ?? 0)),
+    [sources],
+  );
+
+  if (sources.length === 0) {
     return (
       <div className="homePage downloadsPage">
         <div className="emptyState emptyState--tall">
           <EmptyArt name="downloads" />
           <p className="downloadsEmpty">
-            Turn on <strong>Music import</strong> in Settings → Plugins to download songs into your
-            library.
+            Nothing here downloads anything yet. Turn on a downloader in Settings → Plugins —{' '}
+            <strong>Music import</strong> for songs, <strong>LibriVox</strong> or{' '}
+            <strong>Audible</strong> for books — and its queue shows up here.
           </p>
         </div>
       </div>
     );
   }
 
-  const { jobs, paused, setPaused, clearFinished, remove, retry, cancel } = downloads;
-  const running = jobs.filter((j) => j.state === 'downloading');
-  const queued = jobs.filter((j) => j.state === 'queued');
-  const done = jobs.filter((j) => j.state === 'done');
-  const failed = jobs.filter((j) => j.state === 'error');
-  const finished = jobs.filter((j) => j.state === 'done' || j.state === 'error');
-  // Songs, not jobs: what the queue is actually carrying end to end.
-  const songsLeft = [...running, ...queued].reduce(
-    (n, j) => n + Math.max(0, (j.total ?? 0) - j.completed),
+  const showSource = sources.length > 1;
+  const running = rows.filter((r) => r.item.state === 'downloading');
+  const queued = rows.filter((r) => r.item.state === 'queued');
+  const done = rows.filter((r) => r.item.state === 'done');
+  const failed = rows.filter((r) => r.item.state === 'error');
+  const finished = rows.filter((r) => r.item.state === 'done' || r.item.state === 'error');
+  // Parts, not jobs: what the queues are actually carrying end to end. Sources
+  // that cannot count their parts contribute nothing here rather than a guess.
+  const partsLeft = [...running, ...queued].reduce(
+    (n, r) => n + Math.max(0, (r.item.total ?? 0) - (r.item.completed ?? 0)),
     0,
   );
 
-  const card = (job: MusicImportJob) => (
-    <JobCard
-      key={job.id}
-      job={job}
-      onRemove={() => remove(job.id)}
-      onRetry={() => retry(job.id)}
-      onCancel={() => cancel(job.id)}
-    />
-  );
+  // The header's controls act on every source that offered them: one Pause for
+  // the page, not one per plugin, and Clear sweeps all the finished cards.
+  const pausable = sources.filter((s) => s.setPaused);
+  const paused = pausable.some((s) => s.paused);
+  const clearable = sources.filter((s) => s.clearFinished);
 
   return (
     <div className="homePage downloadsPage">
@@ -332,17 +425,28 @@ export function DownloadsPage() {
           )}
         </div>
         <div className="dlHead__actions">
-          {songsLeft > 0 && (
+          {partsLeft > 0 && (
             <span className="dlHead__note">
-              {songsLeft} {songsLeft === 1 ? 'song' : 'songs'} to go
+              {partsLeft} {partsLeft === 1 ? 'file' : 'files'} to go
             </span>
           )}
-          <Button variant={paused ? 'solid' : 'soft'} size="sm" onClick={() => setPaused(!paused)}>
-            {paused ? <Play size={15} /> : <Pause size={15} />}
-            <span>{paused ? 'Resume' : 'Pause'}</span>
-          </Button>
-          {finished.length > 0 && (
-            <Button variant="ghost" size="sm" onClick={clearFinished} title="Clear finished">
+          {pausable.length > 0 && (
+            <Button
+              variant={paused ? 'solid' : 'soft'}
+              size="sm"
+              onClick={() => pausable.forEach((s) => s.setPaused?.(!paused))}
+            >
+              {paused ? <Play size={15} /> : <Pause size={15} />}
+              <span>{paused ? 'Resume' : 'Pause'}</span>
+            </Button>
+          )}
+          {finished.length > 0 && clearable.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => clearable.forEach((s) => s.clearFinished?.())}
+              title="Clear finished"
+            >
               <ListX size={15} />
               <span>Clear</span>
             </Button>
@@ -356,27 +460,37 @@ export function DownloadsPage() {
         </p>
       )}
 
-      {jobs.length === 0 ? (
+      {rows.length === 0 ? (
         <div className="emptyState emptyState--tall">
           <EmptyArt name="downloads" />
           <p className="downloadsEmpty">
-            Nothing in the queue. Add songs from <strong>Discover</strong>, or paste a music link
-            into search.
+            Nothing in the queue. Add songs from <strong>Discover</strong>, paste a music link into
+            search, or pull a book in from <strong>Books</strong>.
           </p>
         </div>
       ) : (
         <>
-          <Section icon={<Download size={15} />} title="Downloading" jobs={running}>
-            {card}
-          </Section>
-          <Section icon={<Clock size={15} />} title="Up next" jobs={queued}>
-            {card}
-          </Section>
-          <Section icon={<Check size={15} />} title="Finished" jobs={finished}>
-            {card}
-          </Section>
+          <Section icon={<Download size={15} />} title="Downloading" rows={running} showSource={showSource} />
+          <Section icon={<Clock size={15} />} title="Up next" rows={queued} showSource={showSource} />
+          <Section icon={<Check size={15} />} title="Finished" rows={finished} showSource={showSource} />
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * The page proper. The scope is here rather than around the whole app because
+ * gathering the sources means calling a run of plugin hooks whose LENGTH moves
+ * with the enabled set - legal only inside a scope that remounts when that set
+ * changes. Keeping it this low costs nothing: the page holds one piece of
+ * state (a card's disclosure), and a plugin toggled mid-view is exactly when
+ * the queue list should be rebuilt anyway.
+ */
+export function DownloadsPage() {
+  return (
+    <PluginHookScope>
+      <DownloadsBoard />
+    </PluginHookScope>
   );
 }

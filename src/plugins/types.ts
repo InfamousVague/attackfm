@@ -126,6 +126,110 @@ export interface PluginPlaylistTile {
 }
 
 /**
+ * How a download stands. Four states, because they are the four questions a
+ * queue can answer - waiting, working, landed, lost - and every downloader
+ * ends up expressing itself in them however many stages it runs internally.
+ * A source with finer stages says so in `stage`.
+ */
+export type DownloadState = 'queued' | 'downloading' | 'done' | 'error';
+
+/**
+ * One thing coming down, in the only shape the Downloads page knows.
+ *
+ * The page renders these and nothing else, so a queue of songs, a queue of
+ * books and whatever a future plugin queues all read as the same card and sort
+ * into the same three sections. The shape is deliberately the LOOSER of the
+ * two it had to cover: a music import counts songs and can name the one in
+ * flight, an Audible book is a single file that goes through stages, so
+ * everything past identity is optional and a card wears only what its source
+ * actually knows.
+ *
+ * The verbs are functions rather than ids because a source owns its own queue:
+ * the page offers a Retry button when - and only when - the source handed it
+ * something to call.
+ */
+export interface DownloadItem {
+  /** Unique within its source; the page namespaces it with the source key. */
+  id: string;
+  title: string;
+  /** The line under the title - an artist, an author, a store. */
+  subtitle?: string | null;
+  /** What this IS, worn as a chip: 'album', 'playlist', 'book'. */
+  kind?: string;
+  /** Cover art, full size - the page asks for the thumbnail variant itself. */
+  artworkUrl?: string | null;
+  state: DownloadState;
+  /**
+   * The source's own word for where it is, when 'downloading' is coarser than
+   * what it knows: Audible decrypts and files after the bytes land, and a card
+   * saying "Decrypting" beats a bar that looks stuck.
+   */
+  stage?: string | null;
+  /** Why it failed, shown on the card when state is 'error'. */
+  error?: string | null;
+  /** A short remark the card wears as a chip - what a source wants said about
+   *  a job that numbers cannot say: '12 already yours'. */
+  note?: string | null;
+  /** Parts finished, for a job made of parts (songs, sections). */
+  completed?: number;
+  /** How many parts in total; null/absent means "not countable", which draws
+   *  an indeterminate bar rather than a false percentage. */
+  total?: number | null;
+  /** The part in flight, by name - a song title, a chapter. */
+  current?: string | null;
+  /** Every part in order, for the card's disclosure list. Absent means the
+   *  job has nothing to unfold and the toggle does not render. */
+  parts?: readonly string[];
+  /** 0-based index of the part in flight within `parts`. */
+  currentIndex?: number | null;
+  /** When it was queued (epoch ms), for newest-first ordering across sources. */
+  createdAt?: number;
+  /** Offered as a button only when the source provides it. */
+  retry?: () => void;
+  cancel?: () => void;
+  remove?: () => void;
+}
+
+/** What a source hands back on every render: its queue, and whatever controls
+ *  over that queue it actually has. */
+export interface DownloadFeed {
+  items: readonly DownloadItem[];
+  /** Whether the source is holding off starting new work. Omit if it has no
+   *  such notion - the page then offers no Pause for it. */
+  paused?: boolean;
+  setPaused?: (paused: boolean) => void;
+  /** Drop this source's finished and failed cards. */
+  clearFinished?: () => void;
+}
+
+/**
+ * A queue a plugin puts on the Downloads page.
+ *
+ * The page is the one place downloads live, whoever is doing the downloading -
+ * so a plugin does not render its own queue inside its own page, it hands the
+ * queue over and the page shows it beside everything else that is coming down.
+ * A user watching a playlist and a book arrive should not have to know which
+ * plugin owns which, or visit two pages to find out.
+ */
+export interface PluginDownloadSource {
+  /** Unique within the plugin; the page namespaces it with the plugin id. */
+  id: string;
+  /** What this queue is called where a card has to say who owns it: 'Books'. */
+  label: string;
+  /** The chip's glyph, sized small (11-13px). */
+  icon?: ReactNode;
+  /**
+   * A hook returning the live queue. Run from inside a PluginHookScope on the
+   * Downloads page, like every other plugin hook: its own hooks must be called
+   * unconditionally and in fixed order before any early return. This is where
+   * a source polls - the page is mounted for as long as anyone is watching,
+   * and a source that wants to keep polling with the page closed does that in
+   * its Provider and reads the result here.
+   */
+  useDownloads: () => DownloadFeed;
+}
+
+/**
  * What a plugin's page is handed when it mounts: the same two doors the core
  * pages (Home, the artist page) are given, and no more. A page starts playback
  * by handing the player a track and the list it came from, and opens an artist
@@ -241,6 +345,12 @@ export interface Plugin {
    * registration order, on the desktop rail and the phone's bottom bar alike.
    */
   pages?: readonly PluginPage[];
+  /**
+   * Download queues this plugin contributes to the Downloads page. Rendered
+   * alongside the music importer's queue and any other plugin's, merged into
+   * the same what-is-happening-now sections.
+   */
+  downloads?: readonly PluginDownloadSource[];
   /**
    * A React hook returning the plugin's commands for the current query. It
    * may call other hooks, but must call them unconditionally and in a fixed

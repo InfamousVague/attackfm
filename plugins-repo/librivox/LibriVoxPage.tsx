@@ -1,26 +1,23 @@
 import { Button, Input, Spinner, Text } from '@glacier/react';
 import { BookAudio, Check, Plus, Search } from '@glacier/icons';
 import { useEffect, useRef, useState } from 'react';
-import { useLibrary } from '@attackfm/app/library';
 import { useServerSession } from '@attackfm/app/serverSession';
 import type { PluginPageProps } from '../../src/plugins/types.ts';
-import {
-  bookJobs,
-  importBook,
-  searchBooks,
-  MissingEndpointError,
-  type BookJob,
-  type CatalogBook,
-} from './api.ts';
+import { searchBooks, MissingEndpointError, type CatalogBook } from './api.ts';
+import { useBookQueue } from './queue.tsx';
 
 /**
  * The LibriVox catalogue: search the public domain and pull a book in. Free,
  * no account - volunteers reading out-of-copyright books. Whatever it saves
  * lands in the library as `kind = 'book'` and shows on the core Books shelf.
+ *
+ * A catalogue, and only a catalogue. What is coming down is the Downloads
+ * page's job - this page keeps just enough of the queue to mark the row you
+ * tapped, so "Add" turns into a count and then a tick without you leaving.
  */
 export function LibriVoxPage(_props: PluginPageProps) {
   const { session } = useServerSession();
-  const { rescan } = useLibrary();
+  const { jobFor, pull: pullBook } = useBookQueue();
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<CatalogBook[] | null>(null);
@@ -53,39 +50,12 @@ export function LibriVoxPage(_props: PluginPageProps) {
     return () => window.clearTimeout(debounce.current);
   }, [query, session]);
 
-  const [jobs, setJobs] = useState<BookJob[]>([]);
-  const active = jobs.some((j) => j.state === 'queued' || j.state === 'downloading');
-  useEffect(() => {
-    if (!session) return;
-    let live = true;
-    const poll = () => {
-      void bookJobs(session)
-        .then((js) => {
-          if (!live) return;
-          setJobs((prev) => {
-            const was = prev.some((p) => p.state === 'queued' || p.state === 'downloading');
-            const is = js.some((p) => p.state === 'queued' || p.state === 'downloading');
-            if (was && !is) void rescan();
-            return js;
-          });
-        })
-        .catch(() => {});
-    };
-    poll();
-    const timer = window.setInterval(poll, active ? 3_000 : 30_000);
-    return () => {
-      live = false;
-      window.clearInterval(timer);
-    };
-  }, [session, active, rescan]);
-
-  const jobFor = (bookId: number) => jobs.find((j) => j.bookId === bookId);
   const pull = (book: CatalogBook) => {
     if (!session) return;
     setNote(null);
-    void importBook(session, book.id)
-      .then((job) => setJobs((prev) => [job, ...prev.filter((j) => j.id !== job.id)]))
-      .catch((e) => setNote(e instanceof Error ? e.message : 'Could not queue that book.'));
+    void pullBook(book.id).catch((e) =>
+      setNote(e instanceof Error ? e.message : 'Could not queue that book.'),
+    );
   };
 
   if (!session) {
@@ -108,32 +78,6 @@ export function LibriVoxPage(_props: PluginPageProps) {
           Public-domain books read by volunteers. Anything you add lands on your Books shelf.
         </Text>
       </div>
-
-      {jobs.length > 0 && (
-        <div className="prefsSection">
-          {jobs.slice(0, 6).map((job) => (
-            <div key={job.id} className="bookJob" data-state={job.state}>
-              {job.cover ? (
-                <img className="bookJobArt" src={job.cover} alt="" loading="lazy" />
-              ) : (
-                <span className="bookJobArt" aria-hidden />
-              )}
-              <div className="bookJobCopy">
-                <Text size="sm">{job.title}</Text>
-                <Text tone="muted" size="xs">
-                  {job.state === 'error'
-                    ? (job.error ?? 'Failed')
-                    : job.state === 'done'
-                      ? 'Added to your library'
-                      : job.state === 'queued'
-                        ? 'Queued'
-                        : `${job.completed} of ${job.total}${job.currentSection ? ` · ${job.currentSection}` : ''}`}
-                </Text>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
 
       <div className="prefsSection">
         <div className="booksSearchRow">

@@ -26,6 +26,7 @@ import {
   PluginSlot,
   PluginsProvider,
   useAcquire,
+  useHasDownloadQueue,
   usePluginPages,
 } from '../plugins/runtime.tsx';
 import { isDesktopApp } from './platform.ts';
@@ -195,6 +196,9 @@ function PrimaryNav({
   // there is nothing to download, so the tab is absent rather than a dead end.
   const dl = useDownloadsOptional();
   const hasDownloads = dl !== null;
+  // Any queue at all, the importer's or a plugin's - what the Downloads tab
+  // itself is gated on, where `hasDownloads` stays "the music importer runs".
+  const hasQueue = useHasDownloadQueue();
   // How many imports are in flight, for the rail item's badge - the one thing
   // the old popover trigger said that a plain nav item would not.
   const dlActive = dl?.active.length ?? 0;
@@ -286,7 +290,7 @@ function PrimaryNav({
                 look away from a ten-minute job. The badge carries the count
                 the old popover trigger wore. Absent when no importer runs, so
                 the foot is only ever Settings in that case. */}
-            {hasDownloads && (
+            {hasQueue && (
               <NavBarItem
                 icon={
                   <span className="appNavRail__dlIcon">
@@ -534,6 +538,7 @@ function AppMain({
   // 'downloads' from a past session falls through to Home rather than a page
   // that should not be here.
   const hasDownloads = useDownloadsOptional() !== null;
+  const hasQueue = useHasDownloadQueue();
   // Discover is reachable whenever there is any acquire handler (import or buy),
   // matching the nav gate; the plugin-free App-Review build has neither.
   const canDiscover = hasDownloads || useAcquire().hasAny;
@@ -569,7 +574,7 @@ function AppMain({
           onPlay={onPlay}
           onOpenArtist={onOpenArtist}
           onOpenPlaylist={onOpenPlaylist}
-          onOpenDownloads={hasDownloads ? onOpenDownloads : undefined}
+          onOpenDownloads={hasQueue ? onOpenDownloads : undefined}
           onOpenStats={onOpenStats}
         />
       ) : tab === 'discover' && canDiscover ? (
@@ -598,7 +603,7 @@ function AppMain({
       ) : tab === 'friends' ? (
         // Friends: who you know on this server, and the asks in flight.
         <FriendsPage />
-      ) : tab === 'downloads' && hasDownloads ? (
+      ) : tab === 'downloads' && hasQueue ? (
         <DownloadsPage />
       ) : (
         // The default is the Library now, and it carries the personalized mixes
@@ -608,7 +613,7 @@ function AppMain({
           onPlay={onPlay}
           onOpenArtist={onOpenArtist}
           onOpenPlaylist={onOpenPlaylist}
-          onOpenDownloads={hasDownloads ? onOpenDownloads : undefined}
+          onOpenDownloads={hasQueue ? onOpenDownloads : undefined}
           onOpenStats={onOpenStats}
         />
       )}

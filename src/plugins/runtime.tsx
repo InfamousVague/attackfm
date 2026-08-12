@@ -18,10 +18,12 @@ import {
   readInstalled,
 } from './remote.ts';
 import { useServerSession } from '../app/serverSession.tsx';
+import { useDownloadsOptional } from './importsBridge.ts';
 import { PluginsContext, usePlugins, type PluginsContextValue } from './pluginsContext.ts';
 import type {
   AcquireHandler,
   AcquireTarget,
+  DownloadItem,
   PaletteContext,
   Plugin,
   PluginCommand,
@@ -473,6 +475,81 @@ export function usePluginPages(): ResolvedPluginPage[] {
       ),
     })),
   );
+}
+
+/**
+ * Whether ANYTHING in this build can download - the one question the three
+ * gates around the Downloads surface (the rail item, the ⋮ row, the content
+ * switch) all used to answer for themselves by asking whether the music
+ * importer was running. It is a plural page now, so a hub with only a book
+ * downloader on has a queue worth showing and a tab worth offering.
+ *
+ * Reads declarations, not queues: it must be callable from a nav bar, and
+ * asking a source what it holds means calling its hook, which is legal only
+ * inside a PluginHookScope. Deliberately NOT folded into the `canDiscover`
+ * test beside it - Discover is about acquiring MUSIC, and a books-only build
+ * should not grow a music feed because it can pull an audiobook.
+ */
+export function useHasDownloadQueue(): boolean {
+  const { enabled } = usePlugins();
+  const bridge = useDownloadsOptional();
+  return bridge !== null || enabled.some((p) => p.downloads?.length);
+}
+
+/** One plugin's queue, resolved for the Downloads page: the source's own
+ *  identity, the items it is carrying, and whatever controls it offered. */
+export interface ResolvedDownloadSource {
+  /** `${plugin.id}:${source.id}` - stable across renders, unique across
+   *  plugins, and the prefix every item's key is built from. */
+  key: string;
+  pluginId: string;
+  label: string;
+  icon?: ReactNode;
+  items: readonly DownloadItem[];
+  paused?: boolean;
+  setPaused?: (paused: boolean) => void;
+  clearFinished?: () => void;
+}
+
+/**
+ * Every enabled plugin's download queue, for the one page that shows them.
+ *
+ * Hook order: like usePluginCommands this loops over `enabled` calling plugin
+ * hooks, legal only because the caller sits under a PluginHookScope whose key
+ * changes with the enabled set - so the sequence of hook calls is fixed for
+ * the life of any instance. A source that throws has already spent hook slots,
+ * so the render cannot continue past it: the error is tagged for the scope's
+ * boundary, which pulls that plugin and remounts the scope clean. That is also
+ * why one plugin's broken queue cannot take the page down with it.
+ */
+export function usePluginDownloadSources(): ResolvedDownloadSource[] {
+  const { enabled } = usePlugins();
+  const inScope = useContext(HookScopeContext);
+  if (!inScope) throw new Error('usePluginDownloadSources must render under a PluginHookScope');
+
+  const sources: ResolvedDownloadSource[] = [];
+  for (const p of enabled) {
+    for (const source of p.downloads ?? []) {
+      let feed;
+      try {
+        // A fixed sequence per mount - the scope's key sees to it; see above.
+        feed = source.useDownloads();
+      } catch (error) {
+        throw new PluginCrashError(p.id, error);
+      }
+      sources.push({
+        key: `${p.id}:${source.id}`,
+        pluginId: p.id,
+        label: source.label,
+        icon: source.icon,
+        items: feed.items,
+        paused: feed.paused,
+        setPaused: feed.setPaused,
+        clearFinished: feed.clearFinished,
+      });
+    }
+  }
+  return sources;
 }
 
 /** What SettingsModal spreads into TabbedModal's sections. */
