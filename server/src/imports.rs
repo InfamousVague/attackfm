@@ -766,6 +766,13 @@ async fn run_job(
         // A writable HOME: the service's own is read-only under hardening, and
         // SpotiFLAC writes a session cache to $HOME/.spotiflac.
         .env("HOME", &manager.sf_home)
+        // A REAL stdin, even though nothing is ever written to it. Inheriting
+        // ours is inheriting whatever the service manager left on fd 0, and a
+        // hub started with that descriptor closed hands the child a closed one:
+        // Python then dies in init_sys_streams with EBADF before it runs a
+        // line, and the import fails with a stack trace that has no Python
+        // frame in it. /dev/null is a descriptor; closed is not.
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true)

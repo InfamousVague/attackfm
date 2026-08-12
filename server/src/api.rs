@@ -301,7 +301,12 @@ pub async fn scan_now(State(state): State<Arc<AppState>>, headers: HeaderMap) ->
 /// `filesystem 1024-blocks used available capacity mount`. Best-effort: a
 /// container without `df` just reports no disk numbers rather than an error.
 fn disk_space(path: &std::path::Path) -> Option<(i64, i64)> {
-    let out = std::process::Command::new("df").arg("-kP").arg(path).output().ok()?;
+    let out = std::process::Command::new("df")
+        .arg("-kP")
+        .arg(path)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .ok()?;
     if !out.status.success() {
         return None;
     }

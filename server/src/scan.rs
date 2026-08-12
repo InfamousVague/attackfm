@@ -254,6 +254,7 @@ fn read_chapters(path: &Path) -> String {
     let Ok(out) = std::process::Command::new("ffprobe")
         .args(["-v", "error", "-show_chapters", "-of", "json"])
         .arg(path)
+        .stdin(std::process::Stdio::null())
         .output()
     else {
         return String::new();

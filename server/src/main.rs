@@ -180,9 +180,45 @@ fn handle_cli_flags() {
     }
 }
 
+/// Put the places tools actually live back on PATH.
+///
+/// This is the one environmental difference between the hub and the VPS that
+/// nothing in an error message would ever point at. launchd hands a LaunchAgent
+/// a bare `/usr/bin:/bin:/usr/sbin:/sbin`, and on an Apple Silicon Mac every
+/// tool the server shells out to - ffmpeg, ffprobe, and whatever the importer
+/// runs - lives in /opt/homebrew/bin instead. On Linux they are in /usr/bin,
+/// which is already on that list, so the same binary that works on the VPS
+/// quietly cannot find any of them at home. Run from a terminal it works too,
+/// because a login shell has the full PATH - which is exactly how a fault like
+/// this stays invisible to whoever is debugging it.
+///
+/// Appends rather than prepends: an operator who set PATH deliberately keeps
+/// their order, and a directory that does not exist is never added.
+fn ensure_tool_path() {
+    let current = std::env::var_os("PATH").unwrap_or_default();
+    let mut dirs: Vec<PathBuf> = std::env::split_paths(&current).collect();
+    let mut extra: Vec<PathBuf> = ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin"]
+        .iter()
+        .map(PathBuf::from)
+        .collect();
+    // pipx puts console scripts here, which is where SpotiFLAC lands.
+    if let Some(home) = std::env::var_os("HOME") {
+        extra.push(PathBuf::from(home).join(".local/bin"));
+    }
+    for dir in extra {
+        if dir.is_dir() && !dirs.contains(&dir) {
+            dirs.push(dir);
+        }
+    }
+    if let Ok(joined) = std::env::join_paths(dirs) {
+        std::env::set_var("PATH", joined);
+    }
+}
+
 #[tokio::main]
 async fn main() {
     handle_cli_flags();
+    ensure_tool_path();
 
     let port: u16 = env_or("AFM_PORT", "8788").parse().unwrap_or(8788);
     let bind = env_or("AFM_BIND", "127.0.0.1");
