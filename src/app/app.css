@@ -3641,9 +3641,23 @@ img.artPop:not([data-loading]) {
   grid-template-columns: repeat(auto-fill, var(--card-track));
   justify-content: space-between;
   gap: var(--glacier-space-3);
-  max-block-size: calc(5 * (var(--card-track) + 2.1rem) + 4 * var(--glacier-space-3));
-  overflow-y: auto;
-  overscroll-behavior: contain;
+}
+
+/* The grid gets its own scroll ONLY where a pointer can deliberately leave
+   it. It used to be capped at five rows and scrollable everywhere, with
+   `overscroll-behavior: contain` on top - which on a phone was a trap: five
+   rows is ~45rem, taller than the visible page, so the grid filled the screen,
+   every touch landed inside it, and `contain` refused to pass the scroll on
+   when it hit the end. The shelves below the playlists became unreachable,
+   and the only cure was owning fewer playlists.
+   On touch the grid simply grows and the PAGE scrolls through it, which is
+   what a phone expects. No containment either way: a scroll that reaches the
+   end of a box should carry on to what holds it. */
+@media (pointer: fine) {
+  .showcaseGrid {
+    max-block-size: calc(5 * (var(--card-track) + 2.1rem) + 4 * var(--glacier-space-3));
+    overflow-y: auto;
+  }
 }
 
 .playlistTile {
