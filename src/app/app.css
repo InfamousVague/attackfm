@@ -1385,8 +1385,8 @@ img {
 .appNavBarPlugins__item {
   display: flex;
   align-items: center;
-  gap: var(--glacier-space-2);
-  padding: var(--glacier-space-2) var(--glacier-space-3);
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3) var(--glacier-space-4);
   border: none;
   border-radius: var(--glacier-radius-lg, 0.9rem);
   background: none;
@@ -1397,6 +1397,13 @@ img {
   /* Each row rises a beat after the one below it - the cascade. */
   animation: appNavBarPluginsRise 0.18s ease both;
   animation-delay: calc(var(--i, 0) * 0.03s);
+}
+
+.appNavBarPlugins__divider {
+  display: block;
+  block-size: var(--glacier-hairline, 1px);
+  margin: var(--glacier-space-1) var(--glacier-space-2);
+  background: var(--glacier-border-subtle);
 }
 
 .appNavBarPlugins__item:hover {
@@ -1414,7 +1421,7 @@ img {
 }
 
 .appNavBarPlugins__itemLabel {
-  font-size: var(--glacier-font-sm, 0.875rem);
+  font-size: var(--glacier-font-md, 1rem);
   font-weight: 550;
 }
 
