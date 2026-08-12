@@ -2483,17 +2483,10 @@ img.artPop:not([data-loading]) {
   z-index: -1;
 }
 
-/* The disc's diffraction sheen catches the hits: the rainbow at the rim
-   brightens a breath on each one, on both the strip's disc and the sheet's. */
-[data-music-live] .spinningDisc__sheen {
-  opacity: calc(0.5 + var(--beat, 0) * 0.18);
-}
-
-/* The frosted hub glints with the music - a fainter cousin of the detent
-   glint, so the glass reads as sitting in the same room as the sound. */
-[data-music-live] .spinningDisc__hub {
-  filter: brightness(calc(1 + var(--beat, 0) * 0.08));
-}
+/* The disc deliberately does NOT ride the bus: its hub wears a backdrop
+   blur, and animating anything filter-shaped on top of that re-renders the
+   blur every frame - it was measurably laggy on device. The platter's life
+   is its spin and its haptics; the light stays still. */
 
 /* The sheet's darkening gradient eases a few percent on the hits, so the
    whole Now Playing scene breathes without any expensive re-blur - only the
@@ -2505,12 +2498,6 @@ img.artPop:not([data-loading]) {
 @media (prefers-reduced-motion: reduce) {
   [data-music-live] .appNavBar__center::after {
     opacity: 0;
-  }
-  [data-music-live] .spinningDisc__sheen {
-    opacity: 0.5;
-  }
-  [data-music-live] .spinningDisc__hub {
-    filter: none;
   }
   [data-music-live] .npScreen__bg::after {
     opacity: 1;

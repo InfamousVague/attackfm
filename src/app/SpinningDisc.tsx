@@ -266,11 +266,11 @@ export function SpinningDisc({
   /** Banks turned degrees and speaks the ratchet in two voices: a micro
    *  tick (the Taptic Engine's soft style) every third of the spacing - the
    *  fine tooth-texture of the wheel - and the full selection click at each
-   *  real detent, which also glints the hub so the eye can count what the
-   *  thumb feels. Micro ticks are texture, so only the clicks get light.
-   *  One floor guards both voices: past ~28 events a second the Engine
-   *  smears them together anyway, so the budget goes to the freshest. */
-  const hubRef = useRef<HTMLSpanElement>(null);
+   *  real detent. Felt only, never lit: the hub wears a backdrop blur, and
+   *  any filter animation on it re-renders that blur per event - the glint
+   *  this used to fire was exactly the disc's lag. One floor guards both
+   *  voices: past ~28 events a second the Engine smears them together
+   *  anyway, so the budget goes to the freshest. */
   const microDetent = useRef(0);
   const clickDetents = (degrees: number, spacing: number) => {
     const turned = Math.abs(degrees);
@@ -283,10 +283,6 @@ export function SpinningDisc({
       if (now - detentAt.current < 35) return;
       detentAt.current = now;
       fireNativeHaptic('selection');
-      hubRef.current?.animate(
-        [{ filter: 'brightness(1.7)' }, { filter: 'brightness(1)' }],
-        { duration: 130, easing: 'ease-out' },
-      );
       return;
     }
     if (microDetent.current >= spacing / 3) {
@@ -411,7 +407,7 @@ export function SpinningDisc({
           spectral hairlines and the glint on the hub plastic are reflections,
           and reflections hold still while the disc turns under them. */}
       <span className="spinningDisc__sheen" />
-      <span ref={hubRef} className="spinningDisc__hub" />
+      <span className="spinningDisc__hub" />
     </div>
   );
 }
