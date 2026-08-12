@@ -1569,8 +1569,10 @@ img {
 .libChip__art {
   position: absolute;
   inset-block: 0;
-  inset-inline-end: -6%;
-  inline-size: 62%;
+  inset-inline-end: -8%;
+  /* Larger than before (was 62%) so the object reads as the chip's face, not a
+     stamp in the corner. */
+  inline-size: 74%;
   block-size: 100%;
   object-fit: contain;
   mix-blend-mode: multiply;
@@ -1579,6 +1581,29 @@ img {
   /* See .searchGenre__objectArt: a child that is already round has no square
      corners to flash past the parent's radius mid-entrance-animation. */
   border-radius: inherit;
+}
+
+/* A few degrees of tilt each, opposite ways, so the pair reads as objects set
+   down by hand rather than two flat fills. The chip's overflow crops the turn. */
+.libChip--all .libChip__art {
+  transform: rotate(7deg);
+}
+
+/* Liked wears the owner's own neon heart - drawn glowing on black, so the chip
+   drops to a dark crimson ground and the art SCREENS onto it: the black falls
+   away and the heart and its trace light up, where the frosted-object multiply
+   would have crushed them. Tilted and a touch larger, like the All object. */
+.libChip--liked {
+  background: radial-gradient(
+    130% 120% at 72% 28%,
+    hsl(var(--libChipHue, 338) 72% 32%) 0%,
+    #140309 78%
+  );
+}
+.libChip--liked .libChip__art {
+  mix-blend-mode: screen;
+  opacity: 1;
+  transform: rotate(-8deg) scale(1.14);
 }
 
 .libChip__name {
@@ -7878,6 +7903,185 @@ body [class*='_panel_']:has(> .dlPanel) {
   margin-block-start: var(--glacier-space-1);
 }
 
+/* ── The Profile page ───────────────────────────────────────────────────────
+   You, at the top; then the live layer, the servers, the people. The hero is
+   deliberately quiet - an avatar, a handle, one line of where you are - so the
+   page's weight stays on the sections that DO things. */
+.profileHero {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  margin-block-end: var(--glacier-space-4);
+}
+
+/* The lg avatar, grown into a hero face - one place, so the friend grid's
+   own lg stays its size. */
+.profileHero__face.friendAvatar--lg {
+  inline-size: 4rem;
+  block-size: 4rem;
+  font-size: 1.5rem;
+}
+
+.profileHero__body {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profileHero__handle {
+  margin: 0;
+  font-size: var(--glacier-font-size-lg);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profileHero__caption {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Where you listen: one column of rows, not a grid of squares - a server is a
+   named place with verbs on the end, which is a ROW's shape. */
+.serverCards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.serverCard {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+/* The one you are on: edged in accent rather than filled with it, so the
+   badge stays the loudest thing on the row. */
+.serverCard[data-current] {
+  border-color: color-mix(in srgb, var(--glacier-accent-solid) 45%, transparent);
+}
+
+.serverCard--verb {
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+  background: transparent;
+  border-style: dashed;
+  transition: background var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.serverCard--verb:hover {
+  background: var(--glacier-hover);
+}
+
+.serverCard__glyph {
+  flex: none;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text-muted);
+}
+
+.serverCard__glyph--accent {
+  color: var(--glacier-accent-text);
+}
+
+.serverCard__body {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.serverCard__name {
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.serverCard__meta {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.serverCard__live {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  color: var(--glacier-accent-text);
+  font-size: var(--glacier-font-size-xs);
+  font-weight: 650;
+}
+
+.serverCard__dot {
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-solid);
+  animation: serverLivePulse 2.4s ease-in-out infinite;
+}
+
+@keyframes serverLivePulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .serverCard__dot {
+    animation: none;
+  }
+}
+
+.serverCard__actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}
+
+/* The Friends section head: the title with its one verb on the end, now that
+   the old page-wide header is the profile hero's job. */
+.friendsBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+}
+
+.friendsBar .homeShelfTitle {
+  margin: 0;
+}
+
+.friendCard__visit {
+  margin-block-start: var(--glacier-space-1);
+}
+
 .registryFriends {
   display: flex;
   flex-direction: column;
@@ -8711,6 +8915,18 @@ body [class*='_panel_']:has(> .dlPanel) {
 .heroArt {
   position: absolute;
   inset: 0;
+}
+/* Larger and tilted: the page hero sits like an object dropped on its ground,
+   not a flat fill - scaled up past the frame (the rounded parent crops the
+   overflow) and turned a few degrees, Liked leaning one way and All the other.
+   The scale stays above cos+sin of the angle, so the turned square still covers
+   its box with no bare corner. (The home shelf uses chips now - see
+   .libChip__art for their tilt; this is the full-page hero.) */
+.songPage--liked .songPageHero .heroArt {
+  transform: scale(1.25) rotate(-8deg);
+}
+.songPage--all .songPageHero .heroArt {
+  transform: scale(1.25) rotate(8deg);
 }
 .heroArt__img {
   display: none;

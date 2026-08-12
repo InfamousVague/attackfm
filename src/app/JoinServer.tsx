@@ -81,6 +81,9 @@ export function JoinServer() {
         <OtpField
           length={6}
           groupSize={3}
+          // sm, because this renders inside a small modal on a phone now: the
+          // md cells ran the sixth one off the sheet's edge.
+          size="sm"
           type="alphanumeric"
           value={value}
           aria-label="Invite code"
