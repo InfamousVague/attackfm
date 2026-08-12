@@ -317,9 +317,9 @@ function FriendsGraph({ token, me, onSignOut }: { token: string; me: string; onS
               <Link2 size={15} /> <span>Invite</span>
             </Button>
           )}
-          <IconButton variant="ghost" size="sm" aria-label="Sign out" onClick={onSignOut}>
-            <LogOut size={15} />
-          </IconButton>
+          <Button variant="danger" size="sm" onClick={onSignOut}>
+            <LogOut size={15} /> <span>Log out</span>
+          </Button>
         </span>
       </header>
 
