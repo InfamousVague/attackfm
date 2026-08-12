@@ -3667,6 +3667,10 @@ export function Player({
 
 /** mm:ss for the Now Playing clock. */
 function formatClock(seconds: number): string {
+  // A deck reports Infinity (transcode stream) or NaN duration until metadata
+  // lands, and Math.max(0, ...) passes both through - show the zero clock
+  // instead of "Infinity:NaN".
+  if (!Number.isFinite(seconds)) return '0:00';
   const t = Math.max(0, Math.floor(seconds));
   return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
 }
