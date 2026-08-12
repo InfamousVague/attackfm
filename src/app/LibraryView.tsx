@@ -160,7 +160,7 @@ export function LibraryView({
   onOpenArtist: (artist: string) => void;
   onOpenPlaylist: (id: string) => void;
   /** Opens a whole-collection song page (Liked, or every song) from a tile. */
-  onOpenSongs: (view: 'liked' | 'all') => void;
+  onOpenSongs: (view: import('./SongPage.tsx').SongCollection) => void;
   /** Opens the download queue. Absent when no importer is running, and the
    *  icon goes with it - there is nothing to queue without one. */
   onOpenDownloads?: () => void;
