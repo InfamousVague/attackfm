@@ -254,6 +254,32 @@ function deployPlugins(env) {
   console.log(`\n${c.green('\u2713')} Plugin repository published.\n`);
 }
 
+/**
+ * Publishes the generated artwork set into the server's assets drop folder
+ * (/opt/attackfm/data/assets, served at /api/assets). Deliberately NO
+ * --delete: it is a drop folder, and pieces added on the box (new
+ * generations, overrides) must survive a redeploy. No restart either -
+ * ServeDir reads the files live.
+ */
+function deployAssets(env) {
+  const src = `${ROOT}/server/assets/artwork/`;
+  if (!existsSync(src)) return;
+  step('Publishing artwork to /api/assets');
+  const result = spawnSync(
+    'sshpass',
+    [
+      '-e', 'rsync', '-az',
+      '-e', 'ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20',
+      src,
+      `${env.AFM_DEPLOY_USER}@${env.AFM_DEPLOY_HOST}:/opt/attackfm/data/assets/`,
+    ],
+    { stdio: 'inherit', env: { ...process.env, SSHPASS: env.AFM_DEPLOY_PASS } },
+  );
+  if (result.status !== 0) fail('artwork publish failed.');
+  ssh(env, 'chown -R attackfm:attackfm /opt/attackfm/data/assets');
+  console.log(`\n${c.green('✓')} Artwork published.\n`);
+}
+
 const mode = process.argv[2] ?? 'deploy';
 const env = loadEnv();
 checkTools();
@@ -261,10 +287,14 @@ checkTools();
 if (mode === 'setup') {
   setup(env);
   deploy(env);
+  deployAssets(env);
 } else if (mode === 'deploy') {
   deploy(env);
+  deployAssets(env);
 } else if (mode === 'plugins') {
   deployPlugins(env);
+} else if (mode === 'assets') {
+  deployAssets(env);
 } else {
-  fail(`Unknown mode "${mode}". Use: redeploy [setup]`);
+  fail(`Unknown mode "${mode}". Use: redeploy [setup|plugins|assets]`);
 }
