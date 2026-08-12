@@ -72,7 +72,9 @@ pub fn find_audible() -> Option<PathBuf> {
 
 /// The Python inside audible-cli's pipx venv — the one that can `import audible`.
 /// Derived from the shim (`<home>/.local/bin/audible` ->
-/// `<home>/.local/pipx/venvs/audible-cli/bin/python3`), mirroring
+/// `<home>/.local/pipx/venvs/audible-cli/bin/python3` on Linux or
+/// `<home>/Library/Application Support/pipx/venvs/audible-cli/bin/python3` on macOS,
+/// mirroring
 /// `search::spotiflac_python`.
 pub fn audible_python() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("AFM_AUDIBLE_PYTHON") {
@@ -83,9 +85,14 @@ pub fn audible_python() -> Option<PathBuf> {
     }
     if let Some(bin) = find_audible() {
         if let Some(local) = bin.parent().and_then(|p| p.parent()) {
-            let py = local.join("pipx/venvs/audible-cli/bin/python3");
-            if py.exists() {
-                return Some(py);
+            let candidates = [
+                local.join("pipx/venvs/audible-cli/bin/python3"),
+                local.join("Library/Application Support/pipx/venvs/audible-cli/bin/python3"),
+            ];
+            for py in candidates {
+                if py.exists() {
+                    return Some(py);
+                }
             }
         }
     }

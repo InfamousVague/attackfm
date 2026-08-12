@@ -78,12 +78,12 @@ impl PairStore {
 }
 
 /// The code the human sees: uppercase, no ambiguous glyphs (no 0/O, 1/I), so
-/// it reads cleanly aloud and types without a second guess. Eight symbols from
-/// a 32-letter alphabet is ~40 bits - far past guessing inside a 3-minute life.
+/// it reads cleanly aloud and types without a second guess. Six digits are easy
+/// to dictate and still give a million possibilities inside a 3-minute life.
 fn make_code() -> String {
-    const ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const ALPHABET: &[u8] = b"0123456789";
     let mut rng = rand::thread_rng();
-    (0..8)
+    (0..6)
         .map(|_| ALPHABET[rng.gen_range(0..ALPHABET.len())] as char)
         .collect()
 }

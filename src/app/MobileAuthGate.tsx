@@ -486,7 +486,7 @@ function CodeStep({
         <Input
           value={code}
           onChange={(e) => setCode(e.currentTarget.value.toUpperCase())}
-          placeholder="ABCD1234"
+          placeholder="123456"
           aria-label="Pairing code"
           leadingIcon={<QrCode size={16} />}
           autoCapitalize="characters"

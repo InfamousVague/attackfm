@@ -392,7 +392,7 @@ function LinkDeviceSection() {
             )}
             {code && (
               <div className="linkDevice__code" aria-label="Pairing code">
-                {code.replace(/(.{4})(.{4})/, '$1 $2')}
+                {code.length === 6 ? code.replace(/(.{3})(.{3})/, '$1 $2') : code}
               </div>
             )}
             {error && <Banner tone="danger">{error}</Banner>}
