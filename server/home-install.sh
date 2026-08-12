@@ -66,6 +66,13 @@ DEF_BIND="$(prev AFM_BIND)"; DEF_BIND="${DEF_BIND:-0.0.0.0}"
 DEF_AI_URL="$(prev AFM_AI_URL)"; DEF_AI_URL="${DEF_AI_URL:-http://127.0.0.1:11434}"
 DEF_MODEL="$(prev AFM_AI_MODEL)"; DEF_MODEL="${DEF_MODEL:-qwen3:14b}"
 DEF_EMBED="$(prev AFM_AI_EMBED_MODEL)"; DEF_EMBED="${DEF_EMBED:-nomic-embed-text}"
+# Spotify app credentials. Search needs a Spotify link for anything it offers
+# to add - the importer takes no other kind - and a hub reaches Spotify either
+# through SpotiFLAC's metadata client or, failing that, these. Blank is fine
+# where SpotiFLAC is installed; without either, songs can be browsed but not
+# added, and the curator finds nothing to buy.
+DEF_SPOT_ID="$(prev AFM_SPOTIFY_CLIENT_ID)"
+DEF_SPOT_SECRET="$(prev AFM_SPOTIFY_CLIENT_SECRET)"
 
 # --- music dir -------------------------------------------------------------
 bold "Where does the music live?"
@@ -94,6 +101,15 @@ mkdir -p "$DATA_DIR"
 
 read -r -p "  Port [$DEF_PORT]: " PORT
 PORT="${PORT:-$DEF_PORT}"
+
+# --- Spotify app (optional) --------------------------------------------------
+bold "Spotify app credentials (optional)"
+say "Only needed if this box has no SpotiFLAC: they are how search finds the"
+say "Spotify links the importer takes. From developer.spotify.com; enter to skip."
+read -r -p "  Client id [${DEF_SPOT_ID:-skip}]: " SPOT_ID
+SPOT_ID="${SPOT_ID:-$DEF_SPOT_ID}"
+read -r -p "  Client secret [${DEF_SPOT_SECRET:+kept}]: " SPOT_SECRET
+SPOT_SECRET="${SPOT_SECRET:-$DEF_SPOT_SECRET}"
 
 # --- install the binary ----------------------------------------------------
 bold "Installing"
@@ -129,6 +145,8 @@ cat > "$PLIST" <<PLIST
     <key>AFM_AI_MODEL</key><string>$DEF_MODEL</string>
     <key>AFM_AI_EMBED_MODEL</key><string>$DEF_EMBED</string>
     <key>AFM_ASSETS_BAKED</key><string>$HERE/assets/artwork</string>
+    <key>AFM_SPOTIFY_CLIENT_ID</key><string>$SPOT_ID</string>
+    <key>AFM_SPOTIFY_CLIENT_SECRET</key><string>$SPOT_SECRET</string>
   </dict>
 </dict></plist>
 PLIST

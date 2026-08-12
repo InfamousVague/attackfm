@@ -168,18 +168,24 @@ async fn buy(state: &Arc<AppState>, user: i64, d: &DiscoveryRow) -> bool {
     // primary input - the same dead end the artist page had, solved the same
     // way: find the Spotify twin by name and hand over that.
     let query = format!("{} {}", d.artist, d.title);
-    let resolved = crate::search::spotiflac_search(state, &query)
-        .await
-        .into_iter()
-        .find(|r| {
-            r.kind == "track"
-                && r.importable
-                && same_artist(&r.subtitle, &d.artist)
-                && same_title(&r.title, &d.title)
-        });
+    let rows = crate::search::spotify_catalog(state, &query).await;
+    let resolved = rows.iter().find(|r| {
+        r.kind == "track"
+            && r.importable
+            && same_artist(&r.subtitle, &d.artist)
+            && same_title(&r.title, &d.title)
+    });
     let Some(hit) = resolved else {
-        // Not on Spotify: record it as failed so the candidate is never
-        // reconsidered, rather than re-searched every cycle forever.
+        // Nothing came back AT ALL means this box could not reach Spotify -
+        // no SpotiFLAC and no web token - which says nothing about the record.
+        // Condemning the candidate then would quietly burn the whole discovery
+        // pool on a misconfigured hub, marking every song "not on Spotify"
+        // forever. Leave it for a later cycle instead.
+        if rows.is_empty() {
+            return false;
+        }
+        // The catalogue answered and did not have it: record the failure so the
+        // candidate is never reconsidered, rather than re-searched every cycle.
         let _ = state.db.record_pull(
             user, &d.ext_id, "track", &d.title, &d.artist, &d.url, "", d.score as f64, "",
         );
