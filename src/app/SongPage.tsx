@@ -1,5 +1,5 @@
 import { Button, Text } from '@glacier/react';
-import { Play, Repeat, Shuffle } from '@glacier/icons';
+import { Play, Shuffle } from '@glacier/icons';
 import { useEffect, useMemo, useState } from 'react';
 import { useLibrary } from './library.tsx';
 import { useServerSession } from './serverSession.tsx';
@@ -7,6 +7,7 @@ import { SongTable } from './SongTable.tsx';
 import { EmptyArt, HeroArt, type EmptyArtName } from './EmptyArt.tsx';
 import { fetchHome, trackIdFromPath } from './server.ts';
 import type { Track } from './tauri.ts';
+import onRepeatChip from '../assets/chip-on-repeat.png';
 
 /**
  * A whole collection of songs, opened as its own page - the fullscreen answer
@@ -144,7 +145,7 @@ export function SongPage({
           <div className="tileSquircle playlistHead__mosaic songPageHero">
             {view === 'onrepeat' ? (
               <span className="songPageHero__repeat" aria-hidden>
-                <Repeat size={64} strokeWidth={2.25} />
+                <img src={onRepeatChip} alt="" />
               </span>
             ) : (
               <HeroArt name={meta.art} />

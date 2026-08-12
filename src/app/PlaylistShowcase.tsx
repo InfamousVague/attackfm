@@ -1,6 +1,6 @@
 import { mosaicArts, useTileArt } from './artLoad.ts';
 import { Button, ContextMenu, Input, Modal, MenuItem, Text } from '@glacier/react';
-import { History, ListMusic, Plus, Repeat, Trash2 } from '@glacier/icons';
+import { History, ListMusic, Plus, Trash2 } from '@glacier/icons';
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { useLibrary } from './library.tsx';
 import { DjLauncher } from './DjLauncher.tsx';
@@ -10,6 +10,7 @@ import type { PluginPlaylistTile } from '../plugins/types.ts';
 import { PlaylistModal } from './PlaylistModal.tsx';
 import likedChip from '../assets/chip-liked.png';
 import allSongsChip from '../assets/chip-all-songs.png';
+import onRepeatChip from '../assets/chip-on-repeat.png';
 import type { Track } from './tauri.ts';
 
 /**
@@ -233,9 +234,7 @@ export function PlaylistShowcase({
             style={{ '--libChipHue': 145 } as CSSProperties}
             onClick={() => onOpenSongs('onrepeat')}
           >
-            <span className="libChip__glyph" aria-hidden>
-              <Repeat size={44} strokeWidth={2.5} />
-            </span>
+            <img className="libChip__art" src={onRepeatChip} alt="" loading="lazy" />
             <span className="libChip__name">On repeat</span>
             <span className="libChip__count">Your most played</span>
           </button>
