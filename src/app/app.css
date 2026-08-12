@@ -3228,6 +3228,59 @@ img.artPop:not([data-loading]) {
   white-space: nowrap;
 }
 
+/* The chapters list inside a book's modal: a run of rows, the one you are in
+   lit with the accent. Each row plays its chapter (a section, or a resume of
+   the one file). */
+.bookChapters {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-block-size: 60vh;
+  overflow-y: auto;
+}
+
+.bookChapters__row {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2) var(--glacier-space-2);
+  border: none;
+  border-radius: var(--glacier-radius-md, 0.6rem);
+  background: none;
+  cursor: pointer;
+  color: var(--glacier-text);
+  text-align: start;
+}
+
+.bookChapters__row:hover {
+  background: var(--glacier-surface-hover, rgba(127, 127, 127, 0.12));
+}
+
+.bookChapters__row[data-current] {
+  color: var(--glacier-accent-text);
+}
+
+.bookChapters__n {
+  flex: none;
+  inline-size: 1.6rem;
+  display: grid;
+  place-items: center;
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-subtle, var(--glacier-text-muted));
+}
+
+.bookChapters__row[data-current] .bookChapters__n {
+  color: var(--glacier-accent-text);
+}
+
+.bookChapters__title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--glacier-font-size-sm);
+}
+
 /* The chapter-list door, tucked against the card's title row. */
 .bookCard__chapters {
   position: absolute;
