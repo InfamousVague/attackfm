@@ -76,3 +76,50 @@ export async function audibleLoginComplete(
 export async function audibleLogout(session: ServerSession): Promise<{ connected: boolean }> {
   return serverRequest(session, '/api/audible/logout', { method: 'POST' });
 }
+
+/** One book you own, as the library endpoint lists it. */
+export interface AudibleBook {
+  asin: string;
+  title: string;
+  author: string;
+  cover: string | null;
+  runtimeMin: number | null;
+  percentComplete: number | null;
+  /** True once it is already downloaded into the library. */
+  ownedLocally: boolean;
+}
+
+/** One Audible download, as the queue reports it. */
+export interface AudibleJob {
+  id: string;
+  asin: string;
+  title: string;
+  author: string;
+  cover: string | null;
+  state: 'queued' | 'downloading' | 'decrypting' | 'filing' | 'done' | 'error';
+  error: string | null;
+  createdAt: number;
+  trackId: number | null;
+}
+
+export async function audibleLibrary(
+  session: ServerSession,
+): Promise<{ connected: boolean; books: AudibleBook[] }> {
+  return serverRequest(session, '/api/audible/library');
+}
+
+export async function audibleImport(
+  session: ServerSession,
+  book: { asin: string; title: string; author: string; cover?: string | null },
+): Promise<AudibleJob> {
+  const reply = await serverRequest<{ job: AudibleJob }>(session, '/api/audible/import', {
+    method: 'POST',
+    body: JSON.stringify({ asin: book.asin, title: book.title, author: book.author, cover: book.cover ?? undefined }),
+  });
+  return reply.job;
+}
+
+export async function audibleJobs(session: ServerSession): Promise<AudibleJob[]> {
+  const reply = await serverRequest<{ jobs: AudibleJob[] }>(session, '/api/audible/jobs');
+  return reply.jobs;
+}

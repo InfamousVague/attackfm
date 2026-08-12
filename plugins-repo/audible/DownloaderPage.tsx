@@ -12,28 +12,118 @@ import {
   type BookJob,
   type CatalogBook,
 } from './libriVoxApi.ts';
+import {
+  audibleImport,
+  audibleJobs,
+  audibleLibrary,
+  audibleStatus,
+  type AudibleBook,
+  type AudibleJob,
+} from './audibleAccount.ts';
 
 /**
- * The audiobook downloader: where books are ACQUIRED. Reading them is the core
- * Books shelf's job; this page only fetches. Two wells feed it - the books you
- * own on Audible (once the account is connected in Settings) and the public
- * domain, read by volunteers, on LibriVox - and both land in the same library
- * as ordinary `kind = 'book'` files. For now the working well is LibriVox; the
- * Audible one lights up the moment an account is connected.
+ * The audiobook downloader: where books are ACQUIRED (reading them is the core
+ * Books shelf's job). Two wells - the books you own on Audible, once the account
+ * is connected in Settings, and the public domain on LibriVox - both landing in
+ * the same library as ordinary `kind = 'book'` files.
  */
+
+const AUD_LABEL: Record<AudibleJob['state'], string> = {
+  queued: 'Queued',
+  downloading: 'Downloading…',
+  decrypting: 'Decrypting…',
+  filing: 'Adding…',
+  done: 'Added',
+  error: 'Failed',
+};
+
+function minutes(min: number | null): string {
+  if (!min) return '';
+  if (min < 60) return `${min} min`;
+  return `${Math.floor(min / 60)}h ${min % 60}m`;
+}
+
 export function DownloaderPage(_props: PluginPageProps) {
   const { session } = useServerSession();
   const { rescan } = useLibrary();
 
+  // --- Audible ---------------------------------------------------------------
+  const [audConnected, setAudConnected] = useState<boolean | null>(null);
+  const [audBooks, setAudBooks] = useState<AudibleBook[] | null>(null);
+  const [audLoading, setAudLoading] = useState(false);
+  const [audJobs, setAudJobs] = useState<AudibleJob[]>([]);
+  const [audNote, setAudNote] = useState<string | null>(null);
+
+  const loadAudible = useCallback(async () => {
+    if (!session) return;
+    setAudLoading(true);
+    try {
+      const status = await audibleStatus(session);
+      setAudConnected(status.connected);
+      if (status.connected) {
+        const lib = await audibleLibrary(session);
+        setAudBooks(lib.books);
+      }
+    } catch {
+      setAudConnected(false);
+    } finally {
+      setAudLoading(false);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    void loadAudible();
+  }, [loadAudible]);
+
+  const audActive = audJobs.some(
+    (j) => j.state !== 'done' && j.state !== 'error',
+  );
+  useEffect(() => {
+    if (!session || audConnected !== true) return;
+    let live = true;
+    const poll = () => {
+      void audibleJobs(session)
+        .then((js) => {
+          if (!live) return;
+          setAudJobs((prev) => {
+            const wasActive = prev.some((p) => p.state !== 'done' && p.state !== 'error');
+            const isActive = js.some((p) => p.state !== 'done' && p.state !== 'error');
+            // A finished download pulls the library and reloads ownership.
+            if (wasActive && !isActive) {
+              void rescan();
+              void loadAudible();
+            }
+            return js;
+          });
+        })
+        .catch(() => {});
+    };
+    poll();
+    const timer = window.setInterval(poll, audActive ? 3_000 : 30_000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, [session, audConnected, audActive, rescan, loadAudible]);
+
+  const audJobFor = (asin: string) => audJobs.find((j) => j.asin === asin);
+
+  const pullAudible = (book: AudibleBook) => {
+    if (!session) return;
+    setAudNote(null);
+    void audibleImport(session, book)
+      .then((job) => setAudJobs((prev) => [job, ...prev.filter((j) => j.id !== job.id)]))
+      .catch((e) => setAudNote(e instanceof Error ? e.message : 'Could not queue that book.'));
+  };
+
+  // --- LibriVox --------------------------------------------------------------
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<CatalogBook[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [missing, setMissing] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
+  const [lvNote, setLvNote] = useState<string | null>(null);
   const debounce = useRef<number | undefined>(undefined);
 
-  // The debounced catalogue search: two characters before it asks, and only
-  // the last keystroke in a 450ms lull actually reaches the server.
   useEffect(() => {
     window.clearTimeout(debounce.current);
     const q = query.trim();
@@ -58,11 +148,8 @@ export function DownloaderPage(_props: PluginPageProps) {
     return () => window.clearTimeout(debounce.current);
   }, [query, session]);
 
-  // The download queue, polled only while something is moving; when a job
-  // crosses the line the library is pulled in behind it so the new book lands
-  // on the shelf without waiting for the next scheduled sync.
-  const [jobs, setJobs] = useState<BookJob[]>([]);
-  const active = jobs.some((j) => j.state === 'queued' || j.state === 'downloading');
+  const [lvJobs, setLvJobs] = useState<BookJob[]>([]);
+  const lvActive = lvJobs.some((j) => j.state === 'queued' || j.state === 'downloading');
   useEffect(() => {
     if (!session) return;
     let live = true;
@@ -70,31 +157,30 @@ export function DownloaderPage(_props: PluginPageProps) {
       void bookJobs(session)
         .then((js) => {
           if (!live) return;
-          setJobs((prev) => {
-            const wasActive = prev.some((p) => p.state === 'queued' || p.state === 'downloading');
-            const isActive = js.some((p) => p.state === 'queued' || p.state === 'downloading');
-            if (wasActive && !isActive) void rescan();
+          setLvJobs((prev) => {
+            const was = prev.some((p) => p.state === 'queued' || p.state === 'downloading');
+            const is = js.some((p) => p.state === 'queued' || p.state === 'downloading');
+            if (was && !is) void rescan();
             return js;
           });
         })
         .catch(() => {});
     };
     poll();
-    const timer = window.setInterval(poll, active ? 3_000 : 30_000);
+    const timer = window.setInterval(poll, lvActive ? 3_000 : 30_000);
     return () => {
       live = false;
       window.clearInterval(timer);
     };
-  }, [session, active, rescan]);
+  }, [session, lvActive, rescan]);
 
-  const jobForBook = (bookId: number) => jobs.find((j) => j.bookId === bookId);
-
-  const pull = (book: CatalogBook) => {
+  const lvJobFor = (bookId: number) => lvJobs.find((j) => j.bookId === bookId);
+  const pullLibriVox = (book: CatalogBook) => {
     if (!session) return;
-    setNote(null);
+    setLvNote(null);
     void importBook(session, book.id)
-      .then((job) => setJobs((prev) => [job, ...prev.filter((j) => j.id !== job.id)]))
-      .catch((e) => setNote(e instanceof Error ? e.message : 'Could not queue that book.'));
+      .then((job) => setLvJobs((prev) => [job, ...prev.filter((j) => j.id !== job.id)]))
+      .catch((e) => setLvNote(e instanceof Error ? e.message : 'Could not queue that book.'));
   };
 
   if (!session) {
@@ -114,56 +200,105 @@ export function DownloaderPage(_props: PluginPageProps) {
           Get audiobooks
         </Text>
         <Text tone="muted" size="sm">
-          Books you download land in your library and show up under Books. Your own Audible books
-          come from a connected account — set that up in Settings → Audible. Below is the LibriVox
-          public-domain catalogue, free to pull any time.
+          Books you download land in your library and show up under Books.
         </Text>
       </div>
 
-      {/* The active/recent downloads, whatever their source. */}
-      {jobs.length > 0 && (
-        <div className="prefsSection">
-          {jobs.slice(0, 6).map((job) => (
-            <div key={job.id} className="bookJob" data-state={job.state}>
-              {job.cover ? (
-                <img className="bookJobArt" src={job.cover} alt="" loading="lazy" />
-              ) : (
-                <span className="bookJobArt" aria-hidden />
-              )}
-              <div className="bookJobCopy">
-                <Text size="sm">{job.title}</Text>
-                <Text tone="muted" size="xs">
-                  {job.state === 'error'
-                    ? (job.error ?? 'Failed')
-                    : job.state === 'done'
-                      ? 'Added to your library'
-                      : job.state === 'queued'
-                        ? 'Queued'
-                        : `${job.completed} of ${job.total}${job.currentSection ? ` · ${job.currentSection}` : ''}`}
-                </Text>
-                {(job.state === 'downloading' || job.state === 'queued') && job.total > 0 && (
-                  <span className="bookJobBar">
-                    <span
-                      className="bookJobBarFill"
-                      style={{ width: `${Math.round((job.completed / job.total) * 100)}%` }}
-                    />
-                  </span>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* The LibriVox catalogue search. */}
+      {/* Your Audible library. */}
       <div className="prefsSection">
+        <Text size="md" className="pageHeading">
+          Your Audible library
+        </Text>
+        {audConnected === false ? (
+          <Text tone="muted" size="sm">
+            Connect your Audible account in Settings → Audible to pull in the books you own.
+          </Text>
+        ) : audLoading && !audBooks ? (
+          <div className="booksSearching">
+            <Spinner /> <Text tone="muted" size="sm">Reading your library…</Text>
+          </div>
+        ) : audBooks && audBooks.length > 0 ? (
+          <>
+            {audNote && (
+              <Text tone="danger" size="sm">
+                {audNote}
+              </Text>
+            )}
+            <div className="bookResults">
+              {audBooks.map((book) => {
+                const job = audJobFor(book.asin);
+                const owned = book.ownedLocally || job?.state === 'done';
+                const busy = job && job.state !== 'done' && job.state !== 'error';
+                const failed = job?.state === 'error';
+                return (
+                  <div key={book.asin} className="bookResult">
+                    {book.cover ? (
+                      <img className="bookResultArt" src={book.cover} alt="" loading="lazy" />
+                    ) : (
+                      <span className="bookResultArt" aria-hidden>
+                        <BookHeadphones size={20} />
+                      </span>
+                    )}
+                    <div className="bookResultCopy">
+                      <Text size="sm">{book.title}</Text>
+                      <Text tone="muted" size="xs">
+                        {book.author}
+                        {book.runtimeMin ? ` · ${minutes(book.runtimeMin)}` : ''}
+                      </Text>
+                      {failed && (
+                        <Text tone="danger" size="xs">
+                          {job?.error ?? 'Failed'}
+                        </Text>
+                      )}
+                    </div>
+                    <Button
+                      variant={owned ? 'ghost' : 'outline'}
+                      size="sm"
+                      disabled={owned || !!busy}
+                      onClick={() => pullAudible(book)}
+                    >
+                      {owned ? (
+                        <>
+                          <Check size={15} /> In library
+                        </>
+                      ) : busy ? (
+                        AUD_LABEL[job!.state]
+                      ) : failed ? (
+                        'Retry'
+                      ) : (
+                        <>
+                          <Plus size={15} /> Add
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        ) : audBooks ? (
+          <Text tone="muted" size="sm">
+            No books in your Audible library yet.
+          </Text>
+        ) : (
+          <div className="booksSearching">
+            <Spinner /> <Text tone="muted" size="sm">Checking Audible…</Text>
+          </div>
+        )}
+      </div>
+
+      {/* The LibriVox public-domain catalogue. */}
+      <div className="prefsSection">
+        <Text size="md" className="pageHeading">
+          LibriVox — free & public domain
+        </Text>
         <div className="booksSearchRow">
           <Search size={16} aria-hidden />
           <Input
             value={query}
             onChange={(e) => setQuery(e.currentTarget.value)}
-            placeholder="Search LibriVox — a title or an author"
-            aria-label="Search the audiobook catalogue"
+            placeholder="Search a title or an author"
+            aria-label="Search the LibriVox catalogue"
           />
         </div>
 
@@ -172,9 +307,9 @@ export function DownloaderPage(_props: PluginPageProps) {
             This server is too old for the audiobook catalogue — update the hub.
           </Text>
         )}
-        {note && (
+        {lvNote && (
           <Text tone="danger" size="sm">
-            {note}
+            {lvNote}
           </Text>
         )}
         {searching && (
@@ -190,7 +325,7 @@ export function DownloaderPage(_props: PluginPageProps) {
         {results && results.length > 0 && (
           <div className="bookResults">
             {results.map((book) => {
-              const job = jobForBook(book.id);
+              const job = lvJobFor(book.id);
               const done = job?.state === 'done';
               const busy = job?.state === 'queued' || job?.state === 'downloading';
               return (
@@ -214,14 +349,14 @@ export function DownloaderPage(_props: PluginPageProps) {
                     variant={done ? 'ghost' : 'outline'}
                     size="sm"
                     disabled={busy || done}
-                    onClick={() => pull(book)}
+                    onClick={() => pullLibriVox(book)}
                   >
                     {done ? (
                       <>
                         <Check size={15} /> Added
                       </>
                     ) : busy ? (
-                      '…'
+                      `${job!.completed}/${job!.total}`
                     ) : (
                       <>
                         <Plus size={15} /> Add
