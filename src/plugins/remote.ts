@@ -31,6 +31,17 @@ const REMOVED_DEFAULTS_KEY = 'attackfm-plugin-sources-removed';
  */
 export const DEFAULT_SOURCES: readonly string[] = ['https://plugins.attack.fm'];
 
+/**
+ * Plugins installed for you on first run - the audiobook downloader and the EQ
+ * - so a fresh app comes stocked rather than empty. Fetched from whatever source
+ * carries them (the hub serves both), and, like a default source, remembered
+ * when removed so uninstalling one is not undone on the next launch.
+ */
+export const DEFAULT_PLUGINS: readonly string[] = ['audible', 'eq-rack'];
+
+/** Default plugins the user has removed, so the auto-install never re-adds them. */
+const REMOVED_DEFAULT_PLUGINS_KEY = 'attackfm-plugins-removed-defaults';
+
 /** One plugin as a repository's manifest lists it. */
 export interface RemotePluginListing {
   id: string;
@@ -190,6 +201,68 @@ export async function installPlugin(
 
 export function uninstallPlugin(id: string): void {
   writeInstalled(readInstalled().filter((p) => p.id !== id));
+  // Removing a default is a decision: tombstone it so the auto-install leaves
+  // it alone from here on.
+  if (DEFAULT_PLUGINS.includes(id)) {
+    const removed = readRemovedDefaultPlugins();
+    if (!removed.includes(id)) writeRemovedDefaultPlugins([...removed, id]);
+  }
+}
+
+function readRemovedDefaultPlugins(): string[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(REMOVED_DEFAULT_PLUGINS_KEY) ?? '[]') as unknown;
+    return Array.isArray(parsed) ? parsed.filter((s): s is string => typeof s === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeRemovedDefaultPlugins(ids: string[]): void {
+  try {
+    localStorage.setItem(REMOVED_DEFAULT_PLUGINS_KEY, JSON.stringify(ids));
+  } catch {
+    // Storage unavailable - the removal still holds for this session.
+  }
+}
+
+/**
+ * Installs any default plugin that is not already installed and has not been
+ * removed, from whichever listed source (plus the connected hub's own
+ * repository) carries it. Returns true when it installed at least one, so the
+ * caller can reload the runtime. Safe to call repeatedly - already-installed and
+ * tombstoned defaults are skipped, so it is a no-op once everything has landed.
+ */
+export async function ensureDefaultPlugins(extraSources: readonly string[] = []): Promise<boolean> {
+  const installed = new Set(readInstalled().map((p) => p.id));
+  const removed = readRemovedDefaultPlugins();
+  const wanted = new Set(
+    DEFAULT_PLUGINS.filter((id) => !installed.has(id) && !removed.includes(id)),
+  );
+  if (wanted.size === 0) return false;
+
+  const sources = [...new Set([...extraSources, ...readSources()])];
+  let installedAny = false;
+  for (const source of sources) {
+    if (wanted.size === 0) break;
+    let manifest: RemoteManifest;
+    try {
+      manifest = await fetchManifest(source);
+    } catch {
+      continue; // an unreachable source is not a reason to give up on the rest
+    }
+    for (const listing of manifest.plugins) {
+      if (!wanted.has(listing.id)) continue;
+      try {
+        await installPlugin(source, listing);
+        wanted.delete(listing.id);
+        installedAny = true;
+      } catch {
+        // A bundle that will not install here may install from another source.
+      }
+    }
+  }
+  return installedAny;
 }
 
 export function readInstalled(): InstalledRemotePlugin[] {

@@ -22,12 +22,6 @@ export function PluginsBarButton({ tab, onTab }: { tab: string; onTab: (tab: str
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
 
-  // A page-set change can orphan the open menu (the plugin toggled off from
-  // Settings while it is up); fold it quietly.
-  useEffect(() => {
-    if (pages.length === 0) setOpen(false);
-  }, [pages.length]);
-
   // Close on a tap anywhere outside, or on Escape.
   useEffect(() => {
     if (!open) return;
@@ -45,13 +39,17 @@ export function PluginsBarButton({ tab, onTab }: { tab: string; onTab: (tab: str
     };
   }, [open]);
 
-  if (pages.length === 0) return null;
   const active = pages.find((pg) => pg.key === tab) ?? null;
 
   return (
     <div className="appNavBarPlugins" ref={root}>
       {open && (
         <div className="appNavBarPlugins__menu" role="menu" aria-label="Plugin pages">
+          {pages.length === 0 && (
+            <span className="appNavBarPlugins__empty">
+              No plugin pages yet — add some in Settings → Plugins.
+            </span>
+          )}
           {pages.map((pg, i) => (
             <button
               key={pg.key}

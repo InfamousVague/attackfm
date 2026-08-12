@@ -44,7 +44,6 @@ import { LibrarySyncProvider } from './librarySync.tsx';
 import { SearchPage } from './SearchPage.tsx';
 import { StatsPage } from './StatsPage.tsx';
 import { ListeningShareBridge } from './listeningShare.tsx';
-import { DjLauncher } from './DjLauncher.tsx';
 import { LibraryView } from './LibraryView.tsx';
 import { useSwipeBack } from './useSwipeBack.ts';
 import { hapticsImpl, useHapticsPref } from './haptics.ts';
@@ -687,7 +686,10 @@ export function App() {
   // Lives here rather than in the page because the header's "All" button is
   // the only thing that flips it - the segmented toggle it replaced lived in
   // the page body and spent a full row on two options.
-  const [libraryView, setLibraryView] = useState<'summary' | 'all'>('summary');
+  // The library shows its shelves; the one-table "All" view lost its header
+  // toggle, so the value stays 'summary'. Kept as state so AppMain's prop and
+  // its type need no change if the flip returns elsewhere later.
+  const [libraryView] = useState<'summary' | 'all'>('summary');
   const [settingsOpen, setSettingsOpen] = useState(false);
   // The track the list handed to the player; null until one is opened.
   const [current, setCurrent] = useState<Track | null>(null);
@@ -1048,34 +1050,6 @@ export function App() {
                       that closes when you look away is the wrong container for
                       it. Absent when the importer plugin is off. */}
                   <DownloadsDoor onOpen={() => goTab('downloads')} />
-                  {/* The DJ sits beside it on the library surface: press it and
-                      be played to. BOTH tab names, because the app opens on
-                      'home' and only becomes 'library' once the brand button is
-                      tapped - they are the same screen, and keying on one of
-                      them means the control is missing on first launch. Its
-                      spoken line is positioned out of the header's flow (see
-                      .mobileHeader .djLauncher) so a returning set cannot make
-                      the header taller. */}
-                  {/* Stats' door moved down beside "Your top artists" -
-                      the shelf that IS the top of the stats page. */}
-                  {(tab === 'library' || tab === 'home') && <DjLauncher onPlay={playFrom} />}
-                  {/* Library's view flip: the whole library as one table. A
-                      header button instead of an in-page toggle - the page
-                      opens on its shelves and this is the one other face. */}
-                  {tab === 'library' && (
-                    <Button
-                      // Soft rather than ghost when off: a ghost button in a
-                      // header with nothing beside it reads as a stray word,
-                      // not a control. It keeps a surface in both states and
-                      // says which one it is in with the accent.
-                      variant={libraryView === 'all' ? 'solid' : 'soft'}
-                      size="sm"
-                      aria-pressed={libraryView === 'all'}
-                      onClick={() => setLibraryView((v) => (v === 'all' ? 'summary' : 'all'))}
-                    >
-                      All
-                    </Button>
-                  )}
                   {/* Settings, moved off the crowded tab bar to the top-right of
                       every page: the gear that opens the modal, and with it the
                       server connection. Always present, so Home, Discover and

@@ -11,7 +11,7 @@ import {
 } from 'react';
 import { Button, Modal } from '@glacier/react';
 import { availablePlugins, filterAvailable, registeredIds } from './index.ts';
-import { loadInstalledPlugins, readInstalled } from './remote.ts';
+import { ensureDefaultPlugins, loadInstalledPlugins, readInstalled } from './remote.ts';
 import { useServerSession } from '../app/serverSession.tsx';
 import { PluginsContext, usePlugins, type PluginsContextValue } from './pluginsContext.ts';
 import type {
@@ -92,6 +92,22 @@ export function PluginsProvider({ children }: { children: ReactNode }) {
   // taking the provider down.
   const [remoteState, setRemoteState] = useState(() => loadInstalledPlugins());
   const reloadRemote = useCallback(() => setRemoteState(loadInstalledPlugins()), []);
+
+  // Bring the default plugins in on first run - and, for the ones only the hub
+  // carries (the audiobook downloader), the moment a server connects. Each
+  // install persists and the check skips what is already there or was removed,
+  // so this settles to a no-op; when it does land something, reload to show it.
+  const hubUrl = session?.url;
+  useEffect(() => {
+    let cancelled = false;
+    const hub = hubUrl ? `${hubUrl.replace(/\/+$/, '')}/plugins` : undefined;
+    void ensureDefaultPlugins(hub ? [hub] : []).then((installed) => {
+      if (installed && !cancelled) reloadRemote();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [hubUrl, reloadRemote]);
 
   // An evaluation failure surfaces exactly like a crash: on the plugin's card,
   // with the message. Re-merged on every reload so a fixed bundle clears.
