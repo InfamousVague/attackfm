@@ -7117,18 +7117,12 @@ body [class*='_panel_']:has(> .dlPanel) {
 
 /* ---- The DJ ------------------------------------------------------------- */
 
-/* On repeat: the one chip whose face is a glyph rather than a picture - the
-   repeat mark, large, leaning into the trailing edge the way the art on its
-   neighbours does. Inherits the row's green from --libChipHue. */
-.libChip__glyph {
-  position: absolute;
-  inset-block: 0;
-  inset-inline-end: 4%;
-  display: flex;
-  align-items: center;
-  color: rgb(255 255 255 / 0.5);
-  pointer-events: none;
-  transform: rotate(-8deg);
+/* On repeat wears the drawn loop rather than a font glyph, and like the DJ's
+   frosted figure it would vanish under the row's multiply - normal, seated
+   with a breath of shadow. */
+.libChip--repeat .libChip__art {
+  mix-blend-mode: normal;
+  filter: drop-shadow(0 4px 10px rgb(0 0 0 / 0.35));
 }
 
 /* The On repeat page's hero: the same mark on the same green, standing in for
@@ -7139,9 +7133,16 @@ body [class*='_panel_']:has(> .dlPanel) {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  padding: 12%;
   background: linear-gradient(140deg, hsl(145 62% 42%), hsl(187 56% 30%));
   border-radius: inherit;
+}
+
+.songPageHero__repeat img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 6px 14px rgb(0 0 0 / 0.35));
 }
 
 /* The DJ chip wears the mascot's own purple; the art is the frosted figure,
