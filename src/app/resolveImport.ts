@@ -81,17 +81,30 @@ export async function resolveImportable(
   title: string,
   signal?: AbortSignal,
 ): Promise<SearchResult | null> {
-  const results = await searchCatalog(session, `${artist} ${title}`, signal);
-  let best: SearchResult | null = null;
-  let bestScore = REJECT;
-  for (const r of results) {
-    if (r.kind !== kind || !importable(r)) continue;
-    const s = score(r, artist, title);
-    if (s < bestScore) {
-      best = r;
-      bestScore = s;
-      if (s === 0) break;
+  // Ask with the title REDUCED to the recording it names. A catalogue title
+  // carries its billing - "Knuckle Velvet (feat. Yah Wav)" - and handing that
+  // whole string to search throws it off badly enough that the right track
+  // does not come back at all (it answers with other people's "Velvet"). The
+  // same query without the credit puts it first. The raw title is still tried
+  // if the clean one finds nothing, since the cleaner only knows the noise it
+  // has been taught.
+  const cleaned = titleKey(title);
+  const queries = cleaned && cleaned !== fold(title) ? [cleaned, title] : [title];
+
+  for (const q of queries) {
+    const results = await searchCatalog(session, `${artist} ${q}`, signal);
+    let best: SearchResult | null = null;
+    let bestScore = REJECT;
+    for (const r of results) {
+      if (r.kind !== kind || !importable(r)) continue;
+      const s = score(r, artist, title);
+      if (s < bestScore) {
+        best = r;
+        bestScore = s;
+        if (s === 0) break;
+      }
     }
+    if (best) return best;
   }
-  return best;
+  return null;
 }
