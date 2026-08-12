@@ -5,6 +5,13 @@
   width: 100%;
 }
 
+/* One option leads, full width, with the rest paired beneath it: the shape a
+   short list wants when its first entry is the default everyone should take
+   (Automatic) and the others are the manual alternatives. */
+.grid[data-lead] .option:first-child {
+  grid-column: 1 / -1;
+}
+
 .option {
   position: relative;
   display: grid;

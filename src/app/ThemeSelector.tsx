@@ -18,6 +18,8 @@ export interface ThemeSelectorProps<Value extends string = string> {
   options: readonly ThemeSelectorOption<Value>[];
   onValueChange: (value: Value) => void;
   name?: string;
+  /** Gives the first option the full width, pairing the rest beneath it. */
+  leadFirst?: boolean;
 }
 
 type PreviewStyle = CSSProperties & Record<`--theme-${string}`, string>;
@@ -88,9 +90,10 @@ export function ThemeSelector<Value extends string>({
   options,
   onValueChange,
   name = 'theme',
+  leadFirst = false,
 }: ThemeSelectorProps<Value>) {
   return (
-    <div className={styles.grid} role="radiogroup" aria-label={ariaLabel}>
+    <div className={styles.grid} role="radiogroup" aria-label={ariaLabel} data-lead={leadFirst || undefined}>
       {options.map((option) => {
         const selected = value === option.value;
 
