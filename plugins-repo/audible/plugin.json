@@ -1,8 +1,8 @@
 {
   "id": "audible",
-  "name": "Audiobook downloader",
-  "version": "0.1.0",
-  "description": "Download audiobooks into your library — the ones you own on Audible, and the public-domain LibriVox catalogue.",
+  "name": "Audible",
+  "version": "0.2.0",
+  "description": "Download the audiobooks you own on Audible into your library.",
   "author": "AttackFM",
   "tags": ["Audiobooks", "Downloads"],
   "entry": "plugin.ts",
