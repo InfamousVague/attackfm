@@ -9,5 +9,6 @@
     "Discovery"
   ],
   "entry": "plugin.ts",
-  "public": true
+  "public": true,
+  "retired": true
 }
