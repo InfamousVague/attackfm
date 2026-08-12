@@ -8,7 +8,7 @@ import { usePlaylists } from './playlists.tsx';
 import { PluginFence, usePlugins } from '../plugins/runtime.tsx';
 import type { PluginPlaylistTile } from '../plugins/types.ts';
 import { PlaylistModal } from './PlaylistModal.tsx';
-import likedChip from '../assets/chip-liked.png';
+import likedChip from '../assets/empty/liked-dark.png';
 import allSongsChip from '../assets/chip-all-songs.png';
 import onRepeatChip from '../assets/chip-on-repeat.png';
 import type { Track } from './tauri.ts';
@@ -207,7 +207,7 @@ export function PlaylistShowcase({
               in the picture it wears. */}
           <button
             type="button"
-            className="libChip"
+            className="libChip libChip--liked"
             style={{ '--libChipHue': 338 } as CSSProperties}
             onClick={() => onOpenSongs('liked')}
           >
@@ -217,7 +217,7 @@ export function PlaylistShowcase({
           </button>
           <button
             type="button"
-            className="libChip"
+            className="libChip libChip--all"
             style={{ '--libChipHue': 214 } as CSSProperties}
             onClick={() => onOpenSongs('all')}
           >
