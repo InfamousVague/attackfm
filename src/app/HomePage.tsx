@@ -20,6 +20,7 @@ import { ShelfSkeleton } from './ShelfSkeleton.tsx';
 import { PlaylistModal } from './PlaylistModal.tsx';
 import { EmptyArt } from './EmptyArt.tsx';
 import { isMusicImportLink } from '../plugins/importsBridge.ts';
+import { usePlugins } from '../plugins/runtime.tsx';
 import type { Track } from './tauri.ts';
 import { ImportFromSearch } from './ImportFromSearch.tsx';
 import { TrackMenu } from './TrackMenu.tsx';
@@ -202,9 +203,32 @@ export function HomePage({
    *  personalized shelves, so the mixes fold into Library above what you own. */
   embedded?: boolean;
 }) {
-  const { tracks, favoriteTracks } = useLibrary();
+  const { tracks, favoriteTracks, books } = useLibrary();
   const { create: createPlaylist } = usePlaylists();
   const { session } = useServerSession();
+  // The Books shelf shows only while the built-in Books feature is on; turning
+  // it off in Settings takes the row away with it.
+  const { isEnabled } = usePlugins();
+  const booksEnabled = isEnabled('books');
+  // The library's books, grouped into books (album is the book), newest first -
+  // a glance at the shelf without leaving the front door.
+  const bookShelf = useMemo(() => {
+    if (!booksEnabled) return [] as Track[][];
+    const byBook = new Map<string, Track[]>();
+    for (const t of books) {
+      const key = `${t.artist}${t.album}`;
+      const list = byBook.get(key);
+      if (list) list.push(t);
+      else byBook.set(key, [t]);
+    }
+    const grouped = [...byBook.values()];
+    for (const b of grouped) b.sort((a, c) => (a.trackNo ?? 0) - (c.trackNo ?? 0));
+    grouped.sort(
+      (a, b) =>
+        Math.max(...b.map((t) => t.addedAt ?? 0)) - Math.max(...a.map((t) => t.addedAt ?? 0)),
+    );
+    return grouped;
+  }, [books, booksEnabled]);
   // Every feed seeds from the last launch's answer, so the shelves paint at
   // full size on the first frame and the refresh below swaps content in place
   // - the page must never assemble itself in front of the listener twice.
@@ -487,6 +511,14 @@ export function HomePage({
         ))}
       </Shelf>
       )}
+
+      {/* Your audiobooks, a glance from the front door - present only while the
+          built-in Books feature is on and there is something on the shelf. */}
+      <Shelf title="Books" count={bookShelf.length}>
+        {bookShelf.map((book) => (
+          <AlbumCard key={book[0]!.path} track={book[0]!} onOpen={() => onPlay(book[0]!, book)} />
+        ))}
+      </Shelf>
 
       {skelFeed ? (
         <ShelfSkeleton title="Your top artists" kind="artist" />
