@@ -305,6 +305,9 @@ export interface RemoteTrack {
   /** 'music' or 'book' - which shelf the row lives on. Absent from servers
    *  that predate audiobooks, which only ever held music. */
   kind?: 'music' | 'book';
+  /** Chapter markers for a single-file audiobook. Absent/empty otherwise; older
+   *  servers never send it. */
+  chapters?: { title: string; startMs: number }[];
   /** Collector attribution - see Track. Optional: older servers never send it. */
   curatorUserId?: number | null;
   curatorPromoted?: boolean;
@@ -409,6 +412,7 @@ export function toTrack(session: ServerSession, remote: RemoteTrack): Track {
     curatorUserId: remote.curatorUserId ?? null,
     curatorPromoted: remote.curatorPromoted ?? false,
     kind: remote.kind ?? 'music',
+    chapters: remote.chapters?.length ? remote.chapters : undefined,
   };
 }
 

@@ -147,6 +147,12 @@ export interface Track {
    */
   kind?: 'music' | 'book';
   /**
+   * Chapter markers for a single-file audiobook: title + start offset (ms), in
+   * order. Absent or empty for everything else. A book that is one m4b (Audible)
+   * carries these; a book that is many files (LibriVox) uses its tracks instead.
+   */
+  chapters?: { title: string; startMs: number }[];
+  /**
    * The cover art: an object URL for a local file, an HTTP URL for a remote
    * one, or null when there is none.
    */

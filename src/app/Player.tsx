@@ -2352,14 +2352,67 @@ export function Player({
   // as broken. Autoplay honours repeat instead (see handleEnded). With no
   // list to walk (the demo stream, a lone search hit) the handlers are not
   // offered and the kit leaves the buttons out.
-  const canSkip = queue.length > 1 && !!onTrackChange && !!track;
+  // A single-file audiobook (Audible) carries chapter markers; a book made of
+  // many files (LibriVox) has none and behaves like an album. When they are
+  // present the skip buttons walk CHAPTERS instead of the queue - a book is one
+  // track, so there is nothing else in the queue to advance to.
+  const chapters = track?.kind === 'book' ? (track.chapters ?? []) : [];
+  const hasChapters = chapters.length > 0;
+  // Which chapter the live position sits in, as a label - recomputed each
+  // render off `position`, so it ticks over as the book plays.
+  const chapterLabel = (() => {
+    if (!hasChapters) return null;
+    const t = position * 1000;
+    let idx = 0;
+    for (let i = 0; i < chapters.length; i++) {
+      if (t >= chapters[i]!.startMs - 1000) idx = i;
+      else break;
+    }
+    const title = chapters[idx]!.title?.trim();
+    const ord = `Chapter ${idx + 1} of ${chapters.length}`;
+    // The title only adds something when it is not just "Chapter N" again.
+    return title && title.toLowerCase() !== `chapter ${idx + 1}` ? `${ord} · ${title}` : ord;
+  })();
+  const chapterNow = () => (activeAudio()?.currentTime ?? positionRef.current) * 1000;
+  const currentChapter = () => {
+    const t = chapterNow();
+    let idx = 0;
+    for (let i = 0; i < chapters.length; i++) {
+      if (t >= chapters[i]!.startMs - 1000) idx = i;
+      else break;
+    }
+    return idx;
+  };
+  const seekChapter = (dir: 1 | -1) => {
+    engaged.current = true;
+    abortCrossfade();
+    const i = currentChapter();
+    if (dir === -1) {
+      // Back near a chapter's top means the previous chapter; deeper in means
+      // the top of this one - the same convention track-skip-back uses.
+      const target = chapterNow() - chapters[i]!.startMs > 3000 ? i : Math.max(0, i - 1);
+      commitSeek(chapters[target]!.startMs / 1000);
+    } else {
+      commitSeek(chapters[Math.min(chapters.length - 1, i + 1)]!.startMs / 1000);
+    }
+  };
+
+  const canSkip = ((queue.length > 1 && !!onTrackChange) || hasChapters) && !!track;
   const skipForward = () => {
+    if (hasChapters) {
+      seekChapter(1);
+      return;
+    }
     engaged.current = true;
     // A skip is a decision about now; a blend toward some other track is not.
     abortCrossfade();
     advance(1, true);
   };
   const skipBack = () => {
+    if (hasChapters) {
+      seekChapter(-1);
+      return;
+    }
     engaged.current = true;
     abortCrossfade();
     const audio = activeAudio();
@@ -3504,6 +3557,7 @@ export function Player({
               ) : (
                 <span className="npScreen__artist">{track?.artist ?? ''}</span>
               )}
+              {chapterLabel && <span className="npScreen__chapter">{chapterLabel}</span>}
               {/* Only while the buffer is actually dry. Silence with the
                   transport still showing play is the thing this whole path
                   exists to stop being a mystery. */}
