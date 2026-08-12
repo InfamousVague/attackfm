@@ -51,7 +51,7 @@ import { DiscoverPage } from '../plugins/discover/DiscoverPage.tsx';
 import { FriendsPage } from './FriendsPage.tsx';
 import { JamProvider } from './jam.tsx';
 import { MobileAuthGate } from './MobileAuthGate.tsx';
-import { PluginsBarButton } from './PluginsBarButton.tsx';
+import { NavMoreMenu } from './NavMoreMenu.tsx';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
 import wordmark from '../assets/attack-white.png';
 import appIcon from '../assets/attack-icon.svg';
@@ -356,9 +356,9 @@ function PrimaryNav({
           active={tab === 'friends'}
           onClick={() => onTab('friends')}
         />
-        {/* The plugins' door on the phone: their pages cascade up out of the
-            bar. Absent until an enabled plugin contributes a page. */}
-        <PluginsBarButton tab={tab} onTab={onTab} />
+        {/* The overflow: the ⋮ menu cascades up the plugin pages (Books among
+            them) plus Stats, Downloads and Settings. */}
+        <NavMoreMenu tab={tab} onTab={onTab} onSettings={onSettings} />
       </div>
       {/* Settings left the bar for the header's top-right (mobileHeader), so
           this side holds two tabs like the other - three was a crowd. */}
@@ -395,26 +395,6 @@ function TopScrim({ resetKey }: { resetKey: string }) {
     return () => host.removeEventListener('scroll', onScroll, { capture: true });
   }, [resetKey]);
   return <div ref={ref} className="appTopScrim" aria-hidden="true" />;
-}
-
-/**
- * The phone header's door into the download queue: the same glyph and live
- * count the desktop rail wears, opening the page rather than a popover. Its
- * own component so the header can ask the bridge without every header render
- * depending on the importer being mounted.
- */
-function DownloadsDoor({ onOpen }: { onOpen: () => void }) {
-  const dl = useDownloadsOptional();
-  if (!dl) return null;
-  const active = dl.active.length;
-  return (
-    <IconButton variant="ghost" size="sm" aria-label="Downloads" onClick={onOpen}>
-      <span className="appNavRail__dlIcon">
-        <Download size={16} />
-        {active > 0 && <span className="appNavRail__dlBadge">{active}</span>}
-      </span>
-    </IconButton>
-  );
 }
 
 /** One tab in the floating phone bar: a glyph over a small label, lit when
@@ -1043,26 +1023,9 @@ export function App() {
                     <img className="mobileHeader__logo" src={wordmark} alt={APP_NAME} />
                   )}
                 </span>
-                <span className="mobileHeader__actions">
-                  {/* The importer's download queue, in the header on every tab
-                      including Library. It opens the Downloads PAGE rather
-                      than a popover: a ten-minute job is watched, and a panel
-                      that closes when you look away is the wrong container for
-                      it. Absent when the importer plugin is off. */}
-                  <DownloadsDoor onOpen={() => goTab('downloads')} />
-                  {/* Settings, moved off the crowded tab bar to the top-right of
-                      every page: the gear that opens the modal, and with it the
-                      server connection. Always present, so Home, Discover and
-                      the rest all reach it here. */}
-                  <IconButton
-                    variant="ghost"
-                    size="sm"
-                    aria-label="Settings"
-                    onClick={() => setSettingsOpen(true)}
-                  >
-                    <Settings size={18} />
-                  </IconButton>
-                </span>
+                {/* Downloads and Settings moved off the header into the bar's
+                    ⋮ menu (NavMoreMenu), so the top is just where you are. */}
+                <span className="mobileHeader__actions" />
               </header>
             )}
             <div className="appBody" ref={bodyRef}>

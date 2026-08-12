@@ -42,6 +42,13 @@ export const DEFAULT_PLUGINS: readonly string[] = ['audible', 'eq-rack'];
 /** Default plugins the user has removed, so the auto-install never re-adds them. */
 const REMOVED_DEFAULT_PLUGINS_KEY = 'attackfm-plugins-removed-defaults';
 
+/**
+ * Plugins a core feature has superseded - uninstalled on sight so they cannot
+ * double up with the built-in that replaced them. The old `audiobooks` plugin
+ * went this way when the Books shelf became core.
+ */
+export const DEPRECATED_PLUGINS: readonly string[] = ['audiobooks'];
+
 /** One plugin as a repository's manifest lists it. */
 export interface RemotePluginListing {
   id: string;
@@ -197,6 +204,16 @@ export async function installPlugin(
   all.push(installed);
   writeInstalled(all);
   return installed;
+}
+
+/** Uninstalls any deprecated plugin still sitting in storage. Returns true when
+ *  it removed one, so the caller can reload the runtime. */
+export function pruneDeprecatedPlugins(): boolean {
+  const installed = readInstalled();
+  const keep = installed.filter((p) => !DEPRECATED_PLUGINS.includes(p.id));
+  if (keep.length === installed.length) return false;
+  writeInstalled(keep);
+  return true;
 }
 
 export function uninstallPlugin(id: string): void {

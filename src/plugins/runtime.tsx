@@ -11,7 +11,12 @@ import {
 } from 'react';
 import { Button, Modal } from '@glacier/react';
 import { availablePlugins, filterAvailable, registeredIds } from './index.ts';
-import { ensureDefaultPlugins, loadInstalledPlugins, readInstalled } from './remote.ts';
+import {
+  ensureDefaultPlugins,
+  loadInstalledPlugins,
+  pruneDeprecatedPlugins,
+  readInstalled,
+} from './remote.ts';
 import { useServerSession } from '../app/serverSession.tsx';
 import { PluginsContext, usePlugins, type PluginsContextValue } from './pluginsContext.ts';
 import type {
@@ -100,6 +105,10 @@ export function PluginsProvider({ children }: { children: ReactNode }) {
   const hubUrl = session?.url;
   useEffect(() => {
     let cancelled = false;
+    // Drop anything a core feature has replaced (the old audiobooks plugin),
+    // then bring the defaults in.
+    const pruned = pruneDeprecatedPlugins();
+    if (pruned) reloadRemote();
     const hub = hubUrl ? `${hubUrl.replace(/\/+$/, '')}/plugins` : undefined;
     void ensureDefaultPlugins(hub ? [hub] : []).then((installed) => {
       if (installed && !cancelled) reloadRemote();
