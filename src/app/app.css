@@ -2460,6 +2460,63 @@ img.artPop:not([data-loading]) {
   }
 }
 
+/* --- Alive to the beat ------------------------------------------------------
+   One variable, many small breaths. The Player publishes `--beat` (0..1, a
+   hit and its decay) on the root while music is audible, plus the
+   data-music-live gate. Consumers are deliberately tiny - a glow's opacity,
+   a sheen's strength, a glint - all compositor-cheap properties, no layout,
+   no blur re-renders. The rule of thumb: nothing moves more than a few
+   percent, and everything falls still the instant the music does. */
+
+/* The nav brand: a crimson halo that swells on the hits - the one beat
+   anchor visible on every page. A pseudo carries the glow so only opacity
+   and scale animate. */
+[data-music-live] .appNavBar__center::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--glacier-accent-solid, #e5484d) 0%, transparent 70%);
+  opacity: calc(var(--beat, 0) * 0.35);
+  scale: calc(1 + var(--beat, 0) * 0.08);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* The disc's diffraction sheen catches the hits: the rainbow at the rim
+   brightens a breath on each one, on both the strip's disc and the sheet's. */
+[data-music-live] .spinningDisc__sheen {
+  opacity: calc(0.5 + var(--beat, 0) * 0.18);
+}
+
+/* The frosted hub glints with the music - a fainter cousin of the detent
+   glint, so the glass reads as sitting in the same room as the sound. */
+[data-music-live] .spinningDisc__hub {
+  filter: brightness(calc(1 + var(--beat, 0) * 0.08));
+}
+
+/* The sheet's darkening gradient eases a few percent on the hits, so the
+   whole Now Playing scene breathes without any expensive re-blur - only the
+   overlay's opacity moves. */
+[data-music-live] .npScreen__bg::after {
+  opacity: calc(1 - var(--beat, 0) * 0.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-music-live] .appNavBar__center::after {
+    opacity: 0;
+  }
+  [data-music-live] .spinningDisc__sheen {
+    opacity: 0.5;
+  }
+  [data-music-live] .spinningDisc__hub {
+    filter: none;
+  }
+  [data-music-live] .npScreen__bg::after {
+    opacity: 1;
+  }
+}
+
 /* --- The ripple-in ----------------------------------------------------------
    Scroll-driven: rippleWave.ts watches every card and reveals it the first
    time it meets the view - at page open, scrolling down, or sliding a shelf
