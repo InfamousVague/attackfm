@@ -176,8 +176,19 @@ pub async fn list(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Api
     Ok(Json(json!({ "current": mine, "friends": friends })))
 }
 
-/// `POST /api/jams/{id}/join` - listen along. Open to the host's friends
-/// only, checked here rather than trusted from the client.
+/// `POST /api/jams/{id}/join` - listen along.
+///
+/// The id IS the invitation. It is six characters from a deliberately
+/// unambiguous alphabet, it exists only in memory while the jam is live, and
+/// it is learnable in exactly three ways: the host reads it out, the host
+/// shares a link, or it appears in a friend's feed (`list`, which shows only
+/// friends' jams). So holding one is the permission - which is what makes a
+/// jam work in a car, where the people beside you may not be in your friends
+/// list and are certainly not on your wifi.
+///
+/// The friend check that used to stand here could not survive that: it made
+/// a shared code useless to the person you shared it with. What remains is
+/// the host's own control - leaving ends the jam for everyone.
 pub async fn join(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -190,11 +201,6 @@ pub async fn join(
     let Some(jam) = jams.get(&id) else {
         return Err((StatusCode::NOT_FOUND, "that jam has ended".into()));
     };
-    let host_id = jam.host_id;
-    if host_id != caller.id && !state.db.are_friends(caller.id, host_id) {
-        return Err((StatusCode::FORBIDDEN, "only the host's friends can join".into()));
-    }
-
     // One jam at a time: joining leaves whatever you were in.
     for other in jams.values_mut() {
         if other.id != id {

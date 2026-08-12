@@ -1,4 +1,6 @@
-import { Button } from '@glacier/react';
+import { Button, Input, Text } from '@glacier/react';
+import { Radio } from '@glacier/icons';
+import { useState } from 'react';
 import { useJam } from './jam.tsx';
 import { useLibrary } from './library.tsx';
 import { useServerSession } from './serverSession.tsx';
@@ -19,6 +21,47 @@ import placeholderArt from '../assets/attack-wave.png';
  * server connected. It leads the page because it is the page's one LIVE thing:
  * a friend's room you can walk into right now beats a directory of names.
  */
+/** The code box: six characters, however they were typed. */
+function JoinJamByCode({ onJoin }: { onJoin: (code: string) => void }) {
+  const [code, setCode] = useState('');
+  const [tried, setTried] = useState(false);
+  // The code is read aloud as often as it is pasted, so it arrives with
+  // spaces, dashes and whatever case the reader felt like.
+  const clean = code.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+  const ready = clean.length >= 4;
+  return (
+    <form
+      className="jamJoin"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!ready) return;
+        setTried(true);
+        onJoin(clean);
+        setCode('');
+      }}
+    >
+      <Input
+        className="jamJoin__field"
+        value={code}
+        onChange={(e) => setCode(e.currentTarget.value)}
+        placeholder="Join with a code"
+        aria-label="Jam code"
+        autoCapitalize="characters"
+        autoCorrect="off"
+        spellCheck={false}
+      />
+      <Button type="submit" variant="outline" size="sm" disabled={!ready}>
+        <Radio size={15} /> <span>Join</span>
+      </Button>
+      {tried && (
+        <Text size="xs" tone="subtle">
+          If the room is live you are in it; if not, the code has expired.
+        </Text>
+      )}
+    </form>
+  );
+}
+
 export function FriendsPage() {
   const { session } = useServerSession();
   const jam = useJam();
@@ -62,6 +105,23 @@ export function FriendsPage() {
                     ? 'Just you so far'
                     : `${jam.current.memberCount} listening`}
                   {jam.hosting ? ' · you set the pace' : ' · following along'}
+                  {/* The code IS the invitation: read it out in a car, where
+                      nobody shares your wifi and the person beside you may
+                      not be in your friends list yet. */}
+                  {jam.hosting && (
+                    <button
+                      type="button"
+                      className="jamLive__code"
+                      title="Copy the code"
+                      onClick={() => {
+                        void navigator.clipboard
+                          ?.writeText(jam.current!.id.toUpperCase())
+                          .catch(() => {});
+                      }}
+                    >
+                      Code {jam.current.id.toUpperCase()}
+                    </button>
+                  )}
                 </span>
               </span>
               <Button variant="ghost" size="sm" onClick={() => void jam.leave()}>
@@ -98,6 +158,10 @@ export function FriendsPage() {
           )}
         </section>
       )}
+
+      {/* Someone in the car reads out six characters and you are in their
+          room. No shared wifi, no friend request first, nothing to scan. */}
+      {session && !jam.current && <JoinJamByCode onJoin={(code) => void jam.join(code)} />}
 
       <RegistryFriends />
     </div>
