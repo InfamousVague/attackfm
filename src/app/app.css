@@ -5104,6 +5104,222 @@ body [class*='_panel_']:has(> .dlPanel) {
 
 /* ── Downloads tab ──────────────────────────────────────────────────────────
    The import queue as a full page; inherits .homePage's scroll/gutter. */
+/* ---- The Downloads page --------------------------------------------------
+   A queue is watched, not glanced at, so the page opens on a status strip:
+   the counts as tiles, then the queue split into what is coming down, what
+   waits, and what is finished. */
+
+/* The rail's download door: a nav item wearing a live count, so a queue
+   running in the background is visible from every page without opening it. */
+.appNavRail__dlIcon {
+  position: relative;
+  display: flex;
+}
+
+.appNavRail__dlBadge {
+  position: absolute;
+  inset-block-start: -5px;
+  inset-inline-end: -8px;
+  min-inline-size: 15px;
+  block-size: 15px;
+  padding-inline: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-on-accent, #fff);
+  font-size: 0.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.dlHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-3);
+}
+
+.dlStats {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  flex-wrap: wrap;
+}
+
+/* One count, worn as a tile: the glyph carries the meaning and the tone
+   carries the mood, so four of these read at a glance without a legend. */
+.dlStat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  background: var(--glacier-surface);
+}
+
+.dlStat__icon {
+  align-self: center;
+  display: flex;
+  color: var(--glacier-text-muted);
+}
+
+.dlStat__num {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.dlStat__label {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.dlStat[data-tone='active'] .dlStat__icon {
+  color: var(--glacier-accent-text);
+}
+
+.dlStat[data-tone='done'] .dlStat__icon {
+  color: var(--glacier-success-text, var(--glacier-text-muted));
+}
+
+.dlStat[data-tone='error'] {
+  border-color: var(--glacier-danger-border, var(--glacier-border));
+}
+
+.dlStat[data-tone='error'] .dlStat__icon,
+.dlStat[data-tone='error'] .dlStat__num {
+  color: var(--glacier-danger-text, var(--glacier-text));
+}
+
+.dlHead__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.dlHead__note {
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.dlPaused {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  margin: 0;
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-accent-soft);
+  border: var(--glacier-hairline) solid var(--glacier-accent-border);
+  color: var(--glacier-text);
+  font-size: var(--glacier-font-size-sm);
+}
+
+.dlSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+.dlSection__title {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+
+.dlSection__icon {
+  display: flex;
+  color: var(--glacier-text-muted);
+}
+
+.dlSection__count {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The kind and the source, worn as marks beside the counts. */
+.dlChip--kind {
+  text-transform: capitalize;
+}
+
+.dlChip--src {
+  text-transform: capitalize;
+  letter-spacing: 0.01em;
+}
+
+.dlChip--spotify {
+  color: #1db954;
+  border-color: color-mix(in srgb, #1db954 45%, transparent);
+}
+
+.dlChip--deezer {
+  color: #a238ff;
+  border-color: color-mix(in srgb, #a238ff 45%, transparent);
+}
+
+.dlCard__progress {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.dlCard__progress .dlCard__bar {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.dlCard__pct {
+  flex: none;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The song list's door: quiet until asked, and it says how many are behind
+   it so the ask is informed. */
+.dlCard__toggle {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--glacier-text-muted);
+  font: inherit;
+  font-size: var(--glacier-font-size-xs);
+  cursor: pointer;
+}
+
+.dlCard__toggle:hover {
+  color: var(--glacier-text);
+}
+
+.dlCard__chev {
+  transition: transform var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.dlCard__chev[data-open] {
+  transform: rotate(180deg);
+}
+
+/* A failed card wears its trouble on its edge, so the eye finds it in a
+   long finished list without reading a word. */
+.dlCard[data-state='error'] {
+  border-color: var(--glacier-danger-border, var(--glacier-border));
+}
+
 .downloadsHead {
   display: flex;
   align-items: center;
@@ -6210,6 +6426,38 @@ body [class*='_panel_']:has(> .dlPanel) {
 
 .catalogTrack__title--play:hover {
   text-decoration: underline;
+}
+
+/* The owned badge: a check that says you have it, becoming a play on hover
+   or focus to say what the tap will do - the same swap the search page's
+   owned rows make. Both glyphs share one cell so the button never resizes. */
+.catalogTrack__add[data-state='owned'] {
+  display: grid;
+  color: var(--glacier-accent-solid);
+  border-color: var(--glacier-accent-border);
+}
+
+.catalogTrack__add[data-state='owned'] > * {
+  grid-area: 1 / 1;
+  transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.catalogTrack__add[data-state='owned'] .catalogTrack__go,
+.catalogTrack__add[data-state='owned']:hover .catalogTrack__have,
+.catalogTrack__add[data-state='owned']:focus-visible .catalogTrack__have,
+.catalogTrack:hover .catalogTrack__add[data-state='owned'] .catalogTrack__have {
+  opacity: 0;
+}
+
+.catalogTrack__add[data-state='owned']:hover .catalogTrack__go,
+.catalogTrack__add[data-state='owned']:focus-visible .catalogTrack__go,
+.catalogTrack:hover .catalogTrack__add[data-state='owned'] .catalogTrack__go {
+  opacity: 1;
+}
+
+.catalogTrack[data-playable]:hover .catalogTrack__add[data-state='owned'] {
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-on-accent, #fff);
 }
 
 .catalogTrack__add:disabled {

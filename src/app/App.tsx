@@ -193,7 +193,11 @@ function PrimaryNav({
   // importer is actually running (it provides the downloads bridge). With no
   // importer - a fresh install, or anyone who has not added a plugin source -
   // there is nothing to download, so the tab is absent rather than a dead end.
-  const hasDownloads = useDownloadsOptional() !== null;
+  const dl = useDownloadsOptional();
+  const hasDownloads = dl !== null;
+  // How many imports are in flight, for the rail item's badge - the one thing
+  // the old popover trigger said that a plain nav item would not.
+  const dlActive = dl?.active.length ?? 0;
   // Discover appears whenever there is ANY way to acquire music - an importer
   // to download through, or a Buy handler to purchase through. Only a build with
   // no acquire handlers at all (the plugin-free App-Review server) hides it.
@@ -268,13 +272,23 @@ function PrimaryNav({
         className="appNavRail"
         end={
           <div className="appNavRail__foot">
-            {/* The importer's download queue, anchored to the foot of the rail
-                just above Settings. Empty (and invisible) when no importer is
-                running, so the foot is only ever Settings in that case. */}
+            {/* The download queue is a PAGE, so its door in the rail is a nav
+                item like any other - not a popover that closes the moment you
+                look away from a ten-minute job. The badge carries the count
+                the old popover trigger wore. Absent when no importer runs, so
+                the foot is only ever Settings in that case. */}
             {hasDownloads && (
-              <div className="appNavRail__downloads">
-                <PluginSlot id="titlebar-end" />
-              </div>
+              <NavBarItem
+                icon={
+                  <span className="appNavRail__dlIcon">
+                    <Download size={18} />
+                    {dlActive > 0 && <span className="appNavRail__dlBadge">{dlActive}</span>}
+                  </span>
+                }
+                label="Downloads"
+                active={tab === 'downloads'}
+                onClick={() => onTab('downloads')}
+              />
             )}
             <NavBarItem icon={<Settings size={18} />} label="Settings" onClick={onSettings} />
           </div>
@@ -369,6 +383,26 @@ function TopScrim({ resetKey }: { resetKey: string }) {
     return () => host.removeEventListener('scroll', onScroll, { capture: true });
   }, [resetKey]);
   return <div ref={ref} className="appTopScrim" aria-hidden="true" />;
+}
+
+/**
+ * The phone header's door into the download queue: the same glyph and live
+ * count the desktop rail wears, opening the page rather than a popover. Its
+ * own component so the header can ask the bridge without every header render
+ * depending on the importer being mounted.
+ */
+function DownloadsDoor({ onOpen }: { onOpen: () => void }) {
+  const dl = useDownloadsOptional();
+  if (!dl) return null;
+  const active = dl.active.length;
+  return (
+    <IconButton variant="ghost" size="sm" aria-label="Downloads" onClick={onOpen}>
+      <span className="appNavRail__dlIcon">
+        <Download size={16} />
+        {active > 0 && <span className="appNavRail__dlBadge">{active}</span>}
+      </span>
+    </IconButton>
+  );
 }
 
 /** One tab in the floating phone bar: a glyph over a small label, lit when
@@ -985,11 +1019,11 @@ export function App() {
                 </span>
                 <span className="mobileHeader__actions">
                   {/* The importer's download queue, in the header on every tab
-                      including Library - it used to be kept off Library to keep
-                      that header clean, which only moved it into the page body
-                      where it read as content rather than chrome. Empty (and
-                      invisible) when the importer plugin is off. */}
-                  <PluginSlot id="titlebar-end" />
+                      including Library. It opens the Downloads PAGE rather
+                      than a popover: a ten-minute job is watched, and a panel
+                      that closes when you look away is the wrong container for
+                      it. Absent when the importer plugin is off. */}
+                  <DownloadsDoor onOpen={() => goTab('downloads')} />
                   {/* The DJ sits beside it on the library surface: press it and
                       be played to. BOTH tab names, because the app opens on
                       'home' and only becomes 'library' once the brand button is
