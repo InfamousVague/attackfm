@@ -640,7 +640,23 @@ export function ArtistPage({ artist, onPlay, onOpenArtist, onOpenPlaylist }: Art
                   {/* Nothing to add for a song you already have, and nothing to
                       add when this row came from your own library in the first
                       place (the catalogue was unreachable). */}
-                  {mine || !t.catalogue ? (
+                  {mine ? (
+                    /* The check is a control, not a label: a song you own is
+                       one tap from playing wherever you tap it - the title or
+                       the badge - and the badge says so by becoming a play on
+                       hover. Before this it was decoration, so tapping the
+                       obvious target did nothing at all. */
+                    <button
+                      type="button"
+                      className="catalogTrack__add"
+                      data-state="owned"
+                      aria-label={`Play ${t.title}`}
+                      onClick={() => onPlay(mine, theirs)}
+                    >
+                      <Check size={14} className="catalogTrack__have" />
+                      <Play size={14} className="catalogTrack__go" />
+                    </button>
+                  ) : !t.catalogue ? (
                     <span className="catalogTrack__add" data-state="added" aria-hidden>
                       <Check size={14} />
                     </span>

@@ -1,6 +1,6 @@
 import { Text } from '@glacier/react';
-import { ChevronLeft, Check, Disc3, Music, Plus, User, X } from '@glacier/icons';
-import { useEffect, useRef, useState } from 'react';
+import { ChevronLeft, Check, Disc3, Music, Play, Plus, User, X } from '@glacier/icons';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRippleWave } from '../../app/rippleWave.ts';
 import { useServerSession } from '../../app/serverSession.tsx';
 import {
@@ -15,6 +15,7 @@ import { PROBE_URL, resolveImportable } from '../../app/resolveImport.ts';
 import { useDownloadsOptional } from '../importsBridge.ts';
 import { IMPORTER_PLUGIN_ID, useAcquire } from '../runtime.tsx';
 import type { AcquireTarget } from '../types.ts';
+import type { Track } from '../../app/tauri.ts';
 
 /**
  * One catalogue artist, opened from a Discover search row: who they are, how
@@ -61,6 +62,7 @@ export function CatalogArtistPage({
   onBack,
   onOpenArtist,
   onTrackQueued,
+  onPlay,
 }: {
   artistId: string;
   artistName: string;
@@ -70,6 +72,9 @@ export function CatalogArtistPage({
   /** Told the job id when a single track is queued, so the page that owns the
    *  deck can start it playing the moment the import lands. */
   onTrackQueued?: (jobId: string) => void;
+  /** Plays a song the library already holds. A row wearing a check IS a song
+   *  you own, so the tap that would have fetched it starts it instead. */
+  onPlay?: (track: Track, queue: Track[]) => void;
   /** Walks to a related artist, staying on this page's shape. */
   onOpenArtist: (id: string, name: string) => void;
 }) {
@@ -163,6 +168,17 @@ export function CatalogArtistPage({
   // Rows whose Spotify lookup came back empty, so the page can say so on the
   // row rather than appearing to have ignored the tap.
   const [missing, setMissing] = useState<Record<string, boolean>>({});
+
+  // What this page can actually play: the top tracks you already own, in the
+  // page's own order. Starting a song here queues these behind it, so the
+  // artist plays on instead of stopping after one.
+  const ownedTop = useMemo(
+    () =>
+      (artist?.top ?? [])
+        .map((t) => owned.find(artistName, t.title))
+        .filter((t): t is Track => t !== null),
+    [artist, artistName, owned],
+  );
 
   useEffect(() => {
     if (!session) return;
@@ -267,8 +283,15 @@ export function CatalogArtistPage({
     const state = addState(t.url, t.id, t.title);
     const gone = missing[t.id] === true;
     const canAdd = acquire.hasHandlers({ ...trackTarget(t), url: PROBE_URL });
+    // A song already in the library: the row stops being an offer and becomes
+    // a song - the name and the check both start it, with the rest of what
+    // you own by this artist behind it so the page plays on.
+    const mine = onPlay ? owned.find(artistName, t.title) : null;
+    const play = mine
+      ? () => onPlay!(mine, ownedTop.length > 0 ? ownedTop : [mine])
+      : null;
     return (
-      <li key={t.id} className="catalogTrack">
+      <li key={t.id} className="catalogTrack" data-playable={play ? '' : undefined}>
         <span className="catalogTrack__rank">{index + 1}</span>
         {t.cover ? (
           <CatalogArt src={t.cover} className="catalogTrack__art" lazy />
@@ -277,24 +300,48 @@ export function CatalogArtistPage({
             <Music size={16} />
           </span>
         )}
-        <span className="catalogTrack__title">{t.title}</span>
+        {play ? (
+          <button type="button" className="catalogTrack__title catalogTrack__title--play" onClick={play}>
+            {t.title}
+          </button>
+        ) : (
+          <span className="catalogTrack__title">{t.title}</span>
+        )}
         <span className="catalogTrack__time">{trackTime(t.duration)}</span>
         <button
           type="button"
           className="catalogTrack__add"
-          data-state={gone ? 'missing' : state}
-          disabled={state !== 'idle' || !canAdd || gone}
-          aria-label={gone ? `${t.title} is not on Spotify` : `Add ${t.title}`}
-          title={
-            gone
-              ? `${t.title} is not on Spotify to import`
-              : canAdd
-                ? undefined
-                : 'No way to add this — enable Music import or Buy in Plugins'
+          data-state={gone ? 'missing' : play ? 'owned' : state}
+          disabled={play ? false : state !== 'idle' || !canAdd || gone}
+          aria-label={
+            play ? `Play ${t.title}` : gone ? `${t.title} is not on Spotify` : `Add ${t.title}`
           }
-          onClick={() => void runResolved('track', t.title, t.url, t.id, t.importable, true)}
+          title={
+            play
+              ? undefined
+              : gone
+                ? `${t.title} is not on Spotify to import`
+                : canAdd
+                  ? undefined
+                  : 'No way to add this — enable Music import or Buy in Plugins'
+          }
+          onClick={
+            play ? play : () => void runResolved('track', t.title, t.url, t.id, t.importable, true)
+          }
         >
-          {gone ? <X size={14} /> : addGlyph(state)}
+          {/* Owned rows swap the check for a play on hover, the way the search
+              page's owned badge does - the check says you have it, the play
+              says what the tap will do. */}
+          {play ? (
+            <>
+              <Check size={14} className="catalogTrack__have" />
+              <Play size={14} className="catalogTrack__go" />
+            </>
+          ) : gone ? (
+            <X size={14} />
+          ) : (
+            addGlyph(state)
+          )}
         </button>
       </li>
     );
