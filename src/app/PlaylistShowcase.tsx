@@ -1,13 +1,13 @@
 import { mosaicArts, useTileArt } from './artLoad.ts';
 import { Button, ContextMenu, Input, Modal, MenuItem, Text } from '@glacier/react';
-import { Heart, History, ListMusic, Plus, Trash2 } from '@glacier/icons';
+import { History, ListMusic, Plus, Trash2 } from '@glacier/icons';
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { useLibrary } from './library.tsx';
 import { usePlaylists } from './playlists.tsx';
 import { PluginFence, usePlugins } from '../plugins/runtime.tsx';
 import type { PluginPlaylistTile } from '../plugins/types.ts';
 import { PlaylistModal } from './PlaylistModal.tsx';
-import type { EmptyArtName } from './EmptyArt.tsx';
+import { HeroArt } from './EmptyArt.tsx';
 import type { Track } from './tauri.ts';
 
 /**
@@ -124,17 +124,22 @@ function PluginTile({ tile, onPlay }: { tile: PluginPlaylistTile; onPlay: (track
 export function PlaylistShowcase({
   onPlay,
   onOpenPlaylist,
+  onOpenSongs,
   onOpenArtist,
 }: {
   onPlay: (track: Track, queue: Track[]) => void;
   /** Opens one of the user's own lists as a full page - where it can be
-   *  reordered, renamed and deleted. Liked and Recent stay modals: they are
-   *  the library's own views, with no order of their own to edit. */
+   *  reordered, renamed and deleted. Recent stays a modal: it is a window on
+   *  the library, with no order of its own to edit. */
   onOpenPlaylist: (id: string) => void;
+  /** Opens a library-wide song page - Liked, or every song - full rather than
+   *  in a sheet. These two are the collection's own big views, so they lead the
+   *  grid as hero tiles instead of glyph squircles. */
+  onOpenSongs: (view: 'liked' | 'all') => void;
   /** Opens an artist's page from a modal row's artist line. */
   onOpenArtist?: (artist: string) => void;
 }) {
-  const { tracks, favoriteTracks } = useLibrary();
+  const { tracks } = useLibrary();
   const { playlists, create, remove, removeTrack } = usePlaylists();
   const { enabled } = usePlugins();
   // 'liked' | 'recent' | a user playlist's id.
@@ -155,15 +160,11 @@ export function PlaylistShowcase({
   // is gone simply does not render, and comes back if the file does.
   const byPath = useMemo(() => new Map(tracks.map((t) => [t.path, t] as const)), [tracks]);
 
-  // The strip's own modal now serves only the two library views. A user's list
-  // opens as a page instead - it has a running order to edit, which a
-  // read-through sheet has nowhere to put.
-  const current: { title: string; tracks: Track[]; empty: string; art?: EmptyArtName } | null =
-    open === 'liked'
-      ? { title: 'Liked', tracks: favoriteTracks, empty: 'No liked songs yet. Tap the heart while a song plays.', art: 'liked' }
-      : open === 'recent'
-        ? { title: 'Recent', tracks: recent, empty: 'Nothing here yet.' }
-        : null;
+  // The strip's modal now serves only Recent - a window on the library, with no
+  // order to edit. Liked and every-song open as full PAGES instead (the hero
+  // tiles below), and a user's own list opens as a page it can reorder.
+  const current: { title: string; tracks: Track[]; empty: string } | null =
+    open === 'recent' ? { title: 'Recent', tracks: recent, empty: 'Nothing here yet.' } : null;
 
   const createDraft = (event: FormEvent) => {
     event.preventDefault();
@@ -188,10 +189,27 @@ export function PlaylistShowcase({
             worth does it scroll - the cap keeps a hundred playlists from
             burying the shelves below. */}
         <div className="showcaseGrid">
+            {/* Liked leads, and does NOT look like the playlists: a hero tile
+                wearing the neon heart, opening the whole liked collection as a
+                page you can shuffle. The two library-wide views (Liked, All)
+                are the grid's heroes; the playlists follow as plain squircles. */}
             <Tile
               name="Liked"
-              cover={<MosaicCover tracks={favoriteTracks} fallback={<Heart size={24} fill="currentColor" />} tone="tileLiked" />}
-              onOpen={() => setOpen('liked')}
+              cover={
+                <div className="tileSquircle tileHero tileHero--liked" aria-hidden>
+                  <HeroArt name="liked" />
+                </div>
+              }
+              onOpen={() => onOpenSongs('liked')}
+            />
+            <Tile
+              name="All songs"
+              cover={
+                <div className="tileSquircle tileHero tileHero--all" aria-hidden>
+                  <HeroArt name="library" />
+                </div>
+              }
+              onOpen={() => onOpenSongs('all')}
             />
             <Tile
               name="Recent"
@@ -272,7 +290,6 @@ export function PlaylistShowcase({
           title={current.title}
           tracks={current.tracks}
           emptyLabel={current.empty}
-          emptyArt={current.art}
           onOpenArtist={
             onOpenArtist &&
             ((artist) => {
