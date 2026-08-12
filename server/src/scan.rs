@@ -210,6 +210,17 @@ fn read_track(path: &Path, rel_path: &str, art_dir: &Path) -> Option<ScannedTrac
     // never what gets served.
     ) || (matches!(file_type, lofty::file::FileType::Mp4) && properties.bit_depth().is_some());
 
+    // Chapter markers for a single-file audiobook. Only books (the folder says
+    // so), only the MP4 family where m4b/Audible chapters live, and only via
+    // ffprobe - so music never pays for a probe with nothing to find.
+    let chapters = if matches!(file_type, lofty::file::FileType::Mp4)
+        && crate::db::kind_for(rel_path) == "book"
+    {
+        read_chapters(path)
+    } else {
+        String::new()
+    };
+
     Some(ScannedTrack {
         rel_path: rel_path.to_string(),
         title,
@@ -231,7 +242,56 @@ fn read_track(path: &Path, rel_path: &str, art_dir: &Path) -> Option<ScannedTrac
         size_bytes: meta.len() as i64,
         mtime,
         art_id,
+        chapters,
     })
+}
+
+/// Chapter markers from a media file, as a JSON string `[{title, startMs}]` in
+/// order - or empty when ffprobe is absent, the file has no chapters, or
+/// anything at all goes wrong. `-c copy` from an AAX preserves these atoms, so
+/// this reads them straight back off the m4b at scan.
+fn read_chapters(path: &Path) -> String {
+    let Ok(out) = std::process::Command::new("ffprobe")
+        .args(["-v", "error", "-show_chapters", "-of", "json"])
+        .arg(path)
+        .output()
+    else {
+        return String::new();
+    };
+    if !out.status.success() {
+        return String::new();
+    }
+    let Ok(v) = serde_json::from_slice::<serde_json::Value>(&out.stdout) else {
+        return String::new();
+    };
+    let list: Vec<serde_json::Value> = v
+        .get("chapters")
+        .and_then(|c| c.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|c| {
+                    let start = c
+                        .get("start_time")
+                        .and_then(|s| s.as_str())
+                        .and_then(|s| s.parse::<f64>().ok())?;
+                    let title = c
+                        .get("tags")
+                        .and_then(|t| t.get("title"))
+                        .and_then(|t| t.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    Some(serde_json::json!({
+                        "title": title,
+                        "startMs": (start * 1000.0).round() as i64,
+                    }))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    if list.is_empty() {
+        return String::new();
+    }
+    serde_json::to_string(&list).unwrap_or_default()
 }
 
 /// Runs one pass over the music root.

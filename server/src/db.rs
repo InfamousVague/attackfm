@@ -69,6 +69,10 @@ pub struct Track {
     /// of every music surface (mixes, shuffle, search, the curator's taste),
     /// and the audiobooks page shows exactly and only them.
     pub kind: String,
+    /// Chapter markers for a single-file audiobook - `[{title, startMs}]` in
+    /// reading order, an empty array for everything else. Derived from the file
+    /// at scan (ffprobe), so it survives a re-scan and needs no separate sync.
+    pub chapters: serde_json::Value,
 }
 
 /// What the scanner has learned about one file, before it becomes a row.
@@ -94,6 +98,9 @@ pub struct ScannedTrack {
     pub size_bytes: i64,
     pub mtime: i64,
     pub art_id: Option<String>,
+    /// Chapter markers as a JSON string (`[{title, startMs}]`), empty when the
+    /// file carries none. The scanner fills it for single-file audiobooks.
+    pub chapters: String,
 }
 
 pub struct User {
@@ -883,6 +890,7 @@ impl Db {
         for (name, decl) in [
             ("curator_user_id", "curator_user_id INTEGER"),
             ("curator_promoted", "curator_promoted INTEGER NOT NULL DEFAULT 0"),
+            ("chapters", "chapters TEXT NOT NULL DEFAULT ''"),
         ] {
             if !have.iter().any(|c| c == name) {
                 conn.execute(&format!("ALTER TABLE tracks ADD COLUMN {decl}"), [])?;
@@ -1177,14 +1185,16 @@ impl Db {
             "INSERT INTO tracks (
                  rel_path, title, artist, album_artist, album, track_no, disc_no, year,
                  genre, lyrics, duration_ms, codec, lossless, sample_rate, bit_depth,
-                 channels, bitrate, size_bytes, mtime, art_id, added_at, rev, deleted, kind
+                 channels, bitrate, size_bytes, mtime, art_id, added_at, rev, deleted, kind,
+                 chapters
              ) VALUES (
                  ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8,
                  ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                 ?16, ?17, ?18, ?19, ?20, ?21, ?22, 0, ?23
+                 ?16, ?17, ?18, ?19, ?20, ?21, ?22, 0, ?23, ?24
              )
              ON CONFLICT(rel_path) DO UPDATE SET
                  kind = excluded.kind,
+                 chapters = excluded.chapters,
                  title = excluded.title, artist = excluded.artist,
                  album_artist = excluded.album_artist, album = excluded.album,
                  track_no = excluded.track_no, disc_no = excluded.disc_no,
@@ -1199,7 +1209,7 @@ impl Db {
                 t.rel_path, t.title, t.artist, t.album_artist, t.album, t.track_no, t.disc_no,
                 t.year, t.genre, t.lyrics, t.duration_ms, t.codec, t.lossless as i64,
                 t.sample_rate, t.bit_depth, t.channels, t.bitrate, t.size_bytes, t.mtime,
-                t.art_id, now_ms(), rev, kind_for(&t.rel_path)
+                t.art_id, now_ms(), rev, kind_for(&t.rel_path), t.chapters
             ],
         )?;
         Ok(())
@@ -1262,13 +1272,19 @@ impl Db {
             curator_user_id: row.get(22)?,
             curator_promoted: row.get::<_, i64>(23)? != 0,
             kind: row.get(24)?,
+            chapters: {
+                // Stored as a JSON string; hand the client the parsed array, or
+                // an empty one if it is blank or somehow unparseable.
+                let raw: String = row.get(25)?;
+                serde_json::from_str(&raw).unwrap_or_else(|_| serde_json::json!([]))
+            },
         })
     }
 
     const TRACK_COLS: &'static str = "id, title, artist, album_artist, album, track_no, disc_no, \
          year, genre, lyrics, deleted, duration_ms, codec, lossless, sample_rate, bit_depth, \
          channels, bitrate, size_bytes, added_at, art_id, rev, curator_user_id, \
-         COALESCE(curator_promoted, 0), COALESCE(kind, 'music')";
+         COALESCE(curator_promoted, 0), COALESCE(kind, 'music'), COALESCE(chapters, '')";
 
     /// Everything stamped above `since`, live rows and tombstones alike. The
     /// tombstones come back as bare ids so a client can drop them.
