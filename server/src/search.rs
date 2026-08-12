@@ -75,10 +75,21 @@ fn token_cache() -> &'static Mutex<Option<(String, u64)>> {
     CACHE.get_or_init(|| Mutex::new(None))
 }
 
-// Superseded by the SpotiFLAC-backed search (its token endpoint is blocked from
-// the box), but kept for the day the anonymous token is reachable again.
-#[allow(dead_code)]
+/// An ordinary Spotify API token, from this hub's own app credentials.
+///
+/// Two Spotify tokens exist and they are not interchangeable. The web
+/// PLAYER's token (canvas.rs mints one with a TOTP against the bundle's
+/// secret) is what pathfinder wants and is REFUSED on the public /v1
+/// endpoints - measured in canvas.rs: the same search answered instantly with
+/// an ordinary token and was 429'd every time with the web one. So search
+/// gets the ordinary kind: plain client credentials, which needs only the
+/// app id and secret this server may already carry for the Spotify link.
+///
+/// The old anonymous `get_access_token` endpoint that stood here is gone from
+/// Spotify's side; asking it just wasted a request per search.
 async fn spotify_token() -> Option<String> {
+    let id = std::env::var("AFM_SPOTIFY_CLIENT_ID").ok().filter(|v| !v.is_empty())?;
+    let secret = std::env::var("AFM_SPOTIFY_CLIENT_SECRET").ok().filter(|v| !v.is_empty())?;
     {
         let guard = token_cache().lock().await;
         if let Some((tok, exp)) = &*guard {
@@ -88,22 +99,21 @@ async fn spotify_token() -> Option<String> {
         }
     }
     let v: Value = client()
-        .get("https://open.spotify.com/get_access_token?reason=transport&productType=web_player")
+        .post("https://accounts.spotify.com/api/token")
+        .basic_auth(&id, Some(&secret))
+        .form(&[("grant_type", "client_credentials")])
         .send()
         .await
         .ok()?
         .json()
         .await
         .ok()?;
-    let tok = v.get("accessToken").and_then(|x| x.as_str())?.to_string();
+    let tok = v.get("access_token").and_then(|x| x.as_str())?.to_string();
     if tok.is_empty() {
         return None;
     }
-    let exp = v
-        .get("accessTokenExpirationTimestampMs")
-        .and_then(|x| x.as_u64())
-        .unwrap_or_else(|| now_ms() + 3_000_000);
-    *token_cache().lock().await = Some((tok.clone(), exp));
+    let ttl = v.get("expires_in").and_then(|x| x.as_u64()).unwrap_or(3600);
+    *token_cache().lock().await = Some((tok.clone(), now_ms() + ttl.saturating_mul(1000)));
     Some(tok)
 }
 
@@ -325,6 +335,29 @@ fn importable(url: &str) -> bool {
     url.contains("open.spotify.com/") || url.starts_with("spotify:")
 }
 
+/// Spotify rows for a query, by whichever road this box has to Spotify.
+///
+/// SpotiFLAC's metadata client leads: it is the downloader's own view of the
+/// catalogue, so what it names is certain to be fetchable. A hub that does not
+/// have it - a home Mac, where the importer may be installed differently or
+/// not at all - used to get NOTHING from Spotify, and since Deezer tracks are
+/// refused as importer input, everything downstream (an artist page's Add, the
+/// curator's own shopping) concluded the record simply was not on Spotify. The
+/// web player's anonymous token is exactly what SpotiFLAC exists to work
+/// around, and it is only blocked from the VPS - from a house it answers - so
+/// it stands in whenever SpotiFLAC is silent.
+///
+/// An EMPTY answer therefore means "neither road reached Spotify", which is a
+/// fact about this box, not about the record. Callers that record a permanent
+/// verdict must tell that apart.
+pub(crate) async fn spotify_catalog(state: &Arc<AppState>, q: &str) -> Vec<SearchResult> {
+    let rows = spotiflac_search(state, q).await;
+    if !rows.is_empty() {
+        return rows;
+    }
+    spotify_search(q).await
+}
+
 // --- Handler -----------------------------------------------------------------
 
 /// `GET /api/search?q=` - external catalogue search across Spotify and Deezer.
@@ -485,21 +518,9 @@ pub async fn search(
         return Ok(Json(json!({ "results": [] })));
     }
 
-    // Spotify (through SpotiFLAC, whose links download) leads; Deezer fills the
-    // list out and stands in whole if the search subprocess comes back empty.
-    let (mut spotify, deezer) = tokio::join!(spotiflac_search(&state, &q), deezer_search(&q));
-
-    // A hub with no SpotiFLAC metadata client - a home Mac, where the importer
-    // may still be installed differently or not at all - got NO Spotify rows
-    // from the line above. That is not a cosmetic loss: Deezer TRACKS are
-    // dropped below (the importer refuses them as input), so the whole answer
-    // became albums-and-artists, and every "Add" on an artist page resolved to
-    // "not on Spotify" and showed an X. The web player's own token is what
-    // SpotiFLAC exists to work around, and it is only blocked from the VPS -
-    // from a house it answers fine - so it stands in when SpotiFLAC is silent.
-    if spotify.is_empty() {
-        spotify = spotify_search(&q).await;
-    }
+    // Spotify (whose links download) leads; Deezer fills the list out and
+    // stands in whole if Spotify comes back empty.
+    let (spotify, deezer) = tokio::join!(spotify_catalog(&state, &q), deezer_search(&q));
 
     let mut results: Vec<SearchResult> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
@@ -514,12 +535,20 @@ pub async fn search(
         //
         // ARTIST rows are kept whatever their source: they navigate rather than
         // import, and Deezer is what makes artist browsing work at all.
-        if r.kind == "track" && !importable(&r.url) {
+        // Anything you can ADD must carry a link the importer takes, which
+        // means Spotify. A Deezer track or album is a row whose button can
+        // only ever fail (SpotiFLAC uses Deezer as a download source, never as
+        // an input), and a dead offer is worse than no offer - so songs and
+        // records come from Spotify or not at all.
+        //
+        // ARTIST rows are the exception, whatever their source: they navigate
+        // rather than import, and Deezer is what makes artist browsing work.
+        if (r.kind == "track" || r.kind == "album") && !importable(&r.url) {
             continue;
         }
-        // Album rows arrive from both sources; ten is plenty of shelf, and
-        // capping them here rather than at the truncate below keeps a wide
-        // album catalogue from squeezing the artists out entirely.
+        // Ten albums is plenty of shelf, and capping them here rather than at
+        // the truncate below keeps a wide album catalogue from squeezing the
+        // artists out entirely.
         if r.kind == "album" && albums >= 10 {
             continue;
         }
