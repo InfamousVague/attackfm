@@ -1,9 +1,10 @@
 import { ContextMenu, MenuItem } from '@glacier/react';
-import { ArrowDownToLine, Check, ListEnd, ListMusic, ListStart, Trash2 } from '@glacier/icons';
+import { ArrowDownToLine, Check, ListEnd, ListMusic, ListStart, Radio, Trash2 } from '@glacier/icons';
 import { useEffect, useState, type ReactNode } from 'react';
 import { AddToPlaylistDialog } from './AddToPlaylist.tsx';
 import { useQueueControls } from './queueControls.tsx';
 import { isHeld, onOfflineChange, pinTrack, unpinTrack } from './offline.ts';
+import { useRadioOptional } from './radio.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { streamUrl, trackIdFromPath } from './server.ts';
 import { isTauri, type Track } from './tauri.ts';
@@ -37,6 +38,9 @@ export function TrackMenu({
   className?: string;
 }) {
   const { playNext, addToQueue, inJam } = useQueueControls();
+  // The station: a song is the most natural thing to start one from, and the
+  // menu is where "do something with this song" already lives.
+  const radio = useRadioOptional();
   const [filing, setFiling] = useState(false);
   // Keeping a song is only offered where it means something: a phone or
   // desktop app (a browser tab has no disk of ours) holding a track that came
@@ -80,6 +84,22 @@ export function TrackMenu({
             <MenuItem icon={<ListMusic size={15} />} onSelect={() => setFiling(true)}>
               Add to playlist…
             </MenuItem>
+            {/* An endless run in this song's direction. It plays first, and
+                the station keeps the queue fed behind it for as long as it
+                is on - see radio.tsx. */}
+            {radio && session && (
+              <MenuItem
+                icon={<Radio size={15} />}
+                onSelect={() => {
+                  // The seed plays first - a station "from this song" that did
+                  // not play it would be a station from somewhere else.
+                  playNext(track);
+                  radio.start(track);
+                }}
+              >
+                Start radio from this
+              </MenuItem>
+            )}
             {/* The song, on this device: it plays with the hub off, the wifi
                 gone, or the plane door shut. Held songs offer the way back
                 out, since the whole point is that the space is yours. */}

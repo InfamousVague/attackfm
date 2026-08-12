@@ -37,6 +37,7 @@ import { QueueControlsBridge } from './queueControls.tsx';
 import { ArtistPage } from './ArtistPage.tsx';
 import { PlaylistPage } from './PlaylistPage.tsx';
 import { DownloadsPage } from './DownloadsPage.tsx';
+import { RadioProvider } from './radio.tsx';
 import { SettingsModal } from './SettingsModal.tsx';
 import { PlaylistsProvider } from './playlists.tsx';
 import { LibrarySyncProvider } from './librarySync.tsx';
@@ -683,6 +684,12 @@ export function App() {
   // way a play context should be: re-sorting the table later reorders the
   // table, not the record already spinning.
   const [queue, setQueue] = useState<Track[]>([]);
+  // Stable for the station's refill effect, which lists it as a dependency:
+  // a fresh closure each render would re-ask the hub on every paint.
+  const extendQueue = useCallback(
+    (more: Track[]) => setQueue((prev) => [...prev, ...more]),
+    [],
+  );
 
   // Every surface that starts playback comes through here: the track to play
   // and the list it came from. A surface with no list (a lone hit) plays the
@@ -883,6 +890,11 @@ export function App() {
                 below - onto this deck's queue, or, when following a jam, into
                 the room the host folds it into. */}
             <QueueControlsBridge localPlayNext={playNext} localAddToQueue={addToQueue}>
+            {/* The station feeds the one queue rather than keeping its own -
+                see radio.tsx. It wraps the CONTENT as well as the deck: a
+                song offers to start a station wherever it is drawn, and a
+                menu outside this provider would silently lack the item. */}
+            <RadioProvider queue={queue} onExtend={extendQueue}>
             {/* Every bottom clearance in the app is spent from
                 --app-player-height, and app.css collapses that one variable to
                 0 when no strip is mounted, which gives the lists their rows
@@ -1125,6 +1137,7 @@ export function App() {
             <IndexingStatus />
             <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
             </div>
+            </RadioProvider>
             </QueueControlsBridge>
             </AcquireProvider>
             </NowPlayingMotionProvider>

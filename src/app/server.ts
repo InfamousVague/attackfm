@@ -302,6 +302,9 @@ export interface RemoteTrack {
   addedAt: number;
   artId: string | null;
   rev: number;
+  /** 'music' or 'book' - which shelf the row lives on. Absent from servers
+   *  that predate audiobooks, which only ever held music. */
+  kind?: 'music' | 'book';
   /** Collector attribution - see Track. Optional: older servers never send it. */
   curatorUserId?: number | null;
   curatorPromoted?: boolean;
@@ -405,6 +408,7 @@ export function toTrack(session: ServerSession, remote: RemoteTrack): Track {
     sizeBytes: remote.sizeBytes,
     curatorUserId: remote.curatorUserId ?? null,
     curatorPromoted: remote.curatorPromoted ?? false,
+    kind: remote.kind ?? 'music',
   };
 }
 
@@ -623,6 +627,21 @@ export async function reportPosition(
     body: JSON.stringify({ trackId, positionMs: Math.round(positionMs) }),
     token: session.token,
   });
+}
+
+/** Every resume position this account has, newest first - the audiobook
+ *  shelf's "continue where you left off". */
+export interface PlayState {
+  trackId: number;
+  positionMs: number;
+  updatedAt: number;
+}
+
+export async function fetchPlayStates(session: ServerSession): Promise<PlayState[]> {
+  const reply = await request<{ states: PlayState[] }>(session.url, '/api/play-state', {
+    token: session.token,
+  });
+  return reply.states;
 }
 
 /** Asks the server to re-walk its music folder. */
@@ -1393,4 +1412,43 @@ export async function uploadFile(
     { method: 'POST', token: session.token, signal: options.signal },
   );
   return done.path;
+}
+
+// --- the endless station -----------------------------------------------------
+
+/**
+ * The next handful for a station. Called again whenever the queue runs low,
+ * which is what makes it endless: the server holds no cursor, so the client
+ * passes what it already has (`exclude`) and gets something else back.
+ */
+export async function fetchRadio(
+  session: ServerSession,
+  opts: {
+    /** Start from this track's feel. */
+    seed?: number | null;
+    /** -1 calmer .. 1 harder. */
+    energy?: number;
+    /** 0 deep cuts .. 1 favourites. */
+    familiar?: number;
+    n?: number;
+    /** Track ids already queued, so a page never repeats the last one. */
+    exclude?: readonly number[];
+  } = {},
+  signal?: AbortSignal,
+): Promise<number[]> {
+  const q = new URLSearchParams();
+  if (opts.seed != null) q.set('seed', String(opts.seed));
+  if (opts.energy !== undefined) q.set('energy', String(opts.energy));
+  if (opts.familiar !== undefined) q.set('familiar', String(opts.familiar));
+  if (opts.n !== undefined) q.set('n', String(opts.n));
+  if (opts.exclude && opts.exclude.length > 0) {
+    // The tail is what matters - the server only needs to avoid what is still
+    // ahead, and a URL is not the place for a whole listening history.
+    q.set('exclude', opts.exclude.slice(-120).join(','));
+  }
+  const reply = await request<{ tracks: number[] }>(session.url, `/api/radio?${q}`, {
+    token: session.token,
+    signal,
+  });
+  return reply.tracks ?? [];
 }
