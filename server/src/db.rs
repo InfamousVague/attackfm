@@ -65,6 +65,10 @@ pub struct Track {
     pub curator_user_id: Option<i64>,
     #[serde(rename = "curatorPromoted")]
     pub curator_promoted: bool,
+    /// 'music' or 'book' - which shelf this row belongs to. Books are kept out
+    /// of every music surface (mixes, shuffle, search, the curator's taste),
+    /// and the audiobooks page shows exactly and only them.
+    pub kind: String,
 }
 
 /// What the scanner has learned about one file, before it becomes a row.
@@ -884,6 +888,19 @@ impl Db {
                 conn.execute(&format!("ALTER TABLE tracks ADD COLUMN {decl}"), [])?;
             }
         }
+        // What a row IS (audiobooks.rs): 'music' or 'book', derived from where
+        // the file lives so it can never drift from the folder. On the tracks
+        // table because every surface needs the split - the delta sync carries
+        // it to clients, mixes and search exclude books server-side, and the
+        // shelf the books live on reads it back. The backfill catches files
+        // already sitting in Audiobooks/ before this column existed.
+        if !have.iter().any(|c| c == "kind") {
+            conn.execute("ALTER TABLE tracks ADD COLUMN kind TEXT NOT NULL DEFAULT 'music'", [])?;
+            conn.execute(
+                "UPDATE tracks SET kind = 'book' WHERE rel_path LIKE 'Audiobooks/%'",
+                [],
+            )?;
+        }
         Ok(())
     }
 
@@ -1160,13 +1177,14 @@ impl Db {
             "INSERT INTO tracks (
                  rel_path, title, artist, album_artist, album, track_no, disc_no, year,
                  genre, lyrics, duration_ms, codec, lossless, sample_rate, bit_depth,
-                 channels, bitrate, size_bytes, mtime, art_id, added_at, rev, deleted
+                 channels, bitrate, size_bytes, mtime, art_id, added_at, rev, deleted, kind
              ) VALUES (
                  ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8,
                  ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                 ?16, ?17, ?18, ?19, ?20, ?21, ?22, 0
+                 ?16, ?17, ?18, ?19, ?20, ?21, ?22, 0, ?23
              )
              ON CONFLICT(rel_path) DO UPDATE SET
+                 kind = excluded.kind,
                  title = excluded.title, artist = excluded.artist,
                  album_artist = excluded.album_artist, album = excluded.album,
                  track_no = excluded.track_no, disc_no = excluded.disc_no,
@@ -1181,7 +1199,7 @@ impl Db {
                 t.rel_path, t.title, t.artist, t.album_artist, t.album, t.track_no, t.disc_no,
                 t.year, t.genre, t.lyrics, t.duration_ms, t.codec, t.lossless as i64,
                 t.sample_rate, t.bit_depth, t.channels, t.bitrate, t.size_bytes, t.mtime,
-                t.art_id, now_ms(), rev
+                t.art_id, now_ms(), rev, kind_for(&t.rel_path)
             ],
         )?;
         Ok(())
@@ -1243,13 +1261,14 @@ impl Db {
             rev: row.get(21)?,
             curator_user_id: row.get(22)?,
             curator_promoted: row.get::<_, i64>(23)? != 0,
+            kind: row.get(24)?,
         })
     }
 
     const TRACK_COLS: &'static str = "id, title, artist, album_artist, album, track_no, disc_no, \
          year, genre, lyrics, deleted, duration_ms, codec, lossless, sample_rate, bit_depth, \
          channels, bitrate, size_bytes, added_at, art_id, rev, curator_user_id, \
-         COALESCE(curator_promoted, 0)";
+         COALESCE(curator_promoted, 0), COALESCE(kind, 'music')";
 
     /// Everything stamped above `since`, live rows and tombstones alike. The
     /// tombstones come back as bare ids so a client can drop them.
@@ -1511,7 +1530,7 @@ impl Db {
     pub fn recent_plays(&self, user_id: i64, limit: i64) -> Vec<i64> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
-            "SELECT p.track_id FROM plays p JOIN tracks t ON t.id = p.track_id AND t.deleted = 0
+            "SELECT p.track_id FROM plays p JOIN tracks t ON t.id = p.track_id AND t.deleted = 0 AND COALESCE(t.kind, 'music') <> 'book'
              WHERE p.user_id = ?1 GROUP BY p.track_id ORDER BY MAX(p.played_at) DESC LIMIT ?2",
         ) else {
             return Vec::new();
@@ -1526,7 +1545,7 @@ impl Db {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
             "SELECT p.track_id, COUNT(*) AS n
-             FROM plays p JOIN tracks t ON t.id = p.track_id AND t.deleted = 0
+             FROM plays p JOIN tracks t ON t.id = p.track_id AND t.deleted = 0 AND COALESCE(t.kind, 'music') <> 'book'
              WHERE p.user_id = ?1 AND p.played_at >= ?2
              GROUP BY p.track_id ORDER BY n DESC, MAX(p.played_at) DESC LIMIT ?3",
         ) else {
@@ -1543,7 +1562,7 @@ impl Db {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
             "SELECT p.track_id, COUNT(*) AS n
-             FROM plays p JOIN tracks t ON t.id = p.track_id AND t.deleted = 0
+             FROM plays p JOIN tracks t ON t.id = p.track_id AND t.deleted = 0 AND COALESCE(t.kind, 'music') <> 'book'
              WHERE p.user_id = ?1 AND p.played_at >= ?2 AND p.played_at < ?3
              GROUP BY p.track_id ORDER BY n DESC, MAX(p.played_at) DESC LIMIT ?4",
         ) else {
@@ -1688,7 +1707,7 @@ impl Db {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
             "SELECT p.track_id, COUNT(*) AS n
-             FROM plays p JOIN tracks t ON t.id = p.track_id AND t.deleted = 0
+             FROM plays p JOIN tracks t ON t.id = p.track_id AND t.deleted = 0 AND COALESCE(t.kind, 'music') <> 'book'
              WHERE p.user_id = ?1 AND t.artist = ?2 COLLATE NOCASE
              GROUP BY p.track_id ORDER BY n DESC, MAX(p.played_at) DESC LIMIT ?3",
         ) else {
@@ -1708,7 +1727,7 @@ impl Db {
             // matching tracks_by_artist's own NOCASE lookup, so the ranked
             // names and the tracks they resolve to never disagree.
             "SELECT t.artist, COUNT(*) AS n
-             FROM plays p JOIN tracks t ON t.id = p.track_id AND t.deleted = 0
+             FROM plays p JOIN tracks t ON t.id = p.track_id AND t.deleted = 0 AND COALESCE(t.kind, 'music') <> 'book'
              WHERE p.user_id = ?1 AND p.played_at >= ?2
              GROUP BY t.artist COLLATE NOCASE ORDER BY n DESC LIMIT ?3",
         ) else {
@@ -1726,7 +1745,7 @@ impl Db {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
             "SELECT t.genre, COUNT(*) AS n
-             FROM plays p JOIN tracks t ON t.id = p.track_id AND t.deleted = 0
+             FROM plays p JOIN tracks t ON t.id = p.track_id AND t.deleted = 0 AND COALESCE(t.kind, 'music') <> 'book'
              WHERE p.user_id = ?1 AND p.played_at >= ?2 AND TRIM(t.genre) <> ''
              GROUP BY t.genre ORDER BY n DESC LIMIT ?3",
         ) else {
@@ -1764,7 +1783,7 @@ impl Db {
         let pairs: Vec<(String, String)> = {
             let Ok(mut stmt) = conn.prepare(
                 "SELECT t.album_artist, t.album, MAX(p.played_at) AS last
-                 FROM plays p JOIN tracks t ON t.id = p.track_id AND t.deleted = 0
+                 FROM plays p JOIN tracks t ON t.id = p.track_id AND t.deleted = 0 AND COALESCE(t.kind, 'music') <> 'book'
                  WHERE p.user_id = ?1 AND TRIM(t.album) <> ''
                  GROUP BY t.album_artist, t.album ORDER BY last DESC LIMIT ?2",
             ) else {
@@ -4056,4 +4075,13 @@ fn discovery_from_row(r: &rusqlite::Row) -> rusqlite::Result<DiscoveryRow> {
         lyric_vec: vec,
         score: r.get(11)?,
     })
+}
+
+
+/// Which shelf a file belongs to, decided by where it lives. The Audiobooks/
+/// folder IS the contract: the book importer files there, a listener dropping
+/// their own m4b/mp3 rips there gets the same treatment, and nothing outside
+/// it can ever be mistaken for a book.
+pub fn kind_for(rel_path: &str) -> &'static str {
+    if rel_path.starts_with("Audiobooks/") { "book" } else { "music" }
 }
