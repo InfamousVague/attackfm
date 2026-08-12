@@ -121,41 +121,48 @@ const listings = [];
 for (const entry of readdirSync(REPO, { withFileTypes: true })) {
   if (!entry.isDirectory()) continue;
   const dir = join(REPO, entry.name);
-  const meta = JSON.parse(readFileSync(join(dir, 'plugin.json'), 'utf8'));
-  const outFile = `${meta.id}-${meta.version}.js`;
+  // A plugin that cannot build is skipped, loudly, and the rest publish: a
+  // half-scaffolded directory (another session mid-write, a missing file)
+  // must never block the whole repository from shipping a finished fix.
+  try {
+    const meta = JSON.parse(readFileSync(join(dir, 'plugin.json'), 'utf8'));
+    const outFile = `${meta.id}-${meta.version}.js`;
 
-  await build({
-    entryPoints: [join(dir, meta.entry)],
-    bundle: true,
-    format: 'iife',
-    globalName: 'AttackFMPluginExport',
-    outfile: join(OUT, outFile),
-    minify: true,
-    sourcemap: false,
-    jsx: 'automatic',
-    logLevel: 'error',
-    loader: { '.png': 'dataurl' },
-    plugins: [hostShimPlugin(importedNames(dir))],
-  });
+    await build({
+      entryPoints: [join(dir, meta.entry)],
+      bundle: true,
+      format: 'iife',
+      globalName: 'AttackFMPluginExport',
+      outfile: join(OUT, outFile),
+      minify: true,
+      sourcemap: false,
+      jsx: 'automatic',
+      logLevel: 'error',
+      loader: { '.png': 'dataurl' },
+      plugins: [hostShimPlugin(importedNames(dir))],
+    });
 
-  const code = readFileSync(join(OUT, outFile));
-  listings.push({
-    id: meta.id,
-    name: meta.name,
-    version: meta.version,
-    description: meta.description,
-    author: meta.author,
-    tags: meta.tags,
-    entry: outFile,
-    api: HOST_API,
-    bytes: code.length,
-    sha256: createHash('sha256').update(code).digest('hex'),
-    ...(meta.desktopOnly ? { desktopOnly: true } : {}),
-    ...(meta.serverBacked ? { serverBacked: true } : {}),
-    ...(meta.requiresServer ? { requiresServer: true } : {}),
-    ...(meta.public ? { public: true } : {}),
-  });
-  console.log(`built ${outFile} (${(code.length / 1024).toFixed(0)} KB)`);
+    const code = readFileSync(join(OUT, outFile));
+    listings.push({
+      id: meta.id,
+      name: meta.name,
+      version: meta.version,
+      description: meta.description,
+      author: meta.author,
+      tags: meta.tags,
+      entry: outFile,
+      api: HOST_API,
+      bytes: code.length,
+      sha256: createHash('sha256').update(code).digest('hex'),
+      ...(meta.desktopOnly ? { desktopOnly: true } : {}),
+      ...(meta.serverBacked ? { serverBacked: true } : {}),
+      ...(meta.requiresServer ? { requiresServer: true } : {}),
+      ...(meta.public ? { public: true } : {}),
+    });
+    console.log(`built ${outFile} (${(code.length / 1024).toFixed(0)} KB)`);
+  } catch (err) {
+    console.warn(`SKIPPED ${entry.name}: ${err?.message?.split('\n')[0] ?? err}`);
+  }
 }
 
 writeFileSync(
