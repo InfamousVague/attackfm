@@ -39,6 +39,7 @@ import { useDownloadsOptional } from '../plugins/importsBridge.ts';
 import { PROBE_URL, importable, resolveImportable } from './resolveImport.ts';
 import type { AcquireTarget } from '../plugins/types.ts';
 import {
+  flatten,
   lyricExcerpt,
   parseQuery,
   searchLibrary,
@@ -176,6 +177,17 @@ const albumKey = (album: { title: string; artist: string }): string =>
 
 function kindWord(kind: SearchResult['kind']): string {
   return kind === 'artist' ? 'Artist' : kind === 'album' ? 'Album' : 'Song';
+}
+
+/** Whether a catalogue row's name is what the query was reaching for: the
+ *  same name, the start of it, or all of it and then some ("ethel" finding
+ *  Ethel Cain, "ethel cain" finding her too). Deliberately stricter than the
+ *  library's own matching - this promotes a row above everything else, so a
+ *  loose word-scatter match is not enough. */
+function isAbout(name: string, phrase: string): boolean {
+  if (!phrase) return false;
+  const n = flatten(name);
+  return n === phrase || n.startsWith(phrase) || phrase.startsWith(n);
 }
 
 /** A stable hue per name, so "Shoegaze" is the same colour every time it is
@@ -479,15 +491,21 @@ export function SearchPage({
   // twice; it stands aside. Matched through the library index, so a row goes
   // only when the very track it resolves to is one of the ones shown.
   const shown = useMemo(() => new Set(lib.songs.map((s) => s.track.path)), [lib.songs]);
-  const outside = useMemo(
-    () =>
-      (catalog ?? []).filter((r) => {
-        if (r.kind !== 'track') return true;
-        const mine = owned.find(r.subtitle, r.title);
-        return !mine || !shown.has(mine.path);
-      }),
-    [catalog, owned, shown],
-  );
+  const outside = useMemo(() => {
+    const rows = (catalog ?? []).filter((r) => {
+      if (r.kind !== 'track') return true;
+      const mine = owned.find(r.subtitle, r.title);
+      return !mine || !shown.has(mine.path);
+    });
+    // The server sends artists LAST - tracks are the rows you can add in a
+    // tap, so they lead - but the collapsed section only shows a handful, and
+    // an artist sitting nineteenth may as well not exist. Typing a name is
+    // asking for the PERSON, so whoever's name is the query comes first: the
+    // door to their catalogue is the answer, and the tracks are still right
+    // behind it.
+    const lead = rows.filter((r) => r.kind === 'artist' && isAbout(r.title, parsed.phrase));
+    return lead.length > 0 ? [...lead, ...rows.filter((r) => !lead.includes(r))] : rows;
+  }, [catalog, owned, shown, parsed.phrase]);
 
   const searching = parsed.active;
   const claimed = plugin.exclusive;
@@ -683,12 +701,19 @@ export function SearchPage({
     if (album) return { t: 'album', id: `album:${albumKey(album)}`, album };
     const song = lib.songs[0];
     if (song) return { t: 'song', id: `song:${song.track.path}`, track: song.track, why: song.why };
+    // Nothing of theirs is owned, but the catalogue knows who they are: the
+    // artist you typed is still the answer, so their page leads the page
+    // rather than three of their songs with Add buttons.
+    const catalogArtist = outside.find((r) => r.kind === 'artist' && isAbout(r.title, phrase));
+    if (catalogArtist) {
+      return { t: 'catalog', id: `catalog:${catalogArtist.id}`, result: catalogArtist, mine: null };
+    }
     const anyArtist = lib.artists[0];
     if (anyArtist) return { t: 'artist', id: `artist:${anyArtist.name}`, artist: anyArtist };
     const anyAlbum = lib.albums[0];
     if (anyAlbum) return { t: 'album', id: `album:${albumKey(anyAlbum)}`, album: anyAlbum };
     return null;
-  }, [lib.albums, lib.artists, lib.songs, parsed]);
+  }, [lib.albums, lib.artists, lib.songs, outside, parsed]);
 
   // Whether the page is wearing its hero. A query of nothing but operators
   // (`genre:"shoegaze"`) has no free text to be most-likely-about, so there is
@@ -1105,7 +1130,12 @@ export function SearchPage({
             <span className="searchRow__text">
               <span className="searchRow__title">{item.result.title}</span>
               <span className="searchRow__sub">
-                {kindWord(item.result.kind)} · {item.result.subtitle}
+                {/* An artist row's subtitle from the server is the word
+                    "Artist" itself, so saying the kind twice is all it would
+                    ever do; say where it leads instead. */}
+                {isArtist
+                  ? 'Artist · not in your library'
+                  : `${kindWord(item.result.kind)} · ${item.result.subtitle}`}
                 {item.result.source && (
                   <span className={`searchSource searchSource--${item.result.source}`}>
                     {item.result.source === 'deezer' ? 'Deezer' : 'Spotify'}
@@ -1459,6 +1489,20 @@ function TopCard({
           sub: `Playlist · ${item.playlist.paths.length} songs`,
           play: false,
         };
+      // A catalogue artist can lead the page when the library holds nothing
+      // by them - the same card, saying plainly that this one is a door out
+      // to their catalogue rather than a shelf of yours.
+      case 'catalog':
+        return item.result.kind === 'artist'
+          ? {
+              shape: 'circle' as const,
+              cover: item.result.cover,
+              fallback: <User size={34} />,
+              title: item.result.title,
+              sub: 'Artist · not in your library',
+              play: false,
+            }
+          : null;
       default:
         return null;
     }
