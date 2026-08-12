@@ -340,6 +340,37 @@ function PrimaryNav({
   );
 }
 
+/**
+ * The header's shadow, cast only while there is something under it: a black
+ * gradient over the top of the content area whose opacity IS the scroll -
+ * zero parked at the top, full a few dozen pixels in, every value between
+ * ridden frame-by-frame. Self-contained: it listens on its parent (the
+ * content host) in the capture phase, so whichever page element is doing the
+ * scrolling - each page is its own scroller - one listener hears it without
+ * anyone threading refs. Direct style writes, no React state: scroll is the
+ * hottest event there is, and the scrim is the only reader.
+ */
+function TopScrim({ resetKey }: { resetKey: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const node = ref.current;
+    const host = node?.parentElement;
+    if (!node || !host) return;
+    // A fresh page mounts parked at the top; start invisible.
+    node.style.opacity = '0';
+    const onScroll = (event: Event) => {
+      const target = event.target;
+      // Only the page scroller (a direct child of the host) drives the scrim -
+      // inner scrollers (track lists, shelves) pass under it untouched.
+      if (!(target instanceof HTMLElement) || target.parentElement !== host) return;
+      node.style.opacity = String(Math.min(1, Math.max(0, target.scrollTop) / 56));
+    };
+    host.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    return () => host.removeEventListener('scroll', onScroll, { capture: true });
+  }, [resetKey]);
+  return <div ref={ref} className="appTopScrim" aria-hidden="true" />;
+}
+
 /** One tab in the floating phone bar: a glyph over a small label, lit when
  *  it is the page you are on. */
 function BarTab({
@@ -482,6 +513,13 @@ function AppMain({
   const canDiscover = hasDownloads || useAcquire().hasAny;
   return (
     <main className="appContent" ref={swipeRef}>
+      {/* The top of the page mirrors the bottom: scrolled content dissolves
+          into black under the header instead of cutting off at its edge.
+          Only on the three browsing surfaces, and only once scrolled - parked
+          at the top there is nothing to dissolve and the scrim is invisible. */}
+      {!detail && (tab === 'home' || tab === 'library' || tab === 'discover' || tab === 'search') && (
+        <TopScrim resetKey={tab} />
+      )}
       {detail?.kind === 'artist' ? (
         <ArtistPage
           artist={detail.artist}
