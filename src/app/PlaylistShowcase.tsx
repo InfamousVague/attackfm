@@ -3,6 +3,7 @@ import { Button, ContextMenu, Input, Modal, MenuItem, Text } from '@glacier/reac
 import { History, ListMusic, Plus, Trash2 } from '@glacier/icons';
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { useLibrary } from './library.tsx';
+import { DjLauncher } from './DjLauncher.tsx';
 import { usePlaylists } from './playlists.tsx';
 import { PluginFence, usePlugins } from '../plugins/runtime.tsx';
 import type { PluginPlaylistTile } from '../plugins/types.ts';
@@ -223,6 +224,7 @@ export function PlaylistShowcase({
             <span className="libChip__name">All songs</span>
             <span className="libChip__count">{songCount(tracks.length)}</span>
           </button>
+          <DjLauncher onPlay={(track, queue) => onPlay(track, queue ?? [track])} />
         </div>
       </section>
 

@@ -10,7 +10,6 @@ import { PlaylistShowcase } from './PlaylistShowcase.tsx';
 import { ForYouShelf } from './ForYouShelf.tsx';
 import { HomeStatsCards } from './HomeStatsCards.tsx';
 import { HomePage } from './HomePage.tsx';
-import { DjLauncher } from './DjLauncher.tsx';
 import { TrackMenu } from './TrackMenu.tsx';
 import { isDesktopApp } from './platform.ts';
 import { EmptyArt } from './EmptyArt.tsx';
@@ -257,7 +256,6 @@ export function LibraryView({
               <Download size={18} />
             </IconButton>
           )}
-          <DjLauncher onPlay={onPlay} />
         </div>
       )}
       {view === 'summary' && warming ? (

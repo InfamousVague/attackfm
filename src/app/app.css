@@ -7101,43 +7101,6 @@ body [class*='_panel_']:has(> .dlPanel) {
   gap: 2px;
 }
 
-/* ---- The DJ launcher --------------------------------------------------- */
-
-.djLauncher {
-  display: flex;
-  flex-direction: column;
-  gap: var(--glacier-space-2);
-}
-
-/* The DJ is an icon in the app header. Its spoken line and any error are the
-   only parts with width, and a header that grows a line of italic text when a
-   set starts is a header that jumps - so in that context the wrapper is a plain
-   inline box and the text hangs out of the flow, under the header, where it can
-   say its piece without moving anything. */
-.mobileHeader .djLauncher {
-  position: relative;
-  display: inline-flex;
-  flex-direction: row;
-  align-items: center;
-}
-
-.mobileHeader .djLauncher__line,
-.mobileHeader .djLauncher > p {
-  position: absolute;
-  inset-block-start: calc(100% + var(--glacier-space-1));
-  inset-inline-end: 0;
-  z-index: 5;
-  max-inline-size: 70vw;
-  padding: var(--glacier-space-2);
-  border-radius: var(--glacier-radius-md);
-  background: var(--glacier-glass-thick, var(--glacier-surface));
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
-  backdrop-filter: blur(var(--glacier-blur-lg));
-  -webkit-backdrop-filter: blur(var(--glacier-blur-lg));
-  box-shadow: var(--glacier-shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.42));
-  text-align: end;
-}
-
 /* The library page's own action row: the download queue's icon, sitting above
    the shelves and pinned to the trailing edge so it reads as page chrome
    rather than as the first item of the first shelf. */
@@ -7152,10 +7115,102 @@ body [class*='_panel_']:has(> .dlPanel) {
   gap: var(--glacier-space-1);
 }
 
-.djLauncher__line {
-  font-style: italic;
+/* ---- The DJ ------------------------------------------------------------- */
+
+/* The DJ chip wears the mascot's own purple; the art is the frosted figure,
+   which multiply would crush on a dark ground, so it rides normal with a
+   breath of shadow to seat it. */
+.libChip--dj {
+  --libChipHue: 265;
 }
 
+.libChip--dj .libChip__art {
+  mix-blend-mode: normal;
+  filter: drop-shadow(0 4px 10px rgb(0 0 0 / 0.35));
+}
+
+.libChip--dj:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+/* A line from the booth: a floating card dropping in under the header, wide
+   enough to READ - the whole reason it left the header row it used to be
+   crushed into. Fixed and portalled, so no ancestor's overflow or blur traps
+   it; below the modals (z 50), above everything that scrolls. */
+.djToast {
+  position: fixed;
+  z-index: 40;
+  inset-block-start: calc(var(--app-safe-top, env(safe-area-inset-top, 0px)) + 3.25rem);
+  inset-inline: 0;
+  margin-inline: auto;
+  inline-size: min(92vw, 30rem);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-glass-thick);
+  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  box-shadow: var(--glacier-shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.42));
+  animation: djToastIn 0.28s var(--glacier-ease-out);
+}
+
+@keyframes djToastIn {
+  from {
+    opacity: 0;
+    transform: translateY(-0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .djToast {
+    animation: none;
+  }
+}
+
+.djToast__face {
+  flex: none;
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  object-fit: contain;
+}
+
+/* The line gets room: full size, real line-height, as many lines as it needs.
+   Scrunched was the bug. */
+.djToast__line {
+  flex: 1;
+  min-inline-size: 0;
+  margin: 0;
+  font-size: var(--glacier-font-size-sm);
+  line-height: 1.5;
+}
+
+.djToast__close {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--glacier-radius-full);
+  background: transparent;
+  color: var(--glacier-text-muted);
+  cursor: pointer;
+}
+
+.djToast__close:hover {
+  background: var(--glacier-hover);
+  color: var(--glacier-text);
+}
 
 /* ── Search, the page ────────────────────────────────────────────────────────
    A destination like Library: a field, chips that narrow what came back, and
