@@ -26,6 +26,54 @@ function genreKey(raw: string): string {
   return raw.toLowerCase().replace(/&/g, 'n').replace(/[^a-z0-9]+/g, '');
 }
 
+/**
+ * The ground a piece sits on. Each object came out of the generator on its
+ * own hue (the plan gives every family one), so the card behind it wears
+ * that same hue rather than a hash of the title - the gradient and the
+ * object agree instead of clashing. Anything unlisted falls to a stable
+ * hash, so a new slug still gets a colour of its own.
+ */
+const SLUG_HUE: Record<string, number> = {
+  'genre-electronic': 190,
+  'genre-rock': 22,
+  'genre-hiphop': 285,
+  'genre-pop': 330,
+  'genre-jazz': 38,
+  'genre-classical': 45,
+  'genre-metal': 215,
+  'genre-rnb': 315,
+  'genre-ambient': 175,
+  'genre-indie': 48,
+  'genre-dance': 12,
+  'genre-country': 25,
+  'mood-chill': 205,
+  'mood-energy': 55,
+  'mood-focus': 40,
+  'mood-late-night': 260,
+  'decade-1980s': 300,
+  'decade-1990s': 150,
+  'decade-2000s': 165,
+  'decade-2010s': 200,
+  'curator-brain': 350,
+  'curator-loop': 265,
+  'curator-crystal': 210,
+  'curator-hand': 230,
+  'curator-mixtape': 30,
+  'empty-library': 220,
+  'empty-search': 195,
+  'empty-playlist': 275,
+  'empty-liked': 340,
+  'empty-downloads': 160,
+};
+
+export function artworkHue(slug: string): number {
+  const known = SLUG_HUE[slug];
+  if (known !== undefined) return known;
+  let h = 7;
+  for (const ch of slug) h = (h * 31 + ch.codePointAt(0)!) % 360;
+  return h;
+}
+
 /** The twelve genre tiles, keyed by the names libraries actually use. */
 const GENRE_ART = new Map<string, string>(
   Object.entries({

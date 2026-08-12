@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { artworkUrl, emptyArtwork } from './artwork.ts';
+import { useState, type CSSProperties } from 'react';
+import { artworkHue, artworkUrl, emptyArtwork } from './artwork.ts';
 import discoveryDark from '../assets/empty/discovery-dark.png';
 import discoveryLight from '../assets/empty/discovery-light.png';
 import downloadsDark from '../assets/empty/downloads-dark.png';
@@ -53,7 +53,11 @@ export function EmptyArt({ name, className }: { name: EmptyArtName; className?: 
   const slug = emptyArtwork(name);
   const served = slug && !failed ? artworkUrl(slug) : null;
   return (
-    <div className={className ? `emptyArt ${className}` : 'emptyArt'} aria-hidden="true">
+    <div
+      className={className ? `emptyArt ${className}` : 'emptyArt'}
+      aria-hidden="true"
+      style={slug ? ({ '--emptyArtHue': `${artworkHue(slug)}` } as CSSProperties) : undefined}
+    >
       {served ? (
         <img
           className="emptyArt__img emptyArt__img--served"

@@ -3,7 +3,7 @@ import { ChartNoAxesColumn, Sparkles } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
 import { mosaicArts, useArtLoad, useCardArt, useTileArt } from './artLoad.ts';
-import { artworkUrl, mixArtwork } from './artwork.ts';
+import { artworkHue, artworkUrl, mixArtwork } from './artwork.ts';
 import { useRippleWave } from './rippleWave.ts';
 import { usePlaylists } from './playlists.tsx';
 import { useServerSession } from './serverSession.tsx';
@@ -93,7 +93,7 @@ function ArtistCard({ name, cover, onOpen }: { name: string; cover: string | nul
 /** A mix's cover: the generated object its name earns (a decade, a mood, a
  *  genre - or the curator's own faces for AI-made lists), else the 2x2
  *  mosaic of its first artworks, glyph fallback. */
-function MixCover({ tracks, art }: { tracks: Track[]; art?: string | null }) {
+function MixCover({ tracks, art }: { tracks: Track[]; art?: { src: string; hue: number } | null }) {
   // A served object that fails to arrive (old server, missing piece) steps
   // the cover back down to the mosaic rather than leaving a broken image.
   const [dead, setDead] = useState(false);
@@ -102,13 +102,22 @@ function MixCover({ tracks, art }: { tracks: Track[]; art?: string | null }) {
   // Under four covers the glyph stands in, and a glyph never loads - the tile
   // hook watches exactly the urls the grid below will draw.
   const { loaded, hostRef } = useTileArt(object || arts.length < 4 ? [] : arts);
-  const served = useArtLoad(object, '');
+  const served = useArtLoad(object?.src ?? null, '');
   if (object) {
     return (
-      <div className="mixCardCover mixCardCover--object" aria-hidden>
+      <div
+        className="mixCardCover mixCardCover--object"
+        aria-hidden
+        style={
+          {
+            '--mixHue': `${object.hue}`,
+            '--objectArt': `url("${object.src}")`,
+          } as React.CSSProperties
+        }
+      >
         <img
           {...served}
-          src={object}
+          src={object.src}
           alt=""
           loading="lazy"
           onError={() => {
@@ -143,13 +152,14 @@ interface ResolvedMix {
   tracks: Track[];
 }
 
-/** The served URL for the object a mix's name earns, or null for the mosaic. */
+/** The object a mix's name earns - its URL and the hue of the ground it sits
+ *  on - or null when the mix keeps its track mosaic. */
 function mixArt(
   title: string,
   opts: { id: string; curated?: boolean; flavor?: 'ai' | 'heuristic' },
-): string | null {
+): { src: string; hue: number } | null {
   const slug = mixArtwork(title, opts);
-  return slug ? artworkUrl(slug) : null;
+  return slug ? { src: artworkUrl(slug), hue: artworkHue(slug) } : null;
 }
 
 /** A shelf: a heading and a horizontal run of cards. Renders nothing when
