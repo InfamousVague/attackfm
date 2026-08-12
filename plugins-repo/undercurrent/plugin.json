@@ -1,0 +1,13 @@
+{
+  "id": "undercurrent",
+  "name": "Undercurrent",
+  "version": "0.1.0",
+  "description": "Ambience under the music: rain, vinyl crackle, fireplace, and wind, synthesized on the spot - no recordings, just a mixer.",
+  "author": "AttackFM",
+  "tags": [
+    "Sound",
+    "Ambience"
+  ],
+  "entry": "plugin.ts",
+  "public": true
+}

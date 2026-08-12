@@ -742,3 +742,52 @@ pub async fn dismiss(
     state.db.forget_discovery(caller.id, &q.id);
     Ok(Json(json!({ "ok": true })))
 }
+
+#[derive(serde::Deserialize)]
+pub struct RelatedQuery {
+    pub artist: String,
+}
+
+/// `GET /api/related?artist=` - one artist's neighbours in the catalogue's
+/// own map, with enough face (picture, fan count) to draw a card. This is
+/// the Rabbit hole plugin's step function: the client walks the graph one
+/// hop at a time, and every hop is this endpoint with a new name. Live
+/// against Deezer rather than cached: a hop is two small requests, and the
+/// page's own session cache absorbs the repeats.
+pub async fn related(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(q): Query<RelatedQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let _caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let c = client(15);
+    let Some(id) = deezer_artist_id(&c, &q.artist).await else {
+        return Ok(Json(json!({ "artists": [] })));
+    };
+    let Ok(reply) = c
+        .get(format!("https://api.deezer.com/artist/{id}/related"))
+        .query(&[("limit", "18")])
+        .send()
+        .await
+    else {
+        return Ok(Json(json!({ "artists": [] })));
+    };
+    let v: serde_json::Value = reply.json().await.unwrap_or(json!({}));
+    let artists: Vec<serde_json::Value> = v
+        .get("data")
+        .and_then(|d| d.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|a| {
+                    Some(json!({
+                        "name": a.get("name")?.as_str()?,
+                        "picture": a.get("picture_medium").and_then(|p| p.as_str()),
+                        "fans": a.get("nb_fan").and_then(|f| f.as_u64()),
+                    }))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(Json(json!({ "artists": artists })))
+}

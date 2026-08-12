@@ -1,0 +1,6 @@
+import { timeMachine } from './index.tsx';
+
+/** The bundle's public face - the host calls this once and gets the plugin. */
+export function createPlugin(): typeof timeMachine {
+  return timeMachine;
+}
