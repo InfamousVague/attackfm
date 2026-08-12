@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import { rememberProfile } from './household.ts';
+import { rememberServer } from './servers.ts';
 import {
   artUrl,
   isRemotePath,
@@ -191,6 +192,11 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
     // the phone to someone else in the house is a tap rather than a password.
     // See household.ts - the store is a convenience over this same session.
     if (next) rememberProfile(next);
+    // And the SERVER is remembered separately (servers.ts): the household
+    // store answers "who uses this device", this answers "where has it been" -
+    // which is what lets the Profile page offer every past server as a one-tap
+    // switch instead of an address to retype.
+    if (next) rememberServer({ url: next.url, username: next.username, isAdmin: next.isAdmin });
     try {
       if (next) localStorage.setItem(SESSION_KEY, JSON.stringify(next));
       else localStorage.removeItem(SESSION_KEY);

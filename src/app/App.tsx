@@ -8,7 +8,7 @@ import {
   TitleBar,
   ToastProvider,
 } from '@glacier/react';
-import { ChartNoAxesColumn, ChevronLeft, ChevronRight, Compass, Download, LibraryBig, Search, Settings, Users } from '@glacier/icons';
+import { ChartNoAxesColumn, ChevronLeft, ChevronRight, CircleUserRound, Compass, Download, LibraryBig, Search, Settings } from '@glacier/icons';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AppearanceProvider } from './appearance.tsx';
 import { LibraryProvider, useLibrary } from './library.tsx';
@@ -50,7 +50,7 @@ import { SongPage, type SongCollection } from './SongPage.tsx';
 import { useSwipeBack } from './useSwipeBack.ts';
 import { hapticsImpl } from './haptics.ts';
 import { DiscoverPage } from '../plugins/discover/DiscoverPage.tsx';
-import { FriendsPage } from './FriendsPage.tsx';
+import { ProfilePage } from './ProfilePage.tsx';
 import { JamProvider } from './jam.tsx';
 import { MobileAuthGate } from './MobileAuthGate.tsx';
 import { NavMoreMenu } from './NavMoreMenu.tsx';
@@ -219,6 +219,7 @@ function PrimaryNav({
     (tab !== 'discover' &&
       tab !== 'downloads' &&
       tab !== 'friends' &&
+      tab !== 'profile' &&
       tab !== 'search' &&
       tab !== 'stats' &&
       !onPluginPage);
@@ -260,10 +261,10 @@ function PrimaryNav({
           has the vertical room; the phone bar folds them into its Plugins
           button (cascading up out of the bar) instead. */}
       <NavBarItem
-        icon={<Users size={18} />}
-        label="Friends"
-        active={tab === 'friends'}
-        onClick={() => onTab('friends')}
+        icon={<CircleUserRound size={18} />}
+        label="Profile"
+        active={tab === 'profile' || tab === 'friends'}
+        onClick={() => onTab('profile')}
       />
       {pages.map((pg) => (
         <NavBarItem
@@ -346,10 +347,10 @@ function PrimaryNav({
         onClick={() => onTab('library')}
       />
       <BarTab
-        icon={<Users size={20} />}
-        label="Friends"
-        active={tab === 'friends'}
-        onClick={() => onTab('friends')}
+        icon={<CircleUserRound size={20} />}
+        label="Profile"
+        active={tab === 'profile' || tab === 'friends'}
+        onClick={() => onTab('profile')}
       />
       {/* The overflow: the ⋮ menu cascades up the plugin pages plus Stats,
           Downloads and Settings. */}
@@ -600,9 +601,11 @@ function AppMain({
         // Stats: the listening, added up - fed by the same event log the
         // curator tunes itself on.
         <StatsPage onPlay={onPlay} onOpenArtist={onOpenArtist} />
-      ) : tab === 'friends' ? (
-        // Friends: who you know on this server, and the asks in flight.
-        <FriendsPage />
+      ) : tab === 'profile' || tab === 'friends' ? (
+        // Profile: who you are - identity, live jams, your servers, your
+        // friends. 'friends' is the tab's old name, honoured so a stored
+        // session lands here rather than falling through to the library.
+        <ProfilePage />
       ) : tab === 'downloads' && hasQueue ? (
         <DownloadsPage />
       ) : (
@@ -1029,8 +1032,8 @@ export function App() {
                     <span className="mobileHeader__title">Library</span>
                   ) : tab === 'downloads' ? (
                     <span className="mobileHeader__title">Downloads</span>
-                  ) : tab === 'friends' ? (
-                    <span className="mobileHeader__title">Friends</span>
+                  ) : tab === 'profile' || tab === 'friends' ? (
+                    <span className="mobileHeader__title">Profile</span>
                   ) : (
                     <img className="mobileHeader__logo" src={wordmark} alt={APP_NAME} />
                   )}

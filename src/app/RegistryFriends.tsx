@@ -6,29 +6,25 @@
 //! has none, and (per the onboarding) the place they are sent to set one up so
 //! a server owner can invite them.
 //!
-//! Two faces, chosen by whether an identity exists:
-//!   - none: create an account (or sign in to an existing one).
-//!   - signed in: the friends graph. The page leads with PEOPLE - one grid
-//!     holding friends and still-waiting invites alike - while the rarely-used
-//!     verbs (add by handle, mint an invite, link this server) live behind two
-//!     header buttons in modals, the same shape every other secondary flow in
-//!     the app wears.
+//! Two exported faces, composed by the Profile page:
+//!   - `AccountSetup`: create an account (or sign in to an existing one).
+//!   - `FriendsSection`: the friends graph - one grid holding friends and
+//!     still-waiting invites alike, with the add-by-handle verb in the section
+//!     head. Identity chrome (whose account this is, signing out) and the
+//!     server-shaped verbs (inviting someone in, joining elsewhere) live on
+//!     the Profile page around it - a section shows the people, the page owns
+//!     the person.
 
 import { Button, Field, IconButton, Input, Modal, Spinner, Text } from '@glacier/react';
-import { Check, UserPlus, X, LogOut, Link2, Copy } from '@glacier/icons';
+import { Check, UserPlus, X } from '@glacier/icons';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { EmptyArt } from './EmptyArt.tsx';
-import { useRegistry } from './registrySession.tsx';
 import { useServerSession } from './serverSession.tsx';
-import { JoinServer } from './JoinServer.tsx';
-import { linkAccount } from './server.ts';
 import {
   acceptFriendRequest,
   announce,
-  createInvite,
   declineFriendRequest,
   fetchFriends,
-  inviteLink,
   login,
   removeFriend,
   sendFriendRequest,
@@ -92,15 +88,9 @@ function weekGlance(f: RegistryFriend): string | null {
   return f.weekTopArtist ? `${time} · ${f.weekTopArtist}` : time;
 }
 
-export function RegistryFriends() {
-  const { session, account, apply, signOut } = useRegistry();
-  if (!session || !account) return <AccountSetup onDone={apply} />;
-  return <FriendsGraph token={session.token} me={account.handle} onSignOut={signOut} />;
-}
-
 // --- account setup ----------------------------------------------------------
 
-function AccountSetup({ onDone }: { onDone: (s: import('./registry.ts').RegistrySession) => void }) {
+export function AccountSetup({ onDone }: { onDone: (s: import('./registry.ts').RegistrySession) => void }) {
   const [mode, setMode] = useState<'create' | 'signin'>('create');
   const [handle, setHandle] = useState('');
   const [password, setPassword] = useState('');
@@ -178,17 +168,27 @@ function AccountSetup({ onDone }: { onDone: (s: import('./registry.ts').Registry
 
 // --- the friends graph ------------------------------------------------------
 
-function FriendsGraph({ token, me, onSignOut }: { token: string; me: string; onSignOut: () => void }) {
+/** How the friend-visit verb reports back to the page (see ProfilePage): the
+ *  section stays about people, the page decides what a visit means. */
+export type VisitServer = (friend: RegistryFriend) => void;
+
+export function FriendsSection({
+  token,
+  me,
+  onVisit,
+}: {
+  token: string;
+  me: string;
+  /** Offered on a friend's card when they answer from a server that is not
+   *  the one this device is listening from. */
+  onVisit?: VisitServer;
+}) {
   const { session: server } = useServerSession();
   const [feed, setFeed] = useState<FriendsFeed | null>(null);
   const [handle, setHandle] = useState('');
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const [invite, setInvite] = useState<string | null>(null);
-  const [inviteCode, setInviteCode] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -243,36 +243,14 @@ function FriendsGraph({ token, me, onSignOut }: { token: string; me: string; onS
     });
   };
 
-  const makeInvite = async () => {
-    if (!server) return;
-    setBusy(true);
-    setNote(null);
-    try {
-      const { code } = await createInvite(token, server.url, server.username ? `${server.username}'s AttackFM` : 'AttackFM');
-      setInvite(inviteLink(code));
-      setInviteCode(code);
-      setCopied(false);
-    } catch (error) {
-      setNote({ tone: 'bad', text: error instanceof Error ? error.message : 'Could not make an invite.' });
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const friends = feed?.friends ?? [];
   const incoming = feed?.incoming ?? [];
   const outgoing = feed?.outgoing ?? [];
-  const anyModal = addOpen || inviteOpen;
-
-  // Feedback lands where the eye is: inside whichever modal is open, on the
-  // page otherwise. Opening either modal clears the previous story.
+  // Feedback lands where the eye is: inside the add modal while it is open,
+  // on the section otherwise. Opening it clears the previous story.
   const openAdd = () => {
     setNote(null);
     setAddOpen(true);
-  };
-  const openInvite = () => {
-    setNote(null);
-    setInviteOpen(true);
   };
 
   const addForm = (
@@ -296,41 +274,7 @@ function FriendsGraph({ token, me, onSignOut }: { token: string; me: string; onS
 
   return (
     <div className="registryFriends">
-      {/* Who you are and everything you can DO, in one quiet row - the rest of
-          the page is left to the people on it. */}
-      <header className="friendsHead">
-        <FriendAvatar handle={me} size="md" />
-        <span className="friendsHead__body">
-          <span className="friendsHead__handle">@{me}</span>
-          <span className="friendsHead__caption">
-            {friends.length === 0
-              ? 'Your account, on every server'
-              : `${friends.length} ${friends.length === 1 ? 'friend' : 'friends'}`}
-          </span>
-        </span>
-        <span className="friendsHead__actions">
-          <Button variant="outline" size="sm" onClick={openAdd}>
-            <UserPlus size={15} /> <span>Add</span>
-          </Button>
-          {server && (
-            <Button variant="outline" size="sm" onClick={openInvite}>
-              <Link2 size={15} /> <span>Invite</span>
-            </Button>
-          )}
-          <Button variant="danger" size="sm" onClick={onSignOut}>
-            <LogOut size={15} /> <span>Log out</span>
-          </Button>
-        </span>
-      </header>
-
-      {/* No server yet: the way in is an invite from someone who runs one. */}
-      {!server && (
-        <div className="registryFriends__join">
-          <JoinServer />
-        </div>
-      )}
-
-      {note && !anyModal && (
+      {note && !addOpen && (
         <p className={`friendsNote friendsNote--${note.tone}`} role="status">
           {note.text}
         </p>
@@ -359,7 +303,12 @@ function FriendsGraph({ token, me, onSignOut }: { token: string; me: string; onS
       )}
 
       <section className="homeShelf">
-        <h2 className="homeShelfTitle">Friends{friends.length > 0 ? ` · ${friends.length}` : ''}</h2>
+        <div className="friendsBar">
+          <h2 className="homeShelfTitle">Friends{friends.length > 0 ? ` · ${friends.length}` : ''}</h2>
+          <Button variant="outline" size="sm" onClick={openAdd}>
+            <UserPlus size={15} /> <span>Add</span>
+          </Button>
+        </div>
         {friends.length === 0 && outgoing.length === 0 ? (
           <div className="emptyState">
             <EmptyArt name="friends" />
@@ -388,6 +337,19 @@ function FriendsGraph({ token, me, onSignOut }: { token: string; me: string; onS
                   {/* What they've been playing, if they share it - the line
                       that makes the grid about music rather than accounts. */}
                   {glance && <span className="friendCard__glance">{glance}</span>}
+                  {/* Their library is somewhere this device is not listening
+                      from - offer the walk over. The page decides what that
+                      means (a one-tap switch, or the truth about invites). */}
+                  {onVisit && f.serverUrl && server?.url !== f.serverUrl.replace(/\/+$/, '') && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="friendCard__visit"
+                      onClick={() => onVisit(f)}
+                    >
+                      Visit their server
+                    </Button>
+                  )}
                   <IconButton
                     variant="ghost"
                     size="sm"
@@ -429,76 +391,6 @@ function FriendsGraph({ token, me, onSignOut }: { token: string; me: string; onS
         </div>
       </Modal>
 
-      <Modal open={inviteOpen} onClose={() => setInviteOpen(false)} title="Invite to your server" size="sm">
-        <div className="friendsModal">
-          {!invite ? (
-            <>
-              <Text size="sm" tone="muted">
-                Mint a link that signs a friend into your server.
-              </Text>
-              <Button variant="solid" onClick={() => void makeInvite()} disabled={busy}>
-                {busy ? 'Making…' : 'Create invite link'}
-              </Button>
-            </>
-          ) : (
-            <>
-              <div className="registryFriends__inviteLink">
-                <Input readOnly value={invite} aria-label="Invite link" onFocus={(e) => e.currentTarget.select()} />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    void navigator.clipboard?.writeText(invite).then(() => setCopied(true)).catch(() => {});
-                  }}
-                >
-                  <Copy size={14} /> {copied ? 'Copied' : 'Copy'}
-                </Button>
-              </div>
-              {inviteCode && (
-                <p className="registryFriends__inviteCode">
-                  Code to read out or type in:{' '}
-                  {/* Split down the middle rather than at a fixed 4, so a code of
-                      any length reads as two even halves instead of a short group
-                      and a long tail. */}
-                  <strong>
-                    {inviteCode.slice(0, Math.ceil(inviteCode.length / 2))}{' '}
-                    {inviteCode.slice(Math.ceil(inviteCode.length / 2))}
-                  </strong>
-                </p>
-              )}
-              <Button variant="outline" size="sm" onClick={() => void makeInvite()} disabled={busy}>
-                {busy ? 'Making…' : 'New link'}
-              </Button>
-            </>
-          )}
-          {note && inviteOpen && (
-            <p className={`friendsNote friendsNote--${note.tone}`} role="status">
-              {note.text}
-            </p>
-          )}
-          {server && (
-            <div className="friendsModal__aside">
-              {/* One-time migration: claim the account you already have on this
-                  server for your central identity, so it stays yours. Idempotent. */}
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={busy}
-                onClick={() =>
-                  void act(async () => {
-                    await linkAccount(server.url, server.token, token);
-                  }, 'Linked this server to your account.')
-                }
-              >
-                Link this server to your account
-              </Button>
-              <Text size="sm" tone="muted">
-                Already had an account here before @{me}? Claim it once and it follows you.
-              </Text>
-            </div>
-          )}
-        </div>
-      </Modal>
     </div>
   );
 }
