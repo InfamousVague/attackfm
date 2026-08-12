@@ -1418,6 +1418,14 @@ img {
   font-weight: 550;
 }
 
+.appNavBarPlugins__empty {
+  display: block;
+  max-inline-size: 14rem;
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  font-size: var(--glacier-font-sm, 0.875rem);
+  color: var(--glacier-text-subtle, var(--glacier-text-muted));
+}
+
 @keyframes appNavBarPluginsRise {
   from {
     opacity: 0;
