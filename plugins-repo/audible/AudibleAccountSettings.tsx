@@ -21,6 +21,17 @@ import {
  * open the sign-in, then take the URL it left you on.
  */
 
+/**
+ * What Amazon leaves you on: the maplanding page, carrying a one-time
+ * authorization code. Checked here because the server can only try a pasted URL
+ * ONCE - handing it to the waiting login child consumes the whole session,
+ * wrong URL or right - so a paste that obviously is not it should never cost
+ * the sign-in.
+ */
+function looksLikeResponseUrl(url: string): boolean {
+  return /openid\.oa2\.authorization_code=/.test(url);
+}
+
 /** Audible's regional stores; an account belongs to exactly one. */
 const MARKETPLACES = [
   { value: 'us', label: 'United States (.com)' },
@@ -89,6 +100,13 @@ export function AudibleAccountSettings() {
       setError('Paste the URL of the page you landed on after signing in.');
       return;
     }
+    if (!looksLikeResponseUrl(url)) {
+      setError(
+        'That does not look like the page Amazon left you on — it should be a long address ' +
+          'containing “openid.oa2.authorization_code”. Copy the whole thing from the address bar.',
+      );
+      return;
+    }
     setFinishing(true);
     setError(null);
     try {
@@ -96,8 +114,21 @@ export function AudibleAccountSettings() {
       setStatus({ toolsInstalled: true, connected: done.connected, name: done.name });
       setLogin(null);
       setResponseUrl('');
+      // Believe the server, not this optimistic write: a connect that half
+      // worked (tokens saved, name not) should read the way the next visit
+      // will.
+      void refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      // The parked login is spent WHATEVER went wrong - the server takes it out
+      // of its store to answer at all, and kills the child with it. Staying on
+      // this step would leave the Finish button holding a dead token, which is
+      // why a second attempt used to fail forever with "that login has
+      // expired". Go back to the door instead, and say so.
+      setLogin(null);
+      setResponseUrl('');
+      const why = e instanceof Error ? e.message : String(e);
+      setError(`${why} — start the sign-in again.`);
+      void refresh();
     } finally {
       setFinishing(false);
     }
@@ -115,6 +146,7 @@ export function AudibleAccountSettings() {
     try {
       await audibleLogout(session);
       setStatus((prev) => (prev ? { ...prev, connected: false, name: null } : prev));
+      void refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -156,7 +188,7 @@ export function AudibleAccountSettings() {
 
   return (
     <div className="prefsBody">
-      {status?.connected ? (
+      {status?.connected && !login ? (
         <div className="prefsSection">
           <Label>Account</Label>
           <Text size="sm">
@@ -164,13 +196,18 @@ export function AudibleAccountSettings() {
             books you own.
           </Text>
           <div className="prefsActions">
+            <Button variant="soft" size="sm" disabled={connecting} onClick={() => void connect()}>
+              {connecting ? 'Opening Amazon…' : <><ExternalLink size={15} /> Sign in again</>}
+            </Button>
             <Button variant="ghost" size="sm" onClick={() => void disconnect()}>
               <Unplug size={15} /> Disconnect
             </Button>
           </div>
           <Text tone="muted" size="sm">
             Your Audible library shows up under the Books tab — anything you own can be pulled in
-            with its chapters and cover.
+            with its chapters and cover. Sign in again if downloads start failing: being
+            “connected” only means the hub still holds tokens, and Amazon can retire those at its
+            own end without telling us.
           </Text>
         </div>
       ) : !login ? (
