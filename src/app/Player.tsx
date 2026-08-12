@@ -837,60 +837,6 @@ export function Player({
   }, [mobileControls, audible, remoteOnly]);
   const beat = useBeat({ meter, active: audible, at: progress });
 
-  // The beat bus: the pulse useBeat already computes every frame, published
-  // as one CSS custom property on the document root - `--beat`, 0..1,
-  // jumping on a hit and falling between them - plus a `data-music-live`
-  // attribute that gates every consumer, so an idle app pays nothing. From
-  // here the stylesheet makes small things breathe in time everywhere: the
-  // nav brand's glow, the disc's diffraction sheen, the frosted hub, the
-  // sheet's veil. All of them read the ONE variable; none of them re-render
-  // React. Reduced motion never sets the attribute, and the pulse still
-  // reaches nothing.
-  useEffect(() => {
-    const root = document.documentElement;
-    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-    if (!audible || still) {
-      root.removeAttribute('data-music-live');
-      root.style.removeProperty('--beat');
-      return;
-    }
-    root.setAttribute('data-music-live', '');
-    return () => {
-      root.removeAttribute('data-music-live');
-      root.style.removeProperty('--beat');
-    };
-  }, [audible]);
-  const lastBeatVar = useRef(-1);
-  const prevPulse = useRef(0);
-  const energyEma = useRef(0);
-  const lastEnergyVar = useRef(-1);
-  if (audible) {
-    // Written during render on purpose: useBeat re-renders this component
-    // every frame while music plays (that is how the strip's bar deforms),
-    // so the freshest pulse is right here, and an effect would just add a
-    // frame of lag. Quantised so identical frames cost no style recalc.
-    const q = Math.round(beat.pulse * 40) / 40;
-    if (q !== lastBeatVar.current) {
-      lastBeatVar.current = q;
-      document.documentElement.style.setProperty('--beat', q.toFixed(3));
-    }
-    // The rising edge IS the beat as an event - the ripple wave quantises
-    // its landings to these, so scrolling deals cards to the rhythm.
-    if (beat.pulse - prevPulse.current > 0.22) {
-      window.dispatchEvent(new CustomEvent('afm:beat'));
-    }
-    prevPulse.current = beat.pulse;
-    // The slow tier: a few-second average of how hard the track is hitting,
-    // 0..1, published coarsely (one recalc per step, not per frame). Loud
-    // stretches deepen every beat effect; ballads calm them - the chorus
-    // feels bigger without any new surface.
-    energyEma.current = energyEma.current * 0.995 + beat.pulse * 0.005;
-    const e = Math.round(energyEma.current * 20) / 20;
-    if (e !== lastEnergyVar.current) {
-      lastEnergyVar.current = e;
-      document.documentElement.style.setProperty('--music-energy', e.toFixed(2));
-    }
-  }
 
   // The phone's own volume, polled while there is something to hear. The
   // hardware buttons fire no event the webview can see, so a poll is the whole
@@ -3539,12 +3485,7 @@ export function Player({
               levels={levels}
               beat={beat}
               tracer
-              // Loud stretches push the deformation toward the hero ceiling;
-              // quiet ones ease it back - the bar visibly knows the chorus.
-              intensity={Math.min(
-                3,
-                beatIntensity(volume, muted, systemVolume) * (1.4 + (energyEma.current > 0.35 ? 0.5 : 0)),
-              )}
+              intensity={Math.min(3, beatIntensity(volume, muted, systemVolume) * 1.6)}
               onValueChange={onScrub}
               onSeekEnd={commitSeek}
             />
