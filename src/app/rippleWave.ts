@@ -24,8 +24,22 @@ import { fireMicroTick } from './haptics.ts';
 
 /** The boxes that ride the wave - concrete card classes, because the menu
  *  wrappers around most of them are display:contents and cannot animate. */
-const RIPPLE_SELECTOR =
-  '.trackCard, .artistCard, .playlistTile, .mixCard, .shelfGhost';
+const RIPPLE_SELECTOR = [
+  '.trackCard',
+  '.artistCard',
+  '.playlistTile',
+  '.mixCard',
+  '.shelfGhost',
+  // Search: result rows, genre tiles, the hero card, the recents strip.
+  '.searchRow',
+  '.searchGenre',
+  '.searchTopCard',
+  '.searchRecent',
+  // Discover and its artist catalogue: suggestion cards, releases, tracks.
+  '.suggestCard',
+  '.resultCard',
+  '.catalogTrack',
+].join(', ');
 
 /** Landing ticks never come closer than this, whatever the scroll does. */
 const TICK_FLOOR_MS = 70;
