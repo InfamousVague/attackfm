@@ -865,7 +865,15 @@ function PluginBrowse({
   const offered = [...feeds.entries()].flatMap(([source, feed]) =>
     listingsOf(feed).map((listing) => ({ source, listing })),
   );
-  const available = offered.filter(({ listing }) => !remoteInstalled.has(listing.id));
+  // Two repositories offering the same plugin is one plugin, not two rows -
+  // the official repo mirrors the private one, so without this every mirrored
+  // plugin doubles. Newest version wins; a tie keeps the first source listed.
+  const byId = new Map<string, { source: string; listing: RemotePluginListing }>();
+  for (const offer of offered) {
+    const seen = byId.get(offer.listing.id);
+    if (!seen || isNewer(offer.listing.version, seen.listing.version)) byId.set(offer.listing.id, offer);
+  }
+  const available = [...byId.values()].filter(({ listing }) => !remoteInstalled.has(listing.id));
 
   if (available.length === 0) {
     return (
@@ -1027,18 +1035,22 @@ function PluginsSettings() {
   const { busyId, install } = useInstaller(reloadRemote);
 
   // Installed plugins a repository is offering a higher version of. Computed
-  // across every source, so a plugin that moved repositories still updates.
+  // across every source, so a plugin that moved repositories still updates -
+  // but one offer per plugin: mirrored repos would otherwise stack a banner
+  // row for each copy. The highest version on offer wins.
   const updates = useMemo(() => {
-    const found: Array<{ source: string; listing: RemotePluginListing; from: string }> = [];
+    const found = new Map<string, { source: string; listing: RemotePluginListing; from: string }>();
     for (const [source, feed] of feeds) {
       for (const listing of listingsOf(feed)) {
         const installed = remoteInstalled.get(listing.id);
-        if (installed && isNewer(listing.version, installed.version)) {
-          found.push({ source, listing, from: installed.version });
+        if (!installed || !isNewer(listing.version, installed.version)) continue;
+        const seen = found.get(listing.id);
+        if (!seen || isNewer(listing.version, seen.listing.version)) {
+          found.set(listing.id, { source, listing, from: installed.version });
         }
       }
     }
-    return found;
+    return [...found.values()];
   }, [feeds, remoteInstalled]);
 
   return (

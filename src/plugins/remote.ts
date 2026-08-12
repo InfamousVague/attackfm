@@ -19,18 +19,16 @@ import { HOST_API_VERSION, installHostRuntime } from './hostRuntime.ts';
 
 const SOURCES_KEY = 'attackfm-plugin-sources';
 const INSTALLED_KEY = 'attackfm-plugins-installed';
+/** Defaults the user has deliberately removed, so a merge never re-adds them. */
+const REMOVED_DEFAULTS_KEY = 'attackfm-plugin-sources-removed';
 
 /**
- * The repositories a fresh install starts with: none.
- *
- * Plugins run with the app's own reach, and downloading music is a plugin - so
- * the app ships with no sources and no way to fetch one until the user
- * deliberately adds a repository in Settings. Nothing to install means no
- * download or import surfaces appear, which is the honest default and what an
- * App Store reviewer (or anyone who has not opted in) should see.
+ * The official public repository, baked in so every install's marketplace is
+ * stocked - fresh ones from first boot, and existing ones through the merge in
+ * `readSources`. Removable in Settings like any added source (the removal is
+ * remembered); it carries only the public-flagged set, so what a fresh
+ * install or an App Store reviewer can reach stays the lawyer-calm catalogue.
  */
-// The official public repository. Baked in so a fresh install's marketplace
-// is stocked rather than empty; removable in Settings like any added source.
 export const DEFAULT_SOURCES: readonly string[] = ['https://plugins.attack.fm'];
 
 /** One plugin as a repository's manifest lists it. */
@@ -75,9 +73,35 @@ export function readSources(): string[] {
     if (!raw) return [...DEFAULT_SOURCES];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [...DEFAULT_SOURCES];
-    return parsed.filter((s): s is string => typeof s === 'string');
+    const sources = parsed.filter((s): s is string => typeof s === 'string');
+    // A default that shipped AFTER this install stored its list still joins
+    // it - otherwise the official repository only ever reaches fresh installs.
+    // Removal is respected through the tombstone, so "linked by default" never
+    // becomes "impossible to unlink".
+    const removed = readRemovedDefaults();
+    for (const source of DEFAULT_SOURCES) {
+      if (!sources.includes(source) && !removed.includes(source)) sources.push(source);
+    }
+    return sources;
   } catch {
     return [...DEFAULT_SOURCES];
+  }
+}
+
+function readRemovedDefaults(): string[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(REMOVED_DEFAULTS_KEY) ?? '[]') as unknown;
+    return Array.isArray(parsed) ? parsed.filter((s): s is string => typeof s === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeRemovedDefaults(removed: string[]): void {
+  try {
+    localStorage.setItem(REMOVED_DEFAULTS_KEY, JSON.stringify(removed));
+  } catch {
+    // Storage unavailable - the removal still applies for this session.
   }
 }
 
@@ -101,12 +125,20 @@ export function addSource(url: string): string[] {
   const sources = readSources();
   if (origin && !sources.includes(origin)) sources.push(origin);
   writeSources(sources);
+  // Adding a default back is a change of heart: clear its tombstone.
+  if (DEFAULT_SOURCES.includes(origin)) {
+    writeRemovedDefaults(readRemovedDefaults().filter((s) => s !== origin));
+  }
   return sources;
 }
 
 export function removeSource(url: string): string[] {
   const sources = readSources().filter((s) => s !== url);
   writeSources(sources);
+  if (DEFAULT_SOURCES.includes(url)) {
+    const removed = readRemovedDefaults();
+    if (!removed.includes(url)) writeRemovedDefaults([...removed, url]);
+  }
   return sources;
 }
 
