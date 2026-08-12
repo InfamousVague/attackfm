@@ -1,8 +1,7 @@
 /**
- * The free-catalogue wire calls: LibriVox search and import, served by the same
- * `/api/audiobooks/*` routes the retired shelf plugin used (only its client was
- * retired; the server routes are live). Bundled locally because a plugin bundle
- * is self-contained - it cannot import another plugin's modules.
+ * LibriVox catalogue calls, served by the `/api/audiobooks/*` routes: search
+ * the public-domain catalogue and pull a book in. Books land in the library as
+ * `kind = 'book'`, where the core Books shelf shows and plays them.
  */
 import type { ServerSession } from '../../src/app/server.ts';
 

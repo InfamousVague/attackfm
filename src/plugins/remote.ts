@@ -37,7 +37,7 @@ export const DEFAULT_SOURCES: readonly string[] = ['https://plugins.attack.fm'];
  * carries them (the hub serves both), and, like a default source, remembered
  * when removed so uninstalling one is not undone on the next launch.
  */
-export const DEFAULT_PLUGINS: readonly string[] = ['audible', 'eq-rack'];
+export const DEFAULT_PLUGINS: readonly string[] = ['audible', 'librivox', 'eq-rack'];
 
 /** Default plugins the user has removed, so the auto-install never re-adds them. */
 const REMOVED_DEFAULT_PLUGINS_KEY = 'attackfm-plugins-removed-defaults';
@@ -250,18 +250,33 @@ function writeRemovedDefaultPlugins(ids: string[]): void {
  * caller can reload the runtime. Safe to call repeatedly - already-installed and
  * tombstoned defaults are skipped, so it is a no-op once everything has landed.
  */
-export async function ensureDefaultPlugins(extraSources: readonly string[] = []): Promise<boolean> {
-  const installed = new Set(readInstalled().map((p) => p.id));
-  const removed = readRemovedDefaultPlugins();
-  const wanted = new Set(
-    DEFAULT_PLUGINS.filter((id) => !installed.has(id) && !removed.includes(id)),
-  );
-  if (wanted.size === 0) return false;
+/** Is version `a` newer than `b`? A small dotted-number compare - enough for the
+ *  plugins' own `x.y.z`, and false on anything it cannot parse (so "unsure"
+ *  never triggers an update). */
+function isNewerVersion(a: string, b: string): boolean {
+  const pa = a.split('.').map((n) => parseInt(n, 10));
+  const pb = b.split('.').map((n) => parseInt(n, 10));
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] ?? 0;
+    const y = pb[i] ?? 0;
+    if (Number.isNaN(x) || Number.isNaN(y)) return false;
+    if (x > y) return true;
+    if (x < y) return false;
+  }
+  return false;
+}
 
+export async function ensureDefaultPlugins(extraSources: readonly string[] = []): Promise<boolean> {
+  const installedVer = new Map(readInstalled().map((p) => [p.id, p.version]));
+  const removed = readRemovedDefaultPlugins();
+  const candidates = new Set(DEFAULT_PLUGINS.filter((id) => !removed.includes(id)));
+  if (candidates.size === 0) return false;
+
+  // The best (newest) listing for each default across every source, so source
+  // order cannot pin a plugin to a stale copy.
+  const best = new Map<string, { source: string; listing: RemotePluginListing }>();
   const sources = [...new Set([...extraSources, ...readSources()])];
-  let installedAny = false;
   for (const source of sources) {
-    if (wanted.size === 0) break;
     let manifest: RemoteManifest;
     try {
       manifest = await fetchManifest(source);
@@ -269,17 +284,28 @@ export async function ensureDefaultPlugins(extraSources: readonly string[] = [])
       continue; // an unreachable source is not a reason to give up on the rest
     }
     for (const listing of manifest.plugins) {
-      if (!wanted.has(listing.id)) continue;
-      try {
-        await installPlugin(source, listing);
-        wanted.delete(listing.id);
-        installedAny = true;
-      } catch {
-        // A bundle that will not install here may install from another source.
+      if (!candidates.has(listing.id)) continue;
+      const cur = best.get(listing.id);
+      if (!cur || isNewerVersion(listing.version, cur.listing.version)) {
+        best.set(listing.id, { source, listing });
       }
     }
   }
-  return installedAny;
+
+  let changed = false;
+  for (const [id, { source, listing }] of best) {
+    const have = installedVer.get(id);
+    // Install if missing; update if the catalogue has a newer version; leave a
+    // current install alone.
+    if (have !== undefined && !isNewerVersion(listing.version, have)) continue;
+    try {
+      await installPlugin(source, listing);
+      changed = true;
+    } catch {
+      // A bundle that will not install is left for the next launch to retry.
+    }
+  }
+  return changed;
 }
 
 export function readInstalled(): InstalledRemotePlugin[] {

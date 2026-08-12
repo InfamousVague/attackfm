@@ -4,18 +4,18 @@
   "plugins": [
     {
       "id": "audible",
-      "name": "Audiobook downloader",
-      "version": "0.1.0",
-      "description": "Download audiobooks into your library — the ones you own on Audible, and the public-domain LibriVox catalogue.",
+      "name": "Audible",
+      "version": "0.2.0",
+      "description": "Download the audiobooks you own on Audible into your library.",
       "author": "AttackFM",
       "tags": [
         "Audiobooks",
         "Downloads"
       ],
-      "entry": "audible-0.1.0.js",
+      "entry": "audible-0.2.0.js",
       "api": 1,
-      "bytes": 14158,
-      "sha256": "963d0734cf109b9037807df6be0b8478299585114e2405557d84c5c790cde3ce",
+      "bytes": 10746,
+      "sha256": "2ff714c87b30aced3c8724b47f0a5f0d71cb3ffa91b59975aa7d194a486baf1a",
       "requiresServer": true
     },
     {
@@ -32,6 +32,23 @@
       "api": 1,
       "bytes": 5741,
       "sha256": "25b040d045c4216b450079681a949ed3c2a1af83eefab1ec456cf7edd44bf4c9",
+      "public": true
+    },
+    {
+      "id": "librivox",
+      "name": "LibriVox",
+      "version": "0.1.0",
+      "description": "Download free, public-domain audiobooks from the LibriVox catalogue into your library.",
+      "author": "AttackFM",
+      "tags": [
+        "Audiobooks",
+        "Downloads"
+      ],
+      "entry": "librivox-0.1.0.js",
+      "api": 1,
+      "bytes": 6492,
+      "sha256": "557bb2d70d56c089ce3ed39653959b3d1b8fd1ade225c6ae58566dfc5dc3bfc6",
+      "requiresServer": true,
       "public": true
     },
     {

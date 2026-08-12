@@ -18,23 +18,23 @@ import { DownloaderPage } from './DownloaderPage.tsx';
  */
 export const audible: Plugin = {
   id: 'audible',
-  name: 'Audiobook downloader',
-  description:
-    'Download audiobooks into your library — the ones you own on Audible, and the public-domain LibriVox catalogue.',
+  name: 'Audible',
+  description: 'Download the audiobooks you own on Audible into your library.',
   icon: <BookHeadphones size={22} />,
   author: 'AttackFM',
-  version: '0.1.0',
+  version: '0.2.0',
   tags: ['Audiobooks', 'Downloads'],
   requiresServer: true,
   details:
-    'Fetches audiobooks into your library from two places: your own Audible account (connect ' +
-    'it in this plugin’s settings — you sign in on Amazon’s own page, so your password never ' +
-    'touches the app or the server) and the free, public-domain LibriVox catalogue. Everything ' +
-    'it saves is decrypted to plain, chaptered files and shows up on the core Books shelf.',
+    'Links your own Audible account to your hub so the books you already own can be pulled into ' +
+    'your library — decrypted to plain, chaptered files. You sign in on Amazon’s own page (in ' +
+    'this plugin’s settings), so your password never touches the app or the server. Whatever it ' +
+    'saves shows up on the built-in Books shelf. Free, public-domain books are a separate plugin ' +
+    '(LibriVox).',
   pages: [
     {
       id: 'downloader',
-      label: 'Get books',
+      label: 'Audible',
       icon: <BookHeadphones size={18} />,
       Content: DownloaderPage,
     },

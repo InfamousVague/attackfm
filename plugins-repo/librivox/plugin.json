@@ -1,0 +1,11 @@
+{
+  "id": "librivox",
+  "name": "LibriVox",
+  "version": "0.1.0",
+  "description": "Download free, public-domain audiobooks from the LibriVox catalogue into your library.",
+  "author": "AttackFM",
+  "tags": ["Audiobooks", "Downloads"],
+  "entry": "plugin.ts",
+  "requiresServer": true,
+  "public": true
+}
