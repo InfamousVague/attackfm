@@ -1,9 +1,11 @@
 import { Button, Text } from '@glacier/react';
-import { Play, Shuffle } from '@glacier/icons';
-import { useMemo } from 'react';
+import { Play, Repeat, Shuffle } from '@glacier/icons';
+import { useEffect, useMemo, useState } from 'react';
 import { useLibrary } from './library.tsx';
+import { useServerSession } from './serverSession.tsx';
 import { SongTable } from './SongTable.tsx';
 import { EmptyArt, HeroArt, type EmptyArtName } from './EmptyArt.tsx';
+import { fetchHome, trackIdFromPath } from './server.ts';
 import type { Track } from './tauri.ts';
 
 /**
@@ -20,7 +22,7 @@ import type { Track } from './tauri.ts';
  * is a WINDOW on the library, filtered.
  */
 
-export type SongCollection = 'liked' | 'all';
+export type SongCollection = 'liked' | 'all' | 'onrepeat';
 
 const META: Record<
   SongCollection,
@@ -39,6 +41,14 @@ const META: Record<
     art: 'library',
     tone: 'songPage--all',
     empty: 'No music in your library yet. Sign in to your server or import songs to fill it.',
+  },
+  onrepeat: {
+    kicker: 'Your library',
+    title: 'On repeat',
+    art: 'library',
+    tone: 'songPage--repeat',
+    empty:
+      'Nothing on repeat yet. Play your library for a while and the songs you keep returning to gather here.',
   },
 };
 
@@ -76,16 +86,44 @@ export function SongPage({
   onOpenArtist: (artist: string) => void;
 }) {
   const { tracks, favoriteTracks } = useLibrary();
+  const { session } = useServerSession();
   const meta = META[view];
 
-  // Both computed unconditionally (hooks must be), one chosen after. All songs
+  // All computed unconditionally (hooks must be), one chosen after. All songs
   // open newest-first to match the table's own default sort; Liked keeps the
-  // favourites' own order.
+  // favourites' own order; On repeat is the server's play ledger, most-played
+  // first - the same `heavy` list the home page's Heavy rotation shelf reads,
+  // shown whole instead of clipped to a shelf.
   const allNewest = useMemo(() => [...tracks].sort((a, b) => b.addedAt - a.addedAt), [tracks]);
-  const listTracks = view === 'liked' ? favoriteTracks : allNewest;
+  const [heavyIds, setHeavyIds] = useState<number[] | null>(null);
+  useEffect(() => {
+    if (view !== 'onrepeat' || !session) return;
+    let live = true;
+    void fetchHome(session)
+      .then((feed) => {
+        if (live) setHeavyIds(feed.heavy ?? []);
+      })
+      .catch(() => {
+        if (live) setHeavyIds([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [view, session]);
+  const onRepeat = useMemo(() => {
+    if (!heavyIds) return [];
+    const byId = new Map<number, Track>();
+    for (const t of tracks) {
+      const id = trackIdFromPath(t.path);
+      if (id !== null) byId.set(id, t);
+    }
+    return heavyIds.map((id) => byId.get(id)).filter((t): t is Track => t !== undefined);
+  }, [heavyIds, tracks]);
+  const listTracks = view === 'liked' ? favoriteTracks : view === 'onrepeat' ? onRepeat : allNewest;
 
   const totalSeconds = listTracks.reduce((sum, t) => sum + (t.duration ?? 0), 0);
-  const empty = listTracks.length === 0;
+  const loading = view === 'onrepeat' && session !== null && heavyIds === null;
+  const empty = listTracks.length === 0 && !loading;
 
   const playAll = () => {
     const first = listTracks[0];
@@ -104,7 +142,13 @@ export function SongPage({
       <header className="playlistHead songPageHead">
         <div className="playlistHead__cover" aria-hidden>
           <div className="tileSquircle playlistHead__mosaic songPageHero">
-            <HeroArt name={meta.art} />
+            {view === 'onrepeat' ? (
+              <span className="songPageHero__repeat" aria-hidden>
+                <Repeat size={64} strokeWidth={2.25} />
+              </span>
+            ) : (
+              <HeroArt name={meta.art} />
+            )}
           </div>
         </div>
 
@@ -131,7 +175,7 @@ export function SongPage({
         </div>
       </header>
 
-      {empty ? (
+      {loading ? null : empty ? (
         <div className="playlistEmpty emptyState emptyState--tall">
           <EmptyArt name={meta.art} />
           <Text tone="muted">{meta.empty}</Text>

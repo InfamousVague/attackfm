@@ -1,6 +1,6 @@
 import { mosaicArts, useTileArt } from './artLoad.ts';
 import { Button, ContextMenu, Input, Modal, MenuItem, Text } from '@glacier/react';
-import { History, ListMusic, Plus, Trash2 } from '@glacier/icons';
+import { History, ListMusic, Plus, Repeat, Trash2 } from '@glacier/icons';
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { useLibrary } from './library.tsx';
 import { DjLauncher } from './DjLauncher.tsx';
@@ -143,7 +143,7 @@ export function PlaylistShowcase({
   /** Opens a library-wide song page - Liked, or every song - full rather than
    *  in a sheet. These two are the collection's own big views, so they lead the
    *  grid as hero tiles instead of glyph squircles. */
-  onOpenSongs: (view: 'liked' | 'all') => void;
+  onOpenSongs: (view: import('./SongPage.tsx').SongCollection) => void;
   /** Opens an artist's page from a modal row's artist line. */
   onOpenArtist?: (artist: string) => void;
 }) {
@@ -223,6 +223,21 @@ export function PlaylistShowcase({
             <img className="libChip__art" src={allSongsChip} alt="" loading="lazy" />
             <span className="libChip__name">All songs</span>
             <span className="libChip__count">{songCount(tracks.length)}</span>
+          </button>
+          {/* The songs you keep coming back to, as a door beside the other
+              whole-library views. Green, wearing the repeat mark itself - the
+              one chip whose face is a symbol, because the symbol IS the name. */}
+          <button
+            type="button"
+            className="libChip libChip--repeat"
+            style={{ '--libChipHue': 145 } as CSSProperties}
+            onClick={() => onOpenSongs('onrepeat')}
+          >
+            <span className="libChip__glyph" aria-hidden>
+              <Repeat size={44} strokeWidth={2.5} />
+            </span>
+            <span className="libChip__name">On repeat</span>
+            <span className="libChip__count">Your most played</span>
           </button>
           <DjLauncher onPlay={(track, queue) => onPlay(track, queue ?? [track])} />
         </div>
