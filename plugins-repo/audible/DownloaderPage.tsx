@@ -45,12 +45,27 @@ export function DownloaderPage(_props: PluginPageProps) {
   const load = useCallback(async () => {
     if (!session) return;
     setLoading(true);
+    setNote(null);
     try {
       const status = await audibleStatus(session);
       setConnected(status.connected);
-      if (status.connected) setAudBooks((await audibleLibrary(session)).books);
+      if (status.connected) {
+        // The library read is its OWN failure: a hub that blinks, or an export
+        // that errors, must not undo `connected` and send you off to reconnect
+        // an account that is perfectly connected. Surface the reason instead.
+        try {
+          setAudBooks((await audibleLibrary(session)).books);
+        } catch (e) {
+          setNote(
+            e instanceof Error
+              ? `Couldn’t read your Audible library: ${e.message}`
+              : 'Couldn’t read your Audible library — try again.',
+          );
+        }
+      }
     } catch {
-      setConnected(false);
+      // Only a STATUS check that could not run leaves the account unknown.
+      setConnected((prev) => prev ?? false);
     } finally {
       setLoading(false);
     }
@@ -170,6 +185,17 @@ export function DownloaderPage(_props: PluginPageProps) {
         <Text tone="muted" size="sm">
           No books in your Audible library yet.
         </Text>
+      ) : note ? (
+        <div className="prefsSection">
+          <Text tone="danger" size="sm">
+            {note}
+          </Text>
+          <div className="prefsActions">
+            <Button variant="outline" size="sm" disabled={loading} onClick={() => void load()}>
+              {loading ? 'Retrying…' : 'Retry'}
+            </Button>
+          </div>
+        </div>
       ) : (
         <div className="booksSearching">
           <Spinner /> <Text tone="muted" size="sm">Checking Audible…</Text>
