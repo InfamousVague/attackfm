@@ -7408,6 +7408,163 @@ body [class*='_panel_']:has(> .dlPanel) {
   color: var(--glacier-text);
 }
 
+/* ---- The plugin fan ----------------------------------------------------- */
+
+/* The plugins' own door: a frosted button riding either screen edge,
+   draggable along it, fanning out one button per plugin page. Exists only
+   while some plugin contributes a page. */
+.pluginFan {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.pluginFan[data-side='right'] {
+  inset-inline-end: 0.65rem;
+}
+
+.pluginFan[data-side='left'] {
+  inset-inline-start: 0.65rem;
+}
+
+.pluginFan[data-dragging] {
+  transition: none;
+}
+
+.pluginFan__fab {
+  inline-size: 2.9rem;
+  block-size: 2.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--glacier-radius-full);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  background: var(--glacier-glass-regular, var(--glacier-surface));
+  color: var(--glacier-text);
+  cursor: grab;
+  backdrop-filter: blur(14px) saturate(1.1);
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.3);
+  /* The drag IS the pointer stream - never hand it to the scroller. */
+  touch-action: none;
+  padding: 0;
+  font: inherit;
+}
+
+.pluginFan[data-dragging] .pluginFan__fab {
+  cursor: grabbing;
+  transform: scale(1.06);
+}
+
+/* On a plugin page the button wears that page's icon in the accent - the
+   door doubles as "you are here". */
+.pluginFan__fab[data-active] {
+  color: var(--glacier-accent-text, var(--glacier-accent-solid));
+  border-color: var(--glacier-accent-border, var(--glacier-border-subtle));
+}
+
+/* The fan itself: one button per page, popping upward from the fab with a
+   small stagger, labels held toward the screen's centre. */
+.pluginFan__items {
+  position: absolute;
+  inset-block-end: calc(100% + var(--glacier-space-2));
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--glacier-space-2);
+}
+
+.pluginFan[data-side='right'] .pluginFan__items {
+  inset-inline-end: 0;
+  align-items: flex-end;
+}
+
+.pluginFan[data-side='left'] .pluginFan__items {
+  inset-inline-start: 0;
+  align-items: flex-start;
+}
+
+.pluginFan__item {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--glacier-text);
+  cursor: pointer;
+  animation: pluginFanPop 0.22s var(--glacier-ease-out) backwards;
+  animation-delay: calc(var(--fan-i, 0) * 30ms);
+}
+
+.pluginFan[data-side='left'] .pluginFan__item {
+  flex-direction: row-reverse;
+}
+
+@keyframes pluginFanPop {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem) scale(0.85);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pluginFan__item {
+    animation: none;
+  }
+}
+
+/* The label: a frosted pill beside the glyph, so the fan reads at a glance
+   without a hover. */
+.pluginFan__itemLabel {
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--glacier-radius-full);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  background: var(--glacier-glass-regular, var(--glacier-surface));
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-size: var(--glacier-font-size-xs);
+  font-weight: var(--glacier-font-weight-medium);
+  white-space: nowrap;
+}
+
+.pluginFan__itemIcon {
+  inline-size: 2.4rem;
+  block-size: 2.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--glacier-radius-full);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  background: var(--glacier-glass-regular, var(--glacier-surface));
+  backdrop-filter: blur(14px) saturate(1.1);
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.25);
+}
+
+.pluginFan__item[data-active] .pluginFan__itemIcon {
+  color: var(--glacier-accent-text, var(--glacier-accent-solid));
+  border-color: var(--glacier-accent-border, var(--glacier-border-subtle));
+}
+
+.pluginFan__item:hover .pluginFan__itemIcon {
+  background: var(--glacier-hover, var(--glacier-surface));
+}
+
+/* Tap-away closes: an invisible sheet under the fan, above the page. */
+.pluginFanScrim {
+  position: fixed;
+  inset: 0;
+  z-index: 59;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: default;
+}
+
 /* ---- Plugins: updates, browse, sources --------------------------------- */
 
 /* The update notice sits above the tabs, tinted so it reads as news rather

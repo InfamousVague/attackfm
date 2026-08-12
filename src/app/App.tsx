@@ -51,6 +51,7 @@ import { DiscoverPage } from '../plugins/discover/DiscoverPage.tsx';
 import { FriendsPage } from './FriendsPage.tsx';
 import { JamProvider } from './jam.tsx';
 import { MobileAuthGate } from './MobileAuthGate.tsx';
+import { PluginFan } from './PluginFan.tsx';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
 import wordmark from '../assets/attack-white.png';
 import appIcon from '../assets/attack-icon.svg';
@@ -247,15 +248,9 @@ function PrimaryNav({
         active={tab === 'search'}
         onClick={() => onTab('search')}
       />
-      {pages.map((pg) => (
-        <NavBarItem
-          key={pg.key}
-          icon={pg.icon}
-          label={pg.label}
-          active={tab === pg.key}
-          onClick={() => onTab(pg.key)}
-        />
-      ))}
+      {/* Plugin pages left the nav for the fan (PluginFan): the draggable
+          edge button that holds one door per plugin page. The bar keeps its
+          core five whatever the plugin count. */}
       <NavBarItem
         icon={<Users size={18} />}
         label="Friends"
@@ -296,21 +291,9 @@ function PrimaryNav({
   // is home (the library, where the mixes live); the groups hold the rest,
   // split so the brand button sits dead-centre whatever each side holds.
   //
-  // Plugin pages take bar seats too - a page with no door on the phone is a
-  // page that does not exist there. They deal out alternately, left side
-  // first (it starts a tab lighter than the right), so the brand stays
-  // centred as pages arrive; the tabs themselves shrink to make room.
-  const pluginLeft = pages.filter((_, i) => i % 2 === 0);
-  const pluginRight = pages.filter((_, i) => i % 2 === 1);
-  const barPage = (pg: (typeof pages)[number]) => (
-    <BarTab
-      key={pg.key}
-      icon={pg.icon}
-      label={pg.label}
-      active={tab === pg.key}
-      onClick={() => onTab(pg.key)}
-    />
-  );
+  // Plugin pages do NOT take bar seats: they live in the fan (PluginFan), the
+  // draggable edge button - so the bar stays five thumb-sized tabs however
+  // many plugins are on.
   return (
     <nav className="appNavBar" aria-label="Primary">
       <div className="appNavBar__group appNavBar__group--left">
@@ -329,7 +312,6 @@ function PrimaryNav({
             onClick={() => onTab('discover')}
           />
         )}
-        {pluginLeft.map(barPage)}
       </div>
 
       {/* The brand, raised: the app icon, protruding above the island, home. */}
@@ -345,7 +327,6 @@ function PrimaryNav({
       </button>
 
       <div className="appNavBar__group appNavBar__group--right">
-        {pluginRight.map(barPage)}
         <BarTab
           icon={<Users size={20} />}
           label="Friends"
@@ -1043,6 +1024,10 @@ export function App() {
                 onSettings={() => setSettingsOpen(true)}
               />
             )}
+            {/* The plugins' own door: the draggable edge button fanning out
+                one button per plugin page, on every platform. Fixed-position,
+                so it rides above the content wherever it is parked. */}
+            <PluginFan tab={tab} onTab={goTab} />
             {/* Songs tapped on the car screen start here, queue and all. */}
             <CarPlayBridge onPlay={playFrom} />
             {/* Pushes the weekly listening glance to the registry while the
