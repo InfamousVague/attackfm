@@ -2133,6 +2133,17 @@ img {
   -webkit-overflow-scrolling: touch;
 }
 
+/* Nothing in the list may shrink to fit it.
+   A flex column that scrolls will still compress its items first - shrinking
+   is a flex item's default - so with more sections than fit, the groups gave
+   up their height instead of overflowing: every row squashed, the last ones
+   clipped by the group's own `overflow: hidden`, and no scrollbar, because
+   the content never actually exceeded the box. Holding the natural height is
+   what turns `overflow-y: auto` above from decoration into a scroll. */
+.settingsScreen__list > * {
+  flex: none;
+}
+
 .settingsScreen__row {
   display: flex;
   align-items: center;
@@ -2954,10 +2965,17 @@ img.artPop:not([data-loading]) {
   overflow: hidden;
 }
 
+/* The four inside a mosaic stay SQUARE. They inherit the card's radius from
+   `.suggestCardCover img` (which needs it so the entrance wave cannot flash
+   a corner past the frame), and on a tile that is only a quarter of the face
+   that rounding lands in the middle of the grid - four little pill shapes
+   with gaps at every junction. The mosaic itself is rounded and clips them,
+   so the outer corners are already right; the inner ones want to be sharp. */
 .discoverMosaic img {
   inline-size: 100%;
   block-size: 100%;
   object-fit: cover;
+  border-radius: 0;
 }
 
 /* A set card: shaped like the chart tiles so the page stays one family, with
