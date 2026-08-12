@@ -1364,22 +1364,14 @@ img {
   display: flex;
 }
 
-.appNavBarPlugins__menu {
-  position: absolute;
-  z-index: 6;
-  inset-block-end: calc(100% + var(--glacier-space-2));
-  inset-inline-end: 0;
-  min-inline-size: 12rem;
+/* The ⋮ menu's contents live inside the kit Popover panel, which brings the
+   glass, the blur, the shadow, the padding and the portal - so this only lays
+   the rows out and gives them a sensible minimum width. */
+.appNavMore__menu {
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-1);
-  padding: var(--glacier-space-1);
-  border-radius: var(--glacier-radius-xl, 1.25rem);
-  background: var(--glacier-glass-thick);
-  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
-  box-shadow: var(--glacier-shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.42));
+  min-inline-size: 12rem;
 }
 
 .appNavBarPlugins__item {
@@ -1394,9 +1386,6 @@ img {
   color: var(--glacier-text);
   text-align: start;
   white-space: nowrap;
-  /* Each row rises a beat after the one below it - the cascade. */
-  animation: appNavBarPluginsRise 0.18s ease both;
-  animation-delay: calc(var(--i, 0) * 0.03s);
 }
 
 .appNavBarPlugins__divider {
@@ -1431,17 +1420,6 @@ img {
   padding: var(--glacier-space-2) var(--glacier-space-3);
   font-size: var(--glacier-font-sm, 0.875rem);
   color: var(--glacier-text-subtle, var(--glacier-text-muted));
-}
-
-@keyframes appNavBarPluginsRise {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 /* The raised centre: the app icon itself, lifted so it overhangs the island's
