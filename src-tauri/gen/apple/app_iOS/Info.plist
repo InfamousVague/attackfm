@@ -15,7 +15,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.3.15</string>
+	<string>0.3.16</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -30,7 +30,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>0.3.15</string>
+	<string>0.3.16</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSApplicationCategoryType</key>
@@ -42,6 +42,11 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_attackfm-jam._tcp</string>
+		<string>_attackfm-jam._udp</string>
+	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>AttackFM uses the camera only to scan QR codes: signing in from another device you own, and adding a friend from their code.</string>
 	<key>NSLocalNetworkUsageDescription</key>
