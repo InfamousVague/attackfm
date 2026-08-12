@@ -35,6 +35,9 @@ interface RadioValue {
   on: boolean;
   seed: Track | null;
   dial: RadioDial;
+  /** Whose taste is blended in with yours, when the house is listening. */
+  blendWith: number | null;
+  setBlendWith: (userId: number | null) => void;
   /** True while a refill is in the air, for the surfaces that say so. */
   filling: boolean;
   start: (seed?: Track | null) => void;
@@ -62,6 +65,7 @@ export function RadioProvider({
   const [on, setOn] = useState(false);
   const [seed, setSeed] = useState<Track | null>(null);
   const [dial, setDialState] = useState<RadioDial>({ energy: 0, familiar: 0.5 });
+  const [blendWith, setBlendWithState] = useState<number | null>(null);
   const [filling, setFilling] = useState(false);
   // Every id the station has handed over this run, so a long evening does not
   // circle back to the same songs. Reset when the station is switched off.
@@ -85,6 +89,7 @@ export function RadioProvider({
   const stop = useCallback(() => {
     setOn(false);
     setSeed(null);
+    setBlendWithState(null);
     served.current = [];
     dry.current = false;
   }, []);
@@ -94,6 +99,12 @@ export function RadioProvider({
     dry.current = false;
     setSeed(from ?? null);
     setOn(true);
+  }, []);
+
+  const setBlendWith = useCallback((userId: number | null) => {
+    // A different pair of ears is a different question - see `dry`.
+    dry.current = false;
+    setBlendWithState(userId);
   }, []);
 
   const setDial = useCallback((next: Partial<RadioDial>) => {
@@ -115,6 +126,7 @@ export function RadioProvider({
     const seedId = seed ? trackIdFromPath(seed.path) : null;
     void fetchRadio(session, {
       seed: seedId,
+      with: blendWith,
       energy: dial.energy,
       familiar: dial.familiar,
       n: PAGE,
@@ -138,11 +150,11 @@ export function RadioProvider({
         busy.current = false;
         setFilling(false);
       });
-  }, [on, session, queue, seed, dial, byId, onExtend]);
+  }, [on, session, queue, seed, dial, blendWith, byId, onExtend]);
 
   const value = useMemo<RadioValue>(
-    () => ({ on, seed, dial, filling, start, stop, setDial }),
-    [on, seed, dial, filling, start, stop, setDial],
+    () => ({ on, seed, dial, filling, blendWith, setBlendWith, start, stop, setDial }),
+    [on, seed, dial, filling, blendWith, setBlendWith, start, stop, setDial],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

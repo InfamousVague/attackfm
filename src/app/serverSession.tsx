@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { rememberProfile } from './household.ts';
 import {
   artUrl,
   isRemotePath,
@@ -186,6 +187,10 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
 
   const persist = useCallback((next: ServerSession | null) => {
     setSession(next);
+    // A device that has been signed into an account remembers it, so handing
+    // the phone to someone else in the house is a tap rather than a password.
+    // See household.ts - the store is a convenience over this same session.
+    if (next) rememberProfile(next);
     try {
       if (next) localStorage.setItem(SESSION_KEY, JSON.stringify(next));
       else localStorage.removeItem(SESSION_KEY);

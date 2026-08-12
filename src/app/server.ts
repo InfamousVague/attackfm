@@ -1433,6 +1433,8 @@ export async function fetchRadio(
     n?: number;
     /** Track ids already queued, so a page never repeats the last one. */
     exclude?: readonly number[];
+    /** Blend with another account on this server. */
+    with?: number | null;
   } = {},
   signal?: AbortSignal,
 ): Promise<number[]> {
@@ -1441,6 +1443,7 @@ export async function fetchRadio(
   if (opts.energy !== undefined) q.set('energy', String(opts.energy));
   if (opts.familiar !== undefined) q.set('familiar', String(opts.familiar));
   if (opts.n !== undefined) q.set('n', String(opts.n));
+  if (opts.with != null) q.set('with', String(opts.with));
   if (opts.exclude && opts.exclude.length > 0) {
     // The tail is what matters - the server only needs to avoid what is still
     // ahead, and a URL is not the place for a whole listening history.
@@ -1451,4 +1454,24 @@ export async function fetchRadio(
     signal,
   });
   return reply.tracks ?? [];
+}
+
+/** One account on this server, for the household surfaces. */
+export interface HouseholdPerson {
+  id: number;
+  username: string;
+  me: boolean;
+}
+
+/** Who else is on this server. Any signed-in listener may ask - see the
+ *  endpoint's own note on why this is not the admin-only user list. */
+export async function fetchHousehold(
+  session: ServerSession,
+  signal?: AbortSignal,
+): Promise<HouseholdPerson[]> {
+  const reply = await request<{ people: HouseholdPerson[] }>(session.url, '/api/household', {
+    token: session.token,
+    signal,
+  });
+  return reply.people ?? [];
 }

@@ -9,9 +9,12 @@
 
 import { Button, IconButton, Slider, SortableList, Text } from '@glacier/react';
 import { ChevronDown, Music, Radio, X } from '@glacier/icons';
+import { useEffect, useState } from 'react';
 import { artSized } from './server.ts';
 import { useArtLoad } from './artLoad.ts';
 import { useRadioOptional } from './radio.tsx';
+import { fetchHousehold, type HouseholdPerson } from './server.ts';
+import { useServerSession } from './serverSession.tsx';
 import type { Track } from './tauri.ts';
 
 interface QueueRow {
@@ -47,6 +50,20 @@ export function QueuePanel({
   // The station, when one is on: the queue is where "what's next" is read, so
   // it is where the dial belongs.
   const radio = useRadioOptional();
+  // Who else is in the house, so a station can belong to two people. Asked
+  // only while one is on - it is a question about this room, not about the app.
+  const { session } = useServerSession();
+  const [house, setHouse] = useState<HouseholdPerson[]>([]);
+  useEffect(() => {
+    if (!radio?.on || !session) return;
+    const ctrl = new AbortController();
+    void fetchHousehold(session, ctrl.signal)
+      .then((people) => setHouse(people.filter((p) => !p.me)))
+      .catch(() => {
+        // An older server without the endpoint: the station stays personal.
+      });
+    return () => ctrl.abort();
+  }, [radio?.on, session]);
 
   const reorder = (next: QueueRow[]) => onQueueChange([...head, ...next.map((r) => r.track)]);
   const remove = (path: string) => onQueueChange(queue.filter((t) => t.path !== path));
@@ -98,6 +115,24 @@ export function QueuePanel({
               />
               <span>Favourites</span>
             </label>
+            {/* Two people, one queue: the blend scores every candidate against
+                BOTH tastes and keeps the worse of the two, so nobody's
+                obsession carries a song the other would skip. */}
+            {house.length > 0 && (
+              <div className="radioBar__blend">
+                <span>With</span>
+                {house.map((p) => (
+                  <Button
+                    key={p.id}
+                    variant={radio.blendWith === p.id ? 'solid' : 'outline'}
+                    size="sm"
+                    onClick={() => radio.setBlendWith(radio.blendWith === p.id ? null : p.id)}
+                  >
+                    {p.username}
+                  </Button>
+                ))}
+              </div>
+            )}
             {radio.filling && (
               <Text size="xs" tone="subtle">
                 Finding the next few…
