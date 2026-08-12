@@ -927,21 +927,17 @@ img {
     ),
     /* The body of the frost, and the ridges barely standing out of it: the
        blur above does the frosting, so the paint's job is body and the
-       clamping rings are a suggestion - moulded into the glass, not drawn
-       on it. */
+       clamping rings are a whisper - two thin LIGHT rings rising out of an
+       even wash, never a dark line. Shadow rings read as grooves cut into
+       the plastic, and a hub this size can't afford grooves. */
     radial-gradient(
       circle closest-side at 50%,
       transparent 0 30%,
-      rgb(255 255 255 / 0.09) 33% 40%,
-      rgb(255 255 255 / 0.14) 42% 44%,
-      rgb(0 0 0 / 0.05) 45% 46.5%,
-      rgb(255 255 255 / 0.1) 49% 55%,
-      rgb(255 255 255 / 0.14) 57% 59%,
-      rgb(0 0 0 / 0.05) 60% 61.5%,
-      rgb(255 255 255 / 0.1) 64% 72%,
-      rgb(255 255 255 / 0.14) 74% 76%,
-      rgb(0 0 0 / 0.05) 77% 78.5%,
-      rgb(255 255 255 / 0.1) 81% 100%
+      rgb(255 255 255 / 0.05) 33% 48%,
+      rgb(255 255 255 / 0.1) 50% 52%,
+      rgb(255 255 255 / 0.05) 54% 70%,
+      rgb(255 255 255 / 0.1) 72% 74%,
+      rgb(255 255 255 / 0.05) 76% 100%
     );
 }
 
