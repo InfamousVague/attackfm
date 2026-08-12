@@ -3025,6 +3025,50 @@ export function Player({
     : commitSeek;
   const onScrubDisp = activeElsewhere ? () => {} : onScrub;
 
+  // The strip's artwork square, defined once because both strips wear it: the
+  // kit's bar on the desktop and the phone's own row. A right-click (or a long
+  // press) offers the turning CD or the flat cover; a track without art gets
+  // the station mark, so the square is never empty.
+  const playerArtwork = (
+        <ContextMenu
+          aria-label="Artwork style"
+          className="artViewTarget"
+          content={npArtMenu}
+        >
+          {artView === 'cd' ? (
+            <SpinningDisc
+              art={dispArtwork}
+              spinning={activeElsewhere ? dispPlaying : audible}
+              // A dry buffer spins the platter up rather than stalling it.
+              spooling={buffering}
+              beat={beat}
+              // The platter and the sound share a motor: the disc brakes and
+              // catches up over the same stretch the audio does, whichever
+              // stop the pause style buys - the turntable's ramp, the fade's
+              // short fall, or the cut's plain halt.
+              spinUpMs={
+                playback.pauseStyle === 'turntable'
+                  ? SPIN_UP_MS
+                  : playback.pauseStyle === 'fade'
+                    ? 250
+                    : 0
+              }
+              spinDownMs={
+                playback.pauseStyle === 'turntable'
+                  ? SPIN_DOWN_MS
+                  : playback.pauseStyle === 'fade'
+                    ? 200
+                    : 0
+              }
+            />
+          ) : artwork ? (
+            <img className="artViewCover" src={artwork} alt="" />
+          ) : (
+            <BeatWave className="artViewCover" beat={beat} />
+          )}
+        </ContextMenu>
+  );
+
   return (
     <>
       {/* crossOrigin keeps the analyser readable: both the asset protocol and
@@ -3046,6 +3090,56 @@ export function Player({
         className="playerBarShell"
         onClick={mobileControls ? openNowPlaying : undefined}
       >
+      {/* On touch the strip is the phone idiom: one row - cover, what is
+          playing, and the one control a passing glance needs - docked on the
+          nav card, with the position as a hairline along the bottom rather
+          than a scrubber nobody can hit accurately at this height. Everything
+          it used to carry (skip, the heart, the equalizer, the fader, the
+          lyrics) is one tap away on the full-screen sheet this row opens, and
+          none of it was worth the height down here. The kit's bar keeps the
+          desktop, where a pointer and a spare 60px both exist. */}
+      {mobileControls ? (
+        <div className="miniStrip" data-loading={listLoading || undefined}>
+          <span className="miniStrip__art">{playerArtwork}</span>
+          <span className="miniStrip__text">
+            <span className="miniStrip__title">{dispTrack?.title ?? 'Funky Chunk'}</span>
+            <span className="miniStrip__sub">
+              {activeElsewhere
+                ? `${dispTrack?.artist ?? ''}${activeDeviceName ? ` · on ${activeDeviceName}` : ''}`
+                : (track?.artist ?? 'Kevin MacLeod')}
+            </span>
+          </span>
+          {/* The controls stop the tap here: the row opens Now Playing, but a
+              press ON a button is that button's, not the sheet's. */}
+          <span className="miniStrip__acts" onClick={(e) => e.stopPropagation()}>
+            <PluginSlot id="player-trailing" />
+            <DevicePicker />
+            <IconButton
+              variant="ghost"
+              size="sm"
+              aria-label={dispPlaying ? 'Pause' : 'Play'}
+              skeleton={listLoading}
+              onClick={() => onPlayingChangeDisp(!dispPlaying)}
+            >
+              {dispPlaying ? <Pause size={20} /> : <Play size={20} />}
+            </IconButton>
+          </span>
+          {/* Position, as a line. Aria-hidden: the sheet's own scrubber is the
+              accessible control, and a progressbar that cannot be moved adds
+              nothing a screen reader wants twice. */}
+          <span className="miniStrip__rail" aria-hidden>
+            <span
+              className="miniStrip__fill"
+              style={{
+                inlineSize:
+                  dispDuration > 0
+                    ? `${Math.min(100, Math.max(0, (dispPosition / dispDuration) * 100))}%`
+                    : '0%',
+              }}
+            />
+          </span>
+        </div>
+      ) : (
       <PlayerBar
         // The shell already insets the strip from the window edges, so it reads
         // as a plate lifted off the background rather than welded to the sill.
@@ -3059,45 +3153,7 @@ export function Player({
         // without art gets the station mark instead, so the square never
         // stands empty. The art itself is decorative: the title beside it
         // already names what is playing.
-        artwork={
-          <ContextMenu
-            aria-label="Artwork style"
-            className="artViewTarget"
-            content={npArtMenu}
-          >
-            {artView === 'cd' ? (
-              <SpinningDisc
-                art={dispArtwork}
-                spinning={activeElsewhere ? dispPlaying : audible}
-                // A dry buffer spins the platter up rather than stalling it.
-                spooling={buffering}
-                beat={beat}
-                // The platter and the sound share a motor: the disc brakes and
-                // catches up over the same stretch the audio does, whichever
-                // stop the pause style buys - the turntable's ramp, the fade's
-                // short fall, or the cut's plain halt.
-                spinUpMs={
-                  playback.pauseStyle === 'turntable'
-                    ? SPIN_UP_MS
-                    : playback.pauseStyle === 'fade'
-                      ? 250
-                      : 0
-                }
-                spinDownMs={
-                  playback.pauseStyle === 'turntable'
-                    ? SPIN_DOWN_MS
-                    : playback.pauseStyle === 'fade'
-                      ? 200
-                      : 0
-                }
-              />
-            ) : artwork ? (
-              <img className="artViewCover" src={artwork} alt="" />
-            ) : (
-              <BeatWave className="artViewCover" beat={beat} />
-            )}
-          </ContextMenu>
-        }
+        artwork={playerArtwork}
         // disp* swap between local playback and mirroring the active device -
         // see the AttackFM Connect block above. Alone or active, these are the
         // local track and handlers; as a remote, the other device's now-playing
@@ -3388,6 +3444,7 @@ export function Player({
         // The bar moves as hard as the station is playing.
         intensity={beatIntensity(volume, muted, systemVolume)}
       />
+      )}
       </div>
 
       {/* The full-screen Now Playing surface, on touch only. Portalled to the

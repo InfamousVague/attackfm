@@ -312,60 +312,48 @@ function PrimaryNav({
     );
   }
 
-  // The phone bar: a floating island with a raised, app-icon centre button.
-  // Custom markup rather than the kit NavBar because the raised centre and the
-  // two flanking groups are a shape the kit's even row cannot make. The centre
-  // is home (the library, where the mixes live); the groups hold the rest,
-  // split so the brand button sits dead-centre whatever each side holds.
+  // The phone bar: a floating island of even tabs. It had a raised brand disc
+  // in the middle for the library, which made the library look like a different
+  // KIND of thing from Search and Friends when it is simply another
+  // destination - and cost the plate a band of height to overhang into. It is
+  // an ordinary tab now, in its place in the row, lit like any other.
   //
   // Plugin pages do NOT take their own bar seats: they gather behind the one
   // Plugins button in the right group (PluginsBarButton), which cascades them
   // up out of the bar - so the core tabs stay put however many plugins are on.
   return (
     <nav className="appNavBar" aria-label="Primary">
-      <div className="appNavBar__group appNavBar__group--left">
-        {/* A destination, so it lights like one. */}
+      {/* A destination, so it lights like one. */}
+      <BarTab
+        icon={<Search size={20} />}
+        label="Search"
+        active={tab === 'search'}
+        onClick={() => onTab('search')}
+      />
+      {canDiscover && (
         <BarTab
-          icon={<Search size={20} />}
-          label="Search"
-          active={tab === 'search'}
-          onClick={() => onTab('search')}
+          icon={<Compass size={20} />}
+          label="Discover"
+          active={tab === 'discover'}
+          onClick={() => onTab('discover')}
         />
-        {canDiscover && (
-          <BarTab
-            icon={<Compass size={20} />}
-            label="Discover"
-            active={tab === 'discover'}
-            onClick={() => onTab('discover')}
-          />
-        )}
-      </div>
-
-      {/* The raised centre, home: the library, where the music you own lives.
-          A library glyph rather than the app mark, so the button says where it
-          goes. */}
-      <button
-        type="button"
-        className="appNavBar__center"
-        aria-label="Home"
-        aria-current={libraryActive ? 'page' : undefined}
-        data-active={libraryActive || undefined}
+      )}
+      {/* The library: where the music you own lives, and the app's home. */}
+      <BarTab
+        icon={<LibraryBig size={20} />}
+        label="Library"
+        active={libraryActive}
         onClick={() => onTab('library')}
-      >
-        <LibraryBig className="appNavBar__centerIcon" size={26} aria-hidden="true" />
-      </button>
-
-      <div className="appNavBar__group appNavBar__group--right">
-        <BarTab
-          icon={<Users size={20} />}
-          label="Friends"
-          active={tab === 'friends'}
-          onClick={() => onTab('friends')}
-        />
-        {/* The overflow: the ⋮ menu cascades up the plugin pages (Books among
-            them) plus Stats, Downloads and Settings. */}
-        <NavMoreMenu tab={tab} onTab={onTab} onSettings={onSettings} />
-      </div>
+      />
+      <BarTab
+        icon={<Users size={20} />}
+        label="Friends"
+        active={tab === 'friends'}
+        onClick={() => onTab('friends')}
+      />
+      {/* The overflow: the ⋮ menu cascades up the plugin pages plus Stats,
+          Downloads and Settings. */}
+      <NavMoreMenu tab={tab} onTab={onTab} onSettings={onSettings} />
       {/* Settings left the bar for the header's top-right (mobileHeader), so
           this side holds two tabs like the other - three was a crowd. */}
     </nav>
