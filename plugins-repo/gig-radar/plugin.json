@@ -1,0 +1,13 @@
+{
+  "id": "gig-radar",
+  "name": "Gig radar",
+  "version": "0.1.0",
+  "description": "Upcoming shows from the artists in your library, with a filter for your corner of the world and tickets one tap away.",
+  "author": "AttackFM",
+  "tags": [
+    "Live",
+    "Discovery"
+  ],
+  "entry": "plugin.ts",
+  "public": true
+}

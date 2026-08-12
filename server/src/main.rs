@@ -41,6 +41,7 @@ mod pair;
 mod push;
 mod recents;
 mod registry_auth;
+mod rewind;
 mod scan;
 mod spotify;
 mod spotify_sync;
@@ -401,6 +402,8 @@ async fn main() {
         .route("/api/discoveries", get(discovery::feed))
         .route("/api/new-music", get(discovery::new_music))
         .route("/api/discoveries/dismiss", post(discovery::dismiss))
+        .route("/api/related", get(discovery::related))
+        .route("/api/rewind", get(rewind::rewind))
         .route("/api/connect", get(connect::connect))
         .route("/api/users", get(api::list_users))
         .route("/api/users/{id}", delete(api::delete_user))

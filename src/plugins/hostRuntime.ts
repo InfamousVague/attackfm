@@ -27,6 +27,8 @@ import { openExternal } from '../app/openExternal.ts';
 import { useLibrary } from '../app/library.tsx';
 import { useLibrarySync } from '../app/librarySync.tsx';
 import { useServerSession } from '../app/serverSession.tsx';
+import { usePlaylists } from '../app/playlists.tsx';
+import { EQ_BANDS, EQ_PRESETS, useEqualizer } from '../app/equalizer.tsx';
 
 export const HOST_API_VERSION = 1;
 
@@ -58,6 +60,9 @@ export function installHostRuntime(): PluginHost {
       '@attackfm/app/library': { useLibrary },
       '@attackfm/app/librarySync': { useLibrarySync },
       '@attackfm/app/serverSession': { useServerSession },
+      // Added for the 2026-08 plugin batch (additive - the table only grows).
+      '@attackfm/app/playlists': { usePlaylists },
+      '@attackfm/app/equalizer': { EQ_BANDS, EQ_PRESETS, useEqualizer },
     },
   };
   (globalThis as { __ATTACKFM_HOST__?: PluginHost }).__ATTACKFM_HOST__ = host;

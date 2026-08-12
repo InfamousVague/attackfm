@@ -1,0 +1,14 @@
+{
+  "id": "time-machine",
+  "name": "Time machine",
+  "version": "0.1.0",
+  "description": "Around this date, years ago: what you had on repeat then, playable now - your own listening history as a place to visit.",
+  "author": "AttackFM",
+  "tags": [
+    "History",
+    "Playlists"
+  ],
+  "entry": "plugin.ts",
+  "requiresServer": true,
+  "public": true
+}

@@ -1,0 +1,13 @@
+{
+  "id": "smart-playlists",
+  "name": "Smart playlists",
+  "version": "0.1.0",
+  "description": "Rule-built playlists that keep themselves current: genre, artist, freshness, duration - you write the rule, the list follows the library.",
+  "author": "AttackFM",
+  "tags": [
+    "Playlists",
+    "Automation"
+  ],
+  "entry": "plugin.ts",
+  "public": true
+}

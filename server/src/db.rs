@@ -1537,6 +1537,23 @@ impl Db {
             .unwrap_or_default()
     }
 
+    /// Plays inside one window of the past: what the rewind page calls "around
+    /// this date, years ago". Same shape as `top_plays`, bounded both ends.
+    pub fn plays_between(&self, user_id: i64, from_ms: i64, to_ms: i64, limit: i64) -> Vec<(i64, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT p.track_id, COUNT(*) AS n
+             FROM plays p JOIN tracks t ON t.id = p.track_id AND t.deleted = 0
+             WHERE p.user_id = ?1 AND p.played_at >= ?2 AND p.played_at < ?3
+             GROUP BY p.track_id ORDER BY n DESC, MAX(p.played_at) DESC LIMIT ?4",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, from_ms, to_ms, limit], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
     // --- friends -------------------------------------------------------
     //
     // A friendship is stored once, lower id first, so every question about a

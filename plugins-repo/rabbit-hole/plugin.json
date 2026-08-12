@@ -1,0 +1,14 @@
+{
+  "id": "rabbit-hole",
+  "name": "Rabbit hole",
+  "version": "0.1.0",
+  "description": "Follow the map: start at an artist you love and walk the catalogue's neighbours hop by hop, marking what you already own.",
+  "author": "AttackFM",
+  "tags": [
+    "Discovery",
+    "Graph"
+  ],
+  "entry": "plugin.ts",
+  "requiresServer": true,
+  "public": true
+}
