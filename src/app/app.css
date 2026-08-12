@@ -1268,7 +1268,10 @@ img {
 .appNavBar {
   position: absolute;
   inset-inline: var(--app-nav-inset);
-  inset-block-end: var(--app-nav-inset);
+  /* Float the whole pill clear of the home indicator rather than draping a
+     dead chin over it: nav-inset off the safe-area edge, so the tabs fill a
+     tight pill and the indicator shows on the page below it. */
+  inset-block-end: calc(var(--app-nav-inset) + var(--app-safe-bottom));
   z-index: 4;
   /* Border-box, so the tabs centre in the island band and the chin is padding
      below them rather than height stolen from them. */
@@ -1283,8 +1286,7 @@ img {
   /* The chin's corners take a wider sweep than the top's: down at the screen's
      edge the phone is already curving away, and a corner that opens out to meet
      it reads as one continuous bottom rather than a card set on top of one. */
-  border-radius: var(--glacier-radius-2xl, 1.75rem) var(--glacier-radius-2xl, 1.75rem)
-    var(--app-nav-chin-radius) var(--app-nav-chin-radius);
+  border-radius: var(--glacier-radius-2xl, 1.75rem);
   /* The card: a near-opaque frosted panel, a hairline edge, and a real shadow
      so it reads as lifted off the content that scrolls behind it. */
   background: var(--glacier-glass-thick);
@@ -1434,9 +1436,11 @@ img {
      padding, over an inset-inline of 0), so the two plates line up down both
      sides instead of stepping in and out. */
   --app-nav-inset: var(--glacier-space-2);
-  /* The chin: the band of card below the tabs that covers the home indicator's
-     dead strip, so that space carries the nav instead of nothing. */
-  --app-nav-chin: var(--app-safe-bottom);
+  /* No chin: the pill floats above the home indicator (see .appNavBar's
+     inset-block-end) rather than reaching down over it, so there is no dead
+     band of card below the tabs. Kept at 0 so every formula that referenced
+     it still resolves. */
+  --app-nav-chin: 0px;
   /* The iPhone's own screen corner. In px, not rem: it is the physical curve of
      the glass and does not move when the interface-size setting does. ~55pt is
      the modern Pro; a few points either way is invisible behind a corner this
@@ -1472,8 +1476,8 @@ img {
      down to the screen's edge. The player and the blur scrim clear exactly
      this, so nothing tucks under the card or the raised button. */
   --app-nav-height: calc(
-    var(--app-nav-overhang) + var(--app-nav-island-height) + var(--app-nav-chin) +
-      var(--app-nav-inset)
+    var(--app-nav-overhang) + var(--app-nav-island-height) + var(--app-nav-inset) +
+      var(--app-safe-bottom)
   );
 }
 
