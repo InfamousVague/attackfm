@@ -487,7 +487,19 @@ pub async fn search(
 
     // Spotify (through SpotiFLAC, whose links download) leads; Deezer fills the
     // list out and stands in whole if the search subprocess comes back empty.
-    let (spotify, deezer) = tokio::join!(spotiflac_search(&state, &q), deezer_search(&q));
+    let (mut spotify, deezer) = tokio::join!(spotiflac_search(&state, &q), deezer_search(&q));
+
+    // A hub with no SpotiFLAC metadata client - a home Mac, where the importer
+    // may still be installed differently or not at all - got NO Spotify rows
+    // from the line above. That is not a cosmetic loss: Deezer TRACKS are
+    // dropped below (the importer refuses them as input), so the whole answer
+    // became albums-and-artists, and every "Add" on an artist page resolved to
+    // "not on Spotify" and showed an X. The web player's own token is what
+    // SpotiFLAC exists to work around, and it is only blocked from the VPS -
+    // from a house it answers fine - so it stands in when SpotiFLAC is silent.
+    if spotify.is_empty() {
+        spotify = spotify_search(&q).await;
+    }
 
     let mut results: Vec<SearchResult> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
