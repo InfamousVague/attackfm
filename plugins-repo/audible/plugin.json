@@ -1,10 +1,13 @@
 {
   "id": "audible",
   "name": "Audible",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Download the audiobooks you own on Audible into your library.",
   "author": "AttackFM",
-  "tags": ["Audiobooks", "Downloads"],
+  "tags": [
+    "Audiobooks",
+    "Downloads"
+  ],
   "entry": "plugin.ts",
   "requiresServer": true
 }

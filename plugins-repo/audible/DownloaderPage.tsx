@@ -1,17 +1,10 @@
 import { Button, Spinner, Text } from '@glacier/react';
 import { BookHeadphones, Check, Plus } from '@glacier/icons';
-import { useCallback, useEffect, useState } from 'react';
-import { useLibrary } from '@attackfm/app/library';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useServerSession } from '@attackfm/app/serverSession';
 import type { PluginPageProps } from '../../src/plugins/types.ts';
-import {
-  audibleImport,
-  audibleJobs,
-  audibleLibrary,
-  audibleStatus,
-  type AudibleBook,
-  type AudibleJob,
-} from './audibleAccount.ts';
+import { audibleLibrary, audibleStatus, type AudibleBook, type AudibleJob } from './audibleAccount.ts';
+import { useAudibleQueue } from './queue.tsx';
 
 /**
  * The Audible downloader page: the books you OWN on Audible, pulled into the
@@ -19,6 +12,10 @@ import {
  * public-domain books are a separate plugin (LibriVox); this one is Audible
  * alone. Once the account is connected in Settings, your library lists here with
  * an Add button per book that downloads, decrypts, and files it under Books.
+ *
+ * The queue itself is not drawn here - the Downloads page shows every book in
+ * flight beside everything else coming down. This page keeps only the mark on
+ * the row you tapped, so Add turns into a stage and then a tick in place.
  */
 
 const AUD_LABEL: Record<AudibleJob['state'], string> = {
@@ -38,12 +35,11 @@ function minutes(min: number | null): string {
 
 export function DownloaderPage(_props: PluginPageProps) {
   const { session } = useServerSession();
-  const { rescan } = useLibrary();
+  const { jobFor, busy, pull: pullBook } = useAudibleQueue();
 
   const [connected, setConnected] = useState<boolean | null>(null);
   const [audBooks, setAudBooks] = useState<AudibleBook[] | null>(null);
   const [loading, setLoading] = useState(false);
-  const [jobs, setJobs] = useState<AudibleJob[]>([]);
   const [note, setNote] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -64,41 +60,20 @@ export function DownloaderPage(_props: PluginPageProps) {
     void load();
   }, [load]);
 
-  const active = jobs.some((j) => j.state !== 'done' && j.state !== 'error');
+  // The list carries an "already yours" mark per book, so it is stale the
+  // moment the queue drains - reload it then, and only then.
+  const wasBusy = useRef(busy);
   useEffect(() => {
-    if (!session || connected !== true) return;
-    let live = true;
-    const poll = () => {
-      void audibleJobs(session)
-        .then((js) => {
-          if (!live) return;
-          setJobs((prev) => {
-            const was = prev.some((p) => p.state !== 'done' && p.state !== 'error');
-            const is = js.some((p) => p.state !== 'done' && p.state !== 'error');
-            if (was && !is) {
-              void rescan();
-              void load();
-            }
-            return js;
-          });
-        })
-        .catch(() => {});
-    };
-    poll();
-    const timer = window.setInterval(poll, active ? 3_000 : 30_000);
-    return () => {
-      live = false;
-      window.clearInterval(timer);
-    };
-  }, [session, connected, active, rescan, load]);
+    if (wasBusy.current && !busy) void load();
+    wasBusy.current = busy;
+  }, [busy, load]);
 
-  const jobFor = (asin: string) => jobs.find((j) => j.asin === asin);
   const pull = (book: AudibleBook) => {
     if (!session) return;
     setNote(null);
-    void audibleImport(session, book)
-      .then((job) => setJobs((prev) => [job, ...prev.filter((j) => j.id !== job.id)]))
-      .catch((e) => setNote(e instanceof Error ? e.message : 'Could not queue that book.'));
+    void pullBook(book).catch((e) =>
+      setNote(e instanceof Error ? e.message : 'Could not queue that book.'),
+    );
   };
 
   if (!session) {

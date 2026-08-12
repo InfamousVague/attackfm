@@ -611,6 +611,7 @@ function pluginContributions(p: Plugin): string[] {
       ? [`A settings tab: ${p.settingsSections.map((s) => s.label).join(', ')}`]
       : []),
     ...(p.playlistTiles?.length ? ['Playlist tiles on the home strip'] : []),
+    ...(p.downloads?.length ? ['A queue on the Downloads page'] : []),
     ...(p.usePaletteCommands ? ['Command palette actions'] : []),
     ...(p.Provider ? ['A background service while enabled'] : []),
   ];

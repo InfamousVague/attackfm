@@ -5675,6 +5675,15 @@ body [class*='_panel_']:has(> .dlPanel) {
   letter-spacing: 0.01em;
 }
 
+/* Who is pulling this. It leads the meta row and wears the accent, because
+   with several queues on one page the owner is the first thing that tells two
+   otherwise identical cards apart - and it is absent entirely when there is
+   only one queue to own anything. */
+.dlChip--source {
+  color: var(--glacier-accent-text);
+  border-color: color-mix(in srgb, var(--glacier-accent-solid) 40%, transparent);
+}
+
 .dlChip--spotify {
   color: #1db954;
   border-color: color-mix(in srgb, #1db954 45%, transparent);
