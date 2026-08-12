@@ -261,10 +261,9 @@ function Glyph({
   // A genre with a generated object wears it over the gradient; the tint
   // stays beneath as the loading face and the fallback for unmapped genres -
   // and for a served object that fails to arrive.
-  const { session: glyphServer } = useServerSession();
   const [tileDead, setTileDead] = useState(false);
   const tileSlug = shape === 'tile' && tint ? genreArtwork(tint) : null;
-  const tileSrc = tileSlug && glyphServer && !tileDead ? artworkUrl(glyphServer, tileSlug) : null;
+  const tileSrc = tileSlug && !tileDead ? artworkUrl(tileSlug) : null;
   const tileLoad = useArtLoad(tileSrc, '');
   if (shape === 'mosaic') {
     return (
@@ -1300,7 +1299,7 @@ export function SearchPage({
                   {browse.map((g) => {
                     // The generated genre object leads; a genre the set does
                     // not cover keeps its own library cover over the tint.
-                    const generated = server ? genreArtwork(g.name) : null;
+                    const generated = genreArtwork(g.name);
                     return (
                     <button
                       key={g.name}
@@ -1310,7 +1309,7 @@ export function SearchPage({
                       onClick={() => setQuery(`genre:"${g.name}"`)}
                     >
                       {generated ? (
-                        <GenreArt src={artworkUrl(server!, generated)} raw fallback={g.covers[0] ?? null} />
+                        <GenreArt src={artworkUrl(generated)} raw fallback={g.covers[0] ?? null} />
                       ) : (
                         g.covers[0] && <GenreArt src={g.covers[0]} />
                       )}
