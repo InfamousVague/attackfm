@@ -1518,6 +1518,65 @@ img {
   display: contents;
 }
 
+/* ── Liked & All songs: the library's two whole-collection views ────────────
+   A pair of chips above the playlist grid. Wide rather than square because
+   the name is the thing being read, and exactly two across so the row says
+   how many there are without a heading having to. */
+.libShelf {
+  margin-block-end: var(--glacier-space-4);
+}
+
+.libChips {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--glacier-space-2);
+}
+
+.libChip {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  min-inline-size: 0;
+  padding: var(--glacier-space-2);
+  padding-inline-end: var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  background: var(--glacier-surface-raised);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition:
+    background var(--glacier-duration-fast) var(--glacier-ease-out),
+    transform var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.libChip:hover {
+  background: var(--glacier-hover);
+}
+
+.libChip:active {
+  transform: scale(0.985);
+}
+
+/* contain, not cover: these are objects photographed against nothing, and
+   cropping one to fill a square would cut the shape that identifies it. */
+.libChip__art {
+  flex: none;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  object-fit: contain;
+}
+
+.libChip__name {
+  min-inline-size: 0;
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── The phone's now-playing row ────────────────────────────────────────────
    One line docked on the nav card: cover, what is playing, and the one control
    a glance needs. Everything else lives on the sheet a tap opens. The height
