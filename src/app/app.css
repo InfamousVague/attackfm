@@ -1355,6 +1355,80 @@ img {
   line-height: 1;
 }
 
+/* The Plugins button on the bar, and the menu that cascades up out of it. The
+   trigger wears .appNavBarTab, so it sits and lights like any core tab; the
+   menu floats above (the bar's overflow is visible), a glass card matching the
+   bar's own, its rows rising in a quick stagger. */
+.appNavBarPlugins {
+  position: relative;
+  display: flex;
+}
+
+.appNavBarPlugins__menu {
+  position: absolute;
+  z-index: 6;
+  inset-block-end: calc(100% + var(--glacier-space-2));
+  inset-inline-end: 0;
+  min-inline-size: 12rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  padding: var(--glacier-space-1);
+  border-radius: var(--glacier-radius-xl, 1.25rem);
+  background: var(--glacier-glass-thick);
+  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  box-shadow: var(--glacier-shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.42));
+}
+
+.appNavBarPlugins__item {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border: none;
+  border-radius: var(--glacier-radius-lg, 0.9rem);
+  background: none;
+  cursor: pointer;
+  color: var(--glacier-text);
+  text-align: start;
+  white-space: nowrap;
+  /* Each row rises a beat after the one below it - the cascade. */
+  animation: appNavBarPluginsRise 0.18s ease both;
+  animation-delay: calc(var(--i, 0) * 0.03s);
+}
+
+.appNavBarPlugins__item:hover {
+  background: var(--glacier-surface-hover, rgba(127, 127, 127, 0.14));
+}
+
+.appNavBarPlugins__item[data-active] {
+  color: var(--glacier-accent-text);
+}
+
+.appNavBarPlugins__itemIcon {
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.appNavBarPlugins__itemLabel {
+  font-size: var(--glacier-font-sm, 0.875rem);
+  font-weight: 550;
+}
+
+@keyframes appNavBarPluginsRise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* The raised centre: the app icon itself, lifted so it overhangs the island's
    top edge, ringed in the page background to cut it cleanly from the card, and
    haloed in the accent so it reads as the prominent home button. */
@@ -2541,6 +2615,19 @@ img.artPop:not([data-loading]) {
 
 .homeShelfScroll {
   margin-inline: calc(-1 * var(--glacier-space-4));
+}
+
+/* Horizontal shelves were very hard to swipe sideways: the ScrollArea's
+   viewport ran with touch-action:auto, so inside a vertically-scrolling page
+   WebKit handed almost every gesture to the page and the shelf barely moved.
+   Locking the viewport to horizontal panning makes a sideways drag on a shelf
+   scroll the shelf; overscroll-behavior keeps a fling to itself so it never
+   nudges the page or triggers the OS back-swipe. The page still scrolls
+   vertically from the titles, the gaps between shelves, and the tiles up top -
+   none of which this touches. */
+.homeShelfScroll [data-scrollbar-appearance] {
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
 }
 
 .homeShelfRow {
