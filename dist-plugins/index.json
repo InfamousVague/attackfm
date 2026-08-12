@@ -3,6 +3,22 @@
   "name": "AttackFM plugins",
   "plugins": [
     {
+      "id": "audible",
+      "name": "Audible",
+      "version": "0.1.0",
+      "description": "Connect your Audible account so your server can download the audiobooks you own into your library.",
+      "author": "AttackFM",
+      "tags": [
+        "Audiobooks",
+        "Downloads"
+      ],
+      "entry": "audible-0.1.0.js",
+      "api": 1,
+      "bytes": 7312,
+      "sha256": "b4dd36121993b85779e7b411f2aa17e5d8857258d88e32d7cb365747b102724b",
+      "requiresServer": true
+    },
+    {
       "id": "eq-rack",
       "name": "EQ rack",
       "version": "0.1.0",
