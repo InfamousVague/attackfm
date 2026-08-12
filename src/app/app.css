@@ -3592,6 +3592,27 @@ img.artPop:not([data-loading]) {
   color: var(--glacier-text);
 }
 
+/* A HERO tile: the library's own big views (Liked, All) wear their painted art
+   filling the whole squircle, so they read apart from the playlist covers in
+   the same grid rather than as one more square. The ground shows in the art's
+   own dark margins and while it loads; the art (HeroArt) sits absolute over it. */
+.tileHero {
+  position: relative;
+}
+.tileHero--liked {
+  /* A crimson-into-black wash so the neon heart lands on colour, and a faint
+     accent ring so the tile is clearly the odd one out in the row. */
+  background: radial-gradient(
+    circle at 50% 42%,
+    color-mix(in srgb, var(--glacier-accent-solid) 34%, #05040a) 0%,
+    #05040a 72%
+  );
+  border-color: color-mix(in srgb, var(--glacier-accent-solid) 40%, var(--glacier-border-subtle));
+}
+.tileHero--all {
+  background: linear-gradient(140deg, var(--glacier-surface-raised) 0%, var(--glacier-surface-sunken) 100%);
+}
+
 /* The kit's Popover panel caps at 24rem, too narrow for eight EQ bands; widen it
    here (still clamped to the window) so the curve and bands are not pinched. */
 .eqPopoverPanel {
@@ -5798,6 +5819,31 @@ body [class*='_panel_']:has(> .dlPanel) {
   align-items: center;
   gap: var(--glacier-space-2);
   margin-block-start: var(--glacier-space-2);
+}
+
+/* The whole-collection song page (Liked, All): the playlist header's shape over
+   the library's own song table. It is wrapped in .homePage so it scrolls and
+   reserves the player/nav like any page; these only tighten the header-to-table
+   gap and let the table bleed to the window edge under a padded header. */
+.homePage.songPage {
+  gap: var(--glacier-space-3);
+}
+.songPageHead {
+  /* .homePage already insets the page; the header lines up with the shelves'
+     edge rather than padding again, while .librarySongs below bleeds out. */
+  padding-inline: 0;
+}
+/* The hero cover: painted art filling the 8rem squircle, on a dark ground its
+   own margins sit against. */
+.songPageHero {
+  position: relative;
+  background: #05040a;
+}
+/* Liked opens ON the heart, ringed faintly in crimson so the page reads as its
+   own place the instant it lands - not one more dark square. */
+.songPage--liked .songPageHero {
+  border-color: color-mix(in srgb, var(--glacier-accent-solid) 45%, transparent);
+  box-shadow: 0 0 26px -8px color-mix(in srgb, var(--glacier-accent-solid) 65%, transparent);
 }
 
 .playlistEmpty {
@@ -8627,6 +8673,42 @@ body [class*='_panel_']:has(> .dlPanel) {
   object-fit: cover;
   mix-blend-mode: multiply;
   border-radius: inherit;
+}
+
+/* ---- Hero art -----------------------------------------------------------
+
+   The same painted light/dark pair EmptyArt draws, but worn as a HERO that
+   FILLS its box (a tile, a page cover) rather than a spot dissolved into the
+   page: no dissolve mask, no server swap, object-fit cover edge to edge. The
+   parent must be positioned and clip (e.g. .tileSquircle, .songPageHero). */
+.heroArt {
+  position: absolute;
+  inset: 0;
+}
+.heroArt__img {
+  display: none;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+/* Theme selection mirrors .emptyArt__img exactly: no data-theme follows the OS,
+   an explicit data-theme wins - so the picture never drifts from its surface. */
+:root:not([data-theme]) .heroArt__img--light {
+  display: block;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .heroArt__img--light {
+    display: none;
+  }
+  :root:not([data-theme]) .heroArt__img--dark {
+    display: block;
+  }
+}
+:root[data-theme='light'] .heroArt__img--light {
+  display: block;
+}
+:root[data-theme='dark'] .heroArt__img--dark {
+  display: block;
 }
 
 /* ---- Skeleton shelves and the library stats card ------------------------ */

@@ -46,6 +46,7 @@ import { SearchPage } from './SearchPage.tsx';
 import { StatsPage } from './StatsPage.tsx';
 import { ListeningShareBridge } from './listeningShare.tsx';
 import { LibraryView } from './LibraryView.tsx';
+import { SongPage, type SongCollection } from './SongPage.tsx';
 import { useSwipeBack } from './useSwipeBack.ts';
 import { hapticsImpl } from './haptics.ts';
 import { DiscoverPage } from '../plugins/discover/DiscoverPage.tsx';
@@ -496,7 +497,10 @@ function PlayerHost({
  * current, so Back returns there - which is why they are one type rather than
  * two fields that could contradict each other.
  */
-type Detail = { kind: 'artist'; artist: string } | { kind: 'playlist'; id: string };
+type Detail =
+  | { kind: 'artist'; artist: string }
+  | { kind: 'playlist'; id: string }
+  | { kind: 'songs'; view: SongCollection };
 
 /**
  * The content area: whichever place is current renders here. A detail page -
@@ -513,6 +517,7 @@ function AppMain({
   onPlay,
   onOpenArtist,
   onOpenPlaylist,
+  onOpenSongs,
   onCloseDetail,
   onOpenDownloads,
   onOpenStats,
@@ -527,6 +532,8 @@ function AppMain({
   onPlay: (track: Track, context?: Track[]) => void;
   onOpenArtist: (artist: string) => void;
   onOpenPlaylist: (id: string) => void;
+  /** Opens a whole-collection song page (Liked, or every song). */
+  onOpenSongs: (view: SongCollection) => void;
   onCloseDetail: () => void;
   /** The library page's own queue icon opens the downloads surface. */
   onOpenDownloads: () => void;
@@ -566,6 +573,9 @@ function AppMain({
           onOpenArtist={onOpenArtist}
           onGone={onCloseDetail}
         />
+      ) : detail?.kind === 'songs' ? (
+        // Liked or every song, opened full - the library's own views as a page.
+        <SongPage view={detail.view} onPlay={onPlay} onOpenArtist={onOpenArtist} />
       ) : activePage ? (
         activePage.render({ onPlay, onOpenArtist })
       ) : tab === 'library' ? (
@@ -575,6 +585,7 @@ function AppMain({
           onPlay={onPlay}
           onOpenArtist={onOpenArtist}
           onOpenPlaylist={onOpenPlaylist}
+          onOpenSongs={onOpenSongs}
           onOpenDownloads={hasQueue ? onOpenDownloads : undefined}
           onOpenStats={onOpenStats}
         />
@@ -614,6 +625,7 @@ function AppMain({
           onPlay={onPlay}
           onOpenArtist={onOpenArtist}
           onOpenPlaylist={onOpenPlaylist}
+          onOpenSongs={onOpenSongs}
           onOpenDownloads={hasQueue ? onOpenDownloads : undefined}
           onOpenStats={onOpenStats}
         />
@@ -762,7 +774,9 @@ export function App() {
         ? a.artist === b.artist
         : a?.kind === 'playlist' && b?.kind === 'playlist'
           ? a.id === b.id
-          : true;
+          : a?.kind === 'songs' && b?.kind === 'songs'
+            ? a.view === b.view
+            : true;
   const samePlace = (a: Place | undefined, b: Place) =>
     a?.tab === b.tab && sameDetail(a?.detail ?? null, b.detail);
   const [nav, setNav] = useState<{ stack: Place[]; index: number }>({
@@ -794,6 +808,9 @@ export function App() {
     push({ tab, detail: next === null ? null : { kind: 'artist', artist: next } });
   /** A playlist page, likewise stacked inside the current tab. */
   const goPlaylist = (id: string) => push({ tab, detail: { kind: 'playlist', id } });
+  /** A whole-collection song page - Liked or every song - stacked the same way.
+   *  The library's own views, opened full instead of in a sheet. */
+  const goSongs = (view: SongCollection) => push({ tab, detail: { kind: 'songs', view } });
   /** Steps off a detail page back to its tab's root - what a deleted playlist
    *  does, since there is no page left to stand on. */
   const closeDetail = () => push({ tab, detail: null });
@@ -1056,6 +1073,7 @@ export function App() {
                 onPlay={playFrom}
                 onOpenArtist={go}
                 onOpenPlaylist={goPlaylist}
+                onOpenSongs={goSongs}
                 onCloseDetail={closeDetail}
                 onOpenDownloads={() => goTab('downloads')}
                 onOpenStats={() => goTab('stats')}

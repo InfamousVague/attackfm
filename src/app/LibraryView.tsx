@@ -148,6 +148,7 @@ export function LibraryView({
   onPlay,
   onOpenArtist,
   onOpenPlaylist,
+  onOpenSongs,
   onOpenDownloads,
   onOpenStats,
 }: {
@@ -159,6 +160,8 @@ export function LibraryView({
   onPlay: (track: Track, context?: Track[]) => void;
   onOpenArtist: (artist: string) => void;
   onOpenPlaylist: (id: string) => void;
+  /** Opens a whole-collection song page (Liked, or every song) from a tile. */
+  onOpenSongs: (view: 'liked' | 'all') => void;
   /** Opens the download queue. Absent when no importer is running, and the
    *  icon goes with it - there is nothing to queue without one. */
   onOpenDownloads?: () => void;
@@ -272,7 +275,12 @@ export function LibraryView({
           {/* Playlists lead the shelves: making and managing lists is the
               library's working surface, so it sits where the thumb lands
               first, above the read-only shelves. */}
-          <PlaylistShowcase onPlay={onPlay} onOpenPlaylist={onOpenPlaylist} onOpenArtist={onOpenArtist} />
+          <PlaylistShowcase
+            onPlay={onPlay}
+            onOpenPlaylist={onOpenPlaylist}
+            onOpenArtist={onOpenArtist}
+            onOpenSongs={onOpenSongs}
+          />
 
           {/* This week's listening at a glance, linking into the full page.
               Renders nothing until there is a week to speak of. */}

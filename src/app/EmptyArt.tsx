@@ -43,6 +43,23 @@ const ART: Record<EmptyArtName, { light: string; dark: string }> = {
   search: { light: searchLight, dark: searchDark },
 };
 
+/**
+ * The same painted light/dark pair, but worn as a HERO that fills its box
+ * rather than an empty-state spot dissolved into the page. No server-slug swap
+ * (the whole point is the local art the owner made - e.g. the neon Liked heart)
+ * and no radial mask: the picture covers the tile or cover it is dropped into,
+ * edge to edge. Used for the standout Liked tile and the Liked/All page heroes.
+ */
+export function HeroArt({ name, className }: { name: EmptyArtName; className?: string }) {
+  const art = ART[name];
+  return (
+    <div className={className ? `heroArt ${className}` : 'heroArt'} aria-hidden="true">
+      <img className="heroArt__img heroArt__img--light" src={art.light} alt="" loading="lazy" />
+      <img className="heroArt__img heroArt__img--dark" src={art.dark} alt="" loading="lazy" />
+    </div>
+  );
+}
+
 export function EmptyArt({ name, className }: { name: EmptyArtName; className?: string }) {
   const art = ART[name];
   // The main server's generated set replaces the painted pair - a frosted
