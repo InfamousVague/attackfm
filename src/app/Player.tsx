@@ -837,6 +837,42 @@ export function Player({
   }, [mobileControls, audible, remoteOnly]);
   const beat = useBeat({ meter, active: audible, at: progress });
 
+  // The beat bus: the pulse useBeat already computes every frame, published
+  // as one CSS custom property on the document root - `--beat`, 0..1,
+  // jumping on a hit and falling between them - plus a `data-music-live`
+  // attribute that gates every consumer, so an idle app pays nothing. From
+  // here the stylesheet makes small things breathe in time everywhere: the
+  // nav brand's glow, the disc's diffraction sheen, the frosted hub, the
+  // sheet's veil. All of them read the ONE variable; none of them re-render
+  // React. Reduced motion never sets the attribute, and the pulse still
+  // reaches nothing.
+  useEffect(() => {
+    const root = document.documentElement;
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    if (!audible || still) {
+      root.removeAttribute('data-music-live');
+      root.style.removeProperty('--beat');
+      return;
+    }
+    root.setAttribute('data-music-live', '');
+    return () => {
+      root.removeAttribute('data-music-live');
+      root.style.removeProperty('--beat');
+    };
+  }, [audible]);
+  const lastBeatVar = useRef(-1);
+  if (audible) {
+    // Written during render on purpose: useBeat re-renders this component
+    // every frame while music plays (that is how the strip's bar deforms),
+    // so the freshest pulse is right here, and an effect would just add a
+    // frame of lag. Quantised so identical frames cost no style recalc.
+    const q = Math.round(beat.pulse * 40) / 40;
+    if (q !== lastBeatVar.current) {
+      lastBeatVar.current = q;
+      document.documentElement.style.setProperty('--beat', q.toFixed(3));
+    }
+  }
+
   // The phone's own volume, polled while there is something to hear. The
   // hardware buttons fire no event the webview can see, so a poll is the whole
   // mechanism, and the call is one message send into the audio session.
