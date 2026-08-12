@@ -7,11 +7,15 @@
 //! anything already played has left the line. Reordering resolves through the
 //! kit's SortableList, which carries both drag and full keyboard reordering.
 
+import { useMemo } from 'react';
 import { Button, IconButton, Slider, SortableList, Text } from '@glacier/react';
 import { ChevronDown, Music, Radio, X } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { artSized } from './server.ts';
 import { useArtLoad } from './artLoad.ts';
+import { useJamOptional } from './jam.tsx';
+import { useLibrary } from './library.tsx';
+import { remotePath } from './server.ts';
 import { useRadioOptional } from './radio.tsx';
 import { TrackMenu } from './TrackMenu.tsx';
 import { fetchHousehold, type HouseholdPerson } from './server.ts';
@@ -51,6 +55,31 @@ export function QueuePanel({
   // The station, when one is on: the queue is where "what's next" is read, so
   // it is where the dial belongs.
   const radio = useRadioOptional();
+
+  // In a jam, the queue on screen is the ROOM's - the host's list, which
+  // everyone's additions flow into. A guest's own device queue is not what
+  // anyone in the room is listening to, so showing it here would be a lie.
+  // The host is already playing that list, so for them this only adds the
+  // attribution: whose taste each song is.
+  const jam = useJamOptional();
+  const { tracks: libraryTracks } = useLibrary();
+  const room = jam?.current ?? null;
+  const following = room !== null && !jam?.hosting;
+  const addedBy = room?.addedBy ?? {};
+  const byId = useMemo(() => {
+    const map = new Map<string, Track>();
+    for (const t of libraryTracks) map.set(t.path, t);
+    return map;
+  }, [libraryTracks]);
+  /** Who asked for this track, when somebody in the room did. */
+  const creditFor = (track: Track): string | null => {
+    const id = Object.keys(addedBy).find((key) => remotePath(Number(key)) === track.path);
+    return id ? (addedBy[id] ?? null) : null;
+  };
+  // A guest reads the room's list; nobody else's device can reorder it.
+  const roomRows: Track[] = following
+    ? room.queue.map((id) => byId.get(remotePath(id))).filter((t): t is Track => t !== undefined)
+    : [];
   // Who else is in the house, so a station can belong to two people. Asked
   // only while one is on - it is a question about this room, not about the app.
   const { session } = useServerSession();
@@ -155,6 +184,37 @@ export function QueuePanel({
           </div>
         )}
 
+        {following ? (
+          <div className="queueUp">
+            <span className="queueUp__label">Next up in the jam</span>
+            {roomRows.length === 0 ? (
+              <Text tone="muted" size="sm" className="queueUp__empty">
+                Nothing queued yet. Add a song from anywhere and it goes to the
+                room - {room?.hostName ?? 'the host'} is playing it for everyone.
+              </Text>
+            ) : (
+              <div className="queueRows">
+                {roomRows.map((t) => {
+                  const credit = creditFor(t);
+                  return (
+                    <TrackMenu key={t.path} track={t} className="queueRowMenu">
+                      <div className="queueRow" data-static>
+                        <Cover track={t} />
+                        <div className="queueRow__meta">
+                          <span className="queueRow__title">{t.title}</span>
+                          <span className="queueRow__artist">
+                            {t.artist}
+                            {credit && <span className="queueRow__credit">added by {credit}</span>}
+                          </span>
+                        </div>
+                      </div>
+                    </TrackMenu>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : (
         <div className="queueUp">
           <span className="queueUp__label">Next up</span>
           {rows.length === 0 ? (
@@ -182,7 +242,15 @@ export function QueuePanel({
                     <Cover track={r.track} />
                     <div className="queueRow__meta">
                       <span className="queueRow__title">{r.track.title}</span>
-                      <span className="queueRow__artist">{r.track.artist}</span>
+                      <span className="queueRow__artist">
+                        {r.track.artist}
+                        {(() => {
+                          const credit = creditFor(r.track);
+                          return credit ? (
+                            <span className="queueRow__credit">added by {credit}</span>
+                          ) : null;
+                        })()}
+                      </span>
                     </div>
                   </button>
                   <IconButton
@@ -199,6 +267,7 @@ export function QueuePanel({
             />
           )}
         </div>
+        )}
       </div>
     </div>
   );

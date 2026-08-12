@@ -9844,3 +9844,26 @@ button.artistAlbum {
 .catalogTrackMenu {
   display: contents;
 }
+
+/* Whose taste this is: a jam's queue is other people's songs arriving in
+   yours, and the row should say so without shouting. */
+.queueRow__credit {
+  margin-inline-start: var(--glacier-space-2);
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+  font-size: var(--glacier-font-size-2xs, 0.65rem);
+  font-weight: var(--glacier-font-weight-semibold);
+}
+
+/* The guest's read-only run: the room's list, in the room's order. */
+.queueRows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.queueRow[data-static] {
+  cursor: default;
+}
