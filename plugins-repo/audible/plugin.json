@@ -1,0 +1,10 @@
+{
+  "id": "audible",
+  "name": "Audible",
+  "version": "0.1.0",
+  "description": "Connect your Audible account so your server can download the audiobooks you own into your library.",
+  "author": "AttackFM",
+  "tags": ["Audiobooks", "Downloads"],
+  "entry": "plugin.ts",
+  "requiresServer": true
+}

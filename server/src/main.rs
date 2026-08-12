@@ -21,6 +21,7 @@
 //! | `AFM_PUBLIC_URL` | *(empty)* | The public origin, e.g. `https://matt.attack.fm` - needed for the Spotify OAuth redirect. |
 
 mod api;
+mod audible;
 mod audiobooks;
 mod auth;
 mod canvas;
@@ -124,6 +125,8 @@ pub struct AppState {
     pub curator: Arc<curator::CuratorState>,
     /// The audiobook download queue - small, serial, in-memory (audiobooks.rs).
     pub audiobooks: Arc<audiobooks::BookQueue>,
+    /// The owner's Audible connection - device tokens and any login mid-flow.
+    pub audible: Arc<audible::AudibleState>,
     /// Per-listener harvest clocks for the discovery pool.
     pub discovery: Arc<discovery::DiscoveryState>,
     /// When this process came up - the uptime the stats endpoint reports.
@@ -253,6 +256,7 @@ async fn main() {
         jams: jams::JamState::new(),
         curator: curator::CuratorState::new(),
         audiobooks: Arc::new(audiobooks::BookQueue::default()),
+        audible: Arc::new(audible::AudibleState::new(&data_dir)),
         discovery: discovery::DiscoveryState::new(),
         started: std::time::Instant::now(),
     });
@@ -438,6 +442,10 @@ async fn main() {
         .route("/api/audiobooks/search", get(audiobooks::search))
         .route("/api/audiobooks/import", post(audiobooks::import))
         .route("/api/audiobooks/jobs", get(audiobooks::jobs))
+        .route("/api/audible/status", get(audible::status))
+        .route("/api/audible/login/start", post(audible::login_start))
+        .route("/api/audible/login/complete", post(audible::login_complete))
+        .route("/api/audible/logout", post(audible::logout))
         .nest_service("/plugins", ServeDir::new(&plugins_dir))
         .nest_service(
             "/api/assets",
