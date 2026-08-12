@@ -4838,29 +4838,42 @@ body [class*='_panel_']:has(> .dlPanel) {
 }
 
 .dlPanel__title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
   font-size: var(--glacier-font-size-sm);
   font-weight: var(--glacier-font-weight-semibold);
   color: var(--glacier-text);
 }
 
-.dlPanel__clear {
-  padding: 0;
-  border: none;
-  background: none;
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--glacier-font-size-xs);
-  color: var(--glacier-text-muted);
-}
-
-.dlPanel__clear:hover {
-  color: var(--glacier-text);
-  text-decoration: underline;
+/* The paused notice: a glyph and its sentence on one line. */
+.dlPanel__note {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
 }
 
 .dlPanel__empty {
   padding-block: var(--glacier-space-4);
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+/* The empty queue's mark: the download glyph in a quiet ring, so the panel
+   reads as a place with nothing in it rather than a missing feature. */
+.dlPanel__emptyGlyph {
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--glacier-radius-full);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text-muted);
 }
 
 .dlList {
@@ -4886,13 +4899,53 @@ body [class*='_panel_']:has(> .dlPanel) {
   background: var(--glacier-hover);
 }
 
-.dlCard__art {
-  inline-size: 2.75rem;
-  block-size: 2.75rem;
+/* The art carries the job's verdict on its corner, so the frame is the
+   anchor the badge rides. */
+.dlCard__artWrap {
+  position: relative;
   flex: none;
+}
+
+.dlCard__art {
+  display: block;
+  inline-size: 3rem;
+  block-size: 3rem;
   border-radius: var(--glacier-radius-sm);
   object-fit: cover;
   background: var(--glacier-surface-sunken);
+}
+
+/* The state, worn where every card in the app wears its verdict: a frosted
+   chip on the artwork corner - spinner, check, cross, clock. No words. */
+.dlCard__badge {
+  position: absolute;
+  inset-block-end: -0.3rem;
+  inset-inline-end: -0.3rem;
+  inline-size: 1.15rem;
+  block-size: 1.15rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface, rgba(0, 0, 0, 0.55));
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  color: var(--glacier-text-muted);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.dlCard__badge[data-state='done'] {
+  color: var(--glacier-success-text, var(--glacier-text));
+  border-color: var(--glacier-success-text, var(--glacier-border-subtle));
+}
+
+.dlCard__badge[data-state='error'] {
+  color: var(--glacier-danger-text, var(--glacier-text));
+  border-color: var(--glacier-danger-text, var(--glacier-border-subtle));
+}
+
+.dlCard__badge[data-state='downloading'] {
+  color: var(--glacier-accent-text, var(--glacier-accent-solid));
 }
 
 .dlCard__body {
@@ -4901,13 +4954,6 @@ body [class*='_panel_']:has(> .dlPanel) {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
-}
-
-.dlCard__top {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--glacier-space-2);
 }
 
 .dlCard__title {
@@ -4920,25 +4966,38 @@ body [class*='_panel_']:has(> .dlPanel) {
   color: var(--glacier-text);
 }
 
-.dlCard__state {
-  flex: none;
+/* One quiet line of source and counts: the subtitle gives way, the chips
+   never do. */
+.dlCard__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  min-width: 0;
+}
+
+.dlCard__sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--glacier-font-size-xs);
   color: var(--glacier-text-muted);
 }
 
-.dlCard__state--done {
-  color: var(--glacier-success-text, var(--glacier-text-muted));
+/* A count with its glyph: songs landed, songs already owned. */
+.dlChip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--glacier-radius-full);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  background: var(--glacier-surface);
+  font-size: var(--glacier-font-size-2xs, 0.65rem);
+  font-variant-numeric: tabular-nums;
+  color: var(--glacier-text-muted);
 }
 
-.dlCard__state--error {
-  color: var(--glacier-danger-text, var(--glacier-text-muted));
-}
-
-.dlCard__state--downloading {
-  color: var(--glacier-accent-text, var(--glacier-accent-solid));
-}
-
-.dlCard__sub,
 .dlCard__track,
 .dlCard__error {
   overflow: hidden;
@@ -4949,10 +5008,16 @@ body [class*='_panel_']:has(> .dlPanel) {
 }
 
 .dlCard__track {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
   color: var(--glacier-text);
 }
 
 .dlCard__error {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
   color: var(--glacier-danger-text, var(--glacier-text-muted));
   white-space: normal;
 }
@@ -5120,8 +5185,8 @@ body [class*='_panel_']:has(> .dlPanel) {
   }
 
   .dlCard__art {
-    inline-size: 2.25rem;
-    block-size: 2.25rem;
+    inline-size: 2.5rem;
+    block-size: 2.5rem;
   }
 
   .dlList {

@@ -1,23 +1,21 @@
 import { CounterBadge, IconButton, Popover, ProgressBar, Spinner, Text } from '@glacier/react';
-import { Check, Download, Pause, Play, RotateCw, Trash2, X } from '@glacier/icons';
+import {
+  Check,
+  CheckCheck,
+  Clock,
+  Download,
+  ListX,
+  Music,
+  Pause,
+  Play,
+  RotateCw,
+  Trash2,
+  TriangleAlert,
+  X,
+} from '@glacier/icons';
 import { useDownloads } from '@attackfm/app/importsBridge';
 import type { MusicImportJob } from './musicImport.ts';
 import placeholderArt from './attack-wave.png';
-
-function stateLabel(job: MusicImportJob): string {
-  switch (job.state) {
-    case 'queued':
-      return 'Queued';
-    case 'downloading':
-      return 'Downloading';
-    case 'done':
-      return 'Done';
-    case 'error':
-      return 'Failed';
-    default:
-      return job.state;
-  }
-}
 
 type TrackState = 'done' | 'downloading' | 'error' | 'queued';
 
@@ -36,25 +34,63 @@ function TrackIcon({ state }: { state: TrackState }) {
   return <span className="dlTrack__dot" />;
 }
 
-/** One import in the popover: art, title, progress, live track, and controls. */
+/** The job's state, worn as a badge on its artwork corner - the same place
+ *  every other card in the app carries its verdict, so a glance down the
+ *  queue reads spinner / check / cross with no words at all. */
+function StateBadge({ job }: { job: MusicImportJob }) {
+  if (job.state === 'done')
+    return (
+      <span className="dlCard__badge" data-state="done" title="Done">
+        <Check size={11} />
+      </span>
+    );
+  if (job.state === 'error')
+    return (
+      <span className="dlCard__badge" data-state="error" title="Failed">
+        <X size={11} />
+      </span>
+    );
+  if (job.state === 'downloading')
+    return (
+      <span className="dlCard__badge" data-state="downloading" title="Downloading">
+        <Spinner size="sm" aria-label="Downloading" />
+      </span>
+    );
+  return (
+    <span className="dlCard__badge" data-state="queued" title="Queued">
+      <Clock size={11} />
+    </span>
+  );
+}
+
+/** One import in the popover: art wearing its state, title, icon-chip counts,
+ *  progress, and controls. */
 function JobCard({ job }: { job: MusicImportJob }) {
   const { remove, retry, cancel } = useDownloads();
   const active = job.state === 'queued' || job.state === 'downloading';
   const total = job.total ?? 0;
   return (
     <li className="dlCard">
-      <img className="dlCard__art" src={job.artworkUrl ?? placeholderArt} alt="" loading="lazy" />
+      <span className="dlCard__artWrap">
+        <img className="dlCard__art" src={job.artworkUrl ?? placeholderArt} alt="" loading="lazy" />
+        <StateBadge job={job} />
+      </span>
       <div className="dlCard__body">
-        <div className="dlCard__top">
-          <span className="dlCard__title">{job.title}</span>
-          <span className={`dlCard__state dlCard__state--${job.state}`}>{stateLabel(job)}</span>
-        </div>
-        <span className="dlCard__sub">
-          {job.subtitle ?? 'Music link'}
-          {total > 0 ? ` · ${job.completed}/${total}` : ''}
-          {job.state === 'done' && job.skipped
-            ? ` · ${job.skipped} already in library`
-            : ''}
+        <span className="dlCard__title">{job.title}</span>
+        <span className="dlCard__meta">
+          <span className="dlCard__sub">{job.subtitle ?? 'Music link'}</span>
+          {total > 0 && (
+            <span className="dlChip" title={`${job.completed} of ${total} songs`}>
+              <Music size={11} />
+              {job.completed}/{total}
+            </span>
+          )}
+          {job.state === 'done' && !!job.skipped && (
+            <span className="dlChip" title={`${job.skipped} already in library`}>
+              <CheckCheck size={11} />
+              {job.skipped}
+            </span>
+          )}
         </span>
         {active && (
           <ProgressBar
@@ -67,10 +103,16 @@ function JobCard({ job }: { job: MusicImportJob }) {
             aria-label="Download progress"
           />
         )}
-        {job.state === 'downloading' && job.currentTrack && (
-          <span className="dlCard__track">{job.currentTrack}</span>
+        {job.state === 'downloading' && job.currentTrack && job.tracks.length === 0 && (
+          <span className="dlCard__track">
+            <Spinner size="sm" aria-label="" /> {job.currentTrack}
+          </span>
         )}
-        {job.state === 'error' && job.error && <span className="dlCard__error">{job.error}</span>}
+        {job.state === 'error' && job.error && (
+          <span className="dlCard__error">
+            <TriangleAlert size={11} /> {job.error}
+          </span>
+        )}
         {job.tracks.length > 0 && (
           <ol className="dlTracks">
             {job.tracks.map((title, i) => {
@@ -125,32 +167,40 @@ export function DownloadsButton() {
     >
       <div className="dlPanel">
         <div className="dlPanel__head">
-          <span className="dlPanel__title">Downloads</span>
+          <span className="dlPanel__title">
+            <Download size={14} /> Downloads
+            {active.length > 0 && (
+              <CounterBadge count={active.length} tone="accent" size="sm" />
+            )}
+          </span>
           <div className="dlPanel__actions">
             {active.length > 0 &&
               (paused ? (
-                <IconButton variant="ghost" size="sm" aria-label="Resume downloads" onClick={() => setPaused(false)}>
+                <IconButton variant="ghost" size="sm" aria-label="Resume downloads" title="Resume" onClick={() => setPaused(false)}>
                   <Play size={15} />
                 </IconButton>
               ) : (
-                <IconButton variant="ghost" size="sm" aria-label="Pause downloads" onClick={() => setPaused(true)}>
+                <IconButton variant="ghost" size="sm" aria-label="Pause downloads" title="Pause" onClick={() => setPaused(true)}>
                   <Pause size={15} />
                 </IconButton>
               ))}
             {hasFinished && (
-              <button type="button" className="dlPanel__clear" onClick={clearFinished}>
-                Clear finished
-              </button>
+              <IconButton variant="ghost" size="sm" aria-label="Clear finished" title="Clear finished" onClick={clearFinished}>
+                <ListX size={15} />
+              </IconButton>
             )}
           </div>
         </div>
         {paused && active.length > 0 && (
-          <Text tone="muted" size="xs">
-            Paused — active downloads finish, new ones wait.
+          <Text tone="muted" size="xs" className="dlPanel__note">
+            <Pause size={11} /> Paused — active downloads finish, new ones wait.
           </Text>
         )}
         {jobs.length === 0 ? (
           <div className="dlPanel__empty">
+            <span className="dlPanel__emptyGlyph" aria-hidden>
+              <Download size={18} />
+            </span>
             <Text tone="muted" size="sm">
               Paste a Spotify link into search to queue a download.
             </Text>

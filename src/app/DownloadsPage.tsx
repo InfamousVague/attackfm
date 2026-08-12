@@ -1,5 +1,5 @@
 import { Button, ProgressBar, Spinner } from '@glacier/react';
-import { Check, Pause, Play, RotateCcw, Trash2, X } from '@glacier/icons';
+import { Check, CheckCheck, Clock, ListX, Music, Pause, Play, RotateCcw, Trash2, TriangleAlert, X } from '@glacier/icons';
 import { useDownloadsOptional, type MusicImportJob } from '../plugins/importsBridge.ts';
 import { EmptyArt } from './EmptyArt.tsx';
 import { artSized } from './server.ts';
@@ -12,19 +12,6 @@ import placeholderArt from '../assets/attack-wave.png';
  * points at Plugins when no importer is on, and otherwise lists every job with
  * its live state and the controls to pause, retry, cancel, or clear.
  */
-
-function stateLabel(job: MusicImportJob): string {
-  switch (job.state) {
-    case 'done':
-      return 'Done';
-    case 'downloading':
-      return 'Downloading';
-    case 'error':
-      return 'Failed';
-    default:
-      return 'Queued';
-  }
-}
 
 /** One song's place in its album/playlist import, derived the same way the
  *  importer popover derives it - the two surfaces must never disagree. */
@@ -42,6 +29,34 @@ function TrackIcon({ state }: { state: TrackState }) {
   if (state === 'downloading') return <Spinner size="sm" aria-label="" />;
   if (state === 'error') return <X size={13} />;
   return <span className="dlTrack__dot" />;
+}
+
+/** The job's state as a badge on its artwork corner - spinner, check or
+ *  cross where every other card in the app wears its verdict, no words. */
+function StateBadge({ job }: { job: MusicImportJob }) {
+  if (job.state === 'done')
+    return (
+      <span className="dlCard__badge" data-state="done" title="Done">
+        <Check size={11} />
+      </span>
+    );
+  if (job.state === 'error')
+    return (
+      <span className="dlCard__badge" data-state="error" title="Failed">
+        <X size={11} />
+      </span>
+    );
+  if (job.state === 'downloading')
+    return (
+      <span className="dlCard__badge" data-state="downloading" title="Downloading">
+        <Spinner size="sm" aria-label="Downloading" />
+      </span>
+    );
+  return (
+    <span className="dlCard__badge" data-state="queued" title="Queued">
+      <Clock size={11} />
+    </span>
+  );
 }
 
 function JobCard({
@@ -63,16 +78,26 @@ function JobCard({
   const art = useArtLoad(artSrc, 'dlCard__art');
   return (
     <li className="dlCard">
-      <img {...art} src={artSrc} alt="" loading="lazy" />
+      <span className="dlCard__artWrap">
+        <img {...art} src={artSrc} alt="" loading="lazy" />
+        <StateBadge job={job} />
+      </span>
       <div className="dlCard__body">
-        <div className="dlCard__top">
-          <span className="dlCard__title">{job.title}</span>
-          <span className={`dlCard__state dlCard__state--${job.state}`}>{stateLabel(job)}</span>
-        </div>
-        <span className="dlCard__sub">
-          {job.subtitle ?? 'Music link'}
-          {total > 0 ? ` · ${job.completed}/${total}` : ''}
-          {job.state === 'done' && job.skipped ? ` · ${job.skipped} already in library` : ''}
+        <span className="dlCard__title">{job.title}</span>
+        <span className="dlCard__meta">
+          <span className="dlCard__sub">{job.subtitle ?? 'Music link'}</span>
+          {total > 0 && (
+            <span className="dlChip" title={`${job.completed} of ${total} songs`}>
+              <Music size={11} />
+              {job.completed}/{total}
+            </span>
+          )}
+          {job.state === 'done' && !!job.skipped && (
+            <span className="dlChip" title={`${job.skipped} already in library`}>
+              <CheckCheck size={11} />
+              {job.skipped}
+            </span>
+          )}
         </span>
         {active && (
           <ProgressBar
@@ -85,10 +110,16 @@ function JobCard({
             aria-label="Download progress"
           />
         )}
-        {job.state === 'downloading' && job.currentTrack && (
-          <span className="dlCard__track">{job.currentTrack}</span>
+        {job.state === 'downloading' && job.currentTrack && job.tracks.length === 0 && (
+          <span className="dlCard__track">
+            <Spinner size="sm" aria-label="" /> {job.currentTrack}
+          </span>
         )}
-        {job.state === 'error' && job.error && <span className="dlCard__error">{job.error}</span>}
+        {job.state === 'error' && job.error && (
+          <span className="dlCard__error">
+            <TriangleAlert size={11} /> {job.error}
+          </span>
+        )}
         {/* The whole album/playlist, song by song - what has landed, what is
             coming down right now, what still waits - visible on the page for
             active AND finished jobs alike, matching the importer popover. */}
@@ -110,16 +141,16 @@ function JobCard({
       </div>
       <div className="dlCard__actions">
         {job.state === 'error' && (
-          <button type="button" className="dlCard__act" aria-label="Retry" onClick={onRetry}>
+          <button type="button" className="dlCard__act" aria-label="Retry" title="Retry" onClick={onRetry}>
             <RotateCcw size={16} />
           </button>
         )}
         {active ? (
-          <button type="button" className="dlCard__act" aria-label="Cancel" onClick={onCancel}>
+          <button type="button" className="dlCard__act" aria-label="Cancel" title="Cancel" onClick={onCancel}>
             <X size={16} />
           </button>
         ) : (
-          <button type="button" className="dlCard__act" aria-label="Remove" onClick={onRemove}>
+          <button type="button" className="dlCard__act" aria-label="Remove" title="Remove" onClick={onRemove}>
             <Trash2 size={16} />
           </button>
         )}
@@ -159,8 +190,9 @@ export function DownloadsPage() {
             <span>{paused ? 'Resume' : 'Pause'}</span>
           </Button>
           {hasFinished && (
-            <Button variant="ghost" size="sm" onClick={clearFinished}>
-              Clear finished
+            <Button variant="ghost" size="sm" onClick={clearFinished} title="Clear finished">
+              <ListX size={15} />
+              <span>Clear finished</span>
             </Button>
           )}
         </div>
