@@ -1,9 +1,12 @@
 import { ContextMenu, MenuItem } from '@glacier/react';
-import { ListEnd, ListMusic, ListStart } from '@glacier/icons';
-import { useState, type ReactNode } from 'react';
+import { ArrowDownToLine, Check, ListEnd, ListMusic, ListStart, Trash2 } from '@glacier/icons';
+import { useEffect, useState, type ReactNode } from 'react';
 import { AddToPlaylistDialog } from './AddToPlaylist.tsx';
 import { useQueueControls } from './queueControls.tsx';
-import type { Track } from './tauri.ts';
+import { isHeld, onOfflineChange, pinTrack, unpinTrack } from './offline.ts';
+import { useServerSession } from './serverSession.tsx';
+import { streamUrl, trackIdFromPath } from './server.ts';
+import { isTauri, type Track } from './tauri.ts';
 
 /**
  * The three things you can do to a song that are not "play it", wrapped around
@@ -35,6 +38,28 @@ export function TrackMenu({
 }) {
   const { playNext, addToQueue, inJam } = useQueueControls();
   const [filing, setFiling] = useState(false);
+  // Keeping a song is only offered where it means something: a phone or
+  // desktop app (a browser tab has no disk of ours) holding a track that came
+  // from a server (a local file is already on this machine).
+  const { session } = useServerSession();
+  const trackId = trackIdFromPath(track.path);
+  const canKeep = isTauri() && session !== null && trackId !== null;
+  const [keeping, setKeeping] = useState(false);
+  const [held, setHeld] = useState(() => isHeld(track.path));
+  useEffect(() => {
+    setHeld(isHeld(track.path));
+    return onOfflineChange(() => setHeld(isHeld(track.path)));
+  }, [track.path]);
+
+  const keep = async () => {
+    if (!session || trackId === null || keeping) return;
+    setKeeping(true);
+    try {
+      await pinTrack(track, streamUrl(session, trackId));
+    } finally {
+      setKeeping(false);
+    }
+  };
 
   return (
     <>
@@ -55,6 +80,22 @@ export function TrackMenu({
             <MenuItem icon={<ListMusic size={15} />} onSelect={() => setFiling(true)}>
               Add to playlist…
             </MenuItem>
+            {/* The song, on this device: it plays with the hub off, the wifi
+                gone, or the plane door shut. Held songs offer the way back
+                out, since the whole point is that the space is yours. */}
+            {canKeep &&
+              (held ? (
+                <MenuItem icon={<Trash2 size={15} />} onSelect={() => void unpinTrack(track.path)}>
+                  Remove from this device
+                </MenuItem>
+              ) : (
+                <MenuItem
+                  icon={keeping ? <Check size={15} /> : <ArrowDownToLine size={15} />}
+                  onSelect={() => void keep()}
+                >
+                  {keeping ? 'Keeping…' : 'Keep on this device'}
+                </MenuItem>
+              ))}
           </>
         }
       >
