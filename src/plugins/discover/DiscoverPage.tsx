@@ -1,4 +1,4 @@
-import { Modal, Text } from '@glacier/react';
+import { Button, Modal, Text } from '@glacier/react';
 import { Check, Compass, ListMusic, Music, Play, Plus, Sparkles } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRippleWave } from '../../app/rippleWave.ts';
@@ -14,6 +14,7 @@ import {
   type Suggestion,
 } from '../../app/server.ts';
 import { useArtLoad } from '../../app/artLoad.ts';
+import { EmptyArt } from '../../app/EmptyArt.tsx';
 import type { AcquireTarget, PluginPageProps } from '../types.ts';
 import { IMPORTER_PLUGIN_ID, useAcquire } from '../runtime.tsx';
 import { useDownloadsOptional } from '../importsBridge.ts';
@@ -624,7 +625,25 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
             </section>
           );
         })
-      ) : null}
+      ) : hero || shelfSets.length > 0 ? null : (
+        /* Nothing from the hub and nothing of our own to show. A bare header
+           reads as a page that failed to load - and, since there is nothing
+           below it, as one that will not even scroll. Say what is actually
+           true instead, and offer the one thing that might change it. */
+        <div className="emptyState emptyState--tall">
+          <EmptyArt name="discovery" />
+          <p className="emptyState__text">
+            {session
+              ? 'Nothing to suggest yet. Your server builds this from charts and from what you play, so it fills in once it has both — play a few things, or try again.'
+              : 'Discover comes from your server. Sign in to one and this fills with charts and picks made from what you play.'}
+          </p>
+          {session && (
+            <Button variant="outline" size="sm" onClick={() => void refresh()}>
+              Try again
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* A set, read in full: owned rows play right now (the row IS the
           playlist entry), discovery rows carry the same add-then-play the
