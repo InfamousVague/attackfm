@@ -13,10 +13,16 @@ import './app/app.css';
 import { App } from './app/App.tsx';
 import { runColdStartMaintenance } from './app/coldStart.ts';
 import { initDeepLinks } from './app/deepLink.ts';
+import { hydrateOffline } from './app/offline.ts';
 
 // Before the first provider runs, so nothing reads a feed cache that a killed
 // app was meant to have forgotten. Cheap, synchronous, and a no-op on resume.
 runColdStartMaintenance();
+
+// What this device already holds, read once from the folder that IS the index
+// (offline.ts): playback consults the map synchronously, so it has to be warm
+// before the first track loads. A no-op in a browser tab.
+void hydrateOffline();
 
 // Catch an invite link the app was opened with (or is handed while running) and
 // hold it for Join a server. Fire-and-forget; a no-op off a device.

@@ -18,6 +18,7 @@ import {
 } from '@glacier/react';
 import { accentOptions, accentSteps } from '@glacier/tokens';
 import {
+  ArrowDownToLine,
   Blocks,
   ChevronLeft,
   ChevronRight,
@@ -65,6 +66,8 @@ import { CuratorSettings } from './CuratorSettings.tsx';
 import { useConnect } from './playbackSync.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { ServerSettings } from './ServerSettings.tsx';
+import { OfflineSettings } from './OfflineSettings.tsx';
+import { heldCount, onOfflineChange } from './offline.ts';
 import { ThemeSelector } from './ThemeSelector.tsx';
 import { getThemePreset, THEME_PRESETS, type ThemePreference } from './themePresets.ts';
 
@@ -1238,6 +1241,10 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   ].filter(Boolean);
   const online = devices.filter((d) => d.online).length;
   const enabledPlugins = allPlugins.filter((p) => isEnabled(p.id)).length;
+  // The rail's one-line reading of the vault. Subscribed rather than read once:
+  // pinning happens from song menus while Settings is open behind them.
+  const [offlineHeld, setOfflineHeld] = useState(() => heldCount());
+  useEffect(() => onOfflineChange(() => setOfflineHeld(heldCount())), []);
 
   const sections: SettingsSection[] = [
     {
@@ -1290,6 +1297,15 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       content: <CuratorSettings />,
       summary: session ? 'Autonomous downloads and mixes' : 'Needs a server',
       tint: 'purple',
+      group: 1,
+    },
+    {
+      id: 'offline',
+      label: 'Offline',
+      icon: <ArrowDownToLine size={16} />,
+      content: <OfflineSettings />,
+      summary: offlineHeld > 0 ? `${offlineHeld} kept on this device` : 'Nothing kept yet',
+      tint: 'green',
       group: 1,
     },
     {

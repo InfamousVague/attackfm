@@ -24,6 +24,10 @@ mod ios_audio;
 // the native template UI in gen/apple/Sources/app/carplay.m.
 mod carplay;
 
+// Your own library, held on the device for offline play. Not the import
+// engine - see offline.rs's header for why that distinction is load-bearing.
+mod offline;
+
 // The native audio engine seam. Compiled everywhere so the frontend can probe
 // unconditionally; only iOS links the real Swift engine (AudioEngine.swift).
 mod native_audio;
@@ -226,6 +230,10 @@ fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'stat
         native_audio::native_audio_set_volume,
         native_audio::native_audio_teardown,
         native_audio::native_audio_poll,
+        offline::offline_list,
+        offline::offline_pin,
+        offline::offline_unpin,
+        offline::offline_clear,
     ]
 }
 
@@ -253,5 +261,9 @@ fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'stat
         native_audio::native_audio_set_volume,
         native_audio::native_audio_teardown,
         native_audio::native_audio_poll,
+        offline::offline_list,
+        offline::offline_pin,
+        offline::offline_unpin,
+        offline::offline_clear,
     ]
 }

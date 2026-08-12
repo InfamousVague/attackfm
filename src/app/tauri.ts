@@ -414,6 +414,22 @@ export async function systemOutputVolume(): Promise<number> {
  * The asset scope in tauri.conf.json must cover the file (the audio + home trees).
  */
 export async function loadAudioUrl(path: string): Promise<string | null> {
+  // A copy on this device wins over the wire, always: it plays with no
+  // network at all, costs the hub nothing, and starts instantly. The asset
+  // protocol serves it range-capable and CORS-clean, so the analyser - and
+  // with it the seek bar's beat and levels - reads exactly as it does from
+  // the server. See offline.ts; the map is a cache of the folder, so a file
+  // deleted underneath us simply falls through to the stream below.
+  const local = offlineResolver?.(path) ?? null;
+  if (local && isTauri()) {
+    try {
+      const { convertFileSrc } = await import('@tauri-apps/api/core');
+      return convertFileSrc(local);
+    } catch {
+      // Fall through to the network rather than failing the load.
+    }
+  }
+
   // A server track resolves to an ordinary HTTPS URL, which the element plays
   // exactly the way it plays the asset protocol - and, being CORS-clean, reads
   // through the analyser the same way too. The whole remote-library feature
@@ -444,6 +460,17 @@ export async function loadAudioUrl(path: string): Promise<string | null> {
 type RemoteResolver = (path: string) => string | null;
 
 let remoteResolver: RemoteResolver | null = null;
+
+/**
+ * The same seam for the offline vault, and for the same reason: this module
+ * sits at the bottom of the import graph (nothing here imports the app), so
+ * the vault registers itself rather than being imported. See offline.ts.
+ */
+let offlineResolver: RemoteResolver | null = null;
+
+export function setOfflineAudioResolver(resolver: RemoteResolver | null): void {
+  offlineResolver = resolver;
+}
 
 export function setRemoteAudioResolver(resolver: RemoteResolver | null): void {
   remoteResolver = resolver;
