@@ -507,6 +507,7 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
         onBack={() => setArtistTrail((t) => t.slice(0, -1))}
         onOpenArtist={(id, name) => setArtistTrail((t) => [...t, { id, name }])}
         onTrackQueued={setPlayWhenAdded}
+        onPlay={onPlay}
       />
     );
   }
