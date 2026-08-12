@@ -1,18 +1,15 @@
 import {
-  ContextMenu,
   DataGrid,
-  MenuItem,
   type DataGridColumn,
   type DataGridRow,
   type DataGridSort,
 } from '@glacier/react';
-import { Clock, ListEnd, ListMusic, ListStart } from '@glacier/icons';
-import { useMemo, useState } from 'react';
+import { Clock } from '@glacier/icons';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useLibrary } from './library.tsx';
-import { AddToPlaylistDialog } from './AddToPlaylist.tsx';
-import { useQueueControls } from './queueControls.tsx';
 import { hasLocalLibrary } from './platform.ts';
 import { useNarrowViewport } from './useNarrowViewport.ts';
+import { TrackMenu } from './TrackMenu.tsx';
 import type { Track } from './tauri.ts';
 import { artSized } from './server.ts';
 import { useArtLoad } from './artLoad.ts';
@@ -31,6 +28,18 @@ const DATE_FORMAT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'n
 
 // The order the table opens in: newest additions first.
 const DEFAULT_SORT: DataGridSort = { columnKey: 'addedAt', direction: 'desc' };
+
+/** The shared song menu, for a cell that only knows its row. A row whose
+ *  track has just left the library (a sync delta mid-render) simply draws
+ *  without a menu rather than vanishing. */
+function SongTitleMenu({ track, children }: { track: Track | null; children: ReactNode }) {
+  if (!track) return <>{children}</>;
+  return (
+    <TrackMenu track={track} className="songTitleMenuTarget">
+      {children}
+    </TrackMenu>
+  );
+}
 
 // The grid's own comparator, verbatim, so the queue handed to the player is
 // the rows exactly as the user sees them - same accessor, same direction,
@@ -123,9 +132,6 @@ export function SongTable({
 }) {
   const library = useLibrary();
   const tracks = tracksProp ?? library.tracks;
-  // The song the add-to-playlist sheet is filing, or null when it is shut. A
-  // context menu has no anchor for a popover, so this path opens the dialog.
-  const [filing, setFiling] = useState<Track | null>(null);
 
   // The sort is lifted out of the grid (controlled) for one reason: the play
   // queue has to be the rows as displayed, and only the sort says what that
@@ -135,7 +141,6 @@ export function SongTable({
   // The grid's rows carry the path as their id; the panel wants the track. One
   // index resolves the one back to the other.
   const byPath = useMemo(() => new Map(tracks.map((t) => [t.path, t] as const)), [tracks]);
-  const { playNext, addToQueue, inJam } = useQueueControls();
 
   // A phone has room for the song and its length, and nothing else. Album and
   // the date added are dropped rather than squeezed - the title cell already
@@ -155,44 +160,7 @@ export function SongTable({
           ? {
               ...col,
               render: (row) => (
-                <ContextMenu
-                  aria-label={`${row.title as string} actions`}
-                  className="songTitleMenuTarget"
-                  content={
-                    <>
-                      <MenuItem
-                        icon={<ListStart size={15} />}
-                        onSelect={() => {
-                          const track = byPath.get(row.id as string);
-                          if (track) playNext(track);
-                        }}
-                      >
-                        Play next
-                      </MenuItem>
-                      <MenuItem
-                        icon={<ListEnd size={15} />}
-                        onSelect={() => {
-                          const track = byPath.get(row.id as string);
-                          if (track) addToQueue(track);
-                        }}
-                      >
-                        {inJam ? 'Add to jam queue' : 'Add to queue'}
-                      </MenuItem>
-                      {/* One item, not a submenu of every list: the panel it opens
-                          can search, create and un-add, none of which a nested
-                          menu of names can do. */}
-                      <MenuItem
-                        icon={<ListMusic size={15} />}
-                        onSelect={() => {
-                          const track = byPath.get(row.id as string);
-                          if (track) setFiling(track);
-                        }}
-                      >
-                        Add to playlist…
-                      </MenuItem>
-                    </>
-                  }
-                >
+                <SongTitleMenu track={byPath.get(row.id as string) ?? null}>
                   <div className="songTitleCell">
                     <SongArt artwork={row.artwork as string | null} />
                     <div className="songTitleText">
@@ -213,12 +181,12 @@ export function SongTable({
                       )}
                     </div>
                   </div>
-                </ContextMenu>
+                </SongTitleMenu>
               ),
             }
           : col,
       ),
-    [onOpenArtist, narrow, byPath, playNext, addToQueue, inJam],
+    [onOpenArtist, narrow, byPath],
   );
 
   const rows: DataGridRow[] = tracks.map((track) => ({
@@ -278,7 +246,6 @@ export function SongTable({
         if (track) onPlay(track, displayed);
       }}
     />
-    <AddToPlaylistDialog track={filing} open={filing !== null} onClose={() => setFiling(null)} />
     </>
   );
 }

@@ -9899,3 +9899,10 @@ button.artistAlbum {
   font-family: var(--glacier-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   letter-spacing: 0.1em;
 }
+
+/* More wrappers that must not become layout: see .playlistRowMenu. */
+.playlistModalMenu,
+.discoverSetRowMenu,
+.songTitleMenuTarget {
+  display: contents;
+}

@@ -15,6 +15,7 @@ import {
 } from '../../app/server.ts';
 import { useArtLoad } from '../../app/artLoad.ts';
 import { EmptyArt } from '../../app/EmptyArt.tsx';
+import { TrackMenu } from '../../app/TrackMenu.tsx';
 import type { AcquireTarget, PluginPageProps } from '../types.ts';
 import { IMPORTER_PLUGIN_ID, useAcquire } from '../runtime.tsx';
 import { useDownloadsOptional } from '../importsBridge.ts';
@@ -656,8 +657,8 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
             </Text>
             {openSet.kind === 'owned'
               ? openSet.tracks!.map((t) => (
+                  <TrackMenu key={t.path} track={t} className="discoverSetRowMenu">
                   <button
-                    key={t.path}
                     type="button"
                     className="discoverSetRow"
                     onClick={() => {
@@ -676,6 +677,7 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
                       <Play size={14} />
                     </span>
                   </button>
+                  </TrackMenu>
                 ))
               : openSet.discoveries!.map((d) => {
                   const state = discoveryState(d);
