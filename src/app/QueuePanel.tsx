@@ -13,6 +13,7 @@ import { useEffect, useState } from 'react';
 import { artSized } from './server.ts';
 import { useArtLoad } from './artLoad.ts';
 import { useRadioOptional } from './radio.tsx';
+import { TrackMenu } from './TrackMenu.tsx';
 import { fetchHousehold, type HouseholdPerson } from './server.ts';
 import { useServerSession } from './serverSession.tsx';
 import type { Track } from './tauri.ts';
@@ -168,6 +169,10 @@ export function QueuePanel({
               getLabel={(r) => r.track.title}
               className="queueSortable"
               renderItem={(r) => (
+                /* The queue is a list of songs like any other, so it carries
+                   the same menu - file one you like into a playlist without
+                   going to find it again somewhere that had a menu. */
+                <TrackMenu track={r.track} className="queueRowMenu">
                 <div className="queueRow">
                   <button
                     type="button"
@@ -189,6 +194,7 @@ export function QueuePanel({
                     <X size={16} />
                   </IconButton>
                 </div>
+                </TrackMenu>
               )}
             />
           )}
