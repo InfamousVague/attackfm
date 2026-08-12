@@ -145,12 +145,11 @@ interface ResolvedMix {
 
 /** The served URL for the object a mix's name earns, or null for the mosaic. */
 function mixArt(
-  session: { url: string },
   title: string,
   opts: { id: string; curated?: boolean; flavor?: 'ai' | 'heuristic' },
 ): string | null {
   const slug = mixArtwork(title, opts);
-  return slug ? artworkUrl(session, slug) : null;
+  return slug ? artworkUrl(slug) : null;
 }
 
 /** A shelf: a heading and a horizontal run of cards. Renders nothing when
@@ -413,10 +412,7 @@ export function HomePage({
         {curated.map((mix) => (
           <button key={mix.id} type="button" className="mixCard" onClick={() => setOpenMix(mix)}>
             <span className="mixCardCoverWrap">
-              <MixCover
-                tracks={mix.tracks}
-                art={session ? mixArt(session, mix.title, { id: mix.id, curated: true }) : null}
-              />
+              <MixCover tracks={mix.tracks} art={mixArt(mix.title, { id: mix.id, curated: true })} />
               {mix.flavor === 'ai' && (
                 <Pill size="sm" tone="accent" className="mixCardBadge">
                   AI
@@ -451,10 +447,7 @@ export function HomePage({
                 needs the whole line to say what it is, and a badge that
                 shares it was the first thing a truncation had to eat. */}
             <span className="mixCardCoverWrap">
-              <MixCover
-                tracks={mix.tracks}
-                art={session ? mixArt(session, mix.title, { id: mix.id, flavor: mix.flavor }) : null}
-              />
+              <MixCover tracks={mix.tracks} art={mixArt(mix.title, { id: mix.id, flavor: mix.flavor })} />
               {mix.flavor === 'ai' && (
                 <Pill size="sm" tone="accent" className="mixCardBadge">
                   AI

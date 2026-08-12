@@ -1,15 +1,24 @@
-//! The generated artwork set: frosted-physical stills served by the home
-//! server at `/api/assets` (see attackfm-artwork-plan.md - the app's own
-//! material language, one object standing for each genre, mood, decade and
-//! empty state). This module is the ONE table of what exists and what wears
-//! it: surfaces ask by meaning (a genre name, a mix title, an empty-state
-//! name) and get a slug or null - never a URL they built themselves. Every
-//! consumer keeps its old face as the fallback, so a server without the set
-//! (or no server at all) looks exactly like yesterday.
+//! The generated artwork set: frosted-physical stills (see
+//! attackfm-artwork-plan.md - the app's own material language, one object
+//! standing for each genre, mood, decade and empty state). This module is the
+//! ONE table of what exists and what wears it: surfaces ask by meaning (a
+//! genre name, a mix title, an empty-state name) and get a slug or null -
+//! never a URL they built themselves. Every consumer keeps its old face as
+//! the fallback, so an unreachable host looks exactly like yesterday.
+//!
+//! Served from the MAIN server (the same always-on box that runs the
+//! registry), not from each library server: the set is one shared body of
+//! art, not per-library data, so every install sees it without every home
+//! hub having to carry and update its own copy. Publish once with
+//! `npm run redeploy -- assets`.
+
+const ASSETS_URL =
+  (import.meta.env?.VITE_ASSETS_URL as string | undefined)?.replace(/\/+$/, '') ||
+  'https://matt.attack.fm/api/assets';
 
 /** A served asset's URL. Unauthenticated, cacheable, plain JPEG. */
-export function artworkUrl(session: { url: string }, slug: string): string {
-  return `${session.url.replace(/\/+$/, '')}/api/assets/${slug}.jpg`;
+export function artworkUrl(slug: string): string {
+  return `${ASSETS_URL}/${slug}.jpg`;
 }
 
 /** "Hip-Hop" / "hip hop" / "R&B" → one comparable key. */

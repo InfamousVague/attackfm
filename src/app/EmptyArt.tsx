@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { artworkUrl, emptyArtwork } from './artwork.ts';
-import { useServerSession } from './serverSession.tsx';
 import discoveryDark from '../assets/empty/discovery-dark.png';
 import discoveryLight from '../assets/empty/discovery-light.png';
 import downloadsDark from '../assets/empty/downloads-dark.png';
@@ -46,14 +45,13 @@ const ART: Record<EmptyArtName, { light: string; dark: string }> = {
 
 export function EmptyArt({ name, className }: { name: EmptyArtName; className?: string }) {
   const art = ART[name];
-  // The server's generated set replaces the painted pair when a session can
-  // reach it - a frosted object on a card instead of a page-blended wash.
-  // Any failure (old server, offline, missing file) falls back to the pair,
-  // so this never costs an empty state its picture.
-  const { session } = useServerSession();
+  // The main server's generated set replaces the painted pair - a frosted
+  // object on a card instead of a page-blended wash. Any failure (offline,
+  // missing piece) falls back to the pair, so this never costs an empty
+  // state its picture.
   const [failed, setFailed] = useState(false);
   const slug = emptyArtwork(name);
-  const served = session && slug && !failed ? artworkUrl(session, slug) : null;
+  const served = slug && !failed ? artworkUrl(slug) : null;
   return (
     <div className={className ? `emptyArt ${className}` : 'emptyArt'} aria-hidden="true">
       {served ? (
