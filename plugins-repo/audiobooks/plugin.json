@@ -1,0 +1,14 @@
+{
+  "id": "audiobooks",
+  "name": "Audiobooks",
+  "version": "0.1.0",
+  "description": "Public-domain audiobooks from LibriVox: search the catalogue, pull a book into your library, and pick up where you left off.",
+  "author": "AttackFM",
+  "tags": [
+    "Books",
+    "Spoken word"
+  ],
+  "entry": "plugin.ts",
+  "requiresServer": true,
+  "public": true
+}
