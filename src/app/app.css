@@ -1358,13 +1358,33 @@ img {
 }
 
 /* The ⋮ menu's contents live inside the kit Popover panel, which brings the
-   glass, the blur, the shadow, the padding and the portal - so this only lays
-   the rows out and gives them a sensible minimum width. */
+   glass, the blur, the shadow, the padding and the portal - so this lays the
+   rows out and the rule below un-stretches the panel itself. */
 .appNavMore__menu {
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-1);
-  min-inline-size: 12rem;
+}
+
+/* The kit's phone default treats a popover panel as a sheet - pinned to both
+   screen edges - which strands this menu's rows a screen away from the ⋮
+   button that opened them. This one is a MENU: as wide as its longest row
+   (the rows nowrap, so "Downloads" sets it), never past half the screen, and
+   hugging the right edge where its button lives. The custom class rides the
+   panel node itself, so the override needs no kit internals beyond that. */
+/* The class is doubled for specificity, not by accident: Vite injects the
+   kit's module CSS when the component module loads - AFTER this file - so an
+   equal-specificity override loses on order alone. One extra class beats
+   whatever the kit's panel rules weigh without reaching for !important. */
+body .appNavMore.appNavMore[class*='_panel_'] {
+  inline-size: max-content;
+  min-inline-size: 0;
+  max-inline-size: 50vw;
+  /* The kit's POSITIONER (the fixed wrapper floating-ui moves) stays the
+     full-width rail it wants to be; the panel rides its trailing end, which
+     is where the ⋮ button lives. Cheaper and safer than fighting the inline
+     top/left the positioning engine writes every frame. */
+  margin-inline-start: auto;
 }
 
 .appNavBarPlugins__item {
