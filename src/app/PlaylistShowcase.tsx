@@ -7,7 +7,8 @@ import { usePlaylists } from './playlists.tsx';
 import { PluginFence, usePlugins } from '../plugins/runtime.tsx';
 import type { PluginPlaylistTile } from '../plugins/types.ts';
 import { PlaylistModal } from './PlaylistModal.tsx';
-import { HeroArt } from './EmptyArt.tsx';
+import likedChip from '../assets/chip-liked.png';
+import allSongsChip from '../assets/chip-all-songs.png';
 import type { Track } from './tauri.ts';
 
 /**
@@ -182,6 +183,26 @@ export function PlaylistShowcase({
       {/* A shelf like every other on the page: the same heading, the same
           horizontal row - the tiles are just squircles instead of squares.
           The counts that used to crowd this header live in the stats card. */}
+      {/* Liked and All songs are not playlists - they are the whole library,
+          sliced two ways, and they never change, never reorder and cannot be
+          deleted. Sitting them in the playlist grid made them look like two
+          more lists among however many the user has made. They lead now, as a
+          pair of half-width chips: a wide shape rather than a square, because
+          what matters about them is the NAME, and a chip that is half the row
+          says "there are exactly two of these" at a glance. */}
+      <section className="homeShelf libShelf">
+        <div className="libChips">
+          <button type="button" className="libChip" onClick={() => onOpenSongs('liked')}>
+            <img className="libChip__art" src={likedChip} alt="" />
+            <span className="libChip__name">Liked</span>
+          </button>
+          <button type="button" className="libChip" onClick={() => onOpenSongs('all')}>
+            <img className="libChip__art" src={allSongsChip} alt="" />
+            <span className="libChip__name">All songs</span>
+          </button>
+        </div>
+      </section>
+
       <section className="homeShelf">
         <h2 className="homeShelfTitle">Playlists</h2>
         {/* A grid, not a rail: every playlist on screen at once, wrapping
@@ -189,28 +210,6 @@ export function PlaylistShowcase({
             worth does it scroll - the cap keeps a hundred playlists from
             burying the shelves below. */}
         <div className="showcaseGrid">
-            {/* Liked leads, and does NOT look like the playlists: a hero tile
-                wearing the neon heart, opening the whole liked collection as a
-                page you can shuffle. The two library-wide views (Liked, All)
-                are the grid's heroes; the playlists follow as plain squircles. */}
-            <Tile
-              name="Liked"
-              cover={
-                <div className="tileSquircle tileHero tileHero--liked" aria-hidden>
-                  <HeroArt name="liked" />
-                </div>
-              }
-              onOpen={() => onOpenSongs('liked')}
-            />
-            <Tile
-              name="All songs"
-              cover={
-                <div className="tileSquircle tileHero tileHero--all" aria-hidden>
-                  <HeroArt name="library" />
-                </div>
-              }
-              onOpen={() => onOpenSongs('all')}
-            />
             <Tile
               name="Recent"
               cover={
