@@ -2635,6 +2635,9 @@ img.artPop:not([data-loading]) {
   inline-size: 100%;
   block-size: 100%;
   object-fit: cover;
+  /* Rounded in its own right, so the entrance wave's compositing cannot flash
+     square corners past the frame - see .searchGenre__objectArt. */
+  border-radius: inherit;
 }
 
 .suggestCardCover--glyph {
@@ -2830,12 +2833,15 @@ img.artPop:not([data-loading]) {
 .discoverHero__art {
   position: absolute;
   inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
 }
 
 .discoverHero__art img {
   inline-size: 100%;
   block-size: 100%;
   object-fit: cover;
+  border-radius: inherit;
 }
 
 .discoverHero__art .suggestCardCover--glyph {
@@ -2944,6 +2950,8 @@ img.artPop:not([data-loading]) {
   grid-template-columns: 1fr 1fr;
   grid-template-rows: 1fr 1fr;
   gap: 1px;
+  border-radius: inherit;
+  overflow: hidden;
 }
 
 .discoverMosaic img {
@@ -3269,8 +3277,12 @@ img.artPop:not([data-loading]) {
 /* Two passes of the same shot: multiply burns the white ground into the
    gradient, and a screened copy over it puts the object's own highlights
    back - frosted glass reads as glass again instead of a flat tint. */
+/* Both passes wear the cover's own rounding: the shelves ride the same
+   entrance wave as the genre tiles, and a composited layer does not get the
+   parent's clip - see .searchGenre__objectArt. */
 .mixCardCover--object img {
   mix-blend-mode: multiply;
+  border-radius: inherit;
 }
 
 .mixCardCover--object::after {
@@ -3281,6 +3293,7 @@ img.artPop:not([data-loading]) {
   mix-blend-mode: screen;
   opacity: 0.28;
   pointer-events: none;
+  border-radius: inherit;
 }
 
 .mixCardTitle {
@@ -7308,6 +7321,12 @@ body [class*='_panel_']:has(> .dlPanel) {
   block-size: 100%;
   object-fit: cover;
   mix-blend-mode: multiply;
+  /* The tile's own rounding, worn by the picture too. The entrance wave
+     animates opacity and scale, which puts the tile on its own compositing
+     layer - and mid-animation the parent's overflow clip is not applied to
+     the layer, so a square picture flashed its white corners past the
+     radius. A child that is already round has no corners to show. */
+  border-radius: inherit;
 }
 
 /* The tile's gradient gets bolder wherever an object rides it - a deeper,
@@ -7326,6 +7345,7 @@ body [class*='_panel_']:has(> .dlPanel) {
   inset: 0;
   background: linear-gradient(to top, rgb(0 0 0 / 0.5), transparent 55%);
   pointer-events: none;
+  border-radius: inherit;
 }
 
 .searchGenre__name,
@@ -8222,6 +8242,7 @@ body [class*='_panel_']:has(> .dlPanel) {
   mask-image: none;
   object-fit: cover;
   mix-blend-mode: multiply;
+  border-radius: inherit;
 }
 
 /* ---- Skeleton shelves and the library stats card ------------------------ */
