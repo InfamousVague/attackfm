@@ -6978,14 +6978,6 @@ body [class*='_panel_']:has(> .dlPanel) {
   gap: var(--glacier-space-4);
 }
 
-.registryFriends__me {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--glacier-space-2);
-}
-
-.registryFriends__invite,
 .registryFriends__join {
   display: flex;
   flex-direction: column;
@@ -8210,29 +8202,67 @@ button.artistAlbum {
 
 /* Who you are: the page opens on a person - your own mark, your handle - with
    sign-out as a quiet icon rather than a labelled button competing with it. */
-.friendsMe {
+/* Identity + every verb the page owns, in one row. Wraps rather than
+   crushes: on a narrow phone the actions drop under the handle. */
+.friendsHead {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--glacier-space-3);
 }
 
-.friendsMe__body {
+.friendsHead__body {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  min-inline-size: 0;
+  /* Enough claim that a narrow screen wraps the actions under the identity
+     instead of crushing the handle to "@…". */
+  min-inline-size: 9rem;
   flex: 1;
 }
 
-.friendsMe__handle {
+.friendsHead__handle {
   font-size: var(--glacier-font-size-lg);
   font-weight: 700;
   letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.friendsMe__caption {
+.friendsHead__caption {
   color: var(--glacier-text-muted);
   font-size: var(--glacier-font-size-sm);
+}
+
+.friendsHead__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+/* Modal bodies: one calm column, whatever the flow. */
+.friendsModal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+/* The migration aside sits below a hairline so it reads as a footnote to the
+   invite, not a second invite. */
+.friendsModal__aside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding-block-start: var(--glacier-space-3);
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border);
+  align-items: flex-start;
+}
+
+/* The empty page's inline add form: centered with the art it follows. */
+.friendsEmptyAdd {
+  inline-size: min(100%, 22rem);
+  margin-inline: auto;
 }
 
 /* An ask is a decision, so it gets a card with the accent on its edge - the
@@ -8275,30 +8305,6 @@ button.artistAlbum {
   display: flex;
   align-items: center;
   gap: var(--glacier-space-1);
-}
-
-/* Asks still in the air: chips, glanceable and quiet. */
-.friendChips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--glacier-space-2);
-}
-
-.friendChip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--glacier-space-2);
-  padding: var(--glacier-space-1) var(--glacier-space-3) var(--glacier-space-1)
-    var(--glacier-space-1);
-  border: var(--glacier-hairline) solid var(--glacier-border);
-  border-radius: var(--glacier-radius-full);
-  background: var(--glacier-surface);
-  font-size: var(--glacier-font-size-sm);
-}
-
-.friendChip__state {
-  color: var(--glacier-text-muted);
-  font-size: var(--glacier-font-size-xs);
 }
 
 /* The graph itself: a grid of people. Cards, coloured by their owners, with
@@ -8345,6 +8351,32 @@ button.artistAlbum {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The shared listening line: slightly brighter than the meta above it, so a
+   friend who shares reads as playing, not as more bookkeeping. */
+.friendCard__glance {
+  color: var(--glacier-text);
+  font-size: var(--glacier-font-size-xs);
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* An ask still in the air: the same card, worn as a ghost - dashed edge, no
+   remove, waiting to become solid the moment they say yes. */
+.friendCard--waiting {
+  border-style: dashed;
+  background: transparent;
+}
+
+.friendCard--waiting .friendCard__face {
+  opacity: 0.55;
+}
+
+.friendCard--waiting .friendCard__handle {
+  color: var(--glacier-text-muted);
 }
 
 .friendCard__remove {
