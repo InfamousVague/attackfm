@@ -439,11 +439,14 @@ export function HomePage({
       {/* While the curator is still reading the library, say so plainly with
           the count - a shelf that is thin because the work is half done should
           not look like a shelf that is thin because you have no taste. */}
-      {curator && curator.progress.checked < curator.progress.total && (
+      {/* Optional chaining, not just a null check: this can arrive from a
+          cache written by an older shape (or a server mid-upgrade), and a
+          feed that is merely INCOMPLETE must not take the whole page down. */}
+      {curator?.progress && curator.progress.checked < curator.progress.total && (
         <p className="curatorNote">
           Your curator is listening through the library — {curator.progress.checked} of{' '}
           {curator.progress.total} tracks read, {curator.progress.withTempo} with a tempo
-          {curator.status.embeddings ? `, ${curator.progress.withLyrics} with lyrics read` : ''}.
+          {curator.status?.embeddings ? `, ${curator.progress.withLyrics} with lyrics read` : ''}.
         </p>
       )}
 

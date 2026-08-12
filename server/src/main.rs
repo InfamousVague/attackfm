@@ -408,6 +408,7 @@ async fn main() {
         .route("/api/new-music", get(discovery::new_music))
         .route("/api/discoveries/dismiss", post(discovery::dismiss))
         .route("/api/related", get(discovery::related))
+        .route("/api/household", get(radio::household))
         .route("/api/radio", get(radio::radio))
         .route("/api/rewind", get(rewind::rewind))
         .route("/api/connect", get(connect::connect))

@@ -2995,6 +2995,243 @@ img.artPop:not([data-loading]) {
   pointer-events: none;
 }
 
+/* ---- Audiobooks: the shelf, the queue, the catalogue -------------------- */
+
+/* Books stand like spines pulled forward: taller cards than the music grids,
+   because a cover that carries a TITLE needs the height to be read. */
+.booksShelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  gap: var(--glacier-space-4) var(--glacier-space-3);
+}
+
+.bookCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.bookCard__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: start;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.bookCard__cover {
+  position: relative;
+  inline-size: 100%;
+  aspect-ratio: 1;
+  border-radius: var(--glacier-radius-lg);
+  overflow: hidden;
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  background: var(--glacier-surface-sunken);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--glacier-accent-text);
+  margin-block-end: var(--glacier-space-1);
+}
+
+.bookCard__cover img {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+/* The play, riding the cover's corner the way the owned badge rides a row:
+   visible on hover so the card says what a tap does. */
+.bookCard__play {
+  position: absolute;
+  inset-block-end: var(--glacier-space-2);
+  inset-inline-end: var(--glacier-space-2);
+  inline-size: 2rem;
+  block-size: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-on-accent, #fff);
+  opacity: 0;
+  transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.bookCard__body:hover .bookCard__play,
+.bookCard__body:focus-visible .bookCard__play {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .bookCard__play {
+    opacity: 0.85;
+  }
+}
+
+.bookCard__title {
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bookCard__author {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bookCard__standing {
+  color: var(--glacier-accent-text);
+  font-size: var(--glacier-font-size-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The chapter-list door, tucked against the card's title row. */
+.bookCard__chapters {
+  position: absolute;
+  inset-block-start: calc(100% - 4.2rem);
+  inset-inline-end: 0;
+  inline-size: 1.6rem;
+  block-size: 1.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--glacier-radius-full);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  background: var(--glacier-surface);
+  color: var(--glacier-text-muted);
+  cursor: pointer;
+}
+
+.bookCard__chapters:hover {
+  color: var(--glacier-text);
+  background: var(--glacier-hover);
+}
+
+/* A download on its way in: a row wearing its cover and a thin progress rail. */
+.bookJobs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.bookJob {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+}
+
+.bookJob[data-state='error'] {
+  border-color: var(--glacier-danger-border, #7a2f29);
+}
+
+.bookJob__cover {
+  flex: none;
+  inline-size: 2.4rem;
+  block-size: 2.4rem;
+  border-radius: var(--glacier-radius-sm);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-accent-text);
+}
+
+.bookJob__cover img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.bookJob__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.bookJob__title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bookJob__sub {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bookJob[data-state='error'] .bookJob__sub {
+  color: var(--glacier-danger-text, #e08a82);
+}
+
+.bookJob__bar {
+  flex: none;
+  inline-size: 5rem;
+  block-size: 4px;
+  border-radius: 2px;
+  background: var(--glacier-surface-sunken);
+  overflow: hidden;
+}
+
+.bookJob__fill {
+  display: block;
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--glacier-accent-solid);
+  transition: width 0.4s var(--glacier-ease-out);
+}
+
+/* The catalogue rows share the discover set-row family; these are just the
+   page's own small states. */
+.bookResults {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  margin-block-start: var(--glacier-space-2);
+}
+
+.booksSearching {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  margin-block-start: var(--glacier-space-2);
+}
+
+.booksEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-6) var(--glacier-space-4);
+  color: var(--glacier-text-subtle);
+  text-align: center;
+}
+
 /* A set, read in full inside the modal: rows that play (owned) or add
    (discoveries), each wearing its cover. */
 .discoverSetList {
@@ -9523,4 +9760,41 @@ button.artistAlbum {
 .radioBar__dial > :nth-child(2) {
   flex: 1;
   min-inline-size: 0;
+}
+
+/* Two people, one station: the blend picker under the dials. */
+.radioBar__blend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+/* ---- The household ------------------------------------------------------ */
+
+/* Accounts this device knows, as faces you can take. */
+.householdRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+}
+
+.householdCard {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-2);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+}
+
+.householdCard__name {
+  font-weight: 600;
+  max-inline-size: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

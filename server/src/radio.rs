@@ -47,6 +47,9 @@ pub struct RadioQuery {
     pub n: Option<usize>,
     /// Comma-separated ids the client already holds, so pages do not repeat.
     pub exclude: Option<String>,
+    /// Blend: another account on this server whose taste joins the search, so
+    /// a station can belong to two people in a house rather than one.
+    pub with: Option<i64>,
 }
 
 /// How many of the best candidates go into the hat. Wide enough that the same
@@ -61,6 +64,45 @@ fn parse_ids(raw: &Option<String>) -> HashSet<i64> {
     raw.as_deref()
         .map(|s| s.split(',').filter_map(|p| p.trim().parse::<i64>().ok()).collect())
         .unwrap_or_default()
+}
+
+/// A blend's score: the WORSE of the two tastes, not the average.
+///
+/// An average lets one person's obsession carry a track neither would have
+/// chosen together - it is how "our" playlists end up being one person's.
+/// Taking the minimum means every song has to clear a bar with both, which is
+/// what a room full of two people actually needs. A small bonus goes to what
+/// they BOTH already play: the common ground is the point of a blend.
+fn blended(mine: f32, theirs: f32, shared: bool) -> f32 {
+    let base = mine.min(theirs);
+    if shared {
+        base * 1.25
+    } else {
+        base
+    }
+}
+
+/// `GET /api/household` - the other accounts on this server.
+///
+/// Deliberately readable by any signed-in listener, where the user LIST is
+/// admin-only: this hands back names and ids and nothing else, and a house
+/// where nobody may know who else lives there cannot blend, hand a device
+/// over, or say whose turn it is. Anyone holding a session on this server is
+/// already inside the house.
+pub async fn household(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let me = auth::require_caller(&state.db, &headers)
+        .map_err(|s| (s, "sign in first".to_string()))?
+        .id;
+    let people: Vec<Value> = state
+        .db
+        .list_users()
+        .into_iter()
+        .map(|(id, username, _)| json!({ "id": id, "username": username, "me": id == me }))
+        .collect();
+    Ok(Json(json!({ "people": people })))
 }
 
 /// `GET /api/radio` - the next handful for an endless station.
@@ -125,6 +167,16 @@ pub async fn radio(
     // middle of the road, and the knob walks either side of it.
     let want_energy = (0.5 + f64::from(energy) * 0.35).clamp(0.05, 0.95);
 
+    // The other half of a blend, when one is asked for: their taste, and what
+    // they actually play, so "both of us" can mean something measurable.
+    let guest = q.with.filter(|id| *id != user).and_then(|id| {
+        taste_for(&state, id).map(|t| {
+            let played: HashSet<i64> =
+                state.db.top_plays(id, 0, 4000).into_iter().map(|(t, _)| t).collect();
+            (t, played)
+        })
+    });
+
     // How often each track has been played lately, for the familiarity dial.
     let plays: HashMap<i64, i64> =
         state.db.top_plays(user, 0, 4000).into_iter().collect();
@@ -136,6 +188,11 @@ pub async fn radio(
         .filter(|f| !exclude.contains(&f.track_id) && Some(f.track_id) != q.seed)
         .map(|f| {
             let mut s = score(f, &taste);
+            // A blend has to clear a bar with both listeners - see `blended`.
+            if let Some((their_taste, their_plays)) = guest.as_ref() {
+                let shared = plays.contains_key(&f.track_id) && their_plays.contains(&f.track_id);
+                s = blended(s, score(f, their_taste), shared);
+            }
             // Measured loudness/character, where the analyser has been.
             if let Some(e) = f.energy {
                 let gap = (e - want_energy).abs() as f32;
