@@ -2921,6 +2921,20 @@ img.artPop:not([data-loading]) {
   padding-inline-end: 7.5rem;
 }
 
+/* A Discover set or hero whose face is ONE generated object rather than a
+   mosaic of album covers: same treatment as the mix cards - a bold ground
+   with the shot multiplied into it. Album art must never get this (it is
+   photography, not a white-ground product shot), so it hangs off the
+   glyph-bearing wrapper only. */
+.discoverSetCard__cover:has(.suggestCardCover--glyph),
+.discoverHero__art:has(.suggestCardCover--glyph) {
+  background: linear-gradient(
+    140deg,
+    hsl(var(--setHue, 300) 66% 52%),
+    hsl(calc(var(--setHue, 300) + 50) 60% 36%)
+  );
+}
+
 /* Four covers as one: the set's face. */
 .discoverMosaic {
   position: absolute;
@@ -3237,10 +3251,35 @@ img.artPop:not([data-loading]) {
   color: var(--glacier-accent-text);
 }
 
-/* One generated object as the whole face - a single frame, not mosaic cells. */
+/* One generated object as the whole face - a single frame, not mosaic cells.
+   The object rides a bold gradient of the mix's own hue: the shots' white
+   grounds multiply away, so the frosted object sits ON the colour rather
+   than on a white card. */
 .mixCardCover--object {
+  position: relative;
   display: block;
-  background: var(--glacier-surface-sunken);
+  background: linear-gradient(
+    140deg,
+    hsl(var(--mixHue, 280) 68% 54%),
+    hsl(calc(var(--mixHue, 280) + 50) 62% 40%)
+  );
+}
+
+/* Two passes of the same shot: multiply burns the white ground into the
+   gradient, and a screened copy over it puts the object's own highlights
+   back - frosted glass reads as glass again instead of a flat tint. */
+.mixCardCover--object img {
+  mix-blend-mode: multiply;
+}
+
+.mixCardCover--object::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--objectArt) center / cover no-repeat;
+  mix-blend-mode: screen;
+  opacity: 0.28;
+  pointer-events: none;
 }
 
 .mixCardTitle {
@@ -7257,22 +7296,34 @@ body [class*='_panel_']:has(> .dlPanel) {
   opacity: 0.85;
 }
 
-/* A generated object as the whole tile face: full bleed under the label, the
-   tint showing through while it loads. The scrim keeps the words readable on
-   the set's bright grounds, and the label rides above it. */
+/* A generated object as the whole tile face: full bleed under the label. It
+   MULTIPLIES into the tile's own gradient, so the shot's white ground burns
+   off and the frosted object sits on the genre's colour - the tint is the
+   background now, not a thing hidden behind a photo. */
 .searchGenre__objectArt {
   position: absolute;
   inset: 0;
   inline-size: 100%;
   block-size: 100%;
   object-fit: cover;
+  mix-blend-mode: multiply;
+}
+
+/* The tile's gradient gets bolder wherever an object rides it - a deeper,
+   more saturated ground so the multiply has something to bite into. */
+.searchGenre:has(.searchGenre__objectArt) {
+  background: linear-gradient(
+    140deg,
+    hsl(var(--searchTileHue, 280) 78% 56%),
+    hsl(calc(var(--searchTileHue, 280) + 48) 68% 34%)
+  );
 }
 
 .searchGenre:has(.searchGenre__objectArt)::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(to top, rgb(0 0 0 / 0.55), transparent 55%);
+  background: linear-gradient(to top, rgb(0 0 0 / 0.5), transparent 55%);
   pointer-events: none;
 }
 
@@ -8150,15 +8201,26 @@ body [class*='_panel_']:has(> .dlPanel) {
   display: block;
 }
 
-/* The served object: a product shot on its own ground, worn as a card rather
-   than blended into the page - rounded and hairlined, no dissolving mask. */
+/* The served object, worn as a card on a bold ground: the shot's white
+   multiplies away into the gradient beneath, so an empty page opens on a
+   frosted object floating in colour rather than a white square. The wrapper
+   owns the gradient; the image only has to burn its ground off. */
+.emptyArt:has(.emptyArt__img--served) {
+  border-radius: var(--glacier-radius-xl, 1rem);
+  overflow: hidden;
+  background: linear-gradient(
+    140deg,
+    hsl(var(--emptyArtHue, 320) 62% 52%),
+    hsl(calc(var(--emptyArtHue, 320) + 55) 58% 34%)
+  );
+}
+
 .emptyArt__img--served {
   display: block;
   -webkit-mask-image: none;
   mask-image: none;
-  border-radius: var(--glacier-radius-xl, 1rem);
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
   object-fit: cover;
+  mix-blend-mode: multiply;
 }
 
 /* ---- Skeleton shelves and the library stats card ------------------------ */
