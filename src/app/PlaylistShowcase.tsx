@@ -8,7 +8,7 @@ import { usePlaylists } from './playlists.tsx';
 import { PluginFence, usePlugins } from '../plugins/runtime.tsx';
 import type { PluginPlaylistTile } from '../plugins/types.ts';
 import { PlaylistModal } from './PlaylistModal.tsx';
-import likedChip from '../assets/empty/liked-dark.png';
+import likedChip from '../assets/chip-liked.png';
 import allSongsChip from '../assets/chip-all-songs.png';
 import onRepeatChip from '../assets/chip-on-repeat.png';
 import type { Track } from './tauri.ts';

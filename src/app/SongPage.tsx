@@ -8,6 +8,7 @@ import { EmptyArt, HeroArt, type EmptyArtName } from './EmptyArt.tsx';
 import { fetchHome, trackIdFromPath } from './server.ts';
 import type { Track } from './tauri.ts';
 import onRepeatChip from '../assets/chip-on-repeat.png';
+import likedChip from '../assets/chip-liked.png';
 
 /**
  * A whole collection of songs, opened as its own page - the fullscreen answer
@@ -146,6 +147,12 @@ export function SongPage({
             {view === 'onrepeat' ? (
               <span className="songPageHero__repeat" aria-hidden>
                 <img src={onRepeatChip} alt="" />
+              </span>
+            ) : view === 'liked' ? (
+              /* The same glossy heart the chip wears, on the chip's own
+                 crimson - one heart for Liked everywhere, by request. */
+              <span className="songPageHero__repeat songPageHero--liked" aria-hidden>
+                <img src={likedChip} alt="" />
               </span>
             ) : (
               <HeroArt name={meta.art} />

@@ -1609,20 +1609,11 @@ body .appNavMore.appNavMore[class*='_panel_'] {
   transform: rotate(7deg);
 }
 
-/* Liked wears the owner's own neon heart - drawn glowing on black, so the chip
-   drops to a dark crimson ground and the art SCREENS onto it: the black falls
-   away and the heart and its trace light up, where the frosted-object multiply
-   would have crushed them. Tilted and a touch larger, like the All object. */
-.libChip--liked {
-  background: radial-gradient(
-    130% 120% at 72% 28%,
-    hsl(var(--libChipHue, 338) 72% 32%) 0%,
-    #140309 78%
-  );
-}
+/* Liked's art, set down by hand like its neighbour - opposite turn, a touch
+   larger. The glossy heart rides the row's own multiply on the crimson
+   gradient; the neon variant tried a dark ground and a screen blend here and
+   Matt sent it back. */
 .libChip--liked .libChip__art {
-  mix-blend-mode: screen;
-  opacity: 1;
   transform: rotate(-8deg) scale(1.14);
 }
 
@@ -7156,6 +7147,11 @@ body [class*='_panel_']:has(> .dlPanel) {
   padding: 12%;
   background: linear-gradient(140deg, hsl(145 62% 42%), hsl(187 56% 30%));
   border-radius: inherit;
+}
+
+/* Liked's hero: same frame, its own crimson. */
+.songPageHero--liked {
+  background: linear-gradient(140deg, hsl(338 62% 44%), hsl(20 56% 32%));
 }
 
 .songPageHero__repeat img {
