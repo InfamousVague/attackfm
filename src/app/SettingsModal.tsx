@@ -40,7 +40,7 @@ import {
 } from '@glacier/icons';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import pkg from '../../package.json';
+import { APP_VERSION } from './version.ts';
 import { fireNativeHaptic, setHapticsPref, useHapticsPref } from './haptics.ts';
 import type { Plugin } from '../plugins/types.ts';
 import {
@@ -1338,7 +1338,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       label: 'About',
       icon: <Info size={16} />,
       content: <AboutSettings />,
-      summary: `AttackFM v${pkg.version}`,
+      summary: `AttackFM v${APP_VERSION}`,
       tint: 'slate',
       group: 3,
     },

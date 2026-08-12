@@ -1,7 +1,7 @@
 import { Button, Pill, Text } from '@glacier/react';
 import { Cloud, ExternalLink, Laptop, Music, Smartphone } from '@glacier/icons';
 import { useEffect, useState } from 'react';
-import pkg from '../../package.json';
+import { APP_VERSION } from './version.ts';
 import wordmark from '../assets/attack-white.png';
 import { openExternal } from './openExternal.ts';
 import { isDesktopApp, isIOS } from './platform.ts';
@@ -57,13 +57,18 @@ export function AboutSettings() {
   // Keyed by a stable id, not the label: a server named "AttackFM" (the
   // shipped default) would otherwise collide with the app row's key.
   const rows: { id: string; icon: React.ReactNode; label: string; value: string }[] = [
-    { id: 'app', icon: <Music size={16} />, label: 'AttackFM', value: `v${pkg.version} · ${platform}` },
+    { id: 'app', icon: <Music size={16} />, label: 'AttackFM', value: `v${APP_VERSION} · ${platform}` },
     ...(session
       ? [
           {
             id: 'server',
             icon: <Cloud size={16} />,
-            label: stats?.name ?? 'Server',
+            // The shipped default server name is "AttackFM", so an
+            // unnamed hub drew a SECOND row called AttackFM carrying the
+            // server's own version - which reads as the app reporting the
+            // wrong one. A named server keeps its name; the default one
+            // says what it is.
+            label: stats?.name && stats.name !== 'AttackFM' ? stats.name : 'Server',
             value: [
               stats ? `v${stats.version}` : null,
               stats ? `up ${uptimeLabel(stats.uptimeSecs)}` : null,
@@ -91,7 +96,7 @@ export function AboutSettings() {
         </Text>
         <div className="aboutHero__pills">
           <Pill size="sm" tone="accent">
-            v{pkg.version}
+            v{APP_VERSION}
           </Pill>
           <Pill size="sm" tone="neutral">
             {platform}

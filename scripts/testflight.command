@@ -123,15 +123,18 @@ case "${yn:-Y}" in n|N) die "stopped" ;; esac
 bold "Bumping to $NEXT"
 python3 - "$NEXT" <<'PY'
 import io, json, sys
-p = 'src-tauri/tauri.conf.json'
-d = json.load(open(p))
-d['version'] = sys.argv[1]
-io.open(p, 'w').write(json.dumps(d, indent=2) + '\n')
+# tauri.conf.json is the one that reaches the binary; package.json rides
+# along so the repo's own manifest never disagrees with the app. (It sat at
+# 0.1.0 through every release, and About - which read it - said so.)
+for p in ('src-tauri/tauri.conf.json', 'package.json'):
+    d = json.load(open(p))
+    d['version'] = sys.argv[1]
+    io.open(p, 'w').write(json.dumps(d, indent=2) + '\n')
 PY
 PLIST=src-tauri/gen/apple/app_iOS/Info.plist
 plutil -replace CFBundleShortVersionString -string "$NEXT" "$PLIST"
 plutil -replace CFBundleVersion -string "$NEXT" "$PLIST"
-ok "tauri.conf.json + gen plist"
+ok "tauri.conf.json + package.json + gen plist"
 
 # THE LOAD-BEARING TOUCH. generate_context! is a proc macro: a changed dist/
 # alone never recompiles the app crate, and without this the IPA ships the
@@ -214,7 +217,7 @@ read -r -p "  Commit and push 'Release $NEXT'? [Y/n] " yn
 case "${yn:-Y}" in
   n|N) say "left uncommitted" ;;
   *)
-    git add src-tauri/tauri.conf.json src-tauri/gen/apple/app_iOS/Info.plist
+    git add src-tauri/tauri.conf.json package.json src-tauri/gen/apple/app_iOS/Info.plist
     git commit -m "Release $NEXT" >/dev/null && git push origin main >/dev/null 2>&1 \
       && ok "committed and pushed" || say "commit/push did not complete - check by hand"
     ;;
