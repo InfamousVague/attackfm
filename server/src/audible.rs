@@ -25,14 +25,15 @@
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
-use crate::{auth, AppState};
+use crate::{auth, scan, AppState};
 
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
@@ -113,7 +114,16 @@ pub struct AudibleState {
     pub config_dir: PathBuf,
     /// A writable HOME for the child, since the real one may be read-only.
     home: PathBuf,
+    /// Where a download is assembled before it is filed into the library.
+    stage: PathBuf,
     login: tokio::sync::Mutex<Option<LoginSession>>,
+    /// The download queue, serialised by `worker` one book at a time - a book
+    /// is a big, human-paced errand, exactly like the LibriVox queue.
+    jobs: tokio::sync::Mutex<Vec<AudibleJob>>,
+    worker: tokio::sync::Mutex<()>,
+    /// The account's AAX activation bytes, fetched once and kept: they are a
+    /// per-account constant, the key every AAX book is unlocked with.
+    activation: tokio::sync::Mutex<Option<String>>,
 }
 
 impl AudibleState {
@@ -122,10 +132,15 @@ impl AudibleState {
             .map(PathBuf::from)
             .unwrap_or_else(|_| data_dir.join("audible"));
         let home = data_dir.join("audible-home");
+        let stage = data_dir.join("audible-stage");
         AudibleState {
             config_dir,
             home,
+            stage,
             login: tokio::sync::Mutex::new(None),
+            jobs: tokio::sync::Mutex::new(Vec::new()),
+            worker: tokio::sync::Mutex::new(()),
+            activation: tokio::sync::Mutex::new(None),
         }
     }
 
@@ -447,4 +462,448 @@ pub async fn logout(
 fn sanitize_locale(s: &str) -> String {
     let cleaned: String = s.chars().filter(|c| c.is_ascii_alphabetic()).collect();
     if cleaned.is_empty() { "us".into() } else { cleaned.to_lowercase() }
+}
+
+/// A path segment that cannot escape or upset the filesystem — same rules the
+/// LibriVox filer uses, so the two shelves sit side by side under Audiobooks.
+fn safe_segment(s: &str) -> String {
+    let cleaned: String = s
+        .chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => ' ',
+            c if c.is_control() => ' ',
+            c => c,
+        })
+        .collect();
+    let trimmed = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    let trimmed = trimmed.trim_matches('.').trim().to_string();
+    if trimmed.is_empty() { "Untitled".into() } else { trimmed }
+}
+
+// --- The library and the download queue --------------------------------------
+
+/// One owned book, trimmed to what a browse card needs. `ownedLocally` is true
+/// once the book is already filed in the library, so the card shows "In library"
+/// instead of an Add button.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudibleBook {
+    pub asin: String,
+    pub title: String,
+    pub author: String,
+    pub cover: Option<String>,
+    pub runtime_min: Option<i64>,
+    pub percent_complete: Option<f64>,
+    pub owned_locally: bool,
+}
+
+/// One download, in flight or finished. camelCase for the client.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AudibleJob {
+    pub id: String,
+    pub asin: String,
+    pub title: String,
+    pub author: String,
+    pub cover: Option<String>,
+    /// queued | downloading | decrypting | filing | done | error
+    pub state: String,
+    pub error: Option<String>,
+    pub created_at: i64,
+    /// The indexed track once it lands, so a client can jump straight to it.
+    pub track_id: Option<i64>,
+}
+
+async fn set_job(state: &Arc<AppState>, id: &str, f: impl FnOnce(&mut AudibleJob)) {
+    let mut jobs = state.audible.jobs.lock().await;
+    if let Some(j) = jobs.iter_mut().find(|j| j.id == id) {
+        f(j);
+    }
+}
+
+/// The rel_path a given book files to — the one place the naming lives, so the
+/// worker, the "already have it" check, and any future re-download all agree.
+fn book_rel_path(author: &str, title: &str) -> String {
+    let a = safe_segment(author);
+    let t = safe_segment(title);
+    format!("Audiobooks/{a}/{t}/{t}.m4b")
+}
+
+/// A ready-to-run audible-cli command, pointed at the owner's config with a
+/// writable HOME. `None` when the tool is not installed.
+fn audible_command(state: &Arc<AppState>) -> Option<tokio::process::Command> {
+    let bin = find_audible()?;
+    let mut cmd = tokio::process::Command::new(bin);
+    cmd.env("HOME", &state.audible.home)
+        .env("AUDIBLE_CONFIG_DIR", &state.audible.config_dir);
+    Some(cmd)
+}
+
+/// `GET /api/audible/library` — the books you own, so the downloader can list
+/// them. Any signed-in caller may read it; downloading is a separate step.
+pub async fn library(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    if !state.audible.connected() {
+        return Ok(Json(json!({ "connected": false, "books": [] })));
+    }
+    let Some(mut cmd) = audible_command(&state) else {
+        return Err((StatusCode::SERVICE_UNAVAILABLE, "Audible tools aren't installed on the server.".into()));
+    };
+
+    let _ = tokio::fs::create_dir_all(&state.audible.stage).await;
+    let out_path = state.audible.stage.join(format!("library-{}.json", now_ms()));
+    cmd.arg("library")
+        .arg("export")
+        .arg("--format")
+        .arg("json")
+        .arg("-o")
+        .arg(&out_path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let ran = tokio::time::timeout(Duration::from_secs(90), cmd.status()).await;
+    let ok = matches!(ran, Ok(Ok(s)) if s.success());
+    if !ok {
+        let _ = tokio::fs::remove_file(&out_path).await;
+        return Err((StatusCode::BAD_GATEWAY, "Could not read your Audible library — try reconnecting.".into()));
+    }
+    let data = tokio::fs::read(&out_path).await.unwrap_or_default();
+    let _ = tokio::fs::remove_file(&out_path).await;
+    let parsed: Value = serde_json::from_slice(&data).unwrap_or_else(|_| json!([]));
+    let items = parsed.as_array().cloned().unwrap_or_default();
+
+    let mut books: Vec<AudibleBook> = Vec::new();
+    for it in &items {
+        let Some(asin) = it.get("asin").and_then(|x| x.as_str()) else { continue };
+        let title = it.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        if title.is_empty() {
+            continue;
+        }
+        let author = it
+            .get("authors")
+            .and_then(|x| x.as_str())
+            .map(clean_author)
+            .unwrap_or_default();
+        let cover = it.get("cover_url").and_then(|x| x.as_str()).filter(|s| !s.is_empty()).map(String::from);
+        let runtime_min = it.get("runtime_length_min").and_then(|x| x.as_i64());
+        let percent_complete = it.get("percent_complete").and_then(|x| x.as_f64());
+        let owned_locally = state.db.track_id_by_path(&book_rel_path(&author, &title)).is_some();
+        books.push(AudibleBook {
+            asin: asin.to_string(),
+            title,
+            author,
+            cover,
+            runtime_min,
+            percent_complete,
+            owned_locally,
+        });
+    }
+    Ok(Json(json!({ "connected": true, "books": books })))
+}
+
+/// Audible lists authors as a comma-joined string that folds in roles -
+/// "Marcus Aurelius, Martin Hammond - translator". Keep the real authors (the
+/// ones with no "- role" suffix); fall back to the whole string if that empties
+/// it. Cosmetic - the file's own tags still drive the library metadata.
+fn clean_author(raw: &str) -> String {
+    let names: Vec<&str> = raw
+        .split(',')
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty() && !p.contains(" - "))
+        .collect();
+    if names.is_empty() {
+        raw.trim().to_string()
+    } else {
+        names.join(", ")
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportAudibleBody {
+    pub asin: String,
+    pub title: String,
+    pub author: String,
+    #[serde(default)]
+    pub cover: Option<String>,
+}
+
+/// `POST /api/audible/import {asin,title,author}` — queue a download of a book
+/// you own. Signed-in callers may pull into the shared library; the title and
+/// author only name a folder (the file's own tags drive everything the app
+/// shows), so there is nothing here a client could forge into harm.
+pub async fn import(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<ImportAudibleBody>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    if !state.audible.connected() {
+        return Err((StatusCode::BAD_REQUEST, "Connect your Audible account in Settings first.".into()));
+    }
+    if find_audible().is_none() {
+        return Err((StatusCode::SERVICE_UNAVAILABLE, "Audible tools aren't installed on the server.".into()));
+    }
+    let asin = body.asin.trim().to_string();
+    if asin.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "which book?".into()));
+    }
+
+    {
+        let jobs = state.audible.jobs.lock().await;
+        if let Some(j) = jobs.iter().find(|j| j.asin == asin && j.state != "error") {
+            return Ok(Json(json!({ "job": j })));
+        }
+    }
+
+    let job = AudibleJob {
+        id: format!("aud-{}-{}", asin, now_ms()),
+        asin: asin.clone(),
+        title: body.title.trim().to_string(),
+        author: clean_author(body.author.trim()),
+        cover: body.cover.clone().filter(|s| !s.is_empty()),
+        state: "queued".into(),
+        error: None,
+        created_at: now_ms(),
+        track_id: None,
+    };
+    let reply = job.clone();
+    {
+        let mut jobs = state.audible.jobs.lock().await;
+        jobs.push(job.clone());
+        let len = jobs.len();
+        if len > 20 {
+            jobs.drain(0..len - 20);
+        }
+    }
+
+    let state2 = state.clone();
+    let id = job.id.clone();
+    tokio::spawn(async move {
+        run_audible_job(state2, id, job.asin, job.title, job.author).await;
+    });
+
+    Ok(Json(json!({ "job": reply })))
+}
+
+/// `GET /api/audible/jobs` — the download queue, newest first.
+pub async fn audible_jobs(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let jobs = state.audible.jobs.lock().await;
+    let mut list: Vec<&AudibleJob> = jobs.iter().collect();
+    list.reverse();
+    Ok(Json(json!({ "jobs": list })))
+}
+
+/// The account's AAX activation bytes, fetched once and remembered. They are a
+/// per-account constant, so one call serves every AAX book the hub ever pulls.
+async fn activation_bytes(state: &Arc<AppState>) -> Option<String> {
+    if let Some(a) = state.audible.activation.lock().await.clone() {
+        return Some(a);
+    }
+    let mut cmd = audible_command(state)?;
+    cmd.current_dir(&state.audible.stage)
+        .arg("activation-bytes")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    let _ = tokio::fs::create_dir_all(&state.audible.stage).await;
+    let out = tokio::time::timeout(Duration::from_secs(60), cmd.output()).await.ok()?.ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    // The bytes are an 8-hex-digit token in the output ("Save ... to file\n<hex>").
+    let bytes = text
+        .split_whitespace()
+        .rev()
+        .find(|t| t.len() == 8 && t.chars().all(|c| c.is_ascii_hexdigit()))?
+        .to_string();
+    *state.audible.activation.lock().await = Some(bytes.clone());
+    Some(bytes)
+}
+
+/// The AES-128 key and IV a `.voucher` carries for an AAXC book. Best-effort:
+/// the voucher is JSON and its shape has drifted between audible-cli versions,
+/// so this hunts the tree for the first pair of hex strings named key/iv rather
+/// than pinning one path. AAX (the common case here) never needs it.
+fn voucher_key_iv(voucher: &Value) -> Option<(String, String)> {
+    fn find<'a>(v: &'a Value, name: &str) -> Option<&'a str> {
+        match v {
+            Value::Object(map) => {
+                for (k, val) in map {
+                    if k.eq_ignore_ascii_case(name) {
+                        if let Some(s) = val.as_str() {
+                            if s.chars().all(|c| c.is_ascii_hexdigit()) && s.len() >= 16 {
+                                return Some(s);
+                            }
+                        }
+                    }
+                    if let Some(found) = find(val, name) {
+                        return Some(found);
+                    }
+                }
+                None
+            }
+            Value::Array(arr) => arr.iter().find_map(|x| find(x, name)),
+            _ => None,
+        }
+    }
+    Some((find(voucher, "key")?.to_string(), find(voucher, "iv")?.to_string()))
+}
+
+/// The download → decrypt → file → index pipeline for one book. Serial (one book
+/// at a time) like the LibriVox queue, and each phase names itself on the job so
+/// a watching card can say where it is.
+async fn run_audible_job(
+    state: Arc<AppState>,
+    job_id: String,
+    asin: String,
+    title: String,
+    author: String,
+) {
+    let _worker = state.audible.worker.lock().await;
+    let fail = |msg: String| async { set_job(&state, &job_id, |j| { j.state = "error".into(); j.error = Some(msg); }).await; };
+
+    // Quota holds here exactly as it does for uploads and music imports.
+    if state.library_quota_bytes > 0 && state.db.total_bytes() >= state.library_quota_bytes {
+        fail("The library is at its storage quota.".into()).await;
+        return;
+    }
+
+    set_job(&state, &job_id, |j| j.state = "downloading".into()).await;
+
+    let job_stage = state.audible.stage.join(safe_segment(&asin));
+    let _ = tokio::fs::remove_dir_all(&job_stage).await;
+    if let Err(e) = tokio::fs::create_dir_all(&job_stage).await {
+        fail(format!("Could not prepare a workspace: {e}")).await;
+        return;
+    }
+
+    // 1. Download the DRM'd book (AAX, or AAXC + voucher as a fallback).
+    let Some(mut cmd) = audible_command(&state) else {
+        fail("Audible tools aren't installed on the server.".into()).await;
+        return;
+    };
+    cmd.arg("download")
+        .arg("-a")
+        .arg(&asin)
+        .arg("--aax-fallback")
+        .arg("-q")
+        .arg("best")
+        .arg("-o")
+        .arg(&job_stage)
+        .arg("-f")
+        .arg("asin_ascii")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    // A long book over a slow line: give it room, but not forever.
+    let ran = tokio::time::timeout(Duration::from_secs(3600), cmd.status()).await;
+    if !matches!(ran, Ok(Ok(s)) if s.success()) {
+        let _ = tokio::fs::remove_dir_all(&job_stage).await;
+        fail("The download from Audible failed.".into()).await;
+        return;
+    }
+
+    // Find what landed: the encrypted audio, and whether it needs a voucher.
+    let mut audio: Option<PathBuf> = None;
+    let mut is_aaxc = false;
+    if let Ok(mut rd) = tokio::fs::read_dir(&job_stage).await {
+        while let Ok(Some(ent)) = rd.next_entry().await {
+            let p = ent.path();
+            match p.extension().and_then(|e| e.to_str()) {
+                Some("aaxc") => {
+                    audio = Some(p);
+                    is_aaxc = true;
+                    break;
+                }
+                Some("aax") if audio.is_none() => audio = Some(p),
+                _ => {}
+            }
+        }
+    }
+    let Some(audio) = audio else {
+        let _ = tokio::fs::remove_dir_all(&job_stage).await;
+        fail("Audible returned no audio for that book.".into()).await;
+        return;
+    };
+
+    // 2. Decrypt to a plain, chaptered m4b - a copy, no re-encode, so the
+    //    embedded chapters and cover come through untouched.
+    set_job(&state, &job_id, |j| j.state = "decrypting".into()).await;
+    let out_m4b = job_stage.join("book.m4b");
+    let mut ff = tokio::process::Command::new("ffmpeg");
+    ff.arg("-y").arg("-loglevel").arg("error");
+    if is_aaxc {
+        let voucher_path = audio.with_extension("voucher");
+        let voucher: Value = tokio::fs::read(&voucher_path)
+            .await
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or(Value::Null);
+        match voucher_key_iv(&voucher) {
+            Some((key, iv)) => {
+                ff.arg("-audible_key").arg(key).arg("-audible_iv").arg(iv);
+            }
+            None => {
+                let _ = tokio::fs::remove_dir_all(&job_stage).await;
+                fail("This book uses Audible's newer AAXC format, which this server can't unlock yet.".into()).await;
+                return;
+            }
+        }
+    } else {
+        let Some(ab) = activation_bytes(&state).await else {
+            let _ = tokio::fs::remove_dir_all(&job_stage).await;
+            fail("Could not fetch your account's activation bytes.".into()).await;
+            return;
+        };
+        ff.arg("-activation_bytes").arg(ab);
+    }
+    ff.arg("-i")
+        .arg(&audio)
+        .arg("-c")
+        .arg("copy")
+        .arg("-movflags")
+        .arg("+faststart")
+        .arg(&out_m4b)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let ffran = tokio::time::timeout(Duration::from_secs(900), ff.status()).await;
+    if !matches!(ffran, Ok(Ok(s)) if s.success()) || !out_m4b.exists() {
+        let _ = tokio::fs::remove_dir_all(&job_stage).await;
+        fail("Decrypting the book failed.".into()).await;
+        return;
+    }
+
+    // 3. File it into the library under Audiobooks/<Author>/<Title>/, so the
+    //    folder contract marks it kind = 'book'. Copy, not rename: the staging
+    //    dir and the music root may be different mounts.
+    set_job(&state, &job_id, |j| j.state = "filing".into()).await;
+    let rel = book_rel_path(&author, &title);
+    let dest = state.music_root.join(&rel);
+    if let Some(parent) = dest.parent() {
+        let _ = tokio::fs::create_dir_all(parent).await;
+    }
+    if let Err(e) = tokio::fs::copy(&out_m4b, &dest).await {
+        let _ = tokio::fs::remove_dir_all(&job_stage).await;
+        fail(format!("Could not file the book into the library: {e}")).await;
+        return;
+    }
+    let _ = tokio::fs::remove_dir_all(&job_stage).await;
+
+    // 4. Index it under the filing lock, like every other arrival.
+    let mut track_id = None;
+    {
+        let _filing = state.filing.lock().await;
+        if scan::scan_one(&state.db, &state.music_root, &state.art_dir, &rel) {
+            track_id = state.db.track_id_by_path(&rel);
+        }
+    }
+
+    set_job(&state, &job_id, |j| {
+        j.state = "done".into();
+        j.track_id = track_id;
+    })
+    .await;
 }

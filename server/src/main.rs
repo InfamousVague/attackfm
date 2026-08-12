@@ -446,6 +446,9 @@ async fn main() {
         .route("/api/audible/login/start", post(audible::login_start))
         .route("/api/audible/login/complete", post(audible::login_complete))
         .route("/api/audible/logout", post(audible::logout))
+        .route("/api/audible/library", get(audible::library))
+        .route("/api/audible/import", post(audible::import))
+        .route("/api/audible/jobs", get(audible::audible_jobs))
         .nest_service("/plugins", ServeDir::new(&plugins_dir))
         .nest_service(
             "/api/assets",
