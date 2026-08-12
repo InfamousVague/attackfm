@@ -46,6 +46,8 @@ const SLUG_HUE: Record<string, number> = {
   'genre-indie': 48,
   'genre-dance': 12,
   'genre-country': 25,
+  'genre-anime': 340,
+  'genre-jpop': 355,
   'mood-chill': 205,
   'mood-energy': 55,
   'mood-focus': 40,
@@ -74,7 +76,7 @@ export function artworkHue(slug: string): number {
   return h;
 }
 
-/** The twelve genre tiles, keyed by the names libraries actually use. */
+/** The genre tiles, keyed by the names libraries actually use. */
 const GENRE_ART = new Map<string, string>(
   Object.entries({
     electronic: 'genre-electronic',
@@ -105,6 +107,11 @@ const GENRE_ART = new Map<string, string>(
     indie: 'genre-indie',
     indierock: 'genre-indie',
     indiepop: 'genre-indie',
+    anime: 'genre-anime',
+    animesoundtrack: 'genre-anime',
+    jpop: 'genre-jpop',
+    japanesepop: 'genre-jpop',
+    jrock: 'genre-jpop',
     dance: 'genre-dance',
     disco: 'genre-dance',
     country: 'genre-country',
