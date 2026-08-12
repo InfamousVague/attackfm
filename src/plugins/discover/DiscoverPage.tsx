@@ -1,6 +1,7 @@
 import { Modal, Text } from '@glacier/react';
 import { Check, Compass, ListMusic, Music, Plus } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRippleWave } from '../../app/rippleWave.ts';
 import { useServerSession } from '../../app/serverSession.tsx';
 import { useLibrary } from '../../app/library.tsx';
 import { useOwned } from '../../app/owned.ts';
@@ -186,6 +187,10 @@ function groupBySection(items: readonly Suggestion[]): { section: string; items:
 // means their catalogue - the discography you can add from - so every artist row
 // here stacks a CatalogArtistPage instead.
 export function DiscoverPage({ onPlay }: PluginPageProps) {
+  // The same entrance the Library wears: cards wave in as they meet the
+  // view, each landing with a soft tick.
+  const rippleRoot = useRef<HTMLDivElement>(null);
+  useRippleWave(rippleRoot);
   const { session } = useServerSession();
   const downloads = useDownloadsOptional();
   const acquire = useAcquire();
@@ -390,7 +395,7 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
   }
 
   return (
-    <div className="discoverPage">
+    <div className="discoverPage" ref={rippleRoot}>
       <header className="discoverHead">
         <span className="discoverHead__glyph" aria-hidden>
           <Compass size={22} />

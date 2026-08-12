@@ -1,6 +1,7 @@
 import { Text } from '@glacier/react';
 import { ChevronLeft, Check, Disc3, Music, Plus, User, X } from '@glacier/icons';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useRippleWave } from '../../app/rippleWave.ts';
 import { useServerSession } from '../../app/serverSession.tsx';
 import {
   fetchCatalogArtist,
@@ -72,6 +73,9 @@ export function CatalogArtistPage({
   /** Walks to a related artist, staying on this page's shape. */
   onOpenArtist: (id: string, name: string) => void;
 }) {
+  // Releases and tracks ride the same wave as everywhere else.
+  const rippleRoot = useRef<HTMLDivElement>(null);
+  useRippleWave(rippleRoot);
   const { session } = useServerSession();
   const downloads = useDownloadsOptional();
   const acquire = useAcquire();
@@ -297,7 +301,7 @@ export function CatalogArtistPage({
   };
 
   return (
-    <div className="discoverPage catalogArtist">
+    <div className="discoverPage catalogArtist" ref={rippleRoot}>
       <button type="button" className="catalogArtist__back" onClick={onBack}>
         <ChevronLeft size={16} />
         {backLabel}

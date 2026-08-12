@@ -28,6 +28,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useLibrary } from './library.tsx';
+import { useRippleWave } from './rippleWave.ts';
 import { usePlaylists, type Playlist } from './playlists.tsx';
 import { useQueueControls } from './queueControls.tsx';
 import { useRegistry } from './registrySession.tsx';
@@ -333,6 +334,12 @@ export function SearchPage({
 }) {
   const { tracks } = useLibrary();
   const { playlists } = usePlaylists();
+  // Results, genre tiles and recents wave in as they meet the view, landing
+  // with the same soft ticks the Library's shelves ride - see rippleWave.ts.
+  // Rows React reuses across keystrokes keep their landed state; only truly
+  // NEW results ripple, so typing refines rather than re-parades.
+  const rippleRoot = useRef<HTMLDivElement>(null);
+  useRippleWave(rippleRoot);
   const { session: registry } = useRegistry();
   const { session: server } = useServerSession();
   const owned = useOwned();
@@ -1166,7 +1173,7 @@ export function SearchPage({
     (catalog !== null || !server);
 
   return (
-    <div className="homePage searchPage">
+    <div className="homePage searchPage" ref={rippleRoot}>
       <SearchField
         id={FIELD_ID}
         className="pageSearch"
