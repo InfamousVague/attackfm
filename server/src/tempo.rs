@@ -53,6 +53,7 @@ async fn decode(input: &std::ffi::OsStr) -> Option<Vec<f32>> {
             .args(["-v", "quiet", "-ss", skip, "-t", TAKE_SECS, "-i"])
             .arg(input)
             .args(["-ac", "1", "-ar", &RATE.to_string(), "-f", "f32le", "-"])
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .output()

@@ -319,6 +319,7 @@ pub async fn art(
 pub fn ffmpeg_available() -> bool {
     std::process::Command::new("ffmpeg")
         .arg("-version")
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()

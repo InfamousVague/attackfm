@@ -457,6 +457,10 @@ pub(crate) async fn spotiflac_search(state: &Arc<AppState>, q: &str) -> Vec<Sear
             .arg(SPOTIFLAC_SEARCH_PY)
             .arg(q)
             .env("HOME", &home)
+            // See the note in imports.rs: an inherited-but-closed fd 0 kills
+            // Python at startup, which here would read as "the catalogue found
+            // nothing" on every search.
+            .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null());
         match tokio::time::timeout(Duration::from_secs(20), cmd.output()).await {
