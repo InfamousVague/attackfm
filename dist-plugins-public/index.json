@@ -3,23 +3,6 @@
   "name": "AttackFM plugins",
   "plugins": [
     {
-      "id": "audiobooks",
-      "name": "Audiobooks",
-      "version": "0.1.0",
-      "description": "Public-domain audiobooks from LibriVox: search the catalogue, pull a book into your library, and pick up where you left off.",
-      "author": "AttackFM",
-      "tags": [
-        "Books",
-        "Spoken word"
-      ],
-      "entry": "audiobooks-0.1.0.js",
-      "api": 1,
-      "bytes": 10887,
-      "sha256": "c5dde13c9423446257a1c305aa1cc20ce399d1bb55d01c91f0ab5873d9d0d6dc",
-      "requiresServer": true,
-      "public": true
-    },
-    {
       "id": "eq-rack",
       "name": "EQ rack",
       "version": "0.1.0",
@@ -33,105 +16,6 @@
       "api": 1,
       "bytes": 5741,
       "sha256": "25b040d045c4216b450079681a949ed3c2a1af83eefab1ec456cf7edd44bf4c9",
-      "public": true
-    },
-    {
-      "id": "gig-radar",
-      "name": "Gig radar",
-      "version": "0.1.0",
-      "description": "Upcoming shows from the artists in your library, with a filter for your corner of the world and tickets one tap away.",
-      "author": "AttackFM",
-      "tags": [
-        "Live",
-        "Discovery"
-      ],
-      "entry": "gig-radar-0.1.0.js",
-      "api": 1,
-      "bytes": 5919,
-      "sha256": "d7334e59f18292e440cc85671cf4c067a56155ddf2315f7408c945ff1610d62d",
-      "public": true
-    },
-    {
-      "id": "library-tools",
-      "name": "Library tools",
-      "version": "0.1.0",
-      "description": "A toolbox of library janitor tools: fix album art, repair tags, merge duplicates, see where the disk went, and back up your playlists.",
-      "author": "AttackFM",
-      "tags": [
-        "Tools",
-        "Maintenance"
-      ],
-      "entry": "library-tools-0.1.0.js",
-      "api": 1,
-      "bytes": 35983,
-      "sha256": "dd994487305a06a33d1a2f6ee1fd9d63da190b09e9ff7bba59148469611e93b5",
-      "requiresServer": true,
-      "public": true
-    },
-    {
-      "id": "rabbit-hole",
-      "name": "Rabbit hole",
-      "version": "0.1.0",
-      "description": "Follow the map: start at an artist you love and walk the catalogue's neighbours hop by hop, marking what you already own.",
-      "author": "AttackFM",
-      "tags": [
-        "Discovery",
-        "Graph"
-      ],
-      "entry": "rabbit-hole-0.1.0.js",
-      "api": 1,
-      "bytes": 6257,
-      "sha256": "154f62adb7064f1460ee3c1db816f20a3aa228530183411839aec9e907492099",
-      "requiresServer": true,
-      "public": true
-    },
-    {
-      "id": "smart-playlists",
-      "name": "Smart playlists",
-      "version": "0.1.0",
-      "description": "Rule-built playlists that keep themselves current: genre, artist, freshness, duration - you write the rule, the list follows the library.",
-      "author": "AttackFM",
-      "tags": [
-        "Playlists",
-        "Automation"
-      ],
-      "entry": "smart-playlists-0.1.0.js",
-      "api": 1,
-      "bytes": 9138,
-      "sha256": "39d34042ff6653f57dd92206e267d85b9a51a86fb7c3655e2f420c856ca74c66",
-      "public": true
-    },
-    {
-      "id": "time-machine",
-      "name": "Time machine",
-      "version": "0.1.0",
-      "description": "Around this date, years ago: what you had on repeat then, playable now - your own listening history as a place to visit.",
-      "author": "AttackFM",
-      "tags": [
-        "History",
-        "Playlists"
-      ],
-      "entry": "time-machine-0.1.0.js",
-      "api": 1,
-      "bytes": 4988,
-      "sha256": "f9bdf42cf5d69dee1f85c7a2a84576b1695881c90998f3258dc8005697b619ea",
-      "requiresServer": true,
-      "public": true
-    },
-    {
-      "id": "undercurrent",
-      "name": "Undercurrent",
-      "version": "0.1.0",
-      "description": "Ambience under the music: rain, vinyl crackle, fireplace, and wind, synthesized on the spot - no recordings, just a mixer.",
-      "author": "AttackFM",
-      "tags": [
-        "Sound",
-        "Ambience"
-      ],
-      "entry": "undercurrent-0.1.0.js",
-      "api": 1,
-      "bytes": 6941,
-      "sha256": "291ea3e62a55ffddc358cea3c4ec760882001362c5742d9db520090a5266cf94",
       "public": true
     }
   ]

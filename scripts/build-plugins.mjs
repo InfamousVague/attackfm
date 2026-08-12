@@ -126,6 +126,17 @@ for (const entry of readdirSync(REPO, { withFileTypes: true })) {
   // must never block the whole repository from shipping a finished fix.
   try {
     const meta = JSON.parse(readFileSync(join(dir, 'plugin.json'), 'utf8'));
+    // Retired: kept in the tree, offered to nobody. A plugin that stops
+    // earning its place should leave the marketplace without leaving the
+    // repository - the source stays readable and one flag brings it back,
+    // where deleting the directory would make "bring it back" an exercise in
+    // git archaeology. Nothing is built and no manifest lists it, so the
+    // publish below (which mirrors with --delete) takes its bundle off the
+    // boxes too.
+    if (meta.retired) {
+      console.log(`skipped ${meta.id} (retired)`);
+      continue;
+    }
     const outFile = `${meta.id}-${meta.version}.js`;
 
     await build({
