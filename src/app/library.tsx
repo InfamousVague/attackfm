@@ -54,6 +54,12 @@ interface LibraryContextValue {
    * the owning account's "For you" surface. Always empty for a local library.
    */
   forYou: Track[];
+  /**
+   * Audiobook sections, split off the music entirely: a book is a thing you
+   * READ through, not shuffle into a mix, so no music surface ever sees these.
+   * The audiobooks page is their one home. Always empty for a local library.
+   */
+  books: Track[];
   /** The favourited tracks that are present in the current library, newest first. */
   favoriteTracks: Track[];
   /** Whether a track (by path) is favourited. */
@@ -244,6 +250,7 @@ function LocalLibrary({ children }: { children: ReactNode }) {
       tracks,
       // A local folder has no collector: everything in it was put there.
       forYou: [],
+      books: [],
       favoriteTracks,
       isFavorite: (path: string) => favorites.includes(path),
       toggleFavorite: (path: string) =>
@@ -394,13 +401,17 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
   // someone adopts them (a listen-through or a heart flips curatorPromoted).
   // Split here, once, so every surface downstream - table, search, shelves,
   // CarPlay - inherits the rule without knowing it exists.
+  // The book line first: an audiobook section is never a music track, on any
+  // shelf, in any mix, whatever its adoption state.
+  const music = useMemo(() => mapped.filter((t) => t.kind !== 'book'), [mapped]);
+  const books = useMemo(() => mapped.filter((t) => t.kind === 'book'), [mapped]);
   const tracks = useMemo(
-    () => mapped.filter((t) => t.curatorUserId == null || t.curatorPromoted),
-    [mapped],
+    () => music.filter((t) => t.curatorUserId == null || t.curatorPromoted),
+    [music],
   );
   const forYou = useMemo(
-    () => mapped.filter((t) => t.curatorUserId != null && !t.curatorPromoted),
-    [mapped],
+    () => music.filter((t) => t.curatorUserId != null && !t.curatorPromoted),
+    [music],
   );
 
   // The car screen mirrors whatever this device has synced: every delta and
@@ -425,6 +436,7 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
       isDefault: false,
       tracks,
       forYou,
+      books,
       favoriteTracks,
       isFavorite: (path: string) => {
         const id = trackIdFromPath(path);
@@ -456,7 +468,7 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
       choose: async () => {},
       reset: async () => {},
     };
-  }, [session, tracks, forYou, favorites, syncing, synced, sync, error]);
+  }, [session, tracks, forYou, books, favorites, syncing, synced, sync, error]);
 
   return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;
 }

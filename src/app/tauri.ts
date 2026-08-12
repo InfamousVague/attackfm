@@ -141,6 +141,12 @@ export interface Track {
   /** When the file landed in the library, epoch milliseconds. */
   addedAt: number;
   /**
+   * What the row IS: 'music' (or absent - local scans and old servers never
+   * say) or 'book', an audiobook section. Books live on their own shelf and
+   * stay out of every music surface; library.tsx makes the split once.
+   */
+  kind?: 'music' | 'book';
+  /**
    * The cover art: an object URL for a local file, an HTTP URL for a remote
    * one, or null when there is none.
    */

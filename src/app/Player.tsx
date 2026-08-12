@@ -57,7 +57,7 @@ import { VolumeControl, VolumeRow, VOLUME_MAX, VOLUME_UNITY } from './VolumeCont
 import npPlaceholderArt from '../assets/attack-wave.png';
 import { NowPlayingBackdrop } from './NowPlayingBackdrop.tsx';
 import { loadAudioUrl, reactivateAudioSession, systemOutputVolume, type Track } from './tauri.ts';
-import { fetchCanvas, isRemotePath, reportPlay, trackIdFromPath } from './server.ts';
+import { fetchCanvas, fetchPlayStates, isRemotePath, reportPlay, reportPosition, trackIdFromPath } from './server.ts';
 import { fireNativeHaptic } from './haptics.ts';
 import { createListenReporter, type ListenSnapshot } from './listens.ts';
 import { loadScrubTape } from './scrubTape.ts';
@@ -1124,6 +1124,63 @@ export function Player({
     if (id !== null && playSessionRef.current) reportPlay(playSessionRef.current, id);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the clock drives it; the rest ride refs or are stable per tick
   }, [coarsePosition, playing, track, duration]);
+
+  // ── The audiobook bookmark ───────────────────────────────────────────────
+  //
+  // A book is a place you return to, so the server learns where the listener
+  // got to: every twenty seconds while a book section plays, and once more the
+  // moment it pauses or the track changes. Music never reports - resuming a
+  // song mid-verse is nobody's habit, and the chatter would buy nothing. The
+  // position rides a ref so the interval never re-arms on every tick.
+  useEffect(() => {
+    if (!track || track.kind !== 'book') return;
+    const id = trackIdFromPath(track.path);
+    if (id === null) return;
+    const send = () => {
+      const s = playSessionRef.current;
+      if (s) void reportPosition(s, id, positionRef.current * 1000).catch(() => {});
+    };
+    let timer: number | undefined;
+    if (playing) {
+      timer = window.setInterval(send, 20_000);
+    }
+    return () => {
+      if (timer !== undefined) window.clearInterval(timer);
+      // The parting word: pause, track change, or the sheet closing all land
+      // the latest position before the interval dies.
+      send();
+    };
+  }, [track, playing]);
+
+  // The other half of the bookmark: a book section OPENS where the listener
+  // left it. Runs once per track, only after the deck has learned a real
+  // duration (seeking before the source is ready gets clobbered by the load),
+  // and only for a spot worth returning to - past the first few seconds,
+  // short of the end. commitSeek is the same door the scrubber uses, so every
+  // clock, crossfade guard and republish rides along.
+  const resumedPath = useRef<string | null>(null);
+  useEffect(() => {
+    if (!track || track.kind !== 'book' || !(duration > 0)) return;
+    if (resumedPath.current === track.path) return;
+    resumedPath.current = track.path;
+    const id = trackIdFromPath(track.path);
+    const s = playSessionRef.current;
+    if (id === null || !s) return;
+    let live = true;
+    void fetchPlayStates(s)
+      .then((states) => {
+        if (!live) return;
+        const mine = states.find((st) => st.trackId === id);
+        if (!mine) return;
+        const to = mine.positionMs / 1000;
+        if (to > 15 && to < duration - 15) commitSeek(to);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- commitSeek is rebuilt every render; the guard ref keeps this once-per-track
+  }, [track, duration]);
 
   // ── CarPlay / system now-playing ─────────────────────────────────────────
   //
