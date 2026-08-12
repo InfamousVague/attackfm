@@ -1277,11 +1277,14 @@ img {
      below them rather than height stolen from them. */
   block-size: calc(var(--app-nav-island-height) + var(--app-nav-chin));
   padding-block-end: var(--app-nav-chin);
-  /* Three cells: a flexible group each side of a fixed centre, so the raised
-     brand button lands dead-centre whatever each side happens to hold. */
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  /* An even row. It was a three-cell grid with a fixed middle, which existed
+     only to land the raised brand disc dead-centre; with the library an
+     ordinary tab there is no privileged cell, and every tab gets the same
+     share of the bar. */
+  display: flex;
   align-items: center;
+  justify-content: space-evenly;
+  gap: var(--glacier-space-1);
   padding-inline: var(--glacier-space-3);
   /* The chin's corners take a wider sweep than the top's: down at the screen's
      edge the phone is already curving away, and a corner that opens out to meet
@@ -1294,7 +1297,8 @@ img {
   -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
   border: var(--glacier-hairline) solid var(--glacier-border-subtle);
   box-shadow: var(--glacier-shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.42));
-  /* The centre button overhangs the top edge, so nothing may clip it. */
+  /* Nothing overhangs the plate now, but the menus that cascade up out of it
+     still must not be clipped. */
   overflow: visible;
 }
 
@@ -1302,23 +1306,12 @@ img {
   box-shadow: -18px 0 42px rgb(0 0 0 / 0.45);
 }
 
-.appNavBar__group {
-  display: flex;
-  align-items: center;
-  justify-content: space-evenly;
-  gap: var(--glacier-space-1);
-  /* Room for plugin pages: the group may hold three tabs on a narrow phone,
-     so each tab is allowed to shrink and its label to truncate rather than
-     the bar overflowing the island. */
+.appNavBar .appNavBarTab {
   min-inline-size: 0;
   flex: 1;
 }
 
-.appNavBar__group .appNavBarTab {
-  min-inline-size: 0;
-}
-
-.appNavBar__group .appNavBarTab__label {
+.appNavBar .appNavBarTab__label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1425,46 +1418,6 @@ img {
 /* The raised centre: the app icon itself, lifted so it overhangs the island's
    top edge, ringed in the page background to cut it cleanly from the card, and
    haloed in the accent so it reads as the prominent home button. */
-.appNavBar__center {
-  justify-self: center;
-  inline-size: 3.5rem;
-  block-size: 3.5rem;
-  margin-block-start: -1.9rem;
-  padding: 0;
-  border: none;
-  /* Circular, filled with the brand pink, with the library glyph centred on
-     it in white. */
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--glacier-accent-solid);
-  overflow: hidden;
-  cursor: pointer;
-  box-shadow:
-    0 0 0 5px var(--glacier-bg),
-    0 9px 22px rgba(0, 0, 0, 0.5);
-  transition: transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease;
-}
-
-.appNavBar__center:active {
-  transform: translateY(1px) scale(0.97);
-}
-
-/* Lit when it is the page: a hair brighter, with a thin ring of the bg around
-   it, so "you are home" reads without changing the shape. */
-.appNavBar__center[data-active] {
-  filter: brightness(1.08);
-  box-shadow:
-    0 0 0 5px var(--glacier-bg),
-    0 0 0 6.5px color-mix(in srgb, var(--glacier-accent-solid) 70%, #fff),
-    0 9px 22px rgba(0, 0, 0, 0.5);
-}
-
-.appNavBar__centerIcon {
-  /* A stroked glyph in white, sitting straight on the pink disc. */
-  color: #fff;
-}
-
 /* The kit nests its items in an inner container sized to their content; make
    it fill the bar so the tabs divide the full width between them. */
 .appNavBar [class*="_items_"] {
@@ -1520,14 +1473,11 @@ img {
      run parallel to the glass instead of cutting across it. Flat 2.25rem read
      too tight against the curve. */
   --app-nav-chin-radius: calc(var(--app-screen-radius) - var(--app-nav-inset));
-  /* How far the raised brand button's border box rises above the card's top.
-     Derived from the button's own numbers rather than guessed: it is centred in
-     the island under a negative top margin, which lifts it by
-     |margin| - (island - button + |margin|) / 2 = 1.9 - (4 - 3.5 + 1.9) / 2.
-     Keep it in step with .appNavBar__center - the player clears exactly this,
-     and the old hand-written 1.9rem over-reserved by nearly 20px, which is the
-     dead band that used to sit between the two plates. */
-  --app-nav-overhang: 0.7rem;
+  /* Nothing rises above the card any more - the raised centre button is gone -
+     so the band the player used to clear for it is zero. Kept as a name rather
+     than deleted because three formulas read it, and a nav that grows a
+     protruding element again wants exactly one place to say so. */
+  --app-nav-overhang: 0px;
   /* What separates the player plate from the raised button above the nav. */
   --app-nav-gap: var(--glacier-space-2);
   /* One tab's height, named so the bar and the band it occupies cannot drift:
@@ -1566,6 +1516,109 @@ img {
    bubbling tap that lifts the full-screen player. */
 .playerBarShell {
   display: contents;
+}
+
+/* ── The phone's now-playing row ────────────────────────────────────────────
+   One line docked on the nav card: cover, what is playing, and the one control
+   a glance needs. Everything else lives on the sheet a tap opens. The height
+   is the cover's - nothing here is allowed to make the row taller than the art
+   it carries, which is what keeps it reading as a strip rather than a card. */
+.miniStrip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2);
+  padding-inline-end: var(--glacier-space-1);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  box-shadow: var(--glacier-shadow-sm);
+  /* The whole row is the handle for the full-screen sheet. */
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  overflow: hidden;
+}
+
+/* The cover, at the row's height and no larger. A square that grows past this
+   is what turns a strip back into the card this replaced. */
+.miniStrip__art {
+  flex: none;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  border-radius: var(--glacier-radius-md);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--glacier-surface-sunken);
+}
+
+.miniStrip__art > *,
+.miniStrip__art img,
+.miniStrip__art canvas,
+.miniStrip__art svg {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+/* min-inline-size: 0 is what lets the two lines actually ellipsis instead of
+   shoving the controls off the end - a flex item's floor is its content. */
+.miniStrip__text {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.miniStrip__title,
+.miniStrip__sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.miniStrip__title {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 600;
+  color: var(--glacier-text);
+}
+
+.miniStrip__sub {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.miniStrip__acts {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}
+
+/* Position as a hairline along the plate's own bottom edge, inset to the
+   padding so it reads as part of the row rather than a bar under it. No
+   transition: it is driven by the audio clock and a smoothed line lies about
+   where the song actually is. */
+.miniStrip__rail {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline: var(--glacier-space-2);
+  block-size: 2px;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-border-subtle);
+  overflow: hidden;
+}
+
+.miniStrip__fill {
+  display: block;
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--glacier-accent-solid);
 }
 
 /* ── Full-screen Now Playing ────────────────────────────────────────────────
