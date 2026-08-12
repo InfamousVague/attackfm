@@ -2495,12 +2495,119 @@ img.artPop:not([data-loading]) {
   opacity: calc(1 - var(--beat, 0) * 0.1);
 }
 
+/* The energy-warmed glow color: the beat surfaces' crimson leans a few
+   degrees toward amber as the track's slow energy climbs, and cools back
+   for the ballads. Only the surfaces below drink from this - the app's
+   actual accent tokens never move. */
+[data-music-live] {
+  --beat-glow: color-mix(
+    in oklch,
+    var(--glacier-accent-solid, #e5484d),
+    oklch(0.75 0.18 55) calc(var(--music-energy, 0) * 40%)
+  );
+  --beat-depth: calc(0.6 + var(--music-energy, 0) * 0.8);
+}
+
+/* The big play button has a pulse: a two-percent swell on the hits, on the
+   standalone scale property so the kit's own press transform is untouched. */
+[data-music-live] .npScreen__play {
+  scale: calc(1 + var(--beat, 0) * 0.02);
+}
+
+/* Toggles that are ON glint with the music: shuffle and repeat lean a
+   breath brighter on hits - state tied to sound, opacity only. */
+[data-music-live] .npScreen__transport [data-on] {
+  opacity: calc(0.8 + var(--beat, 0) * 0.2);
+}
+
+/* The flat cover breathes about one percent - the classic move, cheap on a
+   plain img. The disc stays still by design (see above). */
+[data-music-live] .npScreen__cover {
+  scale: calc(1 + var(--beat, 0) * 0.012);
+}
+
+/* The backdrop words lean brighter on the hits - the whole layer's opacity
+   swells over its resting 0.4, so the lyrics feel sung rather than printed.
+   One element; the per-word keyframes underneath are untouched. */
+[data-music-live] .nowPlayingBackdrop {
+  opacity: calc(0.4 + var(--beat, 0) * 0.12);
+}
+
+/* The volume rail carries a faint charge on the hits - a soft glow along
+   the fill, opacity only, discovered rather than announced. */
+[data-music-live] .volRowRail {
+  position: relative;
+}
+
+[data-music-live] .volRowRail::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: var(--beat-glow);
+  opacity: calc(var(--beat, 0) * 0.12);
+  pointer-events: none;
+}
+
+/* Every card sits in the subwoofer's room: a shadow layer whose depth is
+   the beat times the track's energy. The shadow itself is static paint -
+   only its OPACITY moves, which composites for free even across a page of
+   cards. Cards need a positioning context for the layer; relative on a
+   grid/flex child changes nothing else. */
+[data-music-live] :is(.trackCard, .artistCard, .playlistTile, .mixCard) {
+  position: relative;
+}
+
+[data-music-live] :is(.trackCard, .artistCard, .playlistTile, .mixCard)::after {
+  content: '';
+  position: absolute;
+  inset: 6% 4%;
+  border-radius: var(--glacier-radius-lg);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.55);
+  opacity: calc(var(--beat, 0) * var(--beat-depth, 0.6) * 0.5);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Even interruptions stay in the song: open dialogs and menus wear a
+   hair-thin ring of the glow color that breathes with the pulse. */
+[data-music-live] :is([role='dialog'], [role='menu'])::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid var(--beat-glow);
+  opacity: calc(var(--beat, 0) * 0.2);
+  pointer-events: none;
+}
+
+/* The brand halo drinks the warmed color too, and deepens with energy. */
+[data-music-live] .appNavBar__center::after {
+  background: radial-gradient(circle, var(--beat-glow, var(--glacier-accent-solid, #e5484d)) 0%, transparent 70%);
+  opacity: calc(var(--beat, 0) * 0.25 * var(--beat-depth, 0.6));
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-music-live] .appNavBar__center::after {
     opacity: 0;
   }
   [data-music-live] .npScreen__bg::after {
     opacity: 1;
+  }
+  [data-music-live] .npScreen__play,
+  [data-music-live] .npScreen__cover {
+    scale: 1;
+  }
+  [data-music-live] .npScreen__transport [data-on] {
+    opacity: 1;
+  }
+  [data-music-live] .nowPlayingBackdrop {
+    opacity: 0.4;
+  }
+  [data-music-live] .volRowRail::after,
+  [data-music-live] :is(.trackCard, .artistCard, .playlistTile, .mixCard)::after,
+  [data-music-live] :is([role='dialog'], [role='menu'])::after {
+    opacity: 0;
   }
 }
 

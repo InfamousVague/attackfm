@@ -85,6 +85,31 @@ export function useRippleWave(root: RefObject<HTMLElement | null>): void {
       });
     };
 
+    // While music is audible, arriving batches hold for the next beat and
+    // land ON it - the scroll deals cards to the rhythm. The hold is capped:
+    // a beat that never comes (a breakdown, a fade) must not hold the page
+    // hostage, so a fallback lands the batch anyway.
+    let beatHold = 0;
+    const scheduleLand = () => {
+      if (flush) return;
+      if (document.documentElement.hasAttribute('data-music-live')) {
+        if (beatHold) return;
+        beatHold = window.setTimeout(() => {
+          beatHold = 0;
+          if (!flush) flush = requestAnimationFrame(land);
+        }, 400);
+        return;
+      }
+      flush = requestAnimationFrame(land);
+    };
+    const onBeat = () => {
+      if (!beatHold) return;
+      window.clearTimeout(beatHold);
+      beatHold = 0;
+      if (!flush) flush = requestAnimationFrame(land);
+    };
+    window.addEventListener('afm:beat', onBeat);
+
     const io = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
@@ -92,9 +117,7 @@ export function useRippleWave(root: RefObject<HTMLElement | null>): void {
           io.unobserve(entry.target);
           batch.push(entry.target as HTMLElement);
         }
-        if (batch.length > 0 && flush === 0) {
-          flush = requestAnimationFrame(land);
-        }
+        if (batch.length > 0) scheduleLand();
       },
       // A sliver inside the edge, so items land as they truly arrive rather
       // than while still a pixel offscreen.
@@ -128,7 +151,7 @@ export function useRippleWave(root: RefObject<HTMLElement | null>): void {
           batch.push(el as HTMLElement);
         }
       }
-      if (batch.length > 0 && flush === 0) flush = requestAnimationFrame(land);
+      if (batch.length > 0) scheduleLand();
     };
     let sweepArmed = 0;
     const onScroll = () => {
@@ -158,6 +181,8 @@ export function useRippleWave(root: RefObject<HTMLElement | null>): void {
     return () => {
       mo.disconnect();
       io.disconnect();
+      window.removeEventListener('afm:beat', onBeat);
+      if (beatHold) window.clearTimeout(beatHold);
       document.removeEventListener('scroll', onScroll, { capture: true });
       if (sweepArmed) cancelAnimationFrame(sweepArmed);
       for (const t of settle) window.clearTimeout(t);

@@ -861,6 +861,9 @@ export function Player({
     };
   }, [audible]);
   const lastBeatVar = useRef(-1);
+  const prevPulse = useRef(0);
+  const energyEma = useRef(0);
+  const lastEnergyVar = useRef(-1);
   if (audible) {
     // Written during render on purpose: useBeat re-renders this component
     // every frame while music plays (that is how the strip's bar deforms),
@@ -870,6 +873,22 @@ export function Player({
     if (q !== lastBeatVar.current) {
       lastBeatVar.current = q;
       document.documentElement.style.setProperty('--beat', q.toFixed(3));
+    }
+    // The rising edge IS the beat as an event - the ripple wave quantises
+    // its landings to these, so scrolling deals cards to the rhythm.
+    if (beat.pulse - prevPulse.current > 0.22) {
+      window.dispatchEvent(new CustomEvent('afm:beat'));
+    }
+    prevPulse.current = beat.pulse;
+    // The slow tier: a few-second average of how hard the track is hitting,
+    // 0..1, published coarsely (one recalc per step, not per frame). Loud
+    // stretches deepen every beat effect; ballads calm them - the chorus
+    // feels bigger without any new surface.
+    energyEma.current = energyEma.current * 0.995 + beat.pulse * 0.005;
+    const e = Math.round(energyEma.current * 20) / 20;
+    if (e !== lastEnergyVar.current) {
+      lastEnergyVar.current = e;
+      document.documentElement.style.setProperty('--music-energy', e.toFixed(2));
     }
   }
 
@@ -3520,7 +3539,12 @@ export function Player({
               levels={levels}
               beat={beat}
               tracer
-              intensity={Math.min(3, beatIntensity(volume, muted, systemVolume) * 1.6)}
+              // Loud stretches push the deformation toward the hero ceiling;
+              // quiet ones ease it back - the bar visibly knows the chorus.
+              intensity={Math.min(
+                3,
+                beatIntensity(volume, muted, systemVolume) * (1.4 + (energyEma.current > 0.35 ? 0.5 : 0)),
+              )}
               onValueChange={onScrub}
               onSeekEnd={commitSeek}
             />
