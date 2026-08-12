@@ -1811,8 +1811,9 @@ img {
      notch and its close button went with it, so the panel could be opened and
      not shut. Inset from every edge instead: the sheet underneath frames it,
      the header sits well clear of the notch, and the margin around it is
-     itself a way out (tapping it dismisses). */
-  top: 12%;
+     itself a way out (tapping it dismisses). Sitting a further tenth of the
+     screen down leaves the song it belongs to visible above the words. */
+  top: 22%;
   right: var(--glacier-space-4);
   bottom: calc(env(safe-area-inset-bottom, 0px) + var(--glacier-space-4));
   left: var(--glacier-space-4);
