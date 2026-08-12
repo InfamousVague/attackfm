@@ -24,6 +24,9 @@ mod ios_audio;
 // the native template UI in gen/apple/Sources/app/carplay.m.
 mod carplay;
 
+// Nearby listeners over Multipeer - discovery only, opt-in, foreground.
+mod nearby;
+
 // Your own library, held on the device for offline play. Not the import
 // engine - see offline.rs's header for why that distinction is load-bearing.
 mod offline;
@@ -234,6 +237,9 @@ fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'stat
         offline::offline_pin,
         offline::offline_unpin,
         offline::offline_clear,
+        nearby::nearby_start,
+        nearby::nearby_stop,
+        nearby::nearby_peers,
     ]
 }
 
@@ -265,5 +271,8 @@ fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'stat
         offline::offline_pin,
         offline::offline_unpin,
         offline::offline_clear,
+        nearby::nearby_start,
+        nearby::nearby_stop,
+        nearby::nearby_peers,
     ]
 }
