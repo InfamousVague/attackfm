@@ -118,6 +118,17 @@
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>AttackFM connects to your music server on this network.</string>
 
+	<!-- Multipeer's own Bonjour types, both halves of the pair. iOS 14+ will
+	     not browse a service that is not declared here - it fails silently,
+	     which is the worst way to learn this - and MultipeerConnectivity
+	     registers TCP and UDP for one service type. Must match the string in
+	     Sources/app/nearby.swift. -->
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_attackfm-jam._tcp</string>
+		<string>_attackfm-jam._udp</string>
+	</array>
+
 	<!-- Export compliance: the app's only cryptography is standard HTTPS/TLS to
 	     the music server, which is exempt. Declaring it here means TestFlight
 	     and App Store Connect stop asking the compliance question on every
