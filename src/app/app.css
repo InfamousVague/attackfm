@@ -3240,6 +3240,12 @@ img.artPop:not([data-loading]) {
   color: var(--glacier-accent-text);
 }
 
+/* One generated object as the whole face - a single frame, not mosaic cells. */
+.mixCardCover--object {
+  display: block;
+  background: var(--glacier-surface-sunken);
+}
+
 .mixCardTitle {
   max-inline-size: 100%;
   margin-block-start: var(--glacier-space-1);
@@ -7189,6 +7195,30 @@ body [class*='_panel_']:has(> .dlPanel) {
   opacity: 0.85;
 }
 
+/* A generated object as the whole tile face: full bleed under the label, the
+   tint showing through while it loads. The scrim keeps the words readable on
+   the set's bright grounds, and the label rides above it. */
+.searchGenre__objectArt {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.searchGenre:has(.searchGenre__objectArt)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgb(0 0 0 / 0.55), transparent 55%);
+  pointer-events: none;
+}
+
+.searchGenre__name,
+.searchGenre__count {
+  z-index: 1;
+}
+
 /* ---- Chips and See all -------------------------------------------------- */
 
 .searchChipWrap {
@@ -7878,6 +7908,17 @@ body [class*='_panel_']:has(> .dlPanel) {
 }
 :root[data-theme='dark'] .emptyArt__img--dark {
   display: block;
+}
+
+/* The served object: a product shot on its own ground, worn as a card rather
+   than blended into the page - rounded and hairlined, no dissolving mask. */
+.emptyArt__img--served {
+  display: block;
+  -webkit-mask-image: none;
+  mask-image: none;
+  border-radius: var(--glacier-radius-xl, 1rem);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  object-fit: cover;
 }
 
 /* ---- Skeleton shelves and the library stats card ------------------------ */
