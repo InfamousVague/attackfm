@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Button, ProgressBar, Spinner } from '@glacier/react';
 import {
-  BookAudio,
   Check,
   CheckCheck,
   ChevronDown,
@@ -37,12 +36,12 @@ import placeholderArt from '../assets/attack-wave.png';
  * A queue is something you WATCH - fifty songs arriving over ten minutes - and
  * a panel that closes when you look away is the wrong container for it.
  *
- * It is also PLURAL now. Songs come down through the importer, books through
- * LibriVox or Audible, and whatever a future plugin pulls will come down its
- * own way - but "what is downloading right now" is one question, so it gets
- * one answer in one place. Each source hands over a queue (see
- * PluginDownloadSource in plugins/types.ts) and the page renders them all as
- * the same card; a plugin no longer keeps a private list inside its own page.
+ * It is also PLURAL. Songs come down through the importer, and whatever a
+ * future plugin pulls will come down its own way - but "what is downloading
+ * right now" is one question, so it gets one answer in one place. Each source
+ * hands over a queue (see PluginDownloadSource in plugins/types.ts) and the
+ * page renders them all as the same card, rather than a plugin keeping a
+ * private list inside its own page.
  *
  * Three things carry the design. A status strip answers "what is happening"
  * in one glance, before any card is read. The queue is then SPLIT by state -
@@ -86,7 +85,6 @@ function KindIcon({ kind }: { kind: string }) {
   if (k === 'playlist') return <ListMusic size={12} />;
   if (k === 'album') return <Disc3 size={12} />;
   if (k === 'artist') return <User size={12} />;
-  if (k === 'book' || k === 'audiobook') return <BookAudio size={12} />;
   return <Music size={12} />;
 }
 
@@ -383,9 +381,9 @@ function DownloadsBoard() {
         <div className="emptyState emptyState--tall">
           <EmptyArt name="downloads" />
           <p className="downloadsEmpty">
-            Nothing here downloads anything yet. Turn on a downloader in Settings → Plugins —{' '}
-            <strong>Music import</strong> for songs, <strong>LibriVox</strong> or{' '}
-            <strong>Audible</strong> for books — and its queue shows up here.
+            Nothing here downloads anything yet. Turn on <strong>Music import</strong> in
+            Settings → Plugins, and its queue shows up here — along with any other plugin that
+            brings one.
           </p>
         </div>
       </div>
@@ -464,8 +462,8 @@ function DownloadsBoard() {
         <div className="emptyState emptyState--tall">
           <EmptyArt name="downloads" />
           <p className="downloadsEmpty">
-            Nothing in the queue. Add songs from <strong>Discover</strong>, paste a music link into
-            search, or pull a book in from <strong>Books</strong>.
+            Nothing in the queue. Add songs from <strong>Discover</strong>, or paste a music link
+            into search.
           </p>
         </div>
       ) : (

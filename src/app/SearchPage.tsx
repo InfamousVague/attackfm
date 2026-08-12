@@ -1,6 +1,5 @@
 import { SearchField, Text } from '@glacier/react';
 import {
-  BookAudio,
   Check,
   ChevronRight,
   Compass,
@@ -112,7 +111,6 @@ type Filter =
   | 'songs'
   | 'artists'
   | 'albums'
-  | 'books'
   | 'playlists'
   | 'genres'
   | 'friends'
@@ -130,7 +128,6 @@ const CHIPS: { id: Filter; label: string; icon: ReactNode; group: 'scope' | 'kin
   { id: 'songs', label: 'Songs', icon: <Music size={13} />, group: 'kind' },
   { id: 'artists', label: 'Artists', icon: <User size={13} />, group: 'kind' },
   { id: 'albums', label: 'Albums', icon: <Disc3 size={13} />, group: 'kind' },
-  { id: 'books', label: 'Books', icon: <BookAudio size={13} />, group: 'kind' },
   { id: 'playlists', label: 'Playlists', icon: <ListMusic size={13} />, group: 'kind' },
   { id: 'genres', label: 'Genres', icon: <Tag size={13} />, group: 'kind' },
   { id: 'friends', label: 'Friends', icon: <Users size={13} />, group: 'kind' },
@@ -387,8 +384,7 @@ export function SearchPage({
   onOpenArtist: (artist: string) => void;
   onOpenPlaylist: (id: string) => void;
 }) {
-  const { tracks, books } = useLibrary();
-  const booksEnabled = usePlugins().isEnabled('books');
+  const { tracks } = useLibrary();
   const { playlists } = usePlaylists();
   // Results, genre tiles and recents wave in as they meet the view, landing
   // with the same soft ticks the Library's shelves ride - see rippleWave.ts.
@@ -478,37 +474,6 @@ export function SearchPage({
 
   const parsed = useMemo(() => parseQuery(query), [query]);
   const lib = useMemo(() => searchLibrary(tracks, query), [tracks, query]);
-
-  // Books, as searchable album-shaped hits. A book IS an album here, so tapping
-  // it plays the book's OWN tracks - it never enters the songs section or its
-  // play queue, keeping music and books apart even in search. Only while the
-  // built-in Books feature is on. searchLibrary stays music-only above.
-  const bookHits = useMemo<LocalAlbum[]>(() => {
-    const q = query.trim().toLowerCase();
-    if (!booksEnabled || books.length === 0 || q.length < 1) return [];
-    const byBook = new Map<string, Track[]>();
-    for (const t of books) {
-      const key = `${t.artist}${t.album}`;
-      const list = byBook.get(key);
-      if (list) list.push(t);
-      else byBook.set(key, [t]);
-    }
-    const hits: LocalAlbum[] = [];
-    for (const tr of byBook.values()) {
-      const first = tr[0]!;
-      const title = first.album || first.title;
-      if (!`${title} ${first.artist}`.toLowerCase().includes(q)) continue;
-      tr.sort((a, b) => (a.trackNo ?? 0) - (b.trackNo ?? 0));
-      hits.push({
-        title,
-        artist: first.artist,
-        cover: tr.find((t) => t.artwork)?.artwork ?? null,
-        count: tr.length,
-        tracks: tr,
-      });
-    }
-    return hits;
-  }, [books, booksEnabled, query]);
 
   const people = useMemo(() => {
     const q = query.trim().toLowerCase().replace(/^@/, '');
@@ -829,18 +794,6 @@ export function SearchPage({
           .map<Item>((a) => ({ t: 'album', id: `album:${albumKey(a)}`, album: a })),
       });
     }
-    // Your audiobooks (album-shaped). A tap plays the book.
-    if (on('books') && bookHits.length > 0) {
-      out.push({
-        key: 'books',
-        title: 'Books',
-        icon: <BookAudio size={15} />,
-        total: bookHits.length,
-        items: bookHits
-          .slice(0, cap('books'))
-          .map<Item>((a) => ({ t: 'album', id: `book:${albumKey(a)}`, album: a })),
-      });
-    }
     if (on('playlists') && lists.length > 0) {
       out.push({
         key: 'playlists',
@@ -937,7 +890,6 @@ export function SearchPage({
         if (id === 'songs') return lib.songs.length > 0;
         if (id === 'artists') return lib.artists.length > 0;
         if (id === 'albums') return lib.albums.length > 0;
-        if (id === 'books') return bookHits.length > 0;
         if (id === 'playlists') return lists.length > 0;
         if (id === 'genres') return lib.genres.length > 0;
         if (id === 'friends') return people.length > 0;

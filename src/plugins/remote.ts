@@ -32,22 +32,26 @@ const REMOVED_DEFAULTS_KEY = 'attackfm-plugin-sources-removed';
 export const DEFAULT_SOURCES: readonly string[] = ['https://plugins.attack.fm'];
 
 /**
- * Plugins installed for you on first run - the audiobook downloader and the EQ
- * - so a fresh app comes stocked rather than empty. Fetched from whatever source
- * carries them (the hub serves both), and, like a default source, remembered
- * when removed so uninstalling one is not undone on the next launch.
+ * Plugins installed for you on first run - so a fresh app comes stocked rather
+ * than empty. Fetched from whatever source carries them, and, like a default
+ * source, remembered when removed so uninstalling one is not undone on the next
+ * launch.
  */
-export const DEFAULT_PLUGINS: readonly string[] = ['audible', 'librivox', 'eq-rack'];
+export const DEFAULT_PLUGINS: readonly string[] = ['eq-rack'];
 
 /** Default plugins the user has removed, so the auto-install never re-adds them. */
 const REMOVED_DEFAULT_PLUGINS_KEY = 'attackfm-plugins-removed-defaults';
 
 /**
- * Plugins a core feature has superseded - uninstalled on sight so they cannot
- * double up with the built-in that replaced them. The old `audiobooks` plugin
- * went this way when the Books shelf became core.
+ * Plugins that are no longer part of the app - uninstalled on sight, wherever
+ * they were installed from. It covers both kinds of retirement: one a core
+ * feature superseded (`audiobooks`, when the Books shelf briefly became core),
+ * and one that has simply been withdrawn. The audiobook downloaders went the
+ * second way when AttackFM went back to being about music, and listing them
+ * here is what takes them off a phone that already had them - a repository
+ * dropping a plugin is not, by itself, an uninstall.
  */
-export const DEPRECATED_PLUGINS: readonly string[] = ['audiobooks'];
+export const DEPRECATED_PLUGINS: readonly string[] = ['audiobooks', 'audible', 'librivox'];
 
 /** One plugin as a repository's manifest lists it. */
 export interface RemotePluginListing {

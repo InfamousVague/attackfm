@@ -17,23 +17,6 @@
       "bytes": 5741,
       "sha256": "25b040d045c4216b450079681a949ed3c2a1af83eefab1ec456cf7edd44bf4c9",
       "public": true
-    },
-    {
-      "id": "librivox",
-      "name": "LibriVox",
-      "version": "0.2.0",
-      "description": "Download free, public-domain audiobooks from the LibriVox catalogue into your library.",
-      "author": "AttackFM",
-      "tags": [
-        "Audiobooks",
-        "Downloads"
-      ],
-      "entry": "librivox-0.2.0.js",
-      "api": 1,
-      "bytes": 6968,
-      "sha256": "6a8c61c6fb10af09b996e280893adaca0c60e2533ce83a5c28542b66557726f6",
-      "requiresServer": true,
-      "public": true
     }
   ]
 }

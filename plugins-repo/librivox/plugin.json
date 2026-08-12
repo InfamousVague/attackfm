@@ -10,5 +10,5 @@
   ],
   "entry": "plugin.ts",
   "requiresServer": true,
-  "public": true
+  "retired": true
 }

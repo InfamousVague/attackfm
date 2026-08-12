@@ -9,5 +9,6 @@
     "Downloads"
   ],
   "entry": "plugin.ts",
-  "requiresServer": true
+  "requiresServer": true,
+  "retired": true
 }
