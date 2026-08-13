@@ -331,14 +331,14 @@ function PrimaryNav({
     <nav className="appNavBar" aria-label="Primary">
       {/* A destination, so it lights like one. */}
       <BarTab
-        icon={<Search size={20} />}
+        icon={<Search size={24} />}
         label="Search"
         active={tab === 'search'}
         onClick={() => onTab('search')}
       />
       {canDiscover && (
         <BarTab
-          icon={<Compass size={20} />}
+          icon={<Compass size={24} />}
           label="Discover"
           active={tab === 'discover'}
           onClick={() => onTab('discover')}
@@ -346,13 +346,13 @@ function PrimaryNav({
       )}
       {/* The library: where the music you own lives, and the app's home. */}
       <BarTab
-        icon={<LibraryBig size={20} />}
+        icon={<LibraryBig size={24} />}
         label="Library"
         active={libraryActive}
         onClick={() => onTab('library')}
       />
       <BarTab
-        icon={<CircleUserRound size={20} />}
+        icon={<CircleUserRound size={24} />}
         label="Profile"
         active={tab === 'profile' || tab === 'friends'}
         onClick={() => onTab('profile')}

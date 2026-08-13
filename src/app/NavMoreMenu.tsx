@@ -62,7 +62,7 @@ export function NavMoreMenu({
           aria-label="More"
         >
           <span className="appNavBarTab__icon">
-            <EllipsisVertical size={20} />
+            <EllipsisVertical size={24} />
           </span>
           <span className="appNavBarTab__label">More</span>
         </button>
