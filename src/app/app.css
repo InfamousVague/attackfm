@@ -1353,11 +1353,15 @@ img {
   transition: background-color 0.16s var(--glacier-ease-out, ease), color 0.16s ease;
 }
 
-/* The selected tab: its glyph rides a filled disc of the accent, white on the
-   colour; the label below keeps the accent tint. */
+/* The selected tab: the GLYPH carries the colour and the disc barely exists -
+   a faint wash of the same accent, just enough to seat the icon. The reverse
+   (a bright filled disc under a white glyph) put the loudest thing on screen
+   at the bottom of every page and read as a button waiting to be pressed
+   rather than a mark of where you already are. The label keeps its accent
+   tint from the rule above. */
 .appNavBarTab[data-active] .appNavBarTab__icon {
-  background: var(--glacier-accent-solid);
-  color: #fff;
+  background: color-mix(in srgb, var(--glacier-accent-solid) 16%, transparent);
+  color: var(--glacier-accent-text);
 }
 
 .appNavBarTab__label {
