@@ -98,12 +98,17 @@ export function SongPage({
   // shown whole instead of clipped to a shelf.
   const allNewest = useMemo(() => [...tracks].sort((a, b) => b.addedAt - a.addedAt), [tracks]);
   const [heavyIds, setHeavyIds] = useState<number[] | null>(null);
+  // How many times each of them was played - what the On repeat page shows in
+  // place of a row number, since that count IS the page's subject.
+  const [playsById, setPlaysById] = useState<Map<number, number>>(new Map());
   useEffect(() => {
     if (view !== 'onrepeat' || !session) return;
     let live = true;
     void fetchHome(session)
       .then((feed) => {
-        if (live) setHeavyIds(feed.heavy ?? []);
+        if (!live) return;
+        setHeavyIds(feed.heavy ?? []);
+        setPlaysById(new Map((feed.heavyPlays ?? []).map((h) => [h.id, h.plays])));
       })
       .catch(() => {
         if (live) setHeavyIds([]);
@@ -194,7 +199,12 @@ export function SongPage({
         // and scroll; the header sits above it.
         <section className="homeShelf librarySongs">
           <div className="libraryBody">
-            <SongTable tracks={listTracks} onPlay={onPlay} onOpenArtist={onOpenArtist} />
+            <SongTable
+              tracks={listTracks}
+              onPlay={onPlay}
+              onOpenArtist={onOpenArtist}
+              plays={view === 'onrepeat' && playsById.size > 0 ? playsById : undefined}
+            />
           </div>
         </section>
       )}
