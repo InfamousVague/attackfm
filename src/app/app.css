@@ -11062,3 +11062,309 @@ button.artistAlbum {
   padding: var(--glacier-space-3) 0;
   background: linear-gradient(to top, var(--glacier-bg) 60%, transparent);
 }
+
+/* --- Servers: where the music is served from ----------------------------- */
+
+.serversPage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-4);
+  padding: var(--glacier-space-4);
+  padding-block-end: calc(var(--app-player-height) + var(--app-nav-height, 0px));
+}
+
+.serversPage__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+}
+
+.serversPage__routing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.serversPage__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+.serverCard {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-4);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+/* The box currently feeding the player wears the accent edge - the one piece
+   of state on this page that changes on its own. */
+.serverCard[data-serving] {
+  border-color: var(--glacier-accent-solid);
+}
+
+.serverCard__top {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+.serverCard__icon {
+  display: grid;
+  place-items: center;
+  inline-size: 2rem;
+  block-size: 2rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text-muted);
+  flex: none;
+}
+
+.serverCard__id {
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.serverCard__badge {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-accent-text);
+  white-space: nowrap;
+}
+
+.serverCard__forget,
+.storage__sort {
+  background: none;
+  border: 0;
+  color: var(--glacier-text-muted);
+  cursor: pointer;
+  padding: var(--glacier-space-1);
+  border-radius: var(--glacier-radius-sm);
+}
+
+.serverCard__forget:hover,
+.storage__sort:hover {
+  background: var(--glacier-hover);
+  color: var(--glacier-text);
+}
+
+.serverCard__metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
+  gap: var(--glacier-space-3);
+  inline-size: 100%;
+}
+
+.serverMetric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.serverMetric__value {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+/* Nearness reads as colour before it reads as a number. */
+.serverMetric__value[data-tone='best'] { color: var(--glacier-success-text, var(--glacier-accent-text)); }
+.serverMetric__value[data-tone='good'] { color: var(--glacier-accent-text); }
+.serverMetric__value[data-tone='ok'] { color: var(--glacier-text); }
+.serverMetric__value[data-tone='slow'] { color: var(--glacier-warning-text, var(--glacier-text-muted)); }
+.serverMetric__value[data-tone='bad'] { color: var(--glacier-danger-text, var(--glacier-text-muted)); }
+.serverMetric__value[data-tone='idle'] { color: var(--glacier-text-muted); }
+
+.serverMetric__label {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.serverCard__bar {
+  block-size: 6px;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface-sunken);
+  overflow: hidden;
+}
+
+.serverCard__barFill {
+  display: block;
+  block-size: 100%;
+  background: var(--glacier-accent-solid);
+  border-radius: inherit;
+}
+
+.serverCard__barFill[data-full] {
+  background: var(--glacier-danger-solid, var(--glacier-accent-solid));
+}
+
+.serverCard__disk {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.serverCard__manage {
+  align-self: flex-start;
+}
+
+.serversPage__add {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-4);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.serversPage__addActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--glacier-space-2);
+}
+
+/* --- Freeing space ------------------------------------------------------- */
+
+.storage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-4);
+  padding-block-end: calc(var(--app-player-height) + var(--app-nav-height, 0px));
+  /* The list is the page: it gets whatever the chrome does not use. */
+  block-size: 100%;
+  min-block-size: 0;
+}
+
+.storage__head {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.storage__controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.storage__sorts {
+  display: flex;
+  gap: var(--glacier-space-1);
+}
+
+.storage__sort {
+  font-size: var(--glacier-font-size-sm);
+  padding-inline: var(--glacier-space-3);
+  padding-block: var(--glacier-space-1);
+  border-radius: var(--glacier-radius-full);
+}
+
+.storage__sort[data-active] {
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-accent-on-solid, #fff);
+}
+
+.storage__bulk {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+}
+
+.storage__list {
+  flex: 1;
+  min-block-size: 12rem;
+  border-radius: var(--glacier-radius-lg);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.storageRow {
+  display: flex;
+  inline-size: 100%;
+  box-sizing: border-box;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding-inline: var(--glacier-space-3);
+  block-size: 60px;
+  cursor: pointer;
+  border-block-end: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.storageRow[data-picked] {
+  background: var(--glacier-hover);
+}
+
+.storageRow__text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.storageRow__title,
+.storageRow__sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.storageRow__sub {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+/* The one distinction that matters before deleting: is this the last copy? */
+.storageRow__only {
+  color: var(--glacier-warning-text, var(--glacier-text));
+}
+
+.storageRow__size {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+  flex: none;
+}
+
+.storage__foot,
+.storage__trash {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+  flex-wrap: wrap;
+}
+
+.storage__trash {
+  padding: var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.storage__confirm {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  flex-wrap: wrap;
+}
+
+.storage__warn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-warning-text, var(--glacier-text-muted));
+}

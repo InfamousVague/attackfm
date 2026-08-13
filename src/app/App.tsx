@@ -45,6 +45,7 @@ import { LibrarySyncProvider } from './librarySync.tsx';
 import { SearchPage } from './SearchPage.tsx';
 import { StatsPage } from './StatsPage.tsx';
 import { AiPage } from './AiPage.tsx';
+import { ServersPage } from './ServersPage.tsx';
 import { DjPage } from './DjPage.tsx';
 import { DjChatProvider } from './djChat.tsx';
 import { DatePage } from './DatePage.tsx';
@@ -238,6 +239,7 @@ function PrimaryNav({
       tab !== 'ai' &&
       tab !== 'dj' &&
       tab !== 'date' &&
+      tab !== 'servers' &&
       !onPluginPage);
 
   const primaryItems = (
@@ -638,6 +640,11 @@ function AppMain({
         // (or an account that stopped being the owner) falls through to the
         // library rather than opening a page it should not see.
         <AiPage />
+      ) : tab === 'servers' ? (
+        // Where the bytes come from: every linked server, how near it is, how
+        // much of the library it holds, and - where this account hosts the box
+        // - what to delete to make room.
+        <ServersPage />
       ) : tab === 'stats' ? (
         // Stats: the listening, added up - fed by the same event log the
         // curator tunes itself on.

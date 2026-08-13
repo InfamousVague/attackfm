@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { rememberProfile } from './household.ts';
 import { rememberServer } from './servers.ts';
+import { pickSource, startMirrorHeartbeat } from './mirrors.ts';
 import {
   artUrl,
   isRemotePath,
@@ -144,9 +145,21 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
       // filter to live. The bitrate stays whatever was chosen, so asking for
       // lofi does not quietly also cost quality.
       const fx = effectsParam();
+      // Which BOX serves the bytes is a separate question from which library
+      // this is. A mirror that holds the same song and answers faster from
+      // wherever the phone woke up takes the fetch; everything else about the
+      // session - the row id space, the playlists, the favourites - is still
+      // the session server's. `pickSource` returns null when the session
+      // server is already the best answer, which is the common case and the
+      // one that behaves exactly as it did before mirrors existed.
+      const via = pickSource(live, id);
+      const from: ServerSession = via
+        ? { ...live, url: via.url, streamToken: via.streamToken }
+        : live;
+      const rowId = via ? via.trackId : id;
       return quality === 'transcode' || fx
-        ? transcodeUrl(live, id, bitrate, 0, fx)
-        : streamUrl(live, id);
+        ? transcodeUrl(from, rowId, bitrate, 0, fx)
+        : streamUrl(from, rowId);
     });
     return () => setRemoteAudioResolver(null);
   }, []);
@@ -192,6 +205,13 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
       live = false;
     };
   }, []);
+
+  // Mirrors are only worth timing while there is a session to compare them
+  // against, and re-timed from scratch whenever that session changes.
+  useEffect(() => {
+    if (!session) return;
+    return startMirrorHeartbeat(session);
+  }, [session]);
 
   const persist = useCallback((next: ServerSession | null) => {
     setSession(next);

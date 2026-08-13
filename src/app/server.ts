@@ -723,6 +723,45 @@ export async function deleteUser(session: ServerSession, id: number): Promise<vo
   await request(session.url, `/api/users/${id}`, { method: 'DELETE', token: session.token });
 }
 
+// --- reclaiming disk (admin) -------------------------------------------------
+
+export interface TrashState {
+  files: number;
+  bytes: number;
+}
+
+/**
+ * Quarantines tracks: the files move to the library's trash and the rows are
+ * tombstoned, so every client's delta sync drops them.
+ *
+ * This frees NO space on its own - that is deliberate, and the reason the
+ * reply reports bytes rather than pretending. `purgeTrash` is the second,
+ * separate act that actually returns the disk.
+ */
+export async function removeTracks(
+  session: ServerSession,
+  ids: number[],
+): Promise<{ removed: number; bytes: number; rev: number }> {
+  return request(session.url, '/api/library/remove', {
+    method: 'POST',
+    token: session.token,
+    body: JSON.stringify({ ids }),
+  });
+}
+
+/** What is sitting in the trash, and so what emptying it would give back. */
+export async function fetchTrash(session: ServerSession): Promise<TrashState> {
+  return request<TrashState>(session.url, '/api/library/trash', { token: session.token });
+}
+
+/** Unlinks the trash. The one call here that cannot be undone. */
+export async function purgeTrash(session: ServerSession): Promise<TrashState> {
+  return request<TrashState>(session.url, '/api/library/trash/purge', {
+    method: 'POST',
+    token: session.token,
+  });
+}
+
 /** Kills every stream token the account holds - each device must sign in again
  * to keep listening. The account itself stays. */
 export async function revokeUserStreams(session: ServerSession, id: number): Promise<void> {
