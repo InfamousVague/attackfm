@@ -10509,6 +10509,27 @@ button.artistAlbum {
   gap: var(--glacier-space-3);
 }
 
+/* The effects rack: the multi-select and its one line of consequence. Divided
+   from the sliders above by the same rule the switches use, so the panel reads
+   as three groups - curve, effects, then the two graph switches. */
+.eqPanel__rack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding-block-start: var(--glacier-space-3);
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+/* Label left, Clear right - and Clear only exists when there is something to
+   clear, so the row is usually just the label. */
+.eqPanel__rackHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+  min-block-size: 1.75rem;
+}
+
 /* The effects below the sliders, set off by a rule so they read as a separate
    group rather than two more equalizer controls. */
 .eqPanel__fx {

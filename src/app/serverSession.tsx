@@ -23,6 +23,7 @@ import {
   transcodeUrl,
   type ServerSession,
 } from './server.ts';
+import { effectsParam } from './effects.ts';
 import { setRemoteAudioResolver } from './tauri.ts';
 
 const SESSION_KEY = 'attackfm-server-session';
@@ -137,8 +138,14 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
       // The transcode path deliberately starts from zero: it is a live encode,
       // so there is no range to resume into. Seeking on it is a fresh request,
       // which the player performs by reloading the source.
-      return quality === 'transcode'
-        ? transcodeUrl(live, id, bitrate)
+      //
+      // An effect forces that path even on a fast connection, because the
+      // encoder IS the effects rack - the untouched file has nowhere for a
+      // filter to live. The bitrate stays whatever was chosen, so asking for
+      // lofi does not quietly also cost quality.
+      const fx = effectsParam();
+      return quality === 'transcode' || fx
+        ? transcodeUrl(live, id, bitrate, 0, fx)
         : streamUrl(live, id);
     });
     return () => setRemoteAudioResolver(null);

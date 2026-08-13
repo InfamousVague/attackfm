@@ -49,6 +49,7 @@ import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { VolumeControl, VolumeRow, VOLUME_MAX, VOLUME_UNITY } from './VolumeControl.tsx';
 import npPlaceholderArt from '../assets/attack-wave.png';
 import { NowPlayingBackdrop } from './NowPlayingBackdrop.tsx';
+import { useEffects } from './effects.ts';
 import { loadAudioUrl, reactivateAudioSession, systemOutputVolume, type Track } from './tauri.ts';
 import { isPendingPath } from './pendingPlay.tsx';
 import { fetchCanvas, fetchPlayStates, isRemotePath, reportPlay, reportPosition, trackIdFromPath } from './server.ts';
@@ -671,6 +672,36 @@ export function Player({
     pendingPlay.current = true;
     setActiveSrc(fresh);
   };
+
+  /**
+   * Turning an effect on or off re-colours the song already playing, in place.
+   *
+   * The rack changes the stream's URL, but a media element that is already
+   * playing does not care that the URL it was handed would now be spelled
+   * differently - it holds an open connection to the old one. Without this,
+   * a switch would appear to do nothing until the next track, which reads as
+   * broken rather than as deferred.
+   *
+   * `resumeInPlace` is exactly the right instrument: it re-resolves the source
+   * and returns to the same position through the ordinary canplay path. Its
+   * retry budget is reset first, because that budget counts FAILURES - a
+   * deliberate change is not one, and a song that stalled twice this morning
+   * should still be allowed to go lofi.
+   *
+   * Local files skip it: nothing about their URL changed (the server is what
+   * applies effects), so reloading would restart the song to no purpose.
+   */
+  const rack = useEffects();
+  const rackWas = useRef(rack);
+  useEffect(() => {
+    const before = rackWas.current;
+    rackWas.current = rack;
+    if (before === rack) return;
+    if (!liveRef.current.track || !isRemotePath(liveRef.current.track.path)) return;
+    resumeCount.current = 0;
+    void resumeInPlace();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the rack is the trigger; resumeInPlace is redefined every render
+  }, [rack]);
 
   /** Arm the ladder. Idempotent: an episode already running keeps its timer. */
   const noteStall = () => {
