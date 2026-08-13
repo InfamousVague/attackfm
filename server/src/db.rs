@@ -1378,6 +1378,40 @@ impl Db {
 
     // --- favourites -------------------------------------------------------
 
+    /// The albums this library holds by one artist, with the tracks it has of
+    /// each. What the album filler diffs against a catalogue tracklist.
+    ///
+    /// Grouped case-insensitively, because one album's worth of files is often
+    /// tagged three slightly different ways, and an album split in two by its
+    /// own capitalisation would read as two half-empty records.
+    pub fn albums_by_artist(&self, artist: &str) -> Vec<(String, Vec<(String, Option<i64>)>)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT album, title, track_no FROM tracks
+              WHERE deleted = 0 AND TRIM(album) <> '' AND LOWER(TRIM(artist)) = LOWER(TRIM(?1))
+              ORDER BY album, COALESCE(track_no, 9999), title",
+        ) else {
+            return Vec::new();
+        };
+        let rows: Vec<(String, String, Option<i64>)> = stmt
+            .query_map(rusqlite::params![artist], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<i64>>(2)?))
+            })
+            .map(|r| r.filter_map(Result::ok).collect())
+            .unwrap_or_default();
+        let mut out: Vec<(String, Vec<(String, Option<i64>)>)> = Vec::new();
+        for (album, title, no) in rows {
+            let key = album.trim().to_lowercase();
+            match out.last_mut() {
+                Some((name, tracks)) if name.trim().to_lowercase() == key => {
+                    tracks.push((title, no))
+                }
+                _ => out.push((album, vec![(title, no)])),
+            }
+        }
+        out
+    }
+
     /// The artists behind a set of track ids, most-represented first.
     ///
     /// What a handful of songs is really saying: you did not keep THAT
