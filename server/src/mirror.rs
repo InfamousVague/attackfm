@@ -179,6 +179,15 @@ async fn run(state: &Arc<AppState>, source: &str, token: &str, stream_token: &st
         if !state.mirror.running.load(Ordering::Acquire) {
             break;
         }
+        // The quota is enforced by the upload and import paths, and this writes
+        // files directly - so it has to check for itself or a large mirror
+        // would be the one way to run a box out of disk. Checked per track
+        // rather than once, because the whole point is that this runs for hours.
+        if state.library_quota_bytes > 0 && state.db.total_bytes() >= state.library_quota_bytes {
+            *state.mirror.note.lock().unwrap() =
+                "stopped: this library is at its storage limit".to_string();
+            break;
+        }
         let id = t.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
         let artist = t.get("artist").and_then(|v| v.as_str()).unwrap_or("Unknown");
         let album = t.get("album").and_then(|v| v.as_str()).unwrap_or("Unknown");
