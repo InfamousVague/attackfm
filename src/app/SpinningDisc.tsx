@@ -42,6 +42,25 @@ const FLICK_FRESH_MS = 120;
 /** Close enough to playing speed to hand the platter back to the transport. */
 const FLICK_SETTLED = 0.08;
 
+/**
+ * The capture zone: how close to playing speed the hand has to be turning
+ * before the platter helps it the rest of the way, and how much of the gap it
+ * closes per frame.
+ *
+ * Holding a disc at exactly 1x by hand is a trained skill - a real turntable
+ * gives you the motor underneath fighting to stay at speed, and a touchscreen
+ * gives you nothing. Without help, "ride it along at normal speed" comes out as
+ * a wobble a few percent either side, which is audible as a warble even though
+ * the hand feels steady.
+ *
+ * The range is narrow on purpose: outside it NOTHING is applied, so a slow
+ * crawl and a fast spin are both exactly what the finger did. The pull is
+ * partial even dead centre, so the disc never takes the gesture over - it
+ * leans, it does not grab.
+ */
+const CAPTURE_RANGE = 0.22;
+const CAPTURE_PULL = 0.35;
+
 /** And coming back down to playing speed, which is a drop rather than a ramp:
  *  the disc catches the track the moment there is one, the way a transport
  *  clamps to speed when the read head locks. */
@@ -356,7 +375,23 @@ export function SpinningDisc({
     swing.current = { vel: swing.current.vel * 0.6 + (delta / gap) * 0.4, at: now };
     // The disc's own rate is the conversion: FULL_DEG_PER_SEC of turn is one
     // second of song, so turning it at its free-running speed plays at 1x.
-    onScratch(delta / FULL_DEG_PER_SEC);
+    let seconds = delta / FULL_DEG_PER_SEC;
+    // At 1x the song advances by exactly the wall-clock time that passed, so
+    // `gap` IS the 1x answer and the hand's rate is how far off it landed.
+    const rate = seconds / gap;
+    if (rate > 0) {
+      const off = Math.abs(rate - 1);
+      if (off < CAPTURE_RANGE) {
+        // Strongest dead centre and nothing at all at the edge, so the assist
+        // fades in rather than switching on - a hard boundary would be felt as
+        // the disc snatching at a speed you were only passing through.
+        const pull = CAPTURE_PULL * (1 - off / CAPTURE_RANGE);
+        seconds += (gap - seconds) * pull;
+      }
+    }
+    // Only the SOUND is nudged; the face above was already moved by the raw
+    // delta, so the platter stays welded to the finger however this lands.
+    onScratch(seconds);
   };
 
   const endScratch = (e: ReactPointerEvent<HTMLDivElement>) => {
