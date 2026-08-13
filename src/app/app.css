@@ -4828,7 +4828,7 @@ body [class*='_panel_']:has(> .dlPanel) {
        purpose - taking it off the bottom instead would walk them back into the
        title row and the transport, which is the clearance the 19.5rem below
        exists to hold (see the note there). */
-    inset-block: calc(env(safe-area-inset-top, 0px) + 6rem)
+    inset-block: calc(env(safe-area-inset-top, 0px) + 8rem)
       calc(env(safe-area-inset-bottom, 0px) + 19.5rem);
     inset-inline: var(--glacier-space-6);
   }
