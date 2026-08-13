@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ChartNoAxesColumn, Download, EllipsisVertical, Settings, Sparkles } from '@glacier/icons';
 import { useHasDownloadQueue, usePluginPages } from '../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
@@ -72,17 +73,25 @@ export function NavMoreMenu({
         onClick={() => setOpen((v) => !v)}
       >
         <span className="appNavBarTab__icon">
-          <EllipsisVertical size={24} />
+          <EllipsisVertical size={28} />
         </span>
         <span className="appNavBarTab__label">More</span>
       </button>
-      {/* A tap anywhere else closes, which is the gesture people reach for
-          before they look for a button. */}
-      {open && (
-        <div className="appNavMore__scrim" aria-hidden onPointerDown={() => setOpen(false)} />
-      )}
-      {open && (
-      <div className="appNavMore__menu" role="menu" aria-label="More">
+      {/* PORTALLED to the body, and that is load-bearing rather than tidiness:
+          backdrop-filter cannot reach past an ancestor that already has one,
+          and the nav bar is frosted glass. A menu rendered inside the bar is
+          trapped in the bar's own backdrop and comes out flat - which is the
+          bug the kit's Popover was originally adopted to avoid, and which
+          rendering our own markup in place quietly reintroduced. Out here it
+          blurs the page like the bar does; the fixed insets below put it back
+          exactly where the ⋮ is. */}
+      {open &&
+        createPortal(
+          <>
+            {/* A tap anywhere else closes, which is the gesture people reach
+                for before they look for a button. */}
+            <div className="appNavMore__scrim" aria-hidden onPointerDown={() => setOpen(false)} />
+            <div className="appNavMore__menu" role="menu" aria-label="More">
         {pages.map((pg) => (
           <button
             key={pg.key}
@@ -163,8 +172,10 @@ export function NavMoreMenu({
           </span>
           <span className="appNavBarPlugins__itemLabel">Settings</span>
         </button>
-      </div>
-      )}
+            </div>
+          </>,
+          document.body,
+        )}
     </div>
   );
 }

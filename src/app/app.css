@@ -1347,8 +1347,8 @@ img {
      Sized off the GLYPH (24px) plus its ring of padding, and deliberately not
      off the label: the names stay at --app-nav-label-size so six of them still
      fit across a narrow phone however big the icons get. */
-  inline-size: 2.5rem;
-  block-size: 2.5rem;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
   border-radius: 999px;
   transition: background-color 0.16s var(--glacier-ease-out, ease), color 0.16s ease;
 }
@@ -1403,12 +1403,18 @@ img {
 }
 
 .appNavMore__menu {
-  position: absolute;
+  /* FIXED, not absolute: this is portalled to the body so its blur can reach
+     the page (see NavMoreMenu). That also puts the app's --app-* vars out of
+     scope - they live on .appWindow - so the insets below are rebuilt from kit
+     tokens and env() the way the Now Playing sheet does it.
+     Height of the bar's island (4rem) + the gap it keeps off the screen
+     (space-2) + the safe area its chin covers + a step of air. */
+  position: fixed;
   z-index: 41;
-  /* Above the bar, hugging the edge its button sits on. The bar sets
-     overflow: visible precisely so this can rise out of it. */
-  inset-block-end: calc(100% + var(--glacier-space-3));
-  inset-inline-end: 0;
+  inset-block-end: calc(
+    env(safe-area-inset-bottom, 0px) + 4rem + var(--glacier-space-2) + var(--glacier-space-3)
+  );
+  inset-inline-end: var(--glacier-space-2);
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-1);
@@ -1424,7 +1430,32 @@ img {
   -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
   border: var(--glacier-hairline) solid var(--glacier-border-subtle);
   box-shadow: var(--glacier-shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.42));
-  animation: npRise 0.18s var(--glacier-ease-out);
+  /* Its own entrance, not the sheet's: npRise travels translateY(100%), which
+     for a small menu means starting a whole menu-height below where it belongs.
+     A few pixels is all a menu this size needs.
+
+     Deliberately NO fill-mode: with `both` the element holds the FROM frame
+     until the animation starts, and that frame is opacity 0 - so anywhere the
+     animation does not actually advance (a throttled or backgrounded webview,
+     which is exactly what the dev preview turned out to be) the menu is
+     invisible rather than merely unanimated. Without a fill the element's own
+     styles stand, and the entrance is the only thing at risk. */
+  animation: navMoreRise 0.16s var(--glacier-ease-out);
+}
+
+/* Transform only - never opacity. An animation that is frozen at its first
+   frame (a throttled or backgrounded webview does exactly this: the animation
+   reports "running" while its clock never advances) would leave an
+   opacity-animated menu permanently invisible. Frozen here, the worst case is
+   a menu sitting six pixels low, which nobody will notice and everybody can
+   still read. */
+@keyframes navMoreRise {
+  from {
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    transform: none;
+  }
 }
 
 .appNavBarPlugins__item {
@@ -2168,8 +2199,8 @@ img {
 
 .queueRow__cover {
   flex: none;
-  inline-size: 2.5rem;
-  block-size: 2.5rem;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
   border-radius: var(--glacier-radius-md);
   overflow: hidden;
   display: flex;
@@ -2285,8 +2316,8 @@ img {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  inline-size: 2.5rem;
-  block-size: 2.5rem;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
   border: none;
   border-radius: var(--glacier-radius-full);
   background: transparent;
@@ -5174,8 +5205,8 @@ body [class*='_panel_']:has(> .dlPanel) {
 /* The empty queue's mark: the download glyph in a quiet ring, so the panel
    reads as a place with nothing in it rather than a missing feature. */
 .dlPanel__emptyGlyph {
-  inline-size: 2.5rem;
-  block-size: 2.5rem;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -7269,8 +7300,8 @@ body [class*='_panel_']:has(> .dlPanel) {
 
 .djToast__face {
   flex: none;
-  inline-size: 2.5rem;
-  block-size: 2.5rem;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
   object-fit: contain;
 }
 
@@ -9255,8 +9286,8 @@ body [class*='_panel_']:has(> .dlPanel) {
 }
 
 .artistTopArt {
-  inline-size: 2.5rem;
-  block-size: 2.5rem;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
   border-radius: var(--glacier-radius-sm);
   object-fit: cover;
   background: var(--glacier-surface-sunken);
@@ -9695,8 +9726,8 @@ button.artistAlbum {
 }
 
 .friendAvatar--md {
-  inline-size: 2.5rem;
-  block-size: 2.5rem;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
   font-size: 1rem;
 }
 
