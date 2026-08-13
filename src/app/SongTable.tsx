@@ -11,7 +11,7 @@ import { hasLocalLibrary } from './platform.ts';
 import { useNarrowViewport } from './useNarrowViewport.ts';
 import { TrackMenu } from './TrackMenu.tsx';
 import type { Track } from './tauri.ts';
-import { artSized } from './server.ts';
+import { artSized, trackIdFromPath } from './server.ts';
 import { useArtLoad } from './artLoad.ts';
 import placeholderArt from '../assets/attack-wave.png';
 
@@ -124,11 +124,16 @@ export function SongTable({
   onPlay,
   onOpenArtist,
   tracks: tracksProp,
+  plays,
 }: {
   /** Called with the opened track and the full list in its displayed order. */
   onPlay: (track: Track, queue: Track[]) => void;
   onOpenArtist?: (artist: string) => void;
   tracks?: Track[];
+  /** Play counts by server track id. Given, the leading column shows how many
+   *  times each song was played instead of its position - which is the whole
+   *  point of a most-played list, where a row number says nothing. */
+  plays?: Map<number, number>;
 }) {
   const library = useLibrary();
   const tracks = tracksProp ?? library.tracks;
@@ -156,7 +161,18 @@ export function SongTable({
   const columns = useMemo<DataGridColumn[]>(
     () =>
       COLUMNS.filter((col) => !narrow || !NARROW_HIDDEN.has(col.key)).map((col) =>
-        col.key === 'title'
+        col.key === 'index' && plays
+          ? {
+              ...col,
+              header: 'Plays',
+              width: '4.5rem',
+              render: (row) => {
+                const id = trackIdFromPath(row.id as string);
+                const n = id === null ? undefined : plays.get(id);
+                return <span className="songMuted">{n === undefined ? '' : n.toLocaleString()}</span>;
+              },
+            }
+          : col.key === 'title'
           ? {
               ...col,
               render: (row) => (
@@ -186,7 +202,7 @@ export function SongTable({
             }
           : col,
       ),
-    [onOpenArtist, narrow, byPath],
+    [onOpenArtist, narrow, byPath, plays],
   );
 
   const rows: DataGridRow[] = tracks.map((track) => ({

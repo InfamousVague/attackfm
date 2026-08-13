@@ -729,6 +729,9 @@ export async function revokeUserStreams(session: ServerSession, id: number): Pro
 export interface HomeFeed {
   recent: number[];
   heavy: number[];
+  /** The same songs with their play counts, most-played first. Absent on
+   *  servers older than this field. */
+  heavyPlays?: { id: number; plays: number }[];
   fresh: number[];
   /** Recently-played albums, each a full ordered track-id list to play as-is. */
   jumpBackIn: number[][];

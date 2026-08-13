@@ -139,7 +139,15 @@ pub async fn feed(
 
     let recent = state.db.recent_plays(user, SHELF);
     let since = now_ms() - WINDOW_30D_MS;
-    let heavy: Vec<i64> = state.db.top_plays(user, since, SHELF).into_iter().map(|(id, _)| id).collect();
+    // The counts come back with the ids and used to be thrown away; the On
+    // repeat page shows them instead of a row number, which is the one number
+    // that page is actually about.
+    let heavy_pairs = state.db.top_plays(user, since, SHELF);
+    let heavy: Vec<i64> = heavy_pairs.iter().map(|(id, _)| *id).collect();
+    let heavy_plays: Vec<serde_json::Value> = heavy_pairs
+        .iter()
+        .map(|(id, plays)| serde_json::json!({ "id": id, "plays": plays }))
+        .collect();
     let fresh = state.db.recently_added(SHELF);
     // Jump back in: the albums behind recent plays, each a full ordered
     // track list the client plays as given (no client-side album matching,
@@ -155,6 +163,7 @@ pub async fn feed(
     Ok(Json(json!({
         "recent": recent,
         "heavy": heavy,
+        "heavyPlays": heavy_plays,
         "fresh": fresh,
         "jumpBackIn": jump_back_in,
         "topArtists": top_artists,
