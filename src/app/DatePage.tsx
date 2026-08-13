@@ -19,7 +19,7 @@ import {
   trackIdFromPath,
   type CollectorStatus,
 } from './server.ts';
-import { canCacheDates, warmDates } from './dateCache.ts';
+import { DATE_CACHE_TARGET, setDateDeck, sweepIfIdle } from './autoCache.ts';
 import { loadAudioUrl, type Track } from './tauri.ts';
 import { fireNativeHaptic } from './haptics.ts';
 import { EmptyArt } from './EmptyArt.tsx';
@@ -245,14 +245,17 @@ export function DatePage() {
       .sort((a, b) => b.addedAt - a.addedAt);
   }, [forYou, status, isFavorite, gone]);
 
-  // The next stretch of cards, held on the phone. Runs off the deck itself,
-  // so judging a card both drops the one just seen and reaches one further
-  // ahead. Debounced because the deck recomputes on every swipe and a fast
-  // run through ten cards should cost one pass, not ten. See dateCache.ts for
-  // why it only takes spare room and only evicts its own pins.
+  // The next stretch of cards, kept on the phone. Handed to the device cache
+  // as a ranking signal rather than pinned here: that cache already owns the
+  // budget, the ledger of what it holds, and the rule that it only ever
+  // evicts its own pins. A second cacher beside it would fight it for the
+  // same vault and show up as songs "kept by hand". See autoCache.ts.
   useEffect(() => {
-    if (!canCacheDates() || !session) return;
-    const t = window.setTimeout(() => void warmDates(deck, session), 1500);
+    if (!session) return;
+    setDateDeck(deck.slice(0, DATE_CACHE_TARGET).map((t) => t.path));
+    // Debounced: the deck recomputes on every swipe, and a fast run through
+    // ten cards should cost one sweep rather than ten.
+    const t = window.setTimeout(() => void sweepIfIdle(session), 1500);
     return () => window.clearTimeout(t);
   }, [deck, session]);
 
