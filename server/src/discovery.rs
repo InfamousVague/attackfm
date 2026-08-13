@@ -387,6 +387,17 @@ struct CandidateTrack {
     popularity: f64,
 }
 
+/// The catalogue's id for an artist by name. Public so the album filler can
+/// reach the same lookup rather than keeping a second copy of it.
+pub async fn deezer_artist_id_public(c: &reqwest::Client, name: &str) -> Option<u64> {
+    deezer_artist_id(c, name).await
+}
+
+/// A title reduced to the recording it names. Public for the same reason.
+pub fn title_key_public(title: &str) -> String {
+    title_key(title)
+}
+
 async fn deezer_artist_id(c: &reqwest::Client, name: &str) -> Option<u64> {
     let v: serde_json::Value = c
         .get("https://api.deezer.com/search/artist")

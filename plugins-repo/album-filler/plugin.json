@@ -1,0 +1,14 @@
+{
+  "id": "album-filler",
+  "name": "Album filler",
+  "version": "0.1.0",
+  "description": "Finds the records you own most of and offers you the songs that are missing.",
+  "author": "AttackFM",
+  "tags": [
+    "Library",
+    "Downloads"
+  ],
+  "entry": "plugin.ts",
+  "requiresServer": true,
+  "public": true
+}

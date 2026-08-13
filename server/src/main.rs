@@ -20,6 +20,7 @@
 //! | `AFM_ASSETS_DIR` | `<data>/assets` | Drop folder for generated artwork, served at `/api/assets` (checkout set beneath). |
 //! | `AFM_PUBLIC_URL` | *(empty)* | The public origin, e.g. `https://matt.attack.fm` - needed for the Spotify OAuth redirect. |
 
+mod albums;
 mod api;
 mod audible;
 mod audiobooks;
@@ -441,6 +442,7 @@ async fn main() {
         .route("/api/curator", get(curator::feed))
         .route("/api/curator/pulls", get(collector::status))
         .route("/api/date/done", post(collector::date_done))
+        .route("/api/albums/gaps", get(albums::gaps))
         .route("/api/curator/pulls/settings", post(collector::settings))
         .route("/api/dj", get(dj::station))
         .route("/api/features/status", get(features::status))

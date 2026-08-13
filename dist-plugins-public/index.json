@@ -3,6 +3,23 @@
   "name": "AttackFM plugins",
   "plugins": [
     {
+      "id": "album-filler",
+      "name": "Album filler",
+      "version": "0.1.0",
+      "description": "Finds the records you own most of and offers you the songs that are missing.",
+      "author": "AttackFM",
+      "tags": [
+        "Library",
+        "Downloads"
+      ],
+      "entry": "album-filler-0.1.0.js",
+      "api": 1,
+      "bytes": 6202,
+      "sha256": "a4061fd28a0ab6bc61c6de2ab2cbbc35ba53e8771a784339329c0bb4e539df3c",
+      "requiresServer": true,
+      "public": true
+    },
+    {
       "id": "eq-rack",
       "name": "EQ rack",
       "version": "0.1.0",
