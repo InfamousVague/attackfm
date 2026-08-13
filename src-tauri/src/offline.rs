@@ -123,6 +123,60 @@ pub async fn offline_pin(
     Ok(OfflineEntry { key, path: target.to_string_lossy().into_owned(), bytes: body.len() as u64 })
 }
 
+/// How much room the vault has to work with: free bytes on its volume, and
+/// how much it is already using.
+///
+/// Anything that caches AHEAD of being asked - the Date warmer especially -
+/// has to know this. Filling a phone with songs nobody requested is the
+/// failure mode that makes people turn a feature off, so the rule is that
+/// speculative caching gets the room that is genuinely spare and stops.
+#[tauri::command]
+pub async fn offline_space(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let base = dir(&app)?;
+    let mut held: u64 = 0;
+    if let Ok(read) = std::fs::read_dir(&base) {
+        for entry in read.flatten() {
+            if let Ok(meta) = entry.metadata() {
+                if meta.is_file() {
+                    held += meta.len();
+                }
+            }
+        }
+    }
+    Ok(serde_json::json!({
+        "freeBytes": free_bytes(&base),
+        "heldBytes": held,
+    }))
+}
+
+/// Free bytes on the volume holding `path`, or None when it cannot be asked.
+/// statvfs rather than a crate: this is the one number needed, and every
+/// platform the app ships to is unix.
+fn free_bytes(path: &std::path::Path) -> Option<u64> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let c = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
+        // SAFETY: `c` is a valid NUL-terminated path and `stat` is written
+        // only by statvfs, which is given a pointer to fully-owned storage.
+        unsafe {
+            let mut stat: libc::statvfs = std::mem::zeroed();
+            if libc::statvfs(c.as_ptr(), &mut stat) != 0 {
+                return None;
+            }
+            // f_bavail, not f_bfree: blocks available to an unprivileged
+            // process, which is the number that governs whether OUR write
+            // succeeds.
+            Some(stat.f_bavail as u64 * stat.f_frsize as u64)
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        None
+    }
+}
+
 /// Give one track's space back. Missing is success: the caller wanted it gone.
 #[tauri::command]
 pub async fn offline_unpin(app: tauri::AppHandle, key: String) -> Result<(), String> {
