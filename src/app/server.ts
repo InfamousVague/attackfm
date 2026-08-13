@@ -1200,6 +1200,9 @@ export interface MirrorStatus {
 export async function startMirror(
   session: ServerSession,
   source: { url: string; token: string; streamToken: string },
+  /** Carry only what the source is actually listened to, rather than all of
+   *  it. The destination sizes the set to its own free disk. See hot.rs. */
+  hot?: { minPlays?: number },
 ): Promise<void> {
   await request(session.url, '/api/mirror/start', {
     token: session.token,
@@ -1208,8 +1211,31 @@ export async function startMirror(
       sourceUrl: source.url,
       token: source.token,
       streamToken: source.streamToken,
+      ...(hot ? { hot } : {}),
     }),
   });
+}
+
+export interface HotBar {
+  minPlays: number;
+  tracks: number;
+  bytes: number;
+}
+
+/**
+ * How big the listened-to set is on a server, at each bar - so the size of
+ * the thing can be seen before a copy is started rather than discovered
+ * while it runs.
+ */
+export async function fetchHotSummary(source: {
+  url: string;
+  streamToken: string;
+}): Promise<{ bars: HotBar[]; liked: number; libraryTracks: number }> {
+  return request(
+    source.url,
+    `/api/hot/summary?t=${encodeURIComponent(source.streamToken)}`,
+    {},
+  );
 }
 
 export async function fetchMirrorStatus(session: ServerSession): Promise<MirrorStatus> {
