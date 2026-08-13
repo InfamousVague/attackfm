@@ -10431,3 +10431,27 @@ button.artistAlbum {
   font-size: var(--glacier-font-size-xs);
   color: var(--glacier-text-muted);
 }
+
+/* The lid over the charts: one row that says what is under it. Sits below every
+   personal shelf, because the charts are identical for every account here. */
+.discoverCharts__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  inline-size: 100%;
+  padding: var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  color: var(--glacier-text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.discoverCharts__hint {
+  margin-inline-start: auto;
+  font-weight: 500;
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+}

@@ -319,6 +319,10 @@ export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
     taste: { heard: number; needed: number } | null;
   } | null>(null);
   const [preview, setPreview] = useState<Suggestion | null>(null);
+  // The charts are the same for every account on the hub, so they sit under a
+  // closed lid below everything personal - present for an empty library, out
+  // of the way for a full one.
+  const [chartsOpen, setChartsOpen] = useState(false);
   // The set whose track list is open - the page's own playlists read in full.
   const [openSet, setOpenSet] = useState<SongSet | null>(null);
   // The import job whose arrival should start playback: tapping a song is
@@ -646,17 +650,34 @@ export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
         </section>
       )}
 
-      {items === null && !(discoveries && discoveries.length > 0) ? (
-        <p className="discoverNote" role="status">
-          Loading suggestions…
-        </p>
-      ) : items && items.length > 0 ? (
+      {/* Everything above this line is about YOU. Everything below is the same
+          for every account on this server, which is why it is behind a lid and
+          at the bottom rather than leading the page as it used to. */}
+      {items && items.length > 0 && (
+        <button
+          type="button"
+          className="discoverCharts__toggle"
+          aria-expanded={chartsOpen}
+          onClick={() => setChartsOpen((v) => !v)}
+        >
+          <Compass size={16} />
+          <span>Browse the charts</span>
+          <span className="discoverCharts__hint">{chartsOpen ? 'Hide' : 'Show'}</span>
+        </button>
+      )}
+
+      {items === null && !(discoveries && discoveries.length > 0) ? null : chartsOpen &&
+        items &&
+        items.length > 0 ? (
         sections.map(({ section, items: group }) => {
           // Each section leads with its first chart writ large - a featured
           // card wearing its cover as a backdrop - and the rest keep the grid.
           const featured = group[0];
           const featuredCover = featured?.cover ?? null;
-          const showHero = group.length >= 4 && featuredCover !== null;
+          // No per-section hero any more. A chart playlist rendered large,
+          // above the grid, outranked the listener's own music visually - which
+          // is backwards on a page that is supposed to be about their taste.
+          const showHero = false;
           const gridItems = showHero ? group.slice(1) : group;
           const featuredState = showHero && featured ? describe(featured) : null;
           return (
