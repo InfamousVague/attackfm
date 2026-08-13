@@ -57,6 +57,7 @@ import { VolumeControl, VolumeRow, VOLUME_MAX, VOLUME_UNITY } from './VolumeCont
 import npPlaceholderArt from '../assets/attack-wave.png';
 import { NowPlayingBackdrop } from './NowPlayingBackdrop.tsx';
 import { loadAudioUrl, reactivateAudioSession, systemOutputVolume, type Track } from './tauri.ts';
+import { isPendingPath } from './pendingPlay.tsx';
 import { fetchCanvas, fetchPlayStates, isRemotePath, reportPlay, reportPosition, trackIdFromPath } from './server.ts';
 import { fireNativeHaptic } from './haptics.ts';
 import { createListenReporter, type ListenSnapshot } from './listens.ts';
@@ -383,6 +384,10 @@ export function Player({
   const remoteOnlyRef = useRef(remoteOnly);
   remoteOnlyRef.current = remoteOnly;
   const listLoading = libraryLoading || scanning;
+  // A placeholder for a tapped song still downloading (see pendingPlay.tsx): its
+  // path names an import job, not a file. The load path skips it, and the sheet
+  // shows it "Downloading…" until the real track swaps in and plays.
+  const downloading = track ? isPendingPath(track.path) : false;
   // The heart reflects and toggles the current track's place in favourites.
   const favorite = track ? isFavorite(track.path) : false;
   // Hearting a song answers in the hand - the success triplet, only on the
@@ -1603,6 +1608,19 @@ export function Player({
   // session does not leak them.
   useEffect(() => {
     if (!track) return;
+    // A placeholder for a still-downloading song has no file to load - its path
+    // names an import job. You tapped a new song, so stop whatever was playing
+    // (the sheet's "Downloading…" should be honest silence, not the last track
+    // running on under it), drop any fade or stall, and load nothing; the real
+    // track swaps in and loads here the moment the import lands.
+    if (isPendingPath(track.path)) {
+      abortCrossfadeRef.current();
+      clearStall();
+      activeAudio()?.pause();
+      wantPlaying.current = false;
+      setPlaying(false);
+      return;
+    }
     // Mirroring another device: show its song, fetch nothing. The strip exists
     // here to display progress and send commands, and buffering a file this
     // device will not play is pure cost.
@@ -1658,6 +1676,14 @@ export function Player({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the track only
   }, [track]);
+
+  // Tapping a song you do not own opens Now Playing straight onto it, downloading
+  // - the whole point of the placeholder is to answer the tap with the sheet
+  // (its art, its name) instead of a silent nothing. Phone only, where the sheet
+  // exists; the desktop strip shows the same downloading state in place.
+  useEffect(() => {
+    if (downloading && mobileControls) setNpOpen(true);
+  }, [downloading, mobileControls]);
 
   // Which ramp is in charge. A new ramp bumps the token and the old one's
   // frames see they are stale and stand down, so mashing play/pause hands the
@@ -3040,7 +3066,7 @@ export function Player({
               art={dispArtwork}
               spinning={activeElsewhere ? dispPlaying : audible}
               // A dry buffer spins the platter up rather than stalling it.
-              spooling={buffering}
+              spooling={buffering || downloading}
               beat={beat}
               // The platter and the sound share a motor: the disc brakes and
               // catches up over the same stretch the audio does, whichever
@@ -3513,7 +3539,7 @@ export function Player({
                 <SpinningDisc
                   art={dispArtwork}
                   spinning={activeElsewhere ? dispPlaying : audible}
-                  spooling={buffering}
+                  spooling={buffering || downloading}
                   beat={beat}
                   onScratchStart={onScratchBegin}
                   onScratch={onScratch}
@@ -3564,12 +3590,12 @@ export function Player({
                 <span className="npScreen__artist">{track?.artist ?? ''}</span>
               )}
               {chapterLabel && <span className="npScreen__chapter">{chapterLabel}</span>}
-              {/* Only while the buffer is actually dry. Silence with the
-                  transport still showing play is the thing this whole path
-                  exists to stop being a mystery. */}
-              {buffering && (
+              {/* A downloading placeholder says so; otherwise only while the
+                  buffer is actually dry - silence with the transport still
+                  showing play is the mystery this whole path exists to end. */}
+              {(downloading || buffering) && (
                 <span className="npScreen__buffering" role="status">
-                  Buffering…
+                  {downloading ? 'Downloading…' : 'Buffering…'}
                 </span>
               )}
             </div>
@@ -3584,6 +3610,8 @@ export function Player({
             </IconButton>
           </div>
 
+          {/* No scrubber while downloading - there is no timeline yet. */}
+          {!downloading && (
           <div className="npScreen__scrub">
             {/* The kit's live bar, not a plain slider: the same waveform the
                 mini strip wears, driven by the same levels and beat, so the
@@ -3611,6 +3639,7 @@ export function Player({
               <span>-{formatClock(Math.max(0, duration - position))}</span>
             </div>
           </div>
+          )}
 
           <div className="npScreen__transport">
             <IconButton
@@ -3628,7 +3657,8 @@ export function Player({
             <button
               type="button"
               className="npScreen__play"
-              aria-label={playing ? 'Pause' : 'Play'}
+              aria-label={downloading ? 'Downloading' : playing ? 'Pause' : 'Play'}
+              disabled={downloading}
               onClick={() => setPlayingState(!playing)}
             >
               {playing ? <Pause size={30} fill="currentColor" /> : <Play size={30} fill="currentColor" />}

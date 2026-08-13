@@ -36,6 +36,7 @@ import { useServerSession } from './serverSession.tsx';
 import { artworkUrl, genreArtwork } from './artwork.ts';
 import { IMPORTER_PLUGIN_ID, usePluginCommands, useAcquire, usePlugins } from '../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
+import { usePendingPlay, placeholderTrack } from './pendingPlay.tsx';
 import { PROBE_URL, importable, resolveImportable } from './resolveImport.ts';
 import type { AcquireTarget } from '../plugins/types.ts';
 import {
@@ -398,6 +399,9 @@ export function SearchPage({
   const queue = useQueueControls();
   const acquire = useAcquire();
   const downloads = useDownloadsOptional();
+  // Tapping a not-yet-owned track opens Now Playing on it, downloading, and
+  // plays it when the import lands (see pendingPlay.tsx).
+  const playPending = usePendingPlay();
   const recents = useSearchRecents();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
@@ -615,6 +619,11 @@ export function SearchPage({
             cover: item.result.cover,
             url: item.result.url,
           });
+          // Already in your library: play it, do not re-fetch it.
+          if (item.mine) {
+            onPlay(item.mine, [item.mine]);
+            break;
+          }
           void acquireResult(item.result);
           break;
         }
@@ -635,15 +644,30 @@ export function SearchPage({
   const acquireResult = async (r: SearchResult) => {
     if (adding[r.id]) return;
     const kind = r.kind === 'album' ? 'album' : 'track';
-    const hand = (title: string, url: string) => {
+    const hand = async (title: string, url: string) => {
       const target: AcquireTarget = { kind, title, artist: r.subtitle, url };
       const viaImporter = acquire.handlersFor(target).some((h) => h.pluginId === IMPORTER_PLUGIN_ID);
-      if (viaImporter && downloads) void downloads.enqueue(url).catch(() => {});
-      else acquire.acquire(target);
+      if (viaImporter && downloads) {
+        try {
+          const job = await downloads.enqueue(url);
+          // A single tapped track opens Now Playing on it, downloading, and
+          // plays when it lands; an album is a set, so it just queues. The
+          // placeholder wears the ROW's own art/name, even if the download URL
+          // came from a resolved twin.
+          if (kind === 'track') {
+            playPending?.(
+              placeholderTrack({ jobId: job.id, title: r.title, artist: r.subtitle, artwork: r.cover }),
+              job.id,
+            );
+          }
+        } catch {
+          // Enqueue refused; the row's 'added' state is the only feedback.
+        }
+      } else acquire.acquire(target);
     };
 
     if (importable(r)) {
-      hand(r.title, r.url);
+      await hand(r.title, r.url);
       setAdding((prev) => ({ ...prev, [r.id]: 'added' }));
       return;
     }
@@ -668,7 +692,7 @@ export function SearchPage({
       );
       return;
     }
-    hand(found.title, found.url);
+    await hand(found.title, found.url);
     setAdding((prev) => ({ ...prev, [r.id]: 'added' }));
   };
 

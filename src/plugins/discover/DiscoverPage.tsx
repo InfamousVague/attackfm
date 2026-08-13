@@ -19,6 +19,7 @@ import { TrackMenu } from '../../app/TrackMenu.tsx';
 import type { AcquireTarget, PluginPageProps } from '../types.ts';
 import { IMPORTER_PLUGIN_ID, useAcquire } from '../runtime.tsx';
 import { useDownloadsOptional } from '../importsBridge.ts';
+import { usePendingPlay, placeholderTrack } from '../../app/pendingPlay.tsx';
 import { CatalogArtistPage } from './CatalogArtistPage.tsx';
 import type { MusicImportJob } from '../importsBridge.ts';
 
@@ -246,6 +247,10 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
   const acquire = useAcquire();
   const { tracks: libraryTracks, forYou } = useLibrary();
   const owned = useOwned();
+  // Tapping a not-yet-owned song opens Now Playing on it, downloading, and plays
+  // it when the import lands (see pendingPlay.tsx). The catalogue sub-page below
+  // still uses playWhenAdded; the feed and open sets arm this instead.
+  const playPending = usePendingPlay();
   // null while the first fetch is in flight; an array (possibly empty) after.
   const [items, setItems] = useState<Suggestion[] | null>(null);
   // The server's AI picks: songs you do NOT own, harvested from the artists you
@@ -474,7 +479,10 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
     void Promise.resolve(downloads.enqueue(d.url))
       .then((queued) => {
         setDiscTapped((prev) => ({ ...prev, [d.id]: 'added' }));
-        setPlayWhenAdded(queued.id);
+        playPending?.(
+          placeholderTrack({ jobId: queued.id, title: d.title, artist: d.artist, artwork: d.cover }),
+          queued.id,
+        );
       })
       .catch(() => {
         setDiscTapped((prev) => {
@@ -702,7 +710,16 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
                             onPlay(t, [t]);
                           }
                         } else if (state === 'adding') {
-                          if (job) setPlayWhenAdded(job.id);
+                          if (job)
+                            playPending?.(
+                              placeholderTrack({
+                                jobId: job.id,
+                                title: d.title,
+                                artist: d.artist,
+                                artwork: d.cover,
+                              }),
+                              job.id,
+                            );
                         } else {
                           addDiscovery(d);
                         }
