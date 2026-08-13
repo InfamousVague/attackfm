@@ -58,8 +58,8 @@ const FLICK_SETTLED = 0.08;
  * partial even dead centre, so the disc never takes the gesture over - it
  * leans, it does not grab.
  */
-const CAPTURE_RANGE = 0.22;
-const CAPTURE_PULL = 0.35;
+const CAPTURE_RANGE = 0.36;
+const CAPTURE_PULL = 0.55;
 
 /** And coming back down to playing speed, which is a drop rather than a ramp:
  *  the disc catches the track the moment there is one, the way a transport
@@ -313,13 +313,34 @@ export function SpinningDisc({
   };
 
   /** The pointer's angle around the disc's centre, in degrees. */
-  const angleAt = (e: { clientX: number; clientY: number }): number | null => {
+  /**
+   * Where the finger is on the platter: the angle it subtends, and how far out
+   * it is as a share of the rim.
+   *
+   * The share is the whole point. Turning the disc by the raw subtended angle
+   * pins the touched POINT under the finger, which sounds right and is awful:
+   * the same centimetre of travel sweeps a few degrees at the rim and half a
+   * revolution near the hub, so a thumb resting anywhere but the edge sent the
+   * platter - and the music - flying. Scaling by the radius turns it by the
+   * DISTANCE the finger actually moved instead, which is what a hand expects
+   * from a wheel and what makes fine control possible near the middle.
+   */
+  const pointAt = (
+    e: { clientX: number; clientY: number },
+  ): { angle: number; reach: number } | null => {
     const box = faceRef.current?.parentElement?.getBoundingClientRect();
     if (!box) return null;
     const dx = e.clientX - (box.left + box.width / 2);
     const dy = e.clientY - (box.top + box.height / 2);
-    return (Math.atan2(dy, dx) * 180) / Math.PI;
+    const rim = Math.max(1, Math.min(box.width, box.height) / 2);
+    // Floored so a press at the dead centre still does something rather than
+    // reading as a pivot the disc can be dragged around forever without moving.
+    const reach = Math.max(0.2, Math.min(1, Math.hypot(dx, dy) / rim));
+    return { angle: (Math.atan2(dy, dx) * 180) / Math.PI, reach };
   };
+
+  const angleAt = (e: { clientX: number; clientY: number }): number | null =>
+    pointAt(e)?.angle ?? null;
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!onScratch) return;
@@ -353,14 +374,19 @@ export function SpinningDisc({
 
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!scratching.current || !onScratch) return;
-    const a = angleAt(e);
-    if (a === null) return;
+    const at = pointAt(e);
+    if (at === null) return;
+    const a = at.angle;
     // Shortest way round: crossing the -180/180 seam is a small move, not a
     // full turn in the opposite direction.
-    let delta = a - lastTouchAngle.current;
-    if (delta > 180) delta -= 360;
-    if (delta < -180) delta += 360;
+    let swept = a - lastTouchAngle.current;
+    if (swept > 180) swept -= 360;
+    if (swept < -180) swept += 360;
     lastTouchAngle.current = a;
+    // How far the finger actually TRAVELLED, in rim-equivalent degrees. At the
+    // edge this is the swept angle unchanged; halfway in it is half of it,
+    // because half the radius is half the arc for the same angle.
+    const delta = swept * at.reach;
     angle.current = (angle.current + delta) % 360;
     faceRef.current?.style.setProperty('transform', `rotate(${angle.current.toFixed(2)}deg)`);
     // The scrub ratchet: a click every thirty degrees of drag, the way a jog
