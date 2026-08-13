@@ -1,4 +1,4 @@
-import { Button, Modal, Text } from '@glacier/react';
+import { Button, Modal, ScrollArea, Text } from '@glacier/react';
 import { Check, Compass, ListMusic, Music, Play, Plus, Sparkles } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRippleWave } from '../../app/rippleWave.ts';
@@ -7,6 +7,7 @@ import { useLibrary } from '../../app/library.tsx';
 import { useOwned } from '../../app/owned.ts';
 import type { Track } from '../../app/tauri.ts';
 import {
+  artSized,
   fetchDiscover,
   fetchDiscoveries,
   trackIdFromPath,
@@ -22,6 +23,7 @@ import { useDownloadsOptional } from '../importsBridge.ts';
 import { usePendingPlay, placeholderTrack } from '../../app/pendingPlay.tsx';
 import { CatalogArtistPage } from './CatalogArtistPage.tsx';
 import { CuratorShelves } from '../../app/HomePage.tsx';
+import discoverPlaceholder from '../../assets/attack-wave.png';
 import { ForYouShelf } from '../../app/ForYouShelf.tsx';
 import type { MusicImportJob } from '../importsBridge.ts';
 
@@ -443,6 +445,27 @@ export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
   }, [discoveries, sets]);
   const shelfSets = sets.filter((s) => s.key !== hero?.key);
 
+  // The artists you own the most OF, as doors into their full catalogue. This
+  // is the one shelf here that needs no server, no model and no listening
+  // history - your library alone says who these are - so it is what Discover
+  // can offer on day one while the taste model is still measuring.
+  const ownedArtists = useMemo(() => {
+    const counts = new Map<string, { name: string; cover: string | null; n: number }>();
+    for (const t of libraryTracks) {
+      const name = t.artist.trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      const at = counts.get(key);
+      if (at) {
+        at.n += 1;
+        if (!at.cover) at.cover = t.artwork;
+      } else {
+        counts.set(key, { name, cover: t.artwork, n: 1 });
+      }
+    }
+    return [...counts.values()].sort((a, b) => b.n - a.n).slice(0, 20);
+  }, [libraryTracks]);
+
   const add = (item: Suggestion) => {
     if (!downloads) return;
     const job = jobFor(downloads.jobs, item);
@@ -608,6 +631,35 @@ export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
           the rest of the AI's work rather than on the page about music you
           already chose. */}
       <ForYouShelf onPlay={onPlay} />
+
+      {/* Their whole catalogue, not just the tracks you happen to own - tapping
+          one opens the artist page, where what you have is playable and what you
+          do not is one tap from being yours. */}
+      {ownedArtists.length >= 4 && (
+        <section className="homeShelf">
+          <h2 className="homeShelfTitle">More from artists you own</h2>
+          <ScrollArea orientation="horizontal" className="homeShelfScroll" hideScrollbar>
+            <div className="homeShelfRow">
+              {ownedArtists.map((a) => (
+                <button
+                  key={a.name}
+                  type="button"
+                  className="artistCard"
+                  onClick={() => setArtistTrail([{ id: '', name: a.name }])}
+                >
+                  <img
+                    className="artistCardArt artPop"
+                    src={artSized(a.cover, 640) ?? discoverPlaceholder}
+                    alt=""
+                    loading="lazy"
+                  />
+                  <span className="artistCardName">{a.name}</span>
+                </button>
+              ))}
+            </div>
+          </ScrollArea>
+        </section>
+      )}
 
       {/* The hero: the AI's freshest finds as one place to walk into, leading
           the page the way the live jam leads Friends - the newest thing, big. */}
