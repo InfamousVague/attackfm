@@ -11,7 +11,13 @@ import { Heart, Play, X } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
 import { useServerSession } from './serverSession.tsx';
-import { artSized, fetchCollectorStatus, trackIdFromPath, type CollectorStatus } from './server.ts';
+import {
+  artSized,
+  dateDone,
+  fetchCollectorStatus,
+  trackIdFromPath,
+  type CollectorStatus,
+} from './server.ts';
 import { loadAudioUrl, type Track } from './tauri.ts';
 import { fireNativeHaptic } from './haptics.ts';
 import { EmptyArt } from './EmptyArt.tsx';
@@ -144,6 +150,14 @@ export function DatePage() {
   // Passes survive relaunch; this visit's verdicts live in `gone` so the deck
   // moves the moment a card is judged, without waiting on any sync.
   const passedRef = useRef<Set<number>>(readPassed());
+  // THIS sitting's verdicts, not the running set: what the next batch is shaped
+  // by is what you just said, and a pass you made three weeks ago has already
+  // been answered.
+  const sessionKept = useRef<number[]>([]);
+  const sessionPassed = useRef<number[]>([]);
+  /** null before the deck has ever emptied, then how the ask went. */
+  const [refill, setRefill] = useState<'asking' | 'asked' | 'failed' | null>(null);
+  const askedFor = useRef<string>('');
   const [gone, setGone] = useState<Set<string>>(() => new Set());
 
   const deck = useMemo(() => {
@@ -377,6 +391,36 @@ export function DatePage() {
     }
   };
 
+  // The end of a Date is the moment the app knows most about what you want and
+  // has the least left to show you - so it goes and gets more THEN, seeded by
+  // the verdicts you just gave, rather than waiting out the collector's own
+  // six-hourly sweep. The page has always promised this in its empty state;
+  // this is what makes the promise true.
+  useEffect(() => {
+    if (!session || deck.length > 0) return;
+    // Once per emptying, not once per render - and again after you swipe
+    // through a fresh batch, which is a different sitting with new verdicts.
+    const signature = `${sessionKept.current.length}:${sessionPassed.current.length}`;
+    if (askedFor.current === signature) return;
+    askedFor.current = signature;
+    let live = true;
+    setRefill('asking');
+    void dateDone(session, sessionKept.current, sessionPassed.current)
+      .then(() => {
+        if (!live) return;
+        setRefill('asked');
+        // The sitting is over; the next one starts from a clean slate.
+        sessionKept.current = [];
+        sessionPassed.current = [];
+      })
+      .catch(() => {
+        if (live) setRefill('failed');
+      });
+    return () => {
+      live = false;
+    };
+  }, [session, deck.length]);
+
   // --- the verdict -----------------------------------------------------------
 
   const verdict = useCallback(
@@ -385,12 +429,15 @@ export function DatePage() {
         fireNativeHaptic('success');
         // The heart is the adoption - the same verb as everywhere else.
         if (!isFavorite(track.path)) toggleFavorite(track.path);
+        const id = trackIdFromPath(track.path);
+        if (id !== null) sessionKept.current.push(id);
       } else {
         fireNativeHaptic('light');
         const id = trackIdFromPath(track.path);
         if (id !== null) {
           passedRef.current.add(id);
           writePassed(passedRef.current);
+          sessionPassed.current.push(id);
         }
       }
       // Everything advances NOW, inside the gesture: the deck (so the next
@@ -555,7 +602,13 @@ export function DatePage() {
         <div className="emptyState emptyState--tall">
           <EmptyArt name="discovery" />
           <p className="emptyState__text">
-            You’re all caught up — the DJ fetches more as it learns what you keep.
+            {refill === 'asking'
+              ? 'That\u2019s everyone. Going to find more like the ones you kept\u2026'
+              : refill === 'failed'
+                ? 'That\u2019s everyone. I could not reach your server to look for more.'
+                : refill === 'asked'
+                  ? 'That\u2019s everyone. Your server is out looking now — new ones land as it finds them.'
+                  : 'You\u2019re all caught up — the DJ fetches more as it learns what you keep.'}
           </p>
           {passedRef.current.size > 0 && (
             <Button

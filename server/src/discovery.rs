@@ -284,6 +284,25 @@ impl DiscoveryState {
 
 /// Fills the candidate pool for one listener from the neighbourhood of the
 /// artists they actually play.
+/// Harvest from artists the CALLER just named, ignoring both the clock and the
+/// pool cap.
+///
+/// The background sweep is rate-limited and stops once the pool is full,
+/// because nobody asked it to run. This one is different: the listener reached
+/// the end of a Date and asked for more, and a request answered with "not yet,
+/// come back in six hours" is a refusal dressed as a policy. The seeds are the
+/// artists behind what they just kept and what they have always liked, so the
+/// next batch is shaped by the verdicts they just gave.
+pub async fn harvest_seeded(state: &Arc<AppState>, user: i64, seeds: Vec<(String, i64)>) {
+    if seeds.is_empty() {
+        return;
+    }
+    // The clock still gets stamped: an on-demand run counts as the sweep for
+    // this window, so the two cannot both go out to Deezer at once.
+    state.discovery.last_harvest.lock().await.insert(user, now_ms());
+    harvest_from(state, user, seeds).await;
+}
+
 pub async fn harvest(state: &Arc<AppState>, user: i64) {
     {
         let mut last = state.discovery.last_harvest.lock().await;
@@ -311,6 +330,13 @@ pub async fn harvest(state: &Arc<AppState>, user: i64) {
             return;
         }
     }
+    harvest_from(state, user, seeds).await;
+}
+
+/// The walk itself: seeds -> their neighbours -> candidates you do not own.
+/// Shared by the background sweep and the on-demand run so the two can never
+/// drift into harvesting differently.
+async fn harvest_from(state: &Arc<AppState>, user: i64, seeds: Vec<(String, i64)>) {
     let owned = owned_keys(state);
     let c = client(15);
 
