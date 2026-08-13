@@ -14,6 +14,7 @@ import { useServerSession } from './serverSession.tsx';
 import {
   artSized,
   dateDone,
+  fetchCanvas,
   fetchCollectorStatus,
   trackIdFromPath,
   type CollectorStatus,
@@ -116,13 +117,62 @@ interface Slot {
   playWhenReady: boolean;
 }
 
-/** A card's face: the cover, full bleed, and nothing else. */
-function CardFace({ track }: { track: Track }) {
+/**
+ * A card's face: the song's Spotify Canvas when it has one, its cover when it
+ * does not, and its name across the top either way.
+ *
+ * The clip is the whole reason this screen works as an introduction - a looping
+ * few seconds of the artist's own visual says more about a song you have never
+ * heard than a static square does. It is asked for only for the card actually
+ * being looked at (`live`), because the deck holds several and a Canvas is a
+ * video file; the one underneath keeps its cover until it is the one in hand.
+ *
+ * Everything degrades: no clip is the cover, no cover is the bare plate, and
+ * the name sits over all three.
+ */
+function CardFace({ track, live = false }: { track: Track; live?: boolean }) {
+  const { session } = useServerSession();
   const art = artSized(track.artwork, 640);
-  return art ? (
-    <img className="dateCard__art" src={art} alt="" draggable={false} />
-  ) : (
-    <div className="dateCard__art dateCard__art--bare" aria-hidden />
+  const [canvas, setCanvas] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCanvas(null);
+    if (!live || !session) return;
+    const ctrl = new AbortController();
+    void fetchCanvas(session, track.title, track.artist, ctrl.signal, trackIdFromPath(track.path))
+      .then((url) => {
+        if (!ctrl.signal.aborted) setCanvas(url);
+      });
+    return () => ctrl.abort();
+  }, [live, session, track.title, track.artist, track.path]);
+
+  return (
+    <>
+      {canvas ? (
+        // Muted and inline: the sound on this page is the snippet the card
+        // plays, and a clip that fought it would be two songs at once.
+        <video
+          className="dateCard__art dateCard__art--canvas"
+          src={canvas}
+          poster={art ?? undefined}
+          autoPlay
+          loop
+          muted
+          playsInline
+          disablePictureInPicture
+        />
+      ) : art ? (
+        <img className="dateCard__art" src={art} alt="" draggable={false} />
+      ) : (
+        <div className="dateCard__art dateCard__art--bare" aria-hidden />
+      )}
+      {/* The name, over a gradient that blurs what is under it - legible over a
+          moving clip, which a plain scrim is not. */}
+      <div className="dateCard__id">
+        <span className="dateCard__idTitle">{track.title}</span>
+        <span className="dateCard__idArtist">{track.artist}</span>
+      </div>
+    </>
   );
 }
 
@@ -527,7 +577,7 @@ export function DatePage() {
                 onPointerUp={onPointerEnd}
                 onPointerCancel={onPointerEnd}
               >
-                <CardFace track={current} />
+                <CardFace track={current} live />
                 <span className="dateCard__stamp dateCard__stamp--like" style={{ opacity: likeHint }}>
                   KEEP
                 </span>

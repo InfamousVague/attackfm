@@ -10834,3 +10834,58 @@ button.artistAlbum {
 .appWindow:has(.appPlayer[data-hidden]) {
   --app-player-height: 0rem;
 }
+
+/* The Canvas clip, where a song has one: same box as the cover it replaces, so
+   the card does not resize when the clip arrives a beat after the art. */
+.dateCard__art--canvas {
+  object-fit: cover;
+}
+
+/* The song's name across the top of the card.
+   A gradient SCRIM alone is not enough over a moving clip - a bright frame can
+   wash the text out mid-loop - so the strip also blurs what is behind it, and
+   the blur is masked to fade out with the darkening rather than ending on a
+   hard line halfway down the artwork. */
+.dateCard__id {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--glacier-space-4) var(--glacier-space-4) var(--glacier-space-5);
+  color: #fff;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    rgb(0 0 0 / 0.72) 0%,
+    rgb(0 0 0 / 0.45) 45%,
+    rgb(0 0 0 / 0) 100%
+  );
+  backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 40%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 40%, transparent 100%);
+}
+
+.dateCard__idTitle {
+  font-size: var(--glacier-font-size-lg);
+  font-weight: 700;
+  line-height: 1.15;
+  /* Two lines then stop: a long title must not push the artist off the card. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-shadow: 0 1px 12px rgb(0 0 0 / 0.5);
+}
+
+.dateCard__idArtist {
+  font-size: var(--glacier-font-size-sm);
+  opacity: 0.85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 1px 12px rgb(0 0 0 / 0.5);
+}
