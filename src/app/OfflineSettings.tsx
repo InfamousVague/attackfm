@@ -1,6 +1,16 @@
-import { Button, IconButton, Label, Text } from '@glacier/react';
+import { Button, IconButton, Label, Select, Text } from '@glacier/react';
 import { Trash2 } from '@glacier/icons';
 import { useCallback, useEffect, useState } from 'react';
+import { useServerSession } from './serverSession.tsx';
+import {
+  cacheLimitBytes,
+  cacheUsage,
+  clearCache,
+  LIMIT_CHOICES,
+  onCacheChange,
+  setCacheLimitBytes,
+  sweepCache,
+} from './autoCache.ts';
 import { useLibrary } from './library.tsx';
 import { clearOffline, offlineEntries, onOfflineChange, unpinTrack, type OfflineEntry } from './offline.ts';
 import { isTauri } from './tauri.ts';
@@ -56,8 +66,9 @@ export function OfflineSettings() {
 
   return (
     <div className="prefsBody">
+      <AutoCacheSection />
       <div className="prefsSection">
-        <Label>On this device</Label>
+        <Label>Kept by hand</Label>
         <Text size="sm" tone="muted">
           {entries.length === 0
             ? 'Nothing downloaded yet. A song’s own menu keeps it here, and a kept song plays with no network at all — the hub can be off.'
@@ -108,6 +119,129 @@ export function OfflineSettings() {
               Remove all downloads
             </Button>
           </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** GB, said the way the picker says it. */
+function gbLabel(bytes: number): string {
+  if (bytes === 0) return 'Off';
+  return `${Math.round(bytes / 1024 ** 3)} GB`;
+}
+
+/**
+ * The automatic half: how much room the phone may use, and what it did with it.
+ *
+ * Worth being explicit in the copy about the two things people get wrong about
+ * a cache. It is not a second copy of the library (it holds what you play, and
+ * rotates), and it does not touch songs kept by hand (those are yours, and sit
+ * outside this budget entirely).
+ */
+function AutoCacheSection() {
+  const { session } = useServerSession();
+  const [limit, setLimit] = useState(cacheLimitBytes);
+  const [usage, setUsage] = useState<{ bytes: number; count: number; pinnedBytes: number; pinnedCount: number } | null>(
+    null,
+  );
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+
+  const refresh = useCallback(() => {
+    void cacheUsage().then(setUsage);
+  }, []);
+  useEffect(() => {
+    refresh();
+    return onCacheChange(refresh);
+  }, [refresh]);
+
+  const update = async () => {
+    if (!session) return;
+    setBusy(true);
+    setProgress({ done: 0, total: 0 });
+    try {
+      await sweepCache(session, { onProgress: (done, total) => setProgress({ done, total }) });
+    } finally {
+      setBusy(false);
+      setProgress(null);
+      refresh();
+    }
+  };
+
+  const pct = limit > 0 && usage ? Math.min(100, Math.round((usage.bytes / limit) * 100)) : 0;
+
+  return (
+    <div className="prefsSection">
+      <Label>Downloaded automatically</Label>
+      <Text size="sm" tone="muted">
+        Your liked songs, what you have on repeat, and what you played recently — kept on the phone so
+        they play instantly and without the hub. Songs rotate out as they go cold or as newer ones need
+        the room.
+      </Text>
+
+      <Select
+        aria-label="How much space the cache may use"
+        fullWidth
+        value={String(limit)}
+        options={LIMIT_CHOICES.map((b) => ({ value: String(b), label: gbLabel(b) }))}
+        onValueChange={(v) => {
+          const next = Number(v);
+          setCacheLimitBytes(next);
+          setLimit(next);
+        }}
+      />
+
+      {limit > 0 && (
+        <div className="cacheMeter">
+          <div className="cacheMeter__bar">
+            <span className="cacheMeter__fill" style={{ inlineSize: `${pct}%` }} />
+          </div>
+          <Text size="xs" tone="subtle">
+            {usage
+              ? `${usage.count.toLocaleString()} ${usage.count === 1 ? 'song' : 'songs'} · ${size(usage.bytes)} of ${gbLabel(limit)}`
+              : 'Checking…'}
+          </Text>
+        </div>
+      )}
+
+      {usage && usage.pinnedCount > 0 && (
+        <Text size="xs" tone="subtle">
+          Plus {usage.pinnedCount.toLocaleString()} kept by hand ({size(usage.pinnedBytes)}), which this
+          budget never touches.
+        </Text>
+      )}
+
+      {/* Said plainly rather than buried: this is the one setting on the page
+          that can spend somebody's mobile data without being asked. */}
+      <Text size="xs" tone="subtle">
+        Downloads happen while the app is open. There is no wi-fi-only switch yet, so this can use
+        mobile data.
+      </Text>
+
+      <div className="cacheActions">
+        <Button size="sm" variant="soft" disabled={busy || !session || limit === 0} onClick={() => void update()}>
+          {busy
+            ? progress && progress.total > 0
+              ? `Downloading ${progress.done}/${progress.total}…`
+              : 'Working…'
+            : 'Update now'}
+        </Button>
+        {usage && usage.count > 0 && (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              void clearCache().finally(() => {
+                setBusy(false);
+                refresh();
+              });
+            }}
+          >
+            Empty cache
+          </Button>
         )}
       </div>
     </div>

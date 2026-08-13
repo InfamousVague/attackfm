@@ -50,7 +50,7 @@ fn is_song_kind(kind: &str) -> bool {
     kind == "track"
 }
 
-const AUDIO_EXTENSIONS: &[&str] = &[
+pub(crate) const AUDIO_EXTENSIONS: &[&str] = &[
     "mp3", "m4a", "aac", "flac", "wav", "aiff", "aif", "ogg", "oga", "opus",
 ];
 
@@ -59,7 +59,7 @@ const AUDIO_EXTENSIONS: &[&str] = &[
 /// no API key or self-hosted endpoint - Tidal and Qobuz need a configured
 /// hifi-api / local API, and YouTube's public scraper backends come and go.
 /// The rest trail as fallbacks for tracks Deezer does not carry.
-fn services() -> Vec<String> {
+pub(crate) fn services() -> Vec<String> {
     std::env::var("AFM_IMPORT_SERVICES")
         .ok()
         .filter(|s| !s.trim().is_empty())
@@ -95,14 +95,14 @@ fn enrich_providers() -> Option<Vec<String>> {
 /// backend is throttling a datacentre address the transfer crawls rather than
 /// refusing, and 120s cut off downloads that would have finished. Raised, and
 /// made settable so the box can be tuned without a rebuild.
-fn per_track_timeout() -> String {
+pub(crate) fn per_track_timeout() -> String {
     std::env::var("AFM_IMPORT_TIMEOUT")
         .ok()
         .filter(|s| s.trim().parse::<u32>().is_ok())
         .unwrap_or_else(|| "300".to_string())
 }
 
-fn quality() -> String {
+pub(crate) fn quality() -> String {
     std::env::var("AFM_IMPORT_QUALITY")
         .ok()
         .filter(|s| !s.trim().is_empty())
@@ -269,7 +269,7 @@ fn random_id() -> String {
 /// deliberately NOT in the list: SpotiFLAC accepts the URL but its Apple
 /// metadata provider dies on a redirect, so it would trade one failure for
 /// another.
-async fn spotiflac_input(url: &str) -> Result<String, String> {
+pub(crate) async fn spotiflac_input(url: &str) -> Result<String, String> {
     if !url.to_ascii_lowercase().contains("deezer.") {
         return Ok(url.to_string());
     }

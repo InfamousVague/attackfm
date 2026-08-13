@@ -120,7 +120,7 @@ async fn spotify_token() -> Option<String> {
 // --- Sources -----------------------------------------------------------------
 
 #[allow(dead_code)]
-async fn spotify_search(q: &str) -> Vec<SearchResult> {
+pub(crate) async fn spotify_search(q: &str) -> Vec<SearchResult> {
     let Some(token) = spotify_token().await else {
         return Vec::new();
     };
@@ -219,7 +219,7 @@ async fn spotify_search(q: &str) -> Vec<SearchResult> {
     out
 }
 
-async fn deezer_search(q: &str) -> Vec<SearchResult> {
+pub(crate) async fn deezer_search(q: &str) -> Vec<SearchResult> {
     let mut out = Vec::new();
 
     if let Ok(resp) = client()
