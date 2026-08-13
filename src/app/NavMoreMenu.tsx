@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { Popover } from '@glacier/react';
+import { useEffect, useState } from 'react';
 import { ChartNoAxesColumn, Download, EllipsisVertical, Settings, Sparkles } from '@glacier/icons';
 import { useHasDownloadQueue, usePluginPages } from '../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
@@ -50,27 +49,39 @@ export function NavMoreMenu({
     onTab(next);
   };
 
+  // Closed on Escape like any menu. Bound only while open, so the app is not
+  // carrying a key listener for a menu nobody opened.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+
   return (
-    <Popover
-      placement="top-end"
-      aria-label="More"
-      className="appNavMore"
-      open={open}
-      onOpenChange={setOpen}
-      trigger={
-        <button
-          type="button"
-          className="appNavBarTab appNavBarPlugins__trigger"
-          data-active={onMenuDest || open || undefined}
-          aria-label="More"
-        >
-          <span className="appNavBarTab__icon">
-            <EllipsisVertical size={24} />
-          </span>
-          <span className="appNavBarTab__label">More</span>
-        </button>
-      }
-    >
+    <div className="appNavMore__anchor">
+      <button
+        type="button"
+        className="appNavBarTab appNavBarPlugins__trigger"
+        data-active={onMenuDest || open || undefined}
+        aria-label="More"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="appNavBarTab__icon">
+          <EllipsisVertical size={24} />
+        </span>
+        <span className="appNavBarTab__label">More</span>
+      </button>
+      {/* A tap anywhere else closes, which is the gesture people reach for
+          before they look for a button. */}
+      {open && (
+        <div className="appNavMore__scrim" aria-hidden onPointerDown={() => setOpen(false)} />
+      )}
+      {open && (
       <div className="appNavMore__menu" role="menu" aria-label="More">
         {pages.map((pg) => (
           <button
@@ -153,6 +164,7 @@ export function NavMoreMenu({
           <span className="appNavBarPlugins__itemLabel">Settings</span>
         </button>
       </div>
-    </Popover>
+      )}
+    </div>
   );
 }

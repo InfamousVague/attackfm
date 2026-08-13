@@ -1379,57 +1379,52 @@ img {
   display: flex;
 }
 
-/* The ⋮ menu's contents live inside the kit Popover panel, which brings the
-   glass, the blur, the shadow, the padding and the portal - so this lays the
-   rows out and the rule below un-stretches the panel itself. */
+/* The ⋮ menu. Our own markup and our own box - NOT the kit's Popover.
+   That popover was fought four times over this exact bug: its panel carries a
+   min-width of 12rem and a max-width of min(24rem, 100vw - 2rem), which on a
+   375px phone is 343px - 91% of the screen, i.e. "the whole width". Every
+   override worked in a desktop-emulated preview and none of them held on the
+   device, and without the device's DOM there was no way to see why. A menu of
+   five rows does not need a positioning engine: it is anchored to a button in
+   a bar that is already fixed to the bottom-right, so it is an absolutely
+   positioned box hung off that button, and its width is simply its content. */
+.appNavMore__anchor {
+  position: relative;
+  display: flex;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+/* Catches the tap that dismisses. Below the menu, above everything else. */
+.appNavMore__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
 .appNavMore__menu {
+  position: absolute;
+  z-index: 41;
+  /* Above the bar, hugging the edge its button sits on. The bar sets
+     overflow: visible precisely so this can rise out of it. */
+  inset-block-end: calc(100% + var(--glacier-space-3));
+  inset-inline-end: 0;
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-1);
-}
-
-/* The kit's phone default treats a popover panel as a sheet - pinned to both
-   screen edges - which strands this menu's rows a screen away from the ⋮
-   button that opened them. This one is a MENU: as wide as its longest row
-   (the rows nowrap, so "Downloads" sets it), never past half the screen, and
-   hugging the right edge where its button lives. The custom class rides the
-   panel node itself, so the override needs no kit internals beyond that. */
-/* The class is doubled for specificity, not by accident: Vite injects the
-   kit's module CSS when the component module loads - AFTER this file - so an
-   equal-specificity override loses on order alone. One extra class beats
-   whatever the kit's panel rules weigh without reaching for !important. */
-/* Written defensively, because this kept coming back on the phone while every
-   measurement in a desktop-emulated preview said 147px.
-   Three ways the previous version could do nothing on a device, all closed:
-     1. It required [class*='_panel_'] to match. That attribute selector is the
-        only thing tying the rule to the kit's node, and if the built bundle
-        ever names that class differently the WHOLE rule - !important included -
-        silently stops applying. The custom className is on the same element, so
-        the attribute test buys nothing and is dropped.
-     2. It set only the LOGICAL properties while the kit sets the physical ones
-        (min-width: 12rem; max-width: min(24rem, 100vw - 2rem)). They are the
-        same property in a horizontal writing mode, but only where both are
-        understood; setting both leaves nothing to interpretation.
-     3. margin-inline-start carried no !important, so the right-alignment could
-        lose even when the widths won.
-   The kit's own numbers are why it looked full-width at all: 12rem floor and a
-   100vw-2rem ceiling put the panel at 343px on a 375px screen - 91% of the
-   display, which reads as "the whole width". */
-body .appNavMore,
-body .appNavMore.appNavMore {
-  inline-size: max-content !important;
-  width: max-content !important;
-  min-inline-size: 0 !important;
-  min-width: 0 !important;
-  /* A menu's worth, not a sheet's: capped in rem first so it cannot scale with
-     a big screen, and by viewport second so it cannot overhang a small one. */
-  max-inline-size: min(15rem, 62vw) !important;
-  max-width: min(15rem, 62vw) !important;
-  /* The kit's POSITIONER (the fixed wrapper floating-ui moves) stays the
-     full-width rail it wants to be; the panel rides its trailing end, which
-     is where the ⋮ button lives. Cheaper and safer than fighting the inline
-     top/left the positioning engine writes every frame. */
-  margin-inline-start: auto !important;
+  /* As wide as its longest row and no wider - the rows nowrap, so "Downloads"
+     sets it - with a ceiling so a long plugin name cannot span the screen. */
+  inline-size: max-content;
+  max-inline-size: min(15rem, 62vw);
+  padding: var(--glacier-space-2);
+  /* The bar's own material, so the menu reads as part of it. */
+  border-radius: var(--glacier-radius-xl, 1.25rem);
+  background: var(--glacier-glass-thick);
+  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  box-shadow: var(--glacier-shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.42));
+  animation: npRise 0.18s var(--glacier-ease-out);
 }
 
 .appNavBarPlugins__item {
