@@ -11415,3 +11415,85 @@ button.artistAlbum {
   gap: var(--glacier-space-2);
   flex-wrap: wrap;
 }
+
+/* ---- Wrong song ----------------------------------------------------------
+   The listening room: what you have at the top, then the alternates as they
+   land. A row is a play button, what the catalogue calls it, and the choice -
+   in that order, because the deciding is done by ear and the button that
+   starts the ear comes first. */
+.wrongSong__current {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: var(--glacier-space-3);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface-sunken);
+  margin-block-end: var(--glacier-space-3);
+}
+
+.wrongSong__hunting,
+.wrongSong__error {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding-block: var(--glacier-space-3);
+}
+
+.wrongSong__error {
+  color: var(--glacier-danger-text);
+}
+
+.wrongSong__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.wrongSong__row {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+}
+
+.wrongSong__row:hover {
+  background: var(--glacier-surface-hover);
+}
+
+/* Still downloading: present, and visibly not ready yet. */
+.wrongSong__row--waiting {
+  opacity: 0.65;
+}
+
+.wrongSong__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.0625rem;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+/* Round, like every other play affordance in the app. */
+.wrongSong__play {
+  display: grid;
+  place-items: center;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  flex: none;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--glacier-text);
+  background: var(--glacier-surface-raised);
+}
+
+.wrongSong__play:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.wrongSong__foot {
+  display: flex;
+  justify-content: flex-end;
+}

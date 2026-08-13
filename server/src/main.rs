@@ -45,6 +45,7 @@ mod pair;
 mod push;
 mod radio;
 mod recents;
+mod refetch;
 mod registry_auth;
 mod rewind;
 mod scan;
@@ -104,6 +105,7 @@ pub struct AppState {
     /// The server-side import queue - links any signed-in device enqueues,
     /// downloaded where the music lives.
     pub imports: Arc<imports::ImportManager>,
+    pub refetch: Arc<refetch::RefetchManager>,
     /// Live one-time device-pairing codes (the QR "link a device" flow).
     pub pairing: Arc<pair::PairStore>,
     /// Per-track Spotify Canvas URLs (looping now-playing clip). Inert unless
@@ -280,6 +282,7 @@ async fn main() {
         library_quota_bytes: quota_gb.max(0) * 1024 * 1024 * 1024,
         ffmpeg,
         imports: imports::ImportManager::new(&data_dir),
+        refetch: refetch::RefetchManager::new(&data_dir),
         pairing: pair::PairStore::new(),
         canvas: canvas::CanvasCache::new(),
         public_url,
@@ -405,6 +408,14 @@ async fn main() {
         .route("/api/playlists/{id}/export.m3u", get(tools::export_m3u))
         .route("/api/playlists/import", post(tools::import_playlist))
         .route("/api/imports", get(imports::list).post(imports::enqueue))
+        // Getting the right recording when the importer fetched the wrong one.
+        .route("/api/refetch/{track_id}", post(refetch::start))
+        .route(
+            "/api/refetch/{id}",
+            get(refetch::status).delete(refetch::scrap),
+        )
+        .route("/api/refetch/{id}/audio/{index}", get(refetch::preview))
+        .route("/api/refetch/{id}/keep", post(refetch::keep))
         .route("/api/imports/clear", post(imports::clear))
         .route(
             "/api/imports/{id}",

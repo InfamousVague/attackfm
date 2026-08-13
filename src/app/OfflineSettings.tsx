@@ -3,6 +3,7 @@ import { Trash2 } from '@glacier/icons';
 import { useCallback, useEffect, useState } from 'react';
 import { useServerSession } from './serverSession.tsx';
 import {
+  autoCachedKeys,
   cacheLimitBytes,
   cacheUsage,
   clearCache,
@@ -12,7 +13,7 @@ import {
   sweepCache,
 } from './autoCache.ts';
 import { useLibrary } from './library.tsx';
-import { clearOffline, offlineEntries, onOfflineChange, unpinTrack, type OfflineEntry } from './offline.ts';
+import { offlineEntries, onOfflineChange, unpinTrack, type OfflineEntry } from './offline.ts';
 import { isTauri } from './tauri.ts';
 
 /**
@@ -58,7 +59,9 @@ export function OfflineSettings() {
     );
   }
 
-  const bytes = entries.reduce((sum, e) => sum + e.bytes, 0);
+  const owned = autoCachedKeys();
+  const manual = entries.filter((e) => !owned.has(e.key));
+  const bytes = manual.reduce((sum, e) => sum + e.bytes, 0);
   // A held file is a song while the library still knows it. One the server has
   // since dropped keeps its space until it is cleared, and saying so plainly
   // beats hiding the row and leaving the space unexplained.
@@ -70,15 +73,15 @@ export function OfflineSettings() {
       <div className="prefsSection">
         <Label>Kept by hand</Label>
         <Text size="sm" tone="muted">
-          {entries.length === 0
-            ? 'Nothing downloaded yet. A song’s own menu keeps it here, and a kept song plays with no network at all — the hub can be off.'
-            : `${entries.length} ${entries.length === 1 ? 'song' : 'songs'} · ${size(bytes)}`}
+          {manual.length === 0
+            ? 'Nothing kept by hand. A song’s own menu keeps it here for good — outside the budget above, and never rotated out.'
+            : `${manual.length} ${manual.length === 1 ? 'song' : 'songs'} · ${size(bytes)}`}
         </Text>
 
-        {entries.length > 0 && (
+        {manual.length > 0 && (
           <>
             <div className="offlineList">
-              {entries.slice(0, SHOWN).map((e) => {
+              {manual.slice(0, SHOWN).map((e) => {
                 const track = byPath.get(e.key);
                 return (
                   <div key={e.key} className="offlineRow">
@@ -102,21 +105,24 @@ export function OfflineSettings() {
                 );
               })}
             </div>
-            {entries.length > SHOWN && (
+            {manual.length > SHOWN && (
               <Text size="xs" tone="subtle">
-                …and {entries.length - SHOWN} more.
+                …and {manual.length - SHOWN} more.
               </Text>
             )}
+            {/* Only the hand-kept half: the cache above has its own button,
+                and one control that silently emptied both would make the
+                split this page just drew a lie. */}
             <Button
               variant="danger"
               size="sm"
               disabled={busy}
               onClick={() => {
                 setBusy(true);
-                void clearOffline().finally(() => setBusy(false));
+                void Promise.all(manual.map((e) => unpinTrack(e.key))).finally(() => setBusy(false));
               }}
             >
-              Remove all downloads
+              Remove these
             </Button>
           </>
         )}
