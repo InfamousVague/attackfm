@@ -22,6 +22,7 @@ import { useDownloadsOptional } from '../importsBridge.ts';
 import { usePendingPlay, placeholderTrack } from '../../app/pendingPlay.tsx';
 import { CatalogArtistPage } from './CatalogArtistPage.tsx';
 import { CuratorShelves } from '../../app/HomePage.tsx';
+import { ForYouShelf } from '../../app/ForYouShelf.tsx';
 import type { MusicImportJob } from '../importsBridge.ts';
 
 /** A curated playlist card, as an acquire target: a whole list, no single
@@ -395,16 +396,10 @@ export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
         covers: mosaicOf(fresh.map((t) => t.artwork)),
       });
     }
-    if (forYou.length >= 3) {
-      out.push({
-        key: 'fetched-for-you',
-        title: 'Fetched for you',
-        blurb: `${forYou.length} songs your curator pulled in`,
-        kind: 'owned',
-        tracks: forYou,
-        covers: mosaicOf(forYou.map((t) => t.artwork)),
-      });
-    }
+    // "Fetched for you" used to be built here from the same array, as a set
+    // tile. The real ForYouShelf renders below instead: it filters the pulls to
+    // THIS listener's and carries the halted-budget warning, neither of which a
+    // tile could say.
     const bySeed = new Map<string, Discovery[]>();
     for (const d of discoveries ?? []) {
       if (!d.seed) continue;
@@ -603,6 +598,12 @@ export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
           but a mix of your own music does not. They used to sit on Library,
           which is what made Discover read as somebody else's charts. */}
       <CuratorShelves onPlay={onPlay} onOpenArtist={onOpenArtist} />
+
+      {/* What the collector went and FETCHED on your behalf, awaiting a
+          listen to earn its place in the library proper. It belongs beside
+          the rest of the AI's work rather than on the page about music you
+          already chose. */}
+      <ForYouShelf onPlay={onPlay} />
 
       {/* The hero: the AI's freshest finds as one place to walk into, leading
           the page the way the live jam leads Friends - the newest thing, big. */}

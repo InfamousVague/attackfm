@@ -7,7 +7,6 @@ import { useRippleWave } from './rippleWave.ts';
 import { usePlaylists } from './playlists.tsx';
 import { ShelfSkeleton } from './ShelfSkeleton.tsx';
 import { PlaylistShowcase } from './PlaylistShowcase.tsx';
-import { ForYouShelf } from './ForYouShelf.tsx';
 import { HomeStatsCards } from './HomeStatsCards.tsx';
 import { HistoryShelves } from './HomePage.tsx';
 import { TrackMenu } from './TrackMenu.tsx';
@@ -284,9 +283,6 @@ export function LibraryView({
               Renders nothing until there is a week to speak of. */}
           {onOpenStats && <HomeStatsCards onOpenStats={onOpenStats} />}
 
-          {/* What the collector fetched for you, awaiting adoption - kept out
-              of every other shelf until a listen-through or a heart claims it. */}
-          <ForYouShelf onPlay={onPlay} />
 
           {/* The personalized mixes, folded in from the old Home: what the
               server made from your listening. They sit BELOW the stats and the
