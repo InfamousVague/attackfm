@@ -45,6 +45,7 @@ import { LibrarySyncProvider } from './librarySync.tsx';
 import { SearchPage } from './SearchPage.tsx';
 import { StatsPage } from './StatsPage.tsx';
 import { AiPage } from './AiPage.tsx';
+import { DatePage } from './DatePage.tsx';
 import { ListeningShareBridge } from './listeningShare.tsx';
 import { LibraryView } from './LibraryView.tsx';
 import { SongPage, type SongCollection } from './SongPage.tsx';
@@ -332,14 +333,14 @@ function PrimaryNav({
     <nav className="appNavBar" aria-label="Primary">
       {/* A destination, so it lights like one. */}
       <BarTab
-        icon={<Search size={28} />}
+        icon={<Search size={24} />}
         label="Search"
         active={tab === 'search'}
         onClick={() => onTab('search')}
       />
       {canDiscover && (
         <BarTab
-          icon={<Compass size={28} />}
+          icon={<Compass size={24} />}
           label="Discover"
           active={tab === 'discover'}
           onClick={() => onTab('discover')}
@@ -347,13 +348,13 @@ function PrimaryNav({
       )}
       {/* The library: where the music you own lives, and the app's home. */}
       <BarTab
-        icon={<LibraryBig size={28} />}
+        icon={<LibraryBig size={24} />}
         label="Library"
         active={libraryActive}
         onClick={() => onTab('library')}
       />
       <BarTab
-        icon={<CircleUserRound size={28} />}
+        icon={<CircleUserRound size={24} />}
         label="Profile"
         active={tab === 'profile' || tab === 'friends'}
         onClick={() => onTab('profile')}
@@ -606,6 +607,9 @@ function AppMain({
             onOpenPlaylist={onOpenPlaylist}
           />
         </PluginHookScope>
+      ) : tab === 'date' ? (
+        // The collector's auditions as introductions: snippet, swipe, verdict.
+        <DatePage />
       ) : tab === 'ai' && isOwner ? (
         // What the machine did while you were not looking. Owner-only, and
         // gated here as well as in the menu: a tab restored from a past session
