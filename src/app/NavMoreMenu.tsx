@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Popover } from '@glacier/react';
-import { ChartNoAxesColumn, Download, EllipsisVertical, Settings } from '@glacier/icons';
+import { ChartNoAxesColumn, Download, EllipsisVertical, Settings, Sparkles } from '@glacier/icons';
 import { useHasDownloadQueue, usePluginPages } from '../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
+import { useServerSession } from './serverSession.tsx';
 
 /**
  * The bar's overflow: a vertical-ellipsis tab that opens the app's "rest of the
@@ -36,11 +37,13 @@ export function NavMoreMenu({
   // the count beside the label is the importer's alone; books in flight open
   // the page, they just do not number it.
   const hasQueue = useHasDownloadQueue();
+  // The server owner - the first account through the door.
+  const isOwner = useServerSession().session?.isAdmin === true;
   const [open, setOpen] = useState(false);
 
   // The ⋮ lights when what is on screen lives in this menu.
   const onMenuDest =
-    pages.some((pg) => pg.key === tab) || tab === 'stats' || tab === 'downloads';
+    pages.some((pg) => pg.key === tab) || tab === 'stats' || tab === 'ai' || tab === 'downloads';
 
   const go = (next: string) => {
     setOpen(false);
@@ -86,6 +89,24 @@ export function NavMoreMenu({
         ))}
 
         {pages.length > 0 && <span className="appNavBarPlugins__divider" aria-hidden />}
+
+        {/* The owner's window on the machine that runs their server. Hidden
+            outright from everyone else - a guest has no business reading what
+            the AI bought on somebody else's disk. */}
+        {isOwner && (
+          <button
+            type="button"
+            role="menuitem"
+            className="appNavBarPlugins__item"
+            data-active={tab === 'ai' || undefined}
+            onClick={() => go('ai')}
+          >
+            <span className="appNavBarPlugins__itemIcon" aria-hidden>
+              <Sparkles size={18} />
+            </span>
+            <span className="appNavBarPlugins__itemLabel">AI</span>
+          </button>
+        )}
 
         <button
           type="button"
