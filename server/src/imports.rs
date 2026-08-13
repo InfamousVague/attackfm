@@ -31,10 +31,24 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 // 300s to arrive cannot be declared "stalled" at 180s, or the guard kills
 // exactly the slow-but-working download the longer timeout was meant to allow.
 const STALL_SECS: u64 = 420;
-// One at a time. Imports are a rare, human-paced action, and serial filing
-// means two jobs can never race on the same tag-derived destination in the
-// shared music library - the concurrency was never worth that risk.
-const CONCURRENCY: usize = 1;
+// Download lanes. Filing into the shared library is serialized separately by
+// `state.filing`, so parallel DOWNLOADS never race on a destination - which is
+// what frees these to run at all.
+//
+// Single songs run up to three at once, and a tapped "now playing" song can use
+// all three; a BACKGROUND single (the collector, a sync) is held to two, so one
+// slot always stands clear for a tap and a listen never queues behind a chore.
+// Playlists/albums file many tracks each, so they run one at a time.
+const SONG_SLOTS: usize = 3;
+const BG_SONG_SLOTS: usize = 2;
+const PLAYLIST_SLOTS: usize = 1;
+
+/// A single track shares the song lanes; everything else (playlist, album,
+/// artist, or an unrecognised link that might expand to many) runs on the one
+/// playlist lane.
+fn is_song_kind(kind: &str) -> bool {
+    kind == "track"
+}
 
 const AUDIO_EXTENSIONS: &[&str] = &[
     "mp3", "m4a", "aac", "flac", "wav", "aiff", "aif", "ogg", "oga", "opus",
@@ -152,6 +166,12 @@ pub struct ImportJob {
     /// making one for user 0.
     #[serde(default)]
     pub owner: i64,
+    /// Set when a listener TAPPED this single song to play it now: it opens Now
+    /// Playing downloading and wants its file fast. Such a track jumps ahead of
+    /// background singles for a download slot, and one song slot is always held
+    /// clear for it, so a tap never waits behind the collector or a sync.
+    #[serde(default)]
+    pub now_playing: bool,
 }
 
 pub struct ImportManager {
@@ -513,31 +533,69 @@ pub(crate) async fn fetch_embed_meta(
 
 // --- The runner --------------------------------------------------------------
 
-/// The scheduler: takes queued jobs oldest-first, at most CONCURRENCY at a
-/// time, forever. Spawned once at boot.
+/// Which queued job to start next given the lanes' free capacity, or None if
+/// nothing can run right now. A now-playing tap is picked first and may use
+/// every song slot; a background single leaves the last one clear for a tap; a
+/// playlist takes the one playlist slot. Oldest-first within each group (`jobs`
+/// is insertion order). Returns (id, url, is_song).
+fn pick_runnable(
+    jobs: &[ImportJob],
+    songs: usize,
+    playlists: usize,
+) -> Option<(String, String, bool)> {
+    let hit = |j: &ImportJob| (j.id.clone(), j.url.clone(), is_song_kind(&j.kind));
+    if songs < SONG_SLOTS {
+        if let Some(j) = jobs
+            .iter()
+            .find(|j| j.state == "queued" && is_song_kind(&j.kind) && j.now_playing)
+        {
+            return Some(hit(j));
+        }
+    }
+    if songs < BG_SONG_SLOTS {
+        if let Some(j) = jobs
+            .iter()
+            .find(|j| j.state == "queued" && is_song_kind(&j.kind) && !j.now_playing)
+        {
+            return Some(hit(j));
+        }
+    }
+    if playlists < PLAYLIST_SLOTS {
+        if let Some(j) = jobs.iter().find(|j| j.state == "queued" && !is_song_kind(&j.kind)) {
+            return Some(hit(j));
+        }
+    }
+    None
+}
+
+/// The scheduler: fills two download lanes forever - up to SONG_SLOTS single
+/// songs and PLAYLIST_SLOTS playlist at a time - starting every runnable job
+/// each pass, then sleeping until a slot frees or a job arrives. Spawned once at
+/// boot. Filing into the library stays serialized by state.filing, so the
+/// parallel downloads never race on a destination.
 pub fn spawn_scheduler(state: Arc<AppState>) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
     tokio::spawn(async move {
-        let in_flight = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let songs = Arc::new(AtomicUsize::new(0));
+        let playlists = Arc::new(AtomicUsize::new(0));
         loop {
             let manager = Arc::clone(&state.imports);
-            let next = {
-                let jobs = manager.jobs.lock().await;
-                if in_flight.load(std::sync::atomic::Ordering::Acquire) >= CONCURRENCY {
-                    None
-                } else {
-                    jobs.iter().find(|j| j.state == "queued").map(|j| (j.id.clone(), j.url.clone()))
-                }
-            };
-            let Some((id, url)) = next else {
-                manager.notify.notified().await;
-                continue;
-            };
-            manager.update(&id, |j| j.state = "downloading".to_string()).await;
-            manager.flush().await;
-            in_flight.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+            // Start every job the two lanes have room for this pass.
+            loop {
+                let s = songs.load(Ordering::Acquire);
+                let p = playlists.load(Ordering::Acquire);
+                let picked = {
+                    let jobs = manager.jobs.lock().await;
+                    pick_runnable(&jobs, s, p)
+                };
+                let Some((id, url, is_song)) = picked else { break };
+                manager.update(&id, |j| j.state = "downloading".to_string()).await;
+                manager.flush().await;
+                let lane = if is_song { Arc::clone(&songs) } else { Arc::clone(&playlists) };
+                lane.fetch_add(1, Ordering::AcqRel);
 
-            let run_state = Arc::clone(&state);
-            let slots = Arc::clone(&in_flight);
+                let run_state = Arc::clone(&state);
+                let slots = Arc::clone(&lane);
             tokio::spawn(async move {
                 let manager = Arc::clone(&run_state.imports);
                 // Frees the slot and re-pokes the scheduler no matter how this
@@ -622,6 +680,10 @@ pub fn spawn_scheduler(state: Arc<AppState>) {
                 crate::spotify_sync::on_job_finished(&run_state, &id).await;
                 // The slot is freed and the scheduler re-poked by _guard's Drop.
             });
+            }
+            // Every runnable job started; wait for a slot to free or a job to
+            // arrive, then try to fill the lanes again.
+            manager.notify.notified().await;
         }
     });
 }
@@ -1023,6 +1085,10 @@ type ApiError = (StatusCode, String);
 #[derive(Deserialize)]
 pub struct EnqueueBody {
     pub url: String,
+    /// A single song the listener tapped to PLAY now, not a background add - it
+    /// jumps the song queue and keeps its reserved slot. camelCase on the wire.
+    #[serde(default, rename = "nowPlaying")]
+    pub now_playing: bool,
 }
 
 /// `GET /api/imports` - the queue, newest first.
@@ -1081,6 +1147,8 @@ pub async fn enqueue_internal(
         owned_track_ids: Vec::new(),
         origin: origin.to_string(),
         owner: owner_id,
+        // Server-raised (collector, sync): a background add, never a tap.
+        now_playing: false,
     };
     let id = job.id.clone();
     state.imports.jobs.lock().await.push(job);
@@ -1137,6 +1205,9 @@ pub async fn enqueue(
         owned_track_ids: Vec::new(),
         origin: String::new(),
         owner: caller.id,
+        // Only a tapped single song is now-playing; the client sets it, and
+        // detect_kind must agree it is a track for the flag to matter.
+        now_playing: body.now_playing && is_song_kind(kind),
     };
     {
         let mut jobs = state.imports.jobs.lock().await;
