@@ -16,6 +16,7 @@ import {
   StatTile,
   StatusDot,
   Text,
+  Switch,
 } from '@glacier/react';
 import {
   Activity,
@@ -55,7 +56,9 @@ import { forgetProfile, otherProfiles, type Profile } from './household.ts';
 import {
   fetchMirrorStatus,
   normalizeServerUrl,
+  fetchHotSummary,
   startMirror,
+  type HotBar,
   type MirrorStatus,
 } from './server.ts';
 import { pairPayload } from './pairing.ts';
@@ -700,6 +703,19 @@ function MirrorSection() {
   const [note, setNote] = useState<string | null>(null);
   const [showKeys, setShowKeys] = useState(false);
 
+  // Carrying only the listened-to set. Default ON: a server you are filling
+  // from somewhere else is nearly always the smaller box, and offering to
+  // copy a library that will not fit is offering a job that ends badly.
+  const [hotOnly, setHotOnly] = useState(true);
+  const [hotSummary, setHotSummary] = useState<{
+    bars: HotBar[];
+    liked: number;
+    libraryTracks: number;
+  } | null>(null);
+  const hotSize = hotSummary?.bars.find((b) => b.minPlays === 2) ?? null;
+
+
+
   // Only while something is running: a poll that never stops is a poll that
   // wakes a sleeping phone for nothing.
   useEffect(() => {
@@ -726,6 +742,24 @@ function MirrorSection() {
 
   if (!session) return null;
   const here = source?.url === session.url;
+
+  // Ask the SOURCE how big its listened-to set is, so the size is visible
+  // before the copy rather than discovered during it. Best-effort: an older
+  // source has no such endpoint and the switch simply describes itself.
+  useEffect(() => {
+    if (!source || here || !hotOnly) return;
+    let live = true;
+    void fetchHotSummary(source)
+      .then((s) => {
+        if (live) setHotSummary(s);
+      })
+      .catch(() => {
+        if (live) setHotSummary(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [source, here, hotOnly]);
   const running = status?.running === true;
 
   return (
@@ -772,6 +806,29 @@ function MirrorSection() {
               Only the owner of this server can fill it.
             </Text>
           )}
+          {/* Everything, or only what gets listened to.
+
+              The second is what a server on the internet is usually for: it
+              has a fraction of the disk a hub at home does, and the songs you
+              actually play are a fraction of the library. The set sizes
+              itself against this box's free space, so the choice here is
+              about WHAT to carry, not how much. */}
+          <div className="mirrorScope">
+            <Switch
+              label="Only songs I actually listen to"
+              checked={hotOnly}
+              onCheckedChange={setHotOnly}
+            />
+            {hotOnly && (
+              <Text tone="muted" size="xs">
+                {hotSize
+                  ? `About ${hotSize.tracks.toLocaleString()} songs (${gbLabel(hotSize.bytes)}) of ${(
+                      hotSummary?.libraryTracks ?? 0
+                    ).toLocaleString()} — played twice or more, plus anything liked. Whatever will not fit is left behind, coldest first.`
+                  : 'Played twice or more, plus anything liked.'}
+              </Text>
+            )}
+          </div>
           <div className="prefsActions">
             <Button
               variant="solid"
@@ -780,7 +837,7 @@ function MirrorSection() {
               onClick={() => {
                 setBusy(true);
                 setNote(null);
-                void startMirror(session, source)
+                void startMirror(session, source, hotOnly ? { minPlays: 2 } : undefined)
                   .then(() => setNote('Started. It will keep going with the app closed.'))
                   .catch((e: unknown) =>
                     setNote(e instanceof Error ? e.message : 'Could not start the copy.'),
@@ -788,7 +845,11 @@ function MirrorSection() {
                   .finally(() => setBusy(false));
               }}
             >
-              {running ? 'Copying…' : `Copy ${source.name} into this server`}
+              {running
+                ? 'Copying…'
+                : hotOnly
+                  ? `Copy what I listen to from ${source.name}`
+                  : `Copy ${source.name} into this server`}
             </Button>
           </div>
         </>

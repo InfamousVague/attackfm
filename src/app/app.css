@@ -11522,3 +11522,12 @@ button.artistAlbum {
   display: flex;
   justify-content: flex-end;
 }
+
+/* The mirror's scope choice: everything, or only what gets listened to. Sits
+   above the button it changes, because it changes what the button says. */
+.mirrorScope {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  padding-block: var(--glacier-space-2);
+}
