@@ -9,7 +9,7 @@ import { ShelfSkeleton } from './ShelfSkeleton.tsx';
 import { PlaylistShowcase } from './PlaylistShowcase.tsx';
 import { ForYouShelf } from './ForYouShelf.tsx';
 import { HomeStatsCards } from './HomeStatsCards.tsx';
-import { HomePage } from './HomePage.tsx';
+import { HistoryShelves } from './HomePage.tsx';
 import { TrackMenu } from './TrackMenu.tsx';
 import { isDesktopApp } from './platform.ts';
 import { EmptyArt } from './EmptyArt.tsx';
@@ -293,7 +293,10 @@ export function LibraryView({
               playlists now - the page should open on your own library, not on
               a shelf that is empty until a history exists. Renders its own
               shelves and skeletons, and nothing at all on a local library. */}
-          <HomePage embedded onPlay={onPlay} onOpenArtist={onOpenArtist} onOpenStats={onOpenStats} />
+          {/* What you have been PLAYING. The AI's own shelves used to render
+              here too, which is what made this page four pages in one scroller;
+              they live on Discover now. */}
+          <HistoryShelves onPlay={onPlay} onOpenArtist={onOpenArtist} onOpenStats={onOpenStats} />
 
           {recentlyAdded.length === 0 &&
             favoriteTracks.length === 0 &&

@@ -21,6 +21,7 @@ import { IMPORTER_PLUGIN_ID, useAcquire } from '../runtime.tsx';
 import { useDownloadsOptional } from '../importsBridge.ts';
 import { usePendingPlay, placeholderTrack } from '../../app/pendingPlay.tsx';
 import { CatalogArtistPage } from './CatalogArtistPage.tsx';
+import { CuratorShelves } from '../../app/HomePage.tsx';
 import type { MusicImportJob } from '../importsBridge.ts';
 
 /** A curated playlist card, as an acquire target: a whole list, no single
@@ -286,7 +287,7 @@ function SetMosaic({ covers, size }: { covers: string[]; size?: 'hero' }) {
 // onOpenArtist: that opens the LIBRARY's artist page, and on Discover an artist
 // means their catalogue - the discography you can add from - so every artist row
 // here stacks a CatalogArtistPage instead.
-export function DiscoverPage({ onPlay }: PluginPageProps) {
+export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
   // The same entrance the Library wears: cards wave in as they meet the
   // view, each landing with a soft tick.
   const rippleRoot = useRef<HTMLDivElement>(null);
@@ -594,6 +595,14 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
           <p className="discoverHead__blurb">{warmthLine(warmth, discoveries)}</p>
         </div>
       </header>
+
+      {/* What the AI made FROM your library: mixes whose every track you
+          already own, so they play the instant you tap them. They lead the
+          personal half of the page because they are the only thing here that
+          works on day one - a pool of unowned finds has to be measured first,
+          but a mix of your own music does not. They used to sit on Library,
+          which is what made Discover read as somebody else's charts. */}
+      <CuratorShelves onPlay={onPlay} onOpenArtist={onOpenArtist} />
 
       {/* The hero: the AI's freshest finds as one place to walk into, leading
           the page the way the live jam leads Friends - the newest thing, big. */}

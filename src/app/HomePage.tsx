@@ -191,6 +191,7 @@ export function HomePage({
   onOpenArtist,
   onOpenStats,
   embedded = false,
+  section = 'all',
 }: {
   /** Called with the opened track and the shelf it came from as the queue. */
   onPlay: (track: Track, queue: Track[]) => void;
@@ -202,7 +203,19 @@ export function HomePage({
    *  page's own search field - the host carries both - and show just the
    *  personalized shelves, so the mixes fold into Library above what you own. */
   embedded?: boolean;
+  /**
+   * Which half of these shelves to draw. The two halves answer different
+   * questions and now live on different pages: what the AI MADE for you
+   * ('curator', on Discover) and what you have been PLAYING ('history', on
+   * Library). One component still owns both because the two never render at
+   * once - Library and Discover are separate tabs - so splitting the file would
+   * duplicate the whole feed-loading half for no gain. Prefer the named
+   * wrappers below to passing this by hand.
+   */
+  section?: 'curator' | 'history' | 'all';
 }) {
+  const showCurator = section === 'curator' || section === 'all';
+  const showHistory = section === 'history' || section === 'all';
   const { tracks, favoriteTracks } = useLibrary();
   const { create: createPlaylist } = usePlaylists();
   const { session } = useServerSession();
@@ -314,6 +327,25 @@ export function HomePage({
     }))
     .filter((l) => l.tracks.length >= 4);
 
+  // One shelf, not two. "From your curator" and "Made for you" were two rails
+  // of identical cards that differed only in WHICH PROCESS built them - a
+  // distinction with no meaning to the person reading it. Merged, the curator's
+  // own lists first (they are built from a longer look at the library), deduped
+  // by title so a mix that both halves produced appears once.
+  const madeForYou = useMemo(() => {
+    const out: { mix: ResolvedMix; curated: boolean }[] = [];
+    const seen = new Set<string>();
+    for (const mix of curated) {
+      seen.add(mix.title.trim().toLowerCase());
+      out.push({ mix, curated: true });
+    }
+    for (const mix of mixes) {
+      if (seen.has(mix.title.trim().toLowerCase())) continue;
+      out.push({ mix, curated: false });
+    }
+    return out;
+  }, [curated, mixes]);
+
   // Jump back in: each album arrives as its own ordered id list (the server
   // grouped by album artist and sorted by disc/track), so the client just
   // resolves and plays it - no name matching, no way to merge two albums that
@@ -416,26 +448,30 @@ export function HomePage({
       {/* "Worth adding" (curator finds from outside the library) lives on the
           Discover page now — a library surface should show what you HAVE. */}
 
-      {skelCurator ? (
-        <ShelfSkeleton title="From your curator" kind="mix" count={4} />
+      {showCurator && (skelCurator || skelFeed ? (
+        <ShelfSkeleton title="Made from your library" kind="mix" count={4} />
       ) : (
-      <Shelf title="From your curator" count={curated.length}>
-        {curated.map((mix) => (
+      <Shelf title="Made from your library" count={madeForYou.length}>
+        {madeForYou.map(({ mix, curated: fromCurator }) => (
           <button key={mix.id} type="button" className="mixCard" onClick={() => setOpenMix(mix)}>
+            {/* No AI badge any more: these live on Discover now, which is the
+                AI's own page end to end, so a pill on every card said nothing
+                the heading did not already say. */}
             <span className="mixCardCoverWrap">
-              <MixCover tracks={mix.tracks} art={mixArt(mix.title, { id: mix.id, curated: true })} />
-              {mix.flavor === 'ai' && (
-                <Pill size="sm" tone="accent" className="mixCardBadge">
-                  AI
-                </Pill>
-              )}
+              <MixCover
+                tracks={mix.tracks}
+                art={mixArt(
+                  mix.title,
+                  fromCurator ? { id: mix.id, curated: true } : { id: mix.id, flavor: mix.flavor },
+                )}
+              />
             </span>
             <span className="mixCardTitle">{mix.title}</span>
             <span className="mixCardBlurb">{mix.blurb}</span>
           </button>
         ))}
       </Shelf>
-      )}
+      ))}
 
       {/* While the curator is still reading the library, say so plainly with
           the count - a shelf that is thin because the work is half done should
@@ -443,39 +479,18 @@ export function HomePage({
       {/* Optional chaining, not just a null check: this can arrive from a
           cache written by an older shape (or a server mid-upgrade), and a
           feed that is merely INCOMPLETE must not take the whole page down. */}
-      {curator?.progress && curator.progress.checked < curator.progress.total && (
-        <p className="curatorNote">
-          Your curator is listening through the library — {curator.progress.checked} of{' '}
-          {curator.progress.total} tracks read, {curator.progress.withTempo} with a tempo
-          {curator.status?.embeddings ? `, ${curator.progress.withLyrics} with lyrics read` : ''}.
-        </p>
-      )}
+      {/* Why the shelf above is thin, in plain numbers - half-done work should
+          not read as "you have no taste". Sits under the shelf it explains. */}
+      {showCurator &&
+        curator?.progress &&
+        curator.progress.checked < curator.progress.total && (
+          <p className="curatorNote">
+            Still reading your library — {curator.progress.checked} of {curator.progress.total}{' '}
+            songs.
+          </p>
+        )}
 
-      {skelFeed ? (
-        <ShelfSkeleton title="Made for you" kind="mix" count={4} />
-      ) : (
-      <Shelf title="Made for you" count={mixes.length}>
-        {mixes.map((mix) => (
-          <button key={mix.id} type="button" className="mixCard" onClick={() => setOpenMix(mix)}>
-            {/* The AI mark rides the artwork, not the title - a long name
-                needs the whole line to say what it is, and a badge that
-                shares it was the first thing a truncation had to eat. */}
-            <span className="mixCardCoverWrap">
-              <MixCover tracks={mix.tracks} art={mixArt(mix.title, { id: mix.id, flavor: mix.flavor })} />
-              {mix.flavor === 'ai' && (
-                <Pill size="sm" tone="accent" className="mixCardBadge">
-                  AI
-                </Pill>
-              )}
-            </span>
-            <span className="mixCardTitle">{mix.title}</span>
-            <span className="mixCardBlurb">{mix.blurb}</span>
-          </button>
-        ))}
-      </Shelf>
-      )}
-
-      {skelFeed ? (
+      {showHistory && (skelFeed ? (
         <ShelfSkeleton title="Jump back in" kind="track" />
       ) : (
       <Shelf title="Jump back in" count={jumpBack.length}>
@@ -487,9 +502,9 @@ export function HomePage({
           />
         ))}
       </Shelf>
-      )}
+      ))}
 
-      {skelFeed ? (
+      {showHistory && (skelFeed ? (
         <ShelfSkeleton title="Your top artists" kind="artist" />
       ) : (
       <Shelf
@@ -511,9 +526,9 @@ export function HomePage({
           <ArtistCard key={a.name} name={a.name} cover={a.cover} onOpen={() => onOpenArtist(a.name)} />
         ))}
       </Shelf>
-      )}
+      ))}
 
-      {skelFeed ? (
+      {showHistory && (skelFeed ? (
         <ShelfSkeleton title="Recently played" kind="track" />
       ) : (
       <Shelf title="Recently played" count={recent.length}>
@@ -521,7 +536,7 @@ export function HomePage({
           <TrackCard key={t.path} track={t} onOpen={() => onPlay(t, recent)} />
         ))}
       </Shelf>
-      )}
+      ))}
 
       {/* Three shelves used to sit here and every one of them was a SECOND
           copy of something already on this same screen: "Heavy rotation" is the
@@ -585,4 +600,29 @@ export function HomePage({
       )}
     </div>
   );
+}
+
+/**
+ * The AI's own shelves - the mixes built from your library and your listening -
+ * for the Discover page. Everything on Discover is the AI talking, so these
+ * carry no badges and no explanation of which process made them.
+ */
+export function CuratorShelves(props: {
+  onPlay: (track: Track, queue: Track[]) => void;
+  onOpenArtist: (artist: string) => void;
+}) {
+  return <HomePage {...props} embedded section="curator" />;
+}
+
+/**
+ * The shelves built from what you have PLAYED - jump back in, your top
+ * artists, recently played - for the Library page, beside the music you own.
+ * Keeps the desktop's only door to the Stats page (the top-artists header).
+ */
+export function HistoryShelves(props: {
+  onPlay: (track: Track, queue: Track[]) => void;
+  onOpenArtist: (artist: string) => void;
+  onOpenStats?: () => void;
+}) {
+  return <HomePage {...props} embedded section="history" />;
 }
