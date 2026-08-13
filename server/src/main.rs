@@ -22,6 +22,7 @@
 
 mod albums;
 mod api;
+mod mirror;
 mod audible;
 mod audiobooks;
 mod auth;
@@ -112,6 +113,8 @@ pub struct AppState {
     /// it" sequence - uploads and imports alike - so two never resolve to the
     /// same destination in the shared library between the check and the move.
     pub filing: Arc<tokio::sync::Mutex<()>>,
+    /// One library being pulled into this one, and how far along it is.
+    pub mirror: Arc<mirror::MirrorState>,
     /// The home feed's per-user mix cache (AI curation on a long TTL).
     pub home: Arc<home::HomeState>,
     /// Cached suggested-playlist metadata for the discover surface.
@@ -287,6 +290,7 @@ async fn main() {
         spotify: Arc::new(spotify::SpotifyLogins::default()),
         spotify_sync: Arc::new(spotify_sync::SpotifySyncState::default()),
         filing: Arc::new(tokio::sync::Mutex::new(())),
+        mirror: Arc::new(mirror::MirrorState::default()),
         home: home::HomeState::new(),
         discover: discover::DiscoverState::new(),
         connect: connect::ConnectState::new(),
@@ -443,6 +447,8 @@ async fn main() {
         .route("/api/curator/pulls", get(collector::status))
         .route("/api/date/done", post(collector::date_done))
         .route("/api/albums/gaps", get(albums::gaps))
+        .route("/api/mirror/start", post(mirror::start))
+        .route("/api/mirror/status", get(mirror::status))
         .route("/api/curator/pulls/settings", post(collector::settings))
         .route("/api/dj", get(dj::station))
         .route("/api/features/status", get(features::status))
