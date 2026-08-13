@@ -1037,3 +1037,146 @@ pub async fn import_playlist(
 
     Ok(Json(json!({ "id": id, "matched": matched.len(), "missed": missed })))
 }
+
+// --- 7. removal, and the trash it fills ------------------------------------
+
+#[derive(Deserialize)]
+pub struct RemoveBody {
+    pub ids: Vec<i64>,
+}
+
+/// `POST /api/library/remove` (admin) - quarantines the named tracks and
+/// tombstones their rows.
+///
+/// The duplicate resolver's two-step, minus the re-pointing: there is no
+/// survivor here to inherit a playlist entry, so the row stays (marked
+/// deleted) and the delta sync carries it off in `removed[]`.
+///
+/// Nothing is unlinked. Files land in the trash, which means this endpoint
+/// frees no space by itself - a removal is reversible until someone empties
+/// the trash, and that is a separate, deliberate act. Callers that mean to
+/// reclaim the disk have to say so twice.
+pub async fn remove_tracks(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<RemoveBody>,
+) -> ApiResult {
+    auth::require_admin(&state.db, &headers).map_err(|s| (s, "admins only".into()))?;
+    if body.ids.is_empty() {
+        return Err(bad(StatusCode::BAD_REQUEST, "nothing to remove"));
+    }
+
+    // Only live rows with a known path take part; the byte count is read now,
+    // while the rows are still readable, so the reply can say what it moved.
+    let mut drops: Vec<(i64, String)> = Vec::new();
+    let mut bytes = 0i64;
+    for &id in &body.ids {
+        if let Some(rel) = state.db.track_rel_path(id) {
+            if let Some(t) = state.db.track(id) {
+                bytes += t.size_bytes;
+            }
+            drops.push((id, rel));
+        }
+    }
+    if drops.is_empty() {
+        return Err(bad(StatusCode::NOT_FOUND, "none of those tracks exist"));
+    }
+
+    // File moves off the runtime, no DB lock held.
+    let music_root = state.music_root.clone();
+    let moved: Vec<i64> = tokio::task::spawn_blocking(move || {
+        let mut moved = Vec::new();
+        for (id, rel) in drops {
+            match quarantine_file(&music_root, &rel) {
+                Ok(()) => moved.push(id),
+                // Already gone from disk is as removed as it gets: tombstone
+                // it rather than leave a row pointing at nothing.
+                Err(e) => {
+                    if music_root.join(&rel).exists() {
+                        eprintln!("[tools] quarantine failed: {e}");
+                    } else {
+                        moved.push(id);
+                    }
+                }
+            }
+        }
+        moved
+    })
+    .await
+    .map_err(internal)?;
+
+    if moved.is_empty() {
+        return Err(bad(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "no files could be moved to the trash",
+        ));
+    }
+
+    let rev = state.db.current_rev() + 1;
+    state.db.tombstone_tracks(&moved, rev).map_err(internal)?;
+
+    Ok(Json(json!({
+        "ok": true,
+        "removed": moved.len(),
+        "bytes": bytes,
+        "rev": rev,
+    })))
+}
+
+/// `GET /api/library/trash` (admin) - what is recoverable, and what emptying
+/// the trash would give back.
+pub async fn trash_status(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
+    auth::require_admin(&state.db, &headers).map_err(|s| (s, "admins only".into()))?;
+    let trash = state.music_root.join(scan::TRASH_DIR);
+    let (files, bytes) = tokio::task::spawn_blocking(move || {
+        let Ok(entries) = std::fs::read_dir(&trash) else {
+            return (0i64, 0i64);
+        };
+        let mut files = 0i64;
+        let mut bytes = 0i64;
+        for entry in entries.flatten() {
+            if let Ok(meta) = entry.metadata() {
+                if meta.is_file() {
+                    files += 1;
+                    bytes += meta.len() as i64;
+                }
+            }
+        }
+        (files, bytes)
+    })
+    .await
+    .map_err(internal)?;
+    Ok(Json(json!({ "files": files, "bytes": bytes })))
+}
+
+/// `POST /api/library/trash/purge` (admin) - unlinks everything in the trash.
+///
+/// The one genuinely destructive call in this module, and the only one that
+/// actually returns disk. Kept apart from removal on purpose: quarantine is
+/// cheap to undo, this is not.
+pub async fn purge_trash(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
+    auth::require_admin(&state.db, &headers).map_err(|s| (s, "admins only".into()))?;
+    let trash = state.music_root.join(scan::TRASH_DIR);
+    let (files, bytes) = tokio::task::spawn_blocking(move || {
+        let Ok(entries) = std::fs::read_dir(&trash) else {
+            return (0i64, 0i64);
+        };
+        let mut files = 0i64;
+        let mut bytes = 0i64;
+        for entry in entries.flatten() {
+            let Ok(meta) = entry.metadata() else { continue };
+            if !meta.is_file() {
+                continue;
+            }
+            let size = meta.len() as i64;
+            if std::fs::remove_file(entry.path()).is_ok() {
+                files += 1;
+                bytes += size;
+            }
+        }
+        (files, bytes)
+    })
+    .await
+    .map_err(internal)?;
+    Ok(Json(json!({ "ok": true, "files": files, "bytes": bytes })))
+}

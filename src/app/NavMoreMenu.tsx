@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChartNoAxesColumn, Disc3, Download, EllipsisVertical, Flame, Settings, Sparkles } from '@glacier/icons';
+import {
+  ChartNoAxesColumn,
+  Disc3,
+  Download,
+  EllipsisVertical,
+  Flame,
+  Server,
+  Settings,
+  Sparkles,
+} from '@glacier/icons';
 import { useHasDownloadQueue, usePluginPages } from '../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
 import { useServerSession } from './serverSession.tsx';
@@ -48,6 +57,7 @@ export function NavMoreMenu({
     tab === 'ai' ||
     tab === 'dj' ||
     tab === 'date' ||
+    tab === 'servers' ||
     tab === 'downloads';
 
   const go = (next: string) => {
@@ -162,6 +172,23 @@ export function NavMoreMenu({
             <span className="appNavBarPlugins__itemLabel">AI</span>
           </button>
         )}
+
+        {/* Where the music is served from, and what it costs to keep it
+            there. Offered to everyone - a guest still benefits from being
+            told which box is answering - but the delete tools inside are
+            gated on hosting that particular server. */}
+        <button
+          type="button"
+          role="menuitem"
+          className="appNavBarPlugins__item"
+          data-active={tab === 'servers' || undefined}
+          onClick={() => go('servers')}
+        >
+          <span className="appNavBarPlugins__itemIcon" aria-hidden>
+            <Server size={18} />
+          </span>
+          <span className="appNavBarPlugins__itemLabel">Servers</span>
+        </button>
 
         <button
           type="button"
