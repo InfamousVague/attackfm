@@ -50,6 +50,19 @@ pub struct StartBody {
     /// The source's stream token, which is what `/api/stream` accepts in a
     /// query string - a header cannot ride an audio fetch.
     pub stream_token: String,
+    /// The source's track list, when the caller already has it.
+    ///
+    /// Needed because of an awkward asymmetry in the two credentials: the
+    /// listing wants a SESSION token, which the source revokes the moment that
+    /// device signs out - and signing out of the source is exactly how you get
+    /// to the server you are filling. The stream token has no such problem; it
+    /// is a standing read-only capability and outlives the session.
+    ///
+    /// So a caller that read the listing while it still could may hand it over
+    /// here, and the whole copy then runs on the stream token alone. Absent,
+    /// the mirror fetches the listing itself as before.
+    #[serde(default)]
+    pub tracks: Vec<serde_json::Value>,
 }
 
 fn ext_for(codec: &str) -> &str {
@@ -99,7 +112,7 @@ pub async fn start(
 
     let bg = Arc::clone(&state);
     tokio::spawn(async move {
-        run(&bg, &source, &body.token, &body.stream_token).await;
+        run(&bg, &source, &body.token, &body.stream_token, body.tracks).await;
         bg.mirror.running.store(false, Ordering::Release);
     });
     Ok(Json(json!({ "started": true })))
@@ -122,7 +135,13 @@ pub async fn status(
     })))
 }
 
-async fn run(state: &Arc<AppState>, source: &str, token: &str, stream_token: &str) {
+async fn run(
+    state: &Arc<AppState>,
+    source: &str,
+    token: &str,
+    stream_token: &str,
+    given: Vec<serde_json::Value>,
+) {
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(120))
         .user_agent("AttackFM/0.1 (library mirror)")
@@ -143,6 +162,22 @@ async fn run(state: &Arc<AppState>, source: &str, token: &str, stream_token: &st
 
     let mut since: i64 = 0;
     let mut wanted: Vec<serde_json::Value> = Vec::new();
+
+    // Handed the listing: no session token is needed at all, and the copy runs
+    // entirely on the stream token.
+    if !given.is_empty() {
+        for t in &given {
+            let artist = t.get("artist").and_then(|v| v.as_str()).unwrap_or("");
+            let title = t.get("title").and_then(|v| v.as_str()).unwrap_or("");
+            let key =
+                format!("{}\u{1}{}", crate::discovery::fold(artist), crate::discovery::fold(title));
+            if held.contains(&key) {
+                state.mirror.skipped.fetch_add(1, Ordering::AcqRel);
+            } else {
+                wanted.push(t.clone());
+            }
+        }
+    } else {
     loop {
         let url = format!("{source}/api/library?since={since}");
         let Ok(reply) = http.get(&url).bearer_auth(token).send().await else {
@@ -170,6 +205,7 @@ async fn run(state: &Arc<AppState>, source: &str, token: &str, stream_token: &st
         if !page.get("more").and_then(|m| m.as_bool()).unwrap_or(false) || tracks.len() < PAGE {
             break;
         }
+    }
     }
 
     state.mirror.total.store(wanted.len(), Ordering::Release);
