@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  AudioEqualizer,
   ContextMenu,
   IconButton,
   Lyrics,
@@ -39,13 +38,7 @@ import {
   Volume2,
 } from '@glacier/icons';
 import { isIOS, isMobile } from './platform.ts';
-import {
-  EQ_BANDS_NARROW,
-  EQ_PRESETS,
-  EQ_PRESETS_NARROW,
-  expandNarrowGains,
-  narrowEqGains,
-} from './equalizer.tsx';
+import { EqPanel } from './EqPanel.tsx';
 import { PluginSlot } from '../plugins/runtime.tsx';
 import { SpinningDisc } from './SpinningDisc.tsx';
 import { fetchLyrics, type TrackLyrics } from './lyrics.ts';
@@ -455,7 +448,8 @@ export function Player({
 
   // The EQ gains ride the graph's filters; kept in a ref so a freshly built
   // meter can be seeded with them without waiting for a render.
-  const { gains: eqGains, preset: eqPreset, setGains: setEqGains, setPreset: setEqPreset } = useEqualizer();
+  // Only the GAINS matter here now - the panel owns preset selection.
+  const { gains: eqGains } = useEqualizer();
   const eqGainsRef = useRef(eqGains);
   eqGainsRef.current = eqGains;
 
@@ -3316,12 +3310,7 @@ export function Player({
                   )}
                   {moreView === 'eq' && (
                     <div className="eqPopover">
-                      <AudioEqualizer
-                        value={eqGains}
-                        onValueChange={setEqGains}
-                        preset={eqPreset}
-                        onPresetChange={setEqPreset}
-                      />
+                      <EqPanel />
                     </div>
                   )}
                   {moreView === 'devices' && <DeviceList />}
@@ -3622,28 +3611,7 @@ export function Player({
               }
             >
               <div className="eqPopover">
-                {narrowEq ? (
-                  <AudioEqualizer
-                    size="sm"
-                    bands={EQ_BANDS_NARROW}
-                    presets={EQ_PRESETS_NARROW}
-                    value={narrowEqGains(eqGains)}
-                    onValueChange={(g) => setEqGains(expandNarrowGains(g, eqGains))}
-                    preset={eqPreset}
-                    onPresetChange={(id) => {
-                      setEqPreset(id ?? undefined);
-                      const preset = EQ_PRESETS.find((p) => p.id === id);
-                      if (preset) setEqGains([...preset.gains]);
-                    }}
-                  />
-                ) : (
-                  <AudioEqualizer
-                    value={eqGains}
-                    onValueChange={setEqGains}
-                    preset={eqPreset}
-                    onPresetChange={setEqPreset}
-                  />
-                )}
+                <EqPanel narrow={narrowEq} />
               </div>
             </Popover>
             {/* No fader on a phone: volume is pinned at unity there and the

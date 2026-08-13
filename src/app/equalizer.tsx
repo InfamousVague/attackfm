@@ -22,11 +22,47 @@ export const EQ_BANDS: readonly AudioEqualizerBand[] = [
   { id: 'air', label: '4kHz' },
 ];
 
+/**
+ * The presets, in the order the dropdown lists them: Flat first, then curves
+ * grouped by what you are asking for - more of something (bass, treble, both),
+ * a kind of music, or a room to listen in.
+ *
+ * Every curve is drawn against the eight bands above (32Hz..4kHz) and kept
+ * inside ±8dB, because these run into a gain stage that is already at unity -
+ * a preset that adds 12dB of sub does not sound bigger, it clips. Curves that
+ * lift one end dip the other slightly rather than only adding, so switching
+ * presets changes the SHAPE of the sound instead of just its loudness.
+ */
 export const EQ_PRESETS: readonly AudioEqualizerPreset[] = [
   { id: 'flat', label: 'Flat', gains: [0, 0, 0, 0, 0, 0, 0, 0] },
+
+  // --- more of one end ---
   { id: 'bass-boost', label: 'Bass boost', gains: [6, 5, 4, 2, 0, -2, -3, -4] },
-  { id: 'vocal', label: 'Vocal', gains: [-2, -1, 1, 3, 4, 3, 1, -1] },
+  { id: 'deep-bass', label: 'Deep bass', gains: [8, 6, 3, 0, -1, -2, -2, -2] },
   { id: 'air', label: 'Air', gains: [-4, -2, -1, 0, 1, 3, 5, 6] },
+  { id: 'treble-boost', label: 'Treble boost', gains: [-2, -2, -1, 0, 1, 3, 5, 7] },
+  // Both ends up, middle scooped - the classic "smile", loud and scooped out.
+  { id: 'loudness', label: 'Loudness', gains: [7, 5, 1, -2, -3, -1, 4, 6] },
+
+  // --- kinds of music ---
+  { id: 'vocal', label: 'Vocal', gains: [-2, -1, 1, 3, 4, 3, 1, -1] },
+  { id: 'acoustic', label: 'Acoustic', gains: [2, 1, 0, 1, 2, 2, 3, 3] },
+  { id: 'electronic', label: 'Electronic', gains: [6, 4, 1, -1, -1, 1, 3, 5] },
+  { id: 'rock', label: 'Rock', gains: [4, 3, 1, -1, -1, 1, 3, 4] },
+  { id: 'hiphop', label: 'Hip-hop', gains: [7, 5, 2, 0, -1, 0, 2, 3] },
+  { id: 'jazz', label: 'Jazz', gains: [3, 2, 0, 1, 2, 1, 2, 3] },
+  { id: 'classical', label: 'Classical', gains: [3, 2, 0, 0, 0, 1, 2, 4] },
+
+  // --- where you are listening ---
+  // Small speakers have no sub to give: stop asking, and lift the mids that
+  // actually reach you.
+  { id: 'small-speakers', label: 'Small speakers', gains: [-4, -2, 1, 3, 4, 3, 2, 0] },
+  { id: 'headphones', label: 'Headphones', gains: [4, 2, 0, -1, 0, 1, 2, 3] },
+  // A car is all low-end boom and road noise over the top of it.
+  { id: 'car', label: 'Car', gains: [5, 3, -1, -2, 0, 2, 3, 2] },
+  // Quiet listening loses the ends first (equal-loudness), so give them back.
+  { id: 'late-night', label: 'Late night', gains: [4, 3, 0, -1, -1, 0, 2, 3] },
+  { id: 'podcast', label: 'Spoken word', gains: [-6, -4, 0, 4, 5, 4, 2, -1] },
 ];
 
 /**
