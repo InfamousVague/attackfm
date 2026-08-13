@@ -61,10 +61,21 @@ const REFRESH_MS = 30 * 60 * 1000;
 
 type AddState = 'idle' | 'adding' | 'added';
 
-/** The import job for a suggestion, if one exists: matched by the playlist id
- *  inside the job's URL, so a pasted-link import of the same chart counts. */
+/** The import job for a suggestion, if one exists.
+ *
+ *  The card's own URL is the truth, so an exact match comes first. The id match
+ *  is the fallback that lets a pasted-link import of the same chart count - but
+ *  it has to strip the SOURCE PREFIX the server stamps on Deezer ids
+ *  (`dz-album-123`, `dz-track-123`, see discover.rs) while the URL carries only
+ *  the bare `123`. Matching the prefixed id against the URL never hit, so every
+ *  Deezer card in the feed was structurally unable to say "Added". */
 function jobFor(jobs: readonly MusicImportJob[] | undefined, item: Suggestion): MusicImportJob | null {
-  return jobs?.find((j) => j.url.includes(item.id)) ?? null;
+  if (!jobs) return null;
+  const exact = jobs.find((j) => j.url === item.url);
+  if (exact) return exact;
+  const bare = item.id.replace(/^dz-(?:album|track)-/, '');
+  if (!bare) return null;
+  return jobs.find((j) => j.url.includes(bare)) ?? null;
 }
 
 /** What the queue says about this suggestion. An errored job reads as idle:
