@@ -1394,18 +1394,38 @@ img {
    kit's module CSS when the component module loads - AFTER this file - so an
    equal-specificity override loses on order alone. One extra class beats
    whatever the kit's panel rules weigh without reaching for !important. */
-body .appNavMore.appNavMore[class*='_panel_'] {
-  /* !important, not just doubled specificity: on iOS the kit's coarse-pointer
-     "sheet" default can pin the panel to both edges with a weight the Android-
-     emulated preview never shows, so guarantee the width constraint outright. */
+/* Written defensively, because this kept coming back on the phone while every
+   measurement in a desktop-emulated preview said 147px.
+   Three ways the previous version could do nothing on a device, all closed:
+     1. It required [class*='_panel_'] to match. That attribute selector is the
+        only thing tying the rule to the kit's node, and if the built bundle
+        ever names that class differently the WHOLE rule - !important included -
+        silently stops applying. The custom className is on the same element, so
+        the attribute test buys nothing and is dropped.
+     2. It set only the LOGICAL properties while the kit sets the physical ones
+        (min-width: 12rem; max-width: min(24rem, 100vw - 2rem)). They are the
+        same property in a horizontal writing mode, but only where both are
+        understood; setting both leaves nothing to interpretation.
+     3. margin-inline-start carried no !important, so the right-alignment could
+        lose even when the widths won.
+   The kit's own numbers are why it looked full-width at all: 12rem floor and a
+   100vw-2rem ceiling put the panel at 343px on a 375px screen - 91% of the
+   display, which reads as "the whole width". */
+body .appNavMore,
+body .appNavMore.appNavMore {
   inline-size: max-content !important;
+  width: max-content !important;
   min-inline-size: 0 !important;
-  max-inline-size: 50vw !important;
+  min-width: 0 !important;
+  /* A menu's worth, not a sheet's: capped in rem first so it cannot scale with
+     a big screen, and by viewport second so it cannot overhang a small one. */
+  max-inline-size: min(15rem, 62vw) !important;
+  max-width: min(15rem, 62vw) !important;
   /* The kit's POSITIONER (the fixed wrapper floating-ui moves) stays the
      full-width rail it wants to be; the panel rides its trailing end, which
      is where the ⋮ button lives. Cheaper and safer than fighting the inline
      top/left the positioning engine writes every frame. */
-  margin-inline-start: auto;
+  margin-inline-start: auto !important;
 }
 
 .appNavBarPlugins__item {
