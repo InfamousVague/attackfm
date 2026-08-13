@@ -559,8 +559,8 @@ function PlaybackSettings() {
           }}
         />
         <Text tone="muted" size="sm">
-          Ticks and taps from the Taptic Engine as you press, play, and spin the disc - and a
-          soft pulse as shelves load in.
+          Ticks from the Taptic Engine as you tap, play, and spin the disc. Only things you
+          actually press answer - scrolling and loading stay silent.
         </Text>
       </div>
       <div className="prefsSection">

@@ -82,6 +82,81 @@ export function fireMicroTick(): void {
     });
 }
 
+// --- the tap tick ---------------------------------------------------------
+
+/** What counts as something you TAP, and so something that should answer. */
+const TAPPABLE =
+  'button, a, input, select, textarea, label, summary, [role="button"], [role="menuitem"],' +
+  ' [role="menuitemradio"], [role="menuitemcheckbox"], [role="tab"], [role="switch"],' +
+  ' [role="option"], [role="link"], [contenteditable="true"]';
+
+/** How far a finger may travel and still have been a tap rather than a drag. */
+const TAP_SLOP_PX = 10;
+/** How long it may rest and still be a tap rather than a press-and-hold. */
+const TAP_MAX_MS = 700;
+
+/**
+ * The app-wide tap tick.
+ *
+ * The kit ships this as one delegated POINTERDOWN listener, which is why it had
+ * to be switched off: a scroll begins with a pointerdown on whatever card sits
+ * under the thumb, so flicking a shelf buzzed the whole way down and the app
+ * felt like it was pushing back. The distinction the kit misses is that a tap
+ * is only a tap in hindsight - you know at pointerUP, once the finger has
+ * lifted without travelling.
+ *
+ * So this waits: it remembers where a touch started, and fires only if the
+ * finger lifts near where it landed, quickly, on something actually tappable.
+ * Scrolls, drags, swipes and long-presses all fail that test and stay silent,
+ * while every button, row and tab answers. Touch only - a mouse has no motor -
+ * and gated by the same preference as everything else, so the Settings switch
+ * governs this too.
+ *
+ * Returns its own cleanup.
+ */
+export function installTapHaptics(): () => void {
+  if (!nativeHaptics) return () => {};
+  let startX = 0;
+  let startY = 0;
+  let startAt = 0;
+  let armed = false;
+
+  const onDown = (e: PointerEvent) => {
+    if (e.pointerType === 'mouse') return;
+    const el = e.target instanceof Element ? e.target.closest(TAPPABLE) : null;
+    armed = el !== null;
+    startX = e.clientX;
+    startY = e.clientY;
+    startAt = e.timeStamp;
+  };
+  const onUp = (e: PointerEvent) => {
+    if (!armed) return;
+    armed = false;
+    if (e.pointerType === 'mouse') return;
+    if (Math.abs(e.clientX - startX) > TAP_SLOP_PX) return;
+    if (Math.abs(e.clientY - startY) > TAP_SLOP_PX) return;
+    if (e.timeStamp - startAt > TAP_MAX_MS) return;
+    // The finger has to still be ON something tappable: a press that began on a
+    // row and lifted over the page is a cancelled tap, not a quiet one.
+    const el = e.target instanceof Element ? e.target.closest(TAPPABLE) : null;
+    if (!el) return;
+    fireNativeHaptic('selection');
+  };
+  const onCancel = () => {
+    armed = false;
+  };
+
+  // Capture, so a handler that stops propagation cannot silence the hand.
+  window.addEventListener('pointerdown', onDown, { capture: true, passive: true });
+  window.addEventListener('pointerup', onUp, { capture: true, passive: true });
+  window.addEventListener('pointercancel', onCancel, { capture: true, passive: true });
+  return () => {
+    window.removeEventListener('pointerdown', onDown, { capture: true });
+    window.removeEventListener('pointerup', onUp, { capture: true });
+    window.removeEventListener('pointercancel', onCancel, { capture: true });
+  };
+}
+
 // --- the preference -------------------------------------------------------
 
 const PREF_KEY = 'attackfm-haptics';

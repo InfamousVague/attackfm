@@ -54,7 +54,7 @@ import {
   isPendingPath,
 } from './pendingPlay.tsx';
 import { useSwipeBack } from './useSwipeBack.ts';
-import { hapticsImpl } from './haptics.ts';
+import { hapticsImpl, installTapHaptics, useHapticsPref } from './haptics.ts';
 import { DiscoverPage } from '../plugins/discover/DiscoverPage.tsx';
 import { ProfilePage } from './ProfilePage.tsx';
 import { JamProvider } from './jam.tsx';
@@ -695,6 +695,15 @@ export function App() {
   // its type need no change if the flip returns elsewhere later.
   const [libraryView] = useState<'summary' | 'all'>('summary');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // The app-wide tap tick, bound to the Settings switch. Mounted only while the
+  // preference is on, so turning haptics off really does remove the listener
+  // rather than leaving one that checks a flag on every touch - and turning it
+  // back on takes effect immediately, with no reload.
+  const hapticsOn = useHapticsPref();
+  useEffect(() => {
+    if (!hapticsOn) return;
+    return installTapHaptics();
+  }, [hapticsOn]);
   // The track the list handed to the player; null until one is opened.
   const [current, setCurrent] = useState<Track | null>(null);
   // The list that track was opened from, in the order it was showing - what
@@ -886,8 +895,14 @@ export function App() {
           and on cards rippling in read as force feedback, not feel. The
           semantic moments that stay (favourite, transport, disc physics,
           swipe-back) fire fireNativeHaptic directly, gated by the haptics
-          preference - so `enabled={false}` silences only the tap/scroll tick,
-          not those. The impl stays for any kit surface that asks via useHaptics. */}
+          preference - so `enabled={false}` silences only the kit's own listener,
+          not those. The impl stays for any kit surface that asks via useHaptics.
+
+          The app-wide tap tick is OURS instead (installTapHaptics, below): the
+          kit fires on pointerdown, and a scroll starts with a pointerdown, so
+          its version buzzed the whole way down a flicked shelf. Ours waits for
+          the finger to lift near where it landed, which is the only moment a
+          tap can be told apart from a drag. */}
       <HapticsProvider enabled={false} impl={hapticsImpl}>
         <ToastProvider>
           <AppearanceProvider>
