@@ -3,7 +3,11 @@ import { HardDrive, Radio, RefreshCw, X } from '@glacier/icons';
 import { StorageManager } from './StorageManager.tsx';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useServerSession } from './serverSession.tsx';
+import { useRegistry } from './registrySession.tsx';
+import { fetchSavedServers } from './serverSync.ts';
+import type { Membership } from './registry.ts';
 import {
+  enterServer,
   fetchServerStats,
   loadCachedIndex,
   pairClaim,
@@ -243,6 +247,11 @@ export function ServersPage() {
         ))}
       </div>
 
+      <SavedServers
+        linked={rows.map((r) => r.url)}
+        onLinked={() => void refresh()}
+      />
+
       <AddServer onAdded={() => void refresh()} />
     </div>
   );
@@ -433,6 +442,93 @@ function AddServer({ onAdded }: { onAdded: () => void }) {
           {busy ? 'Linking…' : 'Link'}
         </Button>
       </div>
+    </section>
+  );
+}
+
+/**
+ * Servers saved to the account that this device has not linked yet.
+ *
+ * The account stores addresses, never tokens, so "connect" here is a real
+ * sign-in: the device presents its registry identity to that server and the
+ * server decides, exactly as it would for a stranger. What the account saved
+ * was the reminder, not the key - which is why this can be offered on a phone
+ * that has never touched the box before without any credential having
+ * travelled.
+ */
+function SavedServers({ linked, onLinked }: { linked: string[]; onLinked: () => void }) {
+  const { session: registry } = useRegistry();
+  const [saved, setSaved] = useState<Membership[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void fetchSavedServers().then((list) => {
+      if (live) setSaved(list);
+    });
+    return () => {
+      live = false;
+    };
+  }, [registry?.token, linked.length]);
+
+  const missing = saved.filter((m) => !linked.includes(m.serverUrl.replace(/\/+$/, '')));
+  if (!registry) {
+    return (
+      <Text size="sm" tone="muted">
+        Sign in to your AttackFM account to save these servers and get them back on your next device.
+      </Text>
+    );
+  }
+  if (missing.length === 0) return null;
+
+  const connect = async (m: Membership) => {
+    setBusy(m.serverUrl);
+    setError(null);
+    try {
+      const next = await enterServer(m.serverUrl, registry.token);
+      addMirror({
+        url: m.serverUrl,
+        token: next.token,
+        streamToken: next.streamToken,
+        username: next.username,
+        isAdmin: next.isAdmin,
+        name: m.serverName || undefined,
+      });
+      await refreshHoldings({ ...next, addedAt: Date.now() } as Mirror);
+      onLinked();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'That server would not let this device in.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <section className="serversPage__saved">
+      <Text>Saved to your account</Text>
+      <Text size="sm" tone="muted">
+        Signed in elsewhere. Connect to stream from them here too.
+      </Text>
+      {missing.map((m) => (
+        <div key={m.serverUrl} className="serversPage__savedRow">
+          <span>
+            <Text>{m.serverName || m.serverUrl.replace(/^https?:\/\//, '')}</Text>
+            <Text size="sm" tone="muted">
+              {m.serverUrl.replace(/^https?:\/\//, '')}
+              {m.role === 'owner' ? ' · you host this' : ''}
+            </Text>
+          </span>
+          <Button variant="soft" disabled={busy !== null} onClick={() => void connect(m)}>
+            {busy === m.serverUrl ? 'Connecting…' : 'Connect'}
+          </Button>
+        </div>
+      ))}
+      {error && (
+        <Text size="sm" tone="danger">
+          {error}
+        </Text>
+      )}
     </section>
   );
 }

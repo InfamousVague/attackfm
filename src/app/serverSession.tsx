@@ -11,6 +11,7 @@ import {
 import { rememberProfile } from './household.ts';
 import { rememberServer } from './servers.ts';
 import { pickSource, startMirrorHeartbeat } from './mirrors.ts';
+import { startServerSync } from './serverSync.ts';
 import {
   artUrl,
   isRemotePath,
@@ -212,6 +213,10 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
     if (!session) return;
     return startMirrorHeartbeat(session);
   }, [session]);
+
+  // And the account learns where this device listens, so the next device does
+  // not have to be told again. Addresses only - see serverSync.ts.
+  useEffect(() => startServerSync(session), [session]);
 
   const persist = useCallback((next: ServerSession | null) => {
     setSession(next);
