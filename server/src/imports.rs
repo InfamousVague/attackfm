@@ -444,6 +444,11 @@ pub(crate) fn find_spotiflac() -> Option<PathBuf> {
 
 // --- Spotify embed metadata (ported from the desktop importer) --------------
 
+/// The embed page lists at most this many tracks in its `trackList`. At the cap
+/// the length is a FLOOR, not the real total, so a bigger playlist must not
+/// trust it - or its count reads "100" while 150 songs actually download.
+const EMBED_TRACK_CAP: u32 = 100;
+
 const EMBED_UA: &str =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15";
 
@@ -520,7 +525,12 @@ pub(crate) async fn fetch_embed_meta(
                 })
         });
     let track_list = find_key(&data, "trackList").and_then(|v| v.as_array());
-    let total = track_list.map(|a| a.len() as u32).filter(|n| *n > 0);
+    // Only trust the length as a total when the list is SHORT of the cap; at the
+    // cap it is truncated, so report no total and let the download's own count
+    // fill it in when the run ends.
+    let total = track_list
+        .map(|a| a.len() as u32)
+        .filter(|n| *n > 0 && *n < EMBED_TRACK_CAP);
     let titles = track_list
         .map(|a| {
             a.iter()
@@ -612,9 +622,10 @@ pub fn spawn_scheduler(state: Arc<AppState>) {
                         manager
                             .update(&id, |j| {
                                 j.completed = count.max(j.completed);
-                                if j.total.is_none() {
-                                    j.total = Some(j.completed);
-                                }
+                                // The true total is at least what actually
+                                // downloaded - correct a capped or absent estimate
+                                // so a 150-song playlist never finishes at "100".
+                                j.total = Some(j.total.map_or(j.completed, |t| t.max(j.completed)));
                                 j.skipped = skipped;
                                 j.state = "done".to_string();
                                 j.error = None;
@@ -903,6 +914,14 @@ async fn run_job(
                     manager
                         .update(id, |j| {
                             j.completed = count;
+                            // Never let the running count outrun the estimate; a
+                            // capped playlist carries no total and stays
+                            // indeterminate until it lands.
+                            if let Some(t) = j.total {
+                                if count > t {
+                                    j.total = Some(count);
+                                }
+                            }
                             j.current_track = newest.clone();
                             j.current_index = count.checked_sub(1);
                         })
