@@ -63,7 +63,59 @@ pub struct StartBody {
     /// the mirror fetches the listing itself as before.
     #[serde(default)]
     pub tracks: Vec<serde_json::Value>,
+
+    /// Carry only the source's HOT set - the songs actually listened to -
+    /// rather than its whole library. See hot.rs.
+    #[serde(default)]
+    pub hot: Option<HotSpec>,
 }
+
+/// What "hot" means for this pull, and how much of it this box can take.
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub struct HotSpec {
+    /// How many listens make a song hot. The source's default is 2.
+    #[serde(default)]
+    pub min_plays: Option<i64>,
+    /// Ceiling for the whole set. Left unset, the destination measures its own
+    /// free disk and asks for what fits - which is the point of the mode: a
+    /// box on the internet is defined by being smaller than the library, and
+    /// it is the only one that knows by how much.
+    #[serde(default)]
+    pub max_bytes: Option<u64>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// Free bytes on the volume holding `path`. See the identical note in the
+/// app's offline vault: statvfs rather than a crate, for one number.
+pub(crate) fn free_bytes(path: &std::path::Path) -> Option<u64> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let c = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
+        // SAFETY: `c` is a valid NUL-terminated path; `stat` is owned here and
+        // written only by statvfs.
+        unsafe {
+            let mut stat: libc::statvfs = std::mem::zeroed();
+            if libc::statvfs(c.as_ptr(), &mut stat) != 0 {
+                return None;
+            }
+            // f_bavail: blocks an unprivileged process may actually use.
+            Some(stat.f_bavail as u64 * stat.f_frsize as u64)
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        None
+    }
+}
+
+/// Room a hot pull leaves alone. A server that fills its own disk stops being
+/// a server - there has to be space for the database, the art cache and the
+/// staging an import needs.
+const DISK_FLOOR: u64 = 5 * 1024 * 1024 * 1024;
 
 fn ext_for(codec: &str) -> &str {
     match codec.trim().to_ascii_lowercase().as_str() {
@@ -112,7 +164,7 @@ pub async fn start(
 
     let bg = Arc::clone(&state);
     tokio::spawn(async move {
-        run(&bg, &source, &body.token, &body.stream_token, body.tracks).await;
+        run(&bg, &source, &body.token, &body.stream_token, body.tracks, body.hot).await;
         bg.mirror.running.store(false, Ordering::Release);
     });
     Ok(Json(json!({ "started": true })))
@@ -141,6 +193,7 @@ async fn run(
     token: &str,
     stream_token: &str,
     given: Vec<serde_json::Value>,
+    hot: Option<HotSpec>,
 ) {
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(120))
@@ -162,6 +215,54 @@ async fn run(
 
     let mut since: i64 = 0;
     let mut wanted: Vec<serde_json::Value> = Vec::new();
+    let mut given = given;
+
+    // Hot mode: ask the source what is worth carrying instead of walking the
+    // whole library. The answer arrives in the same shape a listing does, so
+    // everything below this is unchanged.
+    if given.is_empty() {
+        if let Some(spec) = hot {
+            let budget = spec.max_bytes.or_else(|| {
+                free_bytes(&state.music_root).map(|free| free.saturating_sub(DISK_FLOOR))
+            });
+            let mut url = format!("{source}/api/hot?t={}", urlencoding_lite(stream_token));
+            if let Some(n) = spec.min_plays {
+                url.push_str(&format!("&minPlays={n}"));
+            }
+            if let Some(b) = budget {
+                url.push_str(&format!("&maxBytes={b}"));
+            }
+            if let Some(l) = spec.limit {
+                url.push_str(&format!("&limit={l}"));
+            }
+            *state.mirror.note.lock().unwrap() = "asking what is worth carrying".to_string();
+            match http.get(&url).send().await {
+                Ok(reply) if reply.status().is_success() => {
+                    let body: serde_json::Value = reply.json().await.unwrap_or(json!({}));
+                    given = body
+                        .get("tracks")
+                        .and_then(|t| t.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    let skipped = body.get("skippedForSpace").and_then(|v| v.as_u64()).unwrap_or(0);
+                    *state.mirror.note.lock().unwrap() = if skipped > 0 {
+                        format!("{} songs to carry; {skipped} would not fit", given.len())
+                    } else {
+                        format!("{} songs to carry", given.len())
+                    };
+                }
+                Ok(reply) => {
+                    *state.mirror.note.lock().unwrap() =
+                        format!("the source refused the hot list ({})", reply.status());
+                    return;
+                }
+                Err(e) => {
+                    *state.mirror.note.lock().unwrap() = format!("could not reach the source: {e}");
+                    return;
+                }
+            }
+        }
+    }
 
     // Handed the listing: no session token is needed at all, and the copy runs
     // entirely on the stream token.

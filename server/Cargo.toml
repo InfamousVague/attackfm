@@ -11,6 +11,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+# statvfs only: how much room the music volume has left, which is what lets
+# a hot server ask its source for exactly the set that will fit.
+libc = "0.2"
 # The identity token contract: verify a registry-issued token offline, with no
 # call back to the registry, so a server keeps working when the directory blips.
 afm-identity = { path = "crates/identity" }
