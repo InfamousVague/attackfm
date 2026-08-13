@@ -347,9 +347,15 @@ export function transcodeUrl(
   trackId: number,
   bitrate: number,
   seek = 0,
+  fx: string | null = null,
 ): string {
   const at = seek > 0 ? `&seek=${seek.toFixed(3)}` : '';
-  return `${session.url}/api/transcode/${trackId}?t=${encodeURIComponent(session.streamToken)}&bitrate=${bitrate}${at}`;
+  // Effect NAMES, which the server looks up in its own table; it never accepts
+  // a filter. Part of the URL rather than a header so the media element - which
+  // sends no headers of ours - carries it, and so a change of rack is a change
+  // of URL, which is what makes the source reload.
+  const with_fx = fx ? `&fx=${encodeURIComponent(fx)}` : '';
+  return `${session.url}/api/transcode/${trackId}?t=${encodeURIComponent(session.streamToken)}&bitrate=${bitrate}${at}${with_fx}`;
 }
 
 export function artUrl(session: ServerSession, artId: string): string {

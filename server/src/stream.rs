@@ -327,6 +327,110 @@ pub fn ffmpeg_available() -> bool {
         .unwrap_or(false)
 }
 
+
+/// The effects a listener may ask for, and the ffmpeg filter each one IS.
+///
+/// The client sends NAMES, never filter strings. Everything in the right-hand
+/// column ends up on an ffmpeg command line, and the rule that keeps that safe
+/// is that the vocabulary lives HERE: an unknown name is dropped rather than
+/// passed through, so no request can compose a filter of its own. (The bitrate
+/// below is clamped for exactly the same reason.)
+///
+/// Every filter here is in essentially every ffmpeg build - no rubberband, no
+/// impulse-response files - so a box that can transcode at all can do all of
+/// these. The numbers are not guesses: each was tuned by rendering audio and
+/// null-testing it against the dry signal, because the obvious settings turn
+/// out to be inaudible. `acrusher` with bit depth alone measured 68 dB below
+/// the source (nothing); it needs `samples` - the sample-rate decimation - to
+/// be the sound anybody means by "crushed". A soft clipper needs far more gain
+/// into it than seems reasonable: +6 dB gave 0.2% distortion, and it takes
+/// about +24 dB to reach the few-percent range a real pedal lives in.
+///
+/// The first field is the stage, which fixes the ORDER the chain is built in.
+/// A multi-select hands us a set, not a sequence, and a set has no opinion
+/// about whether the echo comes before or after the filter - but the ear does.
+/// So the chain is always assembled dirt -> tone -> movement -> space, the
+/// order these boxes sit in on a real desk, however they were clicked.
+const FX_SPEED: u8 = 0;
+const FX_DIRT: u8 = 1;
+const FX_TONE: u8 = 2;
+const FX_MOVE: u8 = 3;
+const FX_SPACE: u8 = 4;
+
+const EFFECTS: &[(u8, &str, &str)] = &[
+    // --- speed ---
+    // Tempo only, deliberately: dropping pitch WITH tempo the way a tape does
+    // needs the file's true sample rate to compute against, and guessing that
+    // wrong turns a slowed song into a chipmunk.
+    (FX_SPEED, "slow", "atempo=0.92"),
+    (FX_SPEED, "fast", "atempo=1.12"),
+
+    // --- dirt ---
+    // The pedal. Soft clipping is what an overdrive actually does: peaks round
+    // off instead of squaring, so it grits rather than buzzes. The makeup gain
+    // afterwards is what keeps it level with the dry track - and it can be a
+    // fixed number because a hard-driven clipper puts out the same level for
+    // any input worth listening to, which auto-levels quiet tracks for free.
+    (FX_DIRT, "drive", "volume=24dB,asoftclip=type=atan:param=0.5,volume=-11dB"),
+    (FX_DIRT, "crush", "acrusher=bits=6:samples=6:mode=log:aa=1:mix=1"),
+
+    // --- tone ---
+    // The lofi cornerstone: everything above the mids gone, the way a song
+    // sounds through a wall, or off a tape, or from the next room.
+    (FX_TONE, "lowpass", "lowpass=f=1800"),
+    (FX_TONE, "radio", "highpass=f=400,lowpass=f=3000"),
+    (FX_TONE, "warm", "highpass=f=45,lowpass=f=11000,volume=2dB"),
+
+    // --- movement ---
+    // The wobble of a tape that has been played too many times.
+    (FX_MOVE, "wow", "vibrato=f=2.2:d=0.15"),
+    (FX_MOVE, "tremolo", "tremolo=f=5:d=0.5"),
+    (FX_MOVE, "phaser", "aphaser=type=t:decay=0.4"),
+
+    // --- space ---
+    // Cheap rooms. aecho rather than a convolver, which would want an impulse
+    // response file that would then have to exist on every server.
+    (FX_SPACE, "room", "aecho=0.8:0.85:45:0.3"),
+    (FX_SPACE, "hall", "aecho=0.8:0.9:250:0.35"),
+
+    // --- the whole point ---
+    // "Lofi" is not one filter, it is a chain, and asking someone to find the
+    // five that make it is asking them to already know. So it is one switch:
+    // a little dirt, the bits dropped, the top and bottom taken off, and the
+    // tape wobble over it. Stacks with the rest - lofi plus room is lofi in a
+    // room - because it sits at the tone stage and the others sit elsewhere.
+    (
+        FX_TONE,
+        "lofi",
+        "volume=10dB,asoftclip=type=atan:param=0.8,volume=-6dB,\
+acrusher=bits=8:samples=4:mode=log:aa=1:mix=0.8,\
+highpass=f=120,lowpass=f=3400,vibrato=f=2.2:d=0.15",
+    ),
+];
+
+/// Turns a requested `fx` list into one `-af` chain: known names only, in
+/// signal-chain order, with a limiter on the end because stacking any of these
+/// can push the sum past full scale and clipping is not one of the effects.
+fn effect_chain(fx: Option<&String>) -> Option<String> {
+    let asked = fx?;
+    let mut picked: Vec<(u8, &str)> = Vec::new();
+    for name in asked.split(',').map(|n| n.trim()).filter(|n| !n.is_empty()).take(12) {
+        if let Some((stage, _, filter)) = EFFECTS.iter().find(|(_, id, _)| *id == name) {
+            if !picked.iter().any(|(_, f)| f == filter) {
+                picked.push((*stage, filter));
+            }
+        }
+    }
+    if picked.is_empty() {
+        return None;
+    }
+    // Stable sort: the desk order across stages, click order within one.
+    picked.sort_by_key(|(stage, _)| *stage);
+    let mut chain: Vec<&str> = picked.into_iter().map(|(_, f)| f).collect();
+    chain.push("alimiter=limit=0.95");
+    Some(chain.join(","))
+}
+
 /// `GET /api/transcode/:id?bitrate=&seek=` - a re-encoded stream.
 ///
 /// The body is ffmpeg's stdout piped straight through, so there is no length
@@ -369,10 +473,12 @@ pub async fn transcode(
     if seek > 0.0 {
         command.arg("-ss").arg(format!("{seek:.3}"));
     }
+    command.arg("-i").arg(&path).args(["-map", "0:a:0"]);
+    // The effects, when any were asked for and recognised.
+    if let Some(chain) = effect_chain(params.get("fx")) {
+        command.args(["-af", &chain]);
+    }
     command
-        .arg("-i")
-        .arg(&path)
-        .args(["-map", "0:a:0"])
         .args(["-c:a", "aac"])
         .args(["-b:a", &format!("{bitrate}k")])
         // ADTS: a self-framing stream a media element can start playing from
@@ -429,4 +535,89 @@ where
             Err(e) => Some((Err(e), reader)),
         }
     })
+}
+
+#[cfg(test)]
+mod effect_tests {
+    use super::*;
+
+    fn chain(s: &str) -> Option<String> {
+        effect_chain(Some(&s.to_string()))
+    }
+
+    #[test]
+    fn nothing_asked_is_no_chain() {
+        assert!(effect_chain(None).is_none());
+        assert!(chain("").is_none());
+        assert!(chain("   ,  ,").is_none());
+    }
+
+    /// The one that matters: unknown names are DROPPED, never forwarded. Every
+    /// string here is an attempt to reach the ffmpeg command line.
+    #[test]
+    fn unknown_names_never_reach_ffmpeg() {
+        for probe in [
+            "definitely_not_a_filter",
+            "volume=99dB",
+            "lowpass=f=1800",              // a real filter, but spelled as one
+            "drive; rm -rf /",
+            "drive'",
+            "$(reboot)",
+            "../../etc/passwd",
+            "amovie=/etc/passwd",          // ffmpeg's own file-reading source
+        ] {
+            assert!(chain(probe).is_none(), "leaked: {probe}");
+        }
+        // A known name alongside junk keeps only the known one.
+        let c = chain("lowpass,volume=99dB,amovie=/etc/passwd").unwrap();
+        assert_eq!(c, "lowpass=f=1800,alimiter=limit=0.95");
+    }
+
+    #[test]
+    fn known_names_become_their_filters() {
+        assert!(chain("lowpass").unwrap().starts_with("lowpass=f=1800"));
+        assert!(chain("drive").unwrap().contains("asoftclip"));
+        assert!(chain("lofi").unwrap().contains("acrusher"));
+    }
+
+    /// However they were clicked, the chain comes out in desk order.
+    #[test]
+    fn chain_is_built_in_signal_order() {
+        let c = chain("hall,lowpass,slow,drive,wow").unwrap();
+        let at = |needle: &str| c.find(needle).expect(needle);
+        assert!(at("atempo") < at("asoftclip"), "speed before dirt: {c}");
+        assert!(at("asoftclip") < at("lowpass"), "dirt before tone: {c}");
+        assert!(at("lowpass") < at("vibrato"), "tone before movement: {c}");
+        assert!(at("vibrato") < at("aecho"), "movement before space: {c}");
+        // Reversing the request must not reverse the chain.
+        assert_eq!(c, chain("wow,drive,slow,lowpass,hall").unwrap());
+    }
+
+    #[test]
+    fn every_chain_ends_limited() {
+        for id in EFFECTS.iter().map(|(_, id, _)| *id) {
+            let c = chain(id).unwrap_or_else(|| panic!("{id} produced nothing"));
+            assert!(c.ends_with("alimiter=limit=0.95"), "{id} unlimited: {c}");
+        }
+    }
+
+    #[test]
+    fn duplicates_collapse_and_the_list_is_bounded() {
+        assert_eq!(chain("drive,drive,drive").unwrap(), chain("drive").unwrap());
+        // Far more names than the cap, all valid: still bounded.
+        let many = vec!["room"; 60].join(",");
+        assert_eq!(chain(&many).unwrap(), chain("room").unwrap());
+    }
+
+    /// Ids are the contract with the client; nothing may contain a comma (the
+    /// separator) or shell/ffmpeg punctuation.
+    #[test]
+    fn ids_are_plain_words() {
+        for (_, id, _) in EFFECTS {
+            assert!(
+                id.chars().all(|c| c.is_ascii_lowercase()),
+                "id {id} is not a plain lowercase word"
+            );
+        }
+    }
 }

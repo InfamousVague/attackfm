@@ -11,6 +11,7 @@
 //! keeps a phone that was wiped, restored, or updated from believing it holds
 //! songs it does not.
 
+import { effectsOn } from './effects.ts';
 import { isTauri, setOfflineAudioResolver, type Track } from './tauri.ts';
 
 /** Library path -> absolute file path on this device. */
@@ -76,9 +77,28 @@ export function heldPath(path: string): string | null {
   return held.get(path) ?? null;
 }
 
+/**
+ * What `loadAudioUrl` actually consults - and the one place the effects rack
+ * gets to override the vault.
+ *
+ * A held file is normally the best answer there is: no network, instant, free.
+ * But the effects are applied by the SERVER as it encodes, so a local copy is
+ * the one source that cannot have them. If the vault answered while an effect
+ * was on, pinned tracks would quietly play dry and the switch would look
+ * broken on exactly the songs someone cared about enough to keep.
+ *
+ * So while the rack has anything in it, the vault says it holds nothing, and
+ * playback goes to the server to be coloured. Turning the effects off returns
+ * every pinned track to playing offline.
+ */
+function offlineSource(path: string): string | null {
+  if (effectsOn()) return null;
+  return heldPath(path);
+}
+
 // Registered rather than imported: tauri.ts is the bottom of the graph and
 // must not depend on the app above it.
-setOfflineAudioResolver(heldPath);
+setOfflineAudioResolver(offlineSource);
 
 /**
  * Keep a track. `url` is the same stream URL playback would have used, so a
