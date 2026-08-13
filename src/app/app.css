@@ -10497,3 +10497,144 @@ button.artistAlbum {
   padding-block-start: var(--glacier-space-3);
   border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
 }
+
+/* ---- Date mode -----------------------------------------------------------
+   The collector's auditions met one at a time: the cover full-bleed, a snippet
+   playing under the house squiggle, and a verdict by swipe. No headings and no
+   captions - the page is the card. */
+.datePage {
+  justify-content: center;
+}
+
+.dateStack {
+  position: relative;
+  inline-size: min(100%, 24rem);
+  margin-inline: auto;
+  aspect-ratio: 3 / 4;
+  max-block-size: 62dvh;
+}
+
+.dateCard {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: var(--glacier-radius-xl, 1.25rem);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  background: var(--glacier-surface-raised);
+  box-shadow: var(--glacier-shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.42));
+  /* The card is a swipe surface: every horizontal move is a verdict in
+     progress, so the browser gets none of them. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+  transition: transform 0.28s var(--glacier-ease-out);
+}
+
+/* The verdict carries the card off the way the hand sent it. Transform only -
+   an opacity that freezes in a throttled webview is an invisible card. */
+.dateCard[data-leaving='right'] {
+  transform: translateX(130%) rotate(16deg);
+}
+.dateCard[data-leaving='left'] {
+  transform: translateX(-130%) rotate(-16deg);
+}
+
+/* The next introduction, peeking from under the current one. */
+.dateCard--under {
+  transform: scale(0.94) translateY(12px);
+  filter: brightness(0.7);
+  pointer-events: none;
+}
+
+/* The judged card flies over everything, including the now-live next card. */
+.dateCard--outgoing {
+  pointer-events: none;
+  z-index: 2;
+}
+
+.dateCard__art {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+.dateCard__art--bare {
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--glacier-accent-solid) 30%, #0a0a0c),
+    #0a0a0c
+  );
+}
+
+/* The verdict stamps, inked in as the drag commits. */
+.dateCard__stamp {
+  position: absolute;
+  inset-block-start: var(--glacier-space-4);
+  padding: 2px var(--glacier-space-2);
+  border: 3px solid currentColor;
+  border-radius: var(--glacier-radius-sm, 0.375rem);
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  opacity: 0;
+  pointer-events: none;
+}
+.dateCard__stamp--like {
+  inset-inline-start: var(--glacier-space-4);
+  color: #37d67a;
+  transform: rotate(-14deg);
+}
+.dateCard__stamp--pass {
+  inset-inline-end: var(--glacier-space-4);
+  color: #ff5f6d;
+  transform: rotate(14deg);
+}
+
+/* Autoplay refused: the card wears the play button until the first tap. */
+.dateCard__tapPlay {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  inline-size: 4rem;
+  block-size: 4rem;
+  border: none;
+  border-radius: 999px;
+  background: rgba(5, 5, 8, 0.65);
+  color: #fff;
+  cursor: pointer;
+}
+
+/* The house squiggle along the card's foot, on a wash so it reads over any
+   cover. Its drags are seeks; the card ignores pointerdowns that start here. */
+.dateCard__wave {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  padding: var(--glacier-space-5) var(--glacier-space-3) var(--glacier-space-2);
+  background: linear-gradient(to top, rgba(5, 5, 8, 0.75), transparent);
+}
+
+/* The verdicts as buttons, for anyone who would rather tap than fling. */
+.dateActions {
+  display: flex;
+  justify-content: center;
+  gap: var(--glacier-space-6);
+}
+
+.dateActions .dateActions__btn {
+  inline-size: 3.75rem;
+  block-size: 3.75rem;
+  border-radius: 999px;
+}
+.dateActions__btn--pass {
+  color: #ff5f6d;
+}
+.dateActions__btn--like {
+  color: #37d67a;
+}
