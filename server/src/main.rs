@@ -440,6 +440,7 @@ async fn main() {
         .route("/api/artist", get(search::artist))
         .route("/api/curator", get(curator::feed))
         .route("/api/curator/pulls", get(collector::status))
+        .route("/api/date/done", post(collector::date_done))
         .route("/api/curator/pulls/settings", post(collector::settings))
         .route("/api/dj", get(dj::station))
         .route("/api/features/status", get(features::status))

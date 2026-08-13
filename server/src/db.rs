@@ -1378,6 +1378,31 @@ impl Db {
 
     // --- favourites -------------------------------------------------------
 
+    /// The artists behind a set of track ids, most-represented first.
+    ///
+    /// What a handful of songs is really saying: you did not keep THAT
+    /// recording so much as that sound, and the catalogue is walked by artist.
+    /// Empty ids answer empty rather than the whole library.
+    pub fn artists_for(&self, ids: &[i64]) -> Vec<(String, i64)> {
+        if ids.is_empty() {
+            return Vec::new();
+        }
+        let conn = self.lock();
+        let holes = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT artist, COUNT(*) n FROM tracks
+              WHERE id IN ({holes}) AND deleted = 0 AND TRIM(artist) <> ''
+              GROUP BY LOWER(TRIM(artist)) ORDER BY n DESC"
+        );
+        let Ok(mut stmt) = conn.prepare(&sql) else {
+            return Vec::new();
+        };
+        let bound: Vec<&dyn rusqlite::ToSql> = ids.iter().map(|i| i as &dyn rusqlite::ToSql).collect();
+        stmt.query_map(bound.as_slice(), |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
+            .map(|r| r.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
     pub fn favorites(&self, user_id: i64) -> Vec<i64> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(

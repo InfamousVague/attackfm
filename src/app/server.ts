@@ -1043,6 +1043,24 @@ export async function fetchDiscoveries(
   });
 }
 
+/**
+ * The deck ran out: tell the server what the verdicts were so it can go and get
+ * more shaped by them, instead of waiting out its own six-hourly sweep.
+ * Answers as soon as the work is queued, not when it finishes.
+ */
+export async function dateDone(
+  session: ServerSession,
+  kept: number[],
+  passed: number[],
+): Promise<{ seeded: number }> {
+  const out = await request<{ seeded?: number }>(session.url, '/api/date/done', {
+    token: session.token,
+    method: 'POST',
+    body: JSON.stringify({ kept, passed }),
+  });
+  return { seeded: out.seeded ?? 0 };
+}
+
 /** Not for me. Forgotten rather than hidden, so the harvest can replace it. */
 export async function dismissDiscovery(session: ServerSession, id: string): Promise<void> {
   await request(session.url, `/api/discoveries/dismiss?id=${encodeURIComponent(id)}`, {

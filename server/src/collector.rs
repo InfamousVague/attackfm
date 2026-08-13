@@ -328,6 +328,77 @@ use crate::auth;
 /// `GET /api/curator/pulls` - the collector accounting for itself: the dials,
 /// the ledger against the cap, and what it bought lately. `userId` is how the
 /// client matches quarantined tracks to "mine".
+/// What a finished Date is worth: the verdicts, so the next batch is shaped by
+/// them rather than by the same background guess that produced this one.
+#[derive(serde::Deserialize)]
+pub struct DateDone {
+    /// Auditions kept - the strongest signal there is, since the listener just
+    /// said yes to them one at a time.
+    #[serde(default)]
+    pub kept: Vec<i64>,
+    /// Auditions passed on. Not punishment - their artists are simply left out
+    /// of the seeds, so the next batch reaches somewhere else.
+    #[serde(default)]
+    pub passed: Vec<i64>,
+}
+
+/// `POST /api/date/done` - the deck ran out; go and get more, now.
+///
+/// The page has always ended on "the DJ fetches more as it learns what you
+/// keep", and nothing made that true: the collector runs on its own clock and
+/// harvests from a six-hourly sweep, so reaching the end of a Date and reaching
+/// for the app an hour later looked identical. This is the promise, kept.
+///
+/// The seeds are the verdicts, in order of how much they say: the artists
+/// behind what was just kept first, then the artists behind everything ever
+/// liked, minus anyone just passed on. It answers immediately - a harvest walks
+/// a catalogue over tens of seconds and nobody should hold a request open for
+/// it - and the work runs behind.
+pub async fn date_done(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<DateDone>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+
+    // Just-passed artists are excluded rather than down-weighted: a pass is a
+    // small, cheap "not this", and the honest reading of it is "look elsewhere"
+    // rather than a permanent mark against an artist the listener may love.
+    let avoid: std::collections::HashSet<String> = state
+        .db
+        .artists_for(&body.passed)
+        .into_iter()
+        .map(|(name, _)| crate::discovery::fold(&name))
+        .collect();
+
+    let mut seeds: Vec<(String, i64)> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let liked = state.db.favorites(caller.id);
+    for (name, n) in state.db.artists_for(&body.kept).into_iter().chain(state.db.artists_for(&liked)) {
+        let key = crate::discovery::fold(&name);
+        if key.is_empty() || avoid.contains(&key) || !seen.insert(key) {
+            continue;
+        }
+        seeds.push((name, n));
+        if seeds.len() >= 8 {
+            break;
+        }
+    }
+
+    let seeded = seeds.len();
+    if seeded > 0 {
+        let bg = Arc::clone(&state);
+        let user = caller.id;
+        tokio::spawn(async move {
+            crate::discovery::harvest_seeded(&bg, user, seeds).await;
+            // Then buy one straight away rather than waiting out the cycle: the
+            // listener is standing in front of an empty deck.
+            pull_cycle(&bg).await;
+        });
+    }
+    Ok(Json(serde_json::json!({ "seeded": seeded })))
+}
+
 pub async fn status(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
