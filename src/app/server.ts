@@ -403,7 +403,7 @@ export async function startRefetch(
   session: ServerSession,
   trackId: number,
 ): Promise<RefetchJob> {
-  return request<RefetchJob>(session.url, `/api/refetch/${trackId}`, {
+  return request<RefetchJob>(session.url, `/api/refetch/track/${trackId}`, {
     method: 'POST',
     token: session.token,
   });

@@ -374,15 +374,33 @@ async fn fetch_one(
         .await
         .map_err(|e| format!("SpotiFLAC would not start: {e}"))?;
 
-    find_audio(dir).ok_or_else(|| {
-        let tail = String::from_utf8_lossy(&out.stderr);
-        let last = tail.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("");
-        if last.is_empty() {
-            "nothing came back".to_string()
-        } else {
-            last.chars().take(160).collect()
-        }
-    })
+    find_audio(dir).ok_or_else(|| explain(&out.stderr))
+}
+
+/// Why a candidate did not arrive, in words worth showing someone.
+///
+/// SpotiFLAC draws a tqdm progress bar on stderr, so the LAST line of a failed
+/// run is almost always `Progress: 100%|████...| 1/1` - which is not an error,
+/// reads as success, and was what the modal showed. Bars are skipped, and when
+/// nothing else was said the honest answer is that this provider had nothing,
+/// which is the usual reason: a single-service attempt against a provider that
+/// does not carry the track.
+fn explain(stderr: &[u8]) -> String {
+    let text = String::from_utf8_lossy(stderr);
+    let line = text
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        // tqdm bars, and the carriage-return redraws of one.
+        .filter(|l| !l.contains('\u{2588}') && !l.contains("%|") && !l.starts_with("Progress:"))
+        .filter(|l| !l.starts_with("Downloading") && !l.starts_with("Searching"))
+        .next_back()
+        .unwrap_or("");
+    if line.is_empty() {
+        "this provider did not have it".to_string()
+    } else {
+        line.chars().take(160).collect()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -741,6 +759,18 @@ mod refetch_tests {
             source: source.to_string(),
             importable: true,
         }
+    }
+
+    #[test]
+    fn a_progress_bar_is_never_an_error_message() {
+        // The exact shape that reached the modal before: a finished tqdm bar
+        // as the last line of a failed run.
+        let bar = b"Searching...\nProgress: 100%|\xe2\x96\x88\xe2\x96\x88\xe2\x96\x88| 1/1 [00:02<00:00,  2.3s/it]\n";
+        assert_eq!(explain(bar), "this provider did not have it");
+        assert_eq!(explain(b""), "this provider did not have it");
+        // A real message still gets through.
+        let real = b"Progress: 100%|xx| 1/1\nTrack not available in your region\n";
+        assert_eq!(explain(real), "Track not available in your region");
     }
 
     #[test]
