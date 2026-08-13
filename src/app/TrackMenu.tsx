@@ -1,7 +1,17 @@
 import { ContextMenu, MenuItem } from '@glacier/react';
-import { ArrowDownToLine, Check, ListEnd, ListMusic, ListStart, Radio, Trash2 } from '@glacier/icons';
+import {
+  ArrowDownToLine,
+  Check,
+  ListEnd,
+  ListMusic,
+  ListStart,
+  Radio,
+  SearchX,
+  Trash2,
+} from '@glacier/icons';
 import { useEffect, useState, type ReactNode } from 'react';
 import { AddToPlaylistDialog } from './AddToPlaylist.tsx';
+import { WrongSongModal } from './WrongSongModal.tsx';
 import { useQueueControls } from './queueControls.tsx';
 import { isHeld, onOfflineChange, pinTrack, unpinTrack } from './offline.ts';
 import { useRadioOptional } from './radio.tsx';
@@ -42,12 +52,16 @@ export function TrackMenu({
   // menu is where "do something with this song" already lives.
   const radio = useRadioOptional();
   const [filing, setFiling] = useState(false);
+  const [reporting, setReporting] = useState(false);
   // Keeping a song is only offered where it means something: a phone or
   // desktop app (a browser tab has no disk of ours) holding a track that came
   // from a server (a local file is already on this machine).
   const { session } = useServerSession();
   const trackId = trackIdFromPath(track.path);
   const canKeep = isTauri() && session !== null && trackId !== null;
+  // Replacing the file is a change to the shared library, so it takes the same
+  // rank the server asks for; a non-admin would only get a 403 from the menu.
+  const canReport = session !== null && trackId !== null && session.isAdmin;
   const [keeping, setKeeping] = useState(false);
   const [held, setHeld] = useState(() => isHeld(track.path));
   useEffect(() => {
@@ -103,6 +117,17 @@ export function TrackMenu({
             {/* The song, on this device: it plays with the hub off, the wifi
                 gone, or the plane door shut. Held songs offer the way back
                 out, since the whole point is that the space is yours. */}
+            {/* The importer matches a song by searching for its title and
+                artist, so it can arrive as a live cut, a remix, or a cover -
+                correctly tagged either way, which is why only a listener ever
+                catches it. Offered wherever a song is, because that is where
+                you are standing when you notice. Admin-only: it edits a file
+                the whole server shares. */}
+            {canReport && (
+              <MenuItem icon={<SearchX size={15} />} onSelect={() => setReporting(true)}>
+                Wrong song?
+              </MenuItem>
+            )}
             {canKeep &&
               (held ? (
                 <MenuItem icon={<Trash2 size={15} />} onSelect={() => void unpinTrack(track.path)}>
@@ -125,6 +150,11 @@ export function TrackMenu({
         track={filing ? track : null}
         open={filing}
         onClose={() => setFiling(false)}
+      />
+      <WrongSongModal
+        track={reporting ? track : null}
+        open={reporting}
+        onClose={() => setReporting(false)}
       />
     </>
   );

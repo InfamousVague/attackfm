@@ -647,7 +647,7 @@ pub struct ResolveBody {
 
 /// Moves one library file into the trash, preserving its filename and
 /// suffixing -2, -3... on collisions. Never unlinks. Blocking.
-fn quarantine_file(music_root: &Path, rel: &str) -> Result<(), String> {
+pub(crate) fn quarantine_file(music_root: &Path, rel: &str) -> Result<(), String> {
     let src = resolve_in_root(music_root, rel).ok_or_else(|| format!("{rel}: not in library"))?;
     let trash = music_root.join(scan::TRASH_DIR);
     std::fs::create_dir_all(&trash).map_err(|e| format!("cannot create trash dir: {e}"))?;

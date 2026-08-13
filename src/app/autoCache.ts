@@ -97,6 +97,12 @@ export function isAutoCached(key: string): boolean {
   return key in readLedger();
 }
 
+/** Every key this cache owns, for callers separating the automatic half from
+ *  the hand-kept one without re-reading storage per row. */
+export function autoCachedKeys(): Set<string> {
+  return new Set(Object.keys(readLedger()));
+}
+
 // --- what is worth holding -------------------------------------------------
 
 export interface Hotness {
