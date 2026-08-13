@@ -379,12 +379,25 @@ fn take_spread(mut ranked: Vec<(f32, &TrackFeatures)>, n: usize) -> Vec<i64> {
 }
 
 
+/// How many distinct tracks a listener must have played inside the window
+/// before their taste has an answer. Named because the CLIENT shows it: the
+/// Discover page counts up to this ("2 of 4 songs") rather than inventing a
+/// threshold of its own, so the ask can never drift from the gate.
+pub const TASTE_MIN_TRACKS: usize = 4;
+
+/// How many distinct tracks this listener has played inside the window - the
+/// numerator of that ask, and the thing taste_for gates on.
+pub(crate) fn taste_heard(state: &Arc<AppState>, user: i64) -> usize {
+    let since = now_ms() - WINDOW_30D_MS;
+    state.db.top_plays(user, since, 60).len()
+}
+
 /// This listener's taste, built from their heavy rotation. None until they
 /// have played enough for the question to have an answer.
 pub(crate) fn taste_for(state: &Arc<AppState>, user: i64) -> Option<Taste> {
     let since = now_ms() - WINDOW_30D_MS;
     let top: Vec<i64> = state.db.top_plays(user, since, 60).into_iter().map(|(id, _)| id).collect();
-    if top.len() < 4 {
+    if top.len() < TASTE_MIN_TRACKS {
         return None;
     }
     let all = state.db.all_features();
