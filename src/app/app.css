@@ -10286,3 +10286,128 @@ button.artistAlbum {
   color: var(--glacier-text-muted);
   font-size: var(--glacier-font-size-xs);
 }
+
+/* ---- The AI page (owner only) -------------------------------------------
+   What the machine did while nobody was looking. Reads as a report, not a
+   dashboard: a row of headline numbers, two plain-language sections, then the
+   ledger of what it bought and why. */
+.aiPage__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.aiStats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: var(--glacier-space-3);
+}
+
+.aiStat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.aiStat__value {
+  font-size: var(--glacier-font-size-xl);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.aiStat__label {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.aiSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+/* One sentence per line, each a fact about the machine's current state. */
+.aiFacts {
+  margin: 0;
+  padding-inline-start: var(--glacier-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  color: var(--glacier-text-subtle);
+  font-size: var(--glacier-font-size-sm);
+}
+
+.aiPulls {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* A bought song: what it is, why it was chosen, and where it stands. */
+.aiPull {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3) 0;
+  border-block-end: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.aiPull__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.aiPull__title {
+  font-weight: 600;
+}
+
+.aiPull__artist {
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+}
+
+/* The reason it was bought. Italic because it is the machine's own words. */
+.aiPull__reason {
+  margin-block-start: var(--glacier-space-1);
+  font-size: var(--glacier-font-size-sm);
+  font-style: italic;
+  color: var(--glacier-text-subtle);
+}
+
+.aiPull__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex: none;
+  text-align: end;
+}
+
+.aiPull__state {
+  font-size: var(--glacier-font-size-xs);
+  font-weight: 600;
+  color: var(--glacier-text-subtle);
+}
+
+/* Kept is the outcome that matters, so it is the only one that gets colour. */
+.aiPull__state[data-state='promoted'] {
+  color: var(--glacier-accent-text);
+}
+
+.aiPull__state[data-state='failed'] {
+  color: var(--glacier-danger-text, var(--glacier-text-muted));
+}
+
+.aiPull__at {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}

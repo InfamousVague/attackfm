@@ -12,7 +12,7 @@ import { ChartNoAxesColumn, ChevronLeft, ChevronRight, CircleUserRound, Compass,
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AppearanceProvider } from './appearance.tsx';
 import { LibraryProvider, useLibrary } from './library.tsx';
-import { ServerSessionProvider } from './serverSession.tsx';
+import { ServerSessionProvider, useServerSession } from './serverSession.tsx';
 import { RegistrySessionProvider } from './registrySession.tsx';
 import { EqualizerProvider } from './equalizer.tsx';
 import { PlaybackProvider } from './playback.tsx';
@@ -44,6 +44,7 @@ import { PlaylistsProvider } from './playlists.tsx';
 import { LibrarySyncProvider } from './librarySync.tsx';
 import { SearchPage } from './SearchPage.tsx';
 import { StatsPage } from './StatsPage.tsx';
+import { AiPage } from './AiPage.tsx';
 import { ListeningShareBridge } from './listeningShare.tsx';
 import { LibraryView } from './LibraryView.tsx';
 import { SongPage, type SongCollection } from './SongPage.tsx';
@@ -540,6 +541,9 @@ function AppMain({
   // 'downloads' from a past session falls through to Home rather than a page
   // that should not be here.
   const hasDownloads = useDownloadsOptional() !== null;
+  // The server owner - the first account through the door. The AI page is
+  // theirs alone; everyone else never sees the row or the route.
+  const isOwner = useServerSession().session?.isAdmin === true;
   const hasQueue = useHasDownloadQueue();
   // Discover is reachable whenever there is any acquire handler (import or buy),
   // matching the nav gate; the plugin-free App-Review build has neither.
@@ -602,6 +606,12 @@ function AppMain({
             onOpenPlaylist={onOpenPlaylist}
           />
         </PluginHookScope>
+      ) : tab === 'ai' && isOwner ? (
+        // What the machine did while you were not looking. Owner-only, and
+        // gated here as well as in the menu: a tab restored from a past session
+        // (or an account that stopped being the owner) falls through to the
+        // library rather than opening a page it should not see.
+        <AiPage />
       ) : tab === 'stats' ? (
         // Stats: the listening, added up - fed by the same event log the
         // curator tunes itself on.
