@@ -23,7 +23,7 @@
 //! or an OS reclaim cannot leave it believing in files that are gone.
 
 import { fetchHome, fetchRemoteFavorites, loadCachedIndex, remotePath, streamUrl, trackIdFromPath, type RemoteTrack, type ServerSession } from './server.ts';
-import { heldPath, offlineEntries, pinTrack, unpinTrack } from './offline.ts';
+import { heldPath, offlineEntries, offlineSpace, pinTrack, unpinTrack } from './offline.ts';
 import { pickSource } from './mirrors.ts';
 import { isTauri, type Track } from './tauri.ts';
 
@@ -105,6 +105,29 @@ export function autoCachedKeys(): Set<string> {
 
 // --- what is worth holding -------------------------------------------------
 
+/**
+ * The next Dates, published by the deck itself.
+ *
+ * Everything else {@link rankHotness} weighs is a fact the SERVER holds -
+ * likes, play counts, recency. The Date deck is not: it is computed on the
+ * device from what has already been judged, passed and hearted this sitting,
+ * so the only place that knows it is the page drawing it. It is left here as
+ * a hint rather than fetched, and an empty hint simply means the deck has not
+ * been opened yet.
+ */
+let dateDeck: string[] = [];
+
+/** How many cards ahead to guarantee. */
+export const DATE_CACHE_TARGET = 20;
+
+/**
+ * Tell the cache which cards are coming. Called by the Date page as its deck
+ * changes; the next sweep acts on it.
+ */
+export function setDateDeck(keys: string[]): void {
+  dateDeck = keys.slice(0, DATE_CACHE_TARGET);
+}
+
 export interface Hotness {
   /** Library path (`afm://<id>`), most-wanted first. */
   keys: string[];
@@ -132,6 +155,19 @@ export async function rankHotness(session: ServerSession): Promise<Hotness> {
     score.set(key, (score.get(key) ?? 0) + points);
     if (!reasons.has(key)) reasons.set(key, why);
   };
+
+  // The next cards on the Date deck, ahead of everything - including likes.
+  //
+  // Not because a Date matters more than a song you love, but because of when
+  // it is needed. A liked song is a permanent resident and will be cached on
+  // any pass; a Date is judged in about four seconds and then gone, so the
+  // round trip lands inside the swipe, which is exactly where it shows. It is
+  // also a bounded set - twenty songs - so putting it first cannot crowd the
+  // cache out the way an unbounded signal could.
+  dateDeck.forEach((key, i) => {
+    const id = trackIdFromPath(key);
+    if (id !== null) bump(id, 2000 - i, 'up next on Dates');
+  });
 
   // Liked songs are the one signal the listener stated out loud.
   try {
@@ -246,11 +282,32 @@ export function planCache(input: {
  * needs the room - so there is no separate eviction policy to disagree with
  * the admission one.
  */
+/** Room the cache must leave alone whatever its budget says. */
+const SPACE_FLOOR = 2 * 1024 ** 3;
+
+/**
+ * The budget, clamped to what the disk can actually give.
+ *
+ * A limit is a ceiling, not a promise: someone can choose 15 GB on a phone
+ * with 3 GB left, and then the cache is the reason there is no room for
+ * photos. So the effective budget is never more than what is free beyond a
+ * floor, plus what the cache is already holding (which it can reuse). Where
+ * free space cannot be read the stored limit stands, which is how this
+ * behaved before.
+ */
+async function affordable(limit: number): Promise<number> {
+  if (limit === 0) return 0;
+  const room = await offlineSpace();
+  if (!room || room.freeBytes === null) return limit;
+  const ceiling = Math.max(0, room.freeBytes - SPACE_FLOOR) + room.heldBytes;
+  return Math.min(limit, ceiling);
+}
+
 export async function sweepCache(
   session: ServerSession,
   options: { signal?: AbortSignal; onProgress?: (done: number, total: number) => void } = {},
 ): Promise<SweepResult> {
-  const limit = cacheLimitBytes();
+  const limit = await affordable(cacheLimitBytes());
 
   // The folder is the authority on what exists; the ledger only says which of
   // it is ours. Reconciling here is what survives a restore or a wipe.
