@@ -12,6 +12,7 @@ import { rememberProfile } from './household.ts';
 import { rememberServer } from './servers.ts';
 import { pickSource, startMirrorHeartbeat } from './mirrors.ts';
 import { startServerSync } from './serverSync.ts';
+import { startCacheSweeps } from './autoCache.ts';
 import {
   artUrl,
   isRemotePath,
@@ -217,6 +218,12 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
   // And the account learns where this device listens, so the next device does
   // not have to be told again. Addresses only - see serverSync.ts.
   useEffect(() => startServerSync(session), [session]);
+
+  // And the device quietly keeps hold of what this listener actually plays.
+  useEffect(() => {
+    if (!session) return;
+    return startCacheSweeps(session);
+  }, [session]);
 
   const persist = useCallback((next: ServerSession | null) => {
     setSession(next);

@@ -1,0 +1,425 @@
+//! The device cache: the songs most likely to be wanted next, kept locally.
+//!
+//! The offline vault (offline.ts) is deliberate - you pin a song, it stays.
+//! This is the other half: nobody chooses, the phone just quietly holds what
+//! it can work out you will reach for. Liked songs first, then what is
+//! actually on repeat, then what was played recently. On a hub that lives in a
+//! house rather than a datacentre, that turns "the wifi is bad" and "I left"
+//! into non-events for the music that matters most.
+//!
+//! TWO RULES SHAPE EVERYTHING HERE.
+//!
+//! First: **the budget governs this cache only, never a pin.** A song someone
+//! deliberately kept for a flight must not be deleted to make room for one an
+//! algorithm liked. So the ledger below records what the SWEEP put on disk;
+//! anything held that this ledger does not know about is treated as a manual
+//! pin and is never touched. Unknown means untouchable, which is the safe way
+//! for that guess to be wrong.
+//!
+//! Second: **the disk stays the index.** offline.rs recovers what is held by
+//! listing a folder, and that remains the authority on what exists. This
+//! ledger holds only POLICY - which entries this cache is responsible for -
+//! and is reconciled against the folder on every sweep, so a restore, a wipe
+//! or an OS reclaim cannot leave it believing in files that are gone.
+
+import { fetchHome, fetchRemoteFavorites, loadCachedIndex, remotePath, streamUrl, trackIdFromPath, type RemoteTrack, type ServerSession } from './server.ts';
+import { heldPath, offlineEntries, pinTrack, unpinTrack } from './offline.ts';
+import { pickSource } from './mirrors.ts';
+import { isTauri, type Track } from './tauri.ts';
+
+const LEDGER_KEY = 'attackfm-autocache';
+const LIMIT_KEY = 'attackfm-cache-limit';
+
+/** The default ceiling. Fifteen gigabytes is a few thousand lossy songs or a
+ *  few hundred lossless ones - enough to hold everything anyone plays in a
+ *  normal month without being the largest thing on the phone. */
+export const DEFAULT_LIMIT_BYTES = 15 * 1024 ** 3;
+
+/** What the settings pane offers. Off is a real choice: someone always on
+ *  their own wifi may simply not want the space used. */
+export const LIMIT_CHOICES = [0, 2, 5, 10, 15, 25, 50, 100].map((gb) => gb * 1024 ** 3);
+
+export function cacheLimitBytes(): number {
+  try {
+    const raw = localStorage.getItem(LIMIT_KEY);
+    if (raw !== null) {
+      const n = Number(raw);
+      if (Number.isFinite(n) && n >= 0) return n;
+    }
+  } catch {
+    // Fall through to the default.
+  }
+  return DEFAULT_LIMIT_BYTES;
+}
+
+export function setCacheLimitBytes(bytes: number): void {
+  try {
+    localStorage.setItem(LIMIT_KEY, String(Math.max(0, Math.round(bytes))));
+  } catch {
+    // Applies for this run regardless.
+  }
+  for (const fn of listeners) fn();
+}
+
+const listeners = new Set<() => void>();
+
+export function onCacheChange(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
+// --- the ledger: which entries this cache owns -----------------------------
+
+type Ledger = Record<string, number>;
+
+function readLedger(): Ledger {
+  try {
+    const raw = localStorage.getItem(LEDGER_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Ledger) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeLedger(ledger: Ledger): void {
+  try {
+    localStorage.setItem(LEDGER_KEY, JSON.stringify(ledger));
+  } catch {
+    // A lost ledger costs correctness in one direction only: entries become
+    // indistinguishable from manual pins, so they stop being evicted rather
+    // than starting to be. The cache stalls; it never eats someone's pins.
+  }
+}
+
+/** Whether this device holds the song because the sweep decided to. */
+export function isAutoCached(key: string): boolean {
+  return key in readLedger();
+}
+
+// --- what is worth holding -------------------------------------------------
+
+export interface Hotness {
+  /** Library path (`afm://<id>`), most-wanted first. */
+  keys: string[];
+  /** Why, for the settings pane to explain itself. */
+  reasons: Map<string, string>;
+}
+
+/**
+ * Rank the library by how likely it is to be wanted next.
+ *
+ * The weights are ordinal rather than measured - what matters is the ORDER,
+ * and that liked songs beat heavy rotation beats recent beats new. A song can
+ * score on several counts and should: something both liked and on repeat is
+ * the surest bet on the phone.
+ *
+ * This is also the ranking a "fast sync" server would need to decide what to
+ * hold, which is why it returns keys and reasons rather than doing anything
+ * with them.
+ */
+export async function rankHotness(session: ServerSession): Promise<Hotness> {
+  const score = new Map<string, number>();
+  const reasons = new Map<string, string>();
+  const bump = (id: number, points: number, why: string) => {
+    const key = remotePath(id);
+    score.set(key, (score.get(key) ?? 0) + points);
+    if (!reasons.has(key)) reasons.set(key, why);
+  };
+
+  // Liked songs are the one signal the listener stated out loud.
+  try {
+    const favorites = await fetchRemoteFavorites(session);
+    for (const id of favorites) bump(id, 1000, 'liked');
+  } catch {
+    // A signal that will not load is one fewer input, not a failure.
+  }
+
+  try {
+    const feed = await fetchHome(session);
+    // Play count, but flattened: the 200-play song and the 40-play song are
+    // both "yours", and letting raw counts run would let one obsession crowd
+    // the whole cache out.
+    for (const { id, plays } of feed.heavyPlays ?? []) {
+      bump(id, 300 + Math.min(200, Math.sqrt(plays) * 40), 'on repeat');
+    }
+    for (const id of feed.heavy ?? []) bump(id, 300, 'on repeat');
+    // Recency decays down the list, so the last thing played outranks the
+    // fortieth.
+    (feed.recent ?? []).forEach((id, i) => bump(id, Math.max(40, 250 - i * 5), 'played recently'));
+    for (const album of feed.jumpBackIn ?? []) {
+      for (const id of album) bump(id, 120, 'from an album you came back to');
+    }
+    for (const id of feed.fresh ?? []) bump(id, 60, 'newly added');
+  } catch {
+    // Same.
+  }
+
+  const keys = [...score.entries()].sort((a, b) => b[1] - a[1]).map(([key]) => key);
+  return { keys, reasons };
+}
+
+// --- the sweep -------------------------------------------------------------
+
+export interface SweepResult {
+  /** Bytes this cache is holding after the pass. */
+  bytes: number;
+  downloaded: number;
+  evicted: number;
+  /** Bytes held by manual pins, which sit outside the budget. */
+  pinnedBytes: number;
+}
+
+/** How many downloads run at once. Two keeps the cache from competing with
+ *  the song actually playing for the same connection. */
+const CONCURRENCY = 2;
+
+/** A track whose size the index does not know cannot be budgeted for, so it is
+ *  assumed to be about an average lossless song rather than skipped. */
+const ASSUMED_BYTES = 35 * 1024 ** 2;
+
+function toTrackish(remote: RemoteTrack): Track {
+  return {
+    path: remotePath(remote.id),
+    title: remote.title,
+    artist: remote.artist,
+    album: remote.album,
+    duration: remote.duration,
+    addedAt: remote.addedAt,
+    codec: remote.codec,
+  } as Track;
+}
+
+/**
+ * Decide what the cache should hold and what it must let go.
+ *
+ * Pure on purpose: this is the half that can delete a file, and it should be
+ * checkable without a phone, a server or a disk. Everything it needs is passed
+ * in; everything it decides comes back as two lists.
+ */
+export function planCache(input: {
+  /** Library keys, hottest first. */
+  ranked: string[];
+  /** Key -> size in bytes, for the ones the index knows. */
+  sizes: Map<string, number>;
+  /** Keys currently on disk, cache-owned or not. */
+  onDisk: Set<string>;
+  /** Keys this cache owns; everything else on disk is a manual pin. */
+  owned: Set<string>;
+  limitBytes: number;
+}): { keep: string[]; evict: string[]; plannedBytes: number } {
+  const { ranked, sizes, onDisk, owned, limitBytes } = input;
+  const keep: string[] = [];
+  let planned = 0;
+  if (limitBytes > 0) {
+    for (const key of ranked) {
+      // Held by hand already: it plays offline either way, and charging the
+      // budget for it would shrink the cache every time someone pinned a song.
+      if (onDisk.has(key) && !owned.has(key)) continue;
+      const size = sizes.get(key) || ASSUMED_BYTES;
+      // `continue`, not `break`: a single huge file near the ceiling should not
+      // stop every smaller song behind it from fitting.
+      if (planned + size > limitBytes) continue;
+      planned += size;
+      keep.push(key);
+    }
+  }
+  const wanted = new Set(keep);
+  // Only ever cache-owned keys. A manual pin is never in this list, which is
+  // the invariant the whole design rests on.
+  const evict = [...owned].filter((key) => !wanted.has(key));
+  return { keep, evict, plannedBytes: planned };
+}
+
+/**
+ * Bring the device cache in line with what the listener actually wants.
+ *
+ * One pass: rank, fill to the budget, then drop whatever this cache is holding
+ * that no longer makes the list. That single rule covers both halves of
+ * rotation - a song goes when it goes cold, and equally when something hotter
+ * needs the room - so there is no separate eviction policy to disagree with
+ * the admission one.
+ */
+export async function sweepCache(
+  session: ServerSession,
+  options: { signal?: AbortSignal; onProgress?: (done: number, total: number) => void } = {},
+): Promise<SweepResult> {
+  const limit = cacheLimitBytes();
+
+  // The folder is the authority on what exists; the ledger only says which of
+  // it is ours. Reconciling here is what survives a restore or a wipe.
+  const onDisk = await offlineEntries();
+  const diskKeys = new Set(onDisk.map((e) => e.key));
+  let ledger = readLedger();
+  for (const key of Object.keys(ledger)) {
+    if (!diskKeys.has(key)) delete ledger[key];
+  }
+
+  const pinnedBytes = onDisk.filter((e) => !(e.key in ledger)).reduce((n, e) => n + e.bytes, 0);
+  const bytesOf = new Map(onDisk.map((e) => [e.key, e.bytes] as const));
+
+  // Turned off: give back everything this cache owns, and nothing else.
+  if (limit === 0 || !isTauri()) {
+    let evicted = 0;
+    for (const key of Object.keys(ledger)) {
+      await unpinTrack(key);
+      evicted += 1;
+    }
+    writeLedger({});
+    return { bytes: 0, downloaded: 0, evicted, pinnedBytes };
+  }
+
+  const { keys } = await rankHotness(session);
+  const index = loadCachedIndex(session.url);
+  const byId = new Map(index.tracks.map((t) => [t.id, t] as const));
+
+  // Fill the budget in rank order. A song already pinned by hand is skipped
+  // rather than counted: it is held either way, and charging the cache for it
+  // would shrink the cache every time someone pinned something.
+  // Only songs this server's index can size and name are candidates.
+  const known = new Map<string, RemoteTrack>();
+  const sizes = new Map<string, number>();
+  for (const key of keys) {
+    const id = trackIdFromPath(key);
+    if (id === null) continue;
+    const remote = byId.get(id);
+    if (!remote) continue;
+    known.set(key, remote);
+    sizes.set(key, remote.sizeBytes || ASSUMED_BYTES);
+  }
+
+  const plan = planCache({
+    ranked: [...known.keys()],
+    sizes,
+    onDisk: diskKeys,
+    owned: new Set(Object.keys(ledger)),
+    limitBytes: limit,
+  });
+  const want = new Map(plan.keep.map((key) => [key, known.get(key)!] as const));
+
+  // Evict first, so the room exists before anything is fetched.
+  let evicted = 0;
+  for (const key of plan.evict) {
+    await unpinTrack(key);
+    delete ledger[key];
+    evicted += 1;
+  }
+  writeLedger(ledger);
+
+  const missing = [...want.entries()].filter(([key]) => !heldPath(key));
+  let done = 0;
+  let downloaded = 0;
+  options.onProgress?.(0, missing.length);
+
+  const worker = async () => {
+    for (;;) {
+      const next = missing.shift();
+      if (!next || options.signal?.aborted) return;
+      const [key, remote] = next;
+      // Fetched from whichever server is nearest, exactly as playback would -
+      // filling the cache is the one job where that choice matters most.
+      const via = pickSource(session, remote.id);
+      const from = via ? { ...session, url: via.url, streamToken: via.streamToken } : session;
+      const url = streamUrl(from, via ? via.trackId : remote.id);
+      const ok = await pinTrack(toTrackish(remote), url).catch(() => false);
+      if (ok) {
+        downloaded += 1;
+        ledger[key] = Date.now();
+        writeLedger(ledger);
+      }
+      done += 1;
+      options.onProgress?.(done, done + missing.length);
+    }
+  };
+  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+
+  const after = await offlineEntries();
+  const ours = after.filter((e) => e.key in readLedger());
+  for (const fn of listeners) fn();
+  return {
+    bytes: ours.reduce((n, e) => n + e.bytes, 0),
+    downloaded,
+    evicted,
+    pinnedBytes: after.filter((e) => !(e.key in readLedger())).reduce((n, e) => n + e.bytes, 0),
+  };
+}
+
+/** What the cache is holding right now, without changing anything. */
+export async function cacheUsage(): Promise<{ bytes: number; count: number; pinnedBytes: number; pinnedCount: number }> {
+  const entries = await offlineEntries();
+  const ledger = readLedger();
+  const ours = entries.filter((e) => e.key in ledger);
+  const pins = entries.filter((e) => !(e.key in ledger));
+  return {
+    bytes: ours.reduce((n, e) => n + e.bytes, 0),
+    count: ours.length,
+    pinnedBytes: pins.reduce((n, e) => n + e.bytes, 0),
+    pinnedCount: pins.length,
+  };
+}
+
+/** Drop everything the cache owns, leaving pins alone. */
+export async function clearCache(): Promise<void> {
+  const ledger = readLedger();
+  for (const key of Object.keys(ledger)) await unpinTrack(key);
+  writeLedger({});
+  for (const fn of listeners) fn();
+}
+
+// --- when it runs ----------------------------------------------------------
+
+/** How often to reconsider, once settled. Taste moves over days, not minutes,
+ *  and every pass costs a `/api/home` and a favourites read. */
+const SWEEP_EVERY_MS = 6 * 60 * 60 * 1000;
+/** A pause after launch, so the cache never competes with the first song
+ *  someone opened the app to play. */
+const FIRST_SWEEP_DELAY_MS = 90_000;
+
+let sweeping = false;
+
+/** Run a pass unless one is already going. Safe to call from anywhere. */
+export async function sweepIfIdle(session: ServerSession): Promise<void> {
+  if (sweeping || !isTauri()) return;
+  sweeping = true;
+  try {
+    await sweepCache(session);
+  } catch {
+    // A failed pass is a pass; the next one will find the same work to do.
+  } finally {
+    sweeping = false;
+  }
+}
+
+/**
+ * Keep the cache current for as long as a session is live.
+ *
+ * Foreground only, and never while the app is hidden: this downloads whole
+ * songs, and a phone in a pocket is exactly where a background fetch turns
+ * into a battery and data complaint nobody asked for.
+ */
+export function startCacheSweeps(session: ServerSession): () => void {
+  if (!isTauri()) return () => {};
+  let stopped = false;
+  let last = 0;
+
+  const maybe = () => {
+    if (stopped || document.hidden) return;
+    if (Date.now() - last < SWEEP_EVERY_MS) return;
+    last = Date.now();
+    void sweepIfIdle(session);
+  };
+
+  const first = window.setTimeout(() => {
+    last = Date.now();
+    void sweepIfIdle(session);
+  }, FIRST_SWEEP_DELAY_MS);
+  const timer = window.setInterval(maybe, 30 * 60 * 1000);
+  document.addEventListener('visibilitychange', maybe);
+
+  return () => {
+    stopped = true;
+    window.clearTimeout(first);
+    window.clearInterval(timer);
+    document.removeEventListener('visibilitychange', maybe);
+  };
+}
