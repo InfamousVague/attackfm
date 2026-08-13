@@ -210,3 +210,53 @@ export function inviteLink(code: string): string {
 }
 
 export { REGISTRY_URL };
+
+// --- the servers this account can reach ------------------------------------
+
+/**
+ * One server saved to the account.
+ *
+ * Addresses, not credentials. The account remembers WHERE you listen; each
+ * device still mints its own tokens by re-proving membership through
+ * `/api/registry/enter`. That split is the whole security story: a registry
+ * breach leaks a list of hostnames, not a way into anyone's music.
+ */
+export interface Membership {
+  serverUrl: string;
+  serverName: string;
+  role: string;
+  state: 'active' | 'pending' | string;
+  since: number;
+}
+
+/** Every server saved to this account, across all its devices. */
+export async function fetchMemberships(token: string): Promise<Membership[]> {
+  const reply = await call<{ memberships: Membership[] }>('/v1/memberships', { token });
+  return reply.memberships ?? [];
+}
+
+/** Save a server to the account, so the next device is handed it. */
+export async function recordMembership(
+  token: string,
+  entry: { serverUrl: string; serverName?: string; role?: string },
+): Promise<void> {
+  await call('/v1/memberships', {
+    method: 'POST',
+    token,
+    body: JSON.stringify({
+      serverUrl: entry.serverUrl,
+      serverName: entry.serverName ?? '',
+      role: entry.role ?? 'member',
+    }),
+  });
+}
+
+/** Stop syncing a server to this account. Membership on the server itself is
+ *  untouched - this only forgets the entry in the directory. */
+export async function forgetMembership(token: string, serverUrl: string): Promise<void> {
+  await call('/v1/memberships', {
+    method: 'POST',
+    token,
+    body: JSON.stringify({ serverUrl, forget: true }),
+  });
+}

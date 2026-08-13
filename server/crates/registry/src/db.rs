@@ -64,6 +64,9 @@ pub struct Invite {
 #[derive(Debug, Clone)]
 pub struct Membership {
     pub server_url: String,
+    /// The server's own name, as the device last saw it. Display only - it is
+    /// whatever that box called itself, not a claim the registry vouches for.
+    pub name: String,
     pub role: String,
     pub state: String,
     pub since: i64,
@@ -94,7 +97,20 @@ impl Db {
                     conn.execute(&format!("ALTER TABLE stats ADD COLUMN {decl}"), [])?;
                 }
             }
-        }        Ok(Self { conn: Mutex::new(conn) })
+        }
+        // Same retrofit for memberships: `name` arrived with cloud-saved
+        // server lists, and every registry predating that has rows without it.
+        {
+            let have: Vec<String> = conn
+                .prepare("SELECT name FROM pragma_table_info('memberships')")?
+                .query_map([], |r| r.get(0))?
+                .filter_map(Result::ok)
+                .collect();
+            if !have.iter().any(|c| c == "name") {
+                conn.execute("ALTER TABLE memberships ADD COLUMN name TEXT NOT NULL DEFAULT ''", [])?;
+            }
+        }
+        Ok(Self { conn: Mutex::new(conn) })
     }
 
     /// The registry's own signing secret, persisted so tokens survive a restart.
@@ -441,17 +457,52 @@ impl Db {
         );
     }
 
+    /// Record that this account can reach a server, from the device's own
+    /// report rather than from an invite.
+    ///
+    /// Servers someone OWNS never pass through invite redemption, so without
+    /// this their own hub is the one server the registry never knew about -
+    /// exactly the one a new device most needs handed back. A name that
+    /// arrives empty leaves whatever was already stored alone.
+    pub fn record_membership(&self, account_id: i64, server_url: &str, name: &str, role: &str, now: i64) {
+        let c = self.conn.lock().unwrap();
+        let _ = c.execute(
+            "INSERT INTO memberships (account_id, server_url, role, state, since, name)
+             VALUES (?1, ?2, ?3, 'active', ?4, ?5)
+             ON CONFLICT(account_id, server_url) DO UPDATE SET
+               role = excluded.role,
+               state = 'active',
+               name = CASE WHEN excluded.name = '' THEN memberships.name ELSE excluded.name END",
+            (account_id, server_url, role, now, name),
+        );
+    }
+
+    /// Forget a server for this account - the device's "stop syncing this one".
+    pub fn forget_membership(&self, account_id: i64, server_url: &str) {
+        let c = self.conn.lock().unwrap();
+        let _ = c.execute(
+            "DELETE FROM memberships WHERE account_id = ?1 AND server_url = ?2",
+            (account_id, server_url),
+        );
+    }
+
     /// The servers an account belongs to (active or pending).
     pub fn memberships_of(&self, id: i64) -> Vec<Membership> {
         let c = self.conn.lock().unwrap();
         let mut stmt = match c.prepare(
-            "SELECT server_url, role, state, since FROM memberships WHERE account_id = ?1 ORDER BY since",
+            "SELECT server_url, role, state, since, name FROM memberships WHERE account_id = ?1 ORDER BY since",
         ) {
             Ok(s) => s,
             Err(_) => return Vec::new(),
         };
         let rows = stmt.query_map([id], |r| {
-            Ok(Membership { server_url: r.get(0)?, role: r.get(1)?, state: r.get(2)?, since: r.get(3)? })
+            Ok(Membership {
+                server_url: r.get(0)?,
+                role: r.get(1)?,
+                state: r.get(2)?,
+                since: r.get(3)?,
+                name: r.get(4)?,
+            })
         });
         rows.map(|it| it.filter_map(Result::ok).collect()).unwrap_or_default()
     }

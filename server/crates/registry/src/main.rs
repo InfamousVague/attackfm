@@ -719,9 +719,64 @@ async fn memberships(State(state): State<Arc<AppState>>, headers: HeaderMap) -> 
         .db
         .memberships_of(who.sub)
         .iter()
-        .map(|m| json!({ "serverUrl": m.server_url, "role": m.role, "state": m.state, "since": m.since }))
+        .map(|m| {
+            json!({
+                "serverUrl": m.server_url,
+                "serverName": m.name,
+                "role": m.role,
+                "state": m.state,
+                "since": m.since,
+            })
+        })
         .collect();
     Ok(Json(json!({ "memberships": list })))
+}
+
+#[derive(Deserialize)]
+struct MembershipBody {
+    #[serde(rename = "serverUrl")]
+    server_url: String,
+    #[serde(default, rename = "serverName")]
+    server_name: String,
+    #[serde(default)]
+    role: String,
+    /// Set to stop syncing this server rather than to record it.
+    #[serde(default)]
+    forget: bool,
+}
+
+/// `POST /v1/memberships` - a device reporting where it got in.
+///
+/// The list this builds is deliberately ADDRESSES, not credentials. A device
+/// that signs into a server keeps its own tokens; what travels to the account
+/// is only "this account can reach that box", which is enough for the next
+/// device to re-prove membership through `/api/registry/enter` and mint tokens
+/// of its own. Storing the tokens instead would make this one row a master key
+/// to every music server the account touches, and a registry breach would hand
+/// over all of them at once.
+///
+/// Self-asserted, and that is the honest reading of it: anyone can claim to
+/// reach any address. It costs nothing, because the claim buys no access - the
+/// server itself still decides whether this identity may enter.
+async fn set_membership(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<MembershipBody>,
+) -> ApiResult {
+    let who = caller(&state, &headers)?;
+    let url = body.server_url.trim().trim_end_matches('/');
+    if url.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "a server address is required".into()));
+    }
+    if body.forget {
+        state.db.forget_membership(who.sub, url);
+        return Ok(Json(json!({ "ok": true, "forgotten": true })));
+    }
+    let role = if body.role.trim().is_empty() { "member" } else { body.role.trim() };
+    state
+        .db
+        .record_membership(who.sub, url, body.server_name.trim(), role, now_secs());
+    Ok(Json(json!({ "ok": true })))
 }
 
 fn db_err(_: rusqlite::Error) -> ApiError {
@@ -778,7 +833,7 @@ async fn main() {
         .route("/v1/invites/{code}/redeem", post(redeem_invite))
         // The shareable face of an invite: what a tapped link lands on.
         .route("/i/{code}", get(invite_landing))
-        .route("/v1/memberships", get(memberships))
+        .route("/v1/memberships", get(memberships).post(set_membership))
         .layer(cors)
         .with_state(state);
 
