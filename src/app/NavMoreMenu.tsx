@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChartNoAxesColumn, Download, EllipsisVertical, Settings, Sparkles } from '@glacier/icons';
+import { ChartNoAxesColumn, Download, EllipsisVertical, Flame, Settings, Sparkles } from '@glacier/icons';
 import { useHasDownloadQueue, usePluginPages } from '../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
 import { useServerSession } from './serverSession.tsx';
@@ -43,7 +43,7 @@ export function NavMoreMenu({
 
   // The ⋮ lights when what is on screen lives in this menu.
   const onMenuDest =
-    pages.some((pg) => pg.key === tab) || tab === 'stats' || tab === 'ai' || tab === 'downloads';
+    pages.some((pg) => pg.key === tab) || tab === 'stats' || tab === 'ai' || tab === 'date' || tab === 'downloads';
 
   const go = (next: string) => {
     setOpen(false);
@@ -73,7 +73,7 @@ export function NavMoreMenu({
         onClick={() => setOpen((v) => !v)}
       >
         <span className="appNavBarTab__icon">
-          <EllipsisVertical size={28} />
+          <EllipsisVertical size={24} />
         </span>
         <span className="appNavBarTab__label">More</span>
       </button>
@@ -109,6 +109,21 @@ export function NavMoreMenu({
         ))}
 
         {pages.length > 0 && <span className="appNavBarPlugins__divider" aria-hidden />}
+
+        {/* Meet the music the DJ fetched: snippet playing, swipe to keep or
+            pass. Session-gated pages handle their own signed-out face. */}
+        <button
+          type="button"
+          role="menuitem"
+          className="appNavBarPlugins__item"
+          data-active={tab === 'date' || undefined}
+          onClick={() => go('date')}
+        >
+          <span className="appNavBarPlugins__itemIcon" aria-hidden>
+            <Flame size={18} />
+          </span>
+          <span className="appNavBarPlugins__itemLabel">Date</span>
+        </button>
 
         {/* The owner's window on the machine that runs their server. Hidden
             outright from everyone else - a guest has no business reading what
