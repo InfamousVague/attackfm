@@ -214,6 +214,31 @@ mod key_tests {
     }
 }
 
+/// The library's own most-represented artists, as harvest seeds.
+///
+/// The fallback for a listener with no recent plays: whoever you have the most
+/// OF is the best available guess at who you like, and it needs no history at
+/// all. Shaped like `top_artists` (name, count, most first) so the caller
+/// cannot tell which source it got.
+fn library_seed_artists(state: &Arc<AppState>, limit: i64) -> Vec<(String, i64)> {
+    let mut counts: std::collections::HashMap<String, (String, i64)> =
+        std::collections::HashMap::new();
+    for (artist, _title) in state.db.owned_names() {
+        let name = artist.trim();
+        if name.is_empty() {
+            continue;
+        }
+        let entry = counts
+            .entry(name.to_ascii_lowercase())
+            .or_insert_with(|| (name.to_string(), 0));
+        entry.1 += 1;
+    }
+    let mut out: Vec<(String, i64)> = counts.into_values().collect();
+    out.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    out.truncate(limit.max(0) as usize);
+    out
+}
+
 /// The whole library as comparison keys - what a candidate is tested against.
 fn owned_keys(state: &Arc<AppState>) -> HashSet<String> {
     state
@@ -274,9 +299,17 @@ pub async fn harvest(state: &Arc<AppState>, user: i64) {
     }
 
     let since = now_ms() - 30 * 24 * 60 * 60 * 1000;
-    let seeds = state.db.top_artists(user, since, SEED_ARTISTS);
+    let mut seeds = state.db.top_artists(user, since, SEED_ARTISTS);
     if seeds.is_empty() {
-        return;
+        // No recent plays - but a library IS a statement of taste, and the most
+        // common artists in it are the honest stand-in for a heavy rotation
+        // nobody has built yet. Without this a full library with a quiet month
+        // harvested nothing at all, so Discover stayed empty for exactly the
+        // listener who had the most to go on.
+        seeds = library_seed_artists(state, SEED_ARTISTS);
+        if seeds.is_empty() {
+            return;
+        }
     }
     let owned = owned_keys(state);
     let c = client(15);
@@ -723,6 +756,14 @@ pub async fn feed(
     Ok(Json(json!({
         "items": items,
         "progress": { "pool": pool, "listened": listened },
+        // What the page needs to ask for listening honestly: how many distinct
+        // songs this listener has played in the window, and how many the taste
+        // model actually waits for. Both come from the gate itself, so the copy
+        // ("2 of 4 songs") can never drift from the rule it describes.
+        "taste": {
+            "heard": crate::curator::taste_heard(&state, caller.id),
+            "needed": crate::curator::TASTE_MIN_TRACKS,
+        },
     })))
 }
 
