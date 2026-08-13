@@ -3754,6 +3754,21 @@ img.artPop:not([data-loading]) {
    here (still clamped to the window) so the curve and bands are not pinched. */
 .eqPopoverPanel {
   max-inline-size: min(30rem, calc(100vw - 2rem));
+  /* And a height, which is what was missing. The kit's preset row wraps, so a
+     rack with a decent number of presets grew taller than the screen - and a
+     panel that overflows the viewport cannot be scrolled from the inside, so
+     the drag that went looking for the rest of it landed on the PAGE, which
+     the popover correctly read as a press outside itself and closed on. That
+     is why scrolling the presets shut the equalizer.
+     Capped and scrolled internally, the gesture stays in the panel. */
+  max-block-size: min(70dvh, 34rem);
+  overflow-y: auto;
+  /* A flick that reaches the end stays here rather than chaining to the page
+     underneath and dismissing on the way. */
+  overscroll-behavior: contain;
+  /* Say plainly that a vertical drag on this panel is a scroll, so the touch
+     is never claimed by anything else mid-gesture. */
+  touch-action: pan-y;
 }
 
 /* The volume popover: one fader and its reading, so the panel is only as wide
@@ -3849,6 +3864,12 @@ img.artPop:not([data-loading]) {
 .morePopoverPanel {
   max-inline-size: min(26rem, calc(100vw - 2rem));
   background: color-mix(in srgb, var(--glacier-bg) 88%, transparent);
+  /* Same guard as the EQ panel above: anything that can outgrow the screen has
+     to be scrollable from the inside, or reaching for its bottom dismisses it. */
+  max-block-size: min(70dvh, 34rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 
 .morePopover {
