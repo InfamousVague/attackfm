@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChartNoAxesColumn, Download, EllipsisVertical, Flame, Settings, Sparkles } from '@glacier/icons';
+import { ChartNoAxesColumn, Disc3, Download, EllipsisVertical, Flame, Settings, Sparkles } from '@glacier/icons';
 import { useHasDownloadQueue, usePluginPages } from '../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
 import { useServerSession } from './serverSession.tsx';
@@ -43,7 +43,12 @@ export function NavMoreMenu({
 
   // The ⋮ lights when what is on screen lives in this menu.
   const onMenuDest =
-    pages.some((pg) => pg.key === tab) || tab === 'stats' || tab === 'ai' || tab === 'date' || tab === 'downloads';
+    pages.some((pg) => pg.key === tab) ||
+    tab === 'stats' ||
+    tab === 'ai' ||
+    tab === 'dj' ||
+    tab === 'date' ||
+    tab === 'downloads';
 
   const go = (next: string) => {
     setOpen(false);
@@ -123,6 +128,21 @@ export function NavMoreMenu({
             <Flame size={18} />
           </span>
           <span className="appNavBarPlugins__itemLabel">Date</span>
+        </button>
+
+        {/* The DJ, as a conversation - everyone's, not just the owner's: it
+            reads the caller's own taste. */}
+        <button
+          type="button"
+          role="menuitem"
+          className="appNavBarPlugins__item"
+          data-active={tab === 'dj' || undefined}
+          onClick={() => go('dj')}
+        >
+          <span className="appNavBarPlugins__itemIcon" aria-hidden>
+            <Disc3 size={18} />
+          </span>
+          <span className="appNavBarPlugins__itemLabel">DJ</span>
         </button>
 
         {/* The owner's window on the machine that runs their server. Hidden

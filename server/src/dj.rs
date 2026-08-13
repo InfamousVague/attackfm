@@ -37,6 +37,14 @@ fn dj_model() -> String {
     std::env::var("AFM_DJ_MODEL")
         .ok()
         .filter(|s| !s.trim().is_empty())
+        // Then whatever model this box was actually set up with, and only then a
+        // literal. home-install.sh writes AFM_AI_MODEL and never AFM_DJ_MODEL, so
+        // the old default asked for a model nobody had pulled - and because the
+        // feed's `ai` flag is just "AFM_AI_URL is set", that failure was
+        // indistinguishable from having no AI at all.
+        .or_else(|| {
+            std::env::var("AFM_AI_MODEL").ok().filter(|s| !s.trim().is_empty())
+        })
         .unwrap_or_else(|| "qwen2.5:7b".to_string())
 }
 

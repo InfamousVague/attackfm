@@ -10659,10 +10659,14 @@ button.artistAlbum {
 }
 
 .djAvatar {
-  inline-size: 100%;
-  block-size: 100%;
+  /* Square and capped: the kit's gutter is as tall as the run it labels, and an
+     image told to fill it stretches into a smear beside a long message. */
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  aspect-ratio: 1;
   object-fit: cover;
   border-radius: 50%;
+  align-self: flex-start;
 }
 
 /* The DJ's own words, above whatever card the message carries. */

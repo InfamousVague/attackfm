@@ -231,6 +231,12 @@ function PrimaryNav({
       tab !== 'profile' &&
       tab !== 'search' &&
       tab !== 'stats' &&
+      // Built-in pages that own their own route. Without these the deny-list
+      // lights Library while you are standing on the DJ or the AI page - the
+      // trap of listing what is NOT library instead of what is.
+      tab !== 'ai' &&
+      tab !== 'dj' &&
+      tab !== 'date' &&
       !onPluginPage);
 
   const primaryItems = (
