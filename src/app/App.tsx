@@ -47,6 +47,11 @@ import { StatsPage } from './StatsPage.tsx';
 import { ListeningShareBridge } from './listeningShare.tsx';
 import { LibraryView } from './LibraryView.tsx';
 import { SongPage, type SongCollection } from './SongPage.tsx';
+import {
+  PendingPlayProvider,
+  PendingPlayWatcher,
+  isPendingPath,
+} from './pendingPlay.tsx';
 import { useSwipeBack } from './useSwipeBack.ts';
 import { hapticsImpl } from './haptics.ts';
 import { DiscoverPage } from '../plugins/discover/DiscoverPage.tsx';
@@ -704,6 +709,9 @@ export function App() {
   // False until the user picks something themselves: the launch seed loads
   // the deck without dropping the needle.
   const [autoplay, setAutoplay] = useState(false);
+  // The import job the current placeholder waits on while a tapped remote song
+  // downloads (see pendingPlay.tsx). Null when nothing is downloading.
+  const [pendingJobId, setPendingJobId] = useState<string | null>(null);
 
   // Populated by ConnectPlayRouter (which lives inside the Connect provider and
   // so can read the shared session). When another device holds audio, it routes
@@ -720,6 +728,34 @@ export function App() {
     setCurrent((prev) => (prev === track ? { ...track } : track));
     setQueue(context ?? [track]);
   };
+
+  // A song tapped in Discover/Search that this device does not own yet: show it
+  // in Now Playing under a "Downloading" state - the placeholder carries its
+  // art, title and artist - while its import runs, then let the watcher swap in
+  // the real file and start playback. Not routed anywhere; routing happens when
+  // the real track finally plays.
+  const playPending = (placeholder: Track, jobId: string) => {
+    setAutoplay(false);
+    setCurrent(placeholder);
+    setQueue([placeholder]);
+    setPendingJobId(jobId);
+  };
+  const onPendingResolved = (real: Track) => {
+    setPendingJobId(null);
+    // Play it as any pick would (routing to the active device if one holds
+    // audio). If routing sent it elsewhere, playFrom left `current` on the
+    // placeholder, so swap that out here too.
+    playFrom(real, [real]);
+    setCurrent((c) => (c && isPendingPath(c.path) ? real : c));
+  };
+  const onPendingFailed = () => {
+    // The import failed (the watcher toasts): drop the placeholder if it is
+    // still current. Nothing was playing under it, so the strip simply clears.
+    setPendingJobId(null);
+    setCurrent((c) => (c && isPendingPath(c.path) ? null : c));
+  };
+  // The placeholder the watcher matches a finished local import back against.
+  const pendingPlaceholder = current && isPendingPath(current.path) ? current : null;
 
   // Queue editing (see queueControls.tsx). The queue is just `queue` in play
   // order; the current track's spot is found by path, so inserting after it,
@@ -1056,19 +1092,23 @@ export function App() {
                   onSettings={() => setSettingsOpen(true)}
                 />
               )}
-              <AppMain
-                swipeRef={swipeRef}
-                detail={detail}
-                tab={tab}
-                libraryView={libraryView}
-                onPlay={playFrom}
-                onOpenArtist={go}
-                onOpenPlaylist={goPlaylist}
-                onOpenSongs={goSongs}
-                onCloseDetail={closeDetail}
-                onOpenDownloads={() => goTab('downloads')}
-                onOpenStats={() => goTab('stats')}
-              />
+              {/* Provides the arm-and-play verb to Discover/Search so a tapped,
+                  not-yet-owned song opens Now Playing downloading. */}
+              <PendingPlayProvider value={playPending}>
+                <AppMain
+                  swipeRef={swipeRef}
+                  detail={detail}
+                  tab={tab}
+                  libraryView={libraryView}
+                  onPlay={playFrom}
+                  onOpenArtist={go}
+                  onOpenPlaylist={goPlaylist}
+                  onOpenSongs={goSongs}
+                  onCloseDetail={closeDetail}
+                  onOpenDownloads={() => goTab('downloads')}
+                  onOpenStats={() => goTab('stats')}
+                />
+              </PendingPlayProvider>
             </div>
             {/* The phone's primary navigation: a full-width icon bar along the
                 bottom, its items spread edge to edge, icon-only (the tooltip
@@ -1097,6 +1137,16 @@ export function App() {
                 Lives here, inside the Connect provider, because only a child of
                 it can read the shared session. */}
             <ConnectPlayRouter routeRef={connectRouteRef} />
+            {/* Watches the armed import job and, when it lands, swaps the
+                downloading placeholder for the real track and plays it. Headless;
+                sits inside the downloads + library providers. */}
+            <PendingPlayWatcher
+              jobId={pendingJobId}
+              expectTitle={pendingPlaceholder?.title ?? null}
+              expectArtist={pendingPlaceholder?.artist ?? null}
+              onResolved={onPendingResolved}
+              onFailed={onPendingFailed}
+            />
             {/* No song, no strip: the app opens on its library rather than on
                 a transport wired to nothing. The bar arrives with the first
                 thing played and stays for the session - `current` only ever
