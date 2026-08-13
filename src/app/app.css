@@ -1343,9 +1343,12 @@ img {
   display: grid;
   place-items: center;
   /* A circular footprint, empty until selected - so lighting it fills a disc of
-     the accent under the glyph rather than shifting the row when it lights. */
-  inline-size: 2.25rem;
-  block-size: 2.25rem;
+     the accent under the glyph rather than shifting the row when it lights.
+     Sized off the GLYPH (24px) plus its ring of padding, and deliberately not
+     off the label: the names stay at --app-nav-label-size so six of them still
+     fit across a narrow phone however big the icons get. */
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
   border-radius: 999px;
   transition: background-color 0.16s var(--glacier-ease-out, ease), color 0.16s ease;
 }
