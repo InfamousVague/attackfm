@@ -38,7 +38,7 @@ import {
   SkipForward,
   Volume2,
 } from '@glacier/icons';
-import { isIOS } from './platform.ts';
+import { isIOS, isMobile } from './platform.ts';
 import {
   EQ_BANDS_NARROW,
   EQ_PRESETS,
@@ -348,7 +348,12 @@ export function Player({
   // control a phone already has, so the app-side fader would only fight them.
   // Desktop keeps its calibrated fader, restored from the last session.
   const [volume, setVolume] = useState(() => {
-    if (isIOS) return VOLUME_UNITY;
+    // Every phone, not just iOS: the hardware buttons are the volume
+    // control a handset already has, and a second fader in the app only
+    // fights them - two places to be quiet, one of which the user cannot
+    // see while the screen is off. Pinned at unity so the OS mixer is the
+    // only thing between the file and the speaker.
+    if (isMobile) return VOLUME_UNITY;
     // The absent-key check must come before Number(): Number(null) is 0, which
     // would pass the range guard and open every fresh install silent.
     const raw = readDeckPref('volume');
@@ -362,7 +367,7 @@ export function Player({
   useEffect(() => writeDeckPref('shuffle', shuffle ? 'on' : 'off'), [shuffle]);
   useEffect(() => writeDeckPref('repeat', repeat), [repeat]);
   useEffect(() => {
-    if (!isIOS) writeDeckPref('volume', String(Math.round(volume)));
+    if (!isMobile) writeDeckPref('volume', String(Math.round(volume)));
   }, [volume]);
 
   // The strip is built from the music list, so there is nothing settled to show
@@ -3214,107 +3219,24 @@ export function Player({
                   if (open) setMoreView('menu');
                 }}
                 trigger={
-                  <IconButton variant="ghost" size="sm" aria-label="Player options">
-                    <EllipsisVertical size={18} />
+                  /* Where the ⋮ used to be. The strip's one trailing control is
+                      now the thing you actually reach for mid-song on a phone -
+                      where is this playing - rather than a menu of panels. The
+                      equalizer moved to the Now Playing sheet with the other
+                      playback controls; lyrics already open full-screen from
+                      there; and volume belongs to the phone's own buttons (see
+                      the mobile volume note). */
+                  <IconButton variant="ghost" size="sm" aria-label="Playing on">
+                    <MonitorSpeaker size={18} />
                   </IconButton>
                 }
               >
                 <div className="morePopover">
-                  {moreView === 'menu' && (
-                    <div className="moreMenu">
-                      <button
-                        type="button"
-                        className="moreMenuItem"
-                        onClick={() => setMoreView('eq')}
-                      >
-                        <AudioLines size={16} />
-                        Equalizer
-                      </button>
-                      <button
-                        type="button"
-                        className="moreMenuItem"
-                        onClick={() => setMoreView('lyrics')}
-                      >
-                        <Mic size={16} />
-                        Lyrics
-                      </button>
-                      <button
-                        type="button"
-                        className="moreMenuItem"
-                        onClick={() => setMoreView('volume')}
-                      >
-                        <Volume2 size={16} />
-                        Volume
-                      </button>
-                      {/* Leaves the chooser rather than nesting inside it: the
-                          panel wants the whole sheet, and the popover it would
-                          sit in is too slim to search a list of playlists in. */}
-                      {track && (
-                        <button
-                          type="button"
-                          className="moreMenuItem"
-                          onClick={() => {
-                            setMoreOpen(false);
-                            setFiling(track);
-                          }}
-                        >
-                          <ListPlus size={16} />
-                          Add to playlist
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  {moreView !== 'menu' && (
-                    <button
-                      type="button"
-                      className="moreBack"
-                      onClick={() => setMoreView('menu')}
-                    >
-                      <ChevronLeft size={14} />
-                      {moreView === 'eq' ? 'Equalizer' : moreView === 'lyrics' ? 'Lyrics' : 'Volume'}
-                    </button>
-                  )}
-                  {moreView === 'eq' &&
-                    (narrowEq ? (
-                      <AudioEqualizer
-                        size="sm"
-                        bands={EQ_BANDS_NARROW}
-                        presets={EQ_PRESETS_NARROW}
-                        value={narrowEqGains(eqGains)}
-                        onValueChange={(g) => setEqGains(expandNarrowGains(g, eqGains))}
-                        preset={eqPreset}
-                        onPresetChange={(id) => {
-                          setEqPreset(id ?? undefined);
-                          const preset = EQ_PRESETS.find((p) => p.id === id);
-                          if (preset) setEqGains([...preset.gains]);
-                        }}
-                      />
-                    ) : (
-                      <AudioEqualizer
-                        value={eqGains}
-                        onValueChange={setEqGains}
-                        preset={eqPreset}
-                        onPresetChange={setEqPreset}
-                      />
-                    ))}
-                  {moreView === 'lyrics' && (
-                    <div className="lyricsPopover">
-                      <LyricsPanel
-                        key={(track ?? IDLE_TRACK).path}
-                        track={track ?? IDLE_TRACK}
-                        position={position}
-                        onSeek={commitSeek}
-                      />
-                    </div>
-                  )}
-                  {moreView === 'volume' && (
-                    <VolumeRow
-                      value={volume}
-                      muted={muted}
-                      onValueChange={setVolumeState}
-                      onMutedChange={setMutedState}
-                    />
-                  )}
+                  {moreView === 'menu' && <DeviceList />}
+                  {/* The strip's popover is the device list and nothing else
+                      now. Equalizer, lyrics and volume each left for a better
+                      home: the first two to the Now Playing sheet, and volume
+                      to the phone's own buttons. */}
                 </div>
               </Popover>
             </>
@@ -3724,23 +3646,29 @@ export function Player({
                 )}
               </div>
             </Popover>
-            <Popover
-              placement="top"
-              aria-label="Volume"
-              className="morePopoverPanel"
-              trigger={
-                <IconButton variant="ghost" aria-label="Volume">
-                  <Volume2 size={20} />
-                </IconButton>
-              }
-            >
-              <VolumeRow
-                value={volume}
-                muted={muted}
-                onValueChange={setVolumeState}
-                onMutedChange={setMutedState}
-              />
-            </Popover>
+            {/* No fader on a phone: volume is pinned at unity there and the
+                handset's own buttons are the control, so a slider that cannot
+                move would be a lie. Desktop, which has no hardware keys of its
+                own, keeps it. */}
+            {!isMobile && (
+              <Popover
+                placement="top"
+                aria-label="Volume"
+                className="morePopoverPanel"
+                trigger={
+                  <IconButton variant="ghost" aria-label="Volume">
+                    <Volume2 size={20} />
+                  </IconButton>
+                }
+              >
+                <VolumeRow
+                  value={volume}
+                  muted={muted}
+                  onValueChange={setVolumeState}
+                  onMutedChange={setMutedState}
+                />
+              </Popover>
+            )}
           </div>
 
           {/* Lyrics fill the whole sheet rather than a low popover: a header to
