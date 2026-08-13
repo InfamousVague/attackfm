@@ -843,6 +843,40 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+/// Whether a track has been listened to enough to be worth carrying.
+///
+/// "Listened to twice" cannot just mean two rows in `plays`: that table
+/// records a song STARTING, so a track skipped past every time it came up
+/// looks identical to one played through. Where the listen log has an opinion
+/// - a completion or an abandonment - it wins, and a song with nothing but
+/// abandonments is out however often it started. Where it has no opinion
+/// (history older than the log, or a client that never reported), the play
+/// count stands as it always did.
+pub fn hot_enough(r: &HotRow, min_plays: i64) -> bool {
+    if r.completed >= min_plays {
+        return true;
+    }
+    // Judged, and judged against.
+    if r.completed == 0 && r.skipped >= min_plays {
+        return false;
+    }
+    r.plays >= min_plays
+}
+
+/// How much a listener has actually played one track. See `hot_rows`.
+#[derive(Clone, Copy)]
+pub struct HotRow {
+    pub id: i64,
+    /// Times it was started.
+    pub plays: i64,
+    /// Times it was played THROUGH - the number that means "listened to".
+    pub completed: i64,
+    /// Times it was started and abandoned. A song with many of these and no
+    /// completions is being rejected, however often it appears in `plays`.
+    pub skipped: i64,
+    pub last_at: i64,
+}
+
 impl Db {
     pub fn open(path: &Path) -> rusqlite::Result<Self> {
         let conn = Connection::open(path)?;
@@ -1437,7 +1471,60 @@ impl Db {
             .unwrap_or_default()
     }
 
-    pub fn favorites(&self, user_id: i64) -> Vec<i64> {
+/// One track's standing in a listener's history, for deciding what a hot
+    /// server should carry.
+    pub fn hot_rows(&self, user_id: i64, min_plays: i64) -> Vec<HotRow> {
+        let conn = self.lock();
+        let mut rows: std::collections::HashMap<i64, HotRow> = std::collections::HashMap::new();
+
+        // Plays: the coarse count, and what "listened to twice" means plainly.
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT track_id, COUNT(*) n, MAX(played_at) last FROM plays
+              WHERE user_id = ?1 GROUP BY track_id",
+        ) {
+            if let Ok(mapped) = stmt.query_map(params![user_id], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?))
+            }) {
+                for (id, n, last) in mapped.filter_map(Result::ok) {
+                    let e = rows.entry(id).or_insert(HotRow { id, plays: 0, completed: 0, skipped: 0, last_at: 0 });
+                    e.plays = n;
+                    e.last_at = e.last_at.max(last);
+                }
+            }
+        }
+
+        // Completed listens and abandonments, which is the honest half. The
+        // `plays` count above records that a song STARTED; a song started four
+        // times and finished none is one being skipped past, and on a box that
+        // is short of disk that distinction is the whole point.
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT track_id,
+                    SUM(CASE WHEN completed = 1 AND skipped = 0 THEN 1 ELSE 0 END) done,
+                    SUM(CASE WHEN skipped = 1 THEN 1 ELSE 0 END) skip,
+                    MAX(started_at) last
+               FROM listen_events WHERE user_id = ?1 GROUP BY track_id",
+        ) {
+            if let Ok(mapped) = stmt.query_map(params![user_id], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, i64>(3)?,
+                ))
+            }) {
+                for (id, done, skip, last) in mapped.filter_map(Result::ok) {
+                    let e = rows.entry(id).or_insert(HotRow { id, plays: 0, completed: 0, skipped: 0, last_at: 0 });
+                    e.completed = done;
+                    e.skipped = skip;
+                    e.last_at = e.last_at.max(last);
+                }
+            }
+        }
+
+        rows.into_values().filter(|r| hot_enough(r, min_plays)).collect()
+    }
+
+        pub fn favorites(&self, user_id: i64) -> Vec<i64> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
             "SELECT f.track_id FROM favorites f JOIN tracks t ON t.id = f.track_id

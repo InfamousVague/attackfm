@@ -37,6 +37,7 @@ mod dj;
 mod features;
 mod friends;
 mod home;
+mod hot;
 mod imports;
 mod jams;
 mod library_search;
@@ -461,6 +462,9 @@ async fn main() {
         .route("/api/curator/pulls", get(collector::status))
         .route("/api/date/done", post(collector::date_done))
         .route("/api/albums/gaps", get(albums::gaps))
+        // What a hot server should be carrying: the listened-to working set.
+        .route("/api/hot", get(hot::hot))
+        .route("/api/hot/summary", get(hot::summary))
         .route("/api/mirror/start", post(mirror::start))
         .route("/api/mirror/status", get(mirror::status))
         .route("/api/curator/pulls/settings", post(collector::settings))
