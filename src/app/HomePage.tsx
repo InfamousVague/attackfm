@@ -523,31 +523,13 @@ export function HomePage({
       </Shelf>
       )}
 
-      {skelFeed ? (
-        <ShelfSkeleton title="Heavy rotation" kind="track" />
-      ) : (
-      <Shelf title="Heavy rotation" count={heavy.length}>
-        {heavy.map((t) => (
-          <TrackCard key={t.path} track={t} onOpen={() => onPlay(t, heavy)} />
-        ))}
-      </Shelf>
-      )}
-
-      {held ? (
-        <ShelfSkeleton title="New in your library" kind="track" />
-      ) : (
-      <Shelf title="New in your library" count={fresh.length}>
-        {fresh.map((t) => (
-          <TrackCard key={t.path} track={t} onOpen={() => onPlay(t, fresh)} />
-        ))}
-      </Shelf>
-      )}
-
-      <Shelf title="Liked" count={feed ? 0 : favoriteTracks.length}>
-        {favoriteTracks.map((t) => (
-          <TrackCard key={t.path} track={t} onOpen={() => onPlay(t, favoriteTracks)} />
-        ))}
-      </Shelf>
+      {/* Three shelves used to sit here and every one of them was a SECOND
+          copy of something already on this same screen: "Heavy rotation" is the
+          On repeat chip's own list, "New in your library" is the library's
+          "Recently added", and "Liked" is its "Liked songs". Scrolling past the
+          same music three times under three names is most of why the page read
+          as long and confusing - so the duplicates go and the originals, which
+          have real destinations behind them, stay. */}
 
       {/* Embedded in the Library, this stays silent. The empty state speaks for
           a whole page ("nothing here yet, play something"), and folded into a
