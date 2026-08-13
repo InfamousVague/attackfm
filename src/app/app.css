@@ -1392,9 +1392,12 @@ img {
    equal-specificity override loses on order alone. One extra class beats
    whatever the kit's panel rules weigh without reaching for !important. */
 body .appNavMore.appNavMore[class*='_panel_'] {
-  inline-size: max-content;
-  min-inline-size: 0;
-  max-inline-size: 50vw;
+  /* !important, not just doubled specificity: on iOS the kit's coarse-pointer
+     "sheet" default can pin the panel to both edges with a weight the Android-
+     emulated preview never shows, so guarantee the width constraint outright. */
+  inline-size: max-content !important;
+  min-inline-size: 0 !important;
+  max-inline-size: 50vw !important;
   /* The kit's POSITIONER (the fixed wrapper floating-ui moves) stays the
      full-width rail it wants to be; the panel rides its trailing end, which
      is where the ⋮ button lives. Cheaper and safer than fighting the inline
