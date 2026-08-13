@@ -30,6 +30,10 @@ const SPOOL_UP_MS = 420;
  */
 /** Release speed (as a share of playing speed) below which a release is just
  *  a release - the hand was placing the platter, not throwing it. */
+// UNARMED. Nothing sets `freewheel` any more - releasing the platter stops it
+// dead rather than throwing it - so the numbers below and the freewheel branch
+// in the tick are dormant, kept whole so the throw can be handed back with one
+// line if it is ever wanted. See endScratch.
 const FLICK_MIN = 2;
 /** And the most a throw is allowed to carry - past this the art is a smear
  *  and the song a chipmunk chirp; nobody is served. */
@@ -314,29 +318,21 @@ export function SpinningDisc({
 
   /** The pointer's angle around the disc's centre, in degrees. */
   /**
-   * Where the finger is on the platter: the angle it subtends, and how far out
-   * it is as a share of the rim.
+   * Where the finger is on the platter: the angle it subtends from the centre.
    *
-   * The share is the whole point. Turning the disc by the raw subtended angle
-   * pins the touched POINT under the finger, which sounds right and is awful:
-   * the same centimetre of travel sweeps a few degrees at the rim and half a
-   * revolution near the hub, so a thumb resting anywhere but the edge sent the
-   * platter - and the music - flying. Scaling by the radius turns it by the
-   * DISTANCE the finger actually moved instead, which is what a hand expects
-   * from a wheel and what makes fine control possible near the middle.
+   * Scaling this by how far out the touch is - turning by the finger's travel
+   * rather than by the angle - was tried and reverted. It is the tidier physics
+   * and it feels wrong: the platter lags the hand that is holding it, which
+   * reads as the record slipping under your finger rather than as control.
    */
   const pointAt = (
     e: { clientX: number; clientY: number },
-  ): { angle: number; reach: number } | null => {
+  ): { angle: number } | null => {
     const box = faceRef.current?.parentElement?.getBoundingClientRect();
     if (!box) return null;
     const dx = e.clientX - (box.left + box.width / 2);
     const dy = e.clientY - (box.top + box.height / 2);
-    const rim = Math.max(1, Math.min(box.width, box.height) / 2);
-    // Floored so a press at the dead centre still does something rather than
-    // reading as a pivot the disc can be dragged around forever without moving.
-    const reach = Math.max(0.2, Math.min(1, Math.hypot(dx, dy) / rim));
-    return { angle: (Math.atan2(dy, dx) * 180) / Math.PI, reach };
+    return { angle: (Math.atan2(dy, dx) * 180) / Math.PI };
   };
 
   const angleAt = (e: { clientX: number; clientY: number }): number | null =>
@@ -383,10 +379,11 @@ export function SpinningDisc({
     if (swept > 180) swept -= 360;
     if (swept < -180) swept += 360;
     lastTouchAngle.current = a;
-    // How far the finger actually TRAVELLED, in rim-equivalent degrees. At the
-    // edge this is the swept angle unchanged; halfway in it is half of it,
-    // because half the radius is half the arc for the same angle.
-    const delta = swept * at.reach;
+    // The swept angle, unscaled. Turning by anything less slides the platter
+    // out from under the finger holding it, which is the one thing a hand on a
+    // record notices immediately - it was tried, and it reads as slip, not as
+    // control. The point you put your finger on stays there.
+    const delta = swept;
     angle.current = (angle.current + delta) % 360;
     faceRef.current?.style.setProperty('transform', `rotate(${angle.current.toFixed(2)}deg)`);
     // The scrub ratchet: a click every thirty degrees of drag, the way a jog
@@ -430,17 +427,13 @@ export function SpinningDisc({
     // else is the hand putting the platter down. The freewheel keeps the
     // scratch session open and feeds the same onScratch stream the drag did,
     // so to the Player a flick IS a drag - one that happens to be decaying.
-    const fresh = performance.now() - swing.current.at < FLICK_FRESH_MS;
-    const share = swing.current.vel / FULL_DEG_PER_SEC;
-    if (fresh && Math.abs(share) >= FLICK_MIN && kick.current) {
-      velocity.current = Math.max(-FLICK_MAX, Math.min(FLICK_MAX, share));
-      freewheel.current = true;
-      // The throw leaves the hand: heavy for a hard fling, medium for a
-      // gentler one - the release weighs what the wrist put in.
-      fireNativeHaptic(Math.abs(velocity.current) > FLICK_MAX * 0.6 ? 'heavy' : 'medium');
-      kick.current();
-      return;
-    }
+    // Letting go used to THROW it: a release above twice speed kept the platter
+    // running at whatever the wrist last did, up to nine times speed, coasting
+    // down over the next second. That is the "it ramps way too fast" - by then
+    // the disc is not following a finger at all, because the finger has gone.
+    // The platter now stops where the hand left it and the transport takes it
+    // back, so the only thing that ever moves it is the hand. (The freewheel
+    // machinery below is left intact; this is the one line that armed it.)
     sessionOpen.current = false;
     // The hand setting the platter down: the lightest touch there is.
     fireNativeHaptic('light');
