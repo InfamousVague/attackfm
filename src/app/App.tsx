@@ -58,6 +58,7 @@ import {
 } from './pendingPlay.tsx';
 import { useSwipeBack } from './useSwipeBack.ts';
 import { hapticsImpl, installTapHaptics, useHapticsPref } from './haptics.ts';
+import { installOverlayGuard } from './overlayGuard.ts';
 import { DiscoverPage } from '../plugins/discover/DiscoverPage.tsx';
 import { ProfilePage } from './ProfilePage.tsx';
 import { JamProvider } from './jam.tsx';
@@ -729,6 +730,9 @@ export function App() {
     if (!hapticsOn) return;
     return installTapHaptics();
   }, [hapticsOn]);
+  // A dropdown opened inside a popover portals out of it, which the popover
+  // reads as a press outside itself. See overlayGuard.
+  useEffect(() => installOverlayGuard(), []);
   // The track the list handed to the player; null until one is opened.
   const [current, setCurrent] = useState<Track | null>(null);
   // The list that track was opened from, in the order it was showing - what
