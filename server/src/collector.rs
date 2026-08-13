@@ -65,7 +65,19 @@ pub(crate) fn cap_bytes(state: &Arc<AppState>) -> i64 {
 /// one waits for near-certainties. The band keeps even 100% adventure above
 /// the "every term neutral" score of 0.5, so noise is never bought.
 fn threshold(exploration: f64) -> f64 {
-    0.66 - 0.18 * exploration.clamp(0.0, 1.0)
+    0.72 - 0.16 * exploration.clamp(0.0, 1.0)
+}
+
+/// Whether anything about this candidate was actually MEASURED.
+///
+/// A score is three terms, each falling back to a neutral 0.5 when its input is
+/// missing - which means a candidate nobody has measured scores on popularity
+/// alone and can drift over the bar on fame rather than fit. The collector
+/// spends real disk, so it waits until at least one term is real: a tempo taken
+/// off the preview, or a lyric vector read for it. Suggesting such a candidate
+/// is still fine (that costs nothing); BUYING it is not.
+fn measured(d: &DiscoveryRow) -> bool {
+    d.bpm.is_some() || d.lyric_vec.is_some()
 }
 
 /// Starts the collector. Runs until the process ends.
@@ -150,7 +162,7 @@ async fn pull_cycle(state: &Arc<AppState>) {
             .top_discoveries(user, CANDIDATES)
             .into_iter()
             .filter(|d| !pulled.contains(&d.ext_id) && !d.url.trim().is_empty())
-            .find(|d| d.score as f64 >= bar);
+            .find(|d| d.score as f64 >= bar && measured(d));
         let Some(candidate) = pick else { continue };
 
         if buy(state, user, &candidate).await {
