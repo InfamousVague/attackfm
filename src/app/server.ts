@@ -1022,6 +1022,11 @@ export interface Discovery {
 export interface DiscoveryFeed {
   items: Discovery[];
   progress: { pool: number; listened: number };
+  /** How many distinct songs you have played inside the taste window, and how
+   *  many the model waits for before it has an opinion. Straight from the gate
+   *  itself (curator::TASTE_MIN_TRACKS), so the page's ask cannot drift from
+   *  the rule. Absent on servers older than this field. */
+  taste?: { heard: number; needed: number };
 }
 
 /** What the curator found outside your library, best first. */
