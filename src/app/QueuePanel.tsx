@@ -50,7 +50,15 @@ export function QueuePanel({
   const curIdx = current ? queue.findIndex((t) => t.path === current.path) : -1;
   const head = curIdx >= 0 ? queue.slice(0, curIdx + 1) : queue.slice();
   const upcoming = curIdx >= 0 ? queue.slice(curIdx + 1) : [];
-  const rows: QueueRow[] = upcoming.map((t) => ({ id: t.path, track: t }));
+  // Only the near horizon is drawn. "Shuffle all" hands this panel the whole
+  // library, and a list of five thousand rows is not a queue anyone reads - it
+  // is a scroll with no bottom, and it made reordering the next few songs
+  // impossible. The rest is still QUEUED and still plays; it is simply summed
+  // up in a line rather than laid out row by row.
+  const UP_NEXT_SHOWN = 10;
+  const shown = upcoming.slice(0, UP_NEXT_SHOWN);
+  const hiddenCount = upcoming.length - shown.length;
+  const rows: QueueRow[] = shown.map((t) => ({ id: t.path, track: t }));
 
   // The station, when one is on: the queue is where "what's next" is read, so
   // it is where the dial belongs.
@@ -95,8 +103,15 @@ export function QueuePanel({
     return () => ctrl.abort();
   }, [radio?.on, session]);
 
-  const reorder = (next: QueueRow[]) => onQueueChange([...head, ...next.map((r) => r.track)]);
+  // The tail beyond the drawn rows has to be carried through a reorder, or
+  // dragging one of the visible songs would silently discard everything queued
+  // behind them.
+  const reorder = (next: QueueRow[]) =>
+    onQueueChange([...head, ...next.map((r) => r.track), ...upcoming.slice(UP_NEXT_SHOWN)]);
   const remove = (path: string) => onQueueChange(queue.filter((t) => t.path !== path));
+  /** Empty what is still to come. The song playing is not "next", so it keeps
+   *  playing - clearing the queue should never also stop the music. */
+  const clearUpcoming = () => onQueueChange(head);
 
   return (
     <div className="queuePanel" role="dialog" aria-label="Queue">
@@ -216,7 +231,14 @@ export function QueuePanel({
           </div>
         ) : (
         <div className="queueUp">
-          <span className="queueUp__label">Next up</span>
+          <div className="queueUp__head">
+            <span className="queueUp__label">Next up</span>
+            {rows.length > 0 && (
+              <Button variant="ghost" size="sm" onClick={clearUpcoming}>
+                Clear
+              </Button>
+            )}
+          </div>
           {rows.length === 0 ? (
             <Text tone="muted" size="sm" className="queueUp__empty">
               Nothing queued. Add songs from anywhere with “Add to queue,” and
@@ -265,6 +287,13 @@ export function QueuePanel({
                 </TrackMenu>
               )}
             />
+          )}
+          {/* Everything past the drawn rows still plays; it just is not worth
+              five thousand rows to say so. */}
+          {hiddenCount > 0 && (
+            <Text tone="muted" size="sm" className="queueUp__more">
+              and {hiddenCount.toLocaleString()} more
+            </Text>
           )}
         </div>
         )}

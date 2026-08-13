@@ -2075,6 +2075,16 @@ body .appNavMore.appNavMore[class*='_panel_'] {
 }
 
 .queueNow__label,
+/* The heading row: the label, and Clear pushed to the far end where a
+   destructive-ish control belongs - away from the rows it empties. */
+.queueUp__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+  margin-block-end: var(--glacier-space-2);
+}
+
 .queueUp__label {
   display: block;
   font-size: 0.72rem;
@@ -2082,7 +2092,12 @@ body .appNavMore.appNavMore[class*='_panel_'] {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--glacier-text-muted);
-  margin-block-end: var(--glacier-space-2);
+}
+
+/* What is queued past the drawn rows, summed up rather than listed. */
+.queueUp__more {
+  display: block;
+  padding: var(--glacier-space-2) var(--glacier-space-1) 0;
 }
 
 .queueUp__empty {
