@@ -1327,42 +1327,37 @@ img {
   align-items: center;
   justify-content: center;
   gap: 2px;
-  padding: var(--glacier-space-1) var(--glacier-space-2);
+  /* Padding is the SEAT the selected squircle is drawn on, so it is here on the
+     tab rather than on the glyph - the whole item lights, name included. Tight
+     inline so five of these still fit across a narrow phone. */
+  padding: var(--glacier-space-2) var(--glacier-space-1);
   border: none;
+  border-radius: var(--glacier-radius-lg, 0.9rem);
   background: none;
   cursor: pointer;
   color: var(--glacier-text-subtle);
-  transition: color 0.15s ease;
+  transition: background-color 0.16s var(--glacier-ease-out, ease), color 0.15s ease;
 }
 
+/* The selected tab: a squircle behind the whole item - glyph AND name - in a
+   faint wash of the accent, with the contents taking the accent colour. The
+   mark of where you are should enclose the thing that names it; a disc around
+   only the icon left the label sitting outside its own highlight. */
 .appNavBarTab[data-active] {
-  color: var(--glacier-accent-text);
-}
-
-.appNavBarTab__icon {
-  display: grid;
-  place-items: center;
-  /* A circular footprint, empty until selected - so lighting it fills a disc of
-     the accent under the glyph rather than shifting the row when it lights.
-     Sized off the GLYPH (24px) plus its ring of padding, and deliberately not
-     off the label: the names stay at --app-nav-label-size so six of them still
-     fit across a narrow phone however big the icons get. */
-  inline-size: 2.75rem;
-  block-size: 2.75rem;
-  border-radius: 999px;
-  transition: background-color 0.16s var(--glacier-ease-out, ease), color 0.16s ease;
-}
-
-/* The selected tab: the GLYPH carries the colour and the disc barely exists -
-   a faint wash of the same accent, just enough to seat the icon. The reverse
-   (a bright filled disc under a white glyph) put the loudest thing on screen
-   at the bottom of every page and read as a button waiting to be pressed
-   rather than a mark of where you already are. The label keeps its accent
-   tint from the rule above. */
-.appNavBarTab[data-active] .appNavBarTab__icon {
   background: color-mix(in srgb, var(--glacier-accent-solid) 16%, transparent);
   color: var(--glacier-accent-text);
 }
+
+/* Just the glyph now. The highlight moved out to the tab (above), so this no
+   longer carries a disc of its own - it only has to hold the icon at its own
+   size and let the squircle around both do the lighting. */
+.appNavBarTab__icon {
+  display: grid;
+  place-items: center;
+  transition: color 0.16s ease;
+}
+
+
 
 .appNavBarTab__label {
   font-size: var(--app-nav-label-size);
