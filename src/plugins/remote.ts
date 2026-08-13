@@ -32,12 +32,18 @@ const REMOVED_DEFAULTS_KEY = 'attackfm-plugin-sources-removed';
 export const DEFAULT_SOURCES: readonly string[] = ['https://plugins.attack.fm'];
 
 /**
- * Plugins installed for you on first run - so a fresh app comes stocked rather
- * than empty. Fetched from whatever source carries them, and, like a default
- * source, remembered when removed so uninstalling one is not undone on the next
- * launch.
+ * Plugins installed for you on first run. Empty on purpose.
+ *
+ * It shipped an equalizer, which put an unexplained extra destination in front
+ * of everyone who had never asked for one - and a newcomer counting the things
+ * they must understand does not need a graphic EQ to be among them on launch
+ * day. The plugin is a keystroke away in Plugins for anyone who wants it.
+ *
+ * The machinery around this stays: anything listed here is fetched from
+ * whatever source carries it and, like a default source, remembered when
+ * removed so uninstalling is not undone on the next launch.
  */
-export const DEFAULT_PLUGINS: readonly string[] = ['eq-rack'];
+export const DEFAULT_PLUGINS: readonly string[] = [];
 
 /** Default plugins the user has removed, so the auto-install never re-adds them. */
 const REMOVED_DEFAULT_PLUGINS_KEY = 'attackfm-plugins-removed-defaults';
