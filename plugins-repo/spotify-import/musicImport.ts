@@ -51,10 +51,14 @@ export async function serverRequest<T>(
   return (await response.json()) as T;
 }
 
-export async function serverEnqueueImport(session: ServerSession, url: string): Promise<MusicImportJob> {
+export async function serverEnqueueImport(
+  session: ServerSession,
+  url: string,
+  nowPlaying = false,
+): Promise<MusicImportJob> {
   return serverRequest<MusicImportJob>(session, '/api/imports', {
     method: 'POST',
-    body: JSON.stringify({ url }),
+    body: JSON.stringify({ url, nowPlaying }),
   });
 }
 

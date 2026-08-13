@@ -649,7 +649,9 @@ export function SearchPage({
       const viaImporter = acquire.handlersFor(target).some((h) => h.pluginId === IMPORTER_PLUGIN_ID);
       if (viaImporter && downloads) {
         try {
-          const job = await downloads.enqueue(url);
+          // A single tapped track is now-playing (reserved slot); an album is a
+          // background set.
+          const job = await downloads.enqueue(url, kind === 'track');
           // A single tapped track opens Now Playing on it, downloading, and
           // plays when it lands; an album is a set, so it just queues. The
           // placeholder wears the ROW's own art/name, even if the download URL

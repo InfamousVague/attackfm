@@ -88,8 +88,10 @@ export interface DownloadsContextValue {
   active: MusicImportJob[];
   /** Whether the queue is paused (in-flight downloads still finish). */
   paused: boolean;
-  /** Queue a link for download; returns the (new or existing) job. */
-  enqueue: (url: string) => Promise<MusicImportJob>;
+  /** Queue a link for download; returns the (new or existing) job. `nowPlaying`
+   *  marks a single song the listener tapped to play - the server jumps it into
+   *  a reserved download slot ahead of background adds. */
+  enqueue: (url: string, nowPlaying?: boolean) => Promise<MusicImportJob>;
   remove: (id: string) => void;
   retry: (id: string) => void;
   cancel: (id: string) => void;

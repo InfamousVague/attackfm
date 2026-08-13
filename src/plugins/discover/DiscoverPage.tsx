@@ -476,7 +476,7 @@ export function DiscoverPage({ onPlay }: PluginPageProps) {
     const job = downloads.jobs?.find((j) => j.url === d.url) ?? null;
     if (job && job.state !== 'error') return;
     setDiscTapped((prev) => ({ ...prev, [d.id]: 'adding' }));
-    void Promise.resolve(downloads.enqueue(d.url))
+    void Promise.resolve(downloads.enqueue(d.url, true))
       .then((queued) => {
         setDiscTapped((prev) => ({ ...prev, [d.id]: 'added' }));
         playPending?.(

@@ -131,9 +131,9 @@ function ServerDownloads({ children }: { children: ReactNode }) {
       active: ordered.filter((j) => j.state === 'queued' || j.state === 'downloading'),
       // The hub queue has no global pause; it simply runs what it is given.
       paused: false,
-      enqueue: async (url: string) => {
+      enqueue: async (url: string, nowPlaying = false) => {
         if (!session) throw new Error('Not connected to a server.');
-        const job = await serverEnqueueImport(session, url);
+        const job = await serverEnqueueImport(session, url, nowPlaying);
         // Shown at once for feedback, deduped by id so a poll that already
         // raced this job in cannot leave two cards sharing a React key.
         setJobs((prev) => [job, ...prev.filter((j) => j.id !== job.id)]);
