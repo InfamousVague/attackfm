@@ -45,6 +45,8 @@ import { LibrarySyncProvider } from './librarySync.tsx';
 import { SearchPage } from './SearchPage.tsx';
 import { StatsPage } from './StatsPage.tsx';
 import { AiPage } from './AiPage.tsx';
+import { DjPage } from './DjPage.tsx';
+import { DjChatProvider } from './djChat.tsx';
 import { DatePage } from './DatePage.tsx';
 import { ListeningShareBridge } from './listeningShare.tsx';
 import { LibraryView } from './LibraryView.tsx';
@@ -447,6 +449,7 @@ function PlayerHost({
   onQueueChange,
   onOpenArtist,
   autoplay,
+  hidden = false,
 }: {
   current: Track | null;
   queue: Track[];
@@ -455,6 +458,13 @@ function PlayerHost({
   /** The Now Playing sheet's artist line opens the artist page through here. */
   onOpenArtist: (artist: string) => void;
   autoplay: boolean;
+  /** Date mode's floor: the strip hides (and the page below reclaims its
+   *  space) while the deck itself stays mounted - tearing the Player down
+   *  would take the audio graph, the scrub state and the session's seed with
+   *  it, when all Date needs is silence and a clean screen. DatePage pauses
+   *  the audio on entry; this keeps the paused strip from hanging under the
+   *  cards pretending something is playing. */
+  hidden?: boolean;
 }) {
   const connect = useConnect();
   const { tracks } = useLibrary();
@@ -471,7 +481,7 @@ function PlayerHost({
   const shown = current ?? remoteTrack;
   if (!shown) return null;
   return (
-    <div className="appPlayer">
+    <div className="appPlayer" data-hidden={hidden || undefined}>
       {/* The player walks the queue itself; it only reports where it
           landed, and `current` follows. */}
       <Player
@@ -610,6 +620,11 @@ function AppMain({
       ) : tab === 'date' ? (
         // The collector's auditions as introductions: snippet, swipe, verdict.
         <DatePage />
+      ) : tab === 'dj' ? (
+        // The DJ, as a conversation. Not owner-gated: it reads the CALLER's own
+        // taste and the caller's own pulls, so it is correct for everyone on the
+        // hub - unlike the AI page below, which reports on the server itself.
+        <DjPage />
       ) : tab === 'ai' && isOwner ? (
         // What the machine did while you were not looking. Owner-only, and
         // gated here as well as in the menu: a tab restored from a past session
@@ -1123,6 +1138,11 @@ export function App() {
               )}
               {/* Provides the arm-and-play verb to Discover/Search so a tapped,
                   not-yet-owned song opens Now Playing downloading. */}
+              {/* The DJ's transcript lives HERE, above the content area, not in
+                  the page: a page unmounts the moment you navigate, and a
+                  conversation that forgets itself when you go and look at an
+                  artist is not a conversation. */}
+              <DjChatProvider onPlay={playFrom}>
               <PendingPlayProvider value={playPending}>
                 <AppMain
                   swipeRef={swipeRef}
@@ -1138,6 +1158,7 @@ export function App() {
                   onOpenStats={() => goTab('stats')}
                 />
               </PendingPlayProvider>
+              </DjChatProvider>
             </div>
             {/* The phone's primary navigation: a full-width icon bar along the
                 bottom, its items spread edge to edge, icon-only (the tooltip
@@ -1188,6 +1209,7 @@ export function App() {
               onQueueChange={setQueue}
               onOpenArtist={go}
               autoplay={autoplay}
+              hidden={tab === 'date'}
             />
             <IndexingStatus />
             <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />

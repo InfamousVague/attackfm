@@ -10638,3 +10638,195 @@ button.artistAlbum {
 .dateActions__btn--like {
   color: #37d67a;
 }
+
+/* ---- The DJ conversation -------------------------------------------------
+   A chat page whose real content is the CARDS: every answer that names music
+   carries something you can act on. The transcript scrolls, the composer is
+   pinned, and both clear the floating player and nav the way every page does. */
+.djPage {
+  flex: 1;
+  min-block-size: 0;
+  display: flex;
+  flex-direction: column;
+  padding-block-start: var(--glacier-space-3);
+  padding-inline: var(--glacier-space-3);
+  padding-block-end: calc(var(--app-player-height) + var(--app-nav-height, 0px));
+}
+
+.djTranscript {
+  flex: 1;
+  min-block-size: 0;
+}
+
+.djAvatar {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+/* The DJ's own words, above whatever card the message carries. */
+.djSaid {
+  display: block;
+  white-space: pre-wrap;
+}
+
+.djTyping {
+  padding: var(--glacier-space-1) var(--glacier-space-2);
+}
+
+.djComposer {
+  flex: none;
+  margin-block-start: var(--glacier-space-2);
+}
+
+/* A card inside a bubble. It sits on the bubble's own ground rather than
+   painting another plate on top of one - two nested surfaces in a 72%-wide
+   bubble reads as clutter. */
+.djCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  margin-block-start: var(--glacier-space-2);
+  min-inline-size: 0;
+}
+
+.djCard__head {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.djCard__title {
+  font-weight: 650;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.djCard__count {
+  margin-inline-start: auto;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  white-space: nowrap;
+}
+
+.djCard__rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.djCard__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+/* A saved draft keeps its rows but loses its controls: a frozen record of what
+   was written, not a control that would now be lying about what it edits. */
+.djCard--draft[data-saved] {
+  opacity: 0.72;
+}
+
+.djRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  min-inline-size: 0;
+}
+
+.djRow__main {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  flex: 1;
+  min-inline-size: 0;
+  padding: var(--glacier-space-1) 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.djRow__art {
+  inline-size: 2rem;
+  block-size: 2rem;
+  border-radius: var(--glacier-radius-sm, 0.35rem);
+  object-fit: cover;
+  flex: none;
+}
+
+.djRow__art--blank {
+  background: var(--glacier-surface-sunken);
+}
+
+.djRow__text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  line-height: 1.2;
+}
+
+.djRow__title,
+.djRow__artist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.djRow__title {
+  font-size: var(--glacier-font-size-sm);
+}
+
+.djRow__artist {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.djRow__add {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--glacier-text-subtle);
+  cursor: pointer;
+}
+
+/* Steering pills. Tapping one posts it as an ordinary turn, so the transcript
+   reads the same whether it was tapped or typed. */
+.djChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+  margin-block-start: var(--glacier-space-2);
+}
+
+.djChip {
+  padding: var(--glacier-space-1) var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: 999px;
+  background: var(--glacier-surface-raised);
+  color: var(--glacier-text);
+  font: inherit;
+  font-size: var(--glacier-font-size-sm);
+  cursor: pointer;
+}
+
+/* Date mode owns the whole screen: the strip stands down (still mounted - the
+   audio deck must survive the visit) and the page reclaims the band it kept
+   clear. DatePage paused the sound on entry; a paused strip hanging under the
+   cards would just be a rival asking for attention. */
+.appPlayer[data-hidden] {
+  display: none;
+}
+.appWindow:has(.appPlayer[data-hidden]) {
+  --app-player-height: 0rem;
+}
