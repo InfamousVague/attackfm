@@ -14,6 +14,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# Only for statvfs: how much room is left on the volume the offline vault
+# lives on, which is what decides whether Dates may be cached ahead.
+libc = "0.2"
 # protocol-asset is what lets a local file play through `convertFileSrc` on the
 # desktop. Leave it on for every target: the mobile builds simply never call it
 # (their library arrives over HTTP), and the `tauri` CLI rewrites this line from

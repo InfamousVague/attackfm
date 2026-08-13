@@ -72,6 +72,16 @@ export function heldCount(): number {
   return held.size;
 }
 
+/** Room on the volume the vault lives on, and what the vault is using.
+ *  `freeBytes` is null where it cannot be asked (a browser, an odd platform),
+ *  which callers must read as "do not cache ahead" rather than "plenty". */
+export async function offlineSpace(): Promise<{
+  freeBytes: number | null;
+  heldBytes: number;
+} | null> {
+  return call<{ freeBytes: number | null; heldBytes: number }>('offline_space');
+}
+
 /** The local file for a track, or null - the hook `loadAudioUrl` consults. */
 export function heldPath(path: string): string | null {
   return held.get(path) ?? null;

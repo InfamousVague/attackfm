@@ -19,6 +19,7 @@ import {
   trackIdFromPath,
   type CollectorStatus,
 } from './server.ts';
+import { canCacheDates, warmDates } from './dateCache.ts';
 import { loadAudioUrl, type Track } from './tauri.ts';
 import { fireNativeHaptic } from './haptics.ts';
 import { EmptyArt } from './EmptyArt.tsx';
@@ -152,6 +153,10 @@ function CardFace({ track, live = false }: { track: Track; live?: boolean }) {
         // Muted and inline: the sound on this page is the snippet the card
         // plays, and a clip that fought it would be two songs at once.
         <video
+          // A fresh element per clip. Without it React reuses the same <video>
+          // and swaps its src, which WebKit does not reliably restart - the
+          // deck recycles cards, so the same element serves several songs.
+          key={canvas}
           className="dateCard__art dateCard__art--canvas"
           src={canvas}
           poster={art ?? undefined}
@@ -160,6 +165,24 @@ function CardFace({ track, live = false }: { track: Track; live?: boolean }) {
           muted
           playsInline
           disablePictureInPicture
+          // `loop` is advisory, and WebKit drops it - after a media
+          // interruption, on a source it has decided is a stream, or when the
+          // app comes back from the background. When it holds, `ended` never
+          // fires and this costs nothing; when it does not, this is what makes
+          // the clip loop. The card is a few seconds of silent video whose
+          // entire job is to keep moving, so restarting is always right.
+          onEnded={(e) => {
+            const v = e.currentTarget;
+            v.currentTime = 0;
+            void v.play().catch(() => {});
+          }}
+          // Same reasoning for a stop that is not an end: nothing in the app
+          // ever pauses this deliberately, so a pause is the system's doing.
+          onPause={(e) => {
+            const v = e.currentTarget;
+            if (v.ended || !live) return;
+            void v.play().catch(() => {});
+          }}
         />
       ) : art ? (
         <img className="dateCard__art" src={art} alt="" draggable={false} />
@@ -221,6 +244,17 @@ export function DatePage() {
       })
       .sort((a, b) => b.addedAt - a.addedAt);
   }, [forYou, status, isFavorite, gone]);
+
+  // The next stretch of cards, held on the phone. Runs off the deck itself,
+  // so judging a card both drops the one just seen and reaches one further
+  // ahead. Debounced because the deck recomputes on every swipe and a fast
+  // run through ten cards should cost one pass, not ten. See dateCache.ts for
+  // why it only takes spare room and only evicts its own pins.
+  useEffect(() => {
+    if (!canCacheDates() || !session) return;
+    const t = window.setTimeout(() => void warmDates(deck, session), 1500);
+    return () => window.clearTimeout(t);
+  }, [deck, session]);
 
   const current = deck[0] ?? null;
   const upcoming = deck[1] ?? null;
