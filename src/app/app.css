@@ -11474,6 +11474,31 @@ button.artistAlbum {
   flex: 1;
 }
 
+/* The catalogue's own title is the most useful thing in the row - "- Radio
+   Edit", "(12 Mix)" - so it gets two lines before it gives up, rather than
+   wrapping to four and pushing the next candidate off the screen. */
+.wrongSong__meta > :first-child {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* On a phone the row is tight: the choice keeps its full width and the text
+   yields, because a truncated title is recoverable by listening and a
+   half-hidden button is not. */
+@media (max-width: 30rem) {
+  .wrongSong__row {
+    gap: var(--glacier-space-2);
+    padding-inline: var(--glacier-space-1);
+  }
+
+  .wrongSong__play {
+    inline-size: 2rem;
+    block-size: 2rem;
+  }
+}
+
 /* Round, like every other play affordance in the app. */
 .wrongSong__play {
   display: grid;

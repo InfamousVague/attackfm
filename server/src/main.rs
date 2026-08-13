@@ -409,7 +409,7 @@ async fn main() {
         .route("/api/playlists/import", post(tools::import_playlist))
         .route("/api/imports", get(imports::list).post(imports::enqueue))
         // Getting the right recording when the importer fetched the wrong one.
-        .route("/api/refetch/{track_id}", post(refetch::start))
+        .route("/api/refetch/track/{track_id}", post(refetch::start))
         .route(
             "/api/refetch/{id}",
             get(refetch::status).delete(refetch::scrap),
