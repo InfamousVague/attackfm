@@ -301,6 +301,7 @@ export function Player({
   onQueueChange,
   onOpenArtist,
   autoplay = true,
+  allowDock = true,
 }: {
   track: Track | null;
   /** The tracks around the current one, in played order. Empty means no list. */
@@ -313,6 +314,9 @@ export function Player({
   /** Opens an artist's page - the Now Playing sheet's artist line links
    *  through here, closing the sheet as it goes. */
   onOpenArtist?: (artist: string) => void;
+  /** Whether the wide-screen docked sheet may mount. The host turns this off
+   *  while the strip is only mirroring a remote device's playback. */
+  allowDock?: boolean;
   /**
    * Whether a newly handed track starts playing once loaded. Off for the
    * launch seed - the app opens with a song on the deck, not blaring - and
@@ -458,6 +462,12 @@ export function Player({
   // the freed width goes to the transport, which app.css grows to thumb size
   // under the same query.
   const mobileControls = useMediaQuery(MOBILE_PLAYER_QUERY);
+  // A screen wide enough to give Now Playing the right half for keeps -
+  // an unfolded foldable, a tablet. The sheet stops being a destination you
+  // lift and becomes a room that is simply always there; the rest of the app
+  // lives in the left pane (appWindow shrinks by --np-dock-width, app.css).
+  const npWide = useMediaQuery('(min-width: 700px)');
+  const npDocked = mobileControls && npWide && allowDock;
   // The overflow popover opens on a chooser - Equalizer, Lyrics, Volume -
   // and each pick swaps the panel in behind a back row. Controlled, so every
   // open starts back at the chooser rather than wherever the last visit left
@@ -2501,7 +2511,7 @@ export function Player({
   // the strip is small and the big surface earns its keep; the desktop strip
   // stays a strip.
   const openNowPlaying = (event: React.MouseEvent) => {
-    if (!track) return;
+    if (!track || npDocked) return;
     const el = event.target as HTMLElement;
     if (el.closest('button, a, input, [role="slider"], [role="menu"], [role="menuitem"]')) return;
     // The sheet has weight; lifting it should too. (The strip's dead space is
@@ -3368,12 +3378,13 @@ export function Player({
           body so its stacking is the viewport's, not the mini-strip's plate
           (which sits below the nav bar) - otherwise the nav would paint over
           it. It reuses every handler the strip does, so the two never diverge. */}
-      {mobileControls && npOpen && createPortal(
+      {mobileControls && (npOpen || npDocked) && createPortal(
         <div
           className="npScreen"
           role="dialog"
           aria-label="Now playing"
           data-open={npOpen || undefined}
+          data-docked={npDocked || undefined}
           // Capture phase, so ANY touch on the sheet - a control, the art, the
           // veil itself - counts as activity: the dim lifts and its clock
           // restarts. The veil below swallows its own tap so a wake-up touch
