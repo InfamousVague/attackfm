@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.44
+
+- A live test of the new update pipe — if you're reading this on your phone, it worked
+- Nothing else changed; enjoy the fireworks
+
 ## 0.3.43
 
 - Android: the back swipe goes back inside the app — closes the sheet, steps to the last page — instead of quitting; at the very start it just tucks the app away, music still playing
