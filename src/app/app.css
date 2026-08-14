@@ -1547,7 +1547,14 @@ img {
   /* The chin: the band of card below the tabs that drapes over the home
      indicator's strip, so that space carries the nav - contoured to the
      screen's bottom by --app-nav-chin-radius - instead of nothing. */
-  --app-nav-chin: var(--app-safe-bottom);
+  /* A FRACTION of the safe area, not all of it. The full inset is the space
+     iOS reserves so nothing important lands under the home indicator, which is
+     more room than the card needs to sit behind it - drawn in full it made the
+     bar bottom-heavy. Three quarters still carries the card past the indicator
+     while giving that weight back. A multiplier rather than a subtraction so
+     it stays exactly 0 where there is no safe area at all (desktop, and any
+     phone without an indicator), instead of going negative. */
+  --app-nav-chin: calc(var(--app-safe-bottom) * 0.75);
   /* The iPhone's own screen corner. In px, not rem: it is the physical curve of
      the glass and does not move when the interface-size setting does. ~55pt is
      the modern Pro; a few points either way is invisible behind a corner this
