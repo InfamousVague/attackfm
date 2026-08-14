@@ -1,4 +1,4 @@
-import { Label, Switch, Text } from '@glacier/react';
+import { Label, Skeleton, Switch, Text } from '@glacier/react';
 import { Check, Disc3, Music, X } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { useServerSession } from './serverSession.tsx';
@@ -77,6 +77,15 @@ export function CuratorSettings() {
 
   return (
     <div className="prefsBody">
+      {/* The pane is otherwise blank until the status lands, which on a slow
+          hub reads as "there is nothing here" rather than "still asking". */}
+      {!status && (
+        <div className="prefsSection" aria-busy>
+          <Skeleton variant="text" width="9rem" />
+          <Skeleton variant="rect" height="0.5rem" radius="var(--glacier-radius-full)" />
+          <Skeleton variant="text" width="12rem" />
+        </div>
+      )}
       {status && (
         <div className="prefsSection">
           <Label>Collector</Label>
