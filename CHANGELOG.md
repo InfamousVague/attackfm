@@ -7,6 +7,14 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.41
+
+- Light mode looks right everywhere: Now Playing keeps its dark, art-first look while the rest of the app goes light
+- The fade at the top of scrolling lists matches the theme instead of always being black
+- The little loading ring on song add buttons is visible on light now
+- Unfolded: the nav bar's glow no longer cuts off at the edge of the Now Playing card
+- Android: the white strip under the app is gone
+
 ## 0.3.40
 
 - Stream from whichever of your servers answers fastest and has the song

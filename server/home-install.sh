@@ -121,6 +121,41 @@ chmod +x "$BIN_DST"
 xattr -d com.apple.quarantine "$BIN_DST" 2>/dev/null || true
 say "binary -> $BIN_DST"
 
+# --- publish the frontend to this hub's devices ----------------------------
+# The hub serves whatever sits in <data>/appbundle to every signed-in phone
+# (server/src/appbundle.rs) - how a TypeScript change reaches a device with
+# no cable and no store. In repo mode the frontend source is right here, so
+# the same `git pull` that updated the server publishes the app too. VERSION
+# is removed first and written back last, alone: while it is absent the hub
+# publishes nothing, so no phone can ever see a half-copied bundle.
+if [ -f "$HERE/Cargo.toml" ] && [ -f "$HERE/../package.json" ]; then
+  if command -v npm >/dev/null 2>&1; then
+    bold "Publishing the app to this hub's devices"
+    REPO="$(cd "$HERE/.." && pwd)"
+    ( cd "$REPO"
+      [ -d node_modules ] || npm ci --no-audit --no-fund
+      npm run build
+    )
+    if [ -f "$REPO/dist/assets/app.js" ] && [ -f "$REPO/dist/assets/app.css" ]; then
+      APPV="$(node -p "require('$REPO/package.json').version")"
+      NATIVE="$(sed -n 's/.*NATIVE_GENERATION: u32 = \([0-9]*\).*/\1/p' "$REPO/src-tauri/src/bundle.rs" | head -1)"
+      BUNDLE_DIR="$DATA_DIR/appbundle"
+      mkdir -p "$BUNDLE_DIR"
+      rm -f "$BUNDLE_DIR/VERSION"
+      cp "$REPO/dist/assets/app.js" "$REPO/dist/assets/app.css" "$BUNDLE_DIR/"
+      awk -v v="$APPV" 'index($0, "## " v) == 1 {on=1; next} /^## / {on=0} on && NF {print}' \
+        "$REPO/CHANGELOG.md" > "$BUNDLE_DIR/NOTES" 2>/dev/null || true
+      printf '%s' "${NATIVE:-1}" > "$BUNDLE_DIR/NATIVE"
+      printf '%s' "$APPV" > "$BUNDLE_DIR/VERSION"
+      say "published $APPV -> $BUNDLE_DIR (phones offer it on their next launch)"
+    else
+      say "frontend build made no dist/assets - the hub keeps publishing what it had"
+    fi
+  else
+    say "npm is missing, so only the server updated. Install node to publish the app OTA from here."
+  fi
+fi
+
 # --- launchd agent ---------------------------------------------------------
 # KeepAlive restarts it if it crashes; RunAtLoad starts it at login. A
 # LaunchAgent (not daemon) because the music drive mounts at login and the
