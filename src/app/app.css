@@ -84,6 +84,19 @@ html {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
+  /* Android's WebView paints its own highlight rectangle over anything
+     tapped - the blue flash around play/pause. The app draws its own pressed
+     states; the OS one is noise on top of them. Inherited, so the root is the
+     one place to say it. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* A tap can leave real :focus behind it, and some webviews draw that as an
+   outline box on the button just pressed. Keyboard focus keeps its ring -
+   :focus-visible still matches - but focus a finger left behind shows
+   nothing. */
+:focus:not(:focus-visible) {
+  outline: none;
 }
 
 /* Typing and editing need selection, and on a phone the paste callout lives on
