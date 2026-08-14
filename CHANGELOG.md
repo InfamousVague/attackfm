@@ -7,7 +7,7 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
-## 0.3.41
+## 0.3.42
 
 - Liked, All songs and On repeat: the header scrolls away into a small sticky bar with the title, Play and Shuffle
 - Fixed: the update banner no longer squeezes the app into a sliver when it appears
