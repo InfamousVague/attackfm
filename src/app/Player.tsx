@@ -63,6 +63,7 @@ import { useServerSession } from './serverSession.tsx';
 import { onCarPlayRemote, pushCarPlayNowPlaying, setIdleTimerDisabled } from './carplay.ts';
 import { useJamOptional } from './jam.tsx';
 import { QueuePanel } from './QueuePanel.tsx';
+import { useSystemBack } from './systemBack.ts';
 import {
   bindMediaSessionHandlers,
   updateMediaSessionMetadata,
@@ -493,6 +494,12 @@ export function Player({
   // The queue, opened over the same sheet the same way: what plays next, and
   // draggable into any order.
   const [npQueue, setNpQueue] = useState(false);
+  // A system back swipe (Android) peels these in the order they opened: the
+  // queue or lyrics panel first, then the sheet itself, before the gesture is
+  // allowed anywhere near the page history underneath.
+  useSystemBack(npQueue, () => setNpQueue(false));
+  useSystemBack(npLyrics, () => setNpLyrics(false));
+  useSystemBack(npOpen, () => setNpOpen(false));
   // The Spotify move: while this sheet is up and the music is going, the phone
   // must not lock - but a screen at full brightness all song long is rude, so
   // after a quiet half-minute the sheet pulls a near-black veil over itself.
