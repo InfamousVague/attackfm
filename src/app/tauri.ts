@@ -435,8 +435,22 @@ export async function loadAudioUrl(path: string): Promise<string | null> {
   const local = offlineResolver?.(path) ?? null;
   if (local && isTauri()) {
     try {
-      const { convertFileSrc } = await import('@tauri-apps/api/core');
-      return convertFileSrc(local);
+      // Android's WebView plays media OUTSIDE the intercepted asset protocol:
+      // an <audio> pointed at http://asset.localhost/... fires loadstart and
+      // then hangs forever, while fetch() of the same URL answers 200 - the
+      // media stack simply never consults the interceptor. So on Android the
+      // held file is pulled through the fetch path that does work and played
+      // as a blob URL, which the renderer serves itself. iOS's WKWebView
+      // routes media through the protocol handler and keeps the direct URL,
+      // range requests and all.
+      if (/Android/i.test(navigator.userAgent)) {
+        const blob = await androidVaultUrl(local);
+        if (blob) return blob;
+        // A vault file that will not read falls through to the stream.
+      } else {
+        const { convertFileSrc } = await import('@tauri-apps/api/core');
+        return convertFileSrc(local);
+      }
     } catch {
       // Fall through to the network rather than failing the load.
     }
@@ -453,6 +467,32 @@ export async function loadAudioUrl(path: string): Promise<string | null> {
   try {
     const { convertFileSrc } = await import('@tauri-apps/api/core');
     return convertFileSrc(path);
+  } catch {
+    return null;
+  }
+}
+
+/** Vault path -> object URL, so replaying a held song does not re-read the
+ *  whole file. Two entries: the playing song and the next one - a FLAC is
+ *  tens of megabytes and blobs live until revoked. */
+const vaultBlobCache = new Map<string, string>();
+
+async function androidVaultUrl(local: string): Promise<string | null> {
+  const cached = vaultBlobCache.get(local);
+  if (cached) return cached;
+  try {
+    const { convertFileSrc } = await import('@tauri-apps/api/core');
+    const res = await fetch(convertFileSrc(local), { cache: 'no-store' });
+    if (!res.ok) return null;
+    const url = URL.createObjectURL(await res.blob());
+    while (vaultBlobCache.size >= 2) {
+      const oldest = vaultBlobCache.entries().next().value;
+      if (!oldest) break;
+      URL.revokeObjectURL(oldest[1]);
+      vaultBlobCache.delete(oldest[0]);
+    }
+    vaultBlobCache.set(local, url);
+    return url;
   } catch {
     return null;
   }
