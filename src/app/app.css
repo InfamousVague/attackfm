@@ -12235,3 +12235,24 @@ button.artistAlbum {
     var(--glacier-surface-sunken) 100%
   );
 }
+
+/* The cache limit: a detented rail and the number it means. */
+.cacheLimit {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+.cacheLimit > :first-child {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.cacheLimit__value {
+  flex: none;
+  min-inline-size: 3.5rem;
+  text-align: end;
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}

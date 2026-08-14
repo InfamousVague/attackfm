@@ -1,4 +1,4 @@
-import { Button, IconButton, Label, Select, Text } from '@glacier/react';
+import { Button, IconButton, Label, Slider, Text } from '@glacier/react';
 import { Trash2 } from '@glacier/icons';
 import { useCallback, useEffect, useState } from 'react';
 import { useServerSession } from './serverSession.tsx';
@@ -186,17 +186,39 @@ function AutoCacheSection() {
         the room.
       </Text>
 
-      <Select
-        aria-label="How much space the cache may use"
-        fullWidth
-        value={String(limit)}
-        options={LIMIT_CHOICES.map((b) => ({ value: String(b), label: gbLabel(b) }))}
-        onValueChange={(v) => {
-          const next = Number(v);
-          setCacheLimitBytes(next);
-          setLimit(next);
-        }}
-      />
+      {/* The slider runs over the curated stops, not raw gigabytes: a linear
+          0-100 rail would cram the sizes people actually pick - 2 to 15 GB -
+          into its first sixth, and the thumb would be all cliff. One detent
+          per stop instead, each with its own haptic tick, Off at the left
+          edge where a phone's brightness slider taught everyone zero lives. */}
+      <div className="cacheLimit">
+        <Slider
+          aria-label="How much space the cache may use"
+          min={0}
+          max={LIMIT_CHOICES.length - 1}
+          step={1}
+          hapticStep={100 / (LIMIT_CHOICES.length - 1)}
+          value={(() => {
+            const i = LIMIT_CHOICES.indexOf(limit);
+            if (i !== -1) return i;
+            // A stored value between stops (possible only if set outside this
+            // UI) snaps DISPLAY to the nearest stop; the true limit stands
+            // until the thumb actually moves.
+            let best = 0;
+            for (let k = 1; k < LIMIT_CHOICES.length; k += 1) {
+              if (Math.abs((LIMIT_CHOICES[k] ?? 0) - limit) < Math.abs((LIMIT_CHOICES[best] ?? 0) - limit)) best = k;
+            }
+            return best;
+          })()}
+          onValueChange={(i) => {
+            const next = LIMIT_CHOICES[Math.max(0, Math.min(LIMIT_CHOICES.length - 1, Math.round(i)))];
+            if (next === undefined || next === limit) return;
+            setCacheLimitBytes(next);
+            setLimit(next);
+          }}
+        />
+        <span className="cacheLimit__value">{gbLabel(limit)}</span>
+      </div>
 
       {limit > 0 && (
         <div className="cacheMeter">
