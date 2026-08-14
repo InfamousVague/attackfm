@@ -12364,7 +12364,7 @@ body:has(.npScreen[data-docked]) .appWindow {
  */
 .updateBanner {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: var(--glacier-space-2);
   margin: var(--glacier-space-2) var(--glacier-space-4) 0;
   padding: var(--glacier-space-2) var(--glacier-space-3);
@@ -12425,4 +12425,58 @@ body:has(.npScreen[data-docked]) .appWindow {
 .updateBanner__close:hover {
   background: var(--glacier-hover);
   color: var(--glacier-text);
+}
+
+/* The banner's first line: everything that was there before the notes were
+   added, now its own row inside the column. */
+.updateBanner__row {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  inline-size: 100%;
+}
+
+/* The post-restart variant is a report, not an offer - no accent border
+   shouting for an action that has already happened. */
+.updateBanner--done {
+  background: var(--glacier-surface-raised);
+  border-color: var(--glacier-border-subtle);
+}
+
+.updateBanner__more {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+  font-weight: 650;
+  padding: var(--glacier-space-1);
+}
+
+.updateBanner__chev {
+  transition: transform var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.updateBanner__chev.is-open {
+  transform: rotate(180deg);
+}
+
+/* What changed, as the list it is. Not a paragraph: these are separate facts
+   and read faster stacked. */
+.updateNotes {
+  margin: 0;
+  padding-inline-start: var(--glacier-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.updateNotes li::marker {
+  color: var(--glacier-accent-text);
 }
