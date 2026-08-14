@@ -1594,6 +1594,20 @@ img {
   --app-nav-label-size: 0.625rem;
 }
 
+/* Android's screen corners are not ours to contour to - the webview sits
+   inside the system's own insets, and the concentric sweep tuned to an
+   iPhone's glass reads as extra rounding. The chin keeps its height (the
+   gesture bar still wants covering); only the corners come back to the same
+   radius the card's top wears. */
+html[data-platform='android'] .appWindow {
+  --app-nav-chin-radius: var(--glacier-radius-2xl, 1.75rem);
+  /* And no safe-area chin at all: Android's webview already sits above the
+     system's gesture strip, so the drape an iPhone needs would just be dead
+     card. The bottom keeps exactly the top's breathing room instead - the
+     tab row floats centred in an even frame. */
+  --app-nav-chin: var(--app-nav-pad-top);
+}
+
 .appWindow:has(.appNavBar) {
   /* The nav's footprint, measured from the very bottom: the brand button's
      overhang above the card, the tab band, and the chin that carries the card

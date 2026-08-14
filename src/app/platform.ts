@@ -48,6 +48,9 @@ export const isMobile = (() => {
 
 export const isIOS = /iPhone|iPod|iPad/i.test(userAgent()) || (isMobile && /Macintosh/i.test(userAgent()));
 
+/** True on Android, in the app or the browser. */
+export const isAndroid = /Android/i.test(userAgent());
+
 /**
  * True only for a real desktop window: something with a frame to decorate and
  * a title bar worth drawing. This is what the window chrome should key on.
