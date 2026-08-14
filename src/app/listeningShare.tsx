@@ -5,19 +5,23 @@ import { announce } from './registry.ts';
 import { fetchStatsSummary } from './stats.ts';
 
 /**
- * Sharing your listening with friends - the OPT-IN half of the friends
- * leaderboard.
+ * Sharing your listening with friends - the weekly glance behind the friends
+ * page.
  *
- * Nothing leaves the house by default. With the switch on, this device
- * announces a small weekly glance to the registry - minutes this week, top
- * artist, streak - beside the library numbers it already announces. Turning
- * the switch off does not need an un-share round trip: the announcements just
+ * ON by default, and only for people who have never said otherwise: an
+ * explicit `off` is honoured forever, so nobody who once turned this off is
+ * quietly turned back on by a later release. Without a default the friends
+ * page is a grid of empty cards - the numbers are what make it about music
+ * rather than a contact list - and a friend is someone you already accepted.
+ *
+ * Turning the switch off needs no un-share round trip: the announcements just
  * stop, the registry's copy goes stale, and friends stop seeing it within the
  * week. Silence IS the revocation.
  *
- * The glance is deliberately tiny. No track list, no history, no timestamps -
- * three numbers and a name, the same altitude as the "796 songs" the registry
- * has always shown friends.
+ * The glance is deliberately tiny, and that is what makes the default
+ * defensible. No track list, no history, no timestamps - three numbers and a
+ * name, the same altitude as the "796 songs" the registry has always shown
+ * friends, and visible only to accounts you have accepted.
  */
 
 const SHARE_KEY = 'attackfm-share-listening';
@@ -28,9 +32,11 @@ const listeners = new Set<() => void>();
 
 export function sharingEnabled(): boolean {
   try {
-    return localStorage.getItem(SHARE_KEY) === 'on';
+    // Only an explicit refusal turns it off. Anything else - never asked, or
+    // a value from some older build - reads as on.
+    return localStorage.getItem(SHARE_KEY) !== 'off';
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -51,7 +57,9 @@ export function useSharing(): boolean {
       return () => listeners.delete(cb);
     },
     sharingEnabled,
-    () => false,
+    // The server-render fallback matches the default, or the switch would
+    // flash off on first paint for everyone who never touched it.
+    () => true,
   );
 }
 
