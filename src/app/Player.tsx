@@ -3383,6 +3383,12 @@ export function Player({
           className="npScreen"
           role="dialog"
           aria-label="Now playing"
+          // Always the dark palette, whatever the app wears: this surface lives
+          // over album art and its own backdrop, where light-theme ink is
+          // unreadable and the lyric layers (white + screen-blend) vanish.
+          // The token layer scopes [data-theme] on any element, so one
+          // attribute re-themes the whole subtree.
+          data-theme="dark"
           data-open={npOpen || undefined}
           data-docked={npDocked || undefined}
           // Capture phase, so ANY touch on the sheet - a control, the art, the
