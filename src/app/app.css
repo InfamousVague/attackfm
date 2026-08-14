@@ -1276,7 +1276,8 @@ img {
   z-index: 4;
   /* Border-box, so the tabs centre in the island band and the chin is padding
      below them rather than height stolen from them. */
-  block-size: calc(var(--app-nav-island-height) + var(--app-nav-chin));
+  block-size: calc(var(--app-nav-island-height) + var(--app-nav-chin) + var(--app-nav-pad-top));
+  padding-block-start: var(--app-nav-pad-top);
   padding-block-end: var(--app-nav-chin);
   /* An even row. It was a three-cell grid with a fixed middle, which existed
      only to land the raised brand disc dead-centre; with the library an
@@ -1536,6 +1537,13 @@ img {
      padding, over an inset-inline of 0), so the two plates line up down both
      sides instead of stepping in and out. */
   --app-nav-inset: var(--glacier-space-2);
+  /* Breathing room above the tab row. The tabs are centred in the island band,
+     which already leaves a few pixels over them - this is the REST of the way
+     to the same gap the card keeps at its sides, so the selected squircle sits
+     in an even frame instead of riding the top edge. Added to the card's height
+     as well as its padding, so the tabs keep their size rather than being
+     squeezed by it. */
+  --app-nav-pad-top: var(--glacier-space-2);
   /* The chin: the band of card below the tabs that drapes over the home
      indicator's strip, so that space carries the nav - contoured to the
      screen's bottom by --app-nav-chin-radius - instead of nothing. */
@@ -1573,7 +1581,7 @@ img {
      this, so nothing tucks under the card or the raised button. */
   --app-nav-height: calc(
     var(--app-nav-overhang) + var(--app-nav-island-height) + var(--app-nav-chin) +
-      var(--app-nav-inset)
+      var(--app-nav-inset) + var(--app-nav-pad-top)
   );
 }
 
@@ -11594,35 +11602,7 @@ button.artistAlbum {
 
 /* --- Profile: about you, with a door to the people ----------------------- */
 
-.profileWeek__row {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--glacier-space-3);
-  margin-block-end: var(--glacier-space-2);
-}
 
-.profileStat {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: var(--glacier-space-3);
-  border-radius: var(--glacier-radius-lg);
-  background: var(--glacier-surface-raised);
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
-  min-inline-size: 0;
-}
-
-.profileStat__value {
-  font-size: var(--glacier-font-size-xl);
-  font-weight: 700;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-}
-
-.profileStat__label {
-  font-size: var(--glacier-font-size-xs);
-  color: var(--glacier-text-muted);
-}
 
 /* The row that says "there is something through here". */
 .profileDoor {
@@ -11718,4 +11698,243 @@ button.artistAlbum {
   color: var(--glacier-accent-text);
   cursor: pointer;
   text-decoration: underline;
+}
+
+/* --- Profile figures ----------------------------------------------------- */
+/*
+ * One hue does one job: magnitude. Every fill below is the app's own accent at
+ * varying strength, so there is no categorical palette to confuse and the
+ * whole set re-themes with the app. Labels wear ink tokens, never the mark's
+ * colour.
+ */
+
+.profileWeek__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+}
+
+.profileWeek__sub {
+  margin: var(--glacier-space-3) 0 var(--glacier-space-2);
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 650;
+  color: var(--glacier-text-muted);
+}
+
+.habitBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem var(--glacier-space-2);
+  border-radius: var(--glacier-radius-full);
+  background: color-mix(in oklab, var(--glacier-accent-solid) 18%, transparent);
+  color: var(--glacier-accent-text);
+  font-size: var(--glacier-font-size-xs);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.habitBadge__icon {
+  display: inline-flex;
+}
+
+/* The numbers people quote at each other. */
+.statTiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--glacier-space-2);
+}
+
+.statTile {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  min-inline-size: 0;
+}
+
+.statTile__icon {
+  display: inline-flex;
+  color: var(--glacier-accent-text);
+  margin-block-end: 2px;
+}
+
+.statTile__value {
+  font-size: var(--glacier-font-size-lg);
+  font-weight: 700;
+  line-height: 1.1;
+  /* Proportional figures: nothing here aligns in a column, and tabular digits
+     make a standalone value read gappy. */
+}
+
+.statTile__label {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+/* --- the radar ----------------------------------------------------------- */
+
+.radarFig {
+  margin: 0;
+}
+
+.radar {
+  inline-size: 100%;
+  block-size: auto;
+  max-inline-size: 20rem;
+  display: block;
+  margin-inline: auto;
+  overflow: visible;
+}
+
+/* Hairline, solid, one shade off the surface. Never dashed. */
+.radar__ring,
+.radar__spoke {
+  fill: none;
+  stroke: var(--glacier-border-subtle);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.radar__ring {
+  stroke: var(--glacier-border-subtle);
+}
+
+.radar__area {
+  fill: color-mix(in oklab, var(--glacier-accent-solid) 26%, transparent);
+  stroke: none;
+}
+
+.radar__edge {
+  fill: none;
+  stroke: var(--glacier-accent-solid);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* 8px markers, ringed in the surface so an overlap still reads as two. */
+.radar__node {
+  fill: var(--glacier-accent-solid);
+  stroke: var(--glacier-surface);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.radar__label {
+  fill: var(--glacier-text-muted);
+  font-size: 6.5px;
+  font-weight: 600;
+}
+
+.radarKey {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 2px var(--glacier-space-4);
+  margin: var(--glacier-space-2) 0 0;
+}
+
+.radarKey__row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+  font-size: var(--glacier-font-size-xs);
+}
+
+.radarKey__label {
+  color: var(--glacier-text);
+  font-weight: 600;
+}
+
+.radarKey__detail {
+  color: var(--glacier-text-muted);
+  text-align: end;
+}
+
+/* --- the day ------------------------------------------------------------- */
+
+.dayFig {
+  margin: 0;
+}
+
+.dayStrip {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  /* A 2px surface gap between fills rather than borders around them. */
+  gap: 2px;
+  block-size: 2.25rem;
+}
+
+.dayStrip__cell {
+  display: block;
+  border-radius: 3px;
+  background: var(--glacier-accent-solid);
+  min-inline-size: 0;
+}
+
+.dayStrip__cell[data-peak] {
+  outline: 2px solid var(--glacier-accent-text);
+  outline-offset: 1px;
+}
+
+.dayAxis {
+  position: relative;
+  display: block;
+  block-size: 1rem;
+  margin: 4px 0 0;
+}
+
+.dayAxis__tick {
+  position: absolute;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- ranked bars --------------------------------------------------------- */
+
+.genreBars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.genreBar {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr auto;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.genreBar__name {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.genreBar__track {
+  block-size: 8px;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface-sunken);
+  overflow: hidden;
+}
+
+/* Rounded data-end, anchored to the baseline. */
+.genreBar__fill {
+  display: block;
+  block-size: 100%;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-solid);
+}
+
+.genreBar__value {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  font-variant-numeric: tabular-nums;
 }
