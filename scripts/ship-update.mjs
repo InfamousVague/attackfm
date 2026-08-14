@@ -77,8 +77,14 @@ const notes = notesFor(version);
 step(`Shipping ${version} (native generation ${native})`);
 if (notes) {
   for (const line of notes.split('\n')) console.log(`    ${line}`);
+} else if (process.argv.includes('--no-notes')) {
+  console.log('    \x1b[33mshipping with no notes (--no-notes)\x1b[0m');
 } else {
-  console.log(`    \x1b[33mno CHANGELOG.md section for ${version} — it will arrive with no notes\x1b[0m`);
+  die(
+    `no \x1b[1m## ${version}\x1b[0m section in CHANGELOG.md.\n` +
+    `    Add one, or pass --no-notes to ship without a changelog.\n` +
+    `    (A silent update is nearly always a mistake - 0.3.42 went out that way.)`,
+  );
 }
 if (DRY) { ok('dry run — nothing built, nothing published'); process.exit(0); }
 
@@ -102,17 +108,38 @@ const e = env();
 const host = e.AFM_DEPLOY_HOST, user = e.AFM_DEPLOY_USER;
 if (!host || !user) die('AFM_DEPLOY_HOST / AFM_DEPLOY_USER missing from .env');
 const remote = '/opt/attackfm/data/appbundle';
-const ssh = (cmd) =>
+const sshRaw = (cmd, opts = {}) =>
   spawnSync('sshpass', ['-e', 'ssh', '-o', 'StrictHostKeyChecking=no', `${user}@${host}`, cmd],
-    { stdio: 'inherit', env: { ...process.env, SSHPASS: e.AFM_DEPLOY_PASS } });
+    { stdio: 'inherit', env: { ...process.env, SSHPASS: e.AFM_DEPLOY_PASS }, ...opts });
+
+/**
+ * A remote step that must succeed.
+ *
+ * The box rate-limits ssh under a burst, so a lone failure is usually
+ * transient - but it is never something to shrug at, because a half-applied
+ * publish is exactly the state VERSION-last was designed to avoid. Retries a
+ * few times, then stops the run.
+ */
+const ssh = (cmd) => {
+  for (let i = 0; i < 4; i += 1) {
+    if (sshRaw(cmd).status === 0) return;
+    if (i < 3) console.log(`    \x1b[33mretrying (${i + 1}/3)…\x1b[0m`);
+  }
+  die(`remote command failed after 4 attempts: ${cmd}`);
+};
 
 step('Uploading');
 ssh(`mkdir -p ${remote}`);
-const rs2 = spawnSync('sshpass',
-  ['-e', 'rsync', '-az', '-e', 'ssh -o StrictHostKeyChecking=no',
-   ...files.map((f) => f.path), `${user}@${host}:${remote}/`],
-  { stdio: 'inherit', env: { ...process.env, SSHPASS: e.AFM_DEPLOY_PASS } });
-if (rs2.status !== 0) die('upload failed');
+let uploaded = false;
+for (let i = 0; i < 4 && !uploaded; i += 1) {
+  const rs2 = spawnSync('sshpass',
+    ['-e', 'rsync', '-az', '-e', 'ssh -o StrictHostKeyChecking=no',
+     ...files.map((f) => f.path), `${user}@${host}:${remote}/`],
+    { stdio: 'inherit', env: { ...process.env, SSHPASS: e.AFM_DEPLOY_PASS } });
+  uploaded = rs2.status === 0;
+  if (!uploaded && i < 3) console.log(`    \x1b[33mretrying upload (${i + 1}/3)…\x1b[0m`);
+}
+if (!uploaded) die('upload failed after 4 attempts');
 
 step('Publishing');
 // VERSION is written LAST and alone: until it lands the server reports that it
@@ -137,4 +164,16 @@ if (!same) {
   die(`checksums differ — the hub does NOT have what was built.\n    local:  ${localSums.join(' ')}\n    remote: ${remoteSums.join(' ')}`);
 }
 
-ok(`published ${version} — devices will offer it within six hours, or on their next launch`);
+const state = spawnSync('sshpass',
+  ['-e', 'ssh', '-o', 'StrictHostKeyChecking=no', `${user}@${host}`,
+   `cat ${remote}/VERSION; echo; wc -l < ${remote}/NOTES`],
+  { encoding: 'utf8', env: { ...process.env, SSHPASS: e.AFM_DEPLOY_PASS } });
+const [publishedVersion, noteLines] = String(state.stdout).trim().split('\n');
+if (publishedVersion !== version) {
+  die(`the hub publishes ${publishedVersion || '(nothing)'}, not ${version}`);
+}
+if (notes && Number(noteLines) === 0) {
+  die('the notes did not land — the hub would offer this update with no changelog');
+}
+
+ok(`published ${version} — ${notes ? `${notes.split('\n').length} changelog lines, ` : ''}devices will offer it within six hours, or on their next launch`);
