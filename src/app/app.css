@@ -1226,6 +1226,17 @@ img {
   position: absolute;
   inset-inline: 0;
   inset-block-end: 0;
+}
+
+/* With the player docked the app window ends early, but the frost band is
+   part of the SCREEN's floor, not the pane's: it reaches on under the
+   floating card to the true right edge, so the blur dissolves behind the
+   card instead of cutting off at the seam. */
+body:has(.npScreen[data-docked]) .appNavScrim {
+  inset-inline: 0 calc(-1 * var(--np-dock-width));
+}
+
+.appNavScrim {
   /* The band reaches over whatever chrome is down there. With no song it is
      the nav's own footprint; when the player arrives it grows by the strip's
      height, so the frost rises with the bar and the content between the two
@@ -1319,7 +1330,7 @@ img {
 }
 
 [data-swipe-committed] {
-  box-shadow: -18px 0 42px rgb(0 0 0 / 0.45);
+  box-shadow: var(--glacier-shadow-lg, -18px 0 42px rgb(0 0 0 / 0.45));
 }
 
 .appNavBar .appNavBarTab {
@@ -1743,12 +1754,62 @@ html[data-platform='android'] .appWindow {
 /* ── Full-screen Now Playing ────────────────────────────────────────────────
    The mini-strip blown up: cover, title, scrubber, transport, fader. Fixed to
    the viewport, above everything, sliding up from the bottom. */
+/* The sheet is forced dark via data-theme on its own root. The token layer's
+   dark block flips the COLOR RAMPS on any [data-theme='dark'] element - but
+   the semantic aliases (--glacier-text, --glacier-bg, the borders, the status
+   families) are declared only on :root, so their light values arrive here
+   already computed. Re-declaring the ramp-referencing aliases inside the
+   scope makes them resolve against the ramps the kit just flipped. Literal
+   aliases (the contrasts, surfaces, glass) are declared by the kit's own dark
+   block and are deliberately NOT repeated here - this rule's higher
+   specificity would otherwise shadow them with light values. */
+.npScreen[data-theme='dark'] {
+  --glacier-bg: var(--glacier-gray-1);
+  --glacier-hover: var(--glacier-gray-3);
+  --glacier-active: var(--glacier-gray-4);
+  --glacier-selection: var(--glacier-accent-5);
+  --glacier-border-subtle: var(--glacier-gray-4);
+  --glacier-border: var(--glacier-gray-6);
+  --glacier-border-strong: var(--glacier-gray-8);
+  --glacier-text: var(--glacier-gray-12);
+  --glacier-text-muted: var(--glacier-gray-11);
+  --glacier-text-subtle: var(--glacier-gray-9);
+  --glacier-text-disabled: var(--glacier-gray-8);
+  --glacier-accent-solid-hover: var(--glacier-accent-10);
+  --glacier-accent-soft: var(--glacier-accent-3);
+  --glacier-accent-soft-hover: var(--glacier-accent-4);
+  --glacier-accent-border: var(--glacier-accent-7);
+  --glacier-accent-text: var(--glacier-accent-11);
+  --glacier-focus-ring: var(--glacier-accent-8);
+  --glacier-danger-solid: var(--glacier-red-9);
+  --glacier-danger-soft: var(--glacier-red-3);
+  --glacier-danger-border: var(--glacier-red-7);
+  --glacier-danger-text: var(--glacier-red-11);
+  --glacier-success-solid: var(--glacier-green-9);
+  --glacier-success-soft: var(--glacier-green-3);
+  --glacier-success-border: var(--glacier-green-7);
+  --glacier-success-text: var(--glacier-green-11);
+  --glacier-warning-solid: var(--glacier-amber-9);
+  --glacier-warning-soft: var(--glacier-amber-3);
+  --glacier-warning-border: var(--glacier-amber-7);
+  --glacier-warning-text: var(--glacier-amber-11);
+  --glacier-info-solid: var(--glacier-blue-9);
+  --glacier-info-soft: var(--glacier-blue-3);
+  --glacier-info-border: var(--glacier-blue-7);
+  --glacier-info-text: var(--glacier-blue-11);
+}
+
 .npScreen {
   position: fixed;
   inset: 0;
   z-index: 50;
   display: flex;
   flex-direction: column;
+  /* The sheet is forced dark (data-theme on its root); the tokens re-scope
+     automatically but INHERITED ink does not - without this line the text
+     color arrives already computed from the light page outside. Naming the
+     token here makes it re-resolve inside the dark scope. */
+  color: var(--glacier-text);
   /* Portalled to the body, so the app's --app-safe-* vars are out of scope
      here - the notch/home-indicator insets come straight from env(). An
      undefined var in this shorthand would drop the whole thing (that is how
@@ -4616,8 +4677,11 @@ body [class*='_panel_']:has(> .dlPanel) {
 .artistAlbumSpin {
   inline-size: 0.75rem;
   block-size: 0.75rem;
-  border: 2px solid rgb(255 255 255 / 0.35);
-  border-top-color: #fff;
+  /* The ring wears the ink of whatever it sits on: white inside the accent
+     badge, theme ink on the bare song-row button - a literal white here was
+     invisible on light. */
+  border: 2px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-top-color: currentColor;
   border-radius: var(--glacier-radius-full);
   animation: artistAlbumSpin 0.7s linear infinite;
 }
@@ -8402,10 +8466,12 @@ body [class*='_panel_']:has(> .dlPanel) {
   z-index: 5;
   pointer-events: none;
   opacity: 0;
+  /* The page's own background, not black: on light themes a black smudge
+     over white content read as dirt. color-mix keeps the alpha ramp. */
   background: linear-gradient(
     to bottom,
-    rgb(0 0 0 / 0.92),
-    rgb(0 0 0 / 0.5) 45%,
+    color-mix(in srgb, var(--glacier-bg) 92%, transparent),
+    color-mix(in srgb, var(--glacier-bg) 50%, transparent) 45%,
     transparent
   );
 }
