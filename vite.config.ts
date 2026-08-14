@@ -7,6 +7,21 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   base: './',
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      output: {
+        // STABLE names, not hashed ones. A downloaded bundle has to be
+        // loadable by a filename the boot loader knows before it has seen the
+        // bundle, and cache-busting is pointless here anyway: the embedded
+        // copy ships inside the binary, and a downloaded one lives in its own
+        // version directory. See src-tauri/src/bundle.rs.
+        entryFileNames: 'assets/app.js',
+        chunkFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: (info) =>
+          info.name && info.name.endsWith('.css') ? 'assets/app.css' : 'assets/[name]-[hash][extname]',
+      },
+    },
+  },
   server: {
     // The launcher may assign a port (a second session's preview); 5240 is
     // the standing default the Tauri shell and docs expect.
