@@ -52,7 +52,7 @@ pub async fn manifest(
             continue;
         }
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-        if name == "VERSION" || name == "NATIVE" {
+        if name == "VERSION" || name == "NATIVE" || name == "NOTES" {
             continue;
         }
         let Ok(bytes) = std::fs::read(&path) else { continue };
@@ -72,7 +72,16 @@ pub async fn manifest(
         .and_then(|s| s.trim().parse().ok())
         .unwrap_or(1);
 
-    Ok(Json(json!({ "version": version, "native": native, "files": files })))
+    // What changed, if the publisher wrote any. Absent is fine: an update
+    // with no story still installs, it just arrives quietly.
+    let notes = std::fs::read_to_string(base.join("NOTES")).unwrap_or_default();
+
+    Ok(Json(json!({
+        "version": version,
+        "native": native,
+        "files": files,
+        "notes": notes,
+    })))
 }
 
 /// `GET /api/app/bundle/{name}` - one file from the published bundle.

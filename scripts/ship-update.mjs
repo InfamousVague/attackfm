@@ -44,11 +44,42 @@ if (!KEEP) {
   version = bits.join('.');
 }
 
+/**
+ * The changelog section for a version, from CHANGELOG.md.
+ *
+ * Read from the repo rather than typed at the prompt so the notes that reach a
+ * phone are the ones committed alongside the code they describe - a changelog
+ * written at deploy time is a changelog nobody reviews.
+ */
+function notesFor(v) {
+  let md;
+  try {
+    md = readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8');
+  } catch {
+    return '';
+  }
+  const lines = md.split('\n');
+  const start = lines.findIndex((l) => l.trim().replace(/^#+\s*/, '').startsWith(v));
+  if (start < 0) return '';
+  const out = [];
+  for (const line of lines.slice(start + 1)) {
+    if (/^#{1,3}\s/.test(line)) break;
+    if (line.trim()) out.push(line.trim());
+  }
+  return out.join('\n');
+}
+
 const rs = readFileSync(join(ROOT, 'src-tauri/src/bundle.rs'), 'utf8');
 const native = Number(rs.match(/NATIVE_GENERATION:\s*u32\s*=\s*(\d+)/)?.[1]);
 if (!Number.isFinite(native)) die('could not read NATIVE_GENERATION from bundle.rs');
 
+const notes = notesFor(version);
 step(`Shipping ${version} (native generation ${native})`);
+if (notes) {
+  for (const line of notes.split('\n')) console.log(`    ${line}`);
+} else {
+  console.log(`    \x1b[33mno CHANGELOG.md section for ${version} — it will arrive with no notes\x1b[0m`);
+}
 if (DRY) { ok('dry run — nothing built, nothing published'); process.exit(0); }
 
 if (!KEEP) {
@@ -87,6 +118,11 @@ step('Publishing');
 // VERSION is written LAST and alone: until it lands the server reports that it
 // publishes nothing, so no device can ever see a manifest for a half-uploaded
 // bundle. This ordering is the entire atomicity guarantee.
+// NOTES before VERSION, for the same reason the files go first: nothing is
+// published until VERSION lands, so notes can never describe a bundle a
+// device cannot yet see.
+const notesB64 = Buffer.from(notes, 'utf8').toString('base64');
+ssh(`printf '%s' '${notesB64}' | base64 -d > ${remote}/NOTES`);
 ssh(`printf '%s' '${native}' > ${remote}/NATIVE && printf '%s' '${version}' > ${remote}/VERSION`);
 
 step('Verifying the hub serves what we just built');
