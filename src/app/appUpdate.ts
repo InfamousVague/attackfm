@@ -101,9 +101,25 @@ export function reportBootOk(): void {
   void call('bundle_boot_ok');
 }
 
+/** The version baked into this build, injected by Vite. */
+declare const __AFM_VERSION__: string;
+
 /** The version actually running, or null on the embedded bundle. */
 export function runningBundle(): string | null {
   return window.__afmBundleVersion ?? null;
+}
+
+/**
+ * What is on screen right now, downloaded or embedded.
+ *
+ * The embedded fallback is what stops a fresh install from treating the hub's
+ * published bundle as news about itself: with no downloaded bundle there is no
+ * `active` version to compare against, so without this every new device would
+ * immediately download the bytes it already has and announce an update to the
+ * version it is running.
+ */
+export function currentVersion(): string {
+  return runningBundle() ?? __AFM_VERSION__;
 }
 
 export async function revertToEmbedded(): Promise<BundleState | null> {
@@ -142,6 +158,7 @@ export async function checkForBundle(session: ServerSession): Promise<string | n
 
   if (!manifest?.version || !Array.isArray(manifest.files)) return null;
   // Already running it, already staged, or already known bad here.
+  if (manifest.version === currentVersion()) return null;
   if (manifest.version === state.active) return null;
   if (state.quarantined.includes(manifest.version)) return null;
   // The guard that keeps a new bundle off an old binary. The native side

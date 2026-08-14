@@ -47,6 +47,7 @@ import { StatsPage } from './StatsPage.tsx';
 import { AiPage } from './AiPage.tsx';
 import { ServersPage } from './ServersPage.tsx';
 import { FriendsPage } from './FriendsPage.tsx';
+import { UpdateBanner } from './UpdateBanner.tsx';
 import { DjPage } from './DjPage.tsx';
 import { DjChatProvider } from './djChat.tsx';
 import { DatePage } from './DatePage.tsx';
@@ -1175,6 +1176,10 @@ export function App() {
                   artist is not a conversation. */}
               <DjChatProvider onPlay={playFrom}>
               <PendingPlayProvider value={playPending}>
+                {/* Sits above the content rather than inside a page: an update
+                    is news about the whole app, and a page that unmounts on
+                    navigation would take the notice with it. */}
+                <UpdateBanner />
                 <AppMain
                   swipeRef={swipeRef}
                   detail={detail}
