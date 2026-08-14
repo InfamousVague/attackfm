@@ -2761,14 +2761,21 @@ img.artPop:not([data-loading]) {
 /* Horizontal shelves were very hard to swipe sideways: the ScrollArea's
    viewport ran with touch-action:auto, so inside a vertically-scrolling page
    WebKit handed almost every gesture to the page and the shelf barely moved.
-   Locking the viewport to horizontal panning makes a sideways drag on a shelf
-   scroll the shelf; overscroll-behavior keeps a fling to itself so it never
-   nudges the page or triggers the OS back-swipe. The page still scrolls
-   vertically from the titles, the gaps between shelves, and the tiles up top -
-   none of which this touches. */
+   Naming the axes fixes that - but it has to name BOTH.
+
+   This was `pan-x` alone, which reads as "only horizontal panning happens
+   here", and that is exactly how it behaves: a vertical drag that STARTS on a
+   shelf is not passed up to the page, it is discarded. Since a shelf is as
+   wide as the screen and several deep on Discover, most of the page was a
+   dead zone where scrolling down did nothing - the thumb just had to miss the
+   artwork. Listing both axes still gives WebKit the explicit declaration that
+   made sideways drags work, while letting it lock to whichever direction the
+   gesture actually went. overscroll-behavior stays inline-only so a sideways
+   fling never nudges the page or triggers the OS back-swipe, and a vertical
+   fling still chains to the page the way it should. */
 .homeShelfScroll [data-scrollbar-appearance] {
-  touch-action: pan-x;
-  overscroll-behavior-x: contain;
+  touch-action: pan-x pan-y;
+  overscroll-behavior-inline: contain;
 }
 
 .homeShelfRow {
@@ -10878,9 +10885,34 @@ button.artistAlbum {
 }
 
 /* The Canvas clip, where a song has one: same box as the cover it replaces, so
-   the card does not resize when the clip arrives a beat after the art. */
+   the card does not resize when the clip arrives a beat after the art.
+
+   pointer-events off, for two reasons that end in the same place: the card
+   above it owns every gesture (swipes must never be eaten by the video), and
+   WebKit only surfaces its tap-summoned media UI on a video that can be
+   tapped. A video no press can reach draws no controls. */
 .dateCard__art--canvas {
   object-fit: cover;
+  pointer-events: none;
+}
+
+/* WebKit's own overlay - the centred play glyph and scrubber it paints on a
+   paused video, most visibly when Low Power Mode refuses autoplay. These are
+   shadow-DOM pseudo-elements, so this is the one place they can be reached.
+   Hidden on the Now Playing canvas too: with the overlay gone, a clip that
+   cannot start is simply a still cover, which is the correct face for it. */
+.dateCard__art--canvas::-webkit-media-controls,
+.dateCard__art--canvas::-webkit-media-controls-panel,
+.dateCard__art--canvas::-webkit-media-controls-container,
+.dateCard__art--canvas::-webkit-media-controls-overlay-play-button,
+.dateCard__art--canvas::-webkit-media-controls-start-playback-button,
+.npScreen__canvas::-webkit-media-controls,
+.npScreen__canvas::-webkit-media-controls-panel,
+.npScreen__canvas::-webkit-media-controls-container,
+.npScreen__canvas::-webkit-media-controls-overlay-play-button,
+.npScreen__canvas::-webkit-media-controls-start-playback-button {
+  display: none !important;
+  -webkit-appearance: none;
 }
 
 /* The song's name across the top of the card.
