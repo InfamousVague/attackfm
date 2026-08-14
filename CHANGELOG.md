@@ -9,6 +9,8 @@ they are read on a phone, in a strip, one thumb away from a song.
 
 ## 0.3.41
 
+- Liked, All songs and On repeat: the header scrolls away into a small sticky bar with the title, Play and Shuffle
+- Fixed: the update banner no longer squeezes the app into a sliver when it appears
 - Light mode looks right everywhere: Now Playing keeps its dark, art-first look while the rest of the app goes light
 - The fade at the top of scrolling lists matches the theme instead of always being black
 - The little loading ring on song add buttons is visible on light now
