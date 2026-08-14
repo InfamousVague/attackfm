@@ -12010,3 +12010,189 @@ button.artistAlbum {
   color: var(--glacier-accent-text);
   flex: none;
 }
+
+/* --- the storage breakdown ------------------------------------------------ */
+
+.storageBreak__totals {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.storageBreak__big {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.storageBreak__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-3);
+}
+
+.storageBreak__key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.storageBreak__key::before {
+  content: '';
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-border);
+}
+
+.storageBreak__key[data-tone='accent']::before {
+  background: var(--glacier-accent-solid);
+}
+
+.storageBreak__key[data-tone='success']::before {
+  background: var(--glacier-success-solid);
+}
+
+.storageBreak__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.storageBreak__row {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  min-inline-size: 0;
+}
+
+.storageBreak__art {
+  inline-size: 2rem;
+  block-size: 2rem;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: var(--glacier-radius-sm);
+  overflow: hidden;
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text-muted);
+}
+
+.storageBreak__art[data-circle] {
+  border-radius: var(--glacier-radius-full);
+}
+
+.storageBreak__art img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.storageBreak__body {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.storageBreak__name,
+.storageBreak__sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.storageBreak__name {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 550;
+}
+
+.storageBreak__sub {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.storageBreak__rail {
+  block-size: 0.25rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface-sunken);
+  overflow: hidden;
+}
+
+.storageBreak__fill {
+  display: block;
+  block-size: 100%;
+  min-inline-size: 2px;
+  background: var(--glacier-accent-solid);
+  border-radius: inherit;
+}
+
+.storageBreak__meta {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.storageBreak__remove {
+  background: none;
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-full);
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+  padding: 2px var(--glacier-space-2);
+  cursor: pointer;
+}
+
+.storageBreak__remove:hover {
+  color: var(--glacier-danger-text, var(--glacier-text));
+  border-color: var(--glacier-danger-solid, var(--glacier-border));
+}
+
+/* A figure waiting on its data: the chrome is real, the data is absent. It
+   dims rather than shimmers - six static rings turned into motion would be
+   noise, and the point is "not yet", not "look here". */
+.radar--pending .radar__ring,
+.radar--pending .radar__spoke {
+  opacity: 0.55;
+}
+
+.radar--pending .radar__label {
+  opacity: 0.5;
+}
+
+.dayStrip--pending .dayStrip__cell {
+  opacity: 0.1;
+  animation: dayStripPulse 1.6s ease-in-out infinite;
+}
+
+/* Starts and ends at the resting opacity, never at 0: a preview pane that
+   freezes animations must leave the strip visible, not blank. */
+@keyframes dayStripPulse {
+  0%, 100% { opacity: 0.1; }
+  50% { opacity: 0.22; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dayStrip--pending .dayStrip__cell {
+    animation: none;
+  }
+}
+
+/* A friend card holding a seat: the real card's box, without a face in it. */
+.friendCard--pending {
+  gap: var(--glacier-space-2);
+  min-block-size: 9.5rem;
+  justify-content: center;
+}

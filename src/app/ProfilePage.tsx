@@ -1,5 +1,5 @@
-import { Button, IconButton, Modal, Input, Spinner, Text } from '@glacier/react';
-import { ChevronRight, Copy, Link2, LogOut, Plus, Radio, Server, UsersRound, X } from '@glacier/icons';
+import { Button, IconButton, Input, Text } from '@glacier/react';
+import { ChevronRight, Copy, LogOut, Radio, UsersRound } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { nearbySupported, useNearby } from './nearby.ts';
 import { useJam } from './jam.tsx';
@@ -7,23 +7,19 @@ import { useLibrary } from './library.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { useRegistry } from './registrySession.tsx';
 import { AccountSetup, FriendAvatar } from './RegistryFriends.tsx';
-import { JoinServer } from './JoinServer.tsx';
-import {
-  createInvite,
-  fetchFriends,
-  inviteLink,
-  type FriendsFeed,
-  type RegistryFriend,
-} from './registry.ts';
-import { enterServer, fetchServerInfo, linkAccount, remotePath } from './server.ts';
-import { forgetServer, knownServers, rememberServer, type KnownServer } from './servers.ts';
+import { fetchFriends, type FriendsFeed } from './registry.ts';
+import { remotePath } from './server.ts';
 import { fetchStatsSummary, type StatsSummary } from './stats.ts';
 import {
   DayClock,
+  DayClockSkeleton,
   GenreBars,
+  GenreBarsSkeleton,
   HabitBadge,
   ListeningRadar,
+  ListeningRadarSkeleton,
   StatTiles,
+  StatTilesSkeleton,
   profileAxes,
 } from './ProfileCharts.tsx';
 import placeholderArt from '../assets/attack-wave.png';
@@ -262,299 +258,6 @@ function LiveNow() {
   );
 }
 
-// --- the servers ------------------------------------------------------------
-
-/** A registry-shaped failure, told the way the server said it - its 403 line
- *  ("This server is invite-only…") is already the honest instruction. */
-function messageOf(err: unknown): string {
-  return err instanceof Error && err.message ? err.message : 'That did not work.';
-}
-
-function hostOf(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return url.replace(/^https?:\/\//, '');
-  }
-}
-
-/**
- * Where you listen: every server this device has entered, as cards. The one
- * you are on wears a live badge; any other is a one-tap switch (membership is
- * re-proved by the registry each time - no invite needed where you already
- * belong). Then the two doors, always visible: share the server you host,
- * and join another with an invite.
- */
-function ServersSection({ visiting }: { visiting: RegistryFriend | null }) {
-  const { session, applySession } = useServerSession();
-  const { session: registry, account } = useRegistry();
-
-  const [saved, setSaved] = useState<KnownServer[]>(() => knownServers());
-  const refresh = () => setSaved(knownServers());
-
-  // Names arrive lazily: /api/server answers without auth, and the answer is
-  // written back to the ledger so the next visit paints it immediately.
-  useEffect(() => {
-    let live = true;
-    for (const s of saved) {
-      if (s.name) continue;
-      void fetchServerInfo(s.url)
-        .then((info) => {
-          if (!live) return;
-          rememberServer({ url: s.url, name: info.name, lastUsed: s.lastUsed });
-          refresh();
-        })
-        .catch(() => {});
-    }
-    return () => {
-      live = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- backfill pass per mount
-  }, []);
-
-  const [busyUrl, setBusyUrl] = useState<string | null>(null);
-  const [note, setNote] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
-
-  const switchTo = useCallback(
-    async (url: string) => {
-      if (!registry) {
-        setNote({
-          tone: 'bad',
-          text: 'Switching needs your AttackFM account signed in — or sign in from Settings → Server.',
-        });
-        return;
-      }
-      setBusyUrl(url);
-      setNote(null);
-      try {
-        const next = await enterServer(url, registry.token);
-        applySession(next);
-        refresh();
-        setNote({ tone: 'ok', text: `Listening from ${hostOf(url)} now.` });
-      } catch (err) {
-        setNote({ tone: 'bad', text: messageOf(err) });
-      } finally {
-        setBusyUrl(null);
-      }
-    },
-    [registry, applySession],
-  );
-
-  // A friend's card said "visit": the page lands the attempt here, where the
-  // outcome (in, or the invite-only truth) shows beside every other server.
-  useEffect(() => {
-    if (!visiting?.serverUrl) return;
-    void switchTo(visiting.serverUrl.replace(/\/+$/, ''));
-  }, [visiting, switchTo]);
-
-  // The current session leads even if the ledger predates it.
-  const cards = useMemo(() => {
-    const current = session?.url ?? null;
-    const list = [...saved];
-    if (current && !list.some((s) => s.url === current)) {
-      list.unshift({ url: current, username: session?.username, isAdmin: session?.isAdmin, lastUsed: Date.now() });
-    }
-    return list.sort((a, b) => Number(b.url === current) - Number(a.url === current) || b.lastUsed - a.lastUsed);
-  }, [saved, session]);
-
-  // Sharing: mint an invite for the CURRENT server. Any member may mint - the
-  // server checks the invite with the registry when it is spent.
-  const [shareOpen, setShareOpen] = useState(false);
-  const [joinOpen, setJoinOpen] = useState(false);
-  const [minting, setMinting] = useState(false);
-  const [link, setLink] = useState<string | null>(null);
-  const [code, setCode] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [shareNote, setShareNote] = useState<string | null>(null);
-
-  const mint = async () => {
-    if (!registry || !session) return;
-    setMinting(true);
-    setShareNote(null);
-    try {
-      const made = await createInvite(
-        registry.token,
-        session.url,
-        session.username ? `${session.username}'s AttackFM` : 'AttackFM',
-      );
-      setLink(inviteLink(made.code));
-      setCode(made.code);
-      setCopied(false);
-    } catch (err) {
-      setShareNote(messageOf(err));
-    } finally {
-      setMinting(false);
-    }
-  };
-
-  return (
-    <section className="homeShelf serversSection">
-      <h2 className="homeShelfTitle">Where you listen</h2>
-
-      {note && (
-        <p className={`friendsNote friendsNote--${note.tone}`} role="status">
-          {note.text}
-        </p>
-      )}
-
-      <div className="serverCards">
-        {cards.map((s) => {
-          const current = session?.url === s.url;
-          return (
-            <div key={s.url} className="serverCard" data-current={current || undefined}>
-              <span className="serverCard__glyph" aria-hidden>
-                <Server size={18} />
-              </span>
-              <span className="serverCard__body">
-                <span className="serverCard__name">{s.name ?? hostOf(s.url)}</span>
-                <span className="serverCard__meta">
-                  {[
-                    s.name ? hostOf(s.url) : null,
-                    s.isAdmin ? 'you host this' : s.username ? `as ${s.username}` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ') || ' '}
-                </span>
-              </span>
-              {current ? (
-                <span className="serverCard__live">
-                  <span className="serverCard__dot" aria-hidden /> Listening
-                </span>
-              ) : (
-                <span className="serverCard__actions">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={busyUrl !== null}
-                    onClick={() => void switchTo(s.url)}
-                  >
-                    {busyUrl === s.url ? <Spinner size="sm" aria-label="" /> : 'Switch'}
-                  </Button>
-                  <IconButton
-                    variant="ghost"
-                    size="sm"
-                    aria-label={`Forget ${s.name ?? hostOf(s.url)}`}
-                    title="Forget this server"
-                    onClick={() => {
-                      forgetServer(s.url);
-                      refresh();
-                    }}
-                  >
-                    <X size={14} />
-                  </IconButton>
-                </span>
-              )}
-            </div>
-          );
-        })}
-
-        {/* The two doors - present whether or not any card is, because "how do
-            I share mine" and "how do I get into theirs" are the questions this
-            section exists to answer. */}
-        {session && registry && (
-          <button type="button" className="serverCard serverCard--verb" onClick={() => { setShareNote(null); setShareOpen(true); }}>
-            <span className="serverCard__glyph serverCard__glyph--accent" aria-hidden>
-              <Link2 size={18} />
-            </span>
-            <span className="serverCard__body">
-              <span className="serverCard__name">Invite a friend here</span>
-              <span className="serverCard__meta">A link that signs them in — no password to share</span>
-            </span>
-          </button>
-        )}
-        <button type="button" className="serverCard serverCard--verb" onClick={() => setJoinOpen(true)}>
-          <span className="serverCard__glyph serverCard__glyph--accent" aria-hidden>
-            <Plus size={18} />
-          </span>
-          <span className="serverCard__body">
-            <span className="serverCard__name">Join another server</span>
-            <span className="serverCard__meta">Enter the invite code a friend sent you</span>
-          </span>
-        </button>
-      </div>
-
-      <Modal open={shareOpen} onClose={() => setShareOpen(false)} title="Invite a friend to this server" size="sm">
-        <div className="friendsModal">
-          {!link ? (
-            <>
-              <Text size="sm" tone="muted">
-                Mint a one-time link that signs a friend into{' '}
-                <strong>{session ? (cards.find((c) => c.url === session.url)?.name ?? hostOf(session.url)) : 'this server'}</strong>{' '}
-                as themselves. Send it however you like; it works once.
-              </Text>
-              <Button variant="solid" onClick={() => void mint()} disabled={minting}>
-                {minting ? 'Making…' : 'Create invite link'}
-              </Button>
-            </>
-          ) : (
-            <>
-              <div className="registryFriends__inviteLink">
-                <Input readOnly value={link} aria-label="Invite link" onFocus={(e) => e.currentTarget.select()} />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    void navigator.clipboard?.writeText(link).then(() => setCopied(true)).catch(() => {});
-                  }}
-                >
-                  <Copy size={14} /> {copied ? 'Copied' : 'Copy'}
-                </Button>
-              </div>
-              {code && (
-                <p className="registryFriends__inviteCode">
-                  Or read the code out:{' '}
-                  <strong>
-                    {code.slice(0, Math.ceil(code.length / 2))} {code.slice(Math.ceil(code.length / 2))}
-                  </strong>
-                </p>
-              )}
-              <Button variant="outline" size="sm" onClick={() => void mint()} disabled={minting}>
-                {minting ? 'Making…' : 'New link'}
-              </Button>
-            </>
-          )}
-          {shareNote && (
-            <p className="friendsNote friendsNote--bad" role="status">
-              {shareNote}
-            </p>
-          )}
-          {session && registry && account && (
-            <div className="friendsModal__aside">
-              {/* One-time migration: claim the account you already have on this
-                  server for your central identity, so it stays yours. Idempotent. */}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  void linkAccount(session.url, session.token, registry.token)
-                    .then(() => setShareNote('Linked this server to your account.'))
-                    .catch((err) => setShareNote(messageOf(err)));
-                }}
-              >
-                Link this server to your account
-              </Button>
-              <Text size="sm" tone="muted">
-                Already had an account here before @{account.handle}? Claim it once and it follows you.
-              </Text>
-            </div>
-          )}
-        </div>
-      </Modal>
-
-      <Modal open={joinOpen} onClose={() => setJoinOpen(false)} title="Join another server" size="sm">
-        <div className="friendsModal">
-          <JoinServer />
-          <Text size="sm" tone="muted">
-            Joining switches you there; this page keeps every server you have
-            joined, so coming back is one tap. A server signed into with a
-            password instead lives in Settings → Server.
-          </Text>
-        </div>
-      </Modal>
-    </section>
-  );
-}
-
 /**
  * You, this week.
  *
@@ -594,12 +297,20 @@ function YourWeek() {
         {hasHistory && <HabitBadge axes={axes} />}
       </div>
 
-      {week ? (
-        <StatTiles week={week} />
-      ) : (
-        <Text size="sm" tone="muted">
-          Counting…
-        </Text>
+      {week ? <StatTiles week={week} /> : <StatTilesSkeleton />}
+
+      {/* While the week is on the wire we cannot know whether there is a shape
+          to draw, so the placeholders stand for the whole set. They hold the
+          exact geometry of the figures they replace, which is what keeps the
+          page from jumping when the numbers land. */}
+      {!week && !failed && (
+        <>
+          <ListeningRadarSkeleton />
+          <h3 className="profileWeek__sub">When you listen</h3>
+          <DayClockSkeleton />
+          <h3 className="profileWeek__sub">What you played</h3>
+          <GenreBarsSkeleton />
+        </>
       )}
 
       {hasHistory && week && (
@@ -671,14 +382,20 @@ function FriendsDoor({ token, onOpen }: { token: string; onOpen: () => void }) {
   );
 }
 
+/** The address as people say it - the host, no scheme. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url.replace(/^https?:\/\//, '');
+  }
+}
+
 // --- the page ---------------------------------------------------------------
 
 export function ProfilePage({ onOpenFriends }: { onOpenFriends?: () => void }) {
   const { session } = useServerSession();
   const { session: registry, account, apply, signOut } = useRegistry();
-  // A friend-card "visit" lands in the servers section, so its outcome shows
-  // where the servers live rather than in the middle of the people.
-  const [visiting, setVisiting] = useState<RegistryFriend | null>(null);
 
   return (
     <div className="homePage profilePage">
@@ -716,7 +433,6 @@ export function ProfilePage({ onOpenFriends }: { onOpenFriends?: () => void }) {
 
       <LiveNow />
 
-      {(registry || session) && <ServersSection visiting={visiting} />}
     </div>
   );
 }

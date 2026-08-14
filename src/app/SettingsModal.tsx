@@ -25,6 +25,7 @@ import {
   Cloud,
   Disc3,
   FolderOpen,
+  HardDrive,
   Info,
   LogOut,
   Mic2,
@@ -32,6 +33,7 @@ import {
   Music,
   Palette,
   Play,
+  Server,
   Settings,
   Sparkles,
   Timer,
@@ -67,7 +69,10 @@ import { useConnect } from './playbackSync.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { ServerSettings } from './ServerSettings.tsx';
 import { OfflineSettings } from './OfflineSettings.tsx';
-import { heldCount, onOfflineChange } from './offline.ts';
+import { StorageSettings } from './StorageSettings.tsx';
+import { WhereYouListen } from './WhereYouListen.tsx';
+import { knownServers } from './servers.ts';
+import { heldCount, offlineSpace, onOfflineChange } from './offline.ts';
 import { ThemeSelector } from './ThemeSelector.tsx';
 import { getThemePreset, THEME_PRESETS, type ThemePreference } from './themePresets.ts';
 
@@ -1245,6 +1250,12 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   // The rail's one-line reading of the vault. Subscribed rather than read once:
   // pinning happens from song menus while Settings is open behind them.
   const [offlineHeld, setOfflineHeld] = useState(() => heldCount());
+  const [heldBytes, setHeldBytes] = useState<number | null>(null);
+  useEffect(() => {
+    const read = () => void offlineSpace().then((sp) => sp && setHeldBytes(sp.heldBytes)).catch(() => {});
+    read();
+    return onOfflineChange(read);
+  }, []);
   useEffect(() => onOfflineChange(() => setOfflineHeld(heldCount())), []);
 
   const sections: SettingsSection[] = [
@@ -1289,6 +1300,20 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       tint: 'blue',
       group: 1,
     },
+    {
+      id: 'listen',
+      label: 'Where you listen',
+      icon: <Server size={16} />,
+      content: <WhereYouListen />,
+      // knownServers() is a cheap localStorage read; the count is honest even
+      // before any pane has mounted.
+      summary: (() => {
+        const n = knownServers().length;
+        return n > 0 ? `${n} ${n === 1 ? 'server' : 'servers'} saved` : 'Join or invite';
+      })(),
+      tint: 'blue',
+      group: 1,
+    },
     // The machine that listens along: the collector's ledger and switch, the
     // recent pulls, and how far the enrichment has read the library.
     {
@@ -1306,6 +1331,18 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       icon: <ArrowDownToLine size={16} />,
       content: <OfflineSettings />,
       summary: offlineHeld > 0 ? `${offlineHeld} kept on this device` : 'Nothing kept yet',
+      tint: 'green',
+      group: 1,
+    },
+    {
+      id: 'storage',
+      label: 'Storage',
+      icon: <HardDrive size={16} />,
+      content: <StorageSettings />,
+      summary:
+        heldBytes != null && heldBytes > 0
+          ? `${heldBytes >= 1e9 ? `${(heldBytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(heldBytes / 1e6))} MB`} on this device`
+          : 'What the space holds',
       tint: 'green',
       group: 1,
     },

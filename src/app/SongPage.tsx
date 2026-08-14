@@ -188,7 +188,7 @@ export function SongPage({
         </div>
       </header>
 
-      {loading ? null : empty ? (
+      {empty && !loading ? (
         <div className="playlistEmpty emptyState emptyState--tall">
           <EmptyArt name={meta.art} />
           <Text tone="muted">{meta.empty}</Text>
@@ -200,6 +200,7 @@ export function SongPage({
         <section className="homeShelf librarySongs">
           <div className="libraryBody">
             <SongTable
+              loading={loading}
               tracks={listTracks}
               onPlay={onPlay}
               onOpenArtist={onOpenArtist}
