@@ -38,6 +38,17 @@ function write(list: KnownServer[]) {
   } catch {
     // Storage full or blocked: the ledger is a convenience, never a failure.
   }
+  for (const l of listeners) l();
+}
+
+const listeners = new Set<() => void>();
+
+/** Fires after every remember/forget - the account sync listens here, so a
+ *  server signed into on this device reaches the registry without the session
+ *  having to change first. */
+export function subscribeKnownServers(cb: () => void): () => void {
+  listeners.add(cb);
+  return () => listeners.delete(cb);
 }
 
 /** Every server this device has entered, most recently used first. */
