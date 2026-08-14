@@ -1,4 +1,5 @@
 import { CircleCheck, Clock, Flame, Moon, Play, Radio, Repeat, Sparkles } from '@glacier/icons';
+import { Skeleton } from '@glacier/react';
 import { useMemo, type ReactNode } from 'react';
 import type { StatsSummary } from './stats.ts';
 
@@ -46,6 +47,34 @@ function hoursLabel(minutes: number): string {
     return h >= 10 ? `${Math.round(h)}h` : `${Math.round(h * 10) / 10}h`;
   }
   return `${minutes}m`;
+}
+
+/**
+ * The tiles' stand-in.
+ *
+ * Six of them, in the same grid, each with the icon disc and the two text
+ * lines the real tile has - because the whole point of a placeholder is that
+ * the layout it reserves is the layout that arrives. The labels are REAL: they
+ * are static strings the page knows before any request, and text that never
+ * changes is one more thing pinned in place across the swap.
+ */
+export function StatTilesSkeleton() {
+  const LABELS = ['listened', 'plays', 'artists', 'streak', 'finished', 'songs'];
+  return (
+    <div className="statTiles" aria-busy>
+      {LABELS.map((label) => (
+        <div key={label} className="statTile">
+          <span className="statTile__icon" aria-hidden>
+            <Skeleton variant="circle" width={15} height={15} />
+          </span>
+          <span className="statTile__value">
+            <Skeleton variant="text" width="2.5rem" />
+          </span>
+          <span className="statTile__label">{label}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function StatTiles({ week }: { week: StatsSummary }) {
@@ -140,20 +169,85 @@ export function profileAxes(week: StatsSummary): Axis[] {
 
 const RINGS = [0.25, 0.5, 0.75, 1];
 
-export function ListeningRadar({ axes }: { axes: Axis[] }) {
-  const geometry = useMemo(() => {
-    const cx = 100;
-    const cy = 92;
-    const r = 62;
-    const at = (i: number, t: number) => {
-      // Straight up for the first axis, clockwise from there.
-      const angle = (-90 + (360 / axes.length) * i) * (Math.PI / 180);
-      return [cx + Math.cos(angle) * r * t, cy + Math.sin(angle) * r * t] as const;
-    };
-    return { cx, cy, r, at };
-  }, [axes.length]);
+/** The axis order, known before any data - so the empty web and its labels are
+ *  drawn from the same list the real chart uses. */
+const AXIS_LABELS = ['Volume', 'Variety', 'Repeat', 'Finish', 'Night', 'Streak'];
 
-  const { cx, cy, r, at } = geometry;
+/**
+ * The radar's stand-in: its own web, drawn empty.
+ *
+ * No pulsing bar could stand in for a hexagon without the page jumping when
+ * the real one lands, so the placeholder IS the chart - same viewBox, same
+ * rings, same labels - with the data polygon simply absent. The web dims
+ * rather than shimmers, which reads as "not yet" without turning six static
+ * lines into motion.
+ */
+export function ListeningRadarSkeleton() {
+  const axes = AXIS_LABELS.map((label, i) => ({ key: String(i), label, value: 0, detail: '' }));
+  return (
+    <figure className="radarFig" aria-busy>
+      <svg viewBox="0 0 200 184" className="radar radar--pending" role="img" aria-label="Loading your listening shape">
+        {RINGS.map((t) => (
+          <polygon key={t} className="radar__ring" points={radarPoints(axes.length, t)} />
+        ))}
+        {axes.map((a, i) => {
+          const [x, y] = radarAt(axes.length, i, 1);
+          return <line key={a.key} className="radar__spoke" x1={100} y1={92} x2={x} y2={y} />;
+        })}
+        {axes.map((a, i) => {
+          const [x, y] = radarAt(axes.length, i, 1);
+          const lx = 100 + (x - 100) * 1.17;
+          const ly = 92 + (y - 92) * 1.17;
+          const anchor = Math.abs(lx - 100) < 6 ? 'middle' : lx > 100 ? 'start' : 'end';
+          return (
+            <text
+              key={a.key}
+              className="radar__label"
+              x={lx}
+              y={ly + (Math.abs(lx - 100) < 6 ? (ly < 92 ? -2 : 8) : 3)}
+              textAnchor={anchor}
+            >
+              {a.label}
+            </text>
+          );
+        })}
+      </svg>
+      <figcaption className="radarKey">
+        {AXIS_LABELS.map((label) => (
+          <span key={label} className="radarKey__row">
+            <span className="radarKey__label">{label}</span>
+            <span className="radarKey__detail">
+              <Skeleton variant="text" width="6rem" />
+            </span>
+          </span>
+        ))}
+      </figcaption>
+    </figure>
+  );
+}
+
+/** The one place the radar's geometry is written, shared by the chart and its
+ *  placeholder so the two can never drift apart. */
+function radarAt(count: number, i: number, t: number): readonly [number, number] {
+  const angle = (-90 + (360 / count) * i) * (Math.PI / 180);
+  return [100 + Math.cos(angle) * 62 * t, 92 + Math.sin(angle) * 62 * t] as const;
+}
+
+function radarPoints(count: number, t: number): string {
+  return Array.from({ length: count }, (_, i) =>
+    radarAt(count, i, t)
+      .map((n) => n.toFixed(1))
+      .join(','),
+  ).join(' ');
+}
+
+export function ListeningRadar({ axes }: { axes: Axis[] }) {
+  // Straight up for the first axis, clockwise from there - from the shared
+  // helper, so the chart and its placeholder cannot drift apart.
+  const { cx, cy, at } = useMemo(
+    () => ({ cx: 100, cy: 92, at: (i: number, t: number) => radarAt(axes.length, i, t) }),
+    [axes.length],
+  );
   const points = axes.map((a, i) => at(i, Math.max(0.02, Math.min(1, a.value))));
   const path = points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
   const readout = axes.map((a) => `${a.label} ${Math.round(a.value * 100)}%`).join(', ');
@@ -169,11 +263,7 @@ export function ListeningRadar({ axes }: { axes: Axis[] }) {
         {/* Recessive hairline web: solid, one shade off the surface. Never
             dashed - a dashed grid reads as a threshold. */}
         {RINGS.map((t) => (
-          <polygon
-            key={t}
-            className="radar__ring"
-            points={axes.map((_, i) => at(i, t).map((n) => n.toFixed(1)).join(',')).join(' ')}
-          />
+          <polygon key={t} className="radar__ring" points={radarPoints(axes.length, t)} />
         ))}
         {axes.map((a, i) => {
           const [x, y] = at(i, 1);
@@ -226,6 +316,26 @@ export function ListeningRadar({ axes }: { axes: Axis[] }) {
  *  mistake in axis form. */
 const HOUR_TICKS = [0, 6, 12, 18];
 
+/** Twenty-four cells at rest, same grid and height as the live strip. */
+export function DayClockSkeleton() {
+  return (
+    <figure className="dayFig" aria-busy>
+      <div className="dayStrip dayStrip--pending" role="img" aria-label="Loading when you listen">
+        {Array.from({ length: 24 }, (_, hour) => (
+          <span key={hour} className="dayStrip__cell" />
+        ))}
+      </div>
+      <figcaption className="dayAxis" aria-hidden>
+        {HOUR_TICKS.map((h) => (
+          <span key={h} className="dayAxis__tick" style={{ insetInlineStart: `${(h / 24) * 100}%` }}>
+            {h === 0 ? '12a' : h === 12 ? '12p' : h > 12 ? `${h - 12}p` : `${h}a`}
+          </span>
+        ))}
+      </figcaption>
+    </figure>
+  );
+}
+
 export function DayClock({ clock }: { clock: number[] }) {
   const max = Math.max(1, ...clock);
   const peak = clock.indexOf(Math.max(...clock));
@@ -262,6 +372,26 @@ export function DayClock({ clock }: { clock: number[] }) {
 }
 
 // --- the ranked handful -----------------------------------------------------
+
+/** Five rows in the real three-column grid, so the list does not resize when
+ *  the genres land. */
+export function GenreBarsSkeleton() {
+  return (
+    <div className="genreBars" aria-busy>
+      {[0, 1, 2, 3, 4].map((i) => (
+        <div key={i} className="genreBar">
+          <span className="genreBar__name">
+            <Skeleton variant="text" width="4.5rem" />
+          </span>
+          <span className="genreBar__track" />
+          <span className="genreBar__value">
+            <Skeleton variant="text" width="2rem" />
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function GenreBars({ genres }: { genres: { genre: string; minutes: number }[] }) {
   const top = genres.slice(0, 5);

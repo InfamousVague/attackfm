@@ -124,12 +124,18 @@ export function SongTable({
   onPlay,
   onOpenArtist,
   tracks: tracksProp,
+  loading,
   plays,
 }: {
   /** Called with the opened track and the full list in its displayed order. */
   onPlay: (track: Track, queue: Track[]) => void;
   onOpenArtist?: (artist: string) => void;
   tracks?: Track[];
+  /** Set while the CALLER is still fetching the rows it will pass. The table
+   *  already knows about a library scan; it cannot know about a list being
+   *  assembled above it (On repeat waits on the play ledger), and without this
+   *  such a list renders as an empty table for the length of the request. */
+  loading?: boolean;
   /** Play counts by server track id. Given, the leading column shows how many
    *  times each song was played instead of its position - which is the whole
    *  point of a most-played list, where a row number says nothing. */
@@ -244,7 +250,7 @@ export function SongTable({
       density="comfortable"
       stickyHeader
       maxHeight="100%"
-      loading={library.scanning && rows.length === 0}
+      loading={loading || (library.scanning && rows.length === 0)}
       // The empty state has to name the thing to do next, and that differs by
       // where the music was meant to come from: a phone has no folder to fill,
       // so telling it one is empty would be a dead end.

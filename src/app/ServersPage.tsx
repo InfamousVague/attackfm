@@ -1,4 +1,4 @@
-import { Button, Field, Heading, Input, Switch, Text } from '@glacier/react';
+import { Button, Field, Heading, Input, Skeleton, Switch, Text } from '@glacier/react';
 import { HardDrive, Radio, RefreshCw, X } from '@glacier/icons';
 import { StorageManager } from './StorageManager.tsx';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -312,15 +312,23 @@ function ServerCard({
         </div>
         <div className="serverMetric">
           <span className="serverMetric__value">
-            {row.held.toLocaleString()}
-            {!row.primary && libraryTotal > 0 ? ` · ${pct}%` : ''}
+            {row.stats || row.held > 0 ? (
+              <>
+                {row.held.toLocaleString()}
+                {!row.primary && libraryTotal > 0 ? ` · ${pct}%` : ''}
+              </>
+            ) : (
+              <Skeleton variant="text" width="2.5rem" />
+            )}
           </span>
           <span className="serverMetric__label">
             {row.primary ? 'songs' : 'of your songs'}
           </span>
         </div>
         <div className="serverMetric">
-          <span className="serverMetric__value">{row.stats ? gb(used) : '—'}</span>
+          <span className="serverMetric__value">
+            {row.stats ? gb(used) : <Skeleton variant="text" width="3rem" />}
+          </span>
           <span className="serverMetric__label">
             {ceiling > 0 ? `of ${gb(ceiling)} used` : 'stored'}
           </span>

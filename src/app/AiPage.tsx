@@ -1,4 +1,4 @@
-import { Text } from '@glacier/react';
+import { Skeleton, Text } from '@glacier/react';
 import { useEffect, useState } from 'react';
 import { useServerSession } from './serverSession.tsx';
 import { useLibrary } from './library.tsx';
@@ -46,10 +46,21 @@ function gb(bytes: number): string {
 }
 
 /** One headline number with its caption. */
-function Stat({ value, label }: { value: string; label: string }) {
+/**
+ * One headline number.
+ *
+ * `pending` matters more than it looks: every value here is derived with `?? 0`
+ * off a feed that starts null, so without it each tile confidently reads ZERO
+ * while the request is still out - and "0 songs it went and got" is a claim
+ * about the machine, not a loading state. The label stays real (it never
+ * changes) and only the figure is held.
+ */
+function Stat({ value, label, pending }: { value: string; label: string; pending?: boolean }) {
   return (
     <div className="aiStat">
-      <span className="aiStat__value">{value}</span>
+      <span className="aiStat__value">
+        {pending ? <Skeleton variant="text" width="2rem" /> : value}
+      </span>
       <span className="aiStat__label">{label}</span>
     </div>
   );
@@ -96,6 +107,11 @@ export function AiPage() {
     );
   }
 
+  // Null means "not answered yet", which is NOT the same as "it has fetched
+  // nothing" - and the empty state below says the second out loud. Kept
+  // separate so a slow request cannot tell someone their machine has been
+  // idle when it simply has not reported in.
+  const loading = collector === null;
   const pulls = collector?.recent ?? [];
   const kept = pulls.filter((p) => p.state === 'promoted').length;
   const waiting = forYou.length;
@@ -115,10 +131,14 @@ export function AiPage() {
       {!loaded ? null : (
         <>
           <section className="aiStats">
-            <Stat value={String(curator?.lists.length ?? 0)} label="mixes built for you" />
-            <Stat value={String(pulls.length)} label="songs it went and got" />
-            <Stat value={String(kept)} label="you kept" />
-            <Stat value={String(waiting)} label="waiting for a listen" />
+            <Stat
+              value={String(curator?.lists.length ?? 0)}
+              label="mixes built for you"
+              pending={curator === null}
+            />
+            <Stat value={String(pulls.length)} label="songs it went and got" pending={loading} />
+            <Stat value={String(kept)} label="you kept" pending={loading} />
+            <Stat value={String(waiting)} label="waiting for a listen" pending={loading} />
           </section>
 
           {/* What it is doing right now, in one line each - the two loops that
@@ -159,7 +179,16 @@ export function AiPage() {
               and this is the only place that shows it. */}
           <section className="aiSection">
             <h2 className="homeShelfTitle">What it fetched</h2>
-            {pulls.length === 0 ? (
+            {loading ? (
+              <ul className="aiPulls" aria-busy>
+                {[0, 1, 2, 3].map((i) => (
+                  <li key={i} className="aiPull">
+                    <Skeleton variant="text" width="60%" />
+                    <Skeleton variant="text" width="40%" />
+                  </li>
+                ))}
+              </ul>
+            ) : pulls.length === 0 ? (
               <div className="emptyState">
                 <EmptyArt name="discovery" />
                 <p className="emptyState__text">

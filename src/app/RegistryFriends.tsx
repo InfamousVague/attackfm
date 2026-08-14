@@ -15,7 +15,17 @@
 //!     the Profile page around it - a section shows the people, the page owns
 //!     the person.
 
-import { Button, Field, IconButton, Input, Modal, Spinner, StatTile, Text } from '@glacier/react';
+import {
+  Button,
+  Field,
+  IconButton,
+  Input,
+  Modal,
+  Skeleton,
+  Spinner,
+  StatTile,
+  Text,
+} from '@glacier/react';
 import { ChartNoAxesColumn, Check, Clock, Flame, UserPlus, X } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { artistImageKnown, cachedArtistImage, resolveArtistImage } from './artistImage.ts';
@@ -340,7 +350,22 @@ export function FriendsSection({
             <UserPlus size={15} /> <span>Add</span>
           </Button>
         </div>
-        {friends.length === 0 && outgoing.length === 0 ? (
+        {feed === null ? (
+          /* Loading is NOT emptiness. Falling through to the empty state here
+             told people they had no friends before the answer had arrived -
+             and on a slow link that claim sat on screen for seconds. Six
+             card-shaped seats say "counting" instead, in the grid the real
+             cards will use. */
+          <div className="friendGrid" aria-busy>
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="friendCard friendCard--pending">
+                <Skeleton variant="circle" width="3rem" height="3rem" />
+                <Skeleton variant="text" width="4.5rem" />
+                <Skeleton variant="text" width="6rem" />
+              </div>
+            ))}
+          </div>
+        ) : friends.length === 0 && outgoing.length === 0 ? (
           <div className="emptyState">
             <EmptyArt name="friends" />
             <p className="emptyState__text">
