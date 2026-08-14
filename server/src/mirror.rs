@@ -85,6 +85,20 @@ pub struct HotSpec {
     pub max_bytes: Option<u64>,
     #[serde(default)]
     pub limit: Option<usize>,
+    /// Let go of what is no longer hot.
+    ///
+    /// This is what separates a hot server from a mirror that merely started
+    /// small. Taste moves, the hot set moves with it, and a box that only ever
+    /// ADDS fills up and stops being able to take the songs you have actually
+    /// started playing - which is exactly how this one reached 85% before it
+    /// was emptied. On by default in hot mode, because a hot pull that grows
+    /// without bound is not the thing anybody asked for.
+    #[serde(default = "yes")]
+    pub prune: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// Free bytes on the volume holding `path`. See the identical note in the
@@ -264,6 +278,24 @@ async fn run(
         }
     }
 
+    // Every identity the source called hot - including the ones this box
+    // ALREADY holds, which are counted as skipped below and never enter
+    // `wanted`. Pruning has to measure against this set and not against what
+    // was copied, or the first hot sync of an up-to-date box would decide that
+    // nothing was wanted and delete the lot.
+    let mut hot_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+    if hot.is_some() {
+        for t in &given {
+            let artist = t.get("artist").and_then(|v| v.as_str()).unwrap_or("");
+            let title = t.get("title").and_then(|v| v.as_str()).unwrap_or("");
+            hot_names.insert(format!(
+                "{}\u{1}{}",
+                crate::discovery::fold(artist),
+                crate::discovery::fold(title)
+            ));
+        }
+    }
+
     // Handed the listing: no session token is needed at all, and the copy runs
     // entirely on the stream token.
     if !given.is_empty() {
@@ -363,6 +395,39 @@ async fn run(
         }
     }
     index_now(state);
+
+    // Everything this box holds that the source no longer calls hot.
+    //
+    // Deleted rather than quarantined, unlike everywhere else in this codebase
+    // that removes a file: a hot server is a CACHE of a library that lives
+    // somewhere else, so every file here exists at home by definition and
+    // nothing is being lost. Quarantining would also defeat the point, since
+    // the whole reason to drop a track is that the disk is finite.
+    // Never on an empty set: a source that answered with nothing, or a request
+    // that failed halfway, must not be read as "none of it is hot".
+    if hot.map(|h| h.prune).unwrap_or(false) && !hot_names.is_empty() {
+        let keep = &hot_names;
+        let mut dropped = 0usize;
+        for (id, rel, artist, title) in state.db.all_track_paths() {
+            let key = format!(
+                "{}\u{1}{}",
+                crate::discovery::fold(&artist),
+                crate::discovery::fold(&title)
+            );
+            if keep.contains(&key) {
+                continue;
+            }
+            let path = state.music_root.join(&rel);
+            let _ = std::fs::remove_file(&path);
+            let rev = state.db.current_rev() + 1;
+            let _ = state.db.tombstone_tracks(&[id], rev);
+            dropped += 1;
+        }
+        if dropped > 0 {
+            *state.mirror.note.lock().unwrap() = format!("{dropped} cold songs let go");
+        }
+    }
+
     *state.mirror.note.lock().unwrap() = "done".to_string();
 }
 

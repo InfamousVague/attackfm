@@ -1524,6 +1524,22 @@ impl Db {
         rows.into_values().filter(|r| hot_enough(r, min_plays)).collect()
     }
 
+    /// Every live track as (id, rel_path, artist, title) - what a hot server
+    /// needs to decide which of its files have gone cold.
+    pub fn all_track_paths(&self) -> Vec<(i64, String, String, String)> {
+        let conn = self.lock();
+        let Ok(mut stmt) =
+            conn.prepare("SELECT id, rel_path, artist, title FROM tracks WHERE deleted = 0")
+        else {
+            return Vec::new();
+        };
+        stmt.query_map([], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
         pub fn favorites(&self, user_id: i64) -> Vec<i64> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
