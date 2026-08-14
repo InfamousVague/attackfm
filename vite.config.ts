@@ -1,11 +1,18 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { readFileSync } from 'node:fs';
+
+// The version baked into THIS build. Without it a freshly installed app
+// cannot tell that the bundle its hub publishes is the very one it is already
+// running, and would download and announce an update to itself.
+const pkgVersion = JSON.parse(readFileSync('./package.json', 'utf8')).version as string;
 
 // A relative base so the built app works when Tauri serves it from a custom
 // protocol rather than the server root. @glacier/react resolves from the
 // vendored copy in node_modules (installed via the file: dependency).
 export default defineConfig({
   base: './',
+  define: { __AFM_VERSION__: JSON.stringify(pkgVersion) },
   plugins: [react()],
   build: {
     rollupOptions: {

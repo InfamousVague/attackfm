@@ -20,7 +20,8 @@
     "redeploy": "node scripts/redeploy.mjs",
     "redeploy:setup": "node scripts/redeploy.mjs setup",
     "bundle:home": "node scripts/home-bundle.mjs",
-    "android:emulator": "\"$HOME/Library/Android/sdk/emulator/emulator\" -avd attackfm -netdelay none -netspeed full"
+    "android:emulator": "\"$HOME/Library/Android/sdk/emulator/emulator\" -avd attackfm -netdelay none -netspeed full",
+    "ship": "node scripts/ship-update.mjs"
   },
   "dependencies": {
     "@glacier/icons": "file:./vendor/@glacier/icons",
