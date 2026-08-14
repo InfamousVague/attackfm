@@ -83,7 +83,11 @@ interface SettingsModalProps {
 
 /** Same coarse/narrow signal the player folds its rails on, so Settings turns
  *  into the touch drill-in exactly where the rest of the mobile chrome does. */
-const MOBILE_QUERY = '(pointer: coarse), (max-width: 540px)';
+// Coarse pointer alone is not "phone": an unfolded foldable is all thumb and
+// 840px wide, and the full-screen drill-in wastes that room. The phone
+// treatment now requires the screen to actually be narrow; a wide touch
+// screen gets the desktop modal, rail and all.
+const MOBILE_QUERY = '(pointer: coarse) and (max-width: 699px), (max-width: 540px)';
 
 function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(
