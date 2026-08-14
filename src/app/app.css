@@ -164,8 +164,13 @@ img {
  * did not, so a loading page jumped when it settled.
  */
 :root {
-  /* A song, and the playlist tiles that stand beside it as peers. */
-  --card-track: 6.35rem;
+  /* A song, and the playlist tiles that stand beside it as peers.
+     Gently fluid rather than fixed: covers give a little with the window so
+     rows pack tighter instead of leaving gutters. The arithmetic lands on
+     ~5.9rem on a phone (one more card in every row), the OLD 6.35rem almost
+     exactly at a 1280px desktop (nothing moves there), and ~7.4rem unfolded,
+     where fixed little squares used to float in white space. */
+  --card-track: clamp(5.9rem, 4.6rem + 2.2vw, 7.4rem);
   /* A mix. Sized as a song card and a playlist tile are, rather than the wider
      hero it used to be: the mixes sit between the playlists and the shelves,
      and three different widths down one page read as three different kinds of
@@ -3755,9 +3760,18 @@ img.artPop:not([data-loading]) {
    inside itself rather than pushing the library's shelves off the page. */
 .showcaseGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, var(--card-track));
-  justify-content: space-between;
-  gap: var(--glacier-space-3);
+  /* minmax + 1fr instead of fixed tracks and space-between: tiles stretch a
+     little to swallow the leftover width, so every row runs edge to edge and
+     the slack lives INSIDE the covers instead of between them as gutters. */
+  grid-template-columns: repeat(auto-fill, minmax(var(--card-track), 1fr));
+  gap: var(--glacier-space-3) var(--glacier-space-2);
+}
+
+/* Inside the grid a tile fills the track the grid dealt it (the art is
+   width:100% + aspect-ratio:1, so it scales with the tile); on the sideways
+   rails the fixed width below still rules. */
+.showcaseGrid .playlistTile {
+  width: 100%;
 }
 
 /* The grid gets its own scroll ONLY where a pointer can deliberately leave
@@ -3772,7 +3786,10 @@ img.artPop:not([data-loading]) {
    end of a box should carry on to what holds it. */
 @media (pointer: fine) {
   .showcaseGrid {
-    max-block-size: calc(5 * (var(--card-track) + 2.1rem) + 4 * var(--glacier-space-3));
+    /* Tracks can stretch past --card-track now (minmax above), so the cap
+       allows ~12% of growth per row; it only ever needed to read as "about
+       five rows before the grid scrolls". */
+    max-block-size: calc(5 * (var(--card-track) * 1.12 + 2.1rem) + 4 * var(--glacier-space-3));
     overflow-y: auto;
   }
 }

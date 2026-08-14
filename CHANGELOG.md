@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.47
+
+- Playlist tiles and album covers now flex a little with the screen: rows pack edge to edge instead of leaving white gaps
+- Phones fit one more cover per row; unfolded and wide screens get slightly larger art instead of empty space
+
 ## 0.3.46
 
 - Installing a newer app now wins over an older downloaded update that used to quietly keep running instead
