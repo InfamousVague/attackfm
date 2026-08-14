@@ -19,7 +19,7 @@ export interface BundleManifest {
   /** The native generation this bundle was built against. */
   native: number;
   files: { name: string; sha256: string; bytes?: number }[];
-  /** Optional human note, shown in Settings. */
+  /** What changed, as markdown-ish lines. Shown before and after applying. */
   notes?: string;
 }
 
@@ -41,6 +41,90 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T |
     // itself, which is exactly how it behaved before this existed.
     return null;
   }
+}
+
+// --- what changed ----------------------------------------------------------
+
+const NOTES_KEY = 'attackfm-bundle-notes';
+const SEEN_KEY = 'attackfm-notes-seen';
+
+function readNotes(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(NOTES_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Keep a version's notes on the device.
+ *
+ * Stored rather than fetched when needed, because the moment they are most
+ * wanted is straight after the update has been applied - and that is a fresh
+ * boot, possibly offline, where asking the hub again would answer nothing. The
+ * map is trimmed to a handful: nobody scrolls back through release notes.
+ */
+function rememberNotes(version: string, notes: string): void {
+  if (!notes.trim()) return;
+  try {
+    const all = readNotes();
+    all[version] = notes;
+    const keys = Object.keys(all);
+    if (keys.length > 6) for (const k of keys.slice(0, keys.length - 6)) delete all[k];
+    localStorage.setItem(NOTES_KEY, JSON.stringify(all));
+  } catch {
+    // Then the update simply arrives without its story.
+  }
+}
+
+/** What changed in a given version, if this device was told. */
+export function notesFor(version: string | null): string | null {
+  if (!version) return null;
+  return readNotes()[version] ?? null;
+}
+
+/**
+ * The notes for the version now running, if they have never been shown.
+ *
+ * This is the payoff of the whole changelog: you restart, and the app tells you
+ * what it just became. Returns null once acknowledged, and null on a version
+ * whose notes were never delivered.
+ */
+export function unseenNotes(): { version: string; notes: string } | null {
+  const version = currentVersion();
+  let seen: string | null = null;
+  try {
+    seen = localStorage.getItem(SEEN_KEY);
+  } catch {
+    return null;
+  }
+  if (seen === version) return null;
+  const notes = notesFor(version);
+  if (!notes) {
+    // Nothing to say for this version: mark it seen so a later version with
+    // notes is not shadowed by an old unacknowledged one.
+    markNotesSeen();
+    return null;
+  }
+  return { version, notes };
+}
+
+export function markNotesSeen(): void {
+  try {
+    localStorage.setItem(SEEN_KEY, currentVersion());
+  } catch {
+    // It will offer once more next launch; harmless.
+  }
+}
+
+/** Split the stored blob into lines a list can render. */
+export function notesLines(notes: string): string[] {
+  return notes
+    .split('\n')
+    .map((l) => l.replace(/^\s*[-*]\s*/, '').trim())
+    .filter(Boolean);
 }
 
 // --- what is waiting, and who wants to know ---------------------------------
@@ -178,8 +262,9 @@ export async function checkForBundle(session: ServerSession): Promise<string | n
     files,
   });
   if (next?.active !== manifest.version) return null;
-  // Only now is there something to tell anyone about: the files are down,
-  // checksummed and pointed at.
+  // Kept BEFORE announcing, so the banner that appears can already show what
+  // is in the update rather than naming a version number and nothing else.
+  if (manifest.notes) rememberNotes(manifest.version, manifest.notes);
   announce(manifest.version);
   return manifest.version;
 }
