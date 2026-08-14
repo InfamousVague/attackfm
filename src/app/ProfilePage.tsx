@@ -1,16 +1,23 @@
 import { Button, IconButton, Modal, Input, Spinner, Text } from '@glacier/react';
-import { Copy, Link2, LogOut, Plus, Radio, Server, X } from '@glacier/icons';
+import { ChevronRight, Copy, Link2, LogOut, Plus, Radio, Server, UsersRound, X } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { nearbySupported, useNearby } from './nearby.ts';
 import { useJam } from './jam.tsx';
 import { useLibrary } from './library.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { useRegistry } from './registrySession.tsx';
-import { AccountSetup, FriendAvatar, FriendsSection } from './RegistryFriends.tsx';
+import { AccountSetup, FriendAvatar } from './RegistryFriends.tsx';
 import { JoinServer } from './JoinServer.tsx';
-import { createInvite, inviteLink, type RegistryFriend } from './registry.ts';
+import {
+  createInvite,
+  fetchFriends,
+  inviteLink,
+  type FriendsFeed,
+  type RegistryFriend,
+} from './registry.ts';
 import { enterServer, fetchServerInfo, linkAccount, remotePath } from './server.ts';
 import { forgetServer, knownServers, rememberServer, type KnownServer } from './servers.ts';
+import { fetchStatsSummary, type StatsSummary } from './stats.ts';
 import placeholderArt from '../assets/attack-wave.png';
 
 /**
@@ -540,9 +547,108 @@ function ServersSection({ visiting }: { visiting: RegistryFriend | null }) {
   );
 }
 
+/**
+ * You, this week.
+ *
+ * The number that used to exist only on a friend's card, shown to its owner
+ * first. It is the same glance the registry shares - minutes, top artist,
+ * streak - so this doubles as the honest preview of what friends can see, and
+ * the page never claims to share something it is not showing you.
+ */
+function YourWeek() {
+  const { session } = useServerSession();
+  const [week, setWeek] = useState<StatsSummary | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!session) return;
+    let live = true;
+    void fetchStatsSummary(session, 'week')
+      .then((s) => live && setWeek(s))
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, [session]);
+
+  if (!session || failed) return null;
+
+  const top = week?.topArtists[0]?.artist ?? null;
+  const hours = week ? Math.round(week.minutes / 6) / 10 : 0;
+
+  return (
+    <section className="homeShelf profileWeek">
+      <h2 className="homeShelfTitle">Your week</h2>
+      <div className="profileWeek__row">
+        <div className="profileStat">
+          <span className="profileStat__value">{week ? (hours >= 1 ? `${hours}h` : `${week.minutes}m`) : '—'}</span>
+          <span className="profileStat__label">listened</span>
+        </div>
+        <div className="profileStat">
+          <span className="profileStat__value">{week ? week.plays.toLocaleString() : '—'}</span>
+          <span className="profileStat__label">plays</span>
+        </div>
+        <div className="profileStat">
+          <span className="profileStat__value">{week?.streakDays ? `${week.streakDays}d` : '—'}</span>
+          <span className="profileStat__label">streak</span>
+        </div>
+      </div>
+      {top && (
+        <Text size="sm" tone="muted">
+          Most played: <strong>{top}</strong>
+        </Text>
+      )}
+    </section>
+  );
+}
+
+/**
+ * The doorway to the people.
+ *
+ * A handful of faces and a count, because the point of the row is to say
+ * "there is something through here" - the grid itself, with its artist
+ * photographs, wants the whole screen and now has one.
+ */
+function FriendsDoor({ token, onOpen }: { token: string; onOpen: () => void }) {
+  const [feed, setFeed] = useState<FriendsFeed | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void fetchFriends(token)
+      .then((f) => live && setFeed(f))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [token]);
+
+  const friends = feed?.friends ?? [];
+  const waiting = feed?.incoming.length ?? 0;
+
+  return (
+    <button type="button" className="profileDoor" onClick={onOpen}>
+      <span className="profileDoor__faces">
+        {friends.slice(0, 4).map((f) => (
+          <FriendAvatar key={f.id} handle={f.handle} size="sm" className="profileDoor__face" />
+        ))}
+        {friends.length === 0 && <UsersRound size={18} />}
+      </span>
+      <span className="profileDoor__text">
+        <span className="profileDoor__title">Friends</span>
+        <span className="profileDoor__sub">
+          {friends.length === 0
+            ? 'Nobody yet — add someone by their handle'
+            : `${friends.length} ${friends.length === 1 ? 'friend' : 'friends'}${waiting > 0 ? ` · ${waiting} waiting on you` : ''}`}
+        </span>
+      </span>
+      <ChevronRight size={18} className="profileDoor__chevron" />
+    </button>
+  );
+}
+
 // --- the page ---------------------------------------------------------------
 
-export function ProfilePage() {
+export function ProfilePage({ onOpenFriends }: { onOpenFriends?: () => void }) {
   const { session } = useServerSession();
   const { session: registry, account, apply, signOut } = useRegistry();
   // A friend-card "visit" lands in the servers section, so its outcome shows
@@ -577,17 +683,15 @@ export function ProfilePage() {
         <AccountSetup onDone={apply} />
       )}
 
+      <YourWeek />
+
+      {registry && account && onOpenFriends && (
+        <FriendsDoor token={registry.token} onOpen={onOpenFriends} />
+      )}
+
       <LiveNow />
 
       {(registry || session) && <ServersSection visiting={visiting} />}
-
-      {registry && account && (
-        <FriendsSection
-          token={registry.token}
-          me={account.handle}
-          onVisit={(friend) => setVisiting(friend)}
-        />
-      )}
     </div>
   );
 }

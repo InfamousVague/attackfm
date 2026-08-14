@@ -46,6 +46,7 @@ import { SearchPage } from './SearchPage.tsx';
 import { StatsPage } from './StatsPage.tsx';
 import { AiPage } from './AiPage.tsx';
 import { ServersPage } from './ServersPage.tsx';
+import { FriendsPage } from './FriendsPage.tsx';
 import { DjPage } from './DjPage.tsx';
 import { DjChatProvider } from './djChat.tsx';
 import { DatePage } from './DatePage.tsx';
@@ -536,6 +537,7 @@ function AppMain({
   onCloseDetail,
   onOpenDownloads,
   onOpenStats,
+  onOpenFriends,
   swipeRef,
 }: {
   /** The edge-swipe back gesture drags this element; App owns the hook. */
@@ -554,6 +556,7 @@ function AppMain({
   onOpenDownloads: () => void;
   /** The stats mini-cards' destination. */
   onOpenStats: () => void;
+  onOpenFriends: () => void;
 }) {
   const pages = usePluginPages();
   const activePage = detail ? null : (pages.find((pg) => pg.key === tab) ?? null);
@@ -649,11 +652,16 @@ function AppMain({
         // Stats: the listening, added up - fed by the same event log the
         // curator tunes itself on.
         <StatsPage onPlay={onPlay} onOpenArtist={onOpenArtist} />
-      ) : tab === 'profile' || tab === 'friends' ? (
+      ) : tab === 'friends' ? (
+        // The people, their own page now - the grid of artist-backed cards
+        // wants the whole screen. 'friends' was already the tab's old alias
+        // for Profile, and pointing it here is the honest reading of the name.
+        <FriendsPage />
+      ) : tab === 'profile' ? (
         // Profile: who you are - identity, live jams, your servers, your
         // friends. 'friends' is the tab's old name, honoured so a stored
         // session lands here rather than falling through to the library.
-        <ProfilePage />
+        <ProfilePage onOpenFriends={onOpenFriends} />
       ) : tab === 'downloads' && hasQueue ? (
         <DownloadsPage />
       ) : (
@@ -1173,6 +1181,7 @@ export function App() {
                   onCloseDetail={closeDetail}
                   onOpenDownloads={() => goTab('downloads')}
                   onOpenStats={() => goTab('stats')}
+                  onOpenFriends={() => goTab('friends')}
                 />
               </PendingPlayProvider>
               </DjChatProvider>
