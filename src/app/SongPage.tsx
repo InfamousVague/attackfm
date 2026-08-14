@@ -1,6 +1,6 @@
 import { Button, Text } from '@glacier/react';
 import { Play, Shuffle } from '@glacier/icons';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { SongTable } from './SongTable.tsx';
@@ -132,6 +132,32 @@ export function SongPage({
   const loading = view === 'onrepeat' && session !== null && heavyIds === null;
   const empty = listTracks.length === 0 && !loading;
 
+  /**
+   * Whether the hero has scrolled out of the way.
+   *
+   * Watched with an observer on a sentinel rather than a scroll handler: the
+   * question is only ever "is the header still on screen", and answering it
+   * from scroll offsets means a listener firing on every frame of a flick to
+   * recompute something the browser already knows.
+   */
+  const pageRef = useRef<HTMLDivElement | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const [stuck, setStuck] = useState(false);
+
+  useEffect(() => {
+    const root = pageRef.current;
+    const mark = sentinelRef.current;
+    if (!root || !mark) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setStuck(!entry?.isIntersecting),
+      { root, threshold: 0 },
+    );
+    observer.observe(mark);
+    return () => observer.disconnect();
+    // Re-armed per view: switching collections replaces the header the
+    // sentinel sits under.
+  }, [view]);
+
   const playAll = () => {
     const first = listTracks[0];
     if (first) onPlay(first, listTracks);
@@ -145,7 +171,29 @@ export function SongPage({
   };
 
   return (
-    <div className={`homePage libraryPage songPage ${meta.tone}`}>
+    <div className={`homePage libraryPage songPage ${meta.tone}`} ref={pageRef}>
+      {/* The collapsed header: the hero's identity and its two actions, kept
+          within reach once the hero itself has gone. Rendered always and
+          revealed by state, so appearing costs no layout. */}
+      <div className="songPageBar" data-show={stuck || undefined} aria-hidden={!stuck}>
+        <span className="songPageBar__mark" aria-hidden>
+          {view === 'onrepeat' ? (
+            <img src={onRepeatChip} alt="" />
+          ) : view === 'liked' ? (
+            <img src={likedChip} alt="" />
+          ) : (
+            <HeroArt name={meta.art} />
+          )}
+        </span>
+        <span className="songPageBar__title">{meta.title}</span>
+        <Button variant="solid" size="sm" onClick={playAll} disabled={empty} tabIndex={stuck ? 0 : -1}>
+          <Play size={14} fill="currentColor" />
+          Play
+        </Button>
+        <Button variant="ghost" size="sm" onClick={shuffleAll} disabled={empty} tabIndex={stuck ? 0 : -1}>
+          <Shuffle size={14} />
+        </Button>
+      </div>
       <header className="playlistHead songPageHead">
         <div className="playlistHead__cover" aria-hidden>
           <div className="tileSquircle playlistHead__mosaic songPageHero">
@@ -187,6 +235,9 @@ export function SongPage({
           </div>
         </div>
       </header>
+      {/* Sits just under the hero: once this leaves the top of the page, the
+          hero has gone with it. */}
+      <div ref={sentinelRef} className="songPageHead__sentinel" aria-hidden />
 
       {empty && !loading ? (
         <div className="playlistEmpty emptyState emptyState--tall">
@@ -200,6 +251,7 @@ export function SongPage({
         <section className="homeShelf librarySongs">
           <div className="libraryBody">
             <SongTable
+              flow
               loading={loading}
               tracks={listTracks}
               onPlay={onPlay}

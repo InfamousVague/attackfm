@@ -124,6 +124,7 @@ export function SongTable({
   onPlay,
   onOpenArtist,
   tracks: tracksProp,
+  flow,
   loading,
   plays,
 }: {
@@ -131,6 +132,16 @@ export function SongTable({
   onPlay: (track: Track, queue: Track[]) => void;
   onOpenArtist?: (artist: string) => void;
   tracks?: Track[];
+  /**
+   * Let the PAGE scroll instead of the table.
+   *
+   * By default the grid keeps its own bounded viewport, which is right inside
+   * a shelf. On a collection page it is not: it makes two nested scrollers,
+   * and a finger on the list moves the inner one, so the page header can never
+   * scroll away. With this the table grows to its full height and the page
+   * above it does the scrolling - one scroller, and a header that can leave.
+   */
+  flow?: boolean;
   /** Set while the CALLER is still fetching the rows it will pass. The table
    *  already knows about a library scan; it cannot know about a list being
    *  assembled above it (On repeat waits on the play ledger), and without this
@@ -242,14 +253,17 @@ export function SongTable({
     <>
     <DataGrid
       aria-label="Songs"
-      className="songTable"
+      className={flow ? 'songTable songTable--flow' : 'songTable'}
       columns={columns}
       data={rows}
       sort={sort}
       onSortChange={setSort}
       density="comfortable"
-      stickyHeader
-      maxHeight="100%"
+      // In flow mode the page is the scroller, so the grid's own sticky
+      // header would pin to the page and collide with the collapsed page
+      // header. The page bar carries that job instead.
+      stickyHeader={!flow}
+      maxHeight={flow ? undefined : '100%'}
       loading={loading || (library.scanning && rows.length === 0)}
       // The empty state has to name the thing to do next, and that differs by
       // where the music was meant to come from: a phone has no folder to fill,

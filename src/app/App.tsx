@@ -580,6 +580,13 @@ function AppMain({
   const canDiscover = hasDownloads || useAcquire().hasAny;
   return (
     <main className="appContent" ref={swipeRef}>
+      {/* Above the pages but INSIDE the content column. It cannot live one
+          level up in .appBody: that is a flex ROW, so a banner there becomes a
+          column beside the app and squeezes it to nothing the moment it shows.
+          Here it stacks over whichever page is on, and still outlives the page
+          it sits above - an update is news about the whole app, and a page
+          that unmounts on navigation would take the notice with it. */}
+      <UpdateBanner />
       {/* The top of the page mirrors the bottom: scrolled content dissolves
           into black under the header instead of cutting off at its edge.
           Only on the three browsing surfaces, and only once scrolled - parked
@@ -1176,10 +1183,6 @@ export function App() {
                   artist is not a conversation. */}
               <DjChatProvider onPlay={playFrom}>
               <PendingPlayProvider value={playPending}>
-                {/* Sits above the content rather than inside a page: an update
-                    is news about the whole app, and a page that unmounts on
-                    navigation would take the notice with it. */}
-                <UpdateBanner />
                 <AppMain
                   swipeRef={swipeRef}
                   detail={detail}
