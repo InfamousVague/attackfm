@@ -17,7 +17,8 @@
 
 import { Button, Field, IconButton, Input, Modal, Spinner, Text } from '@glacier/react';
 import { Check, UserPlus, X } from '@glacier/icons';
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { artistImageKnown, cachedArtistImage, resolveArtistImage } from './artistImage.ts';
 import { EmptyArt } from './EmptyArt.tsx';
 import { useServerSession } from './serverSession.tsx';
 import {
@@ -215,6 +216,34 @@ export function FriendsSection({
     });
   }, [token, server]);
 
+  // A picture for each friend's top artist, so the grid is made of music
+  // rather than initials. Driven off what they already announce, so it costs
+  // nothing extra of them and appears only for friends who share.
+  const [artTick, setArtTick] = useState(0);
+  const topArtists = useMemo(
+    () =>
+      [...new Set((feed?.friends ?? []).map((f) => (f.weekTopArtist ?? '').trim()).filter(Boolean))],
+    [feed],
+  );
+  useEffect(() => {
+    if (!server) return;
+    const unknown = topArtists.filter((name) => !artistImageKnown(name));
+    if (unknown.length === 0) return;
+    let live = true;
+    const control = new AbortController();
+    void Promise.all(
+      unknown.map((name) => resolveArtistImage(server, name, control.signal)),
+    ).then(() => {
+      // One redraw for the batch: the pictures live in a module cache, so the
+      // grid has to be asked to look again rather than being handed them.
+      if (live) setArtTick((n) => n + 1);
+    });
+    return () => {
+      live = false;
+      control.abort();
+    };
+  }, [server, topArtists]);
+
   const act = async (run: () => Promise<void>, ok?: string) => {
     setBusy(true);
     setNote(null);
@@ -325,8 +354,21 @@ export function FriendsSection({
               const seen = seenAgo(f.seenAt);
               const online = seen === 'online now';
               const glance = weekGlance(f);
+              // `artTick` is read here so the memo-free grid re-renders when a
+              // batch of pictures lands; the value itself is meaningless.
+              void artTick;
+              const backdrop = cachedArtistImage(f.weekTopArtist ?? '');
               return (
                 <div key={f.id} className="friendCard" data-online={online || undefined}>
+                  {backdrop && (
+                    <img
+                      className="friendCard__backdrop"
+                      src={backdrop}
+                      alt=""
+                      aria-hidden
+                      loading="lazy"
+                    />
+                  )}
                   <FriendAvatar handle={f.handle} size="lg" className="friendCard__face" />
                   <span className="friendCard__handle">{f.handle}</span>
                   <span className="friendCard__meta">

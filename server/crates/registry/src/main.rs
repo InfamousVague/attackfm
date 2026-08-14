@@ -811,7 +811,16 @@ async fn main() {
 
     let state = Arc::new(AppState { db, issuer, challenges: Mutex::new(HashMap::new()) });
 
-    let cors = CorsLayer::new().allow_origin(Any).allow_methods([Method::GET, Method::POST]).allow_headers(Any);
+    // DELETE belongs here as much as GET does: `/v1/friends/{id}` is the only
+    // route on this service that is neither GET nor POST, and leaving it off
+    // this list did not make it unreachable in an obvious way - it made the
+    // browser refuse it at the preflight, so unfriending failed silently in the
+    // app while curl against the same endpoint worked perfectly. OPTIONS is
+    // named for the preflight itself.
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
+        .allow_headers(Any);
 
     let app = Router::new()
         .route("/health", get(health))

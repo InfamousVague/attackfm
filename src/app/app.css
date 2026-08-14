@@ -9886,6 +9886,36 @@ button.artistAlbum {
   border-radius: var(--glacier-radius-lg);
   background: var(--glacier-surface);
   text-align: center;
+  /* The artist photo is clipped to the card's own corners. */
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* Whoever they played most this week, behind them.
+ *
+ * Held well back on purpose: this is a card about a PERSON, and a photograph
+ * at full strength would make it a card about a band with a name written over
+ * it. Dimmed, desaturated a little and faded out downward, it reads as colour
+ * and texture behind the handle - and the text above keeps its contrast
+ * without needing a scrim of its own. */
+.friendCard__backdrop {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  z-index: -1;
+  opacity: 0.28;
+  filter: saturate(0.85);
+  -webkit-mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.95), transparent 78%);
+  mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.95), transparent 78%);
+  pointer-events: none;
+}
+
+/* A photograph carries its own light, so the card no longer needs the
+   surface behind it to say "card". */
+.friendCard:has(.friendCard__backdrop) {
+  background: var(--glacier-surface-raised);
 }
 
 /* A green ring on the mark while they are around - presence worn where the
