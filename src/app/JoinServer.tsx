@@ -6,8 +6,8 @@
 //! listener's central identity, which the server admits because the invite says
 //! so. The result is an ordinary server session; the account is theirs.
 
-import { Button, Field, OtpField, Text } from '@glacier/react';
-import { LogIn } from '@glacier/icons';
+import { Button, Field, Input, OtpField, Text } from '@glacier/react';
+import { LogIn, Link2 } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { useRegistry } from './registrySession.tsx';
 import { useServerSession } from './serverSession.tsx';
@@ -98,8 +98,27 @@ export function JoinServer() {
         />
       </Field>
 
+      <Field label="Or paste an invite link">
+        <Input
+          size="sm"
+          placeholder="https://registry.attack.fm/i/ABC123"
+          leadingIcon={<Link2 size={14} />}
+          aria-label="Invite link"
+          onChange={(e) => {
+            // The moment the pasted text carries a code, it checks itself -
+            // the six cells above fill in so what happened stays visible.
+            const code = codeFrom(e.target.value);
+            if (code && code.length === 6 && code !== e.target.value.trim()) {
+              setValue(code.toUpperCase());
+              void look(code);
+              e.target.value = '';
+            }
+          }}
+        />
+      </Field>
+
       {!preview ? (
-        <Button variant="outline" size="sm" onClick={() => void look()} disabled={busy || value.length !== 8}>
+        <Button variant="outline" size="sm" onClick={() => void look()} disabled={busy || value.length !== 6}>
           {busy ? 'Checking…' : 'Check invite'}
         </Button>
       ) : (

@@ -7,6 +7,7 @@ import { JoinServer } from './JoinServer.tsx';
 import { createInvite, inviteLink } from './registry.ts';
 import { enterServer, fetchServerInfo, linkAccount } from './server.ts';
 import { forgetServer, knownServers, rememberServer, type KnownServer } from './servers.ts';
+import { fetchSavedServers, forgetServerEverywhere } from './serverSync.ts';
 
 //! Where you listen - every server this device has entered, as cards.
 //!
@@ -44,6 +45,26 @@ export function WhereYouListen() {
 
   const [saved, setSaved] = useState<KnownServer[]>(() => knownServers());
   const refresh = () => setSaved(knownServers());
+  // The account's list, fetched fresh: what the OTHER devices saved. This is
+  // the half that makes a new phone arrive already knowing its servers.
+  const [accountServers, setAccountServers] = useState<{ url: string; name: string; isAdmin: boolean }[]>([]);
+  useEffect(() => {
+    if (!registry) return;
+    let live = true;
+    void fetchSavedServers().then((list) => {
+      if (!live) return;
+      setAccountServers(
+        list.map((m) => ({
+          url: m.serverUrl.replace(/\/+$/, ''),
+          name: m.serverName,
+          isAdmin: m.role === 'owner',
+        })),
+      );
+    });
+    return () => {
+      live = false;
+    };
+  }, [registry]);
 
   // Names arrive lazily: /api/server answers without auth, and the answer is
   // written back to the ledger so the next visit paints it immediately.
@@ -103,8 +124,18 @@ export function WhereYouListen() {
     if (current && !list.some((s) => s.url === current)) {
       list.unshift({ url: current, username: session?.username, isAdmin: session?.isAdmin, lastUsed: Date.now() });
     }
+    // Servers the ACCOUNT knows that this device does not: merged in as
+    // ordinary cards, because to the person they are the same thing - a place
+    // they belong. The switch re-proves membership through the registry, so a
+    // card from another device works here without any credential having
+    // travelled. lastUsed 0 files them under everything this device has
+    // actually touched.
+    for (const a of accountServers) {
+      if (list.some((s) => s.url === a.url)) continue;
+      list.push({ url: a.url, name: a.name || undefined, isAdmin: a.isAdmin, lastUsed: 0 });
+    }
     return list.sort((a, b) => Number(b.url === current) - Number(a.url === current) || b.lastUsed - a.lastUsed);
-  }, [saved, session]);
+  }, [saved, session, accountServers]);
 
   // Sharing: mint an invite for the CURRENT server. Any member may mint - the
   // server checks the invite with the registry when it is spent.
@@ -185,6 +216,8 @@ export function WhereYouListen() {
                     title="Forget this server"
                     onClick={() => {
                       forgetServer(s.url);
+                      void forgetServerEverywhere(s.url);
+                      setAccountServers((list) => list.filter((a) => a.url !== s.url));
                       refresh();
                     }}
                   >

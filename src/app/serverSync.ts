@@ -18,6 +18,7 @@
 
 import { fetchMemberships, forgetMembership, recordMembership, type Membership } from './registry.ts';
 import { mirrorList, subscribeMirrors } from './mirrors.ts';
+import { knownServers, subscribeKnownServers } from './servers.ts';
 import type { ServerSession } from './server.ts';
 
 const REGISTRY_KEY = 'attackfm-registry-session';
@@ -55,43 +56,46 @@ function rememberPushed(urls: string[]): void {
   }
 }
 
-/** Everything this device can currently reach: the session server first, then
- *  each linked mirror. */
+/** Everything this device knows: the session server, each linked mirror, and
+ *  every server remembered on a card. The ledger matters most - a phone that
+ *  has signed into three servers holds two of them ONLY there, and those two
+ *  were exactly the ones the account never learned about. */
 function localServers(session: ServerSession | null): { serverUrl: string; serverName: string; role: string }[] {
   const out: { serverUrl: string; serverName: string; role: string }[] = [];
-  if (session) {
-    out.push({
-      serverUrl: session.url,
-      serverName: '',
-      role: session.isAdmin ? 'owner' : 'member',
-    });
-  }
-  for (const m of mirrorList()) {
-    if (out.some((s) => s.serverUrl === m.url)) continue;
-    out.push({ serverUrl: m.url, serverName: m.name ?? '', role: m.isAdmin ? 'owner' : 'member' });
-  }
+  const add = (serverUrl: string, serverName: string, role: string) => {
+    const url = serverUrl.replace(/\/+$/, '');
+    if (!url || out.some((s) => s.serverUrl === url)) return;
+    out.push({ serverUrl: url, serverName, role });
+  };
+  if (session) add(session.url, '', session.isAdmin ? 'owner' : 'member');
+  for (const m of mirrorList()) add(m.url, m.name ?? '', m.isAdmin ? 'owner' : 'member');
+  for (const k of knownServers()) add(k.url, k.name ?? '', k.isAdmin ? 'owner' : 'member');
   return out;
 }
 
 /**
- * Push this device's servers to the account, and retract what it dropped.
+ * Push this device's servers to the account.
  *
- * The retraction half matters: the list is pushed per-entry rather than as a
- * whole, so a server unlinked here would otherwise live on in the account
- * forever and keep being offered back to every new device.
+ * Additive only. An earlier version diffed against what this device last
+ * pushed and RETRACTED the difference - which, because the push set was only
+ * "session + mirrors", meant switching servers quietly deleted the previous
+ * one from the account. Removal is an intention, not a side effect: it
+ * happens in {@link forgetServerEverywhere}, when someone dismisses the card.
  */
 export async function syncServersUp(session: ServerSession | null): Promise<void> {
   const token = registryToken();
   if (!token) return;
   const mine = localServers(session);
-  const urls = mine.map((s) => s.serverUrl);
-  const gone = lastPushed().filter((u) => !urls.includes(u));
+  await Promise.all(mine.map((s) => recordMembership(token, s).catch(() => {})));
+  rememberPushed(mine.map((s) => s.serverUrl));
+}
 
-  await Promise.all([
-    ...mine.map((s) => recordMembership(token, s).catch(() => {})),
-    ...gone.map((u) => forgetMembership(token, u).catch(() => {})),
-  ]);
-  rememberPushed(urls);
+/** The one deliberate removal: drop a server from this device AND the
+ *  account, so it stops being offered back to every new phone. */
+export async function forgetServerEverywhere(serverUrl: string): Promise<void> {
+  const token = registryToken();
+  if (!token) return;
+  await forgetMembership(token, serverUrl.replace(/\/+$/, '')).catch(() => {});
 }
 
 /** Every server saved to the account, from any device. Empty when signed out
@@ -120,9 +124,11 @@ export function startServerSync(session: ServerSession | null): () => void {
     void syncServersUp(session);
   };
   push();
-  const off = subscribeMirrors(push);
+  const offMirrors = subscribeMirrors(push);
+  const offKnown = subscribeKnownServers(push);
   return () => {
     stopped = true;
-    off();
+    offMirrors();
+    offKnown();
   };
 }
