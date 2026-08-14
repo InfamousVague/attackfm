@@ -43,6 +43,47 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T |
   }
 }
 
+// --- what is waiting, and who wants to know ---------------------------------
+
+/** The version downloaded and pointed at, but not yet running. */
+let staged: string | null = null;
+const watchers = new Set<() => void>();
+
+/**
+ * The update the next launch will run, if it differs from this one.
+ *
+ * Null while there is nothing waiting - which is almost always. A banner reads
+ * this rather than polling, so nothing on screen changes until a download has
+ * actually landed and been verified.
+ */
+export function stagedBundle(): string | null {
+  return staged;
+}
+
+export function watchBundle(fn: () => void): () => void {
+  watchers.add(fn);
+  return () => watchers.delete(fn);
+}
+
+function announce(version: string | null): void {
+  if (staged === version) return;
+  staged = version;
+  for (const fn of watchers) fn();
+}
+
+/**
+ * Apply a staged update.
+ *
+ * A plain reload is the whole mechanism: it re-parses index.html, which runs
+ * the boot loader again, which asks the native side what is active and finds
+ * the newly installed bundle. No process restart, no app-store round trip -
+ * and because the swap only ever happens at a boot, nothing is torn out from
+ * under a running screen.
+ */
+export function applyStagedBundle(): void {
+  window.location.reload();
+}
+
 export function bundleState(): Promise<BundleState | null> {
   return call<BundleState>('bundle_state');
 }
@@ -82,6 +123,10 @@ export async function checkForBundle(session: ServerSession): Promise<string | n
   if (!isTauri()) return null;
   const state = await bundleState();
   if (!state) return null;
+  // Installed on an earlier run and still not running: the banner belongs up
+  // now, before any network call, so a device that is offline still learns
+  // there is an update waiting for it.
+  if (state.active && state.active !== runningBundle()) announce(state.active);
 
   let manifest: BundleManifest;
   try {
@@ -115,7 +160,11 @@ export async function checkForBundle(session: ServerSession): Promise<string | n
     native: manifest.native ?? 0,
     files,
   });
-  return next?.active === manifest.version ? manifest.version : null;
+  if (next?.active !== manifest.version) return null;
+  // Only now is there something to tell anyone about: the files are down,
+  // checksummed and pointed at.
+  announce(manifest.version);
+  return manifest.version;
 }
 
 declare global {
