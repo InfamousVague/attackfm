@@ -824,8 +824,8 @@ function MirrorSection() {
                 {hotSize
                   ? `About ${hotSize.tracks.toLocaleString()} songs (${gbLabel(hotSize.bytes)}) of ${(
                       hotSummary?.libraryTracks ?? 0
-                    ).toLocaleString()} — played twice or more, plus anything liked. Whatever will not fit is left behind, coldest first.`
-                  : 'Played twice or more, plus anything liked.'}
+                    ).toLocaleString()} — played twice or more, plus anything liked. Whatever will not fit is left behind, coldest first, and songs that go cold later are let go so this stays a working set rather than filling up again.`
+                  : 'Played twice or more, plus anything liked. Songs that go cold are let go.'}
               </Text>
             )}
           </div>
