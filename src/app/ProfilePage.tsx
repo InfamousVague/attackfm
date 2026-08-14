@@ -18,6 +18,14 @@ import {
 import { enterServer, fetchServerInfo, linkAccount, remotePath } from './server.ts';
 import { forgetServer, knownServers, rememberServer, type KnownServer } from './servers.ts';
 import { fetchStatsSummary, type StatsSummary } from './stats.ts';
+import {
+  DayClock,
+  GenreBars,
+  HabitBadge,
+  ListeningRadar,
+  StatTiles,
+  profileAxes,
+} from './ProfileCharts.tsx';
 import placeholderArt from '../assets/attack-wave.png';
 
 /**
@@ -574,25 +582,42 @@ function YourWeek() {
   if (!session || failed) return null;
 
   const top = week?.topArtists[0]?.artist ?? null;
-  const hours = week ? Math.round(week.minutes / 6) / 10 : 0;
+  const axes = week ? profileAxes(week) : [];
+  // A week with nothing in it has no shape to draw, and an empty radar reads
+  // as a broken one rather than an honest zero.
+  const hasHistory = !!week && week.plays > 0;
 
   return (
     <section className="homeShelf profileWeek">
-      <h2 className="homeShelfTitle">Your week</h2>
-      <div className="profileWeek__row">
-        <div className="profileStat">
-          <span className="profileStat__value">{week ? (hours >= 1 ? `${hours}h` : `${week.minutes}m`) : '—'}</span>
-          <span className="profileStat__label">listened</span>
-        </div>
-        <div className="profileStat">
-          <span className="profileStat__value">{week ? week.plays.toLocaleString() : '—'}</span>
-          <span className="profileStat__label">plays</span>
-        </div>
-        <div className="profileStat">
-          <span className="profileStat__value">{week?.streakDays ? `${week.streakDays}d` : '—'}</span>
-          <span className="profileStat__label">streak</span>
-        </div>
+      <div className="profileWeek__head">
+        <h2 className="homeShelfTitle">Your week</h2>
+        {hasHistory && <HabitBadge axes={axes} />}
       </div>
+
+      {week ? (
+        <StatTiles week={week} />
+      ) : (
+        <Text size="sm" tone="muted">
+          Counting…
+        </Text>
+      )}
+
+      {hasHistory && week && (
+        <>
+          <ListeningRadar axes={axes} />
+
+          <h3 className="profileWeek__sub">When you listen</h3>
+          <DayClock clock={week.clock} />
+
+          {week.topGenres.length > 0 && (
+            <>
+              <h3 className="profileWeek__sub">What you played</h3>
+              <GenreBars genres={week.topGenres} />
+            </>
+          )}
+        </>
+      )}
+
       {top && (
         <Text size="sm" tone="muted">
           Most played: <strong>{top}</strong>
