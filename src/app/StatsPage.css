@@ -621,3 +621,177 @@ button.statsRow__name:hover {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* --- the revamp: hero, art chips, the fold -------------------------------- */
+
+.statsHero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.statsHero__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--glacier-space-2);
+  flex-wrap: wrap;
+}
+
+/* The one number the page is about. Clamped so "12.5 hr" fits a small phone
+   and "245 min" does not shout on a desktop. */
+.statsHero__value {
+  font-size: clamp(2.25rem, 8vw, 3rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.statsHero__label {
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+}
+
+.statsHero[data-ghost] {
+  min-block-size: 3.5rem;
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-sunken);
+  animation: statsGhost 1.4s ease-in-out infinite;
+}
+
+/* A row of facts wearing covers. Wraps rather than scrolls: five chips is the
+   ceiling, and a wrap keeps every one on screen. */
+.statsArtChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+}
+
+.statsArtChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-1);
+  padding-inline-end: var(--glacier-space-3);
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface-sunken);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  color: inherit;
+  text-align: start;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+}
+
+button.statsArtChip {
+  cursor: pointer;
+  transition: border-color 0.16s var(--glacier-ease-out, ease), background-color 0.16s ease;
+}
+
+button.statsArtChip:hover {
+  border-color: var(--glacier-accent-solid);
+  background: var(--glacier-hover);
+}
+
+/* The cover IS the chip's face: a 2.25rem tile, circular for people. Chips
+   with no cover paint the glyph on a hue from the generated-art family, so
+   the row reads as one set. */
+.statsArtChip__art {
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: var(--glacier-radius-md);
+  overflow: hidden;
+  background:
+    linear-gradient(
+      140deg,
+      hsl(var(--chip-hue, 210) 45% 38%) 0%,
+      hsl(var(--chip-hue, 210) 60% 22%) 100%
+    );
+  color: rgb(255 255 255 / 0.85);
+}
+
+.statsArtChip__art[data-shape='circle'] {
+  border-radius: var(--glacier-radius-full);
+}
+
+.statsArtChip__art img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.statsArtChip__text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.statsArtChip__label {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.statsArtChip__value {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 600;
+  max-inline-size: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The fold's handle: centred, so it reads as the seam it is. */
+.statsMore {
+  display: flex;
+  justify-content: center;
+}
+
+/* Rates as rings, side by side, with the "new to you" count keeping them
+   company at the same visual weight. */
+.statsRings {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-6);
+  flex-wrap: wrap;
+}
+
+.statsRing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}
+
+.statsRing__label {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.statsRing__big {
+  font-size: 1.75rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 76px;
+}
+
+.statsGenreDot {
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  flex: none;
+  border-radius: var(--glacier-radius-full);
+}
+
+.statsSmallRow__body[data-dotted] {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+/* The year grid can outgrow a phone; it scrolls inside its own box rather
+   than widening the page. */
+.statsHeat {
+  overflow-x: auto;
+  padding-block-end: var(--glacier-space-1);
+}

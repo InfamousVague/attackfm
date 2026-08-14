@@ -205,8 +205,11 @@ export function fmtPercent(rate: number): string {
 /* ------------------------------------------------------------------- fetch */
 
 /**
- * The summary for one range. `tzMin` is the offset such that
- * local = utc + tzMin minutes - the NEGATION of what `getTimezoneOffset`
+ * The summary for one range. `tzMin` is `getTimezoneOffset()` AS IS: the
+ * minutes to SUBTRACT from UTC to reach the listener's wall clock, which is
+ * the convention the server documents and applies (local = utc - tzMin). This
+ * used to send the negation, which shifted the clock, the day bars and the
+ * streak by twice the zone offset - ten hours for an EST listener.
  * returns, because JavaScript's convention points the other way.
  */
 export async function fetchStatsSummary(
@@ -214,7 +217,7 @@ export async function fetchStatsSummary(
   range: StatsRange,
   signal?: AbortSignal,
 ): Promise<StatsSummary> {
-  const tzMin = -new Date().getTimezoneOffset();
+  const tzMin = new Date().getTimezoneOffset();
   const res = await fetch(`${session.url}/api/stats/summary?range=${range}&tzMin=${tzMin}`, {
     headers: { authorization: `Bearer ${session.token}` },
     signal,
