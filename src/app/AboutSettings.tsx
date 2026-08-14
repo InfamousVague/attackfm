@@ -49,11 +49,11 @@ export function AboutSettings() {
   const [outcome, setOutcome] = useState<UpdateCheckOutcome | null>(null);
   useEffect(() => watchBundle(() => setStaged(stagedBundle())), []);
   const check = async () => {
-    if (!session || checking) return;
+    if (checking) return;
     setChecking(true);
     setOutcome(null);
     try {
-      setOutcome(await checkForUpdate(session));
+      setOutcome(await checkForUpdate());
     } finally {
       setChecking(false);
     }
@@ -176,9 +176,7 @@ export function AboutSettings() {
               </span>
               <span className="aboutRow__label">Updates</span>
               <span className="aboutRow__value">
-                {staged
-                  ? `v${staged} is ready — restart to apply`
-                  : `from ${session ? session.url.replace(/^https?:\/\//, '') : 'your server'}`}
+                {staged ? `v${staged} is ready — restart to apply` : 'from attack.fm'}
               </span>
             </div>
           </div>
@@ -197,21 +195,11 @@ export function AboutSettings() {
                 Restart and update
               </Button>
             ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void check()}
-                disabled={checking || !session}
-              >
+              <Button variant="outline" size="sm" onClick={() => void check()} disabled={checking}>
                 <RefreshCw size={12} /> {checking ? 'Checking…' : 'Check for updates'}
               </Button>
             )}
           </div>
-          {!session && (
-            <Text tone="subtle" size="xs">
-              Sign into a server to check for updates — it is where they come from.
-            </Text>
-          )}
         </div>
       )}
 

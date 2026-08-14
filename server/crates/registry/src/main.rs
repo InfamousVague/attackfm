@@ -48,6 +48,11 @@ struct AppState {
     /// In memory: a challenge that outlives a restart is no loss, the device
     /// just asks for another.
     challenges: Mutex<HashMap<String, (i64, i64)>>,
+    /// Where the published app frontend lives (beside the database). The
+    /// registry is the one service every device talks to regardless of which
+    /// music server it listens from - which makes it the natural place updates
+    /// come from, the same way sign-in does.
+    bundle_dir: std::path::PathBuf,
 }
 
 type ApiError = (StatusCode, String);
@@ -800,6 +805,89 @@ fn load_or_make_issuer(db: &Db) -> Issuer {
     issuer
 }
 
+// --- app updates ------------------------------------------------------------
+//
+// The registry publishes the app's frontend to every device, the counterpart
+// to src-tauri/src/bundle.rs. It lives HERE - not on any music server -
+// because this is the one address every install already talks to for
+// identity, so updates reach a device whichever server it listens from, and
+// even a device signed into nothing at all.
+//
+// Both routes are deliberately public. What is served is the app's own code,
+// the same bytes as the public repo; and the native downloader is a bare
+// reqwest that sets no headers - an auth requirement here is how four
+// releases once shipped to nobody, silently. The manifest is generated from
+// the bytes on disk per request, so it can never disagree with what a device
+// then downloads and checksums.
+
+/// `GET /v1/app/bundle` - what the registry is publishing, or 404 when nothing.
+async fn app_bundle_manifest(State(state): State<Arc<AppState>>) -> ApiResult {
+    let base = &state.bundle_dir;
+    let version = std::fs::read_to_string(base.join("VERSION"))
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or((StatusCode::NOT_FOUND, "no app bundle is published".into()))?;
+
+    let mut files = Vec::new();
+    let entries = std::fs::read_dir(base)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+        if name == "VERSION" || name == "NATIVE" || name == "NOTES" {
+            continue;
+        }
+        let Ok(bytes) = std::fs::read(&path) else { continue };
+        use sha2::Digest;
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(&bytes);
+        let sum: String = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect();
+        files.push(json!({ "name": name, "sha256": sum, "bytes": bytes.len() }));
+    }
+    if files.is_empty() {
+        return Err((StatusCode::NOT_FOUND, "the published bundle is empty".into()));
+    }
+
+    let native: u32 = std::fs::read_to_string(base.join("NATIVE"))
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(1);
+    let notes = std::fs::read_to_string(base.join("NOTES")).unwrap_or_default();
+
+    Ok(Json(json!({
+        "version": version,
+        "native": native,
+        "files": files,
+        "notes": notes,
+    })))
+}
+
+/// `GET /v1/app/bundle/{name}` - one file from the published bundle.
+async fn app_bundle_file(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(name): axum::extract::Path<String>,
+) -> Result<axum::response::Response, ApiError> {
+    use axum::response::IntoResponse;
+    // The name indexes a flat directory and must not walk out of it.
+    if name.contains('/') || name.contains('\\') || name.contains("..") || name.len() > 128 {
+        return Err((StatusCode::BAD_REQUEST, "not a bundle file".into()));
+    }
+    let path = state.bundle_dir.join(&name);
+    let bytes = std::fs::read(&path).map_err(|_| (StatusCode::NOT_FOUND, "no such file".into()))?;
+    let mime = if name.ends_with(".js") {
+        "text/javascript"
+    } else if name.ends_with(".css") {
+        "text/css"
+    } else {
+        "application/octet-stream"
+    };
+    Ok(([(axum::http::header::CONTENT_TYPE, mime)], bytes).into_response())
+}
+
 #[tokio::main]
 async fn main() {
     let bind = env_or("AFM_REGISTRY_BIND", "127.0.0.1");
@@ -808,8 +896,19 @@ async fn main() {
 
     let db = Arc::new(Db::open(&data).expect("open registry database"));
     let issuer = Arc::new(load_or_make_issuer(&db));
+    // The published frontend lives beside the database: <data dir>/appbundle.
+    let bundle_dir = data
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("appbundle");
 
-    let state = Arc::new(AppState { db, issuer, challenges: Mutex::new(HashMap::new()) });
+    let state = Arc::new(AppState {
+        db,
+        issuer,
+        challenges: Mutex::new(HashMap::new()),
+        bundle_dir,
+    });
 
     // DELETE belongs here as much as GET does: `/v1/friends/{id}` is the only
     // route on this service that is neither GET nor POST, and leaving it off
@@ -843,6 +942,10 @@ async fn main() {
         // The shareable face of an invite: what a tapped link lands on.
         .route("/i/{code}", get(invite_landing))
         .route("/v1/memberships", get(memberships).post(set_membership))
+        // The app's own updates, from the same central place sign-in comes
+        // from - every device checks here, whatever music server it uses.
+        .route("/v1/app/bundle", get(app_bundle_manifest))
+        .route("/v1/app/bundle/{name}", get(app_bundle_file))
         .layer(cors)
         .with_state(state);
 

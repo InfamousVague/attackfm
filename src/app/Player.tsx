@@ -51,6 +51,7 @@ import npPlaceholderArt from '../assets/attack-wave.png';
 import { NowPlayingBackdrop } from './NowPlayingBackdrop.tsx';
 import { useEffects } from './effects.ts';
 import { loadAudioUrl, reactivateAudioSession, systemOutputVolume, type Track } from './tauri.ts';
+import { bindAudioFocus, setNativePlaying } from './androidAudio.ts';
 import { isPendingPath } from './pendingPlay.tsx';
 import { fetchCanvas, fetchPlayStates, isRemotePath, reportPlay, reportPosition, trackIdFromPath } from './server.ts';
 import { fireNativeHaptic } from './haptics.ts';
@@ -2801,6 +2802,34 @@ export function Player({
     previous: skipBack,
     seek: commitSeek,
   };
+
+  // ── Android background playback ──────────────────────────────────────────
+  //
+  // Two things Android needs that no other platform does, both living in
+  // MainActivity and reached through androidAudio.ts (a no-op everywhere else).
+  //
+  // Telling it whether sound is coming out is what starts and stops the
+  // foreground service - the contract that stops the process being treated as
+  // spare memory the moment navigation wants some. `audible` rather than
+  // `playing`, so a deck that is paused, muted or handed to another device does
+  // not leave an ongoing notification standing over silence.
+  useEffect(() => {
+    setNativePlaying(audible);
+  }, [audible]);
+
+  // And obeying focus when the system needs the speaker. These are the player's
+  // own play and pause, so an interruption steers the deck exactly as a button
+  // would and everything downstream follows. A duck never arrives here - Android
+  // lowers and restores the volume itself, and pausing for one is what makes a
+  // spoken direction stop the music for the rest of the drive.
+  useEffect(
+    () =>
+      bindAudioFocus({
+        pause: () => carPlayControls.current?.setPlaying(false),
+        resume: () => carPlayControls.current?.setPlaying(true),
+      }),
+    [],
+  );
 
   // The fader no longer touches the element: it rides the gain after the
   // analyser, so turning down what you hear never turns down what the bar reads.

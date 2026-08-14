@@ -13,7 +13,7 @@ import { rememberServer } from './servers.ts';
 import { pickSource, startMirrorHeartbeat } from './mirrors.ts';
 import { startServerSync } from './serverSync.ts';
 import { startCacheSweeps } from './autoCache.ts';
-import { checkForBundle, reportBootOk } from './appUpdate.ts';
+import { checkForBundle, reclaimEmbeddedIfNewer, reportBootOk } from './appUpdate.ts';
 import {
   artUrl,
   isRemotePath,
@@ -232,10 +232,16 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
   // made, and a module body runs before React has rendered anything.
   useEffect(() => {
     reportBootOk();
+    // And if a fresh install carries a NEWER frontend than the downloaded
+    // bundle that just booted, hand the floor back to the binary - the one
+    // case where the downloaded copy is the stale one.
+    void reclaimEmbeddedIfNewer();
   }, []);
 
-  // And ask the hub whether it is publishing a newer bundle. Never swapped
-  // under a running app - whatever arrives is for the next launch.
+  // And ask attack.fm whether it is publishing a newer bundle. Never swapped
+  // under a running app - whatever arrives is for the next launch. Updates
+  // come from the central registry, not the music server, so this needs no
+  // session at all: a device signed into nothing still stays current.
   //
   // Three triggers, because a phone's clock barely runs: shortly after launch;
   // a six-hour interval (which a backgrounded WebView rarely lives to see);
@@ -245,13 +251,12 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
   // and if it happened to be backgrounded when a tick fired, that tick was
   // simply skipped and never retried.
   useEffect(() => {
-    if (!session) return;
     let live = true;
     let lastAsk = 0;
     const ask = () => {
       if (!live || document.hidden) return;
       lastAsk = Date.now();
-      void checkForBundle(session);
+      void checkForBundle();
     };
     const first = window.setTimeout(ask, 20_000);
     const timer = window.setInterval(ask, 6 * 60 * 60 * 1000);
@@ -267,7 +272,7 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [session]);
+  }, []);
 
   const persist = useCallback((next: ServerSession | null) => {
     setSession(next);

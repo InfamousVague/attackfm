@@ -136,7 +136,14 @@ for (const f of files) console.log(`    ${f.name}  ${(f.bytes.length / 1024).toF
 const e = env();
 const host = e.AFM_DEPLOY_HOST, user = e.AFM_DEPLOY_USER;
 if (!host || !user) die('AFM_DEPLOY_HOST / AFM_DEPLOY_USER missing from .env');
-const remote = '/opt/attackfm/data/appbundle';
+// The registry (registry.attack.fm) is the canonical update source - the same
+// central service every device already talks to for sign-in, whatever music
+// server it listens from. The music hub's old directory is kept published in
+// lockstep as a TRANSITION path: devices running a 0.3.43/0.3.44 frontend
+// still check their session's server, and this is how they get carried onto
+// the registry-checking client. Retire it once nothing old is left checking.
+const remote = '/opt/attackfm/registry/appbundle';
+const legacy = '/opt/attackfm/data/appbundle';
 const sshRaw = (cmd, opts = {}) =>
   spawnSync('sshpass', ['-e', 'ssh', '-o', 'StrictHostKeyChecking=no', `${user}@${host}`, cmd],
     { stdio: 'inherit', env: { ...process.env, SSHPASS: e.AFM_DEPLOY_PASS }, ...opts });
@@ -158,7 +165,7 @@ const ssh = (cmd) => {
 };
 
 step('Uploading');
-ssh(`mkdir -p ${remote}`);
+ssh(`mkdir -p ${remote} ${legacy}`);
 let uploaded = false;
 for (let i = 0; i < 4 && !uploaded; i += 1) {
   const rs2 = spawnSync('sshpass',
@@ -170,7 +177,7 @@ for (let i = 0; i < 4 && !uploaded; i += 1) {
 }
 if (!uploaded) die('upload failed after 4 attempts');
 
-step('Publishing');
+step('Publishing (registry, then the legacy hub path)');
 // VERSION is written LAST and alone: until it lands the server reports that it
 // publishes nothing, so no device can ever see a manifest for a half-uploaded
 // bundle. This ordering is the entire atomicity guarantee.
@@ -180,29 +187,36 @@ step('Publishing');
 const notesB64 = Buffer.from(notes, 'utf8').toString('base64');
 ssh(`printf '%s' '${notesB64}' | base64 -d > ${remote}/NOTES`);
 ssh(`printf '%s' '${native}' > ${remote}/NATIVE && printf '%s' '${version}' > ${remote}/VERSION`);
+// The legacy copy is cp'd FROM the registry dir on the box - one upload, two
+// doors, and the same VERSION-last ordering.
+ssh(
+  `rm -f ${legacy}/VERSION && cp ${remote}/app.js ${remote}/app.css ${remote}/NOTES ${remote}/NATIVE ${legacy}/ && cp ${remote}/VERSION ${legacy}/VERSION`,
+);
 
-step('Verifying the hub serves what we just built');
+step('Verifying both doors serve what we just built');
 const check = spawnSync('sshpass',
   ['-e', 'ssh', '-o', 'StrictHostKeyChecking=no', `${user}@${host}`,
-   `sha256sum ${remote}/app.js ${remote}/app.css | awk '{print $1}'`],
+   `sha256sum ${remote}/app.js ${remote}/app.css ${legacy}/app.js ${legacy}/app.css | awk '{print $1}'`],
   { encoding: 'utf8', env: { ...process.env, SSHPASS: e.AFM_DEPLOY_PASS } });
 const remoteSums = String(check.stdout).trim().split('\n').map((l) => l.trim());
 const localSums = files.map((f) => f.sha256);
-const same = localSums.every((s) => remoteSums.includes(s));
+const same = localSums.every((s) => remoteSums.filter((r) => r === s).length === 2);
 if (!same) {
-  die(`checksums differ — the hub does NOT have what was built.\n    local:  ${localSums.join(' ')}\n    remote: ${remoteSums.join(' ')}`);
+  die(`checksums differ — a door does NOT have what was built.\n    local:  ${localSums.join(' ')}\n    remote: ${remoteSums.join(' ')}`);
 }
 
 const state = spawnSync('sshpass',
   ['-e', 'ssh', '-o', 'StrictHostKeyChecking=no', `${user}@${host}`,
-   `cat ${remote}/VERSION; echo; wc -l < ${remote}/NOTES`],
+   // BYTES, not lines: NOTES is written without a trailing newline, so a
+   // one-line changelog reads as zero lines and once failed a good publish.
+   `cat ${remote}/VERSION; echo; cat ${legacy}/VERSION; echo; wc -c < ${remote}/NOTES`],
   { encoding: 'utf8', env: { ...process.env, SSHPASS: e.AFM_DEPLOY_PASS } });
-const [publishedVersion, noteLines] = String(state.stdout).trim().split('\n');
-if (publishedVersion !== version) {
-  die(`the hub publishes ${publishedVersion || '(nothing)'}, not ${version}`);
+const [publishedVersion, legacyVersion, noteBytes] = String(state.stdout).trim().split('\n').map((l) => l.trim());
+if (publishedVersion !== version || legacyVersion !== version) {
+  die(`published ${publishedVersion || '(nothing)'} / legacy ${legacyVersion || '(nothing)'}, wanted ${version}`);
 }
-if (notes && Number(noteLines) === 0) {
-  die('the notes did not land — the hub would offer this update with no changelog');
+if (notes && Number(noteBytes) === 0) {
+  die('the notes did not land — the registry would offer this update with no changelog');
 }
 
 ok(`published ${version} — ${notes ? `${notes.split('\n').length} changelog lines, ` : ''}devices will offer it within six hours, or on their next launch`);
