@@ -63,6 +63,17 @@ export const EFFECTS: EffectDef[] = [
 const EXCLUSIVE: string[][] = [['slow', 'fast'], ['room', 'hall']];
 
 const KEY = 'attackfm-effects';
+
+// The rack's UI is gone from the equalizer, and an effect with no visible
+// switch must not keep colouring playback from a previous run - re-encoding
+// every song for a setting nobody can see or turn off. The store stays (the
+// plumbing is load-bearing for the transcode URL), but persisted state is
+// purged at load so every session starts dry.
+try {
+  localStorage.removeItem(KEY);
+} catch {
+  // Nothing persisted, nothing to purge.
+}
 const listeners = new Set<() => void>();
 
 function read(): string[] {

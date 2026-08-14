@@ -12261,10 +12261,10 @@ button.artistAlbum {
 
 /* One number both halves read: how much of the screen the docked sheet owns.
    On :root because the sheet portals to the body while the app window shrinks
-   - two subtrees, one truth. 44% keeps the app the wider half; the 34rem cap
-   stops a desktop-sized webview from building a ballroom. */
+   - two subtrees, one truth. 40% keeps the app clearly the wider half; the
+   32rem cap stops a desktop-sized webview from building a ballroom. */
 :root {
-  --np-dock-width: min(44vw, 34rem);
+  --np-dock-width: min(40vw, 32rem);
 }
 
 /* Wide enough for two rooms, and this is mobile chrome (the nav bar is its
