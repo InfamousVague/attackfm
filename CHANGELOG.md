@@ -7,6 +7,16 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.46
+
+- Installing a newer app now wins over an older downloaded update that used to quietly keep running instead
+
+## 0.3.45
+
+- Updates now come straight from attack.fm — the same place you sign in — whichever server your music lives on
+- Checking works even before you've joined a server
+- About says exactly where updates come from
+
 ## 0.3.44
 
 - A live test of the new update pipe — if you're reading this on your phone, it worked

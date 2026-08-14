@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Background playback. Without these the app is, to Android, an ordinary
+         app that happens to make noise: backgrounded behind navigation it gets
+         frozen or killed the moment memory is wanted elsewhere. See
+         PlaybackService. POST_NOTIFICATIONS is what lets the ongoing notice
+         show on Android 13+; the service still runs if it is refused. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -26,6 +35,11 @@
             
             <!-- DEEP LINK PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
         </activity>
+
+        <service
+            android:name=".PlaybackService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="false" />
 
         <provider
           android:name="androidx.core.content.FileProvider"

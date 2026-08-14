@@ -11,7 +11,7 @@
 //! that fails to boot. This module only decides WHEN to ask.
 
 import { isTauri } from './tauri.ts';
-import type { ServerSession } from './server.ts';
+import { REGISTRY_URL } from './registry.ts';
 
 /** What the server publishes at `/api/app/bundle`. */
 export interface BundleManifest {
@@ -210,6 +210,35 @@ export async function revertToEmbedded(): Promise<BundleState | null> {
   return call<BundleState>('bundle_revert');
 }
 
+/** Dotted-numeric compare: is `a` strictly newer than `b`? */
+function newerVersion(a: string, b: string): boolean {
+  const pa = a.split('.').map((n) => Number(n) || 0);
+  const pb = b.split('.').map((n) => Number(n) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d > 0;
+  }
+  return false;
+}
+
+/**
+ * A fresh install outranks the older download it used to hide behind.
+ *
+ * The boot loader always prefers a downloaded bundle - right for the OTA flow,
+ * wrong the day a NEWER app is installed over it (a new APK, a store update):
+ * the old bundle kept the floor and the new frontend inside the binary never
+ * ran, silently, until some later OTA happened to arrive through whatever door
+ * the old client still checked. If the embedded frontend is newer than the
+ * bundle now running, hand the floor back and reboot onto it - once, since
+ * after the revert there is no bundle left to shadow anything.
+ */
+export async function reclaimEmbeddedIfNewer(): Promise<void> {
+  const running = runningBundle();
+  if (!running || !newerVersion(__AFM_VERSION__, running)) return;
+  const state = await revertToEmbedded();
+  if (state && !state.active) window.location.reload();
+}
+
 /**
  * A check's outcome, in words a settings row can show.
  *
@@ -225,11 +254,15 @@ export type UpdateCheckOutcome =
   | { state: 'error'; why: string };
 
 /**
- * Ask the server what it is publishing, and install it if it is newer and this
+ * Ask attack.fm what it is publishing, and install it if it is newer and this
  * build can run it. Every outcome is named; `checkForBundle` below keeps the
  * old quiet contract for the automatic path.
+ *
+ * Updates come from the REGISTRY - the same central service sign-in does -
+ * not from whichever music server the session happens to be on. One canonical
+ * source for every device, and it works signed into nothing at all.
  */
-export async function checkForUpdate(session: ServerSession): Promise<UpdateCheckOutcome> {
+export async function checkForUpdate(): Promise<UpdateCheckOutcome> {
   if (!isTauri()) return { state: 'unavailable', why: 'Updates apply to the installed app.' };
   const state = await bundleState();
   if (!state) return { state: 'unavailable', why: 'This build cannot swap its frontend.' };
@@ -240,15 +273,12 @@ export async function checkForUpdate(session: ServerSession): Promise<UpdateChec
 
   let manifest: BundleManifest;
   try {
-    const res = await fetch(`${session.url}/api/app/bundle`, {
-      headers: { authorization: `Bearer ${session.token}` },
-      cache: 'no-store',
-    });
-    if (res.status === 404) return { state: 'unavailable', why: 'This server publishes no updates.' };
-    if (!res.ok) return { state: 'error', why: `The server answered ${res.status}.` };
+    const res = await fetch(`${REGISTRY_URL}/v1/app/bundle`, { cache: 'no-store' });
+    if (res.status === 404) return { state: 'unavailable', why: 'No update is published right now.' };
+    if (!res.ok) return { state: 'error', why: `attack.fm answered ${res.status}.` };
     manifest = (await res.json()) as BundleManifest;
   } catch {
-    return { state: 'error', why: 'Could not reach the server.' };
+    return { state: 'error', why: 'Could not reach attack.fm.' };
   }
 
   if (!manifest?.version || !Array.isArray(manifest.files)) {
@@ -276,13 +306,13 @@ export async function checkForUpdate(session: ServerSession): Promise<UpdateChec
   }
 
   // The download runs natively with a bare reqwest, which sets no headers.
-  // The file endpoint is public for exactly that reason (see appbundle.rs) -
-  // its old auth requirement met those headerless fetches with a 401, and
-  // every update since the first died silently right here.
+  // The registry's file endpoint is public for exactly that reason - an auth
+  // requirement on the old music-server route met those headerless fetches
+  // with a 401, and every update since the first died silently right there.
   const files = manifest.files.map((f) => ({
     name: f.name,
     sha256: f.sha256,
-    url: `${session.url}/api/app/bundle/${encodeURIComponent(f.name)}`,
+    url: `${REGISTRY_URL}/v1/app/bundle/${encodeURIComponent(f.name)}`,
   }));
 
   const next = await call<BundleState>('bundle_install', {
@@ -301,13 +331,13 @@ export async function checkForUpdate(session: ServerSession): Promise<UpdateChec
 }
 
 /**
- * The automatic path: same check, quiet contract. A hub that is off or an
- * older server are ordinary states, not something to interrupt a listener
- * over - but they do get a console line now, so a device inspected over CDP
- * or logcat shows WHY it is not updating instead of nothing at all.
+ * The automatic path: same check, quiet contract. A registry that is briefly
+ * unreachable is an ordinary state, not something to interrupt a listener
+ * over - but it does get a console line, so a device inspected over CDP or
+ * logcat shows WHY it is not updating instead of nothing at all.
  */
-export async function checkForBundle(session: ServerSession): Promise<string | null> {
-  const outcome = await checkForUpdate(session);
+export async function checkForBundle(): Promise<string | null> {
+  const outcome = await checkForUpdate();
   if (outcome.state === 'staged') return outcome.version;
   if (outcome.state === 'error' || outcome.state === 'unavailable') {
     console.info(`[update] ${outcome.why}`);
