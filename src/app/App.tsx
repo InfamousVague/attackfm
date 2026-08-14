@@ -60,6 +60,7 @@ import {
   isPendingPath,
 } from './pendingPlay.tsx';
 import { useSwipeBack } from './useSwipeBack.ts';
+import { onSystemBack, useSystemBack } from './systemBack.ts';
 import { hapticsImpl, installTapHaptics, useHapticsPref } from './haptics.ts';
 import { installOverlayGuard } from './overlayGuard.ts';
 import { DiscoverPage } from '../plugins/discover/DiscoverPage.tsx';
@@ -750,6 +751,8 @@ export function App() {
   // its type need no change if the flip returns elsewhere later.
   const [libraryView] = useState<'summary' | 'all'>('summary');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // A system back swipe closes Settings before it touches the page history.
+  useSystemBack(settingsOpen, () => setSettingsOpen(false));
   // The app-wide tap tick, bound to the Settings switch. Mounted only while the
   // preference is on, so turning haptics off really does remove the listener
   // rather than leaving one that checks a flag on every touch - and turning it
@@ -934,6 +937,24 @@ export function App() {
   const bodyRef = useRef<HTMLDivElement>(null);
   useSwipeBack(bodyRef, back, nav.index > 0);
   const forward = () => setNav((s) => (s.index < s.stack.length - 1 ? { ...s, index: s.index + 1 } : s));
+
+  // The SYSTEM back gesture (Android hands it in through systemBack.ts): walk
+  // the same stack the header arrows and the edge-swipe do. Registered once at
+  // mount - before any overlay can open - so it sits at the bottom of the
+  // handler stack: sheets and modals get the gesture first, this catches what
+  // is left, and an unconsumed back at the root lets native background the app.
+  // The ref keeps the one registered closure reading live nav state.
+  const sysBackRef = useRef({ canBack, back });
+  sysBackRef.current = { canBack, back };
+  useEffect(
+    () =>
+      onSystemBack(() => {
+        if (!sysBackRef.current.canBack) return false;
+        sysBackRef.current.back();
+        return true;
+      }),
+    [],
+  );
 
   // The chord the field advertises: Cmd/Ctrl+K opens search from anywhere.
   useEffect(() => {
