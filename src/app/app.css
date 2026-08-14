@@ -12315,16 +12315,38 @@ button.artistAlbum {
   }
 }
 
-/* The sheet, docked: pinned to the right edge, app-height, with a seam where
-   the two rooms meet. Everything inside it lays out exactly as the
-   full-screen sheet does - it is the same surface, wearing a narrower room. */
+/* The sheet, docked: a floating card in the right column, not a second
+   screen. It hangs inside the reserved dock width with air on every side,
+   wearing the same card language as the nav bar - the big radius, the
+   hairline, a real shadow - so the app clearly stays one room with a player
+   standing in it. Everything inside lays out exactly as the full-screen
+   sheet does; overflow:hidden (from the base rule) is what lets the radius
+   clip the backdrop art. */
 .npScreen[data-docked] {
-  inset: 0 0 0 auto;
-  inline-size: var(--np-dock-width);
-  border-inline-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
-  /* Full-screen it pads for the home indicator; docked beside the app it
-     needs the same bottom room the nav bar's chin takes, no more. */
+  inset: max(var(--glacier-space-3), env(safe-area-inset-top, 0px)) var(--glacier-space-3)
+    var(--glacier-space-3) auto;
+  inline-size: calc(var(--np-dock-width) - var(--glacier-space-3) * 2);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-2xl, 1.75rem);
+  box-shadow: var(--glacier-shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.42));
+  /* Full-screen it pads for the home indicator; floating it carries its own
+     frame, so ordinary card padding is all it needs. */
   padding-inline: var(--glacier-space-4);
+  padding-block: var(--glacier-space-4);
+}
+
+/* With the whole player standing in the right column, the mini strip is the
+   same transport twice. It hides - the Player component stays mounted (it
+   owns the audio and the docked sheet is its portal), only the plate goes -
+   and the clearance every page pads by follows it to zero, same discipline
+   as the no-strip rule up top: the reservation must not outlive the thing
+   it reserves for. */
+body:has(.npScreen[data-docked]) .appPlayer {
+  display: none;
+}
+
+body:has(.npScreen[data-docked]) .appWindow {
+  --app-player-height: 0rem;
 }
 
 /* No "close" where closing has no meaning: the chevron is the sheet's exit,
