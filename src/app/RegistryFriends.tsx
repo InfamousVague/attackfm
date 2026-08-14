@@ -15,8 +15,8 @@
 //!     the Profile page around it - a section shows the people, the page owns
 //!     the person.
 
-import { Button, Field, IconButton, Input, Modal, Spinner, Text } from '@glacier/react';
-import { Check, UserPlus, X } from '@glacier/icons';
+import { Button, Field, IconButton, Input, Modal, Spinner, StatTile, Text } from '@glacier/react';
+import { ChartNoAxesColumn, Check, Clock, Flame, UserPlus, X } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { artistImageKnown, cachedArtistImage, resolveArtistImage } from './artistImage.ts';
 import { EmptyArt } from './EmptyArt.tsx';
@@ -33,6 +33,7 @@ import {
   type FriendsFeed,
   type RegistryFriend,
 } from './registry.ts';
+import { fmtMinutes } from './stats.ts';
 
 /**
  * A person, as a mark: a deterministic two-tone gradient from their handle
@@ -190,6 +191,7 @@ export function FriendsSection({
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [statsFor, setStatsFor] = useState<RegistryFriend | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -382,16 +384,30 @@ export function FriendsSection({
                   {/* Their library is somewhere this device is not listening
                       from - offer the walk over. The page decides what that
                       means (a one-tap switch, or the truth about invites). */}
-                  {onVisit && f.serverUrl && server?.url !== f.serverUrl.replace(/\/+$/, '') && (
+                  <div className="friendCard__actions">
+                    {/* Their numbers, from what the registry already holds -
+                        no extra request, and nothing they have not chosen to
+                        announce. */}
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="friendCard__visit"
-                      onClick={() => onVisit(f)}
+                      className="friendCard__stats"
+                      onClick={() => setStatsFor(f)}
                     >
-                      Visit their server
+                      <ChartNoAxesColumn size={14} />
+                      Stats
                     </Button>
-                  )}
+                    {onVisit && f.serverUrl && server?.url !== f.serverUrl.replace(/\/+$/, '') && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="friendCard__visit"
+                        onClick={() => onVisit(f)}
+                      >
+                        Visit their server
+                      </Button>
+                    )}
+                  </div>
                   <IconButton
                     variant="ghost"
                     size="sm"
@@ -419,6 +435,15 @@ export function FriendsSection({
         )}
       </section>
 
+      <Modal
+        open={statsFor !== null}
+        onClose={() => setStatsFor(null)}
+        title={statsFor ? `@${statsFor.handle}` : ''}
+        size="sm"
+      >
+        {statsFor && <FriendStats friend={statsFor} />}
+      </Modal>
+
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add a friend" size="sm">
         <div className="friendsModal">
           <Text size="sm" tone="muted">
@@ -433,6 +458,53 @@ export function FriendsSection({
         </div>
       </Modal>
 
+    </div>
+  );
+}
+
+/**
+ * One friend's numbers, from what the registry already holds.
+ *
+ * Two registers, honestly separated: the listening glance (minutes, streak,
+ * top artist) exists only while they share it and is labelled with its own
+ * absence when they do not; the library trio (songs, playlists, artists)
+ * rides every announce and is always there. Nothing here asks their server
+ * anything - a friend's box is not this device's to query.
+ */
+function FriendStats({ friend }: { friend: RegistryFriend }) {
+  const sharing = typeof friend.weekMinutes === 'number';
+  return (
+    <div className="friendStats">
+      {sharing ? (
+        <div className="friendStats__week">
+          <div className="friendStats__hero">
+            <span className="friendStats__minutes">{fmtMinutes(friend.weekMinutes ?? 0)}</span>
+            <span className="friendStats__label">listened this week</span>
+          </div>
+          {/* Names do not belong in number tiles - a tile ellipsizes exactly
+              the part that matters. The artist gets a sentence of their own,
+              and the streak keeps a bare number a tile can always fit. */}
+          {friend.weekTopArtist && (
+            <p className="friendStats__artist">
+              <Clock size={14} aria-hidden /> On repeat: <strong>{friend.weekTopArtist}</strong>
+            </p>
+          )}
+          {(friend.streakDays ?? 0) > 0 && (
+            <p className="friendStats__artist">
+              <Flame size={14} aria-hidden /> {friend.streakDays}-day streak
+            </p>
+          )}
+        </div>
+      ) : (
+        <Text size="sm" tone="muted">
+          They don&rsquo;t share their listening (or haven&rsquo;t played anything this week).
+        </Text>
+      )}
+      <div className="friendStats__tiles">
+        <StatTile value={friend.songs.toLocaleString()} label="songs" />
+        <StatTile value={friend.playlists.toLocaleString()} label="playlists" />
+        <StatTile value={friend.artists.toLocaleString()} label="artists" />
+      </div>
     </div>
   );
 }
