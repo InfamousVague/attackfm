@@ -115,17 +115,41 @@ export function autoCachedKeys(): Set<string> {
  * a hint rather than fetched, and an empty hint simply means the deck has not
  * been opened yet.
  */
-let dateDeck: string[] = [];
+const DATE_DECK_KEY = 'attackfm-date-deck';
 
 /** How many cards ahead to guarantee. */
 export const DATE_CACHE_TARGET = 20;
 
+// Persisted, because the page that publishes the deck is rarely open when the
+// sweep that could act on it runs. The launch sweep fires ninety seconds in -
+// long before anyone has navigated to Dates - and with an in-memory hint that
+// pass would warm nothing, so "instant" would only ever start being true on
+// the SECOND visit of a session. The stored deck is at worst a few days
+// stale, and staleness here is cheap: these are library songs the listener
+// was about to be shown anyway, and the next visit republishes the truth.
+let dateDeck: string[] = (() => {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(DATE_DECK_KEY) ?? '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((k): k is string => typeof k === 'string').slice(0, DATE_CACHE_TARGET);
+  } catch {
+    return [];
+  }
+})();
+
 /**
  * Tell the cache which cards are coming. Called by the Date page as its deck
- * changes; the next sweep acts on it.
+ * changes; the next sweep acts on it, and the launch sweep of the NEXT run
+ * acts on it too - see the note on `dateDeck`.
  */
 export function setDateDeck(keys: string[]): void {
   dateDeck = keys.slice(0, DATE_CACHE_TARGET);
+  try {
+    localStorage.setItem(DATE_DECK_KEY, JSON.stringify(dateDeck));
+  } catch {
+    // Then the next launch warms nothing until the page opens - the old
+    // behaviour, not an error.
+  }
 }
 
 export interface Hotness {
@@ -453,6 +477,29 @@ export async function sweepIfIdle(session: ServerSession): Promise<void> {
   }
 }
 
+// The session the sweeps are running for, so a nudge from elsewhere in the
+// app (the heart, the Date deck) does not need one threaded to it.
+let activeSession: ServerSession | null = null;
+let nudgeTimer: number | undefined;
+
+/**
+ * Ask for a sweep soon, rather than at the next six-hour mark.
+ *
+ * The scheduled cadence is right for drift - taste moves slowly - but wrong
+ * for a stated wish. Hearting a song is the listener saying "this one", and
+ * six hours later is not when they expect it to be on the phone; they expect
+ * it the way a message sends: now-ish, without being asked twice. Debounced a
+ * few seconds so hearting a run of songs costs one pass, not one per press.
+ */
+export function nudgeSweep(): void {
+  if (!isTauri() || !activeSession) return;
+  window.clearTimeout(nudgeTimer);
+  nudgeTimer = window.setTimeout(() => {
+    const live = activeSession;
+    if (live && !document.hidden) void sweepIfIdle(live);
+  }, 4000);
+}
+
 /**
  * Keep the cache current for as long as a session is live.
  *
@@ -462,6 +509,7 @@ export async function sweepIfIdle(session: ServerSession): Promise<void> {
  */
 export function startCacheSweeps(session: ServerSession): () => void {
   if (!isTauri()) return () => {};
+  activeSession = session;
   let stopped = false;
   let last = 0;
 
@@ -481,6 +529,7 @@ export function startCacheSweeps(session: ServerSession): () => void {
 
   return () => {
     stopped = true;
+    if (activeSession === session) activeSession = null;
     window.clearTimeout(first);
     window.clearInterval(timer);
     document.removeEventListener('visibilitychange', maybe);

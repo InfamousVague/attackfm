@@ -20,6 +20,7 @@ import {
   type CollectorStatus,
 } from './server.ts';
 import { DATE_CACHE_TARGET, setDateDeck, sweepIfIdle } from './autoCache.ts';
+import { pendingDateCanvas, warmArt, warmDateCanvas, warmedDateCanvas } from './dateCanvas.ts';
 import { loadAudioUrl, type Track } from './tauri.ts';
 import { fireNativeHaptic } from './haptics.ts';
 import { EmptyArt } from './EmptyArt.tsx';
@@ -134,17 +135,43 @@ interface Slot {
 function CardFace({ track, live = false }: { track: Track; live?: boolean }) {
   const { session } = useServerSession();
   const art = artSized(track.artwork, 640);
-  const [canvas, setCanvas] = useState<string | null>(null);
+  // Warmed a card ago, when the deck had the chance: the clip is then a local
+  // blob and promotion is instant. Read only when LIVE - the under-card must
+  // keep its still cover, or the deck would be running two videos at once.
+  const [canvas, setCanvas] = useState<string | null>(
+    () => (live ? warmedDateCanvas(track.path) : undefined) ?? null,
+  );
 
   useEffect(() => {
-    setCanvas(null);
     if (!live || !session) return;
+    // Settled while this card waited underneath - including the settled
+    // "this song has no clip", which spares asking again.
+    const ready = warmedDateCanvas(track.path);
+    if (ready !== undefined) {
+      setCanvas(ready);
+      return;
+    }
+    let gone = false;
+    // Mid-warm: ride the fetch already running rather than starting a twin.
+    const pending = pendingDateCanvas(track.path);
+    if (pending) {
+      void pending.then((url) => {
+        if (!gone) setCanvas(url);
+      });
+      return () => {
+        gone = true;
+      };
+    }
+    // Never warmed (the first card of a visit): the original path.
     const ctrl = new AbortController();
     void fetchCanvas(session, track.title, track.artist, ctrl.signal, trackIdFromPath(track.path))
       .then((url) => {
         if (!ctrl.signal.aborted) setCanvas(url);
       });
-    return () => ctrl.abort();
+    return () => {
+      gone = true;
+      ctrl.abort();
+    };
   }, [live, session, track.title, track.artist, track.path]);
 
   return (
@@ -182,6 +209,16 @@ function CardFace({ track, live = false }: { track: Track; live?: boolean }) {
             const v = e.currentTarget;
             if (v.ended || !live) return;
             void v.play().catch(() => {});
+          }}
+          // Autoplay can be refused outright - Low Power Mode does - and a
+          // refused video sits on its first frame wearing WebKit's play
+          // overlay. Retrying here catches the refusals that were about
+          // timing; the ones that stick are handled in CSS, where the
+          // overlay is hidden so a stalled clip reads as a still cover
+          // rather than a broken player.
+          onCanPlay={(e) => {
+            const v = e.currentTarget;
+            if (live && v.paused) void v.play().catch(() => {});
           }}
         />
       ) : art ? (
@@ -250,6 +287,16 @@ export function DatePage() {
   // budget, the ledger of what it holds, and the rule that it only ever
   // evicts its own pins. A second cacher beside it would fight it for the
   // same vault and show up as songs "kept by hand". See autoCache.ts.
+  // The next cards' faces, fetched while the current one is being watched -
+  // the same trick the audio slots play, applied to the visuals. Two clips
+  // ahead and three covers ahead: a clip is megabytes and a swipe is seconds,
+  // so two is as far as the network can usefully run ahead anyway.
+  useEffect(() => {
+    if (!session) return;
+    for (const t of deck.slice(1, 3)) warmDateCanvas(session, t);
+    for (const t of deck.slice(1, 4)) warmArt(artSized(t.artwork, 640));
+  }, [deck, session]);
+
   useEffect(() => {
     if (!session) return;
     setDateDeck(deck.slice(0, DATE_CACHE_TARGET).map((t) => t.path));

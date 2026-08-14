@@ -21,6 +21,7 @@ import {
   type RemoteTrack,
   type ServerSession,
 } from './server.ts';
+import { nudgeSweep } from './autoCache.ts';
 import { useServerSession } from './serverSession.tsx';
 import { pushCarPlayLibrary } from './carplay.ts';
 
@@ -445,6 +446,10 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
         void setRemoteFavorite(session, id, nowFavorite).catch(() => {
           setFavorites((prev) => (nowFavorite ? prev.filter((f) => f !== id) : [id, ...prev]));
         });
+        // A heart is a stated wish, and the device cache holds liked songs -
+        // so it acts on the wish now rather than at the next scheduled sweep.
+        // Both directions: hearting downloads soon, unhearting frees the room.
+        nudgeSweep();
       },
       scanning: syncing && tracks.length === 0,
       indexing: syncing,
