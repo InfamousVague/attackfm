@@ -7,6 +7,14 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.43
+
+- Android: the back swipe goes back inside the app — closes the sheet, steps to the last page — instead of quitting; at the very start it just tucks the app away, music still playing
+- Updates actually arrive now: the download itself was failing silently on every device, since the first one
+- Settings → About has a Check for updates button, and says what happened either way
+- About shows the version you're really running, and it moves when an update lands
+- The app also looks for updates when you come back to it, not just on a slow clock
+
 ## 0.3.42
 
 - Liked, All songs and On repeat: the header scrolls away into a small sticky bar with the title, Play and Shuffle

@@ -236,19 +236,36 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
 
   // And ask the hub whether it is publishing a newer bundle. Never swapped
   // under a running app - whatever arrives is for the next launch.
+  //
+  // Three triggers, because a phone's clock barely runs: shortly after launch;
+  // a six-hour interval (which a backgrounded WebView rarely lives to see);
+  // and every return to the foreground, debounced to once an hour - the one
+  // moment a phone reliably gives an app. The old pair alone meant a device
+  // opened for two minutes at a time got a single 20-second window per launch,
+  // and if it happened to be backgrounded when a tick fired, that tick was
+  // simply skipped and never retried.
   useEffect(() => {
     if (!session) return;
     let live = true;
+    let lastAsk = 0;
     const ask = () => {
       if (!live || document.hidden) return;
+      lastAsk = Date.now();
       void checkForBundle(session);
     };
     const first = window.setTimeout(ask, 20_000);
     const timer = window.setInterval(ask, 6 * 60 * 60 * 1000);
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastAsk < 60 * 60 * 1000) return;
+      ask();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       live = false;
       window.clearTimeout(first);
       window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [session]);
 

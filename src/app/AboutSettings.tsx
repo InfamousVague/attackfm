@@ -1,7 +1,7 @@
 import { Button, Pill, Text } from '@glacier/react';
-import { Cloud, ExternalLink, Laptop, Music, Smartphone } from '@glacier/icons';
+import { Cloud, ExternalLink, Laptop, Music, RefreshCw, Smartphone } from '@glacier/icons';
 import { useEffect, useState } from 'react';
-import { APP_VERSION } from './version.ts';
+import { APP_VERSION, SHELL_VERSION } from './version.ts';
 import wordmark from '../assets/attack-white.png';
 import { openExternal } from './openExternal.ts';
 import { isDesktopApp, isIOS } from './platform.ts';
@@ -9,6 +9,13 @@ import { fetchServerStats, type ServerStats } from './server.ts';
 import { useLibrary } from './library.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { isTauri } from './tauri.ts';
+import {
+  applyStagedBundle,
+  checkForUpdate,
+  stagedBundle,
+  watchBundle,
+  type UpdateCheckOutcome,
+} from './appUpdate.ts';
 
 const REPO_URL = 'https://github.com/InfamousVague/attackfm';
 
@@ -31,6 +38,26 @@ export function AboutSettings() {
   const { session } = useServerSession();
   const { tracks } = useLibrary();
   const [stats, setStats] = useState<ServerStats | null>(null);
+
+  // The update controls: what is staged (kept live through watchBundle, so a
+  // background check landing while this pane is open updates the row), whether
+  // a manual check is in flight, and how the last one ended. The outcome is
+  // ALWAYS shown - this pane exists because every failure in the update chain
+  // used to be silent, and four releases went out that no device ever saw.
+  const [staged, setStaged] = useState<string | null>(stagedBundle());
+  const [checking, setChecking] = useState(false);
+  const [outcome, setOutcome] = useState<UpdateCheckOutcome | null>(null);
+  useEffect(() => watchBundle(() => setStaged(stagedBundle())), []);
+  const check = async () => {
+    if (!session || checking) return;
+    setChecking(true);
+    setOutcome(null);
+    try {
+      setOutcome(await checkForUpdate(session));
+    } finally {
+      setChecking(false);
+    }
+  };
 
   useEffect(() => {
     if (!session) {
@@ -58,6 +85,20 @@ export function AboutSettings() {
   // shipped default) would otherwise collide with the app row's key.
   const rows: { id: string; icon: React.ReactNode; label: string; value: string }[] = [
     { id: 'app', icon: <Music size={16} />, label: 'AttackFM', value: `v${APP_VERSION} · ${platform}` },
+    // The shell is the installed binary - the number that only a store or a
+    // sideload moves. Shown on device so "the app updated but this says the
+    // old number" stops being a mystery: the frontend and the shell are
+    // allowed to differ, and here are both.
+    ...(isTauri() && SHELL_VERSION !== APP_VERSION
+      ? [
+          {
+            id: 'shell',
+            icon: <PlatformGlyph size={16} />,
+            label: 'App shell',
+            value: `v${SHELL_VERSION} · updates with an install`,
+          },
+        ]
+      : []),
     ...(session
       ? [
           {
@@ -122,6 +163,57 @@ export function AboutSettings() {
           </Button>
         </div>
       </div>
+
+      {/* Updates, out loud. The automatic check still runs on its own clock;
+          this is the hand on the handle - and the place a failure finally has
+          to explain itself instead of leaving the device silently stale. */}
+      {isTauri() && (
+        <div className="prefsSection">
+          <div className="aboutRows">
+            <div className="aboutRow">
+              <span className="aboutRow__icon" aria-hidden="true">
+                <RefreshCw size={16} />
+              </span>
+              <span className="aboutRow__label">Updates</span>
+              <span className="aboutRow__value">
+                {staged
+                  ? `v${staged} is ready — restart to apply`
+                  : `from ${session ? session.url.replace(/^https?:\/\//, '') : 'your server'}`}
+              </span>
+            </div>
+          </div>
+          {outcome && !staged && (
+            <Text tone={outcome.state === 'error' ? 'danger' : 'muted'} size="sm">
+              {outcome.state === 'current'
+                ? `You're on the latest (v${outcome.version}).`
+                : outcome.state === 'staged'
+                  ? `v${outcome.version} downloaded.`
+                  : outcome.why}
+            </Text>
+          )}
+          <div className="prefsActions">
+            {staged ? (
+              <Button variant="solid" size="sm" onClick={() => applyStagedBundle()}>
+                Restart and update
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void check()}
+                disabled={checking || !session}
+              >
+                <RefreshCw size={12} /> {checking ? 'Checking…' : 'Check for updates'}
+              </Button>
+            )}
+          </div>
+          {!session && (
+            <Text tone="subtle" size="xs">
+              Sign into a server to check for updates — it is where they come from.
+            </Text>
+          )}
+        </div>
+      )}
 
       <Text tone="subtle" size="xs">
         Lyrics from LRCLIB · album art lookups via the iTunes Search API · downloads

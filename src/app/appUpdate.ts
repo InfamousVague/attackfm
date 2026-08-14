@@ -211,18 +211,28 @@ export async function revertToEmbedded(): Promise<BundleState | null> {
 }
 
 /**
- * Ask the server what it is publishing, and install it if it is newer and this
- * build can run it.
+ * A check's outcome, in words a settings row can show.
  *
- * Returns the version staged for next launch, or null when there was nothing
- * to do. Deliberately quiet about failures: a hub that is off, an older server
- * with no such endpoint, or a bundle built for newer native code are all
- * ordinary states, not errors worth interrupting a listener for.
+ * The quiet automatic path discards this; the "Check for updates" button in
+ * Settings exists BECAUSE four releases went out while every failure in this
+ * chain was silent - a device that had been 401ing for weeks looked identical
+ * to one that was up to date. Whatever happens, the answer can now be seen.
  */
-export async function checkForBundle(session: ServerSession): Promise<string | null> {
-  if (!isTauri()) return null;
+export type UpdateCheckOutcome =
+  | { state: 'staged'; version: string }
+  | { state: 'current'; version: string }
+  | { state: 'unavailable'; why: string }
+  | { state: 'error'; why: string };
+
+/**
+ * Ask the server what it is publishing, and install it if it is newer and this
+ * build can run it. Every outcome is named; `checkForBundle` below keeps the
+ * old quiet contract for the automatic path.
+ */
+export async function checkForUpdate(session: ServerSession): Promise<UpdateCheckOutcome> {
+  if (!isTauri()) return { state: 'unavailable', why: 'Updates apply to the installed app.' };
   const state = await bundleState();
-  if (!state) return null;
+  if (!state) return { state: 'unavailable', why: 'This build cannot swap its frontend.' };
   // Installed on an earlier run and still not running: the banner belongs up
   // now, before any network call, so a device that is offline still learns
   // there is an update waiting for it.
@@ -234,22 +244,41 @@ export async function checkForBundle(session: ServerSession): Promise<string | n
       headers: { authorization: `Bearer ${session.token}` },
       cache: 'no-store',
     });
-    if (!res.ok) return null;
+    if (res.status === 404) return { state: 'unavailable', why: 'This server publishes no updates.' };
+    if (!res.ok) return { state: 'error', why: `The server answered ${res.status}.` };
     manifest = (await res.json()) as BundleManifest;
   } catch {
-    return null;
+    return { state: 'error', why: 'Could not reach the server.' };
   }
 
-  if (!manifest?.version || !Array.isArray(manifest.files)) return null;
+  if (!manifest?.version || !Array.isArray(manifest.files)) {
+    return { state: 'error', why: 'The server sent a malformed manifest.' };
+  }
   // Already running it, already staged, or already known bad here.
-  if (manifest.version === currentVersion()) return null;
-  if (manifest.version === state.active) return null;
-  if (state.quarantined.includes(manifest.version)) return null;
+  if (manifest.version === currentVersion()) {
+    return { state: 'current', version: manifest.version };
+  }
+  if (manifest.version === state.active) {
+    announce(state.active);
+    return { state: 'staged', version: manifest.version };
+  }
+  if (state.quarantined.includes(manifest.version)) {
+    return {
+      state: 'unavailable',
+      why: `${manifest.version} failed to boot here before and is quarantined.`,
+    };
+  }
   // The guard that keeps a new bundle off an old binary. The native side
   // refuses this too - twice, because getting it wrong is unrecoverable
   // without a reinstall.
-  if ((manifest.native ?? 0) > state.nativeGeneration) return null;
+  if ((manifest.native ?? 0) > state.nativeGeneration) {
+    return { state: 'unavailable', why: 'This update needs a newer app from the store.' };
+  }
 
+  // The download runs natively with a bare reqwest, which sets no headers.
+  // The file endpoint is public for exactly that reason (see appbundle.rs) -
+  // its old auth requirement met those headerless fetches with a 401, and
+  // every update since the first died silently right here.
   const files = manifest.files.map((f) => ({
     name: f.name,
     sha256: f.sha256,
@@ -261,12 +290,29 @@ export async function checkForBundle(session: ServerSession): Promise<string | n
     native: manifest.native ?? 0,
     files,
   });
-  if (next?.active !== manifest.version) return null;
+  if (next?.active !== manifest.version) {
+    return { state: 'error', why: 'The download failed verification and was discarded.' };
+  }
   // Kept BEFORE announcing, so the banner that appears can already show what
   // is in the update rather than naming a version number and nothing else.
   if (manifest.notes) rememberNotes(manifest.version, manifest.notes);
   announce(manifest.version);
-  return manifest.version;
+  return { state: 'staged', version: manifest.version };
+}
+
+/**
+ * The automatic path: same check, quiet contract. A hub that is off or an
+ * older server are ordinary states, not something to interrupt a listener
+ * over - but they do get a console line now, so a device inspected over CDP
+ * or logcat shows WHY it is not updating instead of nothing at all.
+ */
+export async function checkForBundle(session: ServerSession): Promise<string | null> {
+  const outcome = await checkForUpdate(session);
+  if (outcome.state === 'staged') return outcome.version;
+  if (outcome.state === 'error' || outcome.state === 'unavailable') {
+    console.info(`[update] ${outcome.why}`);
+  }
+  return null;
 }
 
 declare global {

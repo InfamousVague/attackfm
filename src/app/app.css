@@ -1311,7 +1311,7 @@ body:has(.npScreen[data-docked]) .appNavScrim {
   align-items: center;
   justify-content: space-evenly;
   gap: var(--glacier-space-1);
-  padding-inline: var(--glacier-space-3);
+  padding-inline: var(--glacier-space-2);
   /* The chin's corners take a wider sweep than the top's: down at the screen's
      edge the phone is already curving away, and a corner that opens out to meet
      it reads as one continuous bottom rather than a card set on top of one. */
@@ -1355,7 +1355,7 @@ body:has(.npScreen[data-docked]) .appNavScrim {
   /* Padding is the SEAT the selected squircle is drawn on, so it is here on the
      tab rather than on the glyph - the whole item lights, name included. Tight
      inline so five of these still fit across a narrow phone. */
-  padding: var(--glacier-space-2) var(--glacier-space-1);
+  padding: var(--glacier-space-1) var(--glacier-space-1);
   border: none;
   border-radius: var(--glacier-radius-lg, 0.9rem);
   background: none;
@@ -1562,7 +1562,7 @@ body:has(.npScreen[data-docked]) .appNavMore__menu {
   --app-nav-height: 0px;
   /* The island's own height: the band the tabs live in, not counting the chin
      below them or the brand button that overhangs their top. */
-  --app-nav-island-height: 4rem;
+  --app-nav-island-height: 3.5rem;
   /* What the nav card holds back from the screen's edges - the same margin on
      the sides and underneath, so the card sits in an even frame rather than
      floating wide and welded low. Matched to the player plate's own inset (its
@@ -1575,7 +1575,7 @@ body:has(.npScreen[data-docked]) .appNavMore__menu {
      in an even frame instead of riding the top edge. Added to the card's height
      as well as its padding, so the tabs keep their size rather than being
      squeezed by it. */
-  --app-nav-pad-top: var(--glacier-space-2);
+  --app-nav-pad-top: var(--glacier-space-1);
   /* The chin: the band of card below the tabs that drapes over the home
      indicator's strip, so that space carries the nav - contoured to the
      screen's bottom by --app-nav-chin-radius - instead of nothing. */
@@ -1607,10 +1607,10 @@ body:has(.npScreen[data-docked]) .appNavMore__menu {
   --app-nav-gap: var(--glacier-space-2);
   /* One tab's height, named so the bar and the band it occupies cannot drift:
      a glyph, a hairline gap and a small label, with room to tap. */
-  --app-nav-item-height: 2.75rem;
+  --app-nav-item-height: 2.5rem;
   /* Tab names sit at the size a phone's own tab bar uses: small enough that
      six of them fit across a narrow screen without a name being clipped. */
-  --app-nav-label-size: 0.625rem;
+  --app-nav-label-size: 0.5625rem;
 }
 
 /* Android's screen corners are not ours to contour to - the webview sits
