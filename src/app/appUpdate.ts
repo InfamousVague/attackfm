@@ -47,6 +47,56 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T |
 
 const NOTES_KEY = 'attackfm-bundle-notes';
 const SEEN_KEY = 'attackfm-notes-seen';
+/** version -> the version it replaced, so the modal can say "0.3.46 → 0.3.47". */
+const FROM_KEY = 'attackfm-bundle-from';
+/** The last version whose arrival was ANNOUNCED in the modal. */
+const TOLD_KEY = 'attackfm-update-told';
+
+/** What this device was running when `version` was staged. */
+export function previousFor(version: string): string | null {
+  try {
+    const all = JSON.parse(localStorage.getItem(FROM_KEY) || '{}') as Record<string, string>;
+    return all[version] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberPrevious(version: string, from: string): void {
+  if (!from || from === version) return;
+  try {
+    const all = JSON.parse(localStorage.getItem(FROM_KEY) || '{}') as Record<string, string>;
+    all[version] = from;
+    const keys = Object.keys(all);
+    if (keys.length > 6) for (const k of keys.slice(0, keys.length - 6)) delete all[k];
+    localStorage.setItem(FROM_KEY, JSON.stringify(all));
+  } catch {
+    // Then the modal names one version instead of two.
+  }
+}
+
+/**
+ * Whether this version's arrival still owes the listener an announcement.
+ *
+ * The modal is a once-per-version event, not a state: it interrupts, so it
+ * gets exactly one turn. Said no (or said nothing and closed it) and the quiet
+ * banner carries on holding the offer.
+ */
+export function shouldAnnounce(version: string): boolean {
+  try {
+    return localStorage.getItem(TOLD_KEY) !== version;
+  } catch {
+    return false;
+  }
+}
+
+export function markAnnounced(version: string): void {
+  try {
+    localStorage.setItem(TOLD_KEY, version);
+  } catch {
+    // It offers once more next launch; harmless.
+  }
+}
 
 function readNotes(): Record<string, string> {
   try {
@@ -323,9 +373,12 @@ export async function checkForUpdate(): Promise<UpdateCheckOutcome> {
   if (next?.active !== manifest.version) {
     return { state: 'error', why: 'The download failed verification and was discarded.' };
   }
-  // Kept BEFORE announcing, so the banner that appears can already show what
-  // is in the update rather than naming a version number and nothing else.
+  // Kept BEFORE announcing, so the modal that appears can already show what
+  // is in the update rather than naming a version number and nothing else -
+  // including the version it replaces, which is only knowable now, while the
+  // outgoing one is still the one running.
   if (manifest.notes) rememberNotes(manifest.version, manifest.notes);
+  rememberPrevious(manifest.version, currentVersion());
   announce(manifest.version);
   return { state: 'staged', version: manifest.version };
 }

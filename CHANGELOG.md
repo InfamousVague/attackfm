@@ -7,6 +7,12 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.48
+
+- New updates arrive as a proper panel now, with the whole changelog instead of one line behind a chevron
+- Every change carries an icon for what it is: a fix, something new, your phone, the way things look
+- The panel shows the version you're leaving and the one you're getting, and asks once — say Later and the small strip keeps the offer
+
 ## 0.3.47
 
 - Playlist tiles and album covers now flex a little with the screen: rows pack edge to edge instead of leaving white gaps
