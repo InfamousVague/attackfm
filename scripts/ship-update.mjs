@@ -13,7 +13,7 @@
  * installed apps can run - that is the one mistake this mechanism cannot
  * recover from on its own, so the check is here as well as on both ends.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -94,8 +94,37 @@ if (!KEEP) {
   writeFileSync(pkgPath, JSON.stringify({ ...pkg, version }, null, 2) + '\n');
 }
 
-step('Building the web bundle');
-if (spawnSync('npm', ['run', 'build'], { stdio: 'inherit' }).status !== 0) die('build failed');
+step('Building the web bundle (self-contained OTA mode)');
+// AFM_OTA=1 makes vite inline every dynamic import and asset into app.js /
+// app.css (see vite.config.ts). The two files ARE the bundle: a chunk or a
+// hashed asset beside them would be a file no device ever downloads, whose
+// relative import cannot resolve out of a bundle directory anyway - the exact
+// breakage that quarantined every pre-0.3.43 bundle on real phones.
+if (
+  spawnSync('npm', ['run', 'build'], {
+    stdio: 'inherit',
+    env: { ...process.env, AFM_OTA: '1' },
+  }).status !== 0
+)
+  die('build failed');
+
+step('Verifying the bundle is self-contained');
+const emitted = readdirSync(join(ROOT, 'dist/assets'));
+const strays = emitted.filter((n) => n !== 'app.js' && n !== 'app.css');
+if (strays.length) {
+  die(
+    `the OTA build emitted files beyond app.js/app.css — they would never reach a device:\n` +
+    strays.map((s) => `      ${s}`).join('\n') +
+    `\n    (a new worker/worklet or a vite config change broke inlining)`,
+  );
+}
+const jsText = readFileSync(join(ROOT, 'dist/assets/app.js'), 'utf8');
+const relImport = jsText.match(/import\(\s*["']\.\//) || jsText.match(/from\s*["']\.\//);
+if (relImport) die('app.js still holds relative imports — inlineDynamicImports did not apply');
+const cssText = readFileSync(join(ROOT, 'dist/assets/app.css'), 'utf8');
+const relUrl = cssText.match(/url\(\s*["']?(?!data:|#)[^)"']+\)/);
+if (relUrl) die(`app.css still references external files: ${relUrl[0].slice(0, 80)}`);
+ok('app.js + app.css are the whole bundle');
 
 const files = ['app.js', 'app.css'].map((name) => {
   const path = join(ROOT, 'dist/assets', name);

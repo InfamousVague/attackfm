@@ -11,12 +11,13 @@
 //! device's checksum test and quarantine a perfectly good version.
 
 use crate::{auth, AppState};
-use axum::extract::{Path as AxumPath, State};
+use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde_json::json;
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 type ApiError = (StatusCode, String);
@@ -85,12 +86,20 @@ pub async fn manifest(
 }
 
 /// `GET /api/app/bundle/{name}` - one file from the published bundle.
+///
+/// Deliberately UNAUTHENTICATED, unlike everything around it. The download
+/// runs in the NATIVE half of the updater (src-tauri/src/bundle.rs), a bare
+/// reqwest that sets no headers - and for four releases its fetches met this
+/// endpoint's old `require_caller` 401 and every update died silently, on
+/// every device, with nothing logged anywhere. What is served is the app's
+/// own frontend, the same bytes published on GitHub: there is nothing here
+/// worth a token, and requiring one only re-breaks every phone whose
+/// installed build predates the fix. The manifest above stays authed; the
+/// name is traversal-guarded below.
 pub async fn file(
     State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
     AxumPath(name): AxumPath<String>,
 ) -> Result<Response, ApiError> {
-    auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
     // The name indexes a flat directory and must not walk out of it.
     if name.contains('/') || name.contains('\\') || name.contains("..") || name.len() > 128 {
         return Err((StatusCode::BAD_REQUEST, "not a bundle file".into()));

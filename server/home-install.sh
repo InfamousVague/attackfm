@@ -134,9 +134,19 @@ if [ -f "$HERE/Cargo.toml" ] && [ -f "$HERE/../package.json" ]; then
     REPO="$(cd "$HERE/.." && pwd)"
     ( cd "$REPO"
       [ -d node_modules ] || npm ci --no-audit --no-fund
-      npm run build
+      # AFM_OTA=1: inline every chunk and asset into app.js/app.css. The two
+      # files are all a device downloads, and a split build's relative imports
+      # cannot resolve out of a bundle directory - phones quarantined every
+      # bundle published without this.
+      AFM_OTA=1 npm run build
     )
-    if [ -f "$REPO/dist/assets/app.js" ] && [ -f "$REPO/dist/assets/app.css" ]; then
+    # Self-contained or not published: a stray chunk beside app.js means the
+    # inlining broke, and shipping it would quarantine the version on every
+    # phone that downloads it.
+    STRAYS="$(ls "$REPO/dist/assets" 2>/dev/null | grep -v -e '^app\.js$' -e '^app\.css$' || true)"
+    if [ -n "$STRAYS" ]; then
+      say "OTA build emitted extra files ($(echo "$STRAYS" | tr '\n' ' ')) - NOT publishing"
+    elif [ -f "$REPO/dist/assets/app.js" ] && [ -f "$REPO/dist/assets/app.css" ]; then
       APPV="$(node -p "require('$REPO/package.json').version")"
       NATIVE="$(sed -n 's/.*NATIVE_GENERATION: u32 = \([0-9]*\).*/\1/p' "$REPO/src-tauri/src/bundle.rs" | head -1)"
       BUNDLE_DIR="$DATA_DIR/appbundle"
