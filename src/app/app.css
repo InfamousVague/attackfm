@@ -12256,3 +12256,44 @@ button.artistAlbum {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+
+/* --- the split view: Now Playing as the right half ------------------------ */
+
+/* One number both halves read: how much of the screen the docked sheet owns.
+   On :root because the sheet portals to the body while the app window shrinks
+   - two subtrees, one truth. 44% keeps the app the wider half; the 34rem cap
+   stops a desktop-sized webview from building a ballroom. */
+:root {
+  --np-dock-width: min(44vw, 34rem);
+}
+
+/* Wide enough for two rooms, and this is mobile chrome (the nav bar is its
+   signature), and something is playing (the strip is mounted): the app takes
+   the left pane. Absolute children - the nav bar, the strip - position
+   against the shrunk box, so one rule moves the whole household. */
+@media (min-width: 700px) {
+  /* Keyed on the DOCK itself, not merely on a strip existing: while the strip
+     only mirrors a remote device the sheet stays unmounted, and the app must
+     keep the whole width rather than hold an empty right gutter open. */
+  body:has(.npScreen[data-docked]) .appWindow {
+    inline-size: calc(100% - var(--np-dock-width));
+  }
+}
+
+/* The sheet, docked: pinned to the right edge, app-height, with a seam where
+   the two rooms meet. Everything inside it lays out exactly as the
+   full-screen sheet does - it is the same surface, wearing a narrower room. */
+.npScreen[data-docked] {
+  inset: 0 0 0 auto;
+  inline-size: var(--np-dock-width);
+  border-inline-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  /* Full-screen it pads for the home indicator; docked beside the app it
+     needs the same bottom room the nav bar's chin takes, no more. */
+  padding-inline: var(--glacier-space-4);
+}
+
+/* No "close" where closing has no meaning: the chevron is the sheet's exit,
+   and a docked sheet has nowhere to go. */
+.npScreen[data-docked] .npScreen__head > button:first-child {
+  visibility: hidden;
+}

@@ -502,6 +502,12 @@ function PlayerHost({
         onOpenArtist={onOpenArtist}
         // Nothing this device chose to play, so nothing to start.
         autoplay={current ? autoplay : false}
+        // The docked sheet may only stand for THIS device's deck. While the
+        // strip mirrors a remote (current is null, shown is the remote's
+        // track), the sheet's own clock and transport are honestly empty -
+        // it was never reachable in that state before the dock existed, and
+        // mounting it there showed a dead player beside a live strip.
+        allowDock={current !== null}
       />
     </div>
   );

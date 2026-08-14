@@ -14,12 +14,13 @@
     "ios:dev": "node scripts/ios-clean.mjs && tauri ios dev",
     "ios:build": "node scripts/ios-clean.mjs && tauri ios build",
     "ios:build:sim": "node scripts/ios-clean.mjs && tauri ios build --debug --target aarch64-sim",
-    "android:dev": "tauri android dev",
-    "android:build": "tauri android build",
+    "android:dev": "JAVA_HOME=\"/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home\" ANDROID_HOME=\"$HOME/Library/Android/sdk\" NDK_HOME=\"$HOME/Library/Android/sdk/ndk/26.3.11579264\" tauri android dev",
+    "android:build": "JAVA_HOME=\"/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home\" ANDROID_HOME=\"$HOME/Library/Android/sdk\" NDK_HOME=\"$HOME/Library/Android/sdk/ndk/26.3.11579264\" tauri android build",
     "server": "cargo run --manifest-path server/Cargo.toml",
     "redeploy": "node scripts/redeploy.mjs",
     "redeploy:setup": "node scripts/redeploy.mjs setup",
-    "bundle:home": "node scripts/home-bundle.mjs"
+    "bundle:home": "node scripts/home-bundle.mjs",
+    "android:emulator": "\"$HOME/Library/Android/sdk/emulator/emulator\" -avd attackfm -netdelay none -netspeed full"
   },
   "dependencies": {
     "@glacier/icons": "file:./vendor/@glacier/icons",
