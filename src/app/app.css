@@ -11774,6 +11774,9 @@ button.artistAlbum {
   font-size: var(--glacier-font-size-lg);
   font-weight: 700;
   line-height: 1.1;
+  display: flex;
+  align-items: center;
+  min-block-size: calc(var(--glacier-font-size-lg) * 1.1);
   /* Proportional figures: nothing here aligns in a column, and tabular digits
      make a standalone value read gappy. */
 }
@@ -12195,4 +12198,40 @@ button.artistAlbum {
   gap: var(--glacier-space-2);
   min-block-size: 9.5rem;
   justify-content: center;
+}
+
+/* --- skeletons on raised surfaces ---------------------------------------- */
+/*
+ * The kit's skeleton rests at `--glacier-hover` and shimmers to
+ * `--glacier-active`. In this theme `--glacier-hover` resolves to EXACTLY
+ * `--glacier-surface-raised` - oklch(0.21 0.0038 260), the same value, not
+ * merely a near one - which is the background of every card the app puts a
+ * skeleton inside. The placeholder is therefore invisible at rest and only
+ * appears for the moment the shimmer band sweeps over it: on a static
+ * screenshot four tiles out of six looked simply blank.
+ *
+ * That matters beyond a screenshot. Under `prefers-reduced-motion` the kit
+ * swaps the sweep for an opacity pulse of that same invisible colour, and a
+ * backgrounded or throttled page stops animating altogether - in each case the
+ * loading state silently becomes an empty one, which is the exact failure a
+ * skeleton exists to prevent.
+ *
+ * So on raised surfaces the placeholder drops to the sunken step and shimmers
+ * up to hover: it reads as a recess in the card, is legible with animation
+ * stopped, and still moves when motion is welcome.
+ */
+.statTile [class*='_skeleton_'],
+.aiStat [class*='_skeleton_'],
+.serverMetric [class*='_skeleton_'],
+.friendCard [class*='_skeleton_'],
+.radarKey [class*='_skeleton_'],
+.genreBar [class*='_skeleton_'],
+.prefsSection [class*='_skeleton_'] {
+  background-color: var(--glacier-surface-sunken);
+  background-image: linear-gradient(
+    100deg,
+    var(--glacier-surface-sunken) 0%,
+    var(--glacier-hover) 50%,
+    var(--glacier-surface-sunken) 100%
+  );
 }
