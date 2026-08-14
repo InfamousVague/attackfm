@@ -2686,6 +2686,10 @@ html[data-platform='android'] .appWindow {
    padding insets their content. */
 .librarySongs {
   margin-inline: calc(-1 * var(--glacier-space-4));
+  /* Reaches back up over the page's own top padding, which the negative
+     sticky offset now parks it against. */
+  margin-block-start: calc(-1 * var(--glacier-space-5));
+  padding-block-start: var(--glacier-space-5);
 }
 
 /* Skeleton loading for shelf cards. A card whose artwork is still resolving
@@ -12545,4 +12549,109 @@ body:has(.npScreen[data-docked]) .appWindow {
 
 .updateNotes li::marker {
   color: var(--glacier-accent-text);
+}
+
+/* --- a collection header that gets out of the way ------------------------- */
+/*
+ * The page is the single scroller now (SongTable's `flow`), so the hero
+ * scrolls away like any other content. What it leaves behind is this: the
+ * collection's mark, its name, and the two actions worth keeping within a
+ * thumb's reach.
+ *
+ * Rendered always and revealed by state rather than mounted on demand - a bar
+ * that appears by mounting would reflow the list under the finger that
+ * summoned it.
+ */
+.songPageBar {
+  position: sticky;
+  inset-block-start: calc(-1 * var(--glacier-space-5));
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-2) var(--glacier-space-4);
+  margin-inline: calc(-1 * var(--glacier-space-4));
+  /* Near-opaque. At 82% the album thumbnails of the rows beneath read
+     straight through it, so a row and the bar shared the same pixels - which
+     is worse than no frost at all. The blur stays for the sliver that is
+     left, and for the edges. */
+  background: var(--glacier-bg);
+  border-block-end: var(--glacier-hairline) solid var(--glacier-border-subtle);
+
+  /* Out of the way until earned: no height, no hit area, nothing to read. */
+  block-size: 0;
+  padding-block: 0;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+  transition:
+    opacity var(--glacier-duration-fast) var(--glacier-ease-out),
+    block-size var(--glacier-duration-fast) var(--glacier-ease-out),
+    padding-block var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.songPageBar[data-show] {
+  block-size: calc(3rem + var(--glacier-space-5));
+  padding-block-start: calc(var(--glacier-space-5) + var(--glacier-space-2));
+  padding-block-end: var(--glacier-space-2);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .songPageBar {
+    transition: none;
+  }
+}
+
+/* The same mark the hero wears, at a thumbnail's size. */
+.songPageBar__mark {
+  display: grid;
+  place-items: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border-radius: var(--glacier-radius-sm);
+  overflow: hidden;
+  flex: none;
+}
+
+.songPageBar__mark img,
+.songPageBar__mark .heroArt {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: contain;
+}
+
+.songPageBar__title {
+  font-weight: 650;
+  font-size: var(--glacier-font-size-sm);
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Zero-height marker; only its position matters. */
+.songPageHead__sentinel {
+  block-size: 1px;
+  margin-block-start: -1px;
+}
+
+/* In flow mode the grid gives up its own viewport so the page can scroll. */
+.songTable--flow,
+.songTable--flow [data-scrollbar-appearance] {
+  max-block-size: none !important;
+  overflow: visible !important;
+  /* And the BOX grows with the rows, not just the ink: left at a fixed height
+     with visible overflow the rows paint outside their own container, which
+     works only for as long as nothing is ever placed below them. */
+  block-size: auto !important;
+}
+
+/* The section around it stops constraining, for the same reason. */
+.songPage .librarySongs,
+.songPage .libraryBody {
+  block-size: auto;
+  min-block-size: 0;
 }
