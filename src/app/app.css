@@ -1452,6 +1452,14 @@ img {
   animation: navMoreRise 0.16s var(--glacier-ease-out);
 }
 
+/* With Now Playing docked on the right, the viewport's right edge belongs to
+   the sheet, not the app: the menu slides left of the dock so it opens over
+   the pane that owns its trigger, instead of vanishing underneath (menu z 41,
+   dock z 50). */
+body:has(.npScreen[data-docked]) .appNavMore__menu {
+  inset-inline-end: calc(var(--np-dock-width) + var(--glacier-space-2));
+}
+
 /* Transform only - never opacity. An animation that is frozen at its first
    frame (a throttled or backgrounded webview does exactly this: the animation
    reports "running" while its clock never advances) would leave an
@@ -3934,7 +3942,7 @@ img.artPop:not([data-loading]) {
    inline left/top from its floating math, so the side pins need !important;
    the structural positioner>panel pair scopes this to popovers (tooltips and
    plain portals use different bones) without leaning on hashed class names. */
-@media (pointer: coarse), (max-width: 540px) {
+@media (pointer: coarse) and (max-width: 699px), (max-width: 540px) {
   body > [class*='_positioner_']:has(> [class*='_panel_']) {
     left: var(--glacier-space-3) !important;
     right: var(--glacier-space-3) !important;
