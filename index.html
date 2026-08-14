@@ -21,5 +21,92 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <!--
+      The boot loader: which frontend actually runs.
+
+      It sits at the END of <body> on purpose. Vite's built entry is a module
+      script, and module scripts are DEFERRED - they execute only once the
+      document is parsed - so a classic inline script here still runs first and
+      can take the tag out before it ever executes. That is the only window in
+      which the choice can be made.
+
+      The embedded bundle is the floor. Without Tauri (a browser, the dev
+      server), or with no downloaded bundle, or if anything at all goes wrong
+      asking, this puts the embedded tag back exactly as Vite wrote it. The
+      swap happens only on the narrow happy path, and every launch that takes
+      it is recorded as a wager settled by bundle_boot_ok - see bundle.rs.
+    -->
+    <script>
+      (function () {
+        var moduleTag = document.querySelector('script[type="module"][src]');
+        // The dev server serves /src/main.tsx directly; nothing to swap.
+        if (!moduleTag || moduleTag.getAttribute('src').indexOf('/src/') === 0) return;
+
+        var embeddedJs = moduleTag.getAttribute('src');
+        var cssTag = document.querySelector('link[rel="stylesheet"][href*="app.css"]');
+        // Removed before it runs; re-added below on whichever path we take.
+        moduleTag.remove();
+
+        function run(js, css, version) {
+          if (css) {
+            if (cssTag) cssTag.remove();
+            var link = document.createElement('link');
+            link.rel = 'stylesheet';
+            document.head.appendChild(link);
+            link.href = css;
+          }
+          var tag = document.createElement('script');
+          tag.type = 'module';
+          tag.crossOrigin = 'anonymous';
+          tag.src = js;
+          window.__afmBundleVersion = version || null;
+          document.head.appendChild(tag);
+        }
+
+        var core = window.__TAURI__ && window.__TAURI__.core;
+        if (!core || !core.invoke) {
+          run(embeddedJs, null, null);
+          return;
+        }
+
+        var settled = false;
+        // A hung IPC must not mean a blank app: if the answer has not arrived
+        // in a second, boot embedded and carry on.
+        var guard = setTimeout(function () {
+          if (settled) return;
+          settled = true;
+          run(embeddedJs, null, null);
+        }, 1000);
+
+        core
+          .invoke('bundle_state')
+          .then(function (state) {
+            if (settled) return;
+            if (!state || !state.dir || !state.active) {
+              settled = true;
+              clearTimeout(guard);
+              run(embeddedJs, null, null);
+              return;
+            }
+            var dir = state.dir;
+            return core.invoke('bundle_begin_boot', { version: state.active }).then(function () {
+              if (settled) return;
+              settled = true;
+              clearTimeout(guard);
+              run(
+                core.convertFileSrc(dir + '/app.js'),
+                core.convertFileSrc(dir + '/app.css'),
+                state.active
+              );
+            });
+          })
+          .catch(function () {
+            if (settled) return;
+            settled = true;
+            clearTimeout(guard);
+            run(embeddedJs, null, null);
+          });
+      })();
+    </script>
   </body>
 </html>

@@ -13,6 +13,7 @@ import { rememberServer } from './servers.ts';
 import { pickSource, startMirrorHeartbeat } from './mirrors.ts';
 import { startServerSync } from './serverSync.ts';
 import { startCacheSweeps } from './autoCache.ts';
+import { checkForBundle, reportBootOk } from './appUpdate.ts';
 import {
   artUrl,
   isRemotePath,
@@ -223,6 +224,32 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!session) return;
     return startCacheSweeps(session);
+  }, [session]);
+
+  // The running frontend came up: settle the wager the boot loader staked, so
+  // this version is not quarantined on the next launch. Mounted here rather
+  // than at a module top level because "the app works" is the claim being
+  // made, and a module body runs before React has rendered anything.
+  useEffect(() => {
+    reportBootOk();
+  }, []);
+
+  // And ask the hub whether it is publishing a newer bundle. Never swapped
+  // under a running app - whatever arrives is for the next launch.
+  useEffect(() => {
+    if (!session) return;
+    let live = true;
+    const ask = () => {
+      if (!live || document.hidden) return;
+      void checkForBundle(session);
+    };
+    const first = window.setTimeout(ask, 20_000);
+    const timer = window.setInterval(ask, 6 * 60 * 60 * 1000);
+    return () => {
+      live = false;
+      window.clearTimeout(first);
+      window.clearInterval(timer);
+    };
   }, [session]);
 
   const persist = useCallback((next: ServerSession | null) => {

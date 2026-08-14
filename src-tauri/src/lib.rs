@@ -29,6 +29,7 @@ mod nearby;
 
 // Your own library, held on the device for offline play. Not the import
 // engine - see offline.rs's header for why that distinction is load-bearing.
+mod bundle;
 mod offline;
 
 // The native audio engine seam. Compiled everywhere so the frontend can probe
@@ -233,6 +234,11 @@ fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'stat
         native_audio::native_audio_set_volume,
         native_audio::native_audio_teardown,
         native_audio::native_audio_poll,
+        bundle::bundle_state,
+        bundle::bundle_begin_boot,
+        bundle::bundle_boot_ok,
+        bundle::bundle_install,
+        bundle::bundle_revert,
         offline::offline_list,
         offline::offline_pin,
         offline::offline_unpin,
@@ -268,6 +274,11 @@ fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'stat
         native_audio::native_audio_set_volume,
         native_audio::native_audio_teardown,
         native_audio::native_audio_poll,
+        bundle::bundle_state,
+        bundle::bundle_begin_boot,
+        bundle::bundle_boot_ok,
+        bundle::bundle_install,
+        bundle::bundle_revert,
         offline::offline_list,
         offline::offline_pin,
         offline::offline_unpin,

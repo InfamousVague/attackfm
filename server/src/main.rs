@@ -20,6 +20,7 @@
 //! | `AFM_ASSETS_DIR` | `<data>/assets` | Drop folder for generated artwork, served at `/api/assets` (checkout set beneath). |
 //! | `AFM_PUBLIC_URL` | *(empty)* | The public origin, e.g. `https://matt.attack.fm` - needed for the Spotify OAuth redirect. |
 
+mod appbundle;
 mod albums;
 mod api;
 mod mirror;
@@ -74,6 +75,9 @@ pub struct AppState {
     pub db: Arc<Db>,
     pub music_root: PathBuf,
     pub art_dir: PathBuf,
+    /// The data directory itself, for things that live beside art and uploads
+    /// rather than inside them - the published app bundle among them.
+    pub data_dir: PathBuf,
     pub upload_dir: PathBuf,
     pub stream_secret: Vec<u8>,
     /// Recently verified stream tokens, so a wall of cover art does not
@@ -275,6 +279,7 @@ async fn main() {
         db: db.clone(),
         music_root: music_root.clone(),
         art_dir: art_dir.clone(),
+        data_dir: data_dir.clone(),
         upload_dir,
         stream_secret,
         stream_tokens: auth::StreamTokenCache::default(),
@@ -462,6 +467,8 @@ async fn main() {
         .route("/api/curator/pulls", get(collector::status))
         .route("/api/date/done", post(collector::date_done))
         .route("/api/albums/gaps", get(albums::gaps))
+        .route("/api/app/bundle", get(appbundle::manifest))
+        .route("/api/app/bundle/{name}", get(appbundle::file))
         // What a hot server should be carrying: the listened-to working set.
         .route("/api/hot", get(hot::hot))
         .route("/api/hot/summary", get(hot::summary))

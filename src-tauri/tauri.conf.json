@@ -32,10 +32,13 @@
         "enable": true,
         "scope": [
           "$AUDIO/**",
-          "$HOME/**"
+          "$HOME/**",
+          "$APPDATA/**",
+          "$APPCONFIG/**"
         ]
       }
-    }
+    },
+    "withGlobalTauri": true
   },
   "plugins": {
     "deep-link": {
