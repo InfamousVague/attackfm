@@ -651,6 +651,25 @@ function AppMain({
   // Discover is reachable whenever there is any acquire handler (import or buy),
   // matching the nav gate; the plugin-free App-Review build has neither.
   const canDiscover = hasDownloads || useAcquire().hasAny;
+  /*
+   * Which surface, if any, gets the header's shadow - and what re-arms it.
+   *
+   * The browsing tabs have always had it. A song collection has it now BECAUSE
+   * it lost its own sticky strip: that strip was opaque (--glacier-bg), so it
+   * was quietly doing this job, hiding the rows that passed beneath it. With it
+   * gone the list cut off at a hard edge under the header.
+   *
+   * Keyed on the collection as well as the tab, so opening Liked from All
+   * re-arms the listener against the new page's scroller instead of holding a
+   * handle on the one that just unmounted.
+   */
+  const scrimKey =
+    detail?.kind === 'songs'
+      ? `songs:${detail.view}`
+      : !detail && (tab === 'home' || tab === 'library' || tab === 'discover' || tab === 'search')
+        ? tab
+        : null;
+
   return (
     <main className="appContent" ref={swipeRef}>
       {/* Above the pages but INSIDE the content column. It cannot live one
@@ -661,12 +680,10 @@ function AppMain({
           that unmounts on navigation would take the notice with it. */}
       <UpdateBanner />
       {/* The top of the page mirrors the bottom: scrolled content dissolves
-          into black under the header instead of cutting off at its edge.
-          Only on the three browsing surfaces, and only once scrolled - parked
-          at the top there is nothing to dissolve and the scrim is invisible. */}
-      {!detail && (tab === 'home' || tab === 'library' || tab === 'discover' || tab === 'search') && (
-        <TopScrim resetKey={tab} />
-      )}
+          into black under the header instead of cutting off at its edge. Only
+          once scrolled - parked at the top there is nothing to dissolve and
+          the scrim is invisible. See scrimKey above for which pages get it. */}
+      {scrimKey && <TopScrim resetKey={scrimKey} />}
       {detail?.kind === 'artist' ? (
         <ArtistPage
           artist={detail.artist}
