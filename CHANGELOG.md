@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.71
+
+- When downloads fail, the Overview now says which server refused and what it said, instead of only counting the failures
+
 ## 0.3.70
 
 - Downloads & space is redesigned: an Overview with one picture of the space and the last check's receipt, and a Files browser of everything on the device — by artist and album, or biggest first — with delete on every row
