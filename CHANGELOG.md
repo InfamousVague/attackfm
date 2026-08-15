@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.64
+
+- Settings → Offline now says what the last check actually did, so "nothing kept" can tell you why
+
 ## 0.3.63
 
 - Settings → Servers is split into This server / Network / Access, so it is one chunk at a time instead of one long page

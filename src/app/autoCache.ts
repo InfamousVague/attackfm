@@ -153,6 +153,8 @@ export function setDateDeck(keys: string[]): void {
 }
 
 export interface Hotness {
+  /** How many liked songs the server reported, or -1 if it could not be asked. */
+  liked?: number;
   /** Library path (`afm://<id>`), most-wanted first. */
   keys: string[];
   /** Why, for the settings pane to explain itself. */
@@ -194,11 +196,16 @@ export async function rankHotness(session: ServerSession): Promise<Hotness> {
   });
 
   // Liked songs are the one signal the listener stated out loud.
+  let liked = 0;
   try {
     const favorites = await fetchRemoteFavorites(session);
+    liked = favorites.length;
     for (const id of favorites) bump(id, 1000, 'liked');
   } catch {
-    // A signal that will not load is one fewer input, not a failure.
+    // A signal that will not load is one fewer input, not a failure - but it
+    // IS the difference between "you have no liked songs" and "we could not
+    // ask", so it leaves -1 behind rather than nothing.
+    liked = -1;
   }
 
   try {
@@ -222,10 +229,54 @@ export async function rankHotness(session: ServerSession): Promise<Hotness> {
   }
 
   const keys = [...score.entries()].sort((a, b) => b[1] - a[1]).map(([key]) => key);
-  return { keys, reasons };
+  return { keys, reasons, liked };
 }
 
 // --- the sweep -------------------------------------------------------------
+
+/**
+ * What the last pass did, and why it did nothing when it did nothing.
+ *
+ * Every failure in this file is caught and shrugged off - a favourites call
+ * that will not load is "one fewer input", a download that fails is `false` -
+ * which is right for a background job that must never take the app down, and
+ * wrong for anyone trying to work out why their liked songs are not on their
+ * phone. The sweep was unobservable: no error, no log, no count, just an empty
+ * folder. This is the receipt.
+ */
+export interface SweepReport {
+  at: number;
+  /** Plain-language outcome, for the Offline pane to show as-is. */
+  note: string;
+  kept: number;
+  failed: number;
+  /** Ranked songs this server's index could not name or size, so they were
+   *  never candidates - a stale index shows up here rather than nowhere. */
+  skippedUnknown: number;
+  liked: number;
+  limitBytes: number;
+}
+
+const REPORT_KEY = 'attackfm-autocache-report';
+
+function writeReport(next: SweepReport): void {
+  try {
+    localStorage.setItem(REPORT_KEY, JSON.stringify(next));
+  } catch {
+    // The pane simply shows nothing; the sweep itself is unaffected.
+  }
+  for (const fn of listeners) fn();
+}
+
+/** The last pass's receipt, or null if none has run on this device. */
+export function lastSweep(): SweepReport | null {
+  try {
+    const raw = localStorage.getItem(REPORT_KEY);
+    return raw ? (JSON.parse(raw) as SweepReport) : null;
+  } catch {
+    return null;
+  }
+}
 
 export interface SweepResult {
   /** Bytes this cache is holding after the pass. */
@@ -353,10 +404,28 @@ export async function sweepCache(
       evicted += 1;
     }
     writeLedger({});
+    // Two very different reasons to hold nothing, and the pane should not
+    // report them the same way. A clamped budget is the interesting one: the
+    // setting says 15 GB and the phone says otherwise.
+    const stored = cacheLimitBytes();
+    writeReport({
+      at: Date.now(),
+      note:
+        !isTauri()
+          ? 'Only the app can keep songs on a device'
+          : stored === 0
+            ? 'Keeping songs is switched off'
+            : 'No room on this device right now',
+      kept: 0,
+      failed: 0,
+      skippedUnknown: 0,
+      liked: 0,
+      limitBytes: limit,
+    });
     return { bytes: 0, downloaded: 0, evicted, pinnedBytes };
   }
 
-  const { keys } = await rankHotness(session);
+  const { keys, liked = 0 } = await rankHotness(session);
   const index = loadCachedIndex(session.url);
   const byId = new Map(index.tracks.map((t) => [t.id, t] as const));
 
@@ -366,11 +435,19 @@ export async function sweepCache(
   // Only songs this server's index can size and name are candidates.
   const known = new Map<string, RemoteTrack>();
   const sizes = new Map<string, number>();
+  let skippedUnknown = 0;
   for (const key of keys) {
     const id = trackIdFromPath(key);
     if (id === null) continue;
     const remote = byId.get(id);
-    if (!remote) continue;
+    // Wanted, but this device's copy of the library index has never heard of
+    // it - so it cannot be sized, named or fetched. Counted rather than
+    // dropped in silence: a stale index is invisible otherwise, and it is the
+    // likeliest reason a liked song never arrives.
+    if (!remote) {
+      skippedUnknown += 1;
+      continue;
+    }
     known.set(key, remote);
     sizes.set(key, remote.sizeBytes || ASSUMED_BYTES);
   }
@@ -396,6 +473,7 @@ export async function sweepCache(
   const missing = [...want.entries()].filter(([key]) => !heldPath(key));
   let done = 0;
   let downloaded = 0;
+  let failed = 0;
   options.onProgress?.(0, missing.length);
 
   const worker = async () => {
@@ -413,6 +491,8 @@ export async function sweepCache(
         downloaded += 1;
         ledger[key] = Date.now();
         writeLedger(ledger);
+      } else {
+        failed += 1;
       }
       done += 1;
       options.onProgress?.(done, done + missing.length);
@@ -422,6 +502,22 @@ export async function sweepCache(
 
   const after = await offlineEntries();
   const ours = after.filter((e) => e.key in readLedger());
+  writeReport({
+    at: Date.now(),
+    note:
+      liked === -1
+        ? 'Could not ask the server which songs you like'
+        : failed > 0
+          ? `${failed} ${failed === 1 ? 'song' : 'songs'} would not download`
+          : skippedUnknown > 0 && downloaded === 0
+            ? 'Waiting for this device to finish syncing the library'
+            : `${ours.length} kept on this device`,
+    kept: ours.length,
+    failed,
+    skippedUnknown,
+    liked,
+    limitBytes: limit,
+  });
   for (const fn of listeners) fn();
   return {
     bytes: ours.reduce((n, e) => n + e.bytes, 0),

@@ -9,6 +9,7 @@ import {
   clearCache,
   LIMIT_CHOICES,
   onCacheChange,
+  lastSweep,
   setCacheLimitBytes,
   sweepCache,
 } from './autoCache.ts';
@@ -145,6 +146,19 @@ function gbLabel(bytes: number): string {
  * rotates), and it does not touch songs kept by hand (those are yours, and sit
  * outside this budget entirely).
  */
+/** "3 minutes ago" - the sweep is periodic, so WHEN it last ran is half the
+ *  answer to why nothing has arrived. */
+function sinceLabel(at: number): string {
+  const secs = Math.max(0, Math.round((Date.now() - at) / 1000));
+  if (secs < 90) return 'just now';
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+  const days = Math.round(hours / 24);
+  return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+}
+
 function AutoCacheSection() {
   const { session } = useServerSession();
   const [limit, setLimit] = useState(cacheLimitBytes);
@@ -153,9 +167,11 @@ function AutoCacheSection() {
   );
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [report, setReport] = useState(lastSweep);
 
   const refresh = useCallback(() => {
     void cacheUsage().then(setUsage);
+    setReport(lastSweep());
   }, []);
   useEffect(() => {
     refresh();
@@ -231,6 +247,23 @@ function AutoCacheSection() {
               : 'Checking…'}
           </Text>
         </div>
+      )}
+
+      {/*
+        What the last pass actually did.
+        
+        Every failure in the sweep is caught and shrugged off, which is right
+        for a background job and useless for anyone wondering why their liked
+        songs are not here. Without this line the only report is an empty
+        folder, which cannot tell "switched off" from "no room" from "the
+        server would not say what you like".
+      */}
+      {limit > 0 && report && (
+        <Text size="xs" tone={report.failed > 0 || report.liked === -1 ? 'danger' : 'subtle'}>
+          Last check {sinceLabel(report.at)} — {report.note}
+          {report.liked > 0 ? ` · ${report.liked} liked` : ''}
+          {report.skippedUnknown > 0 ? ` · ${report.skippedUnknown} not in this device's index yet` : ''}
+        </Text>
       )}
 
       {usage && usage.pinnedCount > 0 && (
