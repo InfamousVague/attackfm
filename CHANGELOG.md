@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.62
+
+- Servers are one place now: Settings → Servers holds the box you are on, how near each one is, and the servers saved to your account
+- Fixed: the old Servers page could not scroll, so a long list had no way down
+
 ## 0.3.61
 
 - Now Playing wears the app's own colour again — the heart and the other lit controls had turned blue
