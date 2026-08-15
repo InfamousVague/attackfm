@@ -243,13 +243,23 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
   // come from the central registry, not the music server, so this needs no
   // session at all: a device signed into nothing still stays current.
   //
-  // Three triggers, because a phone's clock barely runs: shortly after launch;
-  // a six-hour interval (which a backgrounded WebView rarely lives to see);
-  // and every return to the foreground, debounced to once an hour - the one
-  // moment a phone reliably gives an app. The old pair alone meant a device
-  // opened for two minutes at a time got a single 20-second window per launch,
-  // and if it happened to be backgrounded when a tick fired, that tick was
-  // simply skipped and never retried.
+  // Triggers, because a phone's clock barely runs: shortly after launch; a
+  // six-hour interval (which a backgrounded WebView rarely lives to see); and
+  // every return to the foreground - the one moment a phone reliably gives an
+  // app. The interval alone meant a device opened for two minutes at a time got
+  // a single 20-second window per launch, and a tick that fired while
+  // backgrounded was skipped and never retried.
+  //
+  // The foreground check is debounced by a MINUTE, not the hour it used to be.
+  // An hour meant that coming back to the app - the exact moment someone looks
+  // for a waiting update - almost never asked, because they had usually been in
+  // it within the hour. A minute is still ample protection against a rapid
+  // app-switch storm, and the request is one small conditional GET.
+  //
+  // Both `visibilitychange` and `focus` are listened for, because the two do
+  // not agree across the platforms this runs on: an embedded WebView can be
+  // brought forward without ever firing a visibility change, and `ask` is
+  // idempotent, so hearing about the same return twice costs nothing.
   useEffect(() => {
     let live = true;
     let lastAsk = 0;
@@ -260,17 +270,19 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
     };
     const first = window.setTimeout(ask, 20_000);
     const timer = window.setInterval(ask, 6 * 60 * 60 * 1000);
-    const onVisible = () => {
+    const onReturn = () => {
       if (document.visibilityState !== 'visible') return;
-      if (Date.now() - lastAsk < 60 * 60 * 1000) return;
+      if (Date.now() - lastAsk < 60 * 1000) return;
       ask();
     };
-    document.addEventListener('visibilitychange', onVisible);
+    document.addEventListener('visibilitychange', onReturn);
+    window.addEventListener('focus', onReturn);
     return () => {
       live = false;
       window.clearTimeout(first);
       window.clearInterval(timer);
-      document.removeEventListener('visibilitychange', onVisible);
+      document.removeEventListener('visibilitychange', onReturn);
+      window.removeEventListener('focus', onReturn);
     };
   }, []);
 

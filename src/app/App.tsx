@@ -8,7 +8,7 @@ import {
   TitleBar,
   ToastProvider,
 } from '@glacier/react';
-import { ChartNoAxesColumn, ChevronLeft, ChevronRight, CircleUserRound, Compass, Download, LibraryBig, Search, Settings } from '@glacier/icons';
+import { ChartNoAxesColumn, ChevronLeft, ChevronRight, CircleUserRound, Compass, Download, LibraryBig, Play, Search, Settings, Shuffle } from '@glacier/icons';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AppearanceProvider } from './appearance.tsx';
 import { LibraryProvider, useLibrary } from './library.tsx';
@@ -48,6 +48,7 @@ import { AiPage } from './AiPage.tsx';
 import { ServersPage } from './ServersPage.tsx';
 import { FriendsPage } from './FriendsPage.tsx';
 import { UpdateBanner } from './UpdateBanner.tsx';
+import { useHeaderActions } from './headerActions.ts';
 import { DjPage } from './DjPage.tsx';
 import { DjChatProvider } from './djChat.tsx';
 import { DatePage } from './DatePage.tsx';
@@ -284,7 +285,7 @@ function PrimaryNav({
       <NavBarItem
         icon={<CircleUserRound size={18} />}
         label="Profile"
-        active={tab === 'profile' || tab === 'friends'}
+        active={tab === 'profile'}
         onClick={() => onTab('profile')}
       />
       {pages.map((pg) => (
@@ -370,7 +371,7 @@ function PrimaryNav({
       <BarTab
         icon={<CircleUserRound size={22} />}
         label="Profile"
-        active={tab === 'profile' || tab === 'friends'}
+        active={tab === 'profile'}
         onClick={() => onTab('profile')}
       />
       {/* The overflow: the ⋮ menu cascades up the plugin pages plus Stats,
@@ -379,6 +380,33 @@ function PrimaryNav({
       {/* Settings left the bar for the header's top-right (mobileHeader), so
           this side holds two tabs like the other - three was a crowd. */}
     </nav>
+  );
+}
+
+/**
+ * Whatever the page below has asked the header to offer - Play and Shuffle over
+ * a song collection, today. Draws nothing when nobody is asking, so the header
+ * is unchanged on every other page.
+ */
+function HeaderActionButtons() {
+  const actions = useHeaderActions();
+  if (!actions) return null;
+  return (
+    <>
+      <Button variant="solid" size="sm" onClick={actions.play} disabled={actions.disabled}>
+        <Play size={14} fill="currentColor" />
+        Play
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={actions.shuffle}
+        disabled={actions.disabled}
+        aria-label="Shuffle"
+      >
+        <Shuffle size={14} />
+      </Button>
+    </>
   );
 }
 
@@ -1172,15 +1200,24 @@ export function App() {
                     <span className="mobileHeader__title">Library</span>
                   ) : tab === 'downloads' ? (
                     <span className="mobileHeader__title">Downloads</span>
-                  ) : tab === 'profile' || tab === 'friends' ? (
+                  ) : tab === 'friends' ? (
+                    <span className="mobileHeader__title">Friends</span>
+                  ) : tab === 'profile' ? (
                     <span className="mobileHeader__title">Profile</span>
                   ) : (
                     <img className="mobileHeader__logo" src={wordmark} alt={APP_NAME} />
                   )}
                 </span>
                 {/* Downloads and Settings moved off the header into the bar's
-                    ⋮ menu (NavMoreMenu), so the top is just where you are. */}
-                <span className="mobileHeader__actions" />
+                    ⋮ menu (NavMoreMenu), so the top is just where you are -
+                    which left this slot free for the page below to borrow.
+                    A song collection puts Play and Shuffle here once its own
+                    header has scrolled away: the collapsed strip down there is
+                    3rem holding a mark, a name, a pill and an icon, and this
+                    row is already taller with its trailing half empty. */}
+                <span className="mobileHeader__actions">
+                  <HeaderActionButtons />
+                </span>
               </header>
             )}
             <div className="appBody" ref={bodyRef}>

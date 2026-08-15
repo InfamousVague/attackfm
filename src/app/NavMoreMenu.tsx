@@ -9,6 +9,7 @@ import {
   Server,
   Settings,
   Sparkles,
+  UsersRound,
 } from '@glacier/icons';
 import { useHasDownloadQueue, usePluginPages } from '../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
@@ -58,6 +59,7 @@ export function NavMoreMenu({
     tab === 'dj' ||
     tab === 'date' ||
     tab === 'servers' ||
+    tab === 'friends' ||
     tab === 'downloads';
 
   const go = (next: string) => {
@@ -172,6 +174,28 @@ export function NavMoreMenu({
             <span className="appNavBarPlugins__itemLabel">AI</span>
           </button>
         )}
+
+        {/* The people, reachable without going through Profile first. The
+            profile page keeps its own door onto this - the one with their
+            faces on it and the count of who is waiting on you - because that
+            door says something a menu row cannot. This is the shortcut for
+            when you already know where you are going.
+
+            Ungated, like Date and DJ: friends live on the registry account
+            rather than a server, and the page draws its own signed-out face
+            (AccountSetup) rather than needing the menu to hide it. */}
+        <button
+          type="button"
+          role="menuitem"
+          className="appNavBarPlugins__item"
+          data-active={tab === 'friends' || undefined}
+          onClick={() => go('friends')}
+        >
+          <span className="appNavBarPlugins__itemIcon" aria-hidden>
+            <UsersRound size={18} />
+          </span>
+          <span className="appNavBarPlugins__itemLabel">Friends</span>
+        </button>
 
         {/* Where the music is served from, and what it costs to keep it
             there. Offered to everyone - a guest still benefits from being

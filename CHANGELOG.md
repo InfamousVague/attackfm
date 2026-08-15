@@ -7,6 +7,44 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.56
+
+- Play and Shuffle move up into the top bar when you scroll a song list, instead of crowding the strip below it
+
+## 0.3.55
+
+- The "what changed" note after an update is a one-line banner again — tap +N to read the rest
+
+## 0.3.54
+
+- Light mode: the Liked, All songs and On repeat tiles no longer wear their dark-mode colours
+- Light mode: the bar's unselected icons use ink picked for a light bar instead of the dark one's grey
+
+## 0.3.53
+
+- Friends has its own place in the ⋮ menu, so you can go straight there instead of through Profile
+- The frosted top bar is gone again — the header is back to plain
+
+## 0.3.52
+
+- The top bar is frosted glass now, the same material as the bar along the bottom
+
+## 0.3.51
+
+- Loading placeholders all shimmer the same way now: covers still arriving no longer sweep out of step with the cards holding their place
+- With reduced motion on, a still-loading cover gently pulses instead of sitting frozen
+
+## 0.3.50
+
+- Coming back to the app now checks for an update straight away, instead of only once an hour
+
+## 0.3.49
+
+- Music keeps playing on Android when you switch to maps or another app
+- A spoken direction from navigation no longer stops the music for good — it ducks and comes back
+- The bottom bar is a touch smaller, giving the page back a little room
+- Android only: needs the new app from your installer, not just this update
+
 ## 0.3.48
 
 - New updates arrive as a proper panel now, with the whole changelog instead of one line behind a chevron
