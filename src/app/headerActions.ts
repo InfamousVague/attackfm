@@ -28,6 +28,15 @@ export interface HeaderActions {
    * leaves you asking play WHAT.
    */
   title: string;
+  /**
+   * A thumbnail to sit before the name: the album mosaic of a playlist, the
+   * artist's portrait, the mark a collection wears. Absent where the page has
+   * no single honest image for itself - the empty-state art is painted onto
+   * the page background, so it reads as a smudge at this size.
+   */
+  art?: string | null;
+  /** Round for a person, square for a record. */
+  artRound?: boolean;
   play: () => void;
   shuffle: () => void;
   /** Nothing to play - both controls draw, both are dead. */

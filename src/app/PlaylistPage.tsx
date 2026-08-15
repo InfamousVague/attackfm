@@ -182,12 +182,15 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
     if (!stuck || !lentName) return;
     setHeaderActions({
       title: lentName,
+      // The first of the covers the hero mosaics - one square is all this size
+      // can carry, and it is the same record the tile leads with.
+      art: covers[0] ?? null,
       play: () => handlers.current.playAll(),
       shuffle: () => handlers.current.shuffleAll(),
       disabled: rows.length === 0,
     });
     return () => setHeaderActions(null);
-  }, [stuck, lentName, rows.length]);
+  }, [stuck, lentName, rows.length, covers]);
 
   if (!playlist) return null;
 

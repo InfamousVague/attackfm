@@ -258,6 +258,11 @@ img {
   font-weight: 700;
   letter-spacing: -0.01em;
   white-space: nowrap;
+  /* With a thumbnail before it and Play after it, a long collection name is
+     what gives way: it truncates rather than pushing either off the edge. */
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @media (prefers-color-scheme: light) {
@@ -286,6 +291,41 @@ img {
 .mobileHeader__ident {
   display: grid;
   min-inline-size: 0;
+}
+
+/*
+ * The thumbnail the page lends with its name.
+ *
+ * `flex: none` because a long artist name must eat its own words, not the
+ * picture beside them - the title truncates instead (see below).
+ */
+.mobileHeader__thumb {
+  flex: none;
+  /* 1.4rem with a hair of margin, not 1.6 with a full step: the row is packed
+     to the pixel (nav takes all 200 of the 200.4 it can), so every pixel this
+     gives back is one the name keeps before it ellipsises. */
+  inline-size: 1.4rem;
+  block-size: 1.4rem;
+  margin-inline-end: 0.28rem;
+  border-radius: var(--glacier-radius-sm);
+  object-fit: cover;
+  /* A cover that has not answered yet is a hole in the row; a faint plate
+     under it holds the geometry while it loads. */
+  background: var(--glacier-hover);
+}
+
+/*
+ * A lent name shares its row with a thumbnail and two controls, where a tab's
+ * own name has the row to itself. A hair smaller is what lets "Liked songs"
+ * read whole instead of ending in an ellipsis five pixels short.
+ */
+.mobileHeader__identLayer:has(.mobileHeader__thumb) .mobileHeader__title {
+  font-size: 1rem;
+}
+
+/* A person, not a record. */
+.mobileHeader__thumb[data-round] {
+  border-radius: 50%;
 }
 
 .mobileHeader__identLayer {
@@ -6168,7 +6208,12 @@ body [class*='_panel_']:has(> .dlPanel) {
 
 /* Back + wordmark as one leading cluster in the mobile header, mirroring how
    the desktop title bar seats its nav beside the logo. */
+/* Takes the row's leftover width rather than leaving it in the gap: with a
+   thumbnail and a name in here, every spare pixel is one the name can use
+   before it starts truncating. */
 .mobileHeader__nav {
+  flex: 1;
+  min-inline-size: 0;
   display: flex;
   align-items: center;
   gap: var(--glacier-space-1);
