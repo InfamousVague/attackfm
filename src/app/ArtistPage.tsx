@@ -336,6 +336,10 @@ export function ArtistPage({ artist, onPlay, onOpenArtist, onOpenPlaylist }: Art
     if (!stuck || theirs.length === 0) return;
     setHeaderActions({
       title: artist,
+      // A person, so it is round - the same shape their portrait wears in the
+      // hero above and on every artist card in the app.
+      art: heroArt,
+      artRound: true,
       play: () => {
         const list = handlers.current.playThrough;
         if (list[0]) handlers.current.onPlay(list[0], list);
@@ -347,7 +351,7 @@ export function ArtistPage({ artist, onPlay, onOpenArtist, onOpenPlaylist }: Art
       disabled: false,
     });
     return () => setHeaderActions(null);
-  }, [stuck, artist, theirs.length]);
+  }, [stuck, artist, theirs.length, heroArt]);
 
   /**
    * Pull a record you do not own.

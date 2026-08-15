@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.68
+
+- Scrolling now carries the cover up too: a playlist's album, an artist's portrait, or the collection's own mark, beside its name in the top bar
+
 ## 0.3.67
 
 - Play and Shuffle now fade into the top bar in step with the name, instead of snapping in

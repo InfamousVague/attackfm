@@ -187,12 +187,16 @@ export function SongPage({
     if (!stuck) return;
     setHeaderActions({
       title: meta.title,
+      // Liked and On repeat wear a real object; the library motif is painted
+      // onto the page background (see EmptyArt) and reads as a smudge at
+      // thumbnail size, so it sends none and the header shows the name alone.
+      art: view === 'liked' ? likedChip : view === 'onrepeat' ? onRepeatChip : null,
       play: () => handlers.current.playAll(),
       shuffle: () => handlers.current.shuffleAll(),
       disabled: empty,
     });
     return () => setHeaderActions(null);
-  }, [stuck, empty, meta.title]);
+  }, [stuck, empty, meta.title, view]);
 
   return (
     <div className={`homePage libraryPage songPage ${meta.tone}`} ref={pageRef}>

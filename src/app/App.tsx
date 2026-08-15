@@ -399,9 +399,14 @@ function HeaderIdent({ tab }: { tab: string }) {
   const lent = useHeaderActions();
   const lentTitle = lent?.title ?? null;
   const [shown, setShown] = useState<string | null>(lentTitle);
+  const [shownArt, setShownArt] = useState<string | null>(lent?.art ?? null);
+  const [shownRound, setShownRound] = useState(lent?.artRound ?? false);
   useEffect(() => {
-    if (lentTitle) setShown(lentTitle);
-  }, [lentTitle]);
+    if (!lentTitle) return;
+    setShown(lentTitle);
+    setShownArt(lent?.art ?? null);
+    setShownRound(lent?.artRound ?? false);
+  }, [lentTitle, lent?.art, lent?.artRound]);
 
   return (
     <span className="mobileHeader__ident">
@@ -419,6 +424,18 @@ function HeaderIdent({ tab }: { tab: string }) {
         )}
       </span>
       <span className="mobileHeader__identLayer" data-on={lentTitle || undefined} aria-hidden={!lentTitle}>
+        {/* The picture rides with the name, from the same lend. Kept in state
+            alongside it so it survives the withdrawal and fades out rather
+            than blinking away a frame early. */}
+        {shownArt && (
+          <img
+            className="mobileHeader__thumb"
+            data-round={shownRound || undefined}
+            src={shownArt}
+            alt=""
+            aria-hidden
+          />
+        )}
         <span className="mobileHeader__title">{shown}</span>
       </span>
     </span>
