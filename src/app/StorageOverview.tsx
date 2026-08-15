@@ -7,6 +7,8 @@ import {
   sweepManifest,
   cacheUsage,
   clearCache,
+  dismissSweepReport,
+  resetFailedManifest,
   lastSweep,
   LIMIT_CHOICES,
   onCacheChange,
@@ -177,6 +179,31 @@ export function StorageOverview() {
                   {r.n} × {r.reason}
                 </Text>
               ))}
+            {/* The two things a person standing in front of an error wants:
+                run the red ones again, or put the message away. Retry rides
+                the ordinary sweep - the same pass, the same reasons if it
+                fails again - with the failed tiles wound back to waiting so
+                the wall reads as a retry instead of flickering red. */}
+            {(report.failed > 0 || report.liked === -1) && (
+              <div className="cacheActions">
+                {report.failed > 0 && (
+                  <Button
+                    size="sm"
+                    variant="soft"
+                    disabled={busy || !session || limit === 0}
+                    onClick={() => {
+                      resetFailedManifest();
+                      void update();
+                    }}
+                  >
+                    Retry failed
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" onClick={() => dismissSweepReport()}>
+                  Dismiss
+                </Button>
+              </div>
+            )}
           </>
         )}
       </div>

@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.76
+
+- Failed downloads can be retried in one tap, and the error note can be dismissed
+
 ## 0.3.75
 
 - Downloads run six at a time while nothing is playing, and step back to two under a song so the music never stutters for the cache
