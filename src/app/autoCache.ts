@@ -599,7 +599,18 @@ export async function sweepCache(
       const from = via ? { ...session, url: via.url, streamToken: via.streamToken } : session;
       const url = streamUrl(from, via ? via.trackId : remote.id);
       setManifestState(key, 'downloading');
-      const ok = await pinTrack(toTrackish(remote), url).catch((err: unknown) => {
+      // The cap is the sweep's, not the download's: a wedged connection used
+      // to hang a worker forever, and with two workers two stalls wedged the
+      // whole pass until the phone locked and everything died at once. The
+      // Rust side now stalls out on its own; this is the belt to its braces,
+      // sized for the biggest lossless file on the slowest honest link.
+      const capped = Promise.race([
+        pinTrack(toTrackish(remote), url),
+        new Promise<never>((_, reject) =>
+          window.setTimeout(() => reject(new Error('gave up after 6 minutes')), 6 * 60 * 1000),
+        ),
+      ]);
+      const ok = await capped.catch((err: unknown) => {
         // The Rust side says exactly what went wrong ("server answered 401",
         // "fetch failed: ..."); swallowing it is how 132 failures once read as
         // a mystery. Tagged with the host so mirror-vs-primary is visible.

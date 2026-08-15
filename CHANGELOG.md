@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.73
+
+- Download failures now say their real reason — the layer that was eating the server's answer is gone
+- A download that stops answering is given up on and the sweep moves to the next song, instead of wedging the whole pass
+
 ## 0.3.72
 
 - The Overview shows the last check's whole plan as a wall of covers — green landed, red refused, pulsing while it downloads — so what should be on the phone is visible, song by song

@@ -117,7 +117,12 @@ setOfflineAudioResolver(offlineSource);
 export async function pinTrack(track: Track, url: string): Promise<boolean> {
   if (!isTauri() || held.has(track.path)) return held.has(track.path);
   const ext = (track.codec || '').replace(/[^a-z0-9]/gi, '') || 'audio';
-  const entry = await call<OfflineEntry>('offline_pin', { key: track.path, url, ext });
+  // Deliberately NOT the swallowing call(): the Rust side names its failures
+  // ("server answered 401", "fetch failed: ...") and this is the one command
+  // whose failure somebody is standing there trying to diagnose. Swallowing
+  // here is why a wall of 147 red tiles once carried no reasons at all.
+  const { invoke } = await import('@tauri-apps/api/core');
+  const entry = (await invoke('offline_pin', { key: track.path, url, ext })) as OfflineEntry | null;
   if (!entry) return false;
   held.set(entry.key, entry.path);
   announce();
