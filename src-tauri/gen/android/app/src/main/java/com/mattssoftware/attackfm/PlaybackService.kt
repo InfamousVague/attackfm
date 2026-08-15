@@ -148,7 +148,15 @@ class PlaybackService : MediaBrowserServiceCompat() {
    *  how the two-argument call below silently recursed. */
   private fun goForeground(id: Int, note: Notification) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-      startForeground(id, note, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+      // The truthful type for the moment: playback while a song is on, data
+      // sync while only the cache is working. Re-running startForeground on a
+      // transition updates the type in place.
+      val kind =
+        if (lastState == PlaybackStateCompat.STATE_PLAYING)
+          ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+        else if (syncing) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        else ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+      startForeground(id, note, kind)
     } else {
       @Suppress("DEPRECATION")
       startForeground(id, note)
@@ -178,8 +186,8 @@ class PlaybackService : MediaBrowserServiceCompat() {
     val playing = lastState == PlaybackStateCompat.STATE_PLAYING
     val builder = NotificationCompat.Builder(this, CHANNEL)
       .setSmallIcon(android.R.drawable.ic_media_play)
-      .setContentTitle(lastTitle ?: getString(R.string.app_name))
-      .setContentText(lastArtist ?: "")
+      .setContentTitle(if (!playing && syncing) "Downloading your music" else lastTitle ?: getString(R.string.app_name))
+      .setContentText(if (!playing && syncing) "Keeping songs on this phone" else lastArtist ?: "")
       .setContentIntent(open)
       .setOngoing(playing)
       .setSilent(true)
@@ -260,6 +268,8 @@ class PlaybackService : MediaBrowserServiceCompat() {
     private var lastDuration = 0L
     private var lastPosition = 0L
     private var lastState = PlaybackStateCompat.STATE_NONE
+    /** True while the web layer's cache sweep is downloading. */
+    @Volatile var syncing = false
     const val BROWSE_ROOT = "attackfm.root"
 
     /**

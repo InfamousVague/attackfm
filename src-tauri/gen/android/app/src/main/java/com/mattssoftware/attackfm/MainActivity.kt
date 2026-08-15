@@ -13,6 +13,7 @@ class MainActivity : TauriActivity() {
    *  whether the foreground service runs, and whether the WebView is allowed
    *  to be paused when the app goes behind something. */
   @Volatile private var playing = false
+  @Volatile private var syncing = false
   /*
    * DELIBERATELY no audio-focus request anywhere in this activity.
    *
@@ -58,13 +59,33 @@ class MainActivity : TauriActivity() {
     fun setPlaying(next: Boolean) {
       if (playing == next) return
       playing = next
-      runOnUiThread {
-        if (next) {
-          PlaybackService.start(this@MainActivity)
-        } else {
-          PlaybackService.stop(this@MainActivity)
-        }
-      }
+      applyHold()
+    }
+
+    /**
+     * The cache sweep's hold on the process.
+     *
+     * Without it, tabbing away mid-sweep froze the app and every queued
+     * download died at the socket - "fetch failed: error sending request",
+     * 144 times. The same service that keeps playback alive keeps the sync
+     * alive, wearing the dataSync type and its own notification words while
+     * no song is on.
+     */
+    @JavascriptInterface
+    fun setSyncing(next: Boolean) {
+      if (syncing == next) return
+      syncing = next
+      PlaybackService.syncing = next
+      applyHold()
+    }
+  }
+
+  /** One rule for the service: it runs while EITHER leg needs the process,
+   *  so a song ending mid-sweep does not drop the downloads with it. */
+  private fun applyHold() {
+    runOnUiThread {
+      if (playing || syncing) PlaybackService.start(this)
+      else PlaybackService.stop(this)
     }
   }
 
@@ -108,7 +129,9 @@ class MainActivity : TauriActivity() {
    */
   override fun onPause() {
     super.onPause()
-    if (playing) webView?.onResume()
+    // The deck keeps running for music, and for a sweep: a paused webview
+    // cannot finish the downloads its own sweep started.
+    if (playing || syncing) webView?.onResume()
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
