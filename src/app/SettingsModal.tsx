@@ -18,7 +18,6 @@ import {
 } from '@glacier/react';
 import { accentOptions, accentSteps } from '@glacier/tokens';
 import {
-  ArrowDownToLine,
   Blocks,
   ChevronLeft,
   ChevronRight,
@@ -67,8 +66,7 @@ import { DevicesSettings } from './DevicesSettings.tsx';
 import { CuratorSettings } from './CuratorSettings.tsx';
 import { useConnect } from './playbackSync.tsx';
 import { useServerSession } from './serverSession.tsx';
-import { OfflineSettings } from './OfflineSettings.tsx';
-import { StorageSettings } from './StorageSettings.tsx';
+import { DeviceStorageSettings } from './DeviceStorageSettings.tsx';
 import { ServersSettings } from './ServersSettings.tsx';
 import { knownServers } from './servers.ts';
 import { heldCount, offlineSpace, onOfflineChange } from './offline.ts';
@@ -1322,23 +1320,23 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       group: 1,
     },
     {
-      id: 'offline',
-      label: 'Offline',
-      icon: <ArrowDownToLine size={16} />,
-      content: <OfflineSettings />,
-      summary: offlineHeld > 0 ? `${offlineHeld} kept on this device` : 'Nothing kept yet',
-      tint: 'green',
-      group: 1,
-    },
-    {
       id: 'storage',
-      label: 'Storage',
+      label: 'Downloads & space',
       icon: <HardDrive size={16} />,
-      content: <StorageSettings />,
-      summary:
-        heldBytes != null && heldBytes > 0
-          ? `${heldBytes >= 1e9 ? `${(heldBytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(heldBytes / 1e6))} MB`} on this device`
-          : 'What the space holds',
+      content: <DeviceStorageSettings />,
+      // Both halves of the question in one line: how many songs are down here,
+      // and what they cost. Either alone reads as half an answer.
+      summary: (() => {
+        const room =
+          heldBytes != null && heldBytes > 0
+            ? heldBytes >= 1e9
+              ? `${(heldBytes / 1e9).toFixed(1)} GB`
+              : `${Math.max(1, Math.round(heldBytes / 1e6))} MB`
+            : null;
+        if (offlineHeld > 0 && room) return `${offlineHeld} songs · ${room}`;
+        if (room) return `${room} on this device`;
+        return 'Nothing kept yet';
+      })(),
       tint: 'green',
       group: 1,
     },
