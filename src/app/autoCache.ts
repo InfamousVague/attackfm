@@ -380,9 +380,30 @@ export interface SweepResult {
   pinnedBytes: number;
 }
 
-/** How many downloads run at once. Two keeps the cache from competing with
- *  the song actually playing for the same connection. */
-const CONCURRENCY = 2;
+/**
+ * How many downloads run at once: six on an idle deck, two under a song.
+ *
+ * Two was sized when a download buffered its whole file through memory; now
+ * they stream to disk, and the server end is plain file serving with no limit
+ * of its own, so the client is the only throttle. Parallelism genuinely pays
+ * here - the hub is usually far away (Tailscale, often relayed), and on a
+ * high-latency path a couple of TCP streams cannot fill the pipe that six
+ * can. The stall watchdog is per-stream and counts SILENCE, not slowness, so
+ * six streams sharing a thin uplink do not trip it.
+ *
+ * Under a playing song the old caution stands: the deck shares that same
+ * uplink, and a stutter on the music to fill the cache faster is the wrong
+ * trade. Extra workers drain off live when a song starts mid-sweep.
+ */
+const CONCURRENCY_IDLE = 6;
+const CONCURRENCY_PLAYING = 2;
+
+let playbackAudible = false;
+
+/** The player says whether sound is coming out; the sweep sizes itself by it. */
+export function notePlaybackAudible(audible: boolean): void {
+  playbackAudible = audible;
+}
 
 /** A track whose size the index does not know cannot be budgeted for, so it is
  *  assumed to be about an average lossless song rather than skipped. */
@@ -589,8 +610,12 @@ export async function sweepCache(
   const failReasons = new Map<string, number>();
   options.onProgress?.(0, missing.length);
 
-  const worker = async () => {
+  const worker = async (lane: number) => {
     for (;;) {
+      // A song starting mid-sweep drains the extra lanes: each checks its own
+      // number before pulling more work, so the pass narrows to two without
+      // dropping anything mid-file.
+      if (playbackAudible && lane >= CONCURRENCY_PLAYING) return;
       const next = missing.shift();
       if (!next || options.signal?.aborted) return;
       const [key, remote] = next;
@@ -643,7 +668,12 @@ export async function sweepCache(
       options.onProgress?.(done, done + missing.length);
     }
   };
-  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+  await Promise.all(
+    Array.from(
+      { length: playbackAudible ? CONCURRENCY_PLAYING : CONCURRENCY_IDLE },
+      (_, lane) => worker(lane),
+    ),
+  );
 
   const after = await offlineEntries();
   const ours = after.filter((e) => e.key in readLedger());
