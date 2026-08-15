@@ -654,8 +654,9 @@ function AppMain({
   /*
    * Which surface, if any, gets the header's shadow - and what re-arms it.
    *
-   * The browsing tabs have always had it. A song collection has it now BECAUSE
-   * it lost its own sticky strip: that strip was opaque (--glacier-bg), so it
+   * The browsing tabs have always had it. A song collection and a playlist have
+   * it now because each became a single scroller with its hero inside; the
+   * collection had also been leaning on its own sticky strip: that strip was opaque (--glacier-bg), so it
    * was quietly doing this job, hiding the rows that passed beneath it. With it
    * gone the list cut off at a hard edge under the header.
    *
@@ -666,9 +667,11 @@ function AppMain({
   const scrimKey =
     detail?.kind === 'songs'
       ? `songs:${detail.view}`
-      : !detail && (tab === 'home' || tab === 'library' || tab === 'discover' || tab === 'search')
-        ? tab
-        : null;
+      : detail?.kind === 'playlist'
+        ? `playlist:${detail.id}`
+        : !detail && (tab === 'home' || tab === 'library' || tab === 'discover' || tab === 'search')
+          ? tab
+          : null;
 
   return (
     <main className="appContent" ref={swipeRef}>

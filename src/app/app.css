@@ -6274,10 +6274,25 @@ body [class*='_panel_']:has(> .dlPanel) {
   max-inline-size: 34rem;
 }
 
+/*
+ * The playlist page, laid out like a song collection: .homePage is the single
+ * scroller, so the hero travels with the rows instead of holding still above
+ * them, and the header can pick up its name and its buttons on the way past.
+ */
+.homePage.playlistPage {
+  gap: var(--glacier-space-3);
+}
+
+/* .homePage already insets the page; the hero lines up with the rows rather
+   than padding a second time. */
+.playlistPage .playlistHead {
+  padding-inline: 0;
+}
+
+/* No longer a scroller - just the rows, and the bottom breathing room the
+   ScrollArea used to carry. */
 .playlistPageScroll {
-  flex: 1;
-  min-block-size: 0;
-  padding: 0 var(--glacier-space-3) var(--glacier-space-4);
+  padding-block-end: var(--glacier-space-4);
 }
 
 /* The kit's sortable rows carry the drag handle and the drag chrome; the row
