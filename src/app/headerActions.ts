@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
 /**
- * What the app header is offering right now, on behalf of the page below it.
+ * What the page below has lent the app header: its name, and its controls.
  *
  * The header (App.tsx, .mobileHeader) is a sibling of the page stack, not an
  * ancestor of it, so a page that wants to put something up there has no props
@@ -20,6 +20,14 @@ import { useSyncExternalStore } from 'react';
  * disappear into an orphan with nothing on screen to show for it.
  */
 export interface HeaderActions {
+  /**
+   * What the page is called, shown where the wordmark otherwise sits. The page
+   * that lends its controls lends its NAME with them: once its own header has
+   * scrolled away, the app's logo is the least useful thing that row could be
+   * holding, and a collection with Play in the corner and no name attached
+   * leaves you asking play WHAT.
+   */
+  title: string;
   play: () => void;
   shuffle: () => void;
   /** Nothing to play - both controls draw, both are dead. */
