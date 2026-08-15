@@ -284,6 +284,10 @@ export interface SweepReport {
   note: string;
   kept: number;
   failed: number;
+  /** The distinct download failures, commonest first, each tagged with the
+   *  host it came from - "which server, and what it said" is the whole
+   *  diagnosis for a sweep that planned 130 downloads and landed 2. */
+  failReasons?: { reason: string; n: number }[];
   /** Ranked songs this server's index could not name or size, so they were
    *  never candidates - a stale index shows up here rather than nowhere. */
   skippedUnknown: number;
@@ -511,6 +515,7 @@ export async function sweepCache(
   let done = 0;
   let downloaded = 0;
   let failed = 0;
+  const failReasons = new Map<string, number>();
   options.onProgress?.(0, missing.length);
 
   const worker = async () => {
@@ -523,7 +528,21 @@ export async function sweepCache(
       const via = pickSource(session, remote.id);
       const from = via ? { ...session, url: via.url, streamToken: via.streamToken } : session;
       const url = streamUrl(from, via ? via.trackId : remote.id);
-      const ok = await pinTrack(toTrackish(remote), url).catch(() => false);
+      const ok = await pinTrack(toTrackish(remote), url).catch((err: unknown) => {
+        // The Rust side says exactly what went wrong ("server answered 401",
+        // "fetch failed: ..."); swallowing it is how 132 failures once read as
+        // a mystery. Tagged with the host so mirror-vs-primary is visible.
+        let host = '';
+        try {
+          host = new URL(from.url).host;
+        } catch {
+          host = from.url;
+        }
+        const msg = String(err).replace(/^Error:\s*/, '').slice(0, 90);
+        const reason = `${host}: ${msg}`;
+        failReasons.set(reason, (failReasons.get(reason) ?? 0) + 1);
+        return false;
+      });
       if (ok) {
         downloaded += 1;
         ledger[key] = Date.now();
@@ -541,16 +560,20 @@ export async function sweepCache(
   const ours = after.filter((e) => e.key in readLedger());
   writeReport({
     at: Date.now(),
-    note:
-      liked === -1
-        ? 'Could not ask the server which songs you like'
-        : failed > 0
-          ? `${failed} ${failed === 1 ? 'song' : 'songs'} would not download`
-          : skippedUnknown > 0 && downloaded === 0
-            ? 'Waiting for this device to finish syncing the library'
-            : `${ours.length} kept on this device`,
+    note: (() => {
+      if (liked === -1) return 'Could not ask the server which songs you like';
+      if (failed > 0) {
+        const top = [...failReasons.entries()].sort((a, b) => b[1] - a[1])[0];
+        return `${failed} ${failed === 1 ? 'song' : 'songs'} would not download${top ? ` — ${top[0]}` : ''}`;
+      }
+      if (skippedUnknown > 0 && downloaded === 0)
+        return 'Waiting for this device to finish syncing the library';
+      return `${ours.length} kept on this device`;
+    })(),
     kept: ours.length,
     failed,
+    failReasons: [...failReasons.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
+      .map(([reason, n]) => ({ reason, n })),
     skippedUnknown,
     liked,
     limitBytes: limit,

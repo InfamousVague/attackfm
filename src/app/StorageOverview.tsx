@@ -156,13 +156,24 @@ export function StorageOverview() {
           </Text>
         )}
         {report && limit > 0 && (
-          <Text size="xs" tone={report.failed > 0 || report.liked === -1 ? 'danger' : 'subtle'}>
-            Last check {sinceLabel(report.at)} — {report.note}
-            {report.liked > 0 ? ` · ${report.liked} liked` : ''}
-            {report.skippedUnknown > 0
-              ? ` · ${report.skippedUnknown} not in this device's index yet`
-              : ''}
-          </Text>
+          <>
+            <Text size="xs" tone={report.failed > 0 || report.liked === -1 ? 'danger' : 'subtle'}>
+              Last check {sinceLabel(report.at)} — {report.note}
+              {report.liked > 0 ? ` · ${report.liked} liked` : ''}
+              {report.skippedUnknown > 0
+                ? ` · ${report.skippedUnknown} not in this device's index yet`
+                : ''}
+            </Text>
+            {/* The note leads with the commonest failure; when the sweep hit
+                MORE than one kind, the rest are listed so a mirror failing
+                differently from the primary is two lines, not a mystery. */}
+            {(report.failReasons?.length ?? 0) > 1 &&
+              report.failReasons!.slice(1).map((r) => (
+                <Text key={r.reason} size="xs" tone="danger">
+                  {r.n} × {r.reason}
+                </Text>
+              ))}
+          </>
         )}
       </div>
 
