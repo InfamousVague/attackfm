@@ -51,7 +51,13 @@ import npPlaceholderArt from '../assets/attack-wave.png';
 import { NowPlayingBackdrop } from './NowPlayingBackdrop.tsx';
 import { useEffects } from './effects.ts';
 import { loadAudioUrl, reactivateAudioSession, systemOutputVolume, type Track } from './tauri.ts';
-import { bindAudioFocus, setNativePlaying } from './androidAudio.ts';
+import {
+  bindAudioFocus,
+  bindNativeTransport,
+  setNativeNowPlaying,
+  setNativePlaybackState,
+  setNativePlaying,
+} from './androidAudio.ts';
 import { isPendingPath } from './pendingPlay.tsx';
 import { fetchCanvas, fetchPlayStates, isRemotePath, reportPlay, reportPosition, trackIdFromPath } from './server.ts';
 import { fireNativeHaptic } from './haptics.ts';
@@ -1316,6 +1322,17 @@ export function Player({
       artwork: artwork?.startsWith('http') ? artwork : null,
     });
     updateMediaSessionState({ duration, position: positionRef.current, playing });
+    // Android's half of the same sentence: a WebView does not publish the
+    // page's mediaSession to the system, so without this the lock screen, the
+    // notification and an Android Auto dashboard know nothing. No-ops
+    // everywhere else.
+    setNativeNowPlaying({
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      durationSecs: duration,
+    });
+    setNativePlaybackState(playing, positionRef.current);
     if (isIOS) {
       void pushCarPlayNowPlaying({
         title: track.title,
@@ -1340,6 +1357,7 @@ export function Player({
     }
     carPlaySentPos.current = coarsePosition;
     updateMediaSessionState({ duration, position: coarsePosition, playing });
+    setNativePlaybackState(playing, coarsePosition);
     if (isIOS) {
       void pushCarPlayNowPlaying({
         title: track.title,
@@ -2827,6 +2845,22 @@ export function Player({
       bindAudioFocus({
         pause: () => carPlayControls.current?.setPlaying(false),
         resume: () => carPlayControls.current?.setPlaying(true),
+      }),
+    [],
+  );
+
+  // The MediaSession's buttons - a steering wheel, an Android Auto dashboard,
+  // the lock screen, the notification's own row. They arrive in the service and
+  // are handed here by MainActivity; these are the player's own controls, so a
+  // press out there is the same press as one in here.
+  useEffect(
+    () =>
+      bindNativeTransport({
+        play: () => carPlayControls.current?.setPlaying(true),
+        pause: () => carPlayControls.current?.setPlaying(false),
+        next: () => carPlayControls.current?.next(),
+        previous: () => carPlayControls.current?.previous(),
+        seek: (seconds) => carPlayControls.current?.seek(seconds),
       }),
     [],
   );
