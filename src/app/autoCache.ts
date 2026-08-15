@@ -28,6 +28,40 @@ import { pickSource } from './mirrors.ts';
 import { isTauri, type Track } from './tauri.ts';
 
 const LEDGER_KEY = 'attackfm-autocache';
+const DENY_KEY = 'attackfm-cache-deny';
+
+/**
+ * Songs the listener deleted from the device by hand.
+ *
+ * Without this, deleting an auto-cached file is a promise the next sweep
+ * quietly breaks: the song is still hot, so it is downloaded right back -
+ * which is why the old Storage pane refused to offer delete on cache-owned
+ * rows at all. The file browser offers it, so the refusal becomes a denial
+ * the planner respects. Cleared by Clear-cache (a fresh start is a fresh
+ * start), and counted in the sweep receipt so the exclusions are visible
+ * rather than a mystery about why a liked song never arrives.
+ */
+export function deniedKeys(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DENY_KEY);
+    return raw ? new Set(Object.keys(JSON.parse(raw) as Record<string, number>)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+export function denyKey(key: string): void {
+  try {
+    const raw = localStorage.getItem(DENY_KEY);
+    const all = raw ? (JSON.parse(raw) as Record<string, number>) : {};
+    all[key] = Date.now();
+    localStorage.setItem(DENY_KEY, JSON.stringify(all));
+  } catch {
+    // The delete still happened; the song may just come back next sweep.
+  }
+  for (const fn of listeners) fn();
+}
+
 const LIMIT_KEY = 'attackfm-cache-limit';
 
 /** The default ceiling. Fifteen gigabytes is a few thousand lossy songs or a
@@ -425,7 +459,10 @@ export async function sweepCache(
     return { bytes: 0, downloaded: 0, evicted, pinnedBytes };
   }
 
-  const { keys, liked = 0 } = await rankHotness(session);
+  const { keys: ranked, liked = 0 } = await rankHotness(session);
+  // A song deleted by hand stays deleted: denied keys never re-enter the plan.
+  const denied = deniedKeys();
+  const keys = ranked.filter((key) => !denied.has(key));
   const index = loadCachedIndex(session.url);
   const byId = new Map(index.tracks.map((t) => [t.id, t] as const));
 
@@ -541,11 +578,18 @@ export async function cacheUsage(): Promise<{ bytes: number; count: number; pinn
   };
 }
 
-/** Drop everything the cache owns, leaving pins alone. */
+/** Drop everything the cache owns, leaving pins alone - and the denials with
+ *  it: clearing the cache is a fresh start, and a fresh start includes the
+ *  songs you once told it to stop bringing back. */
 export async function clearCache(): Promise<void> {
   const ledger = readLedger();
   for (const key of Object.keys(ledger)) await unpinTrack(key);
   writeLedger({});
+  try {
+    localStorage.removeItem(DENY_KEY);
+  } catch {
+    // A denial that survives a clear is only a song that stays deleted.
+  }
   for (const fn of listeners) fn();
 }
 
