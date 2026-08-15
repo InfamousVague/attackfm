@@ -1,7 +1,8 @@
 import { Button, ScrollArea, Text } from '@glacier/react';
 import { Check, Disc3, Music, Play, Plus, Shuffle, X } from '@glacier/icons';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
+import { setHeaderActions } from './headerActions.ts';
 import { usePlaylists } from './playlists.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { IMPORTER_PLUGIN_ID, useAcquire } from '../plugins/runtime.tsx';
@@ -304,6 +305,50 @@ export function ArtistPage({ artist, onPlay, onOpenArtist, onOpenPlaylist }: Art
     return pool;
   };
 
+  /*
+   * The hero scrolls away; the header picks up its name and its two buttons -
+   * the same arrangement the song collections and playlists use. All hooks
+   * above the render and none below a branch, which is the rule this page has
+   * always kept and the one a playlist briefly did not.
+   */
+  const pageRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const [stuck, setStuck] = useState(false);
+  useEffect(() => {
+    const root = pageRef.current;
+    const mark = sentinelRef.current;
+    if (!root || !mark) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setStuck(!entry?.isIntersecting),
+      { root, threshold: 0 },
+    );
+    observer.observe(mark);
+    return () => observer.disconnect();
+    // Re-armed per artist: opening another replaces the hero the sentinel sits
+    // under.
+  }, [artist]);
+
+  const handlers = useRef({ playThrough, shuffled, onPlay });
+  handlers.current = { playThrough, shuffled, onPlay };
+  useEffect(() => {
+    // Nothing of theirs on this device is nothing to play - the hero hides its
+    // own buttons in that case, and the header must agree.
+    if (!stuck || theirs.length === 0) return;
+    setHeaderActions({
+      title: artist,
+      play: () => {
+        const list = handlers.current.playThrough;
+        if (list[0]) handlers.current.onPlay(list[0], list);
+      },
+      shuffle: () => {
+        const pool = handlers.current.shuffled();
+        if (pool[0]) handlers.current.onPlay(pool[0], pool);
+      },
+      disabled: false,
+    });
+    return () => setHeaderActions(null);
+  }, [stuck, artist, theirs.length]);
+
   /**
    * Pull a record you do not own.
    *
@@ -535,7 +580,7 @@ export function ArtistPage({ artist, onPlay, onOpenArtist, onOpenPlaylist }: Art
   };
 
   return (
-    <div className="homePage artistPage">
+    <div className="homePage artistPage" ref={pageRef}>
       <header className="artistHero">
         <img {...heroLoad} src={heroArt} alt="" />
         <div className="artistHero__text">
@@ -592,6 +637,9 @@ export function ArtistPage({ artist, onPlay, onOpenArtist, onOpenPlaylist }: Art
           </div>
         )}
       </header>
+      {/* Sits just under the hero: once this leaves the top of the page, the
+          hero has gone with it. */}
+      <div ref={sentinelRef} className="songPageHead__sentinel" aria-hidden />
 
       {popular.length > 0 && (
         <section className="homeShelf">

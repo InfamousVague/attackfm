@@ -47,7 +47,7 @@ import { StatsPage } from './StatsPage.tsx';
 import { AiPage } from './AiPage.tsx';
 import { FriendsPage } from './FriendsPage.tsx';
 import { UpdateBanner } from './UpdateBanner.tsx';
-import { useHeaderActions } from './headerActions.ts';
+import { useHeaderActions, type HeaderActions } from './headerActions.ts';
 import { DjPage } from './DjPage.tsx';
 import { DjChatProvider } from './djChat.tsx';
 import { DatePage } from './DatePage.tsx';
@@ -432,23 +432,45 @@ function HeaderIdent({ tab }: { tab: string }) {
  */
 function HeaderActionButtons() {
   const actions = useHeaderActions();
-  if (!actions) return null;
+  // The last page to lend its controls, kept after it withdraws.
+  //
+  // Rendering straight off the store meant these mounted and unmounted, and an
+  // element that is gone cannot fade: the title beside them cross-faded while
+  // the buttons snapped in and out, which read as two different things
+  // happening rather than one. Holding the last set lets them animate out on
+  // their own terms - the handlers are dead by then anyway, since `on` is what
+  // gates the pointer.
+  const [shown, setShown] = useState<HeaderActions | null>(actions);
+  useEffect(() => {
+    if (actions) setShown(actions);
+  }, [actions]);
+
+  const on = actions !== null;
+  if (!shown) return null;
+
   return (
-    <>
-      <Button variant="solid" size="sm" onClick={actions.play} disabled={actions.disabled}>
+    <span className="mobileHeader__lent" data-on={on || undefined} aria-hidden={!on}>
+      <Button
+        variant="solid"
+        size="sm"
+        onClick={shown.play}
+        disabled={shown.disabled}
+        tabIndex={on ? 0 : -1}
+      >
         <Play size={14} fill="currentColor" />
         Play
       </Button>
       <Button
         variant="ghost"
         size="sm"
-        onClick={actions.shuffle}
-        disabled={actions.disabled}
+        onClick={shown.shuffle}
+        disabled={shown.disabled}
         aria-label="Shuffle"
+        tabIndex={on ? 0 : -1}
       >
         <Shuffle size={14} />
       </Button>
-    </>
+    </span>
   );
 }
 
@@ -667,9 +689,11 @@ function AppMain({
       ? `songs:${detail.view}`
       : detail?.kind === 'playlist'
         ? `playlist:${detail.id}`
-        : !detail && (tab === 'home' || tab === 'library' || tab === 'discover' || tab === 'search')
-          ? tab
-          : null;
+        : detail?.kind === 'artist'
+          ? `artist:${detail.artist}`
+          : !detail && (tab === 'home' || tab === 'library' || tab === 'discover' || tab === 'search')
+            ? tab
+            : null;
 
   return (
     <main className="appContent" ref={swipeRef}>

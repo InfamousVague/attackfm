@@ -309,6 +309,40 @@ img {
   }
 }
 
+/*
+ * The borrowed controls, arriving and leaving.
+ *
+ * Same clock and same easing as the name beside them (.mobileHeader__identLayer),
+ * because they are one gesture: the page hands the header its identity and its
+ * buttons together, and two different timings made that read as two events. A
+ * touch of travel with the fade - they come FROM somewhere - and none of it
+ * under prefers-reduced-motion.
+ */
+.mobileHeader__lent {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  opacity: 0;
+  transform: translateY(-0.35rem);
+  pointer-events: none;
+  transition:
+    opacity 0.22s var(--glacier-ease-out, ease),
+    transform 0.22s var(--glacier-ease-out, ease);
+}
+
+.mobileHeader__lent[data-on] {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobileHeader__lent {
+    transition: none;
+    transform: none;
+  }
+}
+
 .mobileHeader__actions {
   display: flex;
   align-items: center;

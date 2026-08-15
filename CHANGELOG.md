@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.67
+
+- Play and Shuffle now fade into the top bar in step with the name, instead of snapping in
+- Artist pages do it too: scroll past the artist and their name, Play and Shuffle move up
+
 ## 0.3.66
 
 - The changelog no longer parks itself on the home screen after an update — it is said once and then gone
