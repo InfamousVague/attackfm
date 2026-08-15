@@ -16,6 +16,7 @@ interface NativeBridge {
   setPlaying: (playing: boolean) => void;
   /** Present from 0.3.68; absent on an older shell, hence the optionals. */
   setNowPlaying?: (title: string, artist: string, album: string, durationMs: number) => void;
+  setSyncing?: (active: boolean) => void;
   setPlaybackState?: (playing: boolean, positionMs: number) => void;
 }
 
@@ -141,4 +142,20 @@ export function bindNativeTransport(handlers: {
   return () => {
     delete window.__AFM_TRANSPORT__;
   };
+}
+
+/**
+ * Hold the process while the cache sweep downloads.
+ *
+ * Android freezes a backgrounded app that holds no foreground service, and a
+ * frozen app's sockets die where they stand - which turned "tabbed away
+ * mid-sweep" into 144 instant fetch failures. The playback service carries a
+ * dataSync leg for exactly this window. No-op everywhere but Android.
+ */
+export function setNativeSyncing(active: boolean): void {
+  try {
+    window.AFMNative?.setSyncing?.(active);
+  } catch {
+    // Best-effort, like the rest of this bridge.
+  }
 }

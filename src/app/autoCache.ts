@@ -24,6 +24,7 @@
 
 import { artUrl, fetchHome, fetchRemoteFavorites, loadCachedIndex, remotePath, streamUrl, trackIdFromPath, type RemoteTrack, type ServerSession } from './server.ts';
 import { heldPath, offlineEntries, offlineSpace, pinTrack, unpinTrack } from './offline.ts';
+import { setNativeSyncing } from './androidAudio.ts';
 import { pickSource } from './mirrors.ts';
 import { isTauri, type Track } from './tauri.ts';
 
@@ -720,6 +721,7 @@ let sweeping = false;
 export async function sweepIfIdle(session: ServerSession): Promise<void> {
   if (sweeping || !isTauri()) return;
   sweeping = true;
+  setNativeSyncing(true);
   try {
     await sweepCache(session);
     lastCompleteAt = Date.now();
@@ -727,6 +729,7 @@ export async function sweepIfIdle(session: ServerSession): Promise<void> {
     // A failed pass is a pass; the next one will find the same work to do.
   } finally {
     sweeping = false;
+    setNativeSyncing(false);
   }
 }
 
