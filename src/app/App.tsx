@@ -44,7 +44,6 @@ import { PlaylistsProvider } from './playlists.tsx';
 import { LibrarySyncProvider } from './librarySync.tsx';
 import { SearchPage } from './SearchPage.tsx';
 import { StatsPage } from './StatsPage.tsx';
-import { AiPage } from './AiPage.tsx';
 import { FriendsPage } from './FriendsPage.tsx';
 import { UpdateBanner } from './UpdateBanner.tsx';
 import { useHeaderActions, type HeaderActions } from './headerActions.ts';
@@ -239,7 +238,6 @@ function PrimaryNav({
       // Built-in pages that own their own route. Without these the deny-list
       // lights Library while you are standing on the DJ or the AI page - the
       // trap of listing what is NOT library instead of what is.
-      tab !== 'ai' &&
       tab !== 'dj' &&
       tab !== 'date' &&
       !onPluginPage);
@@ -681,9 +679,6 @@ function AppMain({
   // 'downloads' from a past session falls through to Home rather than a page
   // that should not be here.
   const hasDownloads = useDownloadsOptional() !== null;
-  // The server owner - the first account through the door. The AI page is
-  // theirs alone; everyone else never sees the row or the route.
-  const isOwner = useServerSession().session?.isAdmin === true;
   const hasQueue = useHasDownloadQueue();
   // Discover is reachable whenever there is any acquire handler (import or buy),
   // matching the nav gate; the plugin-free App-Review build has neither.
@@ -783,12 +778,6 @@ function AppMain({
         // taste and the caller's own pulls, so it is correct for everyone on the
         // hub - unlike the AI page below, which reports on the server itself.
         <DjPage />
-      ) : tab === 'ai' && isOwner ? (
-        // What the machine did while you were not looking. Owner-only, and
-        // gated here as well as in the menu: a tab restored from a past session
-        // (or an account that stopped being the owner) falls through to the
-        // library rather than opening a page it should not see.
-        <AiPage />
       ) : tab === 'stats' ? (
         // Stats: the listening, added up - fed by the same event log the
         // curator tunes itself on.
