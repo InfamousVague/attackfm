@@ -500,6 +500,81 @@ button.statsRow__name:hover {
    Three of the week's numbers on the Home page, each a door to the full
    page. The strip renders nothing at all when there is nothing to say -
    a zero-minute week is not worth a row of zeros. */
+/*
+ * The week at a glance, on the library page.
+ *
+ * The time leads - it is the number "how much have I been listening" actually
+ * asks for - with three supporting readouts under it and one door into the
+ * full page. It used to be three equal cards and no door, which said the time
+ * no louder than the streak and left the stats page reachable only by tapping
+ * a number that did not look like a link.
+ */
+.statsGlance {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+.statsGlance__time {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  margin: 0;
+}
+
+.statsGlance__value {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+.statsGlance__label {
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+}
+
+/* The button sits under the row rather than beside the heading: at 375px a
+   trailing control would take width from the number it belongs to. */
+.statsGlance__all {
+  align-self: flex-start;
+}
+
+/*
+ * Three across, always.
+ *
+ * The base .statsMini asks for 9rem and wraps, which on a phone means two
+ * cards and then a lonely third. Here they share the row by fraction instead,
+ * and stack their icon over the number so ~7rem of width is enough to read.
+ */
+.statsMinis--three {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--glacier-space-2);
+}
+
+.statsMinis--three .statsMini {
+  min-inline-size: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--glacier-space-1);
+  cursor: default;
+}
+
+/* A top artist's name is the one value here that is not a short number, so it
+   truncates rather than wrapping the card taller than its neighbours. */
+.statsMinis--three .statsMini__body {
+  min-inline-size: 0;
+  inline-size: 100%;
+}
+
+.statsMinis--three .statsMini__value {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .statsMinis {
   display: flex;
   gap: var(--glacier-space-2);
