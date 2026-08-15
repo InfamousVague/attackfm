@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.61
+
+- Now Playing wears the app's own colour again — the heart and the other lit controls had turned blue
+
 ## 0.3.60
 
 - Fixed: opening or leaving a playlist could take the whole app down
