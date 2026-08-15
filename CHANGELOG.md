@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.63
+
+- Settings → Servers is split into This server / Network / Access, so it is one chunk at a time instead of one long page
+- The server's name and address fit on a line each again instead of breaking mid-word
+
 ## 0.3.62
 
 - Servers are one place now: Settings → Servers holds the box you are on, how near each one is, and the servers saved to your account

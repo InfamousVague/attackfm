@@ -7221,11 +7221,30 @@ body [class*='_panel_']:has(> .dlPanel) {
 }
 
 /* The server hero: glyph, name+status, and who is signed in - one glance. */
+/*
+ * The server's identity line.
+ *
+ * It was one wrapping flex row - glyph, name+host, then who you are signed in
+ * as - so on a phone the account chip took width off the middle and both the
+ * name and the hostname broke mid-word: "AttackFM" over "(home)", "headless-"
+ * over "mac.tail83699e.ts.net". A hostname split across two lines is the one
+ * thing on this card you might need to read out loud.
+ *
+ * A two-column grid instead: the glyph keeps its column, the name and host get
+ * the whole of the other one, and WHO drops to its own row underneath rather
+ * than competing for the same line. Nothing truncates - a server you cannot
+ * name is not better than a tall card.
+ */
 .serverHero {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: var(--glacier-space-3);
-  flex-wrap: wrap;
+  gap: var(--glacier-space-2) var(--glacier-space-3);
+}
+
+/* Its own row, full width, so the identity above is never squeezed by it. */
+.serverHero__who {
+  grid-column: 1 / -1;
 }
 
 .serverHero__glyph {
@@ -7252,6 +7271,9 @@ body [class*='_panel_']:has(> .dlPanel) {
   display: flex;
   align-items: center;
   gap: var(--glacier-space-2);
+  /* The version pill rides beside the name and drops below it rather than
+     forcing the name to break to make room. */
+  flex-wrap: wrap;
 }
 
 .serverHero__status {
@@ -7259,6 +7281,13 @@ body [class*='_panel_']:has(> .dlPanel) {
   align-items: center;
   gap: var(--glacier-space-2);
   min-inline-size: 0;
+}
+
+/* With the row to itself a hostname fits on one line at 375px; if a longer one
+   ever does not, it breaks between the dotted parts rather than mid-label. */
+.serverHero__status > * {
+  min-inline-size: 0;
+  overflow-wrap: break-word;
 }
 
 .serverHero__who {
@@ -11463,7 +11492,15 @@ button.artistAlbum {
 .serversSettings {
   display: flex;
   flex-direction: column;
-  gap: var(--glacier-space-5);
+  gap: var(--glacier-space-4);
+}
+
+/* The chunk switcher sits above whichever chunk is showing, with a clear step
+   of air under it so it reads as a control over the page rather than the first
+   row of it. */
+.serversSettings > [role='radiogroup'],
+.serversSettings > [role='tablist'] {
+  margin-block-end: var(--glacier-space-2);
 }
 
 .serversSettings__part {

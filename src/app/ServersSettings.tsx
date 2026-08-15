@@ -1,48 +1,85 @@
-import { Heading, Text } from '@glacier/react';
+import { useState } from 'react';
+import { Heading, SegmentedControl, Text } from '@glacier/react';
 import { useServerSession } from './serverSession.tsx';
-import { ServerSettings } from './ServerSettings.tsx';
+import {
+  HouseholdSection,
+  LinkDeviceSection,
+  MirrorSection,
+  ServerSettings,
+} from './ServerSettings.tsx';
 import { ServersPanel } from './ServersPage.tsx';
 import { WhereYouListen } from './WhereYouListen.tsx';
 
 /**
- * Everything about servers, in one pane.
+ * Everything about servers, in one pane, three chunks at a time.
  *
- * There used to be three doors onto this: a Settings pane for the box you are
- * signed into, a second Settings pane for the ones your account can reach, and
- * a whole nav destination in the overflow menu for their health and routing.
- * Three names for one subject, and the nav destination could not even scroll -
- * it had no overflow of its own, so a list longer than the screen had no way
- * down. Living here fixes that by construction: the settings pane is already
- * the scroller.
+ * There used to be three doors onto this subject: a Settings pane for the box
+ * you are signed into, a second for the ones your account can reach, and a nav
+ * destination in the overflow menu for their health and routing. Three names
+ * for one thing, and the nav destination could not even scroll.
  *
- * The three parts are kept as they were rather than rewritten into one list,
- * because they answer three different questions and each holds something the
- * others do not:
+ * Folding them together fixed the scroll and the duplication but made one very
+ * long pane - a dashboard, a disk meter, a scan, a device pairing flow, a
+ * mirror list, a user table, an uploader and two more server lists, all in a
+ * single column. So the pane shows one chunk at a time:
  *
- * - THIS SERVER: the dashboard, the scan, sign out, the household, linking a
- *   device, users, streaming quality, uploads. The admin surface.
- * - STREAMING: which box actually serves a song, how near each one is, how
- *   much of your library it holds, and what to delete to make room.
- * - YOUR ACCOUNT: switching which server you are signed into, forgetting one
- *   everywhere, and the invite doors.
+ * - THIS SERVER: the box you are on. Its numbers, its disk, its scan, its
+ *   people, what it costs to stream from it, and the way out.
+ * - NETWORK: the other boxes. Which one actually serves a song, how near each
+ *   is, how much of your library it holds, and what to delete to make room.
+ * - ACCESS: ways in and out. Pairing a device, the household, the servers saved
+ *   to your account, and the invite you hand somebody else.
  *
- * They overlap in what they LIST - the same boxes appear more than once - but
- * not in what they DO, and merging the lists would have cost real actions.
+ * The chunks own the grouping; the sections inside them are untouched, so
+ * nothing had to be rewritten to be moved and nothing was lost in moving.
  */
+
+type Chunk = 'server' | 'network' | 'access';
+
+const CHUNKS: { value: Chunk; label: string }[] = [
+  { value: 'server', label: 'This server' },
+  { value: 'network', label: 'Network' },
+  { value: 'access', label: 'Access' },
+];
+
 export function ServersSettings() {
   const { session } = useServerSession();
+  const [chunk, setChunk] = useState<Chunk>('server');
+
+  // Signed out there is one thing to do - connect - and ServerSettings is the
+  // form that does it. Segments over a single form would be three labels
+  // pointing at two empty rooms.
+  if (!session) {
+    return (
+      <div className="prefsBody serversSettings">
+        <ServerSettings />
+      </div>
+    );
+  }
 
   return (
     <div className="prefsBody serversSettings">
-      {/* Signed out, this is the whole pane: ServerSettings renders the
-          connect form, and there is no network or account list to speak of
-          until it succeeds. */}
-      <ServerSettings />
+      <SegmentedControl
+        aria-label="Servers"
+        fullWidth
+        value={chunk}
+        options={CHUNKS}
+        onValueChange={(next) => setChunk(next as Chunk)}
+      />
 
-      {session && (
+      {chunk === 'server' && <ServerSettings />}
+
+      {chunk === 'network' && (
         <>
           <ServersPanel />
+          <MirrorSection />
+        </>
+      )}
 
+      {chunk === 'access' && (
+        <>
+          <LinkDeviceSection />
+          <HouseholdSection />
           <section className="serversSettings__part">
             <header className="serversSettings__partHead">
               <Heading level={3} noMargin>
