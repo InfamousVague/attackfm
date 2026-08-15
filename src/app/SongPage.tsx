@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { SongTable } from './SongTable.tsx';
+import { setHeaderActions } from './headerActions.ts';
 import { EmptyArt, HeroArt, type EmptyArtName } from './EmptyArt.tsx';
 import { fetchHome, trackIdFromPath } from './server.ts';
 import type { Track } from './tauri.ts';
@@ -170,6 +171,28 @@ export function SongPage({
     if (first) onPlay(first, order);
   };
 
+  /*
+   * Lend Play and Shuffle to the app header while the hero is off screen.
+   *
+   * The handlers go through a ref so this publishes on `stuck` and `empty`
+   * alone: they close over the current track list, so as effect dependencies
+   * they would be a fresh pair every render and re-publish forever. Withdrawn
+   * on cleanup, so leaving the page - or scrolling back up to where the hero's
+   * own buttons are on screen - takes them with it rather than leaving a live
+   * Play up there pointing at a list nobody is looking at.
+   */
+  const handlers = useRef({ playAll, shuffleAll });
+  handlers.current = { playAll, shuffleAll };
+  useEffect(() => {
+    if (!stuck) return;
+    setHeaderActions({
+      play: () => handlers.current.playAll(),
+      shuffle: () => handlers.current.shuffleAll(),
+      disabled: empty,
+    });
+    return () => setHeaderActions(null);
+  }, [stuck, empty]);
+
   return (
     <div className={`homePage libraryPage songPage ${meta.tone}`} ref={pageRef}>
       {/* The collapsed header: the hero's identity and its two actions, kept
@@ -185,14 +208,13 @@ export function SongPage({
             <HeroArt name={meta.art} />
           )}
         </span>
+        {/* Just the mark and the name now. Play and Shuffle went up to the app
+            header (the effect above): four things across this 3rem strip - a
+            mark, a name, a pill and an icon - left every one of them cramped,
+            and the header row is already taller with its trailing half empty.
+            Only while stuck, so the hero's own full-size pair is never on
+            screen at the same time as a second copy of itself. */}
         <span className="songPageBar__title">{meta.title}</span>
-        <Button variant="solid" size="sm" onClick={playAll} disabled={empty} tabIndex={stuck ? 0 : -1}>
-          <Play size={14} fill="currentColor" />
-          Play
-        </Button>
-        <Button variant="ghost" size="sm" onClick={shuffleAll} disabled={empty} tabIndex={stuck ? 0 : -1}>
-          <Shuffle size={14} />
-        </Button>
       </div>
       <header className="playlistHead songPageHead">
         <div className="playlistHead__cover" aria-hidden>

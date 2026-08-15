@@ -1378,6 +1378,31 @@ body:has(.npScreen[data-docked]) .appNavScrim {
   color: var(--glacier-accent-text);
 }
 
+/*
+ * An inactive tab in light mode.
+ *
+ * The glyphs above take --glacier-text-subtle, which is the ONE text token
+ * that holds the same value in both themes - oklch(0.535 0.012 260) light and
+ * dark alike, where text/muted/disabled all flip. It is the ramp's gray-9
+ * step, so that sameness is the kit's intent rather than a bug in it, but the
+ * consequence here is that the bar's icons wear a grey picked against a
+ * near-black plate and then wear it again on a near-white one.
+ *
+ * --glacier-text-muted is the neighbouring token that DOES flip (0.498 light,
+ * 0.805 dark), so light mode gets ink chosen for a light bar. Scoped to light
+ * on purpose: dark mode's subtle grey is right where it is, and lifting it to
+ * muted there would make every inactive tab read as lit.
+ */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .appNavBarTab:not([data-active]) {
+    color: var(--glacier-text-muted);
+  }
+}
+
+:root[data-theme='light'] .appNavBarTab:not([data-active]) {
+  color: var(--glacier-text-muted);
+}
+
 /* Just the glyph now. The highlight moved out to the tab (above), so this no
    longer carries a disc of its own - it only has to hold the icon at its own
    size and let the squircle around both do the lighting. */
@@ -1704,6 +1729,40 @@ html[data-platform='android'] .appWindow {
 
 .libChip:active {
   transform: scale(0.985);
+}
+
+/*
+ * The chips in light mode.
+ *
+ * Their gradient is fixed hsl() with no theme branch, and each face is a
+ * single dark-rendered PNG multiplied into it - so all three tiles came out
+ * byte-identical in both themes, which is the "dark-mode fills on a light
+ * page" of it. There is no light render of the heart, the scroll or the
+ * arrows to swap to (unlike src/assets/empty/, which ships pairs), so the
+ * tile moves instead of the object: a lighter, more saturated ground gives
+ * the dark face something to multiply DOWN into, and the object reads as an
+ * object rather than a smudge.
+ *
+ * Same three cases the wordmark handles (.mobileHeader__logo): the media
+ * query catches a system-following app on a light phone, the attribute rule
+ * catches a pinned light theme.
+ */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .libChip {
+    background: linear-gradient(
+      140deg,
+      hsl(var(--libChipHue, 280) 72% 62%),
+      hsl(calc(var(--libChipHue, 280) + 42) 64% 46%)
+    );
+  }
+}
+
+:root[data-theme='light'] .libChip {
+  background: linear-gradient(
+    140deg,
+    hsl(var(--libChipHue, 280) 72% 62%),
+    hsl(calc(var(--libChipHue, 280) + 42) 64% 46%)
+  );
 }
 
 /* The object, worn as the tile's face rather than sat beside the words:
@@ -2704,10 +2763,23 @@ html[data-platform='android'] .appWindow {
    image's load. */
 @keyframes skelSheen {
   0% {
-    background-position: 200% 0;
+    background-position: -45vw 0;
   }
   100% {
-    background-position: -200% 0;
+    background-position: 145vw 0;
+  }
+}
+
+/* What the kit shows when motion is unwelcome: the same surface, breathing,
+   with nothing travelling across it. Ours had no reduced-motion answer at all -
+   it kept sweeping. */
+@keyframes skelPulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
   }
 }
 
@@ -2722,14 +2794,25 @@ img[data-loading],
 .trackCardArtist[data-loading],
 .artistCardName[data-loading] {
   color: transparent;
+  /* The kit's own skeleton recipe, to the value: same two tokens, the same
+     45vw sweep on a fixed attachment, the same 1.8s linear clock. This shimmer
+     cannot BE a <Skeleton> - it is worn by the real <img> and the real text so
+     the reveal costs no layout shift, where the component is a separate span
+     that would have to be swapped out. But it had drifted into its own look:
+     different colours, a 200% sweep, 1.25s ease-in-out. Both appear on one
+     screen (a shelf's placeholder cards above, half-loaded covers below) and
+     the mismatch is visible as two shimmers out of step. */
+  background-color: var(--glacier-hover);
   background-image: linear-gradient(
     100deg,
-    var(--glacier-surface) 30%,
-    var(--glacier-surface-hover, rgba(150, 150, 150, 0.16)) 50%,
-    var(--glacier-surface) 70%
+    var(--glacier-hover) 0%,
+    var(--glacier-active) 50%,
+    var(--glacier-hover) 100%
   );
-  background-size: 200% 100%;
-  animation: skelSheen 1.25s ease-in-out infinite;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  background-size: 45vw 100%;
+  animation: skelSheen 1.8s linear infinite;
 }
 
 /* A loading tile hides its covers under the sheen; they all step out
@@ -2794,7 +2877,12 @@ img.artPop:not([data-loading]) {
   .trackCardTitle[data-loading],
   .trackCardArtist[data-loading],
   .artistCardName[data-loading] {
-    animation: none;
+    /* Not "stop" - "breathe". The kit swaps its travelling sheen for an
+       opacity pulse here rather than freezing, so a still-loading cover keeps
+       saying it is still loading. Killing the animation outright made these
+       read as blank boxes next to pulsing <Skeleton>s on the same screen. */
+    background-image: none;
+    animation: skelPulse 1.6s ease-in-out infinite;
   }
   img.artPop:not([data-loading]),
   [data-tile-pop]:not([data-tile-loading]) > img,

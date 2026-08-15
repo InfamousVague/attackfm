@@ -98,6 +98,7 @@ function UpdateReady({ version }: { version: string }) {
  */
 function WhatChanged({ version, notes }: { version: string; notes: string }) {
   const [gone, setGone] = useState(false);
+  const [open, setOpen] = useState(false);
   const lines = notesLines(notes);
   if (gone || lines.length === 0) return null;
   return (
@@ -108,8 +109,25 @@ function WhatChanged({ version, notes }: { version: string; notes: string }) {
         </span>
         <span className="updateBanner__text">
           <span className="updateBanner__title">Updated to {version}</span>
-          <span className="updateBanner__sub">What changed:</span>
+          {/* The first change, not the words "What changed:" - a label that
+              only announces a list is a line spent saying nothing, and this
+              strip has exactly one line to spend. */}
+          <span className="updateBanner__sub">{lines[0]}</span>
         </span>
+        {lines.length > 1 && (
+          <button
+            type="button"
+            className="updateBanner__more"
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+          >
+            <span>{open ? 'Less' : `+${lines.length - 1}`}</span>
+            <ChevronDown
+              size={13}
+              className={open ? 'updateBanner__chev is-open' : 'updateBanner__chev'}
+            />
+          </button>
+        )}
         <button
           type="button"
           className="updateBanner__close"
@@ -122,11 +140,13 @@ function WhatChanged({ version, notes }: { version: string; notes: string }) {
           <X size={14} />
         </button>
       </div>
-      <ul className="updateNotes">
-        {lines.map((line, i) => (
-          <li key={i}>{line}</li>
-        ))}
-      </ul>
+      {open && lines.length > 1 && (
+        <ul className="updateNotes">
+          {lines.slice(1).map((line, i) => (
+            <li key={i}>{line}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
