@@ -109,18 +109,56 @@ pub async fn offline_pin(
     }
 
     let part = target.with_extension("part");
-    let response = reqwest::get(&url).await.map_err(|e| format!("fetch failed: {e}"))?;
+    // A client with a connect timeout, and a watchdog on every chunk. The old
+    // body was reqwest::get + bytes() - no timeout anywhere, the whole file
+    // buffered in memory - so one wedged connection hung its worker forever,
+    // and with two workers two stalls froze the entire sweep until the phone
+    // locked and every queued download died at once. Streaming to the .part
+    // also stops a 100 MB lossless file transiting RAM whole.
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("client failed: {e}"))?;
+    let mut response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("fetch failed: {e}"))?;
     if !response.status().is_success() {
         return Err(format!("server answered {}", response.status()));
     }
-    let body = response.bytes().await.map_err(|e| format!("read failed: {e}"))?;
-    if body.is_empty() {
-        return Err("the server sent an empty file".into());
+    let mut file = std::fs::File::create(&part).map_err(|e| format!("write failed: {e}"))?;
+    let mut total: u64 = 0;
+    let fail = |part: &std::path::Path, msg: String| -> String {
+        // A half-written .part is debris the next attempt would trip over.
+        let _ = std::fs::remove_file(part);
+        msg
+    };
+    loop {
+        let next = tokio::time::timeout(std::time::Duration::from_secs(45), response.chunk()).await;
+        let chunk = match next {
+            Err(_) => return Err(fail(&part, "stalled: no data for 45 seconds".into())),
+            Ok(Err(e)) => return Err(fail(&part, format!("read failed: {e}"))),
+            Ok(Ok(chunk)) => chunk,
+        };
+        match chunk {
+            Some(bytes) => {
+                use std::io::Write;
+                if let Err(e) = file.write_all(&bytes) {
+                    return Err(fail(&part, format!("write failed: {e}")));
+                }
+                total += bytes.len() as u64;
+            }
+            None => break,
+        }
     }
-    std::fs::write(&part, &body).map_err(|e| format!("write failed: {e}"))?;
+    drop(file);
+    if total == 0 {
+        return Err(fail(&part, "the server sent an empty file".into()));
+    }
     // Renamed only once whole, so an interrupted pin never looks finished.
     std::fs::rename(&part, &target).map_err(|e| format!("rename failed: {e}"))?;
-    Ok(OfflineEntry { key, path: target.to_string_lossy().into_owned(), bytes: body.len() as u64 })
+    Ok(OfflineEntry { key, path: target.to_string_lossy().into_owned(), bytes: total })
 }
 
 /// How much room the vault has to work with: free bytes on its volume, and
