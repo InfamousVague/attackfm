@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.78
+
+- A download that fails from a network hiccup is retried twice on its own before it ever shows red
+- Download lanes start staggered, so a fresh check no longer drops its first connections
+
 ## 0.3.77
 
 - "Wrong song" now says plainly when your server is too old for it, instead of failing with a number

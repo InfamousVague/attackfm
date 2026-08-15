@@ -656,43 +656,57 @@ export async function sweepCache(
       const from = via ? { ...session, url: via.url, streamToken: via.streamToken } : session;
       const url = streamUrl(from, via ? via.trackId : remote.id);
       setManifestState(key, 'downloading');
-      // The cap is the sweep's, not the download's: a wedged connection used
-      // to hang a worker forever, and with two workers two stalls wedged the
-      // whole pass until the phone locked and everything died at once. The
-      // Rust side now stalls out on its own; this is the belt to its braces,
-      // sized for the biggest lossless file on the slowest honest link.
-      const capped = Promise.race([
-        pinTrack(toTrackish(remote), url),
-        new Promise<never>((_, reject) =>
-          window.setTimeout(() => reject(new Error('gave up after 6 minutes')), 6 * 60 * 1000),
-        ),
-      ]);
-      const ok = await capped.catch((err: unknown) => {
-        // The Rust side says exactly what went wrong ("server answered 401",
-        // "fetch failed: ..."); swallowing it is how 132 failures once read as
-        // a mystery. Tagged with the host so mirror-vs-primary is visible.
-        let host = '';
-        try {
-          host = new URL(from.url).host;
-        } catch {
-          host = from.url;
+      let host = '';
+      try {
+        host = new URL(from.url).host;
+      } catch {
+        host = from.url;
+      }
+      /*
+       * Up to three attempts per song, because the two failures that survive
+       * everything else are transient by nature: "error sending request" is a
+       * connect that never established (six TLS handshakes at once through a
+       * Tailscale relay will drop a few), and "error decoding response body"
+       * is a reset mid-file. Both deserve a second try more than they deserve
+       * a red tile and a human pressing Retry. A "server answered 4xx" is a
+       * REFUSAL, not weather - retrying it is asking the same question louder
+       * - so it fails at once.
+       *
+       * The 6-minute race is per attempt: it is the belt over the Rust side's
+       * 45-second stall watchdog, sized for the biggest lossless file on the
+       * slowest honest link.
+       */
+      let ok = false;
+      let lastReason = '';
+      for (let attempt = 0; attempt < 3 && !ok; attempt += 1) {
+        if (options.signal?.aborted) break;
+        if (attempt > 0) {
+          // 2s then 4s, with jitter so retrying lanes do not re-collide.
+          await new Promise((r) => window.setTimeout(r, attempt * 2000 + Math.random() * 800));
         }
-        const msg = String(err).replace(/^Error:\s*/, '').slice(0, 90);
-        const reason = `${host}: ${msg}`;
-        failReasons.set(reason, (failReasons.get(reason) ?? 0) + 1);
-        setManifestState(key, 'failed', reason);
-        return false;
-      });
-      if (ok) setManifestState(key, 'done');
-      else if (manifest.find((e) => e.key === key)?.state !== 'failed') {
-        // pinTrack returned false without throwing (empty body, refused write).
-        setManifestState(key, 'failed', 'download did not finish');
+        try {
+          ok = await Promise.race([
+            pinTrack(toTrackish(remote), url),
+            new Promise<never>((_, reject) =>
+              window.setTimeout(() => reject(new Error('gave up after 6 minutes')), 6 * 60 * 1000),
+            ),
+          ]);
+          if (!ok) lastReason = `${host}: download did not finish`;
+        } catch (err: unknown) {
+          const msg = String(err).replace(/^Error:\s*/, '').slice(0, 90);
+          lastReason = `${host}: ${msg}`;
+          if (/server answered 4/.test(msg)) break;
+        }
       }
       if (ok) {
+        setManifestState(key, 'done');
         downloaded += 1;
         ledger[key] = Date.now();
         writeLedger(ledger);
       } else {
+        const reason = lastReason || `${host}: download did not finish`;
+        failReasons.set(reason, (failReasons.get(reason) ?? 0) + 1);
+        setManifestState(key, 'failed', reason);
         failed += 1;
       }
       done += 1;
@@ -702,7 +716,13 @@ export async function sweepCache(
   await Promise.all(
     Array.from(
       { length: playbackAudible ? CONCURRENCY_PLAYING : CONCURRENCY_IDLE },
-      (_, lane) => worker(lane),
+      async (_, lane) => {
+        // Staggered starts: six connects in the same instant through the same
+        // relay is how "error sending request" happens on an otherwise fine
+        // link. 300ms apart costs nothing against whole files.
+        await new Promise((r) => window.setTimeout(r, lane * 300));
+        return worker(lane);
+      },
     ),
   );
 
