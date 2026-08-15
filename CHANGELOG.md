@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.66
+
+- The changelog no longer parks itself on the home screen after an update — it is said once and then gone
+
 ## 0.3.65
 
 - The library's week now leads with how long you listened, three numbers under it, and a View all stats button
