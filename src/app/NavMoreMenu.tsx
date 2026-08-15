@@ -7,12 +7,10 @@ import {
   EllipsisVertical,
   Flame,
   Settings,
-  Sparkles,
   UsersRound,
 } from '@glacier/icons';
 import { useHasDownloadQueue, usePluginPages } from '../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
-import { useServerSession } from './serverSession.tsx';
 
 /**
  * The bar's overflow: a vertical-ellipsis tab that opens the app's "rest of the
@@ -46,15 +44,12 @@ export function NavMoreMenu({
   // the count beside the label is the importer's alone; books in flight open
   // the page, they just do not number it.
   const hasQueue = useHasDownloadQueue();
-  // The server owner - the first account through the door.
-  const isOwner = useServerSession().session?.isAdmin === true;
   const [open, setOpen] = useState(false);
 
   // The ⋮ lights when what is on screen lives in this menu.
   const onMenuDest =
     pages.some((pg) => pg.key === tab) ||
     tab === 'stats' ||
-    tab === 'ai' ||
     tab === 'dj' ||
     tab === 'date' ||
     tab === 'friends' ||
@@ -154,24 +149,6 @@ export function NavMoreMenu({
           </span>
           <span className="appNavBarPlugins__itemLabel">DJ</span>
         </button>
-
-        {/* The owner's window on the machine that runs their server. Hidden
-            outright from everyone else - a guest has no business reading what
-            the AI bought on somebody else's disk. */}
-        {isOwner && (
-          <button
-            type="button"
-            role="menuitem"
-            className="appNavBarPlugins__item"
-            data-active={tab === 'ai' || undefined}
-            onClick={() => go('ai')}
-          >
-            <span className="appNavBarPlugins__itemIcon" aria-hidden>
-              <Sparkles size={18} />
-            </span>
-            <span className="appNavBarPlugins__itemLabel">AI</span>
-          </button>
-        )}
 
         {/* The people, reachable without going through Profile first. The
             profile page keeps its own door onto this - the one with their
