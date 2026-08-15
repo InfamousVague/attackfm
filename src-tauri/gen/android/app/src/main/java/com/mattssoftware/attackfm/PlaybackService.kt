@@ -14,6 +14,7 @@ import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
+import androidx.media.MediaBrowserServiceCompat
 
 /**
  * The reason Android lets the music keep playing - and the reason anything
@@ -43,10 +44,18 @@ import androidx.core.app.NotificationCompat
  * the audio is still the WebView's, and this is only the face it wears to the
  * rest of the system.
  */
-class PlaybackService : Service() {
+class PlaybackService : MediaBrowserServiceCompat() {
   private var session: MediaSessionCompat? = null
 
-  override fun onBind(intent: Intent?): IBinder? = null
+  /*
+   * NO onBind override here, deliberately.
+   *
+   * MediaBrowserServiceCompat implements onBind itself, and that binding IS
+   * how Android Auto reaches the app. The plain `= null` this class used to
+   * return is exactly what made the car find nothing: a MediaSession alone is
+   * not enough, because Android Auto only looks at apps that answer the
+   * MediaBrowserService action in the first place.
+   */
 
   override fun onCreate() {
     super.onCreate()
@@ -67,6 +76,46 @@ class PlaybackService : Service() {
     session = made
     active = made
     instance = this
+    // What a MediaBrowser client (Android Auto, Assistant) follows from the
+    // browse tree to the transport.
+    sessionToken = made.sessionToken
+
+    // Whatever the page told us BEFORE this service existed.
+    //
+    // The web layer pushes metadata from an effect that runs earlier than the
+    // one starting this service - React runs effects in declaration order - so
+    // on the first play of a launch the song was published to a session that
+    // did not exist yet and was dropped. The values are cached in the
+    // companion regardless, so the new session opens already knowing them
+    // rather than waiting for the next track change to catch up.
+    if (lastTitle != null) {
+      publishMetadata(lastTitle!!, lastArtist ?: "", lastAlbum ?: "", lastDuration)
+    }
+    if (lastState != PlaybackStateCompat.STATE_NONE) {
+      publishState(lastState == PlaybackStateCompat.STATE_PLAYING, lastPosition)
+    }
+  }
+
+  /**
+   * The browse tree, which is empty on purpose.
+   *
+   * Android Auto needs a root to consider this a media app; it does not need
+   * content to show the now-playing card and drive the transport, which is
+   * what was actually missing. Browsing the library from the car is a feature
+   * to build deliberately, not something to fake with an empty folder that
+   * looks broken.
+   */
+  override fun onGetRoot(
+    clientPackageName: String,
+    clientUid: Int,
+    rootHints: android.os.Bundle?,
+  ): BrowserRoot = BrowserRoot(BROWSE_ROOT, null)
+
+  override fun onLoadChildren(
+    parentId: String,
+    result: Result<MutableList<android.support.v4.media.MediaBrowserCompat.MediaItem>>,
+  ) {
+    result.sendResult(mutableListOf())
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -207,7 +256,11 @@ class PlaybackService : Service() {
     private var instance: PlaybackService? = null
     private var lastTitle: String? = null
     private var lastArtist: String? = null
+    private var lastAlbum: String? = null
+    private var lastDuration = 0L
+    private var lastPosition = 0L
     private var lastState = PlaybackStateCompat.STATE_NONE
+    const val BROWSE_ROOT = "attackfm.root"
 
     /**
      * What is playing, as the system should print it.
@@ -218,6 +271,8 @@ class PlaybackService : Service() {
     fun publishMetadata(title: String, artist: String, album: String, durationMs: Long) {
       lastTitle = title
       lastArtist = artist
+      lastAlbum = album
+      lastDuration = durationMs
       active?.setMetadata(
         MediaMetadataCompat.Builder()
           .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
@@ -243,6 +298,7 @@ class PlaybackService : Service() {
     fun publishState(playing: Boolean, positionMs: Long) {
       lastState =
         if (playing) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED
+      lastPosition = positionMs
       active?.setPlaybackState(
         PlaybackStateCompat.Builder()
           .setActions(
