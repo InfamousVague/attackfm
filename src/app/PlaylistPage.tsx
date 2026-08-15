@@ -135,6 +135,60 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
   // only the pop and the skeleton attribute.
   const singleCover = useArtLoad(covers.length >= 4 ? null : (covers[0] ?? null), '');
 
+  /*
+   * The hero scrolls away, and the header picks up what it was carrying - the
+   * same arrangement the song collections use.
+   *
+   * This page used to hold its head still and scroll only its rows, in an inner
+   * ScrollArea. That is why it had nothing to hand over: the header never left,
+   * so there was never a moment where the name and the buttons were off screen
+   * and wanted somewhere to be. The page is the single scroller now, and the
+   * sentinel under the hero is what says the hero has gone.
+   *
+   * Above the early return, like the artwork hooks over it - a playlist that
+   * has just been deleted returns null on the very next render, and hooks
+   * called below that line would be three fewer than the render before, which
+   * React treats as a broken component and tears the whole app down.
+   */
+  const pageRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const [stuck, setStuck] = useState(false);
+  useEffect(() => {
+    const root = pageRef.current;
+    const mark = sentinelRef.current;
+    if (!root || !mark) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setStuck(!entry?.isIntersecting),
+      { root, threshold: 0 },
+    );
+    observer.observe(mark);
+    return () => observer.disconnect();
+    // Re-armed per playlist: opening another one replaces the header the
+    // sentinel sits under.
+  }, [playlist?.id]);
+
+  /*
+   * The handlers, reached through a ref so this publishes on the three things
+   * that actually change what the header says or does. They are assigned
+   * further down, where the track list they close over exists; the ref starts
+   * inert so the hook order never depends on having got that far.
+   */
+  const handlers = useRef<{ playAll: () => void; shuffleAll: () => void }>({
+    playAll: () => {},
+    shuffleAll: () => {},
+  });
+  const lentName = playlist?.name ?? null;
+  useEffect(() => {
+    if (!stuck || !lentName) return;
+    setHeaderActions({
+      title: lentName,
+      play: () => handlers.current.playAll(),
+      shuffle: () => handlers.current.shuffleAll(),
+      disabled: rows.length === 0,
+    });
+    return () => setHeaderActions(null);
+  }, [stuck, lentName, rows.length]);
+
   if (!playlist) return null;
 
   const listTracks = rows.map((r) => r.track);
@@ -170,49 +224,8 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
     if (first) onPlay(first, shuffled);
   };
 
-  /*
-   * The hero scrolls away, and the header picks up what it was carrying - the
-   * same arrangement the song collections use.
-   *
-   * This page used to hold its head still and scroll only its rows, in an inner
-   * ScrollArea. That is why it had nothing to hand over: the header never left,
-   * so there was never a moment where the name and the buttons were off screen
-   * and wanted somewhere to be. The page is the single scroller now, and the
-   * sentinel under the hero is what says the hero has gone.
-   */
-  const pageRef = useRef<HTMLDivElement>(null);
-  const sentinelRef = useRef<HTMLDivElement>(null);
-  const [stuck, setStuck] = useState(false);
-  useEffect(() => {
-    const root = pageRef.current;
-    const mark = sentinelRef.current;
-    if (!root || !mark) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => setStuck(!entry?.isIntersecting),
-      { root, threshold: 0 },
-    );
-    observer.observe(mark);
-    return () => observer.disconnect();
-    // Re-armed per playlist: opening another one replaces the header the
-    // sentinel sits under.
-  }, [playlist.id]);
-
-  /*
-   * Handlers through a ref so this publishes on the three things that actually
-   * change what the header should say or do - see SongPage for the same note.
-   */
-  const handlers = useRef({ playAll, shuffleAll });
+  // Not a hook - just handing the published callbacks the current closures.
   handlers.current = { playAll, shuffleAll };
-  useEffect(() => {
-    if (!stuck) return;
-    setHeaderActions({
-      title: playlist.name,
-      play: () => handlers.current.playAll(),
-      shuffle: () => handlers.current.shuffleAll(),
-      disabled: listTracks.length === 0,
-    });
-    return () => setHeaderActions(null);
-  }, [stuck, playlist.name, listTracks.length]);
 
   const commitRename = (event: FormEvent) => {
     event.preventDefault();
