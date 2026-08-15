@@ -67,10 +67,9 @@ import { DevicesSettings } from './DevicesSettings.tsx';
 import { CuratorSettings } from './CuratorSettings.tsx';
 import { useConnect } from './playbackSync.tsx';
 import { useServerSession } from './serverSession.tsx';
-import { ServerSettings } from './ServerSettings.tsx';
 import { OfflineSettings } from './OfflineSettings.tsx';
 import { StorageSettings } from './StorageSettings.tsx';
-import { WhereYouListen } from './WhereYouListen.tsx';
+import { ServersSettings } from './ServersSettings.tsx';
 import { knownServers } from './servers.ts';
 import { heldCount, offlineSpace, onOfflineChange } from './offline.ts';
 import { ThemeSelector } from './ThemeSelector.tsx';
@@ -1297,23 +1296,16 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     // and, beside it, the devices it goes out to.
     {
       id: 'server',
-      label: 'Server',
-      icon: <Cloud size={16} />,
-      content: <ServerSettings />,
-      summary: session ? session.url.replace(/^https?:\/\//, '') : 'Not connected',
-      tint: 'blue',
-      group: 1,
-    },
-    {
-      id: 'listen',
-      label: 'Where you listen',
+      label: 'Servers',
       icon: <Server size={16} />,
-      content: <WhereYouListen />,
-      // knownServers() is a cheap localStorage read; the count is honest even
-      // before any pane has mounted.
+      content: <ServersSettings />,
+      // The host you are on, and how many boxes the account can reach. Both
+      // numbers come from cheap reads, so the row is honest before any pane
+      // has mounted.
       summary: (() => {
+        const here = session ? session.url.replace(/^https?:\/\//, '') : 'Not connected';
         const n = knownServers().length;
-        return n > 0 ? `${n} ${n === 1 ? 'server' : 'servers'} saved` : 'Join or invite';
+        return n > 1 ? `${here} · ${n} servers` : here;
       })(),
       tint: 'blue',
       group: 1,

@@ -11444,12 +11444,53 @@ button.artistAlbum {
 
 /* --- Servers: where the music is served from ----------------------------- */
 
-.serversPage {
+/*
+ * The servers panel, inside Settings.
+ *
+ * It used to be its own nav destination with this frame - and no overflow, so
+ * a list longer than the screen simply had no way down. Living in the settings
+ * pane fixes that by construction: that pane is already the scroller, already
+ * pads itself, and already clears the player. All this needs is its own
+ * rhythm between sections.
+ */
+/*
+ * The one servers pane, made of three parts that were three separate places.
+ *
+ * They keep their own internals; what this adds is the seam between them - a
+ * rule and a step of air, so a long pane reads as chapters rather than as one
+ * unbroken scroll of controls.
+ */
+.serversSettings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-5);
+}
+
+.serversSettings__part {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  padding-block-start: var(--glacier-space-4);
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.serversSettings__partHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+/* Each part brings its own body wrapper; inside the pane they must not pad
+   or scroll a second time. */
+.serversSettings .prefsBody {
+  padding: 0;
+  gap: var(--glacier-space-4);
+}
+
+.serversPanel {
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-4);
-  padding: var(--glacier-space-4);
-  padding-block-end: calc(var(--app-player-height) + var(--app-nav-height, 0px));
 }
 
 .serversPage__head {

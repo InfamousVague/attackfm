@@ -73,7 +73,7 @@ interface Row {
   stats: ServerStats | null;
 }
 
-export function ServersPage() {
+export function ServersPanel() {
   const { session } = useServerSession();
   const [mirrors, setMirrors] = useState<Mirror[]>(mirrorList);
   const [stats, setStats] = useState<Record<string, ServerStats | null>>({});
@@ -174,11 +174,9 @@ export function ServersPage() {
   }, [rows]);
 
   if (!session) {
-    return (
-      <div className="serversPage">
-        <Text>Sign in to a server to see this.</Text>
-      </div>
-    );
+    // The pane above this one already explains how to connect; there is
+    // nothing about the network to show until there is one.
+    return null;
   }
 
   if (managing) {
@@ -200,10 +198,10 @@ export function ServersPage() {
   }
 
   return (
-    <div className="serversPage">
+    <div className="serversPanel">
       <header className="serversPage__head">
         <div>
-          <Heading level={2} noMargin>Servers</Heading>
+          <Heading level={3} noMargin>Streaming</Heading>
           <Text size="sm" tone="muted">
             {rows.length === 1
               ? 'One server. Add another to keep a second copy and stream from whichever is closer.'
