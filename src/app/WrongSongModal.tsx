@@ -6,6 +6,7 @@ import {
   keepCandidate,
   refetchAudioUrl,
   scrapRefetch,
+  ServerError,
   startRefetch,
   trackIdFromPath,
   type RefetchCandidate,
@@ -86,7 +87,18 @@ export function WrongSongModal({
           if (next.state === 'ready' || next.state === 'failed') break;
         }
       } catch (e) {
-        if (alive) setError(e instanceof Error ? e.message : String(e));
+        if (!alive) return;
+        // A 404 on the start call is not a failed hunt - it is a server from
+        // before this feature existed. Say that, and say the way out: the
+        // whole flow lives on the box that owns the files, so no app update
+        // can stand in for the server's.
+        if (e instanceof ServerError && e.status === 404) {
+          setError(
+            'Your server does not have this yet. It needs its next update — after that, this screen hunts down the alternates by itself.',
+          );
+        } else {
+          setError(e instanceof Error ? e.message : String(e));
+        }
       }
     })();
 
