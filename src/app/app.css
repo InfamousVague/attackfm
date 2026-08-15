@@ -188,6 +188,35 @@ img {
  * (search, plugin actions, settings), minus everything that is about a window:
  * no drag region, no traffic-light gutter, no wordmark competing for width.
  */
+/*
+ * The accent ramp, copied under a name the kit will not touch.
+ *
+ * The named presets that carry AttackFM's crimson are scoped to `:root`
+ * (tokens.css), so they cannot reach a nested element - while the kit's plain
+ * `[data-theme='dark']` block CAN, and redefines all twelve accent steps back
+ * to its default blue on any element that carries the attribute. Now Playing
+ * carries it (it forces a dark sheet over the album art), so everything accent
+ * inside it came out blue - the heart most visibly.
+ *
+ * Custom properties inherit their COMPUTED value, so a copy taken here holds
+ * the ramp the preset resolved, and a nested scope can put it back. Only the
+ * accent is restored; the greys and surfaces SHOULD go dark down there.
+ */
+:root {
+  --afm-accent-1: var(--glacier-accent-1);
+  --afm-accent-2: var(--glacier-accent-2);
+  --afm-accent-3: var(--glacier-accent-3);
+  --afm-accent-4: var(--glacier-accent-4);
+  --afm-accent-5: var(--glacier-accent-5);
+  --afm-accent-6: var(--glacier-accent-6);
+  --afm-accent-7: var(--glacier-accent-7);
+  --afm-accent-8: var(--glacier-accent-8);
+  --afm-accent-9: var(--glacier-accent-9);
+  --afm-accent-10: var(--glacier-accent-10);
+  --afm-accent-11: var(--glacier-accent-11);
+  --afm-accent-12: var(--glacier-accent-12);
+}
+
 .mobileHeader {
   flex: none;
   z-index: 2;
@@ -1863,6 +1892,21 @@ html[data-platform='android'] .appWindow {
    block and are deliberately NOT repeated here - this rule's higher
    specificity would otherwise shadow them with light values. */
 .npScreen[data-theme='dark'] {
+  /* The accent this app actually wears, restored over the kit's default -
+     see the snapshot at :root. Without these twelve the sheet's heart, its
+     scrubber and its lit controls all come out blue. */
+  --glacier-accent-1: var(--afm-accent-1);
+  --glacier-accent-2: var(--afm-accent-2);
+  --glacier-accent-3: var(--afm-accent-3);
+  --glacier-accent-4: var(--afm-accent-4);
+  --glacier-accent-5: var(--afm-accent-5);
+  --glacier-accent-6: var(--afm-accent-6);
+  --glacier-accent-7: var(--afm-accent-7);
+  --glacier-accent-8: var(--afm-accent-8);
+  --glacier-accent-9: var(--afm-accent-9);
+  --glacier-accent-10: var(--afm-accent-10);
+  --glacier-accent-11: var(--afm-accent-11);
+  --glacier-accent-12: var(--afm-accent-12);
   --glacier-bg: var(--glacier-gray-1);
   --glacier-hover: var(--glacier-gray-3);
   --glacier-active: var(--glacier-gray-4);
