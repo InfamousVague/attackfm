@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.60
+
+- Fixed: opening or leaving a playlist could take the whole app down
+
 ## 0.3.59
 
 - Playlists scroll like the song collections do: the cover travels with the songs, and the playlist's name and its Play and Shuffle move up into the top bar
