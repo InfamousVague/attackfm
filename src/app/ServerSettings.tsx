@@ -333,7 +333,7 @@ function gbLabel(bytes: number): string {
  * a password into a phone. The code is short-lived; a countdown says so, and a
  * button mints a fresh one when it lapses.
  */
-function LinkDeviceSection() {
+export function LinkDeviceSection() {
   const { session } = useServerSession();
   const [open, setOpen] = useState(false);
   const [code, setCode] = useState<string | null>(null);
@@ -628,12 +628,9 @@ function Connected() {
         </div>
       </div>
 
-      <HouseholdSection />
-
-      <LinkDeviceSection />
-
-      <MirrorSection />
-
+      {/* Household, Link a device and Mirrors moved out to their own chunks of
+          the Servers pane (ServersSettings) - this section is now only the box
+          you are signed into. */}
       {session.isAdmin && <UsersSection />}
 
       <div className="prefsSection">
@@ -695,7 +692,7 @@ function Connected() {
  * library you want to FILL and start the copy there. The destination does the
  * pulling, so the source needs nothing done to it - no new port, no visit.
  */
-function MirrorSection() {
+export function MirrorSection() {
   const { session } = useServerSession();
   const [source, setSource] = useState(() => readMirrorSource());
   const [status, setStatus] = useState<MirrorStatus | null>(null);
@@ -1246,7 +1243,7 @@ export const serverSectionIcon = <FolderOpen size={16} />;
  * (household.ts), and nothing more: a profile here was minted by someone who
  * had the credentials, and forgetting one takes it off this device.
  */
-function HouseholdSection() {
+export function HouseholdSection() {
   const { session, applySession } = useServerSession();
   const [known, setKnown] = useState<Profile[]>(() => otherProfiles(session));
 
