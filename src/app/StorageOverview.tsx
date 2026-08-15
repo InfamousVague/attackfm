@@ -1,8 +1,10 @@
 import { Button, Label, SegmentedBar, Slider, Text } from '@glacier/react';
+import { artSized } from './server.ts';
 import { useCallback, useEffect, useState } from 'react';
 import { useServerSession } from './serverSession.tsx';
 import {
   cacheLimitBytes,
+  sweepManifest,
   cacheUsage,
   clearCache,
   lastSweep,
@@ -65,11 +67,13 @@ export function StorageOverview() {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [report, setReport] = useState(lastSweep);
+  const [plan, setPlan] = useState(sweepManifest);
 
   const refresh = useCallback(() => {
     void cacheUsage().then(setUsage);
     void offlineSpace().then(setSpace);
     setReport(lastSweep());
+    setPlan([...sweepManifest()]);
   }, []);
   useEffect(() => {
     refresh();
@@ -244,6 +248,43 @@ export function StorageOverview() {
           </Button>
         </div>
       </div>
+
+      {plan.length > 0 && (
+        <div className="prefsSection">
+          <Label>What the last check planned</Label>
+          <Text size="sm" tone="muted">
+            Every song the cache decided this phone should hold, and where each one got.
+          </Text>
+          {/* Mini scale on purpose: the point is the overall pattern - a wall
+              of green with three red is a different sentence from a wall of
+              red - with each tile's title in its tooltip. Failures sort first
+              so the broken part is never below the fold of the cap. */}
+          <div className="sweepGrid" role="list">
+            {[...plan]
+              .sort((a, b) => ORDER[a.state] - ORDER[b.state])
+              .slice(0, 96)
+              .map((e) => (
+                <span
+                  key={e.key}
+                  role="listitem"
+                  className="sweepGrid__tile"
+                  data-state={e.state}
+                  title={`${e.title} — ${e.artist}${e.reason ? ` · ${e.reason}` : e.state === 'done' ? '' : ` · ${e.state}`}`}
+                >
+                  {e.art ? <img src={artSized(e.art, 160) ?? undefined} alt="" loading="lazy" /> : null}
+                </span>
+              ))}
+          </div>
+          <Text size="xs" tone="subtle">
+            {plan.filter((e) => e.state === 'done').length} of {plan.length} on the phone
+            {plan.some((e) => e.state === 'downloading') ? ' · downloading now' : ''}
+            {plan.length > 96 ? ` · showing 96` : ''}
+          </Text>
+        </div>
+      )}
     </>
   );
 }
+
+/** Failures first, then live work, then the queue, then the settled. */
+const ORDER = { failed: 0, downloading: 1, waiting: 2, done: 3 } as const;

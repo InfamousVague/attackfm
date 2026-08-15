@@ -7,6 +7,12 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.72
+
+- The Overview shows the last check's whole plan as a wall of covers — green landed, red refused, pulsing while it downloads — so what should be on the phone is visible, song by song
+- A check interrupted by locking the phone resumes on return instead of waiting six hours
+- Freshly downloaded songs no longer show as "no longer in the library" in Files
+
 ## 0.3.71
 
 - When downloads fail, the Overview now says which server refused and what it said, instead of only counting the failures
