@@ -361,6 +361,37 @@ function writeReport(next: SweepReport): void {
   for (const fn of listeners) fn();
 }
 
+/** Put the last receipt away. The tiles keep their colours - they are the
+ *  truth about the disk - this only silences the text until the next pass
+ *  writes a new one. */
+export function dismissSweepReport(): void {
+  try {
+    localStorage.removeItem(REPORT_KEY);
+  } catch {
+    // Then it stays; harmless.
+  }
+  for (const fn of listeners) fn();
+}
+
+/** Wind every failed tile back to waiting, so a retry reads as a retry rather
+ *  than a wall of red that flickers. The next sweep re-attempts anything not
+ *  on disk anyway - this is presentation, and the honest kind: the state IS
+ *  waiting again the moment a new pass is asked for. */
+export function resetFailedManifest(): void {
+  let changed = false;
+  for (const entry of manifest) {
+    if (entry.state === 'failed') {
+      entry.state = 'waiting';
+      delete entry.reason;
+      changed = true;
+    }
+  }
+  if (changed) {
+    persistManifest();
+    for (const fn of listeners) fn();
+  }
+}
+
 /** The last pass's receipt, or null if none has run on this device. */
 export function lastSweep(): SweepReport | null {
   try {
