@@ -186,36 +186,20 @@ export function SongPage({
   useEffect(() => {
     if (!stuck) return;
     setHeaderActions({
+      title: meta.title,
       play: () => handlers.current.playAll(),
       shuffle: () => handlers.current.shuffleAll(),
       disabled: empty,
     });
     return () => setHeaderActions(null);
-  }, [stuck, empty]);
+  }, [stuck, empty, meta.title]);
 
   return (
     <div className={`homePage libraryPage songPage ${meta.tone}`} ref={pageRef}>
-      {/* The collapsed header: the hero's identity and its two actions, kept
-          within reach once the hero itself has gone. Rendered always and
-          revealed by state, so appearing costs no layout. */}
-      <div className="songPageBar" data-show={stuck || undefined} aria-hidden={!stuck}>
-        <span className="songPageBar__mark" aria-hidden>
-          {view === 'onrepeat' ? (
-            <img src={onRepeatChip} alt="" />
-          ) : view === 'liked' ? (
-            <img src={likedChip} alt="" />
-          ) : (
-            <HeroArt name={meta.art} />
-          )}
-        </span>
-        {/* Just the mark and the name now. Play and Shuffle went up to the app
-            header (the effect above): four things across this 3rem strip - a
-            mark, a name, a pill and an icon - left every one of them cramped,
-            and the header row is already taller with its trailing half empty.
-            Only while stuck, so the hero's own full-size pair is never on
-            screen at the same time as a second copy of itself. */}
-        <span className="songPageBar__title">{meta.title}</span>
-      </div>
+      {/* No collapsed strip here any more. It used to restate the mark and the
+          name under a header that was already a row of chrome; now the name
+          rides the header itself (see the effect above, and .mobileHeader__ident)
+          and the page gets those three rems back for songs. */}
       <header className="playlistHead songPageHead">
         <div className="playlistHead__cover" aria-hidden>
           <div className="tileSquircle playlistHead__mosaic songPageHero">

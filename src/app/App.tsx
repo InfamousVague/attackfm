@@ -384,6 +384,50 @@ function PrimaryNav({
 }
 
 /**
+ * Who you are looking at, in the header: the tab's own name, the wordmark on a
+ * tab that has none - or, when the page below has scrolled far enough to lend
+ * the header its identity, that page's name instead.
+ *
+ * The two live in one grid cell and cross-fade between them. Stacked rather
+ * than swapped so neither the back arrows on one side nor Play on the other
+ * moves while the words change: the cell is already as wide as the wider of
+ * the two, so the fade is the only thing that happens.
+ *
+ * `shown` outlives the lend on purpose. Reading the title straight from the
+ * store would blank the outgoing layer's text the instant the page withdrew,
+ * and a fade-out with nothing left to fade is just a disappearance.
+ */
+function HeaderIdent({ tab }: { tab: string }) {
+  const lent = useHeaderActions();
+  const lentTitle = lent?.title ?? null;
+  const [shown, setShown] = useState<string | null>(lentTitle);
+  useEffect(() => {
+    if (lentTitle) setShown(lentTitle);
+  }, [lentTitle]);
+
+  return (
+    <span className="mobileHeader__ident">
+      <span className="mobileHeader__identLayer" data-on={!lentTitle || undefined} aria-hidden={!!lentTitle}>
+        {tab === 'library' ? (
+          <span className="mobileHeader__title">Library</span>
+        ) : tab === 'downloads' ? (
+          <span className="mobileHeader__title">Downloads</span>
+        ) : tab === 'friends' ? (
+          <span className="mobileHeader__title">Friends</span>
+        ) : tab === 'profile' ? (
+          <span className="mobileHeader__title">Profile</span>
+        ) : (
+          <img className="mobileHeader__logo" src={wordmark} alt={APP_NAME} />
+        )}
+      </span>
+      <span className="mobileHeader__identLayer" data-on={lentTitle || undefined} aria-hidden={!lentTitle}>
+        <span className="mobileHeader__title">{shown}</span>
+      </span>
+    </span>
+  );
+}
+
+/**
  * Whatever the page below has asked the header to offer - Play and Shuffle over
  * a song collection, today. Draws nothing when nobody is asking, so the header
  * is unchanged on every other page.
@@ -1196,17 +1240,7 @@ export function App() {
                   >
                     <ChevronRight size={18} />
                   </IconButton>
-                  {tab === 'library' ? (
-                    <span className="mobileHeader__title">Library</span>
-                  ) : tab === 'downloads' ? (
-                    <span className="mobileHeader__title">Downloads</span>
-                  ) : tab === 'friends' ? (
-                    <span className="mobileHeader__title">Friends</span>
-                  ) : tab === 'profile' ? (
-                    <span className="mobileHeader__title">Profile</span>
-                  ) : (
-                    <img className="mobileHeader__logo" src={wordmark} alt={APP_NAME} />
-                  )}
+                  <HeaderIdent tab={tab} />
                 </span>
                 {/* Downloads and Settings moved off the header into the bar's
                     ⋮ menu (NavMoreMenu), so the top is just where you are -
