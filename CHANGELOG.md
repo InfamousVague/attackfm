@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.75
+
+- Downloads run six at a time while nothing is playing, and step back to two under a song so the music never stutters for the cache
+
 ## 0.3.74
 
 - Downloads keep going when you switch apps: the check now holds the phone awake the way playback does, with its own "Downloading your music" notification

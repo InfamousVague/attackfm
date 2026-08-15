@@ -51,6 +51,7 @@ import npPlaceholderArt from '../assets/attack-wave.png';
 import { NowPlayingBackdrop } from './NowPlayingBackdrop.tsx';
 import { useEffects } from './effects.ts';
 import { loadAudioUrl, reactivateAudioSession, systemOutputVolume, type Track } from './tauri.ts';
+import { notePlaybackAudible } from './autoCache.ts';
 import {
   bindAudioFocus,
   bindNativeTransport,
@@ -2833,6 +2834,9 @@ export function Player({
   // not leave an ongoing notification standing over silence.
   useEffect(() => {
     setNativePlaying(audible);
+    // The cache sweep widens to six download lanes on an idle deck and
+    // narrows back to two under a song - this is the signal it sizes by.
+    notePlaybackAudible(audible);
   }, [audible]);
 
   // And obeying focus when the system needs the speaker. These are the player's
