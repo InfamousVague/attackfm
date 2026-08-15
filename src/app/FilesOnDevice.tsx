@@ -9,9 +9,10 @@ import {
 import { Disc3, Music, Trash2, User } from '@glacier/icons';
 import { useEffect, useMemo, useState } from 'react';
 import { useLibrary } from './library.tsx';
+import { useServerSession } from './serverSession.tsx';
 import { offlineEntries, onOfflineChange, unpinTrack, type OfflineEntry } from './offline.ts';
 import { autoCachedKeys, denyKey, onCacheChange } from './autoCache.ts';
-import { artSized } from './server.ts';
+import { artSized, loadCachedIndex, remotePath, toTrack } from './server.ts';
 import { isTauri, type Track } from './tauri.ts';
 
 /**
@@ -106,14 +107,26 @@ export function FilesOnDevice() {
     };
   }, []);
 
+  const { session } = useServerSession();
   const byPath = useMemo(() => new Map(tracks.map((t) => [t.path, t] as const)), [tracks]);
+  // The sweep resolves songs through the CACHED index, and so must this view:
+  // right after a sign-in the live library can lag it, and every fresh
+  // download briefly read as "no longer in the library" - the one thing it
+  // certainly was not.
+  const byIndex = useMemo(() => {
+    if (!session) return new Map<string, Track>();
+    const m = new Map<string, Track>();
+    for (const t of loadCachedIndex(session.url).tracks) m.set(remotePath(t.id), toTrack(session, t));
+    return m;
+  }, [session]);
+  const resolve = (key: string): Track | null => byPath.get(key) ?? byIndex.get(key) ?? null;
 
   const rows: Row[] = useMemo(() => {
     if (fixture) return fixture;
     return entries.map((e) => ({
       key: e.key,
       bytes: e.bytes,
-      track: byPath.get(e.key) ?? null,
+      track: resolve(e.key),
       auto: owned.has(e.key),
     }));
   }, [entries, byPath, owned, fixture]);

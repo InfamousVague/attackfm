@@ -22,7 +22,7 @@
 //! and is reconciled against the folder on every sweep, so a restore, a wipe
 //! or an OS reclaim cannot leave it believing in files that are gone.
 
-import { fetchHome, fetchRemoteFavorites, loadCachedIndex, remotePath, streamUrl, trackIdFromPath, type RemoteTrack, type ServerSession } from './server.ts';
+import { artUrl, fetchHome, fetchRemoteFavorites, loadCachedIndex, remotePath, streamUrl, trackIdFromPath, type RemoteTrack, type ServerSession } from './server.ts';
 import { heldPath, offlineEntries, offlineSpace, pinTrack, unpinTrack } from './offline.ts';
 import { pickSource } from './mirrors.ts';
 import { isTauri, type Track } from './tauri.ts';
@@ -266,6 +266,60 @@ export async function rankHotness(session: ServerSession): Promise<Hotness> {
   return { keys, reasons, liked };
 }
 
+/**
+ * The sweep's manifest: every song the last pass planned, with where it got.
+ *
+ * The receipt (SweepReport) is the sentence; this is the ledger behind it -
+ * song by song, art and all, so "132 would not download" is inspectable
+ * instead of a number. States move live while a sweep runs (the pane
+ * re-renders off the same listeners the counters use), and the finished
+ * manifest is persisted so the pane still shows the last run after a
+ * restart. Capped on write: a 15 GB plan can hold thousands of songs, and
+ * the pane only ever shows the head.
+ */
+export interface ManifestEntry {
+  key: string;
+  title: string;
+  artist: string;
+  /** Full art URL, resolved at plan time while the session is in hand. */
+  art: string | null;
+  bytes: number;
+  state: 'waiting' | 'downloading' | 'done' | 'failed';
+  reason?: string;
+}
+
+const MANIFEST_KEY = 'attackfm-autocache-manifest';
+const MANIFEST_CAP = 300;
+
+let manifest: ManifestEntry[] = (() => {
+  try {
+    const raw = localStorage.getItem(MANIFEST_KEY);
+    return raw ? (JSON.parse(raw) as ManifestEntry[]) : [];
+  } catch {
+    return [];
+  }
+})();
+
+export function sweepManifest(): ManifestEntry[] {
+  return manifest;
+}
+
+function persistManifest(): void {
+  try {
+    localStorage.setItem(MANIFEST_KEY, JSON.stringify(manifest.slice(0, MANIFEST_CAP)));
+  } catch {
+    // The live view still works; only the restart memory is lost.
+  }
+}
+
+function setManifestState(key: string, state: ManifestEntry['state'], reason?: string): void {
+  const entry = manifest.find((e) => e.key === key);
+  if (!entry) return;
+  entry.state = state;
+  if (reason) entry.reason = reason;
+  for (const fn of listeners) fn();
+}
+
 // --- the sweep -------------------------------------------------------------
 
 /**
@@ -502,6 +556,22 @@ export async function sweepCache(
   });
   const want = new Map(plan.keep.map((key) => [key, known.get(key)!] as const));
 
+  // The plan, published before a byte moves: already-held songs are done on
+  // arrival, the rest wait their turn.
+  manifest = plan.keep.map((key) => {
+    const remote = known.get(key)!;
+    return {
+      key,
+      title: remote.title,
+      artist: remote.artist,
+      art: remote.artId ? artUrl(session, remote.artId) : null,
+      bytes: remote.sizeBytes || 0,
+      state: heldPath(key) ? ('done' as const) : ('waiting' as const),
+    };
+  });
+  persistManifest();
+  for (const fn of listeners) fn();
+
   // Evict first, so the room exists before anything is fetched.
   let evicted = 0;
   for (const key of plan.evict) {
@@ -528,6 +598,7 @@ export async function sweepCache(
       const via = pickSource(session, remote.id);
       const from = via ? { ...session, url: via.url, streamToken: via.streamToken } : session;
       const url = streamUrl(from, via ? via.trackId : remote.id);
+      setManifestState(key, 'downloading');
       const ok = await pinTrack(toTrackish(remote), url).catch((err: unknown) => {
         // The Rust side says exactly what went wrong ("server answered 401",
         // "fetch failed: ..."); swallowing it is how 132 failures once read as
@@ -541,8 +612,14 @@ export async function sweepCache(
         const msg = String(err).replace(/^Error:\s*/, '').slice(0, 90);
         const reason = `${host}: ${msg}`;
         failReasons.set(reason, (failReasons.get(reason) ?? 0) + 1);
+        setManifestState(key, 'failed', reason);
         return false;
       });
+      if (ok) setManifestState(key, 'done');
+      else if (manifest.find((e) => e.key === key)?.state !== 'failed') {
+        // pinTrack returned false without throwing (empty body, refused write).
+        setManifestState(key, 'failed', 'download did not finish');
+      }
       if (ok) {
         downloaded += 1;
         ledger[key] = Date.now();
@@ -558,6 +635,7 @@ export async function sweepCache(
 
   const after = await offlineEntries();
   const ours = after.filter((e) => e.key in readLedger());
+  persistManifest();
   writeReport({
     at: Date.now(),
     note: (() => {
@@ -633,12 +711,19 @@ export async function sweepIfIdle(session: ServerSession): Promise<void> {
   sweeping = true;
   try {
     await sweepCache(session);
+    lastCompleteAt = Date.now();
   } catch {
     // A failed pass is a pass; the next one will find the same work to do.
   } finally {
     sweeping = false;
   }
 }
+
+/** When a sweep last ran to the END. A phone locked mid-download freezes the
+ *  webview and the pass dies where it stood; comparing this against the last
+ *  START is how the schedule knows to go again instead of waiting six hours
+ *  with half a plan on disk. */
+let lastCompleteAt = 0;
 
 // The session the sweeps are running for, so a nudge from elsewhere in the
 // app (the heart, the Date deck) does not need one threaded to it.
@@ -678,7 +763,11 @@ export function startCacheSweeps(session: ServerSession): () => void {
 
   const maybe = () => {
     if (stopped || document.hidden) return;
-    if (Date.now() - last < SWEEP_EVERY_MS) return;
+    // The full gap only applies to a pass that FINISHED; an interrupted one
+    // re-runs on the next look, held to a minute so a flapping screen does
+    // not turn into a download storm.
+    const finished = lastCompleteAt >= last;
+    if (Date.now() - last < (finished ? SWEEP_EVERY_MS : 60_000)) return;
     last = Date.now();
     void sweepIfIdle(session);
   };

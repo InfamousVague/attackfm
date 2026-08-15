@@ -12329,6 +12329,71 @@ button.artistAlbum {
 /* --- the storage breakdown ------------------------------------------------ */
 
 /*
+ * The sweep manifest: the last check's plan as a wall of small covers.
+ *
+ * State is carried on the ring, not inside the art - green settled, accent
+ * pulsing while the bytes move, red refused, dim grey waiting - so the wall
+ * reads at a glance and each tile's words live in its tooltip.
+ */
+.sweepGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(2rem, 1fr));
+  gap: var(--glacier-space-1);
+}
+
+.sweepGrid__tile {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: var(--glacier-radius-sm);
+  overflow: hidden;
+  background: var(--glacier-hover);
+  box-shadow: inset 0 0 0 2px transparent;
+}
+
+.sweepGrid__tile img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.sweepGrid__tile[data-state='done'] {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--glacier-success-solid) 65%, transparent);
+}
+
+.sweepGrid__tile[data-state='failed'] {
+  box-shadow: inset 0 0 0 2px var(--glacier-danger-solid);
+}
+
+.sweepGrid__tile[data-state='failed'] img {
+  opacity: 0.45;
+}
+
+.sweepGrid__tile[data-state='waiting'] {
+  opacity: 0.45;
+}
+
+.sweepGrid__tile[data-state='downloading'] {
+  box-shadow: inset 0 0 0 2px var(--glacier-accent-solid);
+  animation: sweepPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes sweepPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sweepGrid__tile[data-state='downloading'] {
+    animation: none;
+  }
+}
+
+/*
  * The file browser in Downloads & space.
  *
  * The rows are the kit TreeView's own; these classes dress what the app puts
