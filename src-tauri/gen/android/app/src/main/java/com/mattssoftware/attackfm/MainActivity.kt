@@ -33,8 +33,27 @@ class MainActivity : TauriActivity() {
    * order we never lose - Chromium does, and Chromium tells nobody.
    */
 
-  /** What the page calls when the deck starts or stops. */
+  /** What the page calls when the deck starts or stops, and what is on. */
   inner class NativeBridge {
+    /**
+     * The song, for everything outside the app to print.
+     *
+     * Sent from the same place the web mediaSession metadata is set, because
+     * on Android that call reaches nothing: a WebView does not publish its
+     * page's session to the system. This is the Android half of the same
+     * sentence.
+     */
+    @JavascriptInterface
+    fun setNowPlaying(title: String, artist: String, album: String, durationMs: Long) {
+      PlaybackService.publishMetadata(title, artist, album, durationMs)
+    }
+
+    /** Playing or not, and where - the state a car draws its scrubber from. */
+    @JavascriptInterface
+    fun setPlaybackState(playing: Boolean, positionMs: Long) {
+      PlaybackService.publishState(playing, positionMs)
+    }
+
     @JavascriptInterface
     fun setPlaying(next: Boolean) {
       if (playing == next) return
@@ -45,6 +64,30 @@ class MainActivity : TauriActivity() {
         } else {
           PlaybackService.stop(this@MainActivity)
         }
+      }
+    }
+  }
+
+  companion object {
+    /** The activity currently on screen, so the service can reach its page. */
+    private var live: MainActivity? = null
+
+    /**
+     * Hand a transport command to the page.
+     *
+     * The session's callbacks and the notification's buttons both arrive in the
+     * service, which has no WebView of its own - the deck lives in the page.
+     * This is the one wire between them, and it is the same shape the audio
+     * focus route used to be: a global the page installs, called by name.
+     */
+    fun deliverTransport(what: String) {
+      val activity = live ?: return
+      activity.runOnUiThread {
+        val escaped = what.replace("\\", "\\\\").replace("'", "\\'")
+        activity.webView?.evaluateJavascript(
+          "window.__AFM_TRANSPORT__ && window.__AFM_TRANSPORT__('" + escaped + "')",
+          null,
+        )
       }
     }
   }
@@ -71,6 +114,12 @@ class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    live = this
+  }
+
+  override fun onDestroy() {
+    if (live === this) live = null
+    super.onDestroy()
   }
 
   // The system back gesture, routed into the app instead of out of it.

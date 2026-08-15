@@ -14,13 +14,20 @@
 
 interface NativeBridge {
   setPlaying: (playing: boolean) => void;
+  /** Present from 0.3.68; absent on an older shell, hence the optionals. */
+  setNowPlaying?: (title: string, artist: string, album: string, durationMs: number) => void;
+  setPlaybackState?: (playing: boolean, positionMs: number) => void;
 }
 
 declare global {
   interface Window {
     AFMNative?: NativeBridge;
-    /** Called BY MainActivity when audio focus moves. */
+    /** Called BY MainActivity when audio focus moves. Dormant since 0.3.63 -
+     *  the activity no longer requests focus (see attackfm-android-audio-focus). */
     __AFM_AUDIO_FOCUS__?: (event: 'pause' | 'resume') => void;
+    /** Called BY MainActivity when a MediaSession or notification button is
+     *  pressed: 'play' | 'pause' | 'next' | 'previous' | 'seek:<seconds>'. */
+    __AFM_TRANSPORT__?: (command: string) => void;
   }
 }
 
@@ -64,5 +71,74 @@ export function bindAudioFocus(handlers: {
   };
   return () => {
     delete window.__AFM_AUDIO_FOCUS__;
+  };
+}
+
+/**
+ * Tell Android what is playing, so everything outside the app can print it.
+ *
+ * `navigator.mediaSession` is the whole story on iOS - WKWebView hands the
+ * page's session straight to the system. An Android WebView does not: Chromium
+ * publishes a session for a browser TAB, not for a view embedded in someone
+ * else's app. So on Android every one of those calls reached nothing, and the
+ * lock screen, the notification and an Android Auto dashboard had no idea a
+ * song existed. This is the same sentence, said to the half of the platform
+ * that can hear it.
+ */
+export function setNativeNowPlaying(meta: {
+  title: string;
+  artist: string;
+  album: string;
+  durationSecs: number;
+}): void {
+  try {
+    window.AFMNative?.setNowPlaying?.(
+      meta.title,
+      meta.artist,
+      meta.album,
+      Math.max(0, Math.round(meta.durationSecs * 1000)),
+    );
+  } catch {
+    // Best-effort, exactly like the rest of this bridge.
+  }
+}
+
+/** Whether it is playing and where, for the car's scrubber and the row's icon. */
+export function setNativePlaybackState(playing: boolean, positionSecs: number): void {
+  try {
+    window.AFMNative?.setPlaybackState?.(playing, Math.max(0, Math.round(positionSecs * 1000)));
+  } catch {
+    // Same.
+  }
+}
+
+/**
+ * Obey the buttons that are not on this screen.
+ *
+ * A steering wheel, an Android Auto dashboard, the lock screen, the
+ * notification's own row - all of them press the MediaSession, which lands in
+ * the service, which calls this. The handlers are the player's own, so a press
+ * out there steers the deck exactly as a press in here would and everything
+ * downstream follows.
+ */
+export function bindNativeTransport(handlers: {
+  play: () => void;
+  pause: () => void;
+  next: () => void;
+  previous: () => void;
+  seek: (seconds: number) => void;
+}): () => void {
+  window.__AFM_TRANSPORT__ = (command) => {
+    if (command === 'play') handlers.play();
+    else if (command === 'pause') handlers.pause();
+    else if (command === 'next') handlers.next();
+    else if (command === 'previous') handlers.previous();
+    else if (command.startsWith('seek:')) {
+      const secs = Number(command.slice(5));
+      if (Number.isFinite(secs)) handlers.seek(secs);
+    }
+  };
+  return () => {
+    delete window.__AFM_TRANSPORT__;
   };
 }
