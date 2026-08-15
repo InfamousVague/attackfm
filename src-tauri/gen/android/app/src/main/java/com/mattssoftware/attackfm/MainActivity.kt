@@ -6,12 +6,19 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 
 class MainActivity : TauriActivity() {
+  companion object {
+    /** How long after our own request a focus loss is read as the WebView's
+     *  second ask rather than somebody else's interruption. */
+    private const val SELF_REQUEST_GRACE_MS = 2_000L
+  }
+
   private var webView: WebView? = null
 
   /** What the web layer last told us. Drives all three of the things below:
@@ -19,6 +26,22 @@ class MainActivity : TauriActivity() {
    *  WebView is allowed to be paused when the app goes behind something. */
   @Volatile private var playing = false
   private var focusRequest: AudioFocusRequest? = null
+
+  /**
+   * When we last asked for focus, so our OWN WebView can be told apart from a
+   * real interruption.
+   *
+   * Chromium requests audio focus itself the moment a media element starts. So
+   * pressing play fires two requests from one app - ours here, then the
+   * WebView's a beat later - and a new GAIN revokes the previous holder, which
+   * is us. The system then reports that to this listener as an ordinary LOSS,
+   * indistinguishable from another player taking over, and we paused the very
+   * deck we had just been asked to protect: play, then silence, almost at once.
+   *
+   * A real interruption - a call, a spoken direction - arrives long after the
+   * press. Anything inside this window is the app's own second request.
+   */
+  private var focusAskedAt = 0L
 
   private val audio: AudioManager
     get() = getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -33,14 +56,24 @@ class MainActivity : TauriActivity() {
    * WebView simply went quiet and stayed quiet.
    */
   private val onFocusChange = AudioManager.OnAudioFocusChangeListener { change ->
-    when (change) {
-      AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> toWeb("pause")
-      AudioManager.AUDIOFOCUS_GAIN -> toWeb("resume")
+    val selfInflicted =
+      change != AudioManager.AUDIOFOCUS_GAIN &&
+        SystemClock.elapsedRealtime() - focusAskedAt < SELF_REQUEST_GRACE_MS
+    when {
+      // Our own WebView taking the focus we just asked for. Ignoring it is the
+      // difference between background playback working and the music stopping
+      // the instant it starts.
+      selfInflicted -> Unit
+      change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> toWeb("pause")
+      change == AudioManager.AUDIOFOCUS_GAIN -> toWeb("resume")
       // A permanent loss is somebody else taking over for good (another player
       // starting). Stop, and do not creep back in over them.
-      AudioManager.AUDIOFOCUS_LOSS -> {
+      change == AudioManager.AUDIOFOCUS_LOSS -> {
         toWeb("pause")
-        abandonFocus()
+        // NOT abandoning here: a request we have let go of is one the system
+        // will never hand back, so abandoning on a loss is what turned "paused
+        // for a moment" into "paused for the rest of the drive". Keep the
+        // request; the GAIN above is the way back.
       }
       // DUCK: the system lowers the volume itself and restores it. Nothing to
       // do, and pausing here is what makes a nav prompt kill the music.
@@ -59,6 +92,7 @@ class MainActivity : TauriActivity() {
   }
 
   private fun requestFocus() {
+    focusAskedAt = SystemClock.elapsedRealtime()
     if (focusRequest != null) return
     val attrs = AudioAttributes.Builder()
       .setUsage(AudioAttributes.USAGE_MEDIA)
