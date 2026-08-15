@@ -49,9 +49,27 @@
 
         function run(js, css, version) {
           if (css) {
-            if (cssTag) cssTag.remove();
             var link = document.createElement('link');
             link.rel = 'stylesheet';
+            // Same crossorigin the module tag below takes, and the same the
+            // embedded <link> is written with. Without it the stylesheet is
+            // the one request in this file fetched under different rules than
+            // everything around it.
+            link.crossOrigin = 'anonymous';
+            // The embedded sheet stays until the bundle's has actually landed.
+            // Dropping it first is what turns a failed stylesheet into a
+            // BRICK rather than a blemish: the module still boots, so
+            // bundle_boot_ok records the wager as won and the bundle is never
+            // quarantined - leaving a working app with no styles at all, every
+            // image at its natural size, and no way out but a reinstall.
+            link.onload = function () {
+              if (cssTag) cssTag.remove();
+            };
+            link.onerror = function () {
+              // Keep the embedded sheet and drop the one that failed, so the
+              // app is merely a version behind on looks instead of unusable.
+              link.remove();
+            };
             document.head.appendChild(link);
             link.href = css;
           }
