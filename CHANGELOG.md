@@ -7,6 +7,12 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.70
+
+- Downloads & space is redesigned: an Overview with one picture of the space and the last check's receipt, and a Files browser of everything on the device — by artist and album, or biggest first — with delete on every row
+- Deleting an automatic download now sticks: the cache stops bringing that song back
+- The AI page is gone from the More menu — the Curator pane in Settings carries the same information
+
 ## 0.3.69
 
 - Offline and Storage are one pane now — Downloads & space — since they were two halves of the same question

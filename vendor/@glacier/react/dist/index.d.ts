@@ -4559,6 +4559,15 @@ interface TreeItem {
     /** Leading glyph, hidden from assistive tech. */
     icon?: ReactNode;
     /** Trailing content such as a CounterBadge or Pill. */
+    /**
+     * Trailing content such as a CounterBadge, Pill - or a button.
+     *
+     * Interactive trailing content is isolated from the row: a click or key
+     * press that lands on a button, link or input inside this slot does not
+     * also activate the row (select it, toggle its children). A plain badge
+     * keeps the old behaviour - tapping it still activates the row, so the
+     * slot does not eat tap target from rows that only wear a count.
+     */
     trailing?: ReactNode;
     /** Skipped by arrow navigation and unselectable. */
     disabled?: boolean;

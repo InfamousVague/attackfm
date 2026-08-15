@@ -1,33 +1,32 @@
 import { useState } from 'react';
 import { SegmentedControl } from '@glacier/react';
-import { OfflineSettings } from './OfflineSettings.tsx';
-import { StorageSettings } from './StorageSettings.tsx';
+import { StorageOverview } from './StorageOverview.tsx';
+import { FilesOnDevice } from './FilesOnDevice.tsx';
 
 /**
  * What this device is holding, and what it costs.
  *
- * These were two panes sitting next to each other in the same group with the
- * same green tint, and they are two halves of one question. Offline is the
- * POLICY - how much room the cache may use, what it has kept, what you pinned
- * by hand. Storage is the ACCOUNTING - how much is on the disk, which artists
- * it went to, which files are the big ones. Anyone asking "why is this app
- * taking up so much space" needs both, and had to know which of two names to
- * open first.
+ * Two chunks. Overview is the picture and the levers - one bar splitting
+ * everything held into the cache's share, the hand-kept share and download
+ * debris, the last sweep's receipt, the budget slider, the actions. Files is
+ * the browser - every held file by artist and album or by size, with delete
+ * on each row.
  *
- * Together they are long, so the same treatment the Servers pane got: one
- * chunk at a time, in the order the question is actually asked - what is it
- * keeping, then where did the room go.
+ * This replaced two flat panes (Offline, Storage) that each told half the
+ * story and three of whose lists were lenses on the same folder. The browser
+ * holds all three lenses now: by-artist IS its top level, largest-files is
+ * its Biggest view, and kept-by-hand is every row wearing "kept".
  */
 
-type Chunk = 'kept' | 'space';
+type Chunk = 'overview' | 'files';
 
 const CHUNKS: { value: Chunk; label: string }[] = [
-  { value: 'kept', label: 'Downloads' },
-  { value: 'space', label: 'Space' },
+  { value: 'overview', label: 'Overview' },
+  { value: 'files', label: 'Files' },
 ];
 
 export function DeviceStorageSettings() {
-  const [chunk, setChunk] = useState<Chunk>('kept');
+  const [chunk, setChunk] = useState<Chunk>('overview');
 
   return (
     <div className="prefsBody deviceStorage">
@@ -38,7 +37,7 @@ export function DeviceStorageSettings() {
         options={CHUNKS}
         onValueChange={(next) => setChunk(next as Chunk)}
       />
-      {chunk === 'kept' ? <OfflineSettings /> : <StorageSettings />}
+      {chunk === 'overview' ? <StorageOverview /> : <FilesOnDevice />}
     </div>
   );
 }

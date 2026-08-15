@@ -10550,27 +10550,8 @@ button.artistAlbum {
 
 /* ---- The offline vault -------------------------------------------------- */
 
-/* Held songs, listed plainly: this is a space report, not a browsing surface,
-   so the rows stay quiet and the only control is the way out. */
-.offlineList {
-  display: flex;
-  flex-direction: column;
-  gap: var(--glacier-space-1);
-  max-block-size: 22rem;
-  overflow-y: auto;
-}
 
-.offlineRow {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-3);
-  padding: var(--glacier-space-1) var(--glacier-space-2);
-  border-radius: var(--glacier-radius-md);
-}
 
-.offlineRow:hover {
-  background: var(--glacier-hover);
-}
 
 .offlineRow__text {
   display: flex;
@@ -11800,11 +11781,6 @@ button.artistAlbum {
 
 /* --- the device cache ---------------------------------------------------- */
 
-.cacheMeter {
-  display: flex;
-  flex-direction: column;
-  gap: var(--glacier-space-1);
-}
 
 .cacheMeter__bar {
   block-size: 6px;
@@ -12352,6 +12328,67 @@ button.artistAlbum {
 
 /* --- the storage breakdown ------------------------------------------------ */
 
+/*
+ * The file browser in Downloads & space.
+ *
+ * The rows are the kit TreeView's own; these classes dress what the app puts
+ * in its slots - a two-line label (name over meta) and a cover thumb that is
+ * round for a person, square for a record. The name truncates; the sizes and
+ * the delete button never do.
+ */
+.deviceFiles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+.deviceFiles__label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-inline-size: 0;
+}
+
+.deviceFiles__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deviceFiles__meta {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  white-space: nowrap;
+}
+
+.deviceFiles__art {
+  display: grid;
+  place-items: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border-radius: var(--glacier-radius-sm);
+  overflow: hidden;
+  background: var(--glacier-hover);
+  color: var(--glacier-text-subtle);
+  flex: none;
+}
+
+.deviceFiles__art[data-circle] {
+  border-radius: 50%;
+}
+
+.deviceFiles__art img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+/* The tree's rows hold a taller label than the kit's default single line;
+   let them breathe rather than clipping the meta line. */
+.deviceFiles__tree [role='treeitem'] > span {
+  min-block-size: 2.4rem;
+}
+
 .storageBreak__totals {
   display: flex;
   flex-direction: column;
@@ -12396,108 +12433,20 @@ button.artistAlbum {
   background: var(--glacier-success-solid);
 }
 
-.storageBreak__rows {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--glacier-space-2);
-}
 
-.storageBreak__row {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-3);
-  min-inline-size: 0;
-}
 
-.storageBreak__art {
-  inline-size: 2rem;
-  block-size: 2rem;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border-radius: var(--glacier-radius-sm);
-  overflow: hidden;
-  background: var(--glacier-surface-sunken);
-  color: var(--glacier-text-muted);
-}
 
-.storageBreak__art[data-circle] {
-  border-radius: var(--glacier-radius-full);
-}
 
-.storageBreak__art img {
-  inline-size: 100%;
-  block-size: 100%;
-  object-fit: cover;
-}
 
-.storageBreak__body {
-  flex: 1;
-  min-inline-size: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
 
 .storageBreak__name,
-.storageBreak__sub {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
-.storageBreak__name {
-  font-size: var(--glacier-font-size-sm);
-  font-weight: 550;
-}
 
-.storageBreak__sub {
-  font-size: var(--glacier-font-size-xs);
-  color: var(--glacier-text-muted);
-}
 
-.storageBreak__rail {
-  block-size: 0.25rem;
-  border-radius: var(--glacier-radius-full);
-  background: var(--glacier-surface-sunken);
-  overflow: hidden;
-}
 
-.storageBreak__fill {
-  display: block;
-  block-size: 100%;
-  min-inline-size: 2px;
-  background: var(--glacier-accent-solid);
-  border-radius: inherit;
-}
 
-.storageBreak__meta {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-2);
-  font-size: var(--glacier-font-size-xs);
-  color: var(--glacier-text-muted);
-  font-variant-numeric: tabular-nums;
-}
 
-.storageBreak__remove {
-  background: none;
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
-  border-radius: var(--glacier-radius-full);
-  color: var(--glacier-text-muted);
-  font-size: var(--glacier-font-size-xs);
-  padding: 2px var(--glacier-space-2);
-  cursor: pointer;
-}
 
-.storageBreak__remove:hover {
-  color: var(--glacier-danger-text, var(--glacier-text));
-  border-color: var(--glacier-danger-solid, var(--glacier-border));
-}
 
 /* A figure waiting on its data: the chrome is real, the data is absent. It
    dims rather than shimmers - six static rings turned into motion would be
