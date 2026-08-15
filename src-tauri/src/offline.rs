@@ -111,41 +111,65 @@ pub async fn offline_pin(
     let part = target.with_extension("part");
     // A client with a connect timeout, and a watchdog on every chunk. The old
     // body was reqwest::get + bytes() - no timeout anywhere, the whole file
-    // buffered in memory - so one wedged connection hung its worker forever,
-    // and with two workers two stalls froze the entire sweep until the phone
-    // locked and every queued download died at once. Streaming to the .part
-    // also stops a 100 MB lossless file transiting RAM whole.
+    // buffered in memory - so one wedged connection hung its worker forever.
+    //
+    // And the download RESUMES. Playback survives the same flaky path because
+    // Chromium re-requests from where a reset left it; the downloader
+    // restarted whole files from zero, so a reset at 90% of a lossless file
+    // cost everything it had. A surviving .part now picks up with a Range
+    // header - the server is tower's ServeFile, which honours ranges - and
+    // only a clean finish renames it into place.
     let client = reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| format!("client failed: {e}"))?;
-    let mut response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("fetch failed: {e}"))?;
-    if !response.status().is_success() {
-        return Err(format!("server answered {}", response.status()));
+    let already: u64 = std::fs::metadata(&part).map(|m| m.len()).unwrap_or(0);
+    let mut request = client.get(&url);
+    if already > 0 {
+        request = request.header(reqwest::header::RANGE, format!("bytes={already}-"));
     }
-    let mut file = std::fs::File::create(&part).map_err(|e| format!("write failed: {e}"))?;
-    let mut total: u64 = 0;
-    let fail = |part: &std::path::Path, msg: String| -> String {
-        // A half-written .part is debris the next attempt would trip over.
-        let _ = std::fs::remove_file(part);
-        msg
+    let mut response = request.send().await.map_err(|e| format!("fetch failed: {e}"))?;
+    let status = response.status();
+    if status == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
+        // The file on the server is shorter than our fragment - it changed
+        // out from under us (a refetch, a rescan). The fragment is garbage.
+        let _ = std::fs::remove_file(&part);
+        return Err("resume rejected; will start fresh next attempt".into());
+    }
+    if !status.is_success() {
+        // A refusal writes no bytes this attempt; any older fragment is not
+        // implicated, so it survives for a future attempt.
+        return Err(format!("server answered {status}"));
+    }
+    // Asked for a range, given the whole file: the server ignored the header,
+    // so the fragment must not be appended to.
+    let resuming = already > 0 && status == reqwest::StatusCode::PARTIAL_CONTENT;
+    let mut file = if resuming {
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&part)
+            .map_err(|e| format!("write failed: {e}"))?
+    } else {
+        std::fs::File::create(&part).map_err(|e| format!("write failed: {e}"))?
     };
+    let mut total: u64 = if resuming { already } else { 0 };
     loop {
         let next = tokio::time::timeout(std::time::Duration::from_secs(45), response.chunk()).await;
         let chunk = match next {
-            Err(_) => return Err(fail(&part, "stalled: no data for 45 seconds".into())),
-            Ok(Err(e)) => return Err(fail(&part, format!("read failed: {e}"))),
+            // Mid-body deaths KEEP the fragment: what landed is real, and the
+            // next attempt continues from its end instead of paying again.
+            Err(_) => return Err("stalled: no data for 45 seconds".into()),
+            Ok(Err(e)) => return Err(format!("read failed: {e}")),
             Ok(Ok(chunk)) => chunk,
         };
         match chunk {
             Some(bytes) => {
                 use std::io::Write;
                 if let Err(e) = file.write_all(&bytes) {
-                    return Err(fail(&part, format!("write failed: {e}")));
+                    // A disk that will not take bytes will not take a resume
+                    // either; drop the fragment.
+                    let _ = std::fs::remove_file(&part);
+                    return Err(format!("write failed: {e}"));
                 }
                 total += bytes.len() as u64;
             }
@@ -154,7 +178,8 @@ pub async fn offline_pin(
     }
     drop(file);
     if total == 0 {
-        return Err(fail(&part, "the server sent an empty file".into()));
+        let _ = std::fs::remove_file(&part);
+        return Err("the server sent an empty file".into());
     }
     // Renamed only once whole, so an interrupted pin never looks finished.
     std::fs::rename(&part, &target).map_err(|e| format!("rename failed: {e}"))?;
