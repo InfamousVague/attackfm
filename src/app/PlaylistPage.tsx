@@ -5,7 +5,6 @@ import {
   Menu,
   MenuItem,
   Modal,
-  ScrollArea,
   SortableList,
   Text,
 } from '@glacier/react';
@@ -19,7 +18,7 @@ import {
   Trash2,
   X,
 } from '@glacier/icons';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useLibrary } from './library.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { mosaicArts, useArtLoad, useTileArt } from './artLoad.ts';
@@ -27,6 +26,7 @@ import { artSized, fetchPlaylistSuggestions, remotePath } from './server.ts';
 import { usePlaylists } from './playlists.tsx';
 import { EmptyArt } from './EmptyArt.tsx';
 import { TrackMenu } from './TrackMenu.tsx';
+import { setHeaderActions } from './headerActions.ts';
 import type { Track } from './tauri.ts';
 import placeholderArt from '../assets/attack-wave.png';
 
@@ -170,6 +170,50 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
     if (first) onPlay(first, shuffled);
   };
 
+  /*
+   * The hero scrolls away, and the header picks up what it was carrying - the
+   * same arrangement the song collections use.
+   *
+   * This page used to hold its head still and scroll only its rows, in an inner
+   * ScrollArea. That is why it had nothing to hand over: the header never left,
+   * so there was never a moment where the name and the buttons were off screen
+   * and wanted somewhere to be. The page is the single scroller now, and the
+   * sentinel under the hero is what says the hero has gone.
+   */
+  const pageRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const [stuck, setStuck] = useState(false);
+  useEffect(() => {
+    const root = pageRef.current;
+    const mark = sentinelRef.current;
+    if (!root || !mark) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setStuck(!entry?.isIntersecting),
+      { root, threshold: 0 },
+    );
+    observer.observe(mark);
+    return () => observer.disconnect();
+    // Re-armed per playlist: opening another one replaces the header the
+    // sentinel sits under.
+  }, [playlist.id]);
+
+  /*
+   * Handlers through a ref so this publishes on the three things that actually
+   * change what the header should say or do - see SongPage for the same note.
+   */
+  const handlers = useRef({ playAll, shuffleAll });
+  handlers.current = { playAll, shuffleAll };
+  useEffect(() => {
+    if (!stuck) return;
+    setHeaderActions({
+      title: playlist.name,
+      play: () => handlers.current.playAll(),
+      shuffle: () => handlers.current.shuffleAll(),
+      disabled: listTracks.length === 0,
+    });
+    return () => setHeaderActions(null);
+  }, [stuck, playlist.name, listTracks.length]);
+
   const commitRename = (event: FormEvent) => {
     event.preventDefault();
     if (renaming === null) return;
@@ -179,7 +223,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
   };
 
   return (
-    <>
+    <div className="homePage libraryPage playlistPage" ref={pageRef}>
       <header className="playlistHead">
         <div className="playlistHead__cover" aria-hidden>
           {covers.length >= 4 ? (
@@ -241,6 +285,9 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
           </div>
         </div>
       </header>
+      {/* Sits just under the hero: once this leaves the top of the page, the
+          hero has gone with it. */}
+      <div ref={sentinelRef} className="songPageHead__sentinel" aria-hidden />
 
       {rows.length === 0 ? (
         <div className="playlistEmpty emptyState emptyState--tall">
@@ -251,7 +298,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
           </Text>
         </div>
       ) : (
-        <ScrollArea className="playlistPageScroll">
+        <div className="playlistPageScroll">
           {/* Controlled: the list proposes an order, the store commits it - and
               on a server playlist that write is what every other device sees. */}
           <SortableList
@@ -342,7 +389,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
             </ul>
           </section>
         )}
-        </ScrollArea>
+        </div>
       )}
 
       <Modal
@@ -395,6 +442,6 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
           </div>
         </div>
       </Modal>
-    </>
+    </div>
   );
 }
