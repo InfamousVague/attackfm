@@ -15,7 +15,7 @@
 //! offers itself when signed into a server with something to play.
 
 import { Spinner } from '@glacier/react';
-import { X } from '@glacier/icons';
+import { Flame, Lightbulb, MoonStar, Play, Sparkles, Waves, X } from '@glacier/icons';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useServerSession } from './serverSession.tsx';
@@ -58,13 +58,34 @@ interface DjSet {
   lineAt: Map<string, string>;
 }
 
-export function DjLauncher({ onPlay }: { onPlay: (track: Track, queue: Track[]) => void }) {
+/** The Booth's steering row: each chip is a whole brief, one tap from sound.
+ *  The seeds mirror the server's own mood-mix recipes, so the chip and the
+ *  curated shelf speak the same dialect. */
+const MOODS: { label: string; seed: string; Icon: typeof Waves }[] = [
+  { label: 'Chill', seed: 'something chill and unhurried', Icon: Waves },
+  { label: 'Energy', seed: 'high energy, turn it up', Icon: Flame },
+  { label: 'Late night', seed: 'late night, low lights', Icon: MoonStar },
+  { label: 'Focus', seed: 'steady focus, no distractions', Icon: Lightbulb },
+];
+
+export function DjLauncher({
+  onPlay,
+  variant = 'chip',
+}: {
+  onPlay: (track: Track, queue: Track[]) => void;
+  /** 'chip' is the Library's whole-collection door; 'hero' is the Booth's
+   *  drop-the-needle card with the mood chips underneath. */
+  variant?: 'chip' | 'hero';
+}) {
   const { session } = useServerSession();
   const { tracks } = useLibrary();
   const { track: playing } = useNowPlayingMotion();
-  const [busy, setBusy] = useState(false);
+  // Which brief is in flight: '' is the seedless hero press, null is idle.
+  const [busySeed, setBusySeed] = useState<string | null>(null);
+  const [aiSet, setAiSet] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [set, setSet] = useState<DjSet | null>(null);
+  const busy = busySeed !== null;
 
   // Lines fire on ENTERING a run, not on every render inside one - and a set
   // is abandoned the moment playback wanders somewhere the DJ did not choose.
@@ -87,11 +108,12 @@ export function DjLauncher({ onPlay }: { onPlay: (track: Track, queue: Track[]) 
   // is nothing for it to spin.
   if (!session || tracks.length === 0) return null;
 
-  const start = async () => {
-    setBusy(true);
+  const start = async (seed = '') => {
+    setBusySeed(seed);
     setToast(null);
     try {
-      const reply = await fetchDj(session);
+      const reply = await fetchDj(session, seed);
+      setAiSet(reply.ai);
       // The set comes back as track ids; resolve them against the library and
       // flatten every run into one queue, in the order the DJ chose.
       const byId = new Map<number, Track>();
@@ -128,9 +150,56 @@ export function DjLauncher({ onPlay }: { onPlay: (track: Track, queue: Track[]) 
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'The DJ could not start.');
     } finally {
-      setBusy(false);
+      setBusySeed(null);
     }
   };
+
+  // The Booth's face: one hero that IS the brief, and a row of moods that
+  // steer it - every chip a whole request, no field to fill first.
+  if (variant === 'hero') {
+    return (
+      <>
+        <button
+          type="button"
+          className="boothHero"
+          onClick={() => void start()}
+          disabled={busy}
+          aria-label="Start a set from your taste"
+        >
+          <span className="boothHero__disc" aria-hidden="true">
+            {busySeed === '' ? (
+              <Spinner size="sm" aria-label="Cueing" />
+            ) : (
+              <Play size={22} fill="currentColor" />
+            )}
+          </span>
+          <span className="boothHero__text">
+            <span className="boothHero__title">
+              Drop the needle
+              {aiSet && <Sparkles size={14} className="boothHero__spark" aria-hidden="true" />}
+            </span>
+            <span className="boothHero__caption">A live set, built from what you play</span>
+          </span>
+        </button>
+        <div className="boothChips" role="group" aria-label="Set the mood">
+          {MOODS.map(({ label, seed, Icon }) => (
+            <button
+              key={label}
+              type="button"
+              className="boothChip"
+              data-on={busySeed === seed || undefined}
+              disabled={busy}
+              onClick={() => void start(seed)}
+            >
+              {busySeed === seed ? <Spinner size="sm" aria-label="Cueing" /> : <Icon size={14} />}
+              {label}
+            </button>
+          ))}
+        </div>
+        {toast && <DjToast line={toast} onDismiss={() => setToast(null)} />}
+      </>
+    );
+  }
 
   // The chip: the DJ standing beside Liked and All songs, in their row and
   // their clothes - the same gradient face and name-over-line the library's

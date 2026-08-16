@@ -1,5 +1,5 @@
 import { Button, Pill, ScrollArea, SearchField, Text } from '@glacier/react';
-import { ChartNoAxesColumn, Sparkles } from '@glacier/icons';
+import { ChartNoAxesColumn, SlidersHorizontal, Sparkles } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
 import { mosaicArts, useArtLoad, useCardArt, useTileArt } from './artLoad.ts';
@@ -210,6 +210,7 @@ export function HomePage({
   onOpenArtist,
   onOpenAlbum,
   onOpenStats,
+  onTune,
   embedded = false,
   section = 'all',
 }: {
@@ -221,6 +222,9 @@ export function HomePage({
   onOpenAlbum?: (album: string, albumArtist: string) => void;
   /** Opens the stats page - the Top artists shelf's header door. */
   onOpenStats?: () => void;
+  /** When set, each mix card grows a small tune button - the Booth's door
+   *  into trait-weighted rebuilding of that mix. Home passes nothing. */
+  onTune?: (mix: { title: string; tracks: Track[] }) => void;
   /** Rendered inside another page (the Library tab): drop the greeting and the
    *  page's own search field - the host carries both - and show just the
    *  personalized shelves, so the mixes fold into Library above what you own. */
@@ -490,6 +494,30 @@ export function HomePage({
             </span>
             <span className="mixCardTitle">{mix.title}</span>
             <span className="mixCardBlurb">{mix.blurb}</span>
+            {/* A span wearing a button's role: the card is already a button,
+                and HTML does not allow one inside another. */}
+            {onTune && mix.tracks.length > 0 && (
+              <span
+                role="button"
+                tabIndex={0}
+                className="mixCard__tune"
+                aria-label={`Tune ${mix.title}`}
+                title="Rebuild this mix by its traits"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onTune(mix);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onTune(mix);
+                  }
+                }}
+              >
+                <SlidersHorizontal size={14} />
+              </span>
+            )}
           </button>
         ))}
       </Shelf>
@@ -639,6 +667,7 @@ export function HomePage({
 export function CuratorShelves(props: {
   onPlay: (track: Track, queue: Track[]) => void;
   onOpenArtist: (artist: string) => void;
+  onTune?: (mix: { title: string; tracks: Track[] }) => void;
 }) {
   return <HomePage {...props} embedded section="curator" />;
 }

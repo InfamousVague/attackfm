@@ -1461,10 +1461,46 @@ export interface CuratorFeed {
     lastCurated: number;
     /** Whether a local model is configured server-side. */
     ai: boolean;
+    /** Whether a chat model is configured - the half that writes names and
+     *  patter. Absent from older servers. */
+    chat?: boolean;
     /** Whether the embedder is answering - i.e. lyrics are being read. */
     embeddings: boolean;
   };
-  progress: { checked: number; withTempo: number; withLyrics: number; total: number };
+  progress: {
+    checked: number;
+    withTempo: number;
+    withLyrics: number;
+    total: number;
+    /** The library's tempo spread, when enough songs carry a measured bpm.
+     *  Absent from older servers. */
+    tempoMin?: number | null;
+    tempoMedian?: number | null;
+    tempoMax?: number | null;
+  };
+}
+
+/**
+ * The audio analyser's own count: how much of the library has been listened
+ * to by the measuring half of the stack - the 48-part fingerprint that trait
+ * queues rank against. `ffmpeg: false` means the numbers will never move on
+ * this box, which is worth saying out loud rather than showing a stuck bar.
+ */
+export interface FeaturesStatus {
+  analyzed: number;
+  fingerprinted: number;
+  total: number;
+  ffmpeg: boolean;
+}
+
+export async function fetchFeaturesStatus(
+  session: ServerSession,
+  signal?: AbortSignal,
+): Promise<FeaturesStatus> {
+  return request<FeaturesStatus>(session.url, '/api/features/status', {
+    token: session.token,
+    signal,
+  });
 }
 
 export async function fetchCurator(
