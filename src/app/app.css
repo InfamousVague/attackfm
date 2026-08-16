@@ -3198,19 +3198,6 @@ html[data-platform='android'] .appWindow {
   text-overflow: ellipsis;
 }
 
-.boothPulse__dot {
-  flex: none;
-  inline-size: 6px;
-  block-size: 6px;
-  border-radius: 50%;
-  background: var(--glacier-border-subtle);
-}
-
-.boothPulse__dot[data-lit] {
-  background: var(--glacier-accent-solid);
-  box-shadow: 0 0 6px color-mix(in srgb, var(--glacier-accent-solid) 60%, transparent);
-}
-
 /* Drop the needle: the page's one hero. A solid accent disc with a halo, so
    the single most rewarding tap on the page also looks like it. */
 .boothHero {
