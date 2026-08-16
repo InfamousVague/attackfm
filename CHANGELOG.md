@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.91
+
+- An album's missing songs sit in the running order now — track 3 between 2 and 4 whether you own it or not — just a shade quieter, with their + right there
+- The header says "7 of 10 songs" when a record has holes
+
 ## 0.3.90
 
 - The AI DJ got ears: point it at a song, album or playlist, pick which parts of the sound matter, and it builds a queue from what the music actually is - not just what it is filed under

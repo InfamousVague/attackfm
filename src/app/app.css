@@ -5398,13 +5398,19 @@ body [class*='_panel_']:has(> .dlPanel) {
   }
 }
 
-/* A song the record has and this library does not: present but plainly not
-   yours, so the list reads as one record with holes rather than two lists.
-   Lifts to full strength on hover, the same way the artist page's gap rows do -
-   an offer you are reaching for should not stay greyed out under the finger. */
+/* A song the record has and this library does not: inline in the record's
+   own running order, only a shade quieter than the rows you own - the list
+   reads as one record with a few soft spots, the way the artist page's top
+   songs sit together, not as a bright half and a ghost half. Lifts to full
+   strength on hover: an offer you are reaching for should not stay greyed
+   out under the finger. */
 .albumGapRow {
-  opacity: 0.55;
+  opacity: 0.78;
   transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.albumGapRow .catalogTrack__title {
+  color: var(--glacier-text-muted);
 }
 
 .albumGapRow:hover,
@@ -5416,7 +5422,7 @@ body [class*='_panel_']:has(> .dlPanel) {
    the hover that means "you can still do something here". */
 .albumGapRow[data-state='added'],
 .albumGapRow[data-state='missing'] {
-  opacity: 0.55;
+  opacity: 0.6;
 }
 
 .albumGapRow__add {

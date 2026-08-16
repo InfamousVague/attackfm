@@ -278,7 +278,9 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
             </button>
           )}
           <Text tone="muted" size="sm">
-            {list.length} {list.length === 1 ? 'song' : 'songs'}
+            {missing.length > 0
+              ? `${list.length} of ${list.length + missing.length} songs`
+              : `${list.length} ${list.length === 1 ? 'song' : 'songs'}`}
             {totalSeconds > 0 ? ` · ${formatTotal(totalSeconds)}` : ''}
             {multiDisc ? ` · ${discs.length} discs` : ''}
             {year ? ` · ${year}` : ''}
@@ -303,90 +305,102 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
       </header>
       <div ref={sentinelRef} aria-hidden />
 
-      {discs.map((disc) => (
-        <section key={disc} className="albumDisc">
-          {multiDisc && (
-            <Text tone="subtle" size="xs" className="albumDisc__label">
-              Disc {disc}
-            </Text>
-          )}
-          <ol className="catalogTracks">
-            {list
-              .filter((t) => (t.discNo ?? 1) === disc)
-              .map((track, index) => (
-                <TrackMenu track={track} key={track.path}>
-                  <li className="catalogTrack">
-                    {/* The tagged position where there is one, so the numbers
-                        match the sleeve rather than counting what survived; a
-                        rip missing track 3 should read 1, 2, 4. */}
-                    <span className="catalogTrack__rank">{track.trackNo ?? index + 1}</span>
+      {discs.map((disc) => {
+        // The record in running order, holes and all: what you own and what
+        // you don't share one list, sorted by the sleeve's own numbers, so
+        // track 3 sits between 2 and 4 whether or not it is yours. `missing`
+        // is only ever non-empty on a single-disc record (the catalogue's
+        // flat numbering cannot be split across discs), so the merge is safe
+        // to do per-disc.
+        const rows: (
+          | { kind: 'owned'; pos: number; track: (typeof list)[number]; fallback: number }
+          | { kind: 'gap'; pos: number; row: (typeof missing)[number] }
+        )[] = list
+          .filter((t) => (t.discNo ?? 1) === disc)
+          .map((track, index) => ({
+            kind: 'owned' as const,
+            pos: track.trackNo ?? index + 1,
+            fallback: index + 1,
+            track,
+          }));
+        if (disc === discs[0]) {
+          for (const row of missing) rows.push({ kind: 'gap', pos: row.position, row });
+        }
+        rows.sort((a, b) => a.pos - b.pos || (a.kind === 'owned' ? -1 : 1));
+        return (
+          <section key={disc} className="albumDisc">
+            {multiDisc && (
+              <Text tone="subtle" size="xs" className="albumDisc__label">
+                Disc {disc}
+              </Text>
+            )}
+            <ol className="catalogTracks">
+              {rows.map((entry) => {
+                if (entry.kind === 'owned') {
+                  const { track } = entry;
+                  return (
+                    <TrackMenu track={track} key={track.path}>
+                      <li className="catalogTrack">
+                        {/* The tagged position where there is one, so the numbers
+                            match the sleeve rather than counting what survived; a
+                            rip missing track 3 should read 1, 2, 4. */}
+                        <span className="catalogTrack__rank">{track.trackNo ?? entry.fallback}</span>
+                        <button
+                          type="button"
+                          className="catalogTrack__title catalogTrack__title--play"
+                          onClick={() => onPlay(track, list)}
+                        >
+                          {track.title}
+                        </button>
+                        {/* Only where it differs from the record's own credit -
+                            which is exactly the guest that used to make this whole
+                            album vanish from the artist page. */}
+                        {fold(track.artist) !== fold(credit) && (
+                          <span className="catalogTrack__plays">{track.artist}</span>
+                        )}
+                        <span className="catalogTrack__time">{formatDuration(track.duration)}</span>
+                      </li>
+                    </TrackMenu>
+                  );
+                }
+                const { row } = entry;
+                const key = `${row.position}:${row.title}`;
+                const state = adding[key];
+                return (
+                  <li key={key} className="catalogTrack albumGapRow" data-state={state}>
+                    <span className="catalogTrack__rank">{row.position}</span>
+                    <span className="catalogTrack__title">{row.title}</span>
                     <button
                       type="button"
-                      className="catalogTrack__title catalogTrack__title--play"
-                      onClick={() => onPlay(track, list)}
+                      className="albumGapRow__add"
+                      disabled={!session || state === 'finding' || state === 'added'}
+                      aria-label={`Add ${row.title}`}
+                      title={
+                        state === 'missing'
+                          ? 'Not found to import'
+                          : state === 'added'
+                            ? 'Added'
+                            : `Add ${row.title}`
+                      }
+                      onClick={() => void addMissing(row)}
                     >
-                      {track.title}
+                      {state === 'added' ? (
+                        <Check size={14} />
+                      ) : state === 'missing' ? (
+                        <X size={14} />
+                      ) : state === 'finding' ? (
+                        <span className="artistAlbumSpin" aria-label="Finding it" />
+                      ) : (
+                        <Plus size={14} />
+                      )}
                     </button>
-                    {/* Only where it differs from the record's own credit -
-                        which is exactly the guest that used to make this whole
-                        album vanish from the artist page. */}
-                    {fold(track.artist) !== fold(credit) && (
-                      <span className="catalogTrack__plays">{track.artist}</span>
-                    )}
-                    <span className="catalogTrack__time">{formatDuration(track.duration)}</span>
                   </li>
-                </TrackMenu>
-              ))}
-          </ol>
-        </section>
-      ))}
-
-      {/* What the record has and this library does not. Dimmed and after the
-          songs you own, because this is still your page - the holes are an
-          offer, not the content. */}
-      {missing.length > 0 && (
-        <section className="albumDisc albumMissing">
-          <Text tone="subtle" size="xs" className="albumDisc__label">
-            {missing.length} missing from this album
-          </Text>
-          <ol className="catalogTracks">
-            {missing.map((row) => {
-              const key = `${row.position}:${row.title}`;
-              const state = adding[key];
-              return (
-                <li key={key} className="catalogTrack albumGapRow" data-state={state}>
-                  <span className="catalogTrack__rank">{row.position}</span>
-                  <span className="catalogTrack__title">{row.title}</span>
-                  <button
-                    type="button"
-                    className="albumGapRow__add"
-                    disabled={!session || state === 'finding' || state === 'added'}
-                    aria-label={`Add ${row.title}`}
-                    title={
-                      state === 'missing'
-                        ? 'Not found to import'
-                        : state === 'added'
-                          ? 'Added'
-                          : `Add ${row.title}`
-                    }
-                    onClick={() => void addMissing(row)}
-                  >
-                    {state === 'added' ? (
-                      <Check size={14} />
-                    ) : state === 'missing' ? (
-                      <X size={14} />
-                    ) : state === 'finding' ? (
-                      <span className="artistAlbumSpin" aria-label="Finding it" />
-                    ) : (
-                      <Plus size={14} />
-                    )}
-                  </button>
-                </li>
-              );
-            })}
-          </ol>
-        </section>
-      )}
+                );
+              })}
+            </ol>
+          </section>
+        );
+      })}
       <DjCollectionTraitSheet source="album" name={album} seedTracks={list}
         open={mixing} onClose={() => setMixing(false)} />
     </div>
