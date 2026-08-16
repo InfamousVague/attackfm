@@ -2868,6 +2868,11 @@ export function Player({
         next: () => carPlayControls.current?.next(),
         previous: () => carPlayControls.current?.previous(),
         seek: (seconds) => carPlayControls.current?.seek(seconds),
+        // A collection tapped in Android Auto's browse list. The queue is
+        // built where the library lives - the CarPlayBridge in App - so this
+        // only relays; the same division of labour the iOS car uses.
+        playCollection: (id) =>
+          window.dispatchEvent(new CustomEvent('afm-car-collection', { detail: id })),
       }),
     [],
   );

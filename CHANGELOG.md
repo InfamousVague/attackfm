@@ -7,6 +7,12 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.88
+
+- Android: play, pause and skip work from outside the app now — lock screen, a paired computer's media panel, a car — even resuming while the app sleeps in the background
+- Android: pausing no longer makes the controls vanish everywhere; they stay until you swipe them away
+- Android Auto: AttackFM shows up with Liked, All songs and Shuffle all, and the dashboard buttons drive the deck (new app install needed for this one)
+
 ## 0.3.87
 
 - An album page now shows the whole record: the songs you have, and the ones you don't, dimmed with a + to pull them

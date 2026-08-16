@@ -128,6 +128,8 @@ export function bindNativeTransport(handlers: {
   next: () => void;
   previous: () => void;
   seek: (seconds: number) => void;
+  /** A collection tapped in the car's browse list: 'liked' | 'all' | 'shuffle'. */
+  playCollection?: (id: string) => void;
 }): () => void {
   window.__AFM_TRANSPORT__ = (command) => {
     if (command === 'play') handlers.play();
@@ -137,6 +139,8 @@ export function bindNativeTransport(handlers: {
     else if (command.startsWith('seek:')) {
       const secs = Number(command.slice(5));
       if (Number.isFinite(secs)) handlers.seek(secs);
+    } else if (command.startsWith('collection:')) {
+      handlers.playCollection?.(command.slice('collection:'.length));
     }
   };
   return () => {

@@ -81,11 +81,18 @@ class MainActivity : TauriActivity() {
   }
 
   /** One rule for the service: it runs while EITHER leg needs the process,
-   *  so a song ending mid-sweep does not drop the downloads with it. */
+   *  so a song ending mid-sweep does not drop the downloads with it.
+   *
+   *  Pause SOFTENS rather than stops. Stopping released the MediaSession and
+   *  dismissed the notification, which blanked every control surface outside
+   *  the app - lock screen, a paired computer's media panel, Android Auto -
+   *  and made play-from-outside impossible: there was nothing left to press.
+   *  The controls only truly leave when the paused notification is swiped
+   *  away, or the activity itself dies. */
   private fun applyHold() {
     runOnUiThread {
       if (playing || syncing) PlaybackService.start(this)
-      else PlaybackService.stop(this)
+      else PlaybackService.soften()
     }
   }
 
@@ -102,13 +109,32 @@ class MainActivity : TauriActivity() {
      * focus route used to be: a global the page installs, called by name.
      */
     fun deliverTransport(what: String) {
-      val activity = live ?: return
+      val activity = live
+      if (activity == null) {
+        android.util.Log.w("AFMedia", "transport '$what' dropped: no live activity")
+        return
+      }
       activity.runOnUiThread {
+        val wv = activity.webView
+        if (wv == null) {
+          android.util.Log.w("AFMedia", "transport '$what' dropped: no webview")
+          return@runOnUiThread
+        }
+        // A paused, backgrounded webview is FROZEN: evaluateJavascript queues
+        // but nothing runs until the app is foregrounded by hand - which read
+        // as "play from the lock screen does nothing". Waking it first costs
+        // nothing when it is already awake, and the page's own setPlaying
+        // keeps it awake from there.
+        wv.onResume()
+        android.util.Log.i("AFMedia", "transport -> page: $what")
         val escaped = what.replace("\\", "\\\\").replace("'", "\\'")
-        activity.webView?.evaluateJavascript(
-          "window.__AFM_TRANSPORT__ && window.__AFM_TRANSPORT__('" + escaped + "')",
-          null,
-        )
+        wv.evaluateJavascript(
+          "window.__AFM_TRANSPORT__ ? (window.__AFM_TRANSPORT__('" + escaped + "'), 'handled') : 'no-handler'",
+        ) { result ->
+          if (result != "\"handled\"") {
+            android.util.Log.w("AFMedia", "transport '$what' reached page but found $result")
+          }
+        }
       }
     }
   }
@@ -142,6 +168,9 @@ class MainActivity : TauriActivity() {
 
   override fun onDestroy() {
     if (live === this) live = null
+    // The webview dies with the activity, and the audio with the webview - a
+    // session left standing after this would be controls over a corpse.
+    PlaybackService.stop(this)
     super.onDestroy()
   }
 
