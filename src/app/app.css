@@ -1738,6 +1738,53 @@ body:has(.npScreen[data-docked]) .appNavMore__menu {
   inset-inline-end: calc(var(--np-dock-width) + var(--glacier-space-2));
 }
 
+/* --- The dock contract ------------------------------------------------------
+   On the unfolded split the app owns the left pane and the Now Playing card
+   the right - but everything portalled to the BODY still positions against
+   the whole viewport unless told otherwise, which is how toasts ended up
+   sliding behind the card mid-sentence and takeovers buried the player they
+   were about. Every body-level floater gets a docked rule here: centered
+   things re-center on the app pane; takeovers stop at the seam (the search,
+   the settings, the DJ conversation - the card stays beside them); Music
+   Date alone keeps the whole screen, because a date wants no chaperone. */
+
+/* Tap-anywhere dismiss must include taps on the card, or the ⋯ menu simply
+   refuses to close over a third of the screen. The scrim paints nothing, so
+   sitting above the dock costs one swallowed tap, not a covered player - and
+   the menu must climb with it, or it ends up under its own scrim. */
+body:has(.npScreen[data-docked]) .appNavMore__scrim {
+  z-index: 55;
+}
+
+body:has(.npScreen[data-docked]) .appNavMore__menu {
+  z-index: 56;
+}
+
+/* The kit's own body-mounted layers - dialogs, the trait-sheet drawer, alert
+   boxes, toasts - are fixed inset:0 against the viewport: a dialog dims the
+   card it has nothing to say about, and the bottom drawer rides up OVER it.
+   Shrinking the overlay re-scopes everything inside (panels size against the
+   overlay), so one inset moves the whole family into the app's pane.
+   The hashed selectors pin the current kit build; a rebuild that changes
+   them fails soft - overlays return to full-viewport, nothing breaks. */
+body:has(.npScreen[data-docked]) div[class*='_overlay_1r4l3_'],
+body:has(.npScreen[data-docked]) div[class*='_overlay_1mvue_'],
+body:has(.npScreen[data-docked]) div[class*='_overlay_10yq3_'],
+body:has(.npScreen[data-docked]) div[class*='_viewport_1nbns_'] {
+  inset-inline-end: var(--np-dock-width);
+}
+
+body:has(.npScreen[data-docked]) .settingsScreen,
+body:has(.npScreen[data-docked]) .searchSummon,
+body:has(.npScreen[data-docked]) .djLayer {
+  inset-inline-end: var(--np-dock-width);
+}
+
+body:has(.npScreen[data-docked]) .summonPull,
+body:has(.npScreen[data-docked]) .summonHintChip {
+  left: calc((100% - var(--np-dock-width)) / 2);
+}
+
 /* Transform only - never opacity. An animation that is frozen at its first
    frame (a throttled or backgrounded webview does exactly this: the animation
    reports "running" while its clock never advances) would leave an
@@ -9084,6 +9131,15 @@ body [class*='_panel_']:has(> .dlPanel) {
   border: var(--glacier-hairline) solid var(--glacier-border-subtle);
   box-shadow: var(--glacier-shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.42));
   animation: djToastIn 0.28s var(--glacier-ease-out);
+}
+
+/* Docked wide view: the toast belongs to the app's pane, not the viewport.
+   Its z (40) is under the dock (50), so unclamped it slides BEHIND the card
+   mid-sentence - the patter must center in the left pane and stop at the
+   seam. */
+body:has(.npScreen[data-docked]) .djToast {
+  inset-inline: 0 var(--np-dock-width);
+  inline-size: min(calc((100vw - var(--np-dock-width)) * 0.92), 30rem);
 }
 
 @keyframes djToastIn {

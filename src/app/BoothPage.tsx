@@ -20,7 +20,6 @@ import {
   BrainCircuit,
   CalendarClock,
   CalendarHeart,
-  ChevronLeft,
   ChevronRight,
   Disc3,
   Ear,
@@ -40,7 +39,6 @@ import {
   Waves,
 } from '@glacier/icons';
 import { useEffect, useState } from 'react';
-import { DjPage } from './DjPage.tsx';
 import { DjLauncher } from './DjLauncher.tsx';
 import { DjTraitSheet, DjCollectionTraitSheet } from './DjTraitSheet.tsx';
 import { CuratorShelves } from './HomePage.tsx';
@@ -48,7 +46,6 @@ import { CuratorSettings } from './CuratorSettings.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { useDjChat, DJ_AUTHOR } from './djChat.tsx';
-import { useSystemBack } from './systemBack.ts';
 import {
   analyzeDjTrack,
   fetchCollectorStatus,
@@ -106,11 +103,16 @@ export function BoothPage({
   onPlay,
   onOpenArtist,
   onOpenDate,
+  onOpenDj,
 }: {
   onPlay: (track: Track, queue?: Track[]) => void;
   onOpenArtist: (artist: string) => void;
   /** Opens Music Date's fullscreen layer; App hosts it above all chrome. */
   onOpenDate: () => void;
+  /** Opens the DJ conversation's fullscreen layer - hosted by App too, for
+   *  the same reason: a fixed layer inside the swipe host's transform is
+   *  trapped under the app's chrome. */
+  onOpenDj: () => void;
 }) {
   const { session } = useServerSession();
   const { track: playing } = useNowPlayingMotion();
@@ -120,8 +122,6 @@ export function BoothPage({
   const [feats, setFeats] = useState<FeaturesStatus | null>(null);
   const [pulls, setPulls] = useState<CollectorStatus | null>(null);
   const [prefsOpen, setPrefsOpen] = useState(false);
-  const [djOpen, setDjOpen] = useState(false);
-  useSystemBack(djOpen, () => setDjOpen(false));
 
   // The three instruments, each on its own wire: a box that lacks one
   // endpoint (older server, review build) loses that line and nothing else.
@@ -300,7 +300,7 @@ export function BoothPage({
 
       {/* The DJ's door: his last line as the caption, the whole conversation
           behind it - fullscreen, since a composer deserves a viewport. */}
-      <button type="button" className="boothDate boothDoor--dj" onClick={() => setDjOpen(true)}>
+      <button type="button" className="boothDate boothDoor--dj" onClick={onOpenDj}>
         <span className="boothDate__mark boothDoor__face" aria-hidden="true">
           <img src={djMascot} alt="" />
         </span>
@@ -369,21 +369,6 @@ export function BoothPage({
         </span>
         <CuratorShelves onPlay={onPlay} onOpenArtist={onOpenArtist} onTune={setTuneMix} />
       </section>
-
-      {/* The conversation, fullscreen: same layer grammar as Music Date. */}
-      {djOpen && (
-        <div className="dateLayer djLayer">
-          <button
-            type="button"
-            className="dateLayer__close"
-            aria-label="Leave the conversation"
-            onClick={() => setDjOpen(false)}
-          >
-            <ChevronLeft size={20} />
-          </button>
-          <DjPage />
-        </div>
-      )}
 
       {sheetTrack && (
         <DjTraitSheet track={sheetTrack} open onClose={() => setSheetTrack(null)} />
