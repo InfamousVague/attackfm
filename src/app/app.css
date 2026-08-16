@@ -1548,8 +1548,8 @@ body:has(.npScreen[data-docked]) .appNavScrim {
 .appNavBar .appNavBarTab {
   min-inline-size: 0;
   flex: none;
-  inline-size: 3.9rem;
-  block-size: 3.9rem;
+  inline-size: 3.4rem;
+  block-size: 3.4rem;
 }
 
 .appNavBar .appNavBarTab__label {
@@ -14090,8 +14090,9 @@ button.artistAlbum {
      SQUARE around glyph + name - the third try at "not stretched" and the
      one that holds, because at 3.5rem a square that fits a name cannot fit
      the band. On :root, not .appWindow: the ⋮ menu is portalled to the body
-     and positions against this. */
-  --app-nav-island-height: 4.5rem;
+     and positions against this. Trimmed from 4.5rem once the square's inner
+     padding came down - the plate hugs its glyph and name now. */
+  --app-nav-island-height: 4rem;
 }
 
 /* Wide enough for two rooms, and this is mobile chrome (the nav bar is its

@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.102
+
+- The tab squares hug their icon and name tighter, and the bar slimmed down with them
+
 ## 0.3.101
 
 - The bar grew a little so the lit tab could become an actual square — icon and name in one app-icon-shaped plate, identical on every tab
