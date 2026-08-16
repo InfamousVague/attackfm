@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.94
+
+- Tapping a song on an album page plays it from anywhere in the row, not just exactly on its title
+- Album songs are proper song rows now — full height, the guest credit under the title, and holes lining up in the same column
+
 ## 0.3.93
 
 - Two 0.3.92s went out minutes apart from two working sessions; this one carries both, so whichever your phone caught, nothing is missing
