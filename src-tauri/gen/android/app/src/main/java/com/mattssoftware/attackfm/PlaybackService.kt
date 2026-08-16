@@ -62,15 +62,21 @@ class PlaybackService : MediaBrowserServiceCompat() {
     val made = MediaSessionCompat(this, "AttackFM")
     made.setCallback(object : MediaSessionCompat.Callback() {
       // Every one of these is a button somewhere the app is not: the lock
-      // screen, the notification, a steering wheel, an Android Auto dashboard.
-      // They all land in the page's own transport, so intent is recorded in the
-      // one place that owns it rather than in a second copy out here.
+      // screen, the notification, a steering wheel, an Android Auto dashboard,
+      // a paired computer's media panel. They all land in the page's own
+      // transport, so intent is recorded in the one place that owns it rather
+      // than in a second copy out here.
       override fun onPlay() = command("play")
       override fun onPause() = command("pause")
       override fun onSkipToNext() = command("next")
       override fun onSkipToPrevious() = command("previous")
       override fun onStop() = command("pause")
       override fun onSeekTo(pos: Long) = command("seek:" + (pos / 1000))
+      // A row tapped in the car's browse list. The id IS the command - see
+      // onLoadChildren for the three ids this service publishes.
+      override fun onPlayFromMediaId(mediaId: String?, extras: android.os.Bundle?) {
+        if (mediaId != null && mediaId.startsWith("collection:")) command(mediaId)
+      }
     })
     made.isActive = true
     session = made
@@ -97,13 +103,15 @@ class PlaybackService : MediaBrowserServiceCompat() {
   }
 
   /**
-   * The browse tree, which is empty on purpose.
+   * The browse tree: three rows, all playable.
    *
-   * Android Auto needs a root to consider this a media app; it does not need
-   * content to show the now-playing card and drive the transport, which is
-   * what was actually missing. Browsing the library from the car is a feature
-   * to build deliberately, not something to fake with an empty folder that
-   * looks broken.
+   * An empty root technically satisfies Android Auto, but it draws as a blank
+   * screen with the app's name over it - which reads as broken, not minimal.
+   * Three collections the library always has give the car something honest to
+   * offer, and tapping one plays it: the id travels through the session's
+   * onPlayFromMediaId into the page, which builds the queue the same way the
+   * CarPlay bridge does on iOS. A full artist/album tree is a later feature;
+   * this is the difference between "appears with content" and "appears broken".
    */
   override fun onGetRoot(
     clientPackageName: String,
@@ -115,7 +123,26 @@ class PlaybackService : MediaBrowserServiceCompat() {
     parentId: String,
     result: Result<MutableList<android.support.v4.media.MediaBrowserCompat.MediaItem>>,
   ) {
-    result.sendResult(mutableListOf())
+    if (parentId != BROWSE_ROOT) {
+      result.sendResult(mutableListOf())
+      return
+    }
+    fun item(id: String, title: String, subtitle: String) =
+      android.support.v4.media.MediaBrowserCompat.MediaItem(
+        android.support.v4.media.MediaDescriptionCompat.Builder()
+          .setMediaId(id)
+          .setTitle(title)
+          .setSubtitle(subtitle)
+          .build(),
+        android.support.v4.media.MediaBrowserCompat.MediaItem.FLAG_PLAYABLE,
+      )
+    result.sendResult(
+      mutableListOf(
+        item("collection:liked", "Liked", "Your favourites"),
+        item("collection:all", "All songs", "The whole library"),
+        item("collection:shuffle", "Shuffle all", "Everything, surprised"),
+      ),
+    )
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -128,11 +155,42 @@ class PlaybackService : MediaBrowserServiceCompat() {
       ACTION_PAUSE -> command("pause")
       ACTION_NEXT -> command("next")
       ACTION_PREVIOUS -> command("previous")
+      // The paused notification swiped away: the listener is done. This is the
+      // one moment the controls should actually disappear.
+      ACTION_STOP -> {
+        stopForeground(true)
+        stopSelf()
+        return START_NOT_STICKY
+      }
       else -> Unit
     }
     goForeground(NOTIF_ID, buildNotification())
     // Restarted if the system does kill us mid-song, rather than left dead.
     return START_STICKY
+  }
+
+  /**
+   * Paused is not gone.
+   *
+   * This used to stop the whole service on pause, which released the session
+   * and dismissed the notification - and with them every control surface
+   * OUTSIDE the app: the lock screen went blank, a paired computer's media
+   * panel lost the buttons, Android Auto dropped the card. Pressing play from
+   * any of them could not work, because there was nothing left to press.
+   *
+   * Softening keeps the session alive and the notification standing (now
+   * swipeable, no longer foreground-pinned), wearing a Play button and
+   * STATE_PAUSED - which is exactly the "resumable" shape every external
+   * surface expects from a paused player.
+   */
+  fun soften() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+      stopForeground(STOP_FOREGROUND_DETACH)
+    } else {
+      @Suppress("DEPRECATION")
+      stopForeground(false)
+    }
+    refreshNotification()
   }
 
   /** Re-post with whatever the page last told us, so the row's play/pause and
@@ -205,6 +263,9 @@ class PlaybackService : MediaBrowserServiceCompat() {
         actionIntent(if (playing) ACTION_PAUSE else ACTION_PLAY),
       )
       .addAction(android.R.drawable.ic_media_next, "Next", actionIntent(ACTION_NEXT))
+      // Swiping the (paused, unpinned) notification away is "I'm done": tear
+      // the controls down for real instead of leaving a ghost session.
+      .setDeleteIntent(actionIntent(ACTION_STOP))
 
     session?.let { s ->
       builder.setStyle(
@@ -224,8 +285,11 @@ class PlaybackService : MediaBrowserServiceCompat() {
       PendingIntent.FLAG_IMMUTABLE,
     )
 
-  /** Hands a transport command to the page, which owns the deck. */
+  /** Hands a transport command to the page, which owns the deck. Logged at
+   *  every hop (grep AFMedia in logcat), because the last silent version of
+   *  this chain took days to see through. */
   private fun command(what: String) {
+    android.util.Log.i("AFMedia", "session command: $what")
     MainActivity.deliverTransport(what)
   }
 
@@ -258,6 +322,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
     const val ACTION_PAUSE = "attackfm.pause"
     const val ACTION_NEXT = "attackfm.next"
     const val ACTION_PREVIOUS = "attackfm.previous"
+    const val ACTION_STOP = "attackfm.stop"
 
     /** The live service's session, so MainActivity can feed it without binding. */
     private var active: MediaSessionCompat? = null
@@ -339,6 +404,12 @@ class PlaybackService : MediaBrowserServiceCompat() {
 
     fun stop(context: Context) {
       context.stopService(Intent(context, PlaybackService::class.java))
+    }
+
+    /** Pause-shape: session and notification stay, foreground pin lets go.
+     *  A no-op when the service never started - nothing to soften. */
+    fun soften() {
+      instance?.soften()
     }
   }
 }
