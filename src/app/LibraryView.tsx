@@ -145,6 +145,7 @@ export function LibraryView({
   view,
   onPlay,
   onOpenArtist,
+  onOpenAlbum,
   onOpenPlaylist,
   onOpenSongs,
   onOpenDownloads,
@@ -157,6 +158,8 @@ export function LibraryView({
   view: 'summary' | 'all';
   onPlay: (track: Track, context?: Track[]) => void;
   onOpenArtist: (artist: string) => void;
+  /** Opens a record - the "Jump back in" covers are doors. */
+  onOpenAlbum?: (album: string, albumArtist: string) => void;
   onOpenPlaylist: (id: string) => void;
   /** Opens a whole-collection song page (Liked, or every song) from a tile. */
   onOpenSongs: (view: import('./SongPage.tsx').SongCollection) => void;
@@ -292,7 +295,12 @@ export function LibraryView({
           {/* What you have been PLAYING. The AI's own shelves used to render
               here too, which is what made this page four pages in one scroller;
               they live on Discover now. */}
-          <HistoryShelves onPlay={onPlay} onOpenArtist={onOpenArtist} onOpenStats={onOpenStats} />
+          <HistoryShelves
+            onPlay={onPlay}
+            onOpenArtist={onOpenArtist}
+            onOpenAlbum={onOpenAlbum}
+            onOpenStats={onOpenStats}
+          />
 
           {recentlyAdded.length === 0 &&
             favoriteTracks.length === 0 &&

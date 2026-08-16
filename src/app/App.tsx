@@ -33,6 +33,7 @@ import { isDesktopApp } from './platform.ts';
 import { onCarPlayPlay } from './carplay.ts';
 import { remotePath, trackIdFromPath } from './server.ts';
 import type { Track } from './tauri.ts';
+import { AlbumPage } from './AlbumPage.tsx';
 import { Player } from './Player.tsx';
 import { QueueControlsBridge } from './queueControls.tsx';
 import { ArtistPage } from './ArtistPage.tsx';
@@ -631,6 +632,7 @@ function PlayerHost({
  */
 type Detail =
   | { kind: 'artist'; artist: string }
+  | { kind: 'album'; album: string; artist: string }
   | { kind: 'playlist'; id: string }
   | { kind: 'songs'; view: SongCollection };
 
@@ -648,6 +650,7 @@ function AppMain({
   libraryView,
   onPlay,
   onOpenArtist,
+  onOpenAlbum,
   onOpenPlaylist,
   onOpenSongs,
   onCloseDetail,
@@ -664,6 +667,8 @@ function AppMain({
   libraryView: 'summary' | 'all';
   onPlay: (track: Track, context?: Track[]) => void;
   onOpenArtist: (artist: string) => void;
+  /** Opens one record, credited to the artist it was reached through. */
+  onOpenAlbum: (album: string, albumArtist: string) => void;
   onOpenPlaylist: (id: string) => void;
   /** Opens a whole-collection song page (Liked, or every song). */
   onOpenSongs: (view: SongCollection) => void;
@@ -700,6 +705,8 @@ function AppMain({
   const scrimKey =
     detail?.kind === 'songs'
       ? `songs:${detail.view}`
+      : detail?.kind === 'album'
+        ? `album:${detail.artist}:${detail.album}`
       : detail?.kind === 'playlist'
         ? `playlist:${detail.id}`
         : detail?.kind === 'artist'
@@ -727,7 +734,16 @@ function AppMain({
           artist={detail.artist}
           onPlay={onPlay}
           onOpenArtist={onOpenArtist}
+          onOpenAlbum={onOpenAlbum}
           onOpenPlaylist={onOpenPlaylist}
+        />
+      ) : detail?.kind === 'album' ? (
+        <AlbumPage
+          album={detail.album}
+          artist={detail.artist}
+          onPlay={onPlay}
+          onOpenArtist={onOpenArtist}
+          onGone={onCloseDetail}
         />
       ) : detail?.kind === 'playlist' ? (
         <PlaylistPage
@@ -747,6 +763,7 @@ function AppMain({
           view={libraryView}
           onPlay={onPlay}
           onOpenArtist={onOpenArtist}
+          onOpenAlbum={onOpenAlbum}
           onOpenPlaylist={onOpenPlaylist}
           onOpenSongs={onOpenSongs}
           onOpenDownloads={hasQueue ? onOpenDownloads : undefined}
@@ -768,6 +785,7 @@ function AppMain({
           <SearchPage
             onPlay={onPlay}
             onOpenArtist={onOpenArtist}
+            onOpenAlbum={onOpenAlbum}
             onOpenPlaylist={onOpenPlaylist}
           />
         </PluginHookScope>
@@ -802,6 +820,7 @@ function AppMain({
           view={libraryView}
           onPlay={onPlay}
           onOpenArtist={onOpenArtist}
+          onOpenAlbum={onOpenAlbum}
           onOpenPlaylist={onOpenPlaylist}
           onOpenSongs={onOpenSongs}
           onOpenDownloads={hasQueue ? onOpenDownloads : undefined}
@@ -995,6 +1014,8 @@ export function App() {
       ? false
       : a?.kind === 'artist' && b?.kind === 'artist'
         ? a.artist === b.artist
+        : a?.kind === 'album' && b?.kind === 'album'
+          ? a.album === b.album && a.artist === b.artist
         : a?.kind === 'playlist' && b?.kind === 'playlist'
           ? a.id === b.id
           : a?.kind === 'songs' && b?.kind === 'songs'
@@ -1030,6 +1051,8 @@ export function App() {
   const go = (next: string | null) =>
     push({ tab, detail: next === null ? null : { kind: 'artist', artist: next } });
   /** A playlist page, likewise stacked inside the current tab. */
+  const goAlbum = (album: string, albumArtist: string) =>
+    push({ tab, detail: { kind: 'album', album, artist: albumArtist } });
   const goPlaylist = (id: string) => push({ tab, detail: { kind: 'playlist', id } });
   /** A whole-collection song page - Liked or every song - stacked the same way.
    *  The library's own views, opened full instead of in a sheet. */
@@ -1331,6 +1354,7 @@ export function App() {
                   libraryView={libraryView}
                   onPlay={playFrom}
                   onOpenArtist={go}
+                  onOpenAlbum={goAlbum}
                   onOpenPlaylist={goPlaylist}
                   onOpenSongs={goSongs}
                   onCloseDetail={closeDetail}

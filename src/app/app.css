@@ -4928,6 +4928,107 @@ body [class*='_panel_']:has(> .dlPanel) {
   gap: var(--glacier-space-4) var(--glacier-space-3);
 }
 
+/* ── One record, opened ─────────────────────────────────────────────────────
+   Built on the playlist head's proportions, because they answer the same
+   shape of question - a cover, what it is, and the two buttons - and two
+   pages that read alike should not be two different layouts. */
+.albumHead {
+  display: flex;
+  gap: var(--glacier-space-4);
+  align-items: flex-end;
+  padding: var(--glacier-space-4);
+  padding-block-start: var(--glacier-space-2);
+}
+
+.albumHead__cover {
+  inline-size: 8.5rem;
+  block-size: 8.5rem;
+  flex: none;
+  object-fit: cover;
+  border-radius: var(--glacier-radius-lg);
+  box-shadow: var(--glacier-shadow-3);
+  background: var(--glacier-surface-2);
+}
+
+.albumHead__cover--glyph {
+  display: grid;
+  place-items: center;
+  color: var(--glacier-text-subtle);
+}
+
+.albumHead__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  min-inline-size: 0;
+}
+
+.albumHead__kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.albumHead__name {
+  margin: 0;
+  font-size: var(--glacier-font-size-2xl);
+  font-weight: 700;
+  line-height: 1.1;
+  /* A long title wraps rather than pushing the head wider than the window. */
+  overflow-wrap: anywhere;
+}
+
+/* The credit is a link in everything but decoration: same colour as the text
+   it sits in, underlined only when reached, so it does not shout over the
+   title above it. */
+.albumHead__artist {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+  cursor: pointer;
+}
+
+.albumHead__artist:hover,
+.albumHead__artist:focus-visible {
+  color: var(--glacier-text);
+  text-decoration: underline;
+}
+
+.albumHead__actions {
+  display: flex;
+  gap: var(--glacier-space-2);
+  margin-block-start: var(--glacier-space-2);
+}
+
+.albumDisc {
+  padding-inline: var(--glacier-space-4);
+}
+
+.albumDisc__label {
+  display: block;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-block: var(--glacier-space-3) var(--glacier-space-1);
+}
+
+/* The phone has no room for a 8.5rem plate beside the text; the cover leads
+   and the words sit under it, which is the shape every other hero on a small
+   screen already uses. */
+@media (max-width: 540px) {
+  .albumHead {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .albumHead__cover {
+    inline-size: 10rem;
+    block-size: 10rem;
+  }
+}
+
 /* Sits in the heading, saying how much of the discography is actually yours. */
 .artistDiscCount {
   margin-inline-start: var(--glacier-space-2);
