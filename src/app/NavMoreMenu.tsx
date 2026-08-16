@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { CounterBadge } from '@glacier/react';
 import { Download, EllipsisVertical, Settings, UsersRound } from '@glacier/icons';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
 import { usePluginPages } from '../plugins/runtime.tsx';
@@ -85,12 +86,15 @@ export function NavMoreMenu({
         }}
       >
         <span className="appNavBarTab__icon">
-          <EllipsisVertical size={24} />
-          {(pulling > 0 || failed > 0) && (
-            <span className="appNavBadge" data-tone={pulling === 0 ? 'failed' : undefined}>
-              {pulling > 0 ? pulling : failed}
-            </span>
-          )}
+          <EllipsisVertical size={22} />
+          <CounterBadge
+            className="appNavBadge--corner"
+            count={pulling > 0 ? pulling : failed}
+            max={99}
+            size="sm"
+            tone={pulling === 0 ? 'danger' : 'accent'}
+            aria-label={pulling > 0 ? `${pulling} downloading` : `${failed} failed`}
+          />
         </span>
         <span className="appNavBarTab__label">More</span>
       </button>
@@ -177,11 +181,14 @@ export function NavMoreMenu({
               <Download size={18} />
             </span>
             <span className="appNavBarPlugins__itemLabel">Downloads</span>
-            {(pulling > 0 || failed > 0) && (
-              <span className="appNavBadge appNavBadge--row" data-tone={pulling === 0 ? 'failed' : undefined}>
-                {pulling > 0 ? pulling : failed}
-              </span>
-            )}
+            <CounterBadge
+              className="appNavBadge--row"
+              count={pulling > 0 ? pulling : failed}
+              max={99}
+              size="sm"
+              tone={pulling === 0 ? 'danger' : 'accent'}
+              aria-label={pulling > 0 ? `${pulling} downloading` : `${failed} failed`}
+            />
           </button>
         )}
 

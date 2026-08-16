@@ -1541,9 +1541,12 @@ body:has(.npScreen[data-docked]) .appNavScrim {
   box-shadow: var(--glacier-shadow-lg, -18px 0 42px rgb(0 0 0 / 0.45));
 }
 
+/* Fixed, not flex-1: the plate must be the same object on every tab, so the
+   tab takes a set width and space-evenly deals the leftover air. */
 .appNavBar .appNavBarTab {
   min-inline-size: 0;
-  flex: 1;
+  flex: none;
+  inline-size: 3.9rem;
 }
 
 .appNavBar .appNavBarTab__label {
@@ -1589,24 +1592,29 @@ body:has(.npScreen[data-docked]) .appNavScrim {
   transition: background-color 0.16s var(--glacier-ease-out, ease), color 0.15s ease;
 }
 
-/* (The lit background no longer paints the whole tab - the squircle lives on
-   .appNavBarTab__icon below, at a fixed size the label cannot stretch.) */
+/* The generous radius belongs to the squircle and must not outlive it: a
+   superellipse needs a big corner or it reads as the rectangle it replaced,
+   but that same share under plain border-radius is four fat arcs. Chromium
+   takes both lines; WebKit keeps the modest rounded square above. */
+@supports (corner-shape: squircle) {
+  .appNavBarTab {
+    border-radius: 38%;
+    corner-shape: squircle;
+  }
+}
 
 /* The selected tab: a squircle behind the whole item - glyph AND name - in a
    faint wash of the accent, with the contents taking the accent colour. The
    mark of where you are should enclose the thing that names it; a disc around
    only the icon left the label sitting outside its own highlight. */
-/* The selected tab: the tab itself stays unpainted - the mark moved down to
-   a compact squircle around the GLYPH (below). Painted across the whole tab
-   it stretched with the label ("Discover" lit twice as wide as "Booth"),
-   which is exactly the box-with-corners-filed-off look the squircle was
-   brought in to kill. */
+/* The selected tab: one squircle plate over glyph AND name - but at a FIXED
+   width, which is what every earlier cut missed. Painted on a tab that sizes
+   from its label, "Discover" lit twice as wide as "Booth" and the shape read
+   as a stretched box no matter how super its ellipse was. Fixed, every tab's
+   plate is the same object. */
 .appNavBarTab[data-active] {
-  color: var(--glacier-accent-text);
-}
-
-.appNavBarTab[data-active] .appNavBarTab__icon {
   background: color-mix(in srgb, var(--glacier-accent-solid) 16%, transparent);
+  color: var(--glacier-accent-text);
 }
 
 /*
@@ -1634,60 +1642,24 @@ body:has(.npScreen[data-docked]) .appNavScrim {
   color: var(--glacier-text-muted);
 }
 
-/* The glyph's seat IS the indicator: a fixed near-square, so the lit mark is
-   the same rounded square on every tab regardless of how long its name runs.
-   The label sits under it, lit by colour alone. */
+/* The glyph's seat: plain, relative only so a corner badge can ride it. The
+   lit plate lives on the tab (above). */
 .appNavBarTab__icon {
   position: relative;
   display: grid;
   place-items: center;
-  /* A SQUARE, to the pixel - the first cut was 2.75 x 2.1 "near-square",
-     which the eye reads instantly as a squashed rectangle. Held to the
-     height the island can afford under the label. */
-  inline-size: 2.2rem;
-  block-size: 2.2rem;
-  border-radius: 0.8rem;
-  transition:
-    color 0.16s ease,
-    background-color 0.16s var(--glacier-ease-out, ease);
+  transition: color 0.16s ease;
 }
 
-/* A real squircle where the engine draws one (Chromium: Android + desktop);
-   WebKit keeps the rounded square above, which at this compact size already
-   reads right. */
-@supports (corner-shape: squircle) {
-  .appNavBarTab__icon {
-    border-radius: 42%;
-    corner-shape: squircle;
-  }
-}
-
-/* The count riding a nav glyph (the ⋮ while downloads pull) and the same
-   number beside the menu's Downloads row. */
-.appNavBadge {
+/* Placement only - the badge itself is the kit's CounterBadge, so its fill,
+   type and capsule are the standard ones, not a hand-rolled copy. */
+.appNavBadge--corner {
   position: absolute;
-  inset-block-start: -0.2rem;
-  inset-inline-end: -0.2rem;
-  min-inline-size: 1rem;
-  block-size: 1rem;
-  padding-inline: 0.2rem;
-  border-radius: 999px;
-  display: grid;
-  place-items: center;
-  background: var(--glacier-accent-solid);
-  color: var(--glacier-on-accent, #fff);
-  font-size: 0.65rem;
-  font-weight: 700;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-
-.appNavBadge[data-tone='failed'] {
-  background: var(--glacier-danger-solid, #b3261e);
+  inset-block-start: -0.3rem;
+  inset-inline-end: -0.45rem;
 }
 
 .appNavBadge--row {
-  position: static;
   margin-inline-start: auto;
 }
 
@@ -1717,11 +1689,15 @@ body:has(.npScreen[data-docked]) .appNavScrim {
    five rows does not need a positioning engine: it is anchored to a button in
    a bar that is already fixed to the bottom-right, so it is an absolutely
    positioned box hung off that button, and its width is simply its content. */
+/* flex: none, like the tabs it stands among - when they stopped stretching
+   this kept its old flex:1 and quietly swallowed the whole bar's leftover,
+   packing the other four against the left edge. */
 .appNavMore__anchor {
   position: relative;
   display: flex;
+  justify-content: center;
   min-inline-size: 0;
-  flex: 1;
+  flex: none;
 }
 
 /* Catches the tap that dismisses. Below the menu, above everything else. */
