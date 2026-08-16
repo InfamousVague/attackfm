@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.79
+
+- An artist page now shows the songs missing from albums you own part of — dimmed, with a plus to add each one, or Add all to finish the record
+
 ## 0.3.78
 
 - A download that fails from a network hiccup is retried twice on its own before it ever shows red

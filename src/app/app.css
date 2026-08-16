@@ -7057,6 +7057,137 @@ body [class*='_panel_']:has(> .dlPanel) {
 }
 
 /* The popular tracks: a numbered list, each row one tap from the import queue. */
+/*
+ * Records you own part of, and the songs that would finish them.
+ *
+ * These rows are ABSENCES, so they are dimmed - lighter than the songs you
+ * have, and they lift toward full on hover the way a thing you could get
+ * ought to. The plus is the only thing at full strength: it is the offer, and
+ * the offer should not be the faintest thing in the row.
+ */
+.albumGaps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+.albumGap {
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg);
+  overflow: hidden;
+  background: var(--glacier-surface-sunken, var(--glacier-surface));
+}
+
+.albumGap__head {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3);
+}
+
+.albumGap__art {
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  border-radius: var(--glacier-radius-sm);
+  object-fit: cover;
+  flex: none;
+}
+
+.albumGap__art--glyph {
+  display: grid;
+  place-items: center;
+  background: var(--glacier-hover);
+  color: var(--glacier-text-subtle);
+}
+
+.albumGap__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.albumGap__title {
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.albumGap__count {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.albumGap__all {
+  flex: none;
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  background: none;
+  color: var(--glacier-text);
+  font: inherit;
+  font-size: var(--glacier-font-size-xs);
+  font-weight: 650;
+  padding: 0.3rem var(--glacier-space-3);
+  border-radius: var(--glacier-radius-full);
+  cursor: pointer;
+}
+
+.albumGap__all:hover {
+  background: var(--glacier-hover);
+}
+
+.albumGap__list {
+  margin: 0;
+  padding: 0 var(--glacier-space-3) var(--glacier-space-2);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.albumGap__row {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding-block: var(--glacier-space-1);
+  /* The dimming that says "not here". */
+  opacity: 0.55;
+  transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.albumGap__row:hover,
+.albumGap__row[data-state] {
+  opacity: 1;
+}
+
+.albumGap__no {
+  inline-size: 1.25rem;
+  text-align: end;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-subtle);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+.albumGap__name {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The offer stays legible even while the row around it is dimmed. */
+.albumGap__row .catalogTrack__add {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .albumGap__row {
+    transition: none;
+  }
+}
+
 .catalogTracks {
   display: flex;
   flex-direction: column;
