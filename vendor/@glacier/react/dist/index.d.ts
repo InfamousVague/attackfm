@@ -3361,6 +3361,15 @@ interface ToastProps {
     message: ReactNode;
     /** Optional leading glyph. */
     icon?: ReactNode;
+    /**
+     * One verb, offered while the pill stands - "Undo" is the whole reason this
+     * exists. Pressing it runs the handler and dismisses; a toast is not a form,
+     * so one action is the ceiling and anything needing two belongs in a dialog.
+     */
+    action?: {
+        label: string;
+        onPress: () => void;
+    };
     /** Whether a trailing close control is shown. */
     dismissible?: boolean;
     /** Called when the pill or its dismiss control is pressed. */
@@ -3376,11 +3385,16 @@ interface ToastProps {
  * the ToastProvider wraps it in motion and a portal. A danger toast announces
  * as an alert, other tones as a status.
  */
-declare function Toast({ tone, message, icon, dismissible, onDismiss, glass, skeleton, className, }: ToastProps): react.JSX.Element;
+declare function Toast({ tone, message, icon, action, dismissible, onDismiss, glass, skeleton, className, }: ToastProps): react.JSX.Element;
 interface ToastOptions {
     tone?: ToastTone;
     message: ReactNode;
     icon?: ReactNode;
+    /** One verb beside the message - see ToastProps.action. */
+    action?: {
+        label: string;
+        onPress: () => void;
+    };
     /** Auto-dismiss delay in milliseconds; defaults by tone, 0 disables auto-dismiss. */
     duration?: number;
     /** Whether a trailing close control is shown. */

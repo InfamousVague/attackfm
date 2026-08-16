@@ -12,6 +12,7 @@ import {
   useBeat,
   useLiveLevels,
   volumeAmplitude,
+  useToast,
 } from '@glacier/react';
 import type { AnalyserMeter, LoudnessMeter, PlayerRepeat } from '@glacier/react';
 import {
@@ -398,6 +399,7 @@ export function Player({
   // until the folder is resolved and its files have been walked. The whole bar
   // loads as a skeleton until then.
   const { loading: libraryLoading, scanning, isFavorite, toggleFavorite, tracks: libraryTracks } = useLibrary();
+  const { toast } = useToast();
   // The listening room this device is in, if any. Optional: the Player also
   // renders in trees without the provider.
   const jam = useJamOptional();
@@ -420,11 +422,20 @@ export function Player({
   // The heart reflects and toggles the current track's place in favourites.
   const favorite = track ? isFavorite(track.path) : false;
   // Hearting a song answers in the hand - the success triplet, only on the
-  // way IN. Un-hearting stays silent: taking something back is not a fanfare.
+  // way IN. Un-hearting stays silent in the hand but leaves a way back on
+  // screen: the heart is small, the thumb is not, and a like taken by
+  // accident should cost one tap rather than a hunt through the library.
   const toggleFavoriteFelt = () => {
     if (!track) return;
+    const path = track.path;
     if (!favorite) fireNativeHaptic('success');
-    toggleFavorite(track.path);
+    toggleFavorite(path);
+    if (favorite) {
+      toast({
+        message: `Removed “${track.title}” from Liked`,
+        action: { label: 'Undo', onPress: () => toggleFavorite(path) },
+      });
+    }
   };
 
   // The artwork read fresh from the library rather than off the snapshot: a

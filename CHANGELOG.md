@@ -7,6 +7,13 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.92
+
+- Removing a song from the queue, a playlist, or your likes now offers Undo for a few seconds - and puts it back exactly where it was
+- Hold any album cover - home, artist page, search - for Play, Shuffle, queueing the whole record, and the artist
+- About now shows the whole release history, with a "you are here" on the version you're running
+- Downloads left the menus: while anything is pulling, a chip floats above the player saying so from every page - tap it for the queue
+
 ## 0.3.91
 
 - An album's missing songs sit in the running order now — track 3 between 2 and 4 whether you own it or not — just a shade quieter, with their + right there

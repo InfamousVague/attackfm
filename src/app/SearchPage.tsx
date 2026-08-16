@@ -54,6 +54,7 @@ import { useSearchRecents, type Recent } from './searchRecents.ts';
 import { fetchFriends, type RegistryFriend } from './registry.ts';
 import { artSized, searchCatalog, type SearchResult } from './server.ts';
 import { mosaicArts, useArtLoad, useTileArt } from './artLoad.ts';
+import { AlbumMenu } from './AlbumMenu.tsx';
 import { TrackMenu } from './TrackMenu.tsx';
 import { EmptyArt } from './EmptyArt.tsx';
 import type { Track } from './tauri.ts';
@@ -1070,17 +1071,25 @@ export function SearchPage({
 
       case 'album':
         return (
-          <button key={item.id} type="button" {...seat} onClick={() => open(item)}>
-            <Glyph shape="square" cover={item.album.cover} fallback={<Disc3 size={18} />} />
-            <span className="searchRow__text">
-              <span className="searchRow__title">{item.album.title}</span>
-              <span className="searchRow__sub">
-                Album · {item.album.artist} ·{' '}
-                {item.album.count === 1 ? '1 song' : `${item.album.count} songs`}
+          <AlbumMenu
+            key={item.id}
+            tracks={item.album.tracks}
+            onPlay={onPlay}
+            onOpenArtist={onOpenArtist}
+            artistName={item.album.artist}
+          >
+            <button type="button" {...seat} onClick={() => open(item)}>
+              <Glyph shape="square" cover={item.album.cover} fallback={<Disc3 size={18} />} />
+              <span className="searchRow__text">
+                <span className="searchRow__title">{item.album.title}</span>
+                <span className="searchRow__sub">
+                  Album · {item.album.artist} ·{' '}
+                  {item.album.count === 1 ? '1 song' : `${item.album.count} songs`}
+                </span>
               </span>
-            </span>
-            <Play size={16} className="searchRow__end" />
-          </button>
+              <Play size={16} className="searchRow__end" />
+            </button>
+          </AlbumMenu>
         );
 
       case 'playlist':

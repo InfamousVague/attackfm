@@ -23,6 +23,7 @@ import { isMusicImportLink } from '../plugins/importsBridge.ts';
 import { usePlugins } from '../plugins/runtime.tsx';
 import type { Track } from './tauri.ts';
 import { ImportFromSearch } from './ImportFromSearch.tsx';
+import { AlbumMenu } from './AlbumMenu.tsx';
 import { TrackMenu } from './TrackMenu.tsx';
 
 /**
@@ -65,17 +66,35 @@ function TrackCard({ track, onOpen }: { track: Track; onOpen: () => void }) {
 }
 
 /** An album card: cover over the album name and artist. Jump-back-in wears it. */
-function AlbumCard({ track, onOpen }: { track: Track; onOpen: () => void }) {
+function AlbumCard({
+  track,
+  tracks,
+  onOpen,
+  onPlay,
+  onOpenArtist,
+}: {
+  track: Track;
+  /** The whole record, for the menu's Play/Shuffle/queue verbs. */
+  tracks: Track[];
+  onOpen: () => void;
+  onPlay: (track: Track, queue: Track[]) => void;
+  onOpenArtist?: (artist: string) => void;
+}) {
   const { src, loaded, onLoad, onError } = useCardArt(track.artwork);
   const idle = !loaded || undefined;
   return (
-    <TrackMenu track={track}>
+    <AlbumMenu
+      tracks={tracks}
+      onPlay={onPlay}
+      onOpenArtist={onOpenArtist}
+      artistName={track.albumArtist || track.artist}
+    >
       <button type="button" className="trackCard" onClick={onOpen}>
         <img className="trackCardArt artPop" src={src} alt="" loading="lazy" data-loading={idle} onLoad={onLoad} onError={onError} />
         <span className="trackCardTitle" data-loading={idle}>{loaded ? track.album || track.title : NBSP}</span>
         <span className="trackCardArtist" data-loading={idle}>{loaded ? track.artist : NBSP}</span>
       </button>
-    </TrackMenu>
+    </AlbumMenu>
   );
 }
 
@@ -501,6 +520,9 @@ export function HomePage({
           <AlbumCard
             key={album[0]!.path}
             track={album[0]!}
+            tracks={album}
+            onPlay={onPlay}
+            onOpenArtist={onOpenArtist}
             onOpen={() =>
               onOpenAlbum
                 ? onOpenAlbum(album[0]!.album, album[0]!.albumArtist || album[0]!.artist)
