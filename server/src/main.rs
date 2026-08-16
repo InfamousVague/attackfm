@@ -467,6 +467,7 @@ async fn main() {
         .route("/api/curator/pulls", get(collector::status))
         .route("/api/date/done", post(collector::date_done))
         .route("/api/albums/gaps", get(albums::gaps))
+        .route("/api/album/tracks", get(albums::tracks))
         .route("/api/app/bundle", get(appbundle::manifest))
         .route("/api/app/bundle/{name}", get(appbundle::file))
         // What a hot server should be carrying: the listened-to working set.

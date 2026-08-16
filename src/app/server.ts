@@ -1545,6 +1545,39 @@ export async function fetchAlbumGaps(
   return reply.albums ?? [];
 }
 
+/** One song on a record, as the catalogue lists it. Distinct from
+ *  CatalogTrack below, which is an artist's top songs across everything. */
+export interface AlbumTrack {
+  position: number;
+  title: string;
+  /** The link an import takes. Empty when the catalogue gave none. */
+  url: string;
+  /** Whether this library already holds it. */
+  owned: boolean;
+}
+
+/**
+ * The whole of one record, each song marked owned or not.
+ *
+ * A catalogue's album entry carries no songs - only a link to them - so this
+ * is a second call per record and cannot be folded into the artist reply. An
+ * empty `tracks` is a valid answer (catalogue unreachable, or it does not list
+ * this album) and means "show what you have", not "this record is complete".
+ */
+export async function fetchAlbumTracks(
+  session: ServerSession,
+  artist: string,
+  album: string,
+  signal?: AbortSignal,
+): Promise<AlbumTrack[]> {
+  const reply = await request<{ tracks: AlbumTrack[] }>(
+    session.url,
+    `/api/album/tracks?artist=${encodeURIComponent(artist)}&album=${encodeURIComponent(album)}`,
+    { token: session.token, signal },
+  );
+  return reply.tracks ?? [];
+}
+
 export interface CatalogRelease {
   id: string;
   title: string;

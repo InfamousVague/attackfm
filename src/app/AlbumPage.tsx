@@ -1,12 +1,18 @@
 import { Button, Text } from '@glacier/react';
-import { Disc3, Play, Shuffle } from '@glacier/icons';
+import { Check, Disc3, Play, Plus, Shuffle, X } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
+import { useServerSession } from './serverSession.tsx';
+import { IMPORTER_PLUGIN_ID, useAcquire } from '../plugins/runtime.tsx';
+import { useDownloadsOptional } from '../plugins/importsBridge.ts';
+import type { AcquireTarget } from '../plugins/types.ts';
+import { PROBE_URL, importable, resolveImportable } from './resolveImport.ts';
 import { useArtLoad } from './artLoad.ts';
-import { artSized } from './server.ts';
+import { artSized, fetchAlbumTracks, type AlbumTrack } from './server.ts';
 import { TrackMenu } from './TrackMenu.tsx';
 import { setHeaderActions } from './headerActions.ts';
 import { albumCredit, byRunningOrder, fold, isBy } from './albums.ts';
+import { titleKey } from './owned.ts';
 import type { Track } from './tauri.ts';
 
 /**
@@ -64,6 +70,9 @@ function Cover({ art }: { art: string | null }) {
 
 export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: AlbumPageProps) {
   const { tracks } = useLibrary();
+  const { session } = useServerSession();
+  const downloads = useDownloadsOptional();
+  const acquire = useAcquire();
 
   // Every track on this record: the album name matches, and the artist is one
   // of its credits - the second half being what keeps two different records
@@ -95,6 +104,32 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
     observer.observe(mark);
     return () => observer.disconnect();
   }, [album, artist]);
+
+  /*
+   * The rest of the record, from the catalogue.
+   *
+   * A catalogue's album entry carries no songs, only a link to them, so
+   * this is a second request per record - which is why the artist page
+   * could never show it and this page has to ask for itself. It arrives
+   * after the songs you own and only adds the holes: nothing above waits
+   * on it, and a catalogue that cannot be reached leaves the page as your
+   * own copy rather than claiming the record is complete.
+   */
+  const [catalogue, setCatalogue] = useState<AlbumTrack[]>([]);
+  const [adding, setAdding] = useState<Record<string, 'finding' | 'added' | 'missing'>>({});
+  useEffect(() => {
+    setCatalogue([]);
+    setAdding({});
+    if (!session) return;
+    const ctrl = new AbortController();
+    void fetchAlbumTracks(session, artist, album, ctrl.signal)
+      .then(setCatalogue)
+      .catch(() => {
+        // Older server, a record the catalogue does not list, or no
+        // network. All three mean the same thing here: show what you have.
+      });
+    return () => ctrl.abort();
+  }, [session, artist, album]);
 
   const cover = list.find((t) => t.artwork)?.artwork ?? null;
   const handlers = useRef<{ playAll: () => void; shuffleAll: () => void }>({
@@ -140,6 +175,10 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
   if (list.length === 0) return null;
 
   const credit = albumCredit(list);
+  // The server's `owned` is a snapshot from when the reply was built; the
+  // local check is what makes a song stop being offered the moment it
+  // lands, without asking the catalogue again.
+  const heldTitles = new Set(list.map((t) => titleKey(t.title)));
   const totalSeconds = list.reduce((sum, t) => sum + (t.duration ?? 0), 0);
   const year = list.find((t) => t.year)?.year ?? null;
   // Discs only announce themselves on a set that has more than one; a single
@@ -147,6 +186,58 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
   // being made.
   const discs = [...new Set(list.map((t) => t.discNo ?? 1))].sort((a, b) => a - b);
   const multiDisc = discs.length > 1;
+
+  /*
+   * The record as it actually is: your songs, plus the ones the catalogue says
+   * belong here and you do not have, dimmed and one tap from being pulled.
+   *
+   * Only when the catalogue answered AND the record is single-disc. On a set
+   * the catalogue's flat numbering cannot be mapped onto disc-and-track
+   * without guessing which side of a boundary a number falls, and a track
+   * filed under the wrong disc is worse than one not shown - so a multi-disc
+   * record shows what you own and says nothing about holes.
+   */
+  const missing =
+    multiDisc || catalogue.length === 0
+      ? []
+      : catalogue.filter((c) => !c.owned && !heldTitles.has(titleKey(c.title)));
+
+  /**
+   * Pull one missing song. The catalogue's own link is a Deezer one, which
+   * the importer will not take, so it is resolved to something importable
+   * first - the same two-step the artist page's gap rows use, and the same
+   * reason it takes a beat and can come back empty.
+   */
+  const addMissing = async (row: AlbumTrack) => {
+    const key = `${row.position}:${row.title}`;
+    if (!session || adding[key]) return;
+    setAdding((prev) => ({ ...prev, [key]: 'finding' }));
+    const take = (url: string) => {
+      const target: AcquireTarget = { kind: 'track', title: row.title, artist, url };
+      const viaImporter = acquire
+        .handlersFor(target)
+        .some((h) => h.pluginId === IMPORTER_PLUGIN_ID);
+      if (viaImporter && downloads) void downloads.enqueue(url).catch(() => {});
+      else acquire.acquire(target);
+    };
+    if (importable({ url: row.url })) {
+      take(row.url);
+      setAdding((prev) => ({ ...prev, [key]: 'added' }));
+      return;
+    }
+    let found = null;
+    try {
+      found = await resolveImportable(session, 'track', artist, row.title);
+    } catch {
+      // Same outcome as not being there.
+    }
+    if (!found) {
+      setAdding((prev) => ({ ...prev, [key]: 'missing' }));
+      return;
+    }
+    take(found.url);
+    setAdding((prev) => ({ ...prev, [key]: 'added' }));
+  };
 
   const playAll = () => onPlay(list[0]!, list);
   const shuffleAll = () => {
@@ -241,6 +332,53 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
           </ol>
         </section>
       ))}
+
+      {/* What the record has and this library does not. Dimmed and after the
+          songs you own, because this is still your page - the holes are an
+          offer, not the content. */}
+      {missing.length > 0 && (
+        <section className="albumDisc albumMissing">
+          <Text tone="subtle" size="xs" className="albumDisc__label">
+            {missing.length} missing from this album
+          </Text>
+          <ol className="catalogTracks">
+            {missing.map((row) => {
+              const key = `${row.position}:${row.title}`;
+              const state = adding[key];
+              return (
+                <li key={key} className="catalogTrack albumGapRow" data-state={state}>
+                  <span className="catalogTrack__rank">{row.position}</span>
+                  <span className="catalogTrack__title">{row.title}</span>
+                  <button
+                    type="button"
+                    className="albumGapRow__add"
+                    disabled={!session || state === 'finding' || state === 'added'}
+                    aria-label={`Add ${row.title}`}
+                    title={
+                      state === 'missing'
+                        ? 'Not found to import'
+                        : state === 'added'
+                          ? 'Added'
+                          : `Add ${row.title}`
+                    }
+                    onClick={() => void addMissing(row)}
+                  >
+                    {state === 'added' ? (
+                      <Check size={14} />
+                    ) : state === 'missing' ? (
+                      <X size={14} />
+                    ) : state === 'finding' ? (
+                      <span className="artistAlbumSpin" aria-label="Finding it" />
+                    ) : (
+                      <Plus size={14} />
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      )}
     </div>
   );
 }

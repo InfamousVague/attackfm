@@ -1421,8 +1421,14 @@ impl Db {
     pub fn albums_by_artist(&self, artist: &str) -> Vec<(String, Vec<(String, Option<i64>)>)> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
+            // EITHER credit, because a record with a guest on two songs has
+            // three track artists and one album artist - matching the track
+            // credit alone loses those songs, and a record whose songs are ALL
+            // credited that way disappears from the artist entirely.
             "SELECT album, title, track_no FROM tracks
-              WHERE deleted = 0 AND TRIM(album) <> '' AND LOWER(TRIM(artist)) = LOWER(TRIM(?1))
+              WHERE deleted = 0 AND TRIM(album) <> ''
+                AND (LOWER(TRIM(artist)) = LOWER(TRIM(?1))
+                     OR LOWER(TRIM(COALESCE(album_artist, ''))) = LOWER(TRIM(?1)))
               ORDER BY album, COALESCE(track_no, 9999), title",
         ) else {
             return Vec::new();
@@ -3041,6 +3047,24 @@ impl Db {
             |r| r.get::<_, i64>(0),
         )
         .unwrap_or(0)
+    }
+
+    /// The titles this library holds from one record, for marking a catalogue
+    /// tracklist up. Same either-credit rule as albums_by_artist.
+    pub fn album_track_titles(&self, artist: &str, album: &str) -> Vec<String> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT title FROM tracks
+              WHERE deleted = 0
+                AND LOWER(TRIM(album)) = LOWER(TRIM(?2))
+                AND (LOWER(TRIM(artist)) = LOWER(TRIM(?1))
+                     OR LOWER(TRIM(COALESCE(album_artist, ''))) = LOWER(TRIM(?1)))",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(rusqlite::params![artist, album], |r| r.get::<_, String>(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
     }
 
     /// Who is behind a batch of new arrivals, if anyone in particular: the
