@@ -7,6 +7,12 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.85
+
+- Two new notifications: songs the collector found waiting for a date, and a weekly recap of what you played
+- "While you were away" now names who most of the new music was by
+- A Notifications pane in settings, with a switch for each kind
+
 ## 0.3.84
 
 - Paused, the player bar can be swiped down out of the way; it comes back on its own with the next song

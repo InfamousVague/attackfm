@@ -1,10 +1,15 @@
 //! Push notifications, out to the phone.
 //!
-//! Four things are worth interrupting somebody for, and no more: a playlist
-//! their curator just built, music that has landed in the library, a friend
-//! asking, and - every few days, not every day - a note of what arrived. Each
-//! is a `Kind` below, each can be switched off on its own, and anything not
-//! on that list is not a notification.
+//! Only a few things are worth interrupting somebody for: a playlist their
+//! curator just built, music that has landed in the library, auditions waiting
+//! to be met, a friend asking, and - on a clock rather than an event - a note
+//! of what arrived and a recap of the week. Each is a `Kind` below, each can
+//! be switched off on its own, and anything not on that list is not a
+//! notification.
+//!
+//! The event-driven kinds are raised where the event happens (`imports.rs`,
+//! `discovery.rs`); the rest are swept hourly by `sweeps` at the foot of this
+//! file, each holding its own distance from the last one it sent.
 //!
 //! ## What it takes to actually send
 //!
@@ -50,6 +55,10 @@ pub enum Kind {
     Friends,
     /// The every-few-days round-up.
     Digest,
+    /// Auditions the collector fetched are waiting to be met in Date mode.
+    Dates,
+    /// The week just gone, in hours and a name.
+    Recap,
 }
 
 impl Kind {
@@ -59,9 +68,16 @@ impl Kind {
             Kind::Drops => "drops",
             Kind::Friends => "friends",
             Kind::Digest => "digest",
+            Kind::Dates => "dates",
+            Kind::Recap => "recap",
         }
     }
 }
+
+/// Every kind there is. The prefs endpoints both walk this, so a `Kind` added
+/// above is switchable the moment it is listed here and nowhere else.
+pub const ALL_KINDS: [Kind; 6] =
+    [Kind::Curated, Kind::Drops, Kind::Friends, Kind::Digest, Kind::Dates, Kind::Recap];
 
 /// How long a signing token is reused before a fresh one is minted. Apple's
 /// ceiling is an hour and its floor is twenty minutes (mint faster and it
@@ -72,6 +88,23 @@ const TOKEN_REUSE_SECS: i64 = 50 * 60;
 /// means what it says - a digest that arrives daily is a notification people
 /// switch off, and then they have switched off the only one that summarises.
 pub const DIGEST_GAP_MS: i64 = 3 * 24 * 60 * 60 * 1000;
+
+/// The least time between two "waiting to be met" nudges. Once a day at most:
+/// the pile is not urgent, and a queue that pesters is a queue people stop
+/// opening.
+pub const DATES_GAP_MS: i64 = 24 * 60 * 60 * 1000;
+
+/// How many auditions must be waiting before it is worth saying anything. One
+/// song is not an occasion, and the collector trickles.
+pub const DATES_FLOOR: i64 = 5;
+
+/// A recap is weekly or it is not a recap.
+pub const RECAP_GAP_MS: i64 = 7 * 24 * 60 * 60 * 1000;
+
+/// Below this the week had no shape worth reporting. A recap that says "you
+/// played 2 songs" is a reminder that you did not listen, which nobody asked
+/// for.
+pub const RECAP_FLOOR: i64 = 10;
 
 pub struct Apns {
     key_pem: Vec<u8>,
@@ -299,8 +332,7 @@ pub async fn prefs(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Ap
     let who = caller(&state, &headers)?;
     let set: std::collections::HashMap<String, bool> =
         state.db.push_prefs(who.id).into_iter().collect();
-    let all = [Kind::Curated, Kind::Drops, Kind::Friends, Kind::Digest];
-    let prefs: serde_json::Map<String, Value> = all
+    let prefs: serde_json::Map<String, Value> = ALL_KINDS
         .iter()
         .map(|k| (k.as_str().to_string(), Value::Bool(*set.get(k.as_str()).unwrap_or(&true))))
         .collect();
@@ -320,9 +352,7 @@ pub async fn set_pref(
     Json(body): Json<PrefBody>,
 ) -> ApiResult {
     let who = caller(&state, &headers)?;
-    let known = [Kind::Curated, Kind::Drops, Kind::Friends, Kind::Digest]
-        .iter()
-        .any(|k| k.as_str() == body.kind);
+    let known = ALL_KINDS.iter().any(|k| k.as_str() == body.kind);
     if !known {
         return Err((StatusCode::BAD_REQUEST, "no such notification kind".into()));
     }
@@ -330,37 +360,159 @@ pub async fn set_pref(
     Ok(Json(json!({ "ok": true })))
 }
 
-/// The every-few-days round-up, swept hourly: anyone with a device registered,
-/// whose last digest is old enough, and for whom something actually arrived
-/// since. `notify` re-checks the preference and stamps push_sent, so the sweep
-/// itself stays a straight walk.
-pub async fn digest_sweep(state: Arc<AppState>) {
+/// How long, said the way a person would. Minutes under an hour, hours and
+/// minutes above it - never "0h 47m", and never seconds.
+fn spell_duration(ms: i64) -> String {
+    let mins = ms / 60_000;
+    if mins < 60 {
+        return format!("{} min", mins.max(1));
+    }
+    let (h, m) = (mins / 60, mins % 60);
+    if m == 0 {
+        format!("{h} {}", if h == 1 { "hour" } else { "hours" })
+    } else {
+        format!("{h}h {m}m")
+    }
+}
+
+/// Whether one artist's share of a batch is worth putting a name to.
+///
+/// Two rules at once, and both are needed. It must be more than a single song,
+/// or "12 songs landed, 1 of them X" names the least interesting fact
+/// available; and it must be at least half the batch, or the name describes a
+/// minority and quietly misleads. Half exactly counts - a name that covers
+/// half the arrivals is the truest single thing that can be said about them.
+fn dominates(n: i64, total: i64) -> bool {
+    n >= 2 && n * 2 >= total
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Everything that arrives on a clock rather than on an event, swept hourly
+/// over anyone with a device registered.
+///
+/// Three kinds share the walk, and each one owns its own gap: the round-up of
+/// what landed, the nudge that auditions are waiting, and the week's recap.
+/// `notify` re-checks the listener's preference and stamps the send, so a kind
+/// switched off costs nothing here and a kind that fired keeps its distance
+/// without this loop tracking anything itself.
+///
+/// Nothing is sent for an empty window. A notification whose body is "nothing
+/// happened" is the fastest way to teach somebody to swipe the next one away.
+pub async fn sweeps(state: Arc<AppState>) {
     let mut ticker = tokio::time::interval(std::time::Duration::from_secs(60 * 60));
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         ticker.tick().await;
+        let now = now_ms();
         for user in state.db.push_audience() {
-            let last = state.db.push_last_sent(user, Kind::Digest.as_str());
-            let now = std::time::SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_millis() as i64)
-                .unwrap_or(0);
-            if now - last < DIGEST_GAP_MS {
-                continue;
-            }
-            // Counted from the gap's start, not from `last`: a first-ever
-            // digest should speak for the last few days, not all of history.
-            let since = last.max(now - DIGEST_GAP_MS);
-            let landed = state.db.tracks_added_since(since);
-            if landed <= 0 {
-                continue;
-            }
-            let body = if landed == 1 {
-                "1 song landed in the library while you were away.".to_string()
-            } else {
-                format!("{landed} songs landed in the library while you were away.")
-            };
-            notify(&state, user, Kind::Digest, "While you were away".into(), body);
+            digest_for(&state, user, now);
+            dates_for(&state, user, now);
+            recap_for(&state, user, now);
         }
+    }
+}
+
+/// What landed while they were away, and who most of it was by.
+fn digest_for(state: &Arc<AppState>, user: i64, now: i64) {
+    let last = state.db.push_last_sent(user, Kind::Digest.as_str());
+    if now - last < DIGEST_GAP_MS {
+        return;
+    }
+    // Counted from the gap's start, not from `last`: a first-ever digest
+    // should speak for the last few days, not all of history.
+    let since = last.max(now - DIGEST_GAP_MS);
+    let landed = state.db.tracks_added_since(since);
+    if landed <= 0 {
+        return;
+    }
+    let mut body = if landed == 1 {
+        "1 song landed in the library while you were away.".to_string()
+    } else {
+        format!("{landed} songs landed in the library while you were away.")
+    };
+    // The name only earns its place when it accounts for a real share of the
+    // batch - otherwise "12 songs landed, 1 of them X" says less than nothing.
+    if let Some((artist, n)) = state.db.top_artist_added_since(since) {
+        if dominates(n, landed) {
+            body.push_str(&format!(" Mostly {artist}."));
+        }
+    }
+    notify(state, user, Kind::Digest, "While you were away".into(), body);
+}
+
+/// The collector's pile, which otherwise sits unmet: Date mode is a page you
+/// have to think to open, and nobody thinks to open it for music they do not
+/// know is there.
+fn dates_for(state: &Arc<AppState>, user: i64, now: i64) {
+    if now - state.db.push_last_sent(user, Kind::Dates.as_str()) < DATES_GAP_MS {
+        return;
+    }
+    let waiting = state.db.auditions_waiting(user);
+    if waiting < DATES_FLOOR {
+        return;
+    }
+    notify(
+        state,
+        user,
+        Kind::Dates,
+        "Waiting to meet you".into(),
+        format!("{waiting} songs your curator found are waiting for a date."),
+    );
+}
+
+/// The week just gone. Plays, time, and the one name that ran through it.
+fn recap_for(state: &Arc<AppState>, user: i64, now: i64) {
+    if now - state.db.push_last_sent(user, Kind::Recap.as_str()) < RECAP_GAP_MS {
+        return;
+    }
+    let since = now - RECAP_GAP_MS;
+    let (plays, ms) = state.db.listening_since(user, since);
+    if plays < RECAP_FLOOR {
+        return;
+    }
+    let mut body = format!("{plays} songs, {}.", spell_duration(ms));
+    if let Some((artist, n)) = state.db.top_artists(user, since, 1).into_iter().next() {
+        // Same rule as the digest: a name is worth printing when the week
+        // actually belonged to it.
+        if n >= 2 {
+            body.push_str(&format!(" Most of it {artist}."));
+        }
+    }
+    notify(state, user, Kind::Recap, "Your week in music".into(), body);
+}
+
+#[cfg(test)]
+mod push_tests {
+    use super::{dominates, spell_duration};
+
+    /// The shapes a listener actually sees. The one that matters is the hour
+    /// boundary: an unguarded h/m split prints "0h 47m" under an hour and
+    /// "1h 0m" on it, and both read as a bug in the app rather than a number.
+    #[test]
+    fn durations_read_like_a_person_wrote_them() {
+        assert_eq!(spell_duration(0), "1 min", "a rounded-down zero still happened");
+        assert_eq!(spell_duration(47 * 60_000), "47 min");
+        assert_eq!(spell_duration(59 * 60_000), "59 min");
+        assert_eq!(spell_duration(60 * 60_000), "1 hour");
+        assert_eq!(spell_duration(61 * 60_000), "1h 1m");
+        assert_eq!(spell_duration(120 * 60_000), "2 hours");
+        assert_eq!(spell_duration(195 * 60_000), "3h 15m");
+    }
+
+    /// A name is printed when it says something true about the batch.
+    #[test]
+    fn only_a_real_share_earns_a_name() {
+        assert!(!dominates(1, 1), "one song is not a pattern");
+        assert!(!dominates(1, 12), "the loneliest possible majority claim");
+        assert!(!dominates(5, 12), "under half says less than the count alone");
+        assert!(dominates(6, 12), "exactly half is the truest single thing");
+        assert!(dominates(12, 12), "all of it");
+        assert!(dominates(2, 3));
     }
 }
