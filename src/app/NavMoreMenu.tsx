@@ -1,14 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import {
-  ChartNoAxesColumn,
-  Disc3,
-  Download,
-  EllipsisVertical,
-  Flame,
-  Settings,
-  UsersRound,
-} from '@glacier/icons';
+import { Download, EllipsisVertical, Settings, UsersRound } from '@glacier/icons';
 import { useHasDownloadQueue, usePluginPages } from '../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
 
@@ -47,13 +39,10 @@ export function NavMoreMenu({
   const [open, setOpen] = useState(false);
 
   // The ⋮ lights when what is on screen lives in this menu.
+  // Stats and Date are Profile's rooms now, so the drawer no longer claims
+  // them; the DJ moved into the Booth's nav seat.
   const onMenuDest =
-    pages.some((pg) => pg.key === tab) ||
-    tab === 'stats' ||
-    tab === 'dj' ||
-    tab === 'date' ||
-    tab === 'friends' ||
-    tab === 'downloads';
+    pages.some((pg) => pg.key === tab) || tab === 'friends' || tab === 'downloads';
 
   const go = (next: string) => {
     setOpen(false);
@@ -120,35 +109,9 @@ export function NavMoreMenu({
 
         {pages.length > 0 && <span className="appNavBarPlugins__divider" aria-hidden />}
 
-        {/* Meet the music the DJ fetched: snippet playing, swipe to keep or
-            pass. Session-gated pages handle their own signed-out face. */}
-        <button
-          type="button"
-          role="menuitem"
-          className="appNavBarPlugins__item"
-          data-active={tab === 'date' || undefined}
-          onClick={() => go('date')}
-        >
-          <span className="appNavBarPlugins__itemIcon" aria-hidden>
-            <Flame size={18} />
-          </span>
-          <span className="appNavBarPlugins__itemLabel">Date</span>
-        </button>
-
-        {/* The DJ, as a conversation - everyone's, not just the owner's: it
-            reads the caller's own taste. */}
-        <button
-          type="button"
-          role="menuitem"
-          className="appNavBarPlugins__item"
-          data-active={tab === 'dj' || undefined}
-          onClick={() => go('dj')}
-        >
-          <span className="appNavBarPlugins__itemIcon" aria-hidden>
-            <Disc3 size={18} />
-          </span>
-          <span className="appNavBarPlugins__itemLabel">DJ</span>
-        </button>
+        {/* Date and Stats live inside Profile as rooms now, and the DJ holds
+            a real nav seat as the Booth - the drawer keeps only what has no
+            better home: Friends, the download queue while it runs, Settings. */}
 
         {/* The people, reachable without going through Profile first. The
             profile page keeps its own door onto this - the one with their
@@ -170,19 +133,6 @@ export function NavMoreMenu({
             <UsersRound size={18} />
           </span>
           <span className="appNavBarPlugins__itemLabel">Friends</span>
-        </button>
-
-        <button
-          type="button"
-          role="menuitem"
-          className="appNavBarPlugins__item"
-          data-active={tab === 'stats' || undefined}
-          onClick={() => go('stats')}
-        >
-          <span className="appNavBarPlugins__itemIcon" aria-hidden>
-            <ChartNoAxesColumn size={18} />
-          </span>
-          <span className="appNavBarPlugins__itemLabel">Stats</span>
         </button>
 
         {hasQueue && (

@@ -7,6 +7,14 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.89
+
+- The Booth: the DJ, your mixes, and what the curator is up to — one room, with its own preferences, in the nav where Search used to be
+- Search is a pull now: drag down on any page (or ⌘K) and it drops in; close it and you're right where you were
+- Profile is about you: This week and Dates live there as rooms, not buried in the ⋯ menu
+- A little light in the header says whether your server is close, far, or unreachable — tap it for the story and the controls
+- Settings has a search field, remembers the panes you use, and is two panes lighter
+
 ## 0.3.88
 
 - Android: play, pause and skip work from outside the app now — lock screen, a paired computer's media panel, a car — even resuming while the app sleeps in the background
