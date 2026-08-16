@@ -196,9 +196,9 @@ export function BoothPage({
     <div className="boothPage">
       <header className="boothHead">
         <h1 className="boothHead__title">The Booth</h1>
-        {/* The pill is the loop's real phase, and the two dots are the two
-            halves of the model stack: the embedder that reads, the chat
-            model that names. Tapping it opens the brain's preferences. */}
+        {/* The pill is the loop's real phase; tapping it opens the brain's
+            preferences. Model health lives in the brain card below, where it
+            gets words - two bare dots up here read as stray punctuation. */}
         <button
           type="button"
           className="boothPulse"
@@ -207,18 +207,6 @@ export function BoothPage({
         >
           <pulse.Icon size={13} aria-hidden="true" />
           <span className="boothPulse__text">{pulse.text}</span>
-          <span
-            className="boothPulse__dot"
-            data-lit={feed?.status.embeddings || undefined}
-            title={feed?.status.embeddings ? 'Lyrics being read' : 'Embedder off'}
-            aria-hidden="true"
-          />
-          <span
-            className="boothPulse__dot"
-            data-lit={(feed?.status.chat ?? feed?.status.ai) || undefined}
-            title={(feed?.status.chat ?? feed?.status.ai) ? 'Model on' : 'Model off'}
-            aria-hidden="true"
-          />
         </button>
       </header>
 
