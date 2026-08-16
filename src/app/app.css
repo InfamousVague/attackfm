@@ -1641,8 +1641,11 @@ body:has(.npScreen[data-docked]) .appNavScrim {
   position: relative;
   display: grid;
   place-items: center;
-  inline-size: 2.75rem;
-  block-size: 2.1rem;
+  /* A SQUARE, to the pixel - the first cut was 2.75 x 2.1 "near-square",
+     which the eye reads instantly as a squashed rectangle. Held to the
+     height the island can afford under the label. */
+  inline-size: 2.2rem;
+  block-size: 2.2rem;
   border-radius: 0.8rem;
   transition:
     color 0.16s ease,
