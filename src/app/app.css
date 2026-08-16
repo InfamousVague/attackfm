@@ -1586,9 +1586,10 @@ body:has(.npScreen[data-docked]) .appNavScrim {
    *
    * Progressive on purpose - Chromium draws the superellipse (so Android and
    * the desktop app get it), WebKit ignores the line and keeps the rounded
-   * rectangle, which is the shape it has always drawn here.
+   * rectangle - so the fallback radius below is generous too, deep enough to
+   * read app-icon-soft even as plain arcs on a 3.4rem square.
    */
-  border-radius: var(--glacier-radius-lg, 0.9rem);
+  border-radius: 1.15rem;
   background: none;
   cursor: pointer;
   color: var(--glacier-text-subtle);
@@ -1601,7 +1602,7 @@ body:has(.npScreen[data-docked]) .appNavScrim {
    takes both lines; WebKit keeps the modest rounded square above. */
 @supports (corner-shape: squircle) {
   .appNavBarTab {
-    border-radius: 38%;
+    border-radius: 45%;
     corner-shape: squircle;
   }
 }

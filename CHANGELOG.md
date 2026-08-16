@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.104
+
+- The lit tab's square got the softer, deeper corner curve — properly squircle now, on every engine
+
 ## 0.3.103
 
 - The stray dots beside "Mixes freshened…" are gone — model health lives in the brain card, where it gets words
