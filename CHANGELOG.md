@@ -11,6 +11,12 @@ they are read on a phone, in a strip, one thumb away from a song.
 
 - Tapping a song on an album page plays it from anywhere in the row, not just exactly on its title
 - Album songs are proper song rows now — full height, the guest credit under the title, and holes lining up in the same column
+- The Booth is an instrument panel now: everything on it is a live reading from the AI that runs your library
+- Drop the needle — one big button starts a set built from what you play, with mood chips (chill, energy, late night, focus) that steer it in one tap
+- On the platter: whatever's playing, as the DJ hears it — its traits as little glyphed chips, your note if you wrote one, and an honest byline saying whether a model heard it or it was read by ear
+- The header pill shows what the curator is doing right now; the brain card counts what's been read, fingerprinted, and collected
+- Every mix card has a tune button — rebuild that mix by the traits that made it
+- The DJ conversation opens fullscreen now instead of living in a cramped card
 
 ## 0.3.93
 
