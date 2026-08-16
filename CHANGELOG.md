@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.101
+
+- The bar grew a little so the lit tab could become an actual square — icon and name in one app-icon-shaped plate, identical on every tab
+
 ## 0.3.100
 
 - The lit tab's squircle covers the icon and its name again — at one fixed size, so Discover's plate is exactly Booth's
