@@ -34,20 +34,30 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 bold() { printf '\033[1m%s\033[0m\n' "$1"; }
 say()  { printf '  %s\n' "$1"; }
 
-# Where the binary comes from: a prebuilt one beside this script (bundle
-# mode), or a fresh build of the checkout this script lives in (repo mode).
-if [ -f "$HERE/attackfm-server" ]; then
-  BIN_SRC="$HERE/attackfm-server"
-elif [ -f "$HERE/Cargo.toml" ]; then
+# Where the binary comes from: a fresh build of the checkout this script lives
+# in (repo mode), or a prebuilt one beside it (bundle mode).
+#
+# REPO MODE IS CHECKED FIRST, deliberately. This used to prefer any sibling
+# `attackfm-server` file - and a stale prebuilt left over from an old bundle
+# unpack then silently outranked the checkout forever: `git pull` moved the
+# code, the "update" reinstalled the same old binary, and new endpoints 404ed
+# while everything claimed success. A checkout with a Cargo.toml builds, full
+# stop; a loose binary beside it is a leftover, and is named as one.
+if [ -f "$HERE/Cargo.toml" ]; then
   command -v cargo >/dev/null 2>&1 || {
     echo "This is a repo checkout, so the server builds here - but cargo is missing."
     echo "One-time setup:  curl https://sh.rustup.rs -sSf | sh   (then re-run this script)"
     exit 1
   }
+  if [ -f "$HERE/attackfm-server" ]; then
+    say "ignoring the loose attackfm-server beside this script - a repo checkout builds its own"
+  fi
   bold "Building the server from this checkout"
   (cd "$HERE" && cargo build --release)
   BIN_SRC="$HERE/target/release/attackfm-server"
   [ -f "$BIN_SRC" ] || { echo "Build finished but no binary at $BIN_SRC."; exit 1; }
+elif [ -f "$HERE/attackfm-server" ]; then
+  BIN_SRC="$HERE/attackfm-server"
 else
   echo "No attackfm-server binary next to this script and no Cargo.toml either -"
   echo "run from a repo checkout's server/ directory or an unpacked bundle."
@@ -210,6 +220,24 @@ if [ -n "$ok" ]; then
   say "up: $ok"
 else
   echo "  Did not answer on :$PORT - check $LOG_DIR/server.log"; exit 1
+fi
+
+# The answering process must be the binary just installed, not a survivor.
+# Probing a recent route is the cheapest honest proof: 404 on it means the
+# RUNNING server predates this checkout - a stale prebuilt got installed, or
+# launchd kept an old process - and everything above lied by omission. This
+# exact failure once had a phone showing half-albums for days while every
+# "update" reported success.
+freshness="$(curl -s -o /dev/null -w '%{http_code}' -m 3 "http://127.0.0.1:$PORT/api/album/tracks?artist=x&album=y" || echo 000)"
+if [ "$freshness" = "404" ]; then
+  echo ""
+  echo "  *** The running server is OLDER than this checkout. ***"
+  echo "  A route this code carries answered 404. Likely causes:"
+  echo "    - a stale prebuilt attackfm-server was installed (fixed in this script; re-run it)"
+  echo "    - launchd kept an old process: launchctl bootout gui/\$(id -u)/$LABEL and re-run"
+  exit 1
+else
+  say "freshness check: current routes answer ($freshness)"
 fi
 
 # --- Ollama (the curator's brain) ------------------------------------------
