@@ -1541,12 +1541,15 @@ body:has(.npScreen[data-docked]) .appNavScrim {
   box-shadow: var(--glacier-shadow-lg, -18px 0 42px rgb(0 0 0 / 0.45));
 }
 
-/* Fixed, not flex-1: the plate must be the same object on every tab, so the
-   tab takes a set width and space-evenly deals the leftover air. */
+/* Fixed, not flex-1 - and SQUARE: the plate must be the same object on every
+   tab (a tab sized by its label lit "Discover" twice as wide as "Booth"),
+   and equal sides are what the eye checks. The island above grew to hold
+   this height. */
 .appNavBar .appNavBarTab {
   min-inline-size: 0;
   flex: none;
   inline-size: 3.9rem;
+  block-size: 3.9rem;
 }
 
 .appNavBar .appNavBarTab__label {
@@ -1721,7 +1724,7 @@ body:has(.npScreen[data-docked]) .appNavScrim {
      the old round "4rem + steps" overshot the real island and left the menu
      floating a room's height above the bar it belongs to. */
   inset-block-end: calc(
-    var(--glacier-space-2) + var(--glacier-space-1) + 3.5rem +
+    var(--glacier-space-2) + var(--glacier-space-1) + var(--app-nav-island-height) +
       env(safe-area-inset-bottom, 0px) * 0.75 + var(--glacier-space-2)
   );
   inset-inline-end: var(--glacier-space-2);
@@ -1897,9 +1900,9 @@ body:has(.npScreen[data-docked]) .summonHintChip {
    actual presence, so no JS and no media query can drift from truth. */
 .appWindow {
   --app-nav-height: 0px;
-  /* The island's own height: the band the tabs live in, not counting the chin
-     below them or the brand button that overhangs their top. */
-  --app-nav-island-height: 3.5rem;
+  /* The island's own height lives on :root (with --np-dock-width), because
+     the body-portalled ⋮ menu positions against it and a var scoped here is
+     invisible out there. */
   /* What the nav card holds back from the screen's edges - the same margin on
      the sides and underneath, so the card sits in an even frame rather than
      floating wide and welded low. Matched to the player plate's own inset (its
@@ -14083,6 +14086,12 @@ button.artistAlbum {
    32rem cap stops a desktop-sized webview from building a ballroom. */
 :root {
   --np-dock-width: min(40vw, 32rem);
+  /* The island grew from 3.5rem so the lit tab's plate can be an actual
+     SQUARE around glyph + name - the third try at "not stretched" and the
+     one that holds, because at 3.5rem a square that fits a name cannot fit
+     the band. On :root, not .appWindow: the ⋮ menu is portalled to the body
+     and positions against this. */
+  --app-nav-island-height: 4.5rem;
 }
 
 /* Wide enough for two rooms, and this is mobile chrome (the nav bar is its
