@@ -20,6 +20,7 @@
 //! | `AFM_ASSETS_DIR` | `<data>/assets` | Drop folder for generated artwork, served at `/api/assets` (checkout set beneath). |
 //! | `AFM_PUBLIC_URL` | *(empty)* | The public origin, e.g. `https://matt.attack.fm` - needed for the Spotify OAuth redirect. |
 
+mod ai;
 mod appbundle;
 mod albums;
 mod api;
@@ -35,6 +36,7 @@ mod db;
 mod discover;
 mod discovery;
 mod dj;
+mod enrichment;
 mod features;
 mod friends;
 mod home;
@@ -51,9 +53,9 @@ mod refetch;
 mod registry_auth;
 mod rewind;
 mod scan;
+mod search;
 mod spotify;
 mod spotify_sync;
-mod search;
 mod stream;
 mod tempo;
 mod tools;
@@ -145,7 +147,10 @@ pub struct AppState {
 }
 
 fn env_or(key: &str, fallback: &str) -> String {
-    std::env::var(key).ok().filter(|v| !v.is_empty()).unwrap_or_else(|| fallback.to_string())
+    std::env::var(key)
+        .ok()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| fallback.to_string())
 }
 
 /// The whole command line: two flags that report and exit.
@@ -248,15 +253,28 @@ async fn main() {
     // plus an index.json, published by `npm run redeploy -- plugins`. Served
     // unauthenticated - a plugin repo is a distribution channel, and the app
     // fetches it before anyone signs in.
-    let plugins_dir = PathBuf::from(env_or("AFM_PLUGINS_DIR", &data_dir.join("plugins").display().to_string()));
+    let plugins_dir = PathBuf::from(env_or(
+        "AFM_PLUGINS_DIR",
+        &data_dir.join("plugins").display().to_string(),
+    ));
     // The generated artwork the app's surfaces wear (genre tiles, mix covers,
     // empty states). AFM_ASSETS_DIR is the drop folder and wins; the set that
     // ships with the checkout stands beneath it as a fallback, so a bare
     // install still has every face. Unauthenticated like /plugins - cosmetic,
     // fetched before anyone signs in.
-    let assets_dir = PathBuf::from(env_or("AFM_ASSETS_DIR", &data_dir.join("assets").display().to_string()));
+    let assets_dir = PathBuf::from(env_or(
+        "AFM_ASSETS_DIR",
+        &data_dir.join("assets").display().to_string(),
+    ));
     let assets_baked = PathBuf::from(env_or("AFM_ASSETS_BAKED", "server/assets/artwork"));
-    for dir in [&data_dir, &art_dir, &upload_dir, &music_root, &plugins_dir, &assets_dir] {
+    for dir in [
+        &data_dir,
+        &art_dir,
+        &upload_dir,
+        &music_root,
+        &plugins_dir,
+        &assets_dir,
+    ] {
         if let Err(e) = std::fs::create_dir_all(dir) {
             eprintln!("[attackfm] cannot create {}: {e}", dir.display());
             std::process::exit(1);
@@ -320,7 +338,12 @@ async fn main() {
 
     // Index what is already there before taking requests, in the background so
     // a large library does not hold the port closed.
-    scan::spawn_scan(db.clone(), music_root.clone(), art_dir.clone(), progress.clone());
+    scan::spawn_scan(
+        db.clone(),
+        music_root.clone(),
+        art_dir.clone(),
+        progress.clone(),
+    );
 
     // The import runner: downloads links onto this box and indexes them as
     // they land, so every device's catalog follows.
@@ -347,13 +370,19 @@ async fn main() {
         let art_dir = art_dir.clone();
         let progress = progress.clone();
         tokio::spawn(async move {
-            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(scan_minutes * 60));
+            let mut ticker =
+                tokio::time::interval(std::time::Duration::from_secs(scan_minutes * 60));
             // The first tick fires immediately and the boot scan already covers
             // it, so it is spent here rather than duplicating that work.
             ticker.tick().await;
             loop {
                 ticker.tick().await;
-                scan::spawn_scan(db.clone(), music_root.clone(), art_dir.clone(), progress.clone());
+                scan::spawn_scan(
+                    db.clone(),
+                    music_root.clone(),
+                    art_dir.clone(),
+                    progress.clone(),
+                );
             }
         });
     }
@@ -365,7 +394,14 @@ async fn main() {
     // scrub bar that does not work.
     let cors = CorsLayer::new()
         .allow_origin(Any)
-        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE, Method::HEAD, Method::OPTIONS])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::DELETE,
+            Method::HEAD,
+            Method::OPTIONS,
+        ])
         .allow_headers(Any)
         .expose_headers([
             header::CONTENT_LENGTH,
@@ -373,7 +409,10 @@ async fn main() {
             header::ACCEPT_RANGES,
             header::CONTENT_TYPE,
             header::ETAG,
-            HeaderValue::from_static("x-attackfm-track").as_bytes().try_into().unwrap(),
+            HeaderValue::from_static("x-attackfm-track")
+                .as_bytes()
+                .try_into()
+                .unwrap(),
         ]);
 
     let app = Router::new()
@@ -405,7 +444,10 @@ async fn main() {
         .route("/api/art/candidates", get(tools::art_candidates))
         .route("/api/album-art", post(tools::set_album_art))
         .route("/api/library/duplicates", get(tools::duplicates))
-        .route("/api/library/duplicates/resolve", post(tools::resolve_duplicates))
+        .route(
+            "/api/library/duplicates/resolve",
+            post(tools::resolve_duplicates),
+        )
         .route("/api/storage", get(tools::storage))
         .route("/api/library/remove", post(tools::remove_tracks))
         .route("/api/library/trash", get(tools::trash_status))
@@ -423,10 +465,7 @@ async fn main() {
         .route("/api/refetch/{id}/audio/{index}", get(refetch::preview))
         .route("/api/refetch/{id}/keep", post(refetch::keep))
         .route("/api/imports/clear", post(imports::clear))
-        .route(
-            "/api/imports/{id}",
-            axum::routing::delete(imports::remove),
-        )
+        .route("/api/imports/{id}", axum::routing::delete(imports::remove))
         .route("/api/imports/{id}/cancel", post(imports::cancel))
         .route("/api/imports/{id}/retry", post(imports::retry))
         .route("/api/scan", get(api::scan_status).post(api::scan_now))
@@ -434,12 +473,18 @@ async fn main() {
         .route("/api/stats/summary", get(listens::summary))
         .route("/api/favorites", get(api::favorites))
         .route("/api/favorites/{id}", put(api::set_favorite))
-        .route("/api/playlists", get(api::playlists).post(api::create_playlist))
+        .route(
+            "/api/playlists",
+            get(api::playlists).post(api::create_playlist),
+        )
         .route(
             "/api/playlists/{id}",
             put(api::update_playlist).delete(api::delete_playlist),
         )
-        .route("/api/play-state", get(api::play_states).post(api::set_play_state))
+        .route(
+            "/api/play-state",
+            get(api::play_states).post(api::set_play_state),
+        )
         .route("/api/plays", post(home::record_play))
         .route("/api/listens", post(listens::record))
         .route("/api/artist-top", get(home::artist_top))
@@ -477,8 +522,18 @@ async fn main() {
         .route("/api/mirror/status", get(mirror::status))
         .route("/api/curator/pulls/settings", post(collector::settings))
         .route("/api/dj", get(dj::station))
+        .route("/api/dj/analyze", post(dj::analyze_seed))
+        .route("/api/dj/note", post(dj::set_note))
+        .route("/api/dj/queue", post(dj::trait_queue))
         .route("/api/features/status", get(features::status))
-        .route("/api/playlists/{id}/suggestions", get(curator::playlist_suggestions))
+        .route(
+            "/api/debug/song-profiles/{id}",
+            get(enrichment::debug_profile),
+        )
+        .route(
+            "/api/playlists/{id}/suggestions",
+            get(curator::playlist_suggestions),
+        )
         .route("/api/discoveries", get(discovery::feed))
         .route("/api/new-music", get(discovery::new_music))
         .route("/api/discoveries/dismiss", post(discovery::dismiss))
@@ -507,9 +562,18 @@ async fn main() {
             "/api/spotify/sync",
             get(spotify::sync_status).post(spotify::sync_now),
         )
-        .route("/api/spotify/mirror/{key}/items", get(spotify::mirror_items))
-        .route("/api/spotify/mirror/{key}/retry", post(spotify::mirror_retry))
-        .route("/api/spotify/mirror/{key}/forget", post(spotify::mirror_forget))
+        .route(
+            "/api/spotify/mirror/{key}/items",
+            get(spotify::mirror_items),
+        )
+        .route(
+            "/api/spotify/mirror/{key}/retry",
+            post(spotify::mirror_retry),
+        )
+        .route(
+            "/api/spotify/mirror/{key}/forget",
+            post(spotify::mirror_forget),
+        )
         .route("/api/audiobooks/search", get(audiobooks::search))
         .route("/api/audiobooks/import", post(audiobooks::import))
         .route("/api/audiobooks/jobs", get(audiobooks::jobs))
@@ -531,12 +595,14 @@ async fn main() {
         // this cuts it roughly 4x for every client at once). Media stays
         // untouched: FLAC and JPEG do not compress, and the streams' Range
         // handling must never sit behind an encoder.
-        .layer(CompressionLayer::new().compress_when(
-            SizeAbove::new(1024)
-                .and(NotForContentType::new("audio/"))
-                .and(NotForContentType::new("video/"))
-                .and(NotForContentType::new("image/")),
-        ))
+        .layer(
+            CompressionLayer::new().compress_when(
+                SizeAbove::new(1024)
+                    .and(NotForContentType::new("audio/"))
+                    .and(NotForContentType::new("video/"))
+                    .and(NotForContentType::new("image/")),
+            ),
+        )
         .layer(cors)
         .with_state(state);
 
@@ -554,7 +620,11 @@ async fn main() {
     println!("[attackfm] data    {}", data_dir.display());
     println!(
         "[attackfm] transcode {}",
-        if ffmpeg { "available" } else { "unavailable (no ffmpeg on PATH)" }
+        if ffmpeg {
+            "available"
+        } else {
+            "unavailable (no ffmpeg on PATH)"
+        }
     );
 
     if let Err(e) = axum::serve(listener, app)

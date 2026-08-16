@@ -9,25 +9,85 @@
 //! live. A free-text `seed` steers the whole thing - "something mellow for a
 //! rainy morning" - by standing in for the listener's centroid.
 
+use crate::ai::AiClient;
 use crate::auth;
-use crate::curator::{score, taste_from};
+use crate::curator::{cosine, score, taste_from};
 use crate::db::TrackFeatures;
 use crate::AppState;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
+use rand::Rng;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// At most this many from one artist, so the DJ never gets stuck on a favourite.
 const PER_ARTIST_CAP: usize = 2;
 /// How many recent plays define "lately" and get held back from the set.
 const RECENT_WINDOW: i64 = 80;
 
+const TRAIT_CACHE_MS: i64 = 7 * 24 * 60 * 60 * 1000;
+/// Per-generation movement for close matches. Four percentage points peak to
+/// peak changes ordering inside a quality tier without letting a weak match
+/// leapfrog a clearly better one.
+const QUEUE_SCORE_JITTER: f32 = 0.02;
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DjTrait {
+    pub id: String,
+    pub label: String,
+    pub category: String,
+    pub description: String,
+    pub weight: f32,
+    pub confidence: f32,
+    pub query: String,
+    #[serde(default)]
+    pub signals: TraitSignals,
+}
+
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TraitSignals {
+    pub energy: Option<f32>,
+    pub bpm_min: Option<f64>,
+    pub bpm_max: Option<f64>,
+    pub year_min: Option<i64>,
+    pub year_max: Option<i64>,
+    #[serde(default)]
+    pub genres: Vec<String>,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TraitAnalysis {
+    summary: String,
+    traits: Vec<DjTrait>,
+}
+
+#[derive(Clone)]
+struct CachedAnalysis {
+    at: i64,
+    value: TraitAnalysis,
+}
+
+static TRAIT_CACHE: OnceLock<tokio::sync::Mutex<HashMap<String, CachedAnalysis>>> = OnceLock::new();
+
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
 fn ai_url() -> Option<String> {
-    std::env::var("AFM_AI_URL").ok().filter(|s| !s.trim().is_empty())
+    std::env::var("AFM_AI_URL")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
 }
 
 /// The DJ's model. Separate from the offline curator's on purpose: the DJ answers
@@ -43,7 +103,9 @@ fn dj_model() -> String {
         // feed's `ai` flag is just "AFM_AI_URL is set", that failure was
         // indistinguishable from having no AI at all.
         .or_else(|| {
-            std::env::var("AFM_AI_MODEL").ok().filter(|s| !s.trim().is_empty())
+            std::env::var("AFM_AI_MODEL")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
         })
         .unwrap_or_else(|| "qwen2.5:7b".to_string())
 }
@@ -72,7 +134,11 @@ async fn embed(text: &str) -> Option<Vec<f32>> {
         .await
         .ok()?;
     let arr = reply.pointer("/data/0/embedding")?.as_array()?;
-    let v: Vec<f32> = arr.iter().filter_map(|x| x.as_f64()).map(|x| x as f32).collect();
+    let v: Vec<f32> = arr
+        .iter()
+        .filter_map(|x| x.as_f64())
+        .map(|x| x as f32)
+        .collect();
     (v.len() >= 32).then_some(v)
 }
 
@@ -123,8 +189,10 @@ pub async fn station(
         .collect();
     ranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
-    let artist_of: HashMap<i64, String> =
-        feats.iter().map(|f| (f.track_id, f.artist.to_lowercase())).collect();
+    let artist_of: HashMap<i64, String> = feats
+        .iter()
+        .map(|f| (f.track_id, f.artist.to_lowercase()))
+        .collect();
     let mut picks: Vec<i64> = Vec::new();
     let mut per_artist: HashMap<String, usize> = HashMap::new();
     for (_s, id) in ranked {
@@ -148,7 +216,9 @@ pub async fn station(
     let blocks = patter(&state, &picks, &seed)
         .await
         .unwrap_or_else(|| vec![json!({ "say": "", "trackIds": picks.clone() })]);
-    Ok(Json(json!({ "ai": ai_url().is_some(), "vibe": seed, "blocks": blocks })))
+    Ok(Json(
+        json!({ "ai": ai_url().is_some(), "vibe": seed, "blocks": blocks }),
+    ))
 }
 
 /// Ask the DJ model to break the chosen set into a few runs and open each with a
@@ -208,7 +278,12 @@ async fn patter(state: &Arc<AppState>, picks: &[i64], seed: &str) -> Option<Vec<
     let mut used: HashSet<i64> = HashSet::new();
     let mut blocks: Vec<Value> = Vec::new();
     for m in parsed {
-        let say = m.get("say").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+        let say = m
+            .get("say")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
         let ids: Vec<i64> = m
             .get("ids")
             .and_then(|v| v.as_array())
@@ -227,13 +302,858 @@ async fn patter(state: &Arc<AppState>, picks: &[i64], seed: &str) -> Option<Vec<
 
     // Whatever the model left out still gets played, tacked onto the last run so
     // nothing the selector chose is silently dropped.
-    let leftover: Vec<i64> = picks.iter().copied().filter(|id| !used.contains(id)).collect();
+    let leftover: Vec<i64> = picks
+        .iter()
+        .copied()
+        .filter(|id| !used.contains(id))
+        .collect();
     if !leftover.is_empty() {
-        match blocks.last_mut().and_then(|b| b.get_mut("trackIds")).and_then(|v| v.as_array_mut()) {
+        match blocks
+            .last_mut()
+            .and_then(|b| b.get_mut("trackIds"))
+            .and_then(|v| v.as_array_mut())
+        {
             Some(arr) => arr.extend(leftover.into_iter().map(|id| json!(id))),
             None => blocks.push(json!({ "say": "", "trackIds": leftover })),
         }
     }
 
     (!blocks.is_empty()).then_some(blocks)
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalyzeSeedBody {
+    #[serde(default)]
+    pub track_id: Option<i64>,
+    #[serde(default)]
+    pub track_ids: Vec<i64>,
+    #[serde(default)]
+    pub source: String,
+    #[serde(default)]
+    pub name: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TraitQueueBody {
+    #[serde(default)]
+    pub track_id: Option<i64>,
+    #[serde(default)]
+    pub track_ids: Vec<i64>,
+    pub traits: Vec<DjTrait>,
+    pub count: Option<usize>,
+}
+
+/// `POST /api/dj/analyze` - ask the configured local model what is musically
+/// interesting about one owned song. The model returns concepts, never tracks.
+pub async fn analyze_seed(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<AnalyzeSeedBody>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let user = auth::require_caller(&state.db, &headers)
+        .map_err(|s| (s, "sign in first".into()))?
+        .id;
+    let mut seed_ids = body.track_ids;
+    if let Some(id) = body.track_id {
+        seed_ids.insert(0, id);
+    }
+    seed_ids.sort_unstable();
+    seed_ids.dedup();
+    seed_ids.truncate(100);
+    if seed_ids.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "choose at least one song".into()));
+    }
+    let tracks = state.db.tracks_for_curation(&seed_ids);
+    if tracks.is_empty() {
+        return Err((StatusCode::NOT_FOUND, "no such tracks".into()));
+    }
+    let source = match body.source.as_str() {
+        "album" => "album",
+        "playlist" => "playlist",
+        _ => "song",
+    };
+    let is_collection = tracks.len() > 1 || source != "song";
+    let dj_note = (!is_collection)
+        .then(|| state.db.dj_note(user, tracks[0].id))
+        .unwrap_or_default();
+    let feature_by_id: HashMap<i64, TrackFeatures> = state
+        .db
+        .all_features()
+        .into_iter()
+        .map(|f| (f.track_id, f))
+        .collect();
+    let model = AiClient::configured()
+        .map(|c| c.chat_model().to_string())
+        .unwrap_or_default();
+    let enrichment_key = tracks
+        .iter()
+        .map(|t| format!("{}:{:.2}", t.ai_genres.join("|"), t.ai_confidence))
+        .collect::<Vec<_>>()
+        .join(";");
+    let cache_key = format!(
+        "{}:{:?}:{}:{}:{}",
+        source, seed_ids, model, enrichment_key, dj_note
+    );
+    let cache = TRAIT_CACHE.get_or_init(|| tokio::sync::Mutex::new(HashMap::new()));
+    if let Some(hit) = cache.lock().await.get(&cache_key).cloned() {
+        if now_ms() - hit.at < TRAIT_CACHE_MS {
+            return Ok(Json(json!({ "source": source, "trackIds": seed_ids,
+                "summary": hit.value.summary, "traits": hit.value.traits, "cached": true,
+                "ai": !model.is_empty(), "djNote": dj_note })));
+        }
+    }
+
+    let (analysis, used_ai) = if let Some(client) = AiClient::configured() {
+        let prompt = if is_collection {
+            let catalogue = tracks
+                .iter()
+                .map(|track| {
+                    let f = feature_by_id.get(&track.id);
+                    format!(
+                        "{} — {} | enriched genres: {} | sonic traits: {} | moods: {} | year: {} | bpm: {} | energy: {}",
+                        track.artist,
+                        track.title,
+                        track.ai_genres.join(", "),
+                        track.ai_sonic_traits.join(", "),
+                        track.ai_moods.join(", "),
+                        track
+                            .year
+                            .map(|v| v.to_string())
+                            .unwrap_or_else(|| "unknown".into()),
+                        f.and_then(|v| v.bpm)
+                            .map(|v| format!("{v:.0}"))
+                            .unwrap_or_else(|| "unknown".into()),
+                        f.and_then(|v| v.energy)
+                            .map(|v| format!("{v:.2}"))
+                            .unwrap_or_else(|| "unknown".into())
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            format!("Analyze the shared musical identity and useful sonic lanes inside this {} named '{}'. Offer exactly 4 selectable traits. At least 3 MUST describe audible qualities shared by several tracks: groove/rhythm, instrumentation, vocal delivery, production texture, energy, or specific style hybrids. Do not let the collection title, soundtrack/franchise placement, or one outlier define the answer. Queries must describe audible qualities, not proper nouns. The summary should explain the collection's musical center in under 60 words.\n\nTracks:\n{}", source, body.name, catalogue)
+        } else {
+            let track = &tracks[0];
+            let feature = feature_by_id.get(&track.id);
+            let lyrics: String = track.lyrics.chars().take(1800).collect();
+            format!(
+            "Analyze what is musically distinctive about this recording and what a listener may want more of. Offer exactly 4 distinct, selectable traits. At least 3 MUST describe the actual sound: groove/rhythm, instrumentation, vocal delivery, production texture, energy, or a specific hybrid of styles. Prefer supported enriched genres over broad file tags. Soundtrack, Films/Games, an album, or a franchise is context and MUST NOT be returned as a genre/style or retrieval query. The DJ note is high-value human direction but not verified fact. Keep labels and queries concise, sensory, and free of proper nouns. Do not name recommended songs.\n\nTitle: {}\nArtist: {}\nAlbum (context only): {}\nFile genre tag (possibly broad or wrong): {}\nEnriched genres/styles: {}\nEnriched sonic traits: {}\nEnriched moods: {}\nEnriched lyrical themes: {}\nEnrichment summary: {}\nEnrichment confidence: {:.2}\nDJ note: {}\nYear: {}\nBPM: {}\nMeasured energy (0-1): {}\nMeasured brightness (0-1): {}\nLyrics excerpt:\n{}",
+            track.title, track.artist, track.album, track.genre,
+            track.ai_genres.join(", "), track.ai_sonic_traits.join(", "), track.ai_moods.join(", "),
+            track.ai_lyrical_themes.join(", "), track.ai_summary, track.ai_confidence, dj_note,
+            track.year.map(|v| v.to_string()).unwrap_or_else(|| "unknown".into()),
+            feature.as_ref().and_then(|f| f.bpm).map(|v| format!("{v:.0}")).unwrap_or_else(|| "unknown".into()),
+            feature.as_ref().and_then(|f| f.energy).map(|v| format!("{v:.2}")).unwrap_or_else(|| "unknown".into()),
+            feature.as_ref().and_then(|f| f.brightness).map(|v| format!("{v:.2}")).unwrap_or_else(|| "unknown".into()),
+            lyrics
+        )
+        };
+        let schema = trait_schema();
+        match client.chat_json::<TraitAnalysis>(
+            "You are AttackFM's local music curator. Return compact, evidence-aware structured traits for the listener's own library.",
+            &prompt, "attackfm_trait_analysis", schema, true,
+        ).await {
+            Ok(value) => (value, true),
+            Err(error) => {
+                eprintln!("[attackfm] song trait AI failed; using measured fallback: {error}");
+                let track = &tracks[0];
+                (heuristic_analysis(track, feature_by_id.get(&track.id)), false)
+            }
+        }
+    } else {
+        let track = &tracks[0];
+        (
+            heuristic_analysis(track, feature_by_id.get(&track.id)),
+            false,
+        )
+    };
+    let analysis = sanitize_analysis(analysis);
+    if analysis.traits.is_empty() {
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "the DJ could not find useful traits for this song".into(),
+        ));
+    }
+    cache.lock().await.insert(
+        cache_key,
+        CachedAnalysis {
+            at: now_ms(),
+            value: analysis.clone(),
+        },
+    );
+    Ok(Json(json!({ "source": source, "trackIds": seed_ids,
+        "summary": analysis.summary, "traits": analysis.traits, "cached": false,
+        "ai": used_ai, "djNote": dj_note })))
+}
+
+/// `POST /api/dj/queue` - turn selected concepts into a semantic and
+/// feature-aware target, then rank only real rows from this server's library.
+pub async fn trait_queue(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<TraitQueueBody>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let user = auth::require_caller(&state.db, &headers)
+        .map_err(|s| (s, "sign in first".into()))?
+        .id;
+    let song_seed = body.track_id;
+    let mut seed_ids = body.track_ids;
+    if let Some(id) = song_seed {
+        seed_ids.insert(0, id);
+    }
+    seed_ids.sort_unstable();
+    seed_ids.dedup();
+    if seed_ids.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "choose at least one song".into()));
+    }
+    let selected: Vec<DjTrait> = body
+        .traits
+        .into_iter()
+        .take(12)
+        .map(sanitize_trait)
+        .filter(|t| !t.label.is_empty() && !t.query.is_empty())
+        .collect();
+    if selected.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "select at least one trait".into()));
+    }
+    let want = body.count.unwrap_or(24).clamp(6, 40);
+    let features = state.db.all_features();
+    let by_id: HashMap<i64, &TrackFeatures> = features.iter().map(|f| (f.track_id, f)).collect();
+    // A collection mix must retain the sound of the whole collection. Earlier
+    // this endpoint used the seed ids only as an exclusion list, so after the
+    // analysis step the queue had no direct knowledge of the album/playlist at
+    // all. Average every available member embedding and measured feature into
+    // a stable collection profile; an outlier can contribute, but cannot own it.
+    let seed_features: Vec<&TrackFeatures> = seed_ids
+        .iter()
+        .filter_map(|id| by_id.get(id).copied())
+        .collect();
+    let collection_centroid =
+        average_vectors(seed_features.iter().filter_map(|f| f.lyric_vec.as_deref()));
+    let collection_sonic =
+        average_vectors(seed_features.iter().filter_map(|f| f.sonic_vec.as_deref()));
+    let collection_lyrical = average_vectors(
+        seed_features
+            .iter()
+            .filter_map(|f| f.lyrical_vec.as_deref()),
+    );
+    let collection_community = average_vectors(
+        seed_features
+            .iter()
+            .filter_map(|f| f.community_vec.as_deref()),
+    );
+    let collection_energy = average_values(seed_features.iter().filter_map(|f| f.energy));
+    let collection_bpm = average_values(seed_features.iter().filter_map(|f| f.bpm));
+    let collection_brightness = average_values(seed_features.iter().filter_map(|f| f.brightness));
+    let collection_dynamic_range =
+        average_values(seed_features.iter().filter_map(|f| f.dynamic_range));
+    let collection_rhythmic_activity =
+        average_values(seed_features.iter().filter_map(|f| f.rhythmic_activity));
+    let collection_audio = average_owned_vectors(
+        seed_features
+            .iter()
+            .filter_map(|feature| audio_vector(feature)),
+    );
+    let collaborative_candidates: HashSet<&str> = seed_features
+        .iter()
+        .flat_map(|feature| feature.listenbrainz_similar.iter().map(String::as_str))
+        .collect();
+    let recent = state.db.recent_plays(user, RECENT_WINDOW);
+    let taste = taste_from(&recent, &by_id);
+    let liked: HashSet<i64> = state.db.favorites(user).into_iter().collect();
+    // The embedding is primarily a description of audible character. Context
+    // can add colour, but letting a soundtrack/scene phrase occupy an equal
+    // share made soundtrack cuts recommend other soundtrack cuts regardless
+    // of how unlike one another they sounded.
+    let target_text = selected
+        .iter()
+        .map(|t| {
+            let importance = category_importance(&t.category);
+            format!("audible trait (importance {importance:.1}): {}", t.query)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let semantic = match AiClient::configured() {
+        Some(client) => client.embed(&target_text).await.ok(),
+        None => None,
+    };
+    let held: HashSet<i64> = recent.into_iter().collect();
+    let mut rng = rand::thread_rng();
+    let mut ranked: Vec<(f32, &TrackFeatures, serde_json::Value)> = features
+        .iter()
+        .filter(|f| {
+            !seed_ids.contains(&f.track_id) && !held.contains(&f.track_id) && !f.quarantined
+        })
+        .map(|f| {
+            let trait_sem = match (&semantic, &f.lyric_vec) {
+                (Some(q), Some(v)) => (cosine(q, v) + 1.0) / 2.0,
+                _ => 0.5,
+            };
+            let sonic_sem = match (&semantic, &f.sonic_vec) {
+                (Some(q), Some(v)) => (cosine(q, v) + 1.0) / 2.0,
+                _ => trait_sem,
+            };
+            let lyrical_sem = match (&collection_lyrical, &f.lyrical_vec) {
+                (Some(q), Some(v)) => (cosine(q, v) + 1.0) / 2.0,
+                _ => 0.5,
+            };
+            let community_sem = match (&collection_community, &f.community_vec) {
+                (Some(q), Some(v)) => (cosine(q, v) + 1.0) / 2.0,
+                _ => 0.5,
+            };
+            let collection_sem = match (&collection_centroid, &f.lyric_vec) {
+                (Some(q), Some(v)) => (cosine(q, v) + 1.0) / 2.0,
+                _ => 0.5,
+            };
+            let seed_sonic_sem = match (&collection_sonic, &f.sonic_vec) {
+                (Some(q), Some(v)) => (cosine(q, v) + 1.0) / 2.0,
+                _ => collection_sem,
+            };
+            let measured = collection_feature_score(
+                f,
+                collection_energy,
+                collection_bpm,
+                collection_brightness,
+                collection_dynamic_range,
+                collection_rhythmic_activity,
+            );
+            let audio_embedding = match (&collection_audio, audio_vector(f)) {
+                (Some(seed), Some(candidate)) => (cosine(seed, &candidate) + 1.0) / 2.0,
+                _ => measured,
+            };
+            // Traits steer the direction the listener selected, while the
+            // members themselves remain nearly half of the musical evidence.
+            let sem = 0.45 * sonic_sem
+                + 0.25 * seed_sonic_sem
+                + 0.15 * audio_embedding
+                + 0.08 * lyrical_sem
+                + 0.07 * community_sem;
+            let specialized = specialized_score(f, &selected);
+            let history = score(f, &taste);
+            // Likes are a gentle taste vote, not a shortcut to replaying the
+            // favourites list. Eight percent is enough to break close sonic
+            // matches while the selected sound still owns the ranking.
+            let like = if liked.contains(&f.track_id) {
+                1.0
+            } else {
+                0.0
+            };
+            let collaborative = if !f.musicbrainz_id.is_empty()
+                && collaborative_candidates.contains(f.musicbrainz_id.as_str())
+            {
+                1.0
+            } else {
+                0.0
+            };
+            // ListenBrainz is a small positive-only corroborator. Its radio
+            // graph reflects listening patterns, not proof that recordings
+            // sound alike, so it cannot outweigh semantic or measured sound.
+            let relevance = 0.44 * sem
+                + 0.32 * specialized
+                + 0.12 * history
+                + 0.08 * like
+                + 0.04 * collaborative;
+            let jitter = rng.gen_range(-QUEUE_SCORE_JITTER..=QUEUE_SCORE_JITTER);
+            let strongest = [
+                ("sound", 0.45 * sonic_sem + 0.25 * seed_sonic_sem),
+                ("audio", 0.15 * audio_embedding),
+                ("lyrics", 0.08 * lyrical_sem),
+                ("community", 0.07 * community_sem + 0.04 * collaborative),
+                ("your listening", 0.12 * history + 0.08 * like),
+            ]
+            .into_iter()
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap();
+            let explanation = json!({
+                "trackId": f.track_id,
+                "reason": format!("Strongest match: {}", strongest.0),
+                "scores": { "sonic": sonic_sem, "measuredAudio": audio_embedding,
+                    "lyrical": lyrical_sem, "community": community_sem,
+                    "history": history, "liked": like, "collaborative": collaborative }
+            });
+            ((relevance + jitter).clamp(0.0, 1.0), f, explanation)
+        })
+        .collect();
+    ranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    let mut ids = song_seed.into_iter().collect::<Vec<_>>();
+    let mut artists: HashMap<String, usize> = ids
+        .iter()
+        .filter_map(|id| {
+            features
+                .iter()
+                .find(|f| f.track_id == *id)
+                .map(|f| (f.artist.to_lowercase(), 1))
+        })
+        .collect();
+    let mut explanations = Vec::new();
+    for (_, f, explanation) in ranked {
+        let count = artists.entry(f.artist.to_lowercase()).or_insert(0);
+        if *count >= PER_ARTIST_CAP {
+            continue;
+        }
+        *count += 1;
+        ids.push(f.track_id);
+        explanations.push(explanation);
+        if ids.len() >= want {
+            break;
+        }
+    }
+    Ok(Json(
+        json!({ "trackIds": ids, "semantic": semantic.is_some(), "explanations": explanations,
+        "intent": { "kind": "traits", "seedTrackIds": seed_ids,
+            "traits": selected.iter().map(|t| &t.id).collect::<Vec<_>>() } }),
+    ))
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DjNoteBody {
+    pub track_id: i64,
+    #[serde(default)]
+    pub note: String,
+}
+
+/// `POST /api/dj/note` - save human judgement independently of AI enrichment.
+pub async fn set_note(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<DjNoteBody>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let user = auth::require_caller(&state.db, &headers)
+        .map_err(|s| (s, "sign in first".into()))?
+        .id;
+    if state.db.tracks_for_curation(&[body.track_id]).is_empty() {
+        return Err((StatusCode::NOT_FOUND, "no such track".into()));
+    }
+    state
+        .db
+        .set_dj_note(user, body.track_id, &body.note)
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "could not save DJ note".into(),
+            )
+        })?;
+    Ok(Json(
+        json!({ "ok": true, "note": state.db.dj_note(user, body.track_id) }),
+    ))
+}
+
+fn average_values(values: impl Iterator<Item = f64>) -> Option<f64> {
+    let values: Vec<f64> = values.collect();
+    (!values.is_empty()).then(|| values.iter().sum::<f64>() / values.len() as f64)
+}
+
+fn average_vectors<'a>(vectors: impl Iterator<Item = &'a [f32]>) -> Option<Vec<f32>> {
+    let vectors: Vec<&[f32]> = vectors.collect();
+    let len = vectors.first()?.len();
+    if len == 0 {
+        return None;
+    }
+    let usable: Vec<&[f32]> = vectors.into_iter().filter(|v| v.len() == len).collect();
+    if usable.is_empty() {
+        return None;
+    }
+    let mut out = vec![0.0; len];
+    for vector in &usable {
+        for (sum, value) in out.iter_mut().zip(vector.iter()) {
+            *sum += *value;
+        }
+    }
+    for value in &mut out {
+        *value /= usable.len() as f32;
+    }
+    Some(out)
+}
+
+fn average_owned_vectors(vectors: impl Iterator<Item = Vec<f32>>) -> Option<Vec<f32>> {
+    let vectors: Vec<Vec<f32>> = vectors.collect();
+    average_vectors(vectors.iter().map(Vec::as_slice))
+}
+
+/// Prefer the versioned 48-dimensional spectral/temporal fingerprint measured
+/// directly from decoded audio. Older rows fall back to the five explainable
+/// measurements while the background analyser backfills them.
+fn audio_vector(feature: &TrackFeatures) -> Option<Vec<f32>> {
+    if let Some(fingerprint) = feature
+        .audio_fingerprint
+        .as_ref()
+        .filter(|vector| vector.len() == 48)
+    {
+        return Some(fingerprint.clone());
+    }
+    let parts = [
+        feature.bpm.map(|v| (v / 240.0).clamp(0.0, 1.0)),
+        feature.energy,
+        feature.brightness,
+        feature.dynamic_range,
+        feature.rhythmic_activity,
+    ];
+    (parts.iter().filter(|value| value.is_some()).count() >= 3).then(|| {
+        parts
+            .into_iter()
+            .map(|value| value.unwrap_or(0.5) as f32)
+            .collect()
+    })
+}
+
+fn collection_feature_score(
+    feature: &TrackFeatures,
+    energy: Option<f64>,
+    bpm: Option<f64>,
+    brightness: Option<f64>,
+    dynamic_range: Option<f64>,
+    rhythmic_activity: Option<f64>,
+) -> f32 {
+    let mut parts = Vec::new();
+    if let (Some(target), Some(actual)) = (energy, feature.energy) {
+        parts.push((1.0 - (target - actual).abs().min(1.0)) as f32);
+    }
+    if let (Some(target), Some(actual)) = (bpm, feature.bpm) {
+        parts.push((-(target - actual).abs() / 30.0).exp() as f32);
+    }
+    if let (Some(target), Some(actual)) = (brightness, feature.brightness) {
+        parts.push((1.0 - (target - actual).abs().min(1.0)) as f32);
+    }
+    if let (Some(target), Some(actual)) = (dynamic_range, feature.dynamic_range) {
+        parts.push((1.0 - (target - actual).abs().min(1.0)) as f32);
+    }
+    if let (Some(target), Some(actual)) = (rhythmic_activity, feature.rhythmic_activity) {
+        parts.push((1.0 - (target - actual).abs().min(1.0)) as f32);
+    }
+    if parts.is_empty() {
+        0.5
+    } else {
+        parts.iter().sum::<f32>() / parts.len() as f32
+    }
+}
+
+fn specialized_score(feature: &TrackFeatures, traits: &[DjTrait]) -> f32 {
+    let mut total = 0.0f32;
+    let mut weights = 0.0f32;
+    for t in traits {
+        let w = t.weight.clamp(0.1, 1.5)
+            * t.confidence.clamp(0.25, 1.0)
+            * category_importance(&t.category);
+        let mut parts = Vec::new();
+        if let (Some(target), Some(actual)) = (t.signals.energy, feature.energy) {
+            parts.push(1.0 - (target - actual as f32).abs().min(1.0));
+        }
+        if let Some(bpm) = feature.bpm {
+            if let (Some(lo), Some(hi)) = (t.signals.bpm_min, t.signals.bpm_max) {
+                let gap = if bpm < lo {
+                    lo - bpm
+                } else if bpm > hi {
+                    bpm - hi
+                } else {
+                    0.0
+                };
+                parts.push((-gap as f32 / 25.0).exp());
+            }
+        }
+        if let Some(year) = feature.year {
+            if let (Some(lo), Some(hi)) = (t.signals.year_min, t.signals.year_max) {
+                let gap = if year < lo {
+                    lo - year
+                } else if year > hi {
+                    year - hi
+                } else {
+                    0
+                };
+                parts.push((-gap as f32 / 8.0).exp());
+            }
+        }
+        if !t.signals.genres.is_empty()
+            && (!feature.ai_genres.is_empty() || !feature.genre.trim().is_empty())
+        {
+            let candidate_genres = if feature.ai_genres.is_empty() {
+                vec![feature.genre.to_lowercase()]
+            } else {
+                feature.ai_genres.iter().map(|g| g.to_lowercase()).collect()
+            };
+            parts.push(
+                if t.signals.genres.iter().any(|g| {
+                    candidate_genres.iter().any(|candidate| {
+                        candidate.contains(&g.to_lowercase())
+                            || g.to_lowercase().contains(candidate)
+                    })
+                }) {
+                    1.0
+                } else {
+                    0.2
+                },
+            );
+        }
+        if !parts.is_empty() {
+            total += w * parts.iter().sum::<f32>() / parts.len() as f32;
+            weights += w;
+        }
+    }
+    if weights > 0.0 {
+        total / weights
+    } else {
+        0.5
+    }
+}
+
+fn category_importance(category: &str) -> f32 {
+    match category {
+        "sonic" | "production" | "instrumentation" | "vocals" => 1.25,
+        "energy" | "genre_style" | "mood" => 1.0,
+        "lyrical_theme" => 0.75,
+        // Cultural context is useful DJ knowledge, but a weak similarity
+        // signal: a film/game/show is a container, not a sound.
+        "scene_culture" | "era" => 0.45,
+        _ => 0.75,
+    }
+}
+
+fn sanitize_analysis(mut analysis: TraitAnalysis) -> TraitAnalysis {
+    analysis.summary = analysis.summary.trim().chars().take(240).collect();
+    analysis.traits = analysis
+        .traits
+        .into_iter()
+        .take(12)
+        .map(sanitize_trait)
+        .filter(|t| !t.label.is_empty() && !t.query.is_empty())
+        .collect();
+    analysis
+}
+
+fn sanitize_trait(mut t: DjTrait) -> DjTrait {
+    const CATEGORIES: &[&str] = &[
+        "sonic",
+        "energy",
+        "genre_style",
+        "vocals",
+        "era",
+        "mood",
+        "production",
+        "lyrical_theme",
+        "instrumentation",
+        "scene_culture",
+    ];
+    t.label = t.label.trim().chars().take(42).collect();
+    t.description = t.description.trim().chars().take(160).collect();
+    t.query = t.query.trim().chars().take(180).collect();
+    t.category = t.category.trim().to_lowercase();
+    if !CATEGORIES.contains(&t.category.as_str()) {
+        t.category = "sonic".into();
+    }
+    t.weight = t.weight.clamp(0.1, 1.5);
+    t.confidence = t.confidence.clamp(0.0, 1.0);
+    if t.id.trim().is_empty() {
+        t.id = t
+            .label
+            .to_lowercase()
+            .chars()
+            .map(|c| if c.is_alphanumeric() { c } else { '-' })
+            .collect();
+    }
+    t.signals.energy = t.signals.energy.map(|v| v.clamp(0.0, 1.0));
+    t.signals.bpm_min = t.signals.bpm_min.map(|v| v.clamp(30.0, 300.0));
+    t.signals.bpm_max = t.signals.bpm_max.map(|v| v.clamp(30.0, 300.0));
+    t.signals.year_min = t.signals.year_min.map(|v| v.clamp(1900, 2200));
+    t.signals.year_max = t.signals.year_max.map(|v| v.clamp(1900, 2200));
+    t.signals.genres = t
+        .signals
+        .genres
+        .into_iter()
+        .take(5)
+        .map(|g| g.trim().chars().take(48).collect())
+        .filter(|g: &String| !g.is_empty())
+        .collect();
+    t
+}
+
+fn heuristic_analysis(
+    track: &crate::db::CurationTrack,
+    feature: Option<&TrackFeatures>,
+) -> TraitAnalysis {
+    let mut traits = Vec::new();
+    let mut add =
+        |label: &str, category: &str, description: String, query: String, signals: TraitSignals| {
+            traits.push(DjTrait {
+                id: label.to_lowercase().replace(' ', "-"),
+                label: label.into(),
+                category: category.into(),
+                description,
+                weight: 1.0,
+                confidence: 0.7,
+                query,
+                signals,
+            });
+        };
+    let preferred_genre = track
+        .ai_genres
+        .first()
+        .map(String::as_str)
+        .filter(|_| track.ai_confidence >= 0.45)
+        .unwrap_or(track.genre.as_str());
+    let broad_context = matches!(
+        preferred_genre.trim().to_lowercase().as_str(),
+        "soundtrack" | "films/games" | "film" | "game" | "video game music"
+    );
+    if !preferred_genre.trim().is_empty() && !broad_context {
+        add(
+            preferred_genre,
+            "genre_style",
+            "More from this musical lane.".into(),
+            preferred_genre.to_string(),
+            TraitSignals {
+                genres: vec![preferred_genre.to_string()],
+                ..Default::default()
+            },
+        );
+    }
+    if let Some(year) = track.year {
+        let decade = year / 10 * 10;
+        add(
+            &format!("{decade}s"),
+            "era",
+            "More music from the same era.".into(),
+            format!("music from the {decade}s"),
+            TraitSignals {
+                year_min: Some(decade),
+                year_max: Some(decade + 9),
+                ..Default::default()
+            },
+        );
+    }
+    if let Some(f) = feature {
+        if let Some(e) = f.energy {
+            let label = if e >= 0.62 {
+                "High energy"
+            } else if e <= 0.36 {
+                "Low-key"
+            } else {
+                "Steady energy"
+            };
+            add(
+                label,
+                "energy",
+                "Matched to the measured intensity of the recording.".into(),
+                label.into(),
+                TraitSignals {
+                    energy: Some(e as f32),
+                    bpm_min: f.bpm.map(|b| b - 15.0),
+                    bpm_max: f.bpm.map(|b| b + 15.0),
+                    ..Default::default()
+                },
+            );
+        }
+        if let Some(bright) = f.brightness {
+            let label = if bright > 0.58 {
+                "Bright sound"
+            } else {
+                "Dark-toned"
+            };
+            add(
+                label,
+                "sonic",
+                "A similar overall tonal character.".into(),
+                label.into(),
+                TraitSignals::default(),
+            );
+        }
+    }
+    add(
+        "Lyrical character",
+        "lyrical_theme",
+        "Follow the song's words and subject matter.".into(),
+        format!(
+            "songs lyrically and thematically like {} by {}",
+            track.title, track.artist
+        ),
+        TraitSignals::default(),
+    );
+    TraitAnalysis {
+        summary: format!("A few directions outward from {}.", track.title),
+        traits,
+    }
+}
+
+fn trait_schema() -> Value {
+    json!({
+      "type": "object", "additionalProperties": false,
+      "required": ["summary", "traits"],
+      "properties": {
+        "summary": { "type": "string" },
+        "traits": { "type": "array", "minItems": 4, "maxItems": 4, "items": {
+          "type": "object", "additionalProperties": false,
+          "required": ["id", "label", "category", "description", "weight", "confidence", "query", "signals"],
+          "properties": {
+            "id": { "type": "string" }, "label": { "type": "string" },
+            "category": { "type": "string", "enum": ["sonic", "energy", "genre_style", "vocals", "era", "mood", "production", "lyrical_theme", "instrumentation", "scene_culture"] },
+            "description": { "type": "string" }, "weight": { "type": "number" },
+            "confidence": { "type": "number" }, "query": { "type": "string" },
+            "signals": { "type": "object", "additionalProperties": false,
+              "required": ["energy", "bpmMin", "bpmMax", "yearMin", "yearMax", "genres"],
+              "properties": {
+                "energy": { "type": ["number", "null"] }, "bpmMin": { "type": ["number", "null"] },
+                "bpmMax": { "type": ["number", "null"] }, "yearMin": { "type": ["integer", "null"] },
+                "yearMax": { "type": ["integer", "null"] },
+                "genres": { "type": "array", "items": { "type": "string" }, "maxItems": 5 }
+              }
+            }
+          }
+        }}
+      }
+    })
+}
+
+#[cfg(test)]
+mod ranking_tests {
+    use super::*;
+
+    fn feature(bpm: f64, energy: f64, brightness: f64, dynamic: f64, rhythm: f64) -> TrackFeatures {
+        TrackFeatures {
+            track_id: 1,
+            bpm: Some(bpm),
+            lyric_vec: None,
+            genre: "test".into(),
+            ai_genres: Vec::new(),
+            ai_sonic_traits: Vec::new(),
+            artist: "test".into(),
+            energy: Some(energy),
+            brightness: Some(brightness),
+            dynamic_range: Some(dynamic),
+            rhythmic_activity: Some(rhythm),
+            musicbrainz_id: String::new(),
+            listenbrainz_similar: Vec::new(),
+            sonic_vec: None,
+            lyrical_vec: None,
+            community_vec: None,
+            audio_fingerprint: None,
+            year: None,
+            quarantined: false,
+        }
+    }
+
+    #[test]
+    fn local_audio_embedding_is_deterministic_and_bounded() {
+        let vector = audio_vector(&feature(120.0, 0.8, 0.2, 0.6, 0.4)).unwrap();
+        assert_eq!(vector, vec![0.5, 0.8, 0.2, 0.6, 0.4]);
+        assert!(vector.iter().all(|value| (0.0..=1.0).contains(value)));
+    }
+
+    #[test]
+    fn nearby_audio_ranks_above_an_opposite_profile() {
+        let seed = audio_vector(&feature(120.0, 0.8, 0.2, 0.6, 0.4)).unwrap();
+        let near = audio_vector(&feature(123.0, 0.78, 0.22, 0.58, 0.42)).unwrap();
+        let far = audio_vector(&feature(55.0, 0.1, 0.95, 0.05, 0.95)).unwrap();
+        assert!(cosine(&seed, &near) > cosine(&seed, &far));
+    }
+
+    #[test]
+    fn taste_signals_cannot_outweigh_relevance() {
+        let relevance_families = 0.44 + 0.32;
+        let personal_tie_breakers = 0.12 + 0.08;
+        let collaborative = 0.04;
+        assert!(relevance_families > personal_tie_breakers + collaborative);
+        assert!(
+            (relevance_families + personal_tie_breakers + collaborative - 1.0_f32).abs() < 0.001
+        );
+    }
 }

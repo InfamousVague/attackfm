@@ -74,7 +74,7 @@ DEF_PORT="$(prev AFM_PORT)"; DEF_PORT="${DEF_PORT:-8788}"
 DEF_BIND="$(prev AFM_BIND)"; DEF_BIND="${DEF_BIND:-0.0.0.0}"
 # The curator's model envs - the names curator.rs actually reads.
 DEF_AI_URL="$(prev AFM_AI_URL)"; DEF_AI_URL="${DEF_AI_URL:-http://127.0.0.1:11434}"
-DEF_MODEL="$(prev AFM_AI_MODEL)"; DEF_MODEL="${DEF_MODEL:-qwen3:14b}"
+DEF_MODEL="$(prev AFM_AI_MODEL)"; DEF_MODEL="${DEF_MODEL:-gemma4:e4b}"
 DEF_EMBED="$(prev AFM_AI_EMBED_MODEL)"; DEF_EMBED="${DEF_EMBED:-nomic-embed-text}"
 # Spotify app credentials. Search needs a Spotify link for anything it offers
 # to add - the importer takes no other kind - and a hub reaches Spotify either
@@ -255,7 +255,7 @@ if command -v ollama >/dev/null 2>&1 || [ -x /Applications/Ollama.app/Contents/R
   else
     read -r -p "  Pull $DEF_MODEL now (~9GB)? [Y/n]: " yn
     if [ "${yn:-Y}" != "n" ] && [ "${yn:-Y}" != "N" ]; then
-      "$OLLAMA" pull "$DEF_MODEL" || "$OLLAMA" pull qwen2.5:14b || say "pull failed - lists keep plain names until a chat model exists"
+      "$OLLAMA" pull "$DEF_MODEL" || say "pull failed - lists keep plain names until a chat model exists"
     fi
   fi
 else

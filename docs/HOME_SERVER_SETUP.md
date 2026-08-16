@@ -85,7 +85,9 @@ AFM_PUBLIC_URL="https://matt.attack.fm" \
 | `AFM_PUBLIC_URL` | *(empty)* | Public origin, e.g. `https://matt.attack.fm` — needed for Spotify OAuth redirect. |
 | `AFM_PLUGINS_DIR` | `<data>/plugins` | Plugin repo served at `/plugins`. |
 | `AFM_AI_URL` | — | Local AI endpoint for discovery/DJ, e.g. `http://127.0.0.1:11434` (Ollama). |
+| `AFM_AI_MODEL` | `gemma4:e4b` in the home installer | Chat/reasoning model. Gemma 4 `e2b`, `e4b`, `12b`, `26b`, and `31b` fit progressively larger machines; any OpenAI-compatible model remains valid. |
 | `AFM_AI_EMBED_MODEL` | — | Embedding model, e.g. `nomic-embed-text`. |
+| `AFM_AI_TIMEOUT_SECS` | `75` | Bounded AI request timeout (10–300 seconds). |
 | `AFM_SPOTIFY_CLIENT_ID` / `_SECRET` | — | Hub Spotify app (import + OAuth). |
 | `AFM_SPOTIFY_SP_DC` | — | Logged-in Spotify cookie for Canvas (a **secret**; set via env only, never commit). |
 

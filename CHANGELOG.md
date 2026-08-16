@@ -7,6 +7,14 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.90
+
+- The AI DJ got ears: point it at a song, album or playlist, pick which parts of the sound matter, and it builds a queue from what the music actually is - not just what it is filed under
+- Songs can carry your own DJ note ("works best late at night"), and the models can read it but never rewrite it
+- The hub studies your library quietly in the background - measured audio first, models second, and it pauses itself whenever anyone is listening
+- Dragging the seek bar quickly no longer swallows the first inch of the drag
+- On Android, songs that streamed without a length no longer pin the scrubber at zero
+
 ## 0.3.89
 
 - The Booth: the DJ, your mixes, and what the curator is up to — one room, with its own preferences, in the nav where Search used to be

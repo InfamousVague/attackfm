@@ -86,6 +86,22 @@ import { initDockWave } from './dockWave.ts';
 const TRACK_ART: string | null = null;
 
 /**
+ * Android WebView reports `Infinity` for the duration of some streamed audio
+ * responses.  That is a valid media-element sentinel (the stream looks live),
+ * but it is not a usable player timeline: position / Infinity pins every
+ * scrubber at zero while the elapsed clock continues to advance.  Prefer the
+ * element's duration when it is real, otherwise keep the duration indexed in
+ * the library for this track.
+ */
+function timelineDuration(mediaDuration: number, trackDuration?: number | null): number {
+  if (Number.isFinite(mediaDuration) && mediaDuration > 0) return mediaDuration;
+  if (trackDuration != null && Number.isFinite(trackDuration) && trackDuration > 0) {
+    return trackDuration;
+  }
+  return 0;
+}
+
+/**
  * A blank stand-in for the surfaces that need a non-null Track while nothing is
  * loaded - the deck visuals key off `.path`, and publish() wants a shape. It is
  * deliberately empty and unplayable: an idle device must advertise "nothing,"
@@ -1466,7 +1482,9 @@ export function Player({
         tickRef.current(audio);
       };
       const onMeta = () => {
-        if (isActive()) setDuration(audio.duration || 0);
+        if (isActive()) {
+          setDuration(timelineDuration(audio.duration, liveRef.current.track?.duration));
+        }
       };
       // Through the ref: this listener is bound once, the queue changes often.
       const onEnded = () => {
@@ -1717,6 +1735,10 @@ export function Player({
       if (cancelled || !url) return;
       created = url;
       setPosition(0);
+      // Seed the timeline from the indexed metadata immediately. Android may
+      // later describe a streamed response as infinitely long; onMeta keeps
+      // this finite value instead of replacing it with that sentinel.
+      setDuration(timelineDuration(0, track.duration));
       // Aborted again here, not just at the effect's top: a blend can begin in
       // the gap the await opened, off the old track's last timeupdates.
       abortCrossfadeRef.current();
@@ -2363,7 +2385,7 @@ export function Player({
         // shared path re-asserts the fader on whichever deck now answers.
         applyVolume();
         setPosition(nowActive.currentTime);
-        setDuration(nowActive.duration || 0);
+        setDuration(timelineDuration(nowActive.duration, flight.next.duration));
         wantPlaying.current = true;
         setPlaying(true);
         adoptedPath.current = flight.next.path;
@@ -2423,7 +2445,7 @@ export function Player({
         seatOf(nowActive)?.setLevel(1);
         applyVolume();
         setPosition(0);
-        setDuration(nowActive.duration || 0);
+        setDuration(timelineDuration(nowActive.duration, warm.next.duration));
         wantPlaying.current = true;
         setPlaying(true);
         void nowActive.play().catch(() => {
@@ -2868,11 +2890,6 @@ export function Player({
         next: () => carPlayControls.current?.next(),
         previous: () => carPlayControls.current?.previous(),
         seek: (seconds) => carPlayControls.current?.seek(seconds),
-        // A collection tapped in Android Auto's browse list. The queue is
-        // built where the library lives - the CarPlayBridge in App - so this
-        // only relays; the same division of labour the iOS car uses.
-        playCollection: (id) =>
-          window.dispatchEvent(new CustomEvent('afm-car-collection', { detail: id })),
       }),
     [],
   );

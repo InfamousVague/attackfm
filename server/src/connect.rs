@@ -38,7 +38,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 
 fn now_ms() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 // Per-connection ids are how the hub tells two tabs of the same device apart,
@@ -107,6 +110,16 @@ pub struct ConnectState {
 impl ConnectState {
     pub fn new() -> Arc<Self> {
         Arc::new(Self::default())
+    }
+
+    /// True while any listener has an active playing session. Background AI
+    /// and file analysis use this to give playback the whole box.
+    pub async fn any_playing(&self) -> bool {
+        self.users
+            .lock()
+            .await
+            .values()
+            .any(|hub| hub.session.playing)
     }
 }
 
@@ -228,7 +241,16 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, user_id: i64) {
         match parsed {
             ClientMsg::Hello { id, name, kind } => {
                 my_device = Some(id.clone());
-                on_hello(&state, user_id, conn_id, &tx, id, name, kind.unwrap_or_else(|| "web".into())).await;
+                on_hello(
+                    &state,
+                    user_id,
+                    conn_id,
+                    &tx,
+                    id,
+                    name,
+                    kind.unwrap_or_else(|| "web".into()),
+                )
+                .await;
             }
             ClientMsg::State {
                 track_id,
@@ -241,7 +263,20 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, user_id: i64) {
                 queue_index,
             } => {
                 if let Some(dev) = &my_device {
-                    on_state(&state, user_id, dev, track_id, position_ms, playing, shuffle, repeat, volume, queue, queue_index).await;
+                    on_state(
+                        &state,
+                        user_id,
+                        dev,
+                        track_id,
+                        position_ms,
+                        playing,
+                        shuffle,
+                        repeat,
+                        volume,
+                        queue,
+                        queue_index,
+                    )
+                    .await;
                 }
             }
             ClientMsg::Command { command } => {
@@ -300,9 +335,21 @@ async fn on_hello(
     let hub = users.entry(user_id).or_default();
     hub.devices.insert(
         id.clone(),
-        Device { id: id.clone(), name, kind, online: true, last_seen: now_ms() },
+        Device {
+            id: id.clone(),
+            name,
+            kind,
+            online: true,
+            last_seen: now_ms(),
+        },
     );
-    hub.conns.insert(id, Conn { conn_id, tx: tx.clone() });
+    hub.conns.insert(
+        id,
+        Conn {
+            conn_id,
+            tx: tx.clone(),
+        },
+    );
     // This connection gets the full current picture; everyone else just needs
     // the refreshed device list.
     let _ = tx.send(devices_message(hub));
@@ -331,7 +378,9 @@ async fn on_state(
     queue_index: Option<i64>,
 ) {
     let mut users = state.connect.users.lock().await;
-    let Some(hub) = users.get_mut(&user_id) else { return };
+    let Some(hub) = users.get_mut(&user_id) else {
+        return;
+    };
 
     // A device reporting state claims active when the seat is empty (this is how
     // playback starts cold - press play, become active). If another device is
@@ -381,15 +430,25 @@ async fn on_state(
 
 async fn on_command(state: &Arc<AppState>, user_id: i64, command: Command) {
     let users = state.connect.users.lock().await;
-    let Some(hub) = users.get(&user_id) else { return };
-    let Some(active) = &hub.session.active_device_id else { return };
-    let Some(conn) = hub.conns.get(active) else { return };
-    let _ = conn.tx.send(json!({ "type": "command", "command": command }).to_string());
+    let Some(hub) = users.get(&user_id) else {
+        return;
+    };
+    let Some(active) = &hub.session.active_device_id else {
+        return;
+    };
+    let Some(conn) = hub.conns.get(active) else {
+        return;
+    };
+    let _ = conn
+        .tx
+        .send(json!({ "type": "command", "command": command }).to_string());
 }
 
 async fn on_transfer(state: &Arc<AppState>, user_id: i64, target: &str) {
     let mut users = state.connect.users.lock().await;
-    let Some(hub) = users.get_mut(&user_id) else { return };
+    let Some(hub) = users.get_mut(&user_id) else {
+        return;
+    };
     if !hub.conns.contains_key(target) {
         // Cannot hand playback to a device that is not connected.
         return;
@@ -420,7 +479,9 @@ async fn on_transfer(state: &Arc<AppState>, user_id: i64, target: &str) {
         }
     }
     if let Some(conn) = hub.conns.get(target) {
-        let _ = conn.tx.send(json!({ "type": "becomeActive", "state": hub.session }).to_string());
+        let _ = conn
+            .tx
+            .send(json!({ "type": "becomeActive", "state": hub.session }).to_string());
     }
     let devices = devices_message(hub);
     let state_msg = state_message(hub);
@@ -430,7 +491,9 @@ async fn on_transfer(state: &Arc<AppState>, user_id: i64, target: &str) {
 
 async fn on_disconnect(state: &Arc<AppState>, user_id: i64, device: &str, conn_id: u64) {
     let mut users = state.connect.users.lock().await;
-    let Some(hub) = users.get_mut(&user_id) else { return };
+    let Some(hub) = users.get_mut(&user_id) else {
+        return;
+    };
 
     // Only tear down if this exact connection is the current one. A reconnect
     // that already replaced it must not be undone by the old socket's teardown.
@@ -455,7 +518,8 @@ async fn on_disconnect(state: &Arc<AppState>, user_id: i64, device: &str, conn_i
     // Forget devices that are offline and not the active one, so the picker does
     // not accrete dead tabs forever. A device the session still references is
     // kept so its name survives a brief reconnect.
-    hub.devices.retain(|id, d| d.online || Some(id) == hub.session.active_device_id.as_ref());
+    hub.devices
+        .retain(|id, d| d.online || Some(id) == hub.session.active_device_id.as_ref());
 
     let devices = devices_message(hub);
     let state_msg = state_message(hub);

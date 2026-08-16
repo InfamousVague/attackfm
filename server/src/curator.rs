@@ -23,6 +23,12 @@
 //! go to the model the operator pointed at, which is theirs.
 
 use crate::db::{CurationTrack, TrackFeatures};
+use crate::enrichment::{
+    apply_patch, listenbrainz, musicbrainz, normalize_specific_tag, semantic_validation_errors,
+    RefinementPatch, SemanticProfile, SpecificTagDecisionBatch, CONTROLLED_GENRES,
+    CONTROLLED_MOODS, CONTROLLED_TRAITS, CONTROLLED_VIBES, FAST_PROMPT_VERSION,
+    REFINEMENT_PROMPT_VERSION,
+};
 use crate::AppState;
 use serde::Serialize;
 use serde_json::json;
@@ -41,8 +47,191 @@ const VECTOR_RETRY_MS: i64 = 3 * 60 * 1000;
 /// a stream stutters - but embeddings are cheap and the tempo is measured only
 /// once, so a fresh library backfills its vectors in minutes, not an hour.
 const ENRICH_BATCH: i64 = 24;
+const AI_ENRICH_BATCH: i64 = 2;
+const AI_ENRICH_TTL_MS: i64 = 90 * 24 * 60 * 60 * 1000;
 /// Politeness gap between catalogue lookups.
 const LOOKUP_GAP: Duration = Duration::from_millis(900);
+
+/// Keep the learned vocabulary about reusable sounds and styles. Identity
+/// facts, broad parents, lyrical phrases, and production traits belong in
+/// their own fields rather than becoming permanent `specific_tags`.
+fn enforce_specific_tag_boundaries(profile: &mut SemanticProfile) {
+    let mut kept = Vec::new();
+    let mut production = Vec::new();
+    for raw in std::mem::take(&mut profile.specific_tags) {
+        let tag = normalize_specific_tag(&raw);
+        if tag.is_empty()
+            || CONTROLLED_GENRES.contains(&tag.as_str())
+            || CONTROLLED_MOODS.contains(&tag.as_str())
+            || CONTROLLED_VIBES.contains(&tag.as_str())
+            || CONTROLLED_TRAITS.contains(&tag.as_str())
+            || tag.contains("area-code")
+            || tag.contains("lifestyle-reference")
+            || tag.contains("luxury-lifestyle")
+            || tag.ends_with("-persona")
+            || tag.split('-').count() > 6
+        {
+            continue;
+        }
+        if tag.ends_with("-textures")
+            || tag.ends_with("-vocals")
+            || tag.ends_with("-percussion")
+            || tag.ends_with("-production")
+        {
+            production.push(tag);
+        } else if !kept.contains(&tag) {
+            kept.push(tag);
+        }
+    }
+    for tag in production {
+        if !profile.production_descriptors.contains(&tag) {
+            profile.production_descriptors.push(tag);
+        }
+    }
+    profile.production_descriptors.truncate(8);
+    profile.specific_tags = kept;
+}
+
+/// The reviewer may delete or reorganize Qwen's tags, but one community lookup
+/// is not enough authority to invent new canonical vocabulary. New descriptors
+/// must originate in the independent fast pass; later versions can admit a new
+/// term when two truly independent evidence sources are represented explicitly.
+fn prevent_reviewer_tag_expansion(fast: &SemanticProfile, patch: &mut RefinementPatch) {
+    let allowed = fast
+        .specific_tags
+        .iter()
+        .map(|tag| normalize_specific_tag(tag))
+        .collect::<HashSet<_>>();
+    for tags in [
+        &mut patch.add.specific_tags,
+        &mut patch.replace.specific_tags,
+    ] {
+        tags.retain(|tag| allowed.contains(&normalize_specific_tag(tag)));
+    }
+}
+
+async fn reconcile_specific_tags(
+    state: &Arc<AppState>,
+    client: &crate::ai::AiClient,
+    track_id: i64,
+    profile: &mut SemanticProfile,
+) {
+    let mut canonical = Vec::new();
+    let mut undecided = Vec::new();
+    for raw in profile.specific_tags.clone() {
+        let normalized = normalize_specific_tag(&raw);
+        if normalized.is_empty() {
+            continue;
+        }
+        if let Some(existing) = state.db.specific_tag_exact(&normalized) {
+            let _ = state.db.record_specific_tag_decision(
+                track_id,
+                &raw,
+                &normalized,
+                Some(&existing),
+                "reuse",
+                &json!([]),
+                "exact-or-alias",
+                "",
+                None,
+            );
+            if !canonical.contains(&existing) {
+                canonical.push(existing);
+            }
+            continue;
+        }
+        let embedding = client
+            .embed(&format!("Music descriptor meaning and usage: {normalized}"))
+            .await
+            .ok();
+        // Embeddings retrieve possibilities; they do not establish synonymy.
+        // Only a very close, already-established descriptor may be reused by
+        // the model.  Everything else remains a distinct provisional term.
+        let candidates = embedding
+            .as_deref()
+            .map(|v| state.db.specific_tag_candidates(v, 8))
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|candidate| candidate.status == "established" && candidate.similarity >= 0.93)
+            .take(4)
+            .collect::<Vec<_>>();
+        undecided.push((raw, normalized, embedding, candidates));
+    }
+    if !undecided.is_empty() {
+        let comparison = undecided
+            .iter()
+            .map(|(_, tag, _, candidates)| {
+                json!({
+                    "input_tag": tag,
+                    "closest_existing": candidates,
+                })
+            })
+            .collect::<Vec<_>>();
+        let prompt = format!("Resolve open-ended music descriptors against a learned vocabulary. Similarity only retrieves candidates; it does not prove equivalence. Preserve meaningful distinctions (for example dream-pop is not automatically shoegaze). For each input choose exactly one action: reuse an existing canonical tag only when meaning is equivalent in music-discovery use; keep-new when it is useful and distinct; reject when it is vague, malformed, redundant, or not a music descriptor. canonical_tag must be one supplied existing tag for reuse, the input_tag for keep-new, and empty for reject. Give a short reusable description for keep-new. Return one decision per input.\nRecording profile context: {}\nComparisons: {}",
+            serde_json::to_string(profile).unwrap_or_default(), serde_json::to_string(&comparison).unwrap_or_default());
+        let schema = json!({"type":"object","additionalProperties":false,"required":["decisions"],"properties":{"decisions":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["input_tag","action","canonical_tag","description","reason"],"properties":{"input_tag":{"type":"string"},"action":{"type":"string","enum":["reuse","keep-new","reject"]},"canonical_tag":{"type":"string"},"description":{"type":"string","maxLength":180},"reason":{"type":"string","maxLength":140}}}}}});
+        let decisions = client.chat_json::<SpecificTagDecisionBatch>(
+            "You maintain a precise, evolving vocabulary of music descriptors. Merge synonyms, not merely related concepts.",
+            &prompt, "attackfm_specific_tag_registry_v1", schema, false).await.ok();
+        for (raw, normalized, embedding, candidates) in undecided {
+            let decision = decisions.as_ref().and_then(|batch| {
+                batch
+                    .decisions
+                    .iter()
+                    .find(|d| normalize_specific_tag(&d.input_tag) == normalized)
+            });
+            let candidate_json = serde_json::to_value(&candidates).unwrap_or_else(|_| json!([]));
+            let (action, chosen, description, decided_by) = match decision {
+                Some(d)
+                    if d.action == "reuse"
+                        && candidates
+                            .iter()
+                            .any(|c| c.canonical_tag == d.canonical_tag) =>
+                {
+                    (
+                        "reuse",
+                        Some(d.canonical_tag.clone()),
+                        d.description.as_str(),
+                        "model-equivalence",
+                    )
+                }
+                Some(d) if d.action == "reject" => {
+                    ("reject", None, d.description.as_str(), "model-equivalence")
+                }
+                Some(d) => (
+                    "keep-new",
+                    Some(normalized.clone()),
+                    d.description.as_str(),
+                    "model-equivalence",
+                ),
+                None => (
+                    "keep-new",
+                    Some(normalized.clone()),
+                    "Provisional music descriptor awaiting repeated evidence.",
+                    "safe-fallback",
+                ),
+            };
+            let _ = state.db.record_specific_tag_decision(
+                track_id,
+                &raw,
+                &normalized,
+                chosen.as_deref(),
+                action,
+                &candidate_json,
+                decided_by,
+                description,
+                embedding.as_deref(),
+            );
+            if let Some(tag) = chosen {
+                if !canonical.contains(&tag) {
+                    canonical.push(tag);
+                }
+            }
+        }
+    }
+    canonical.truncate(16);
+    profile.specific_tags = canonical;
+}
 /// Between cycles with work left to do.
 const BUSY_SLEEP: Duration = Duration::from_secs(15);
 /// Between cycles when the library is fully enriched.
@@ -73,7 +262,9 @@ fn now_ms() -> i64 {
 }
 
 pub(crate) fn ai_url() -> Option<String> {
-    std::env::var("AFM_AI_URL").ok().filter(|s| !s.trim().is_empty())
+    std::env::var("AFM_AI_URL")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
 }
 
 /// The chat model, and whether there is one at all.
@@ -85,7 +276,10 @@ pub(crate) fn ai_url() -> Option<String> {
 /// half that actually drives the recommendations - run off their own switch
 /// below, so a server can read lyrics without ever generating a word.
 pub(crate) fn ai_chat_model() -> Option<String> {
-    std::env::var("AFM_AI_MODEL").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+    std::env::var("AFM_AI_MODEL")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 /// The embedding model. Separate from the chat model because they are
@@ -144,13 +338,276 @@ pub fn spawn(state: Arc<AppState>) {
         tokio::time::sleep(Duration::from_secs(20)).await;
         loop {
             let did_work = enrich_cycle(&state).await;
+            let ai_work = fast_enrich_cycle(&state).await;
+            let refined = refinement_cycle(&state).await;
             curate_cycle(&state).await;
             // Then the world outside the library: harvest candidates, listen to
             // a couple, and keep the shelf honest about what is already owned.
             let discovered = discovery_cycle(&state).await;
-            tokio::time::sleep(if did_work || discovered { BUSY_SLEEP } else { IDLE_SLEEP }).await;
+            tokio::time::sleep(if did_work || ai_work || refined || discovered {
+                BUSY_SLEEP
+            } else {
+                IDLE_SLEEP
+            })
+            .await;
         }
     });
+}
+
+/// Slowly gives every song a richer musical description. The database query is
+/// the durable queue: unfinished tracks remain at the front across restarts.
+/// Chat work only starts when neither playback nor importing needs the box.
+async fn fast_enrich_cycle(state: &Arc<AppState>) -> bool {
+    if ai_chat_model().is_none() || ai_url().is_none() || state.connect.any_playing().await {
+        return false;
+    }
+    if state
+        .imports
+        .jobs
+        .lock()
+        .await
+        .iter()
+        .any(|j| j.state == "queued" || j.state == "downloading")
+    {
+        return false;
+    }
+    let allowlist = std::env::var("AFM_ENRICH_TRACK_IDS")
+        .ok()
+        .map(|raw| {
+            raw.split(',')
+                .filter_map(|id| id.trim().parse::<i64>().ok())
+                .collect::<HashSet<_>>()
+        })
+        .filter(|ids| !ids.is_empty());
+    let query_limit = if allowlist.is_some() {
+        i64::MAX
+    } else {
+        AI_ENRICH_BATCH
+    };
+    let mut ids = state
+        .db
+        .tracks_needing_fast_profile(query_limit, now_ms() - AI_ENRICH_TTL_MS);
+    if let Some(allowlist) = &allowlist {
+        ids.retain(|id| allowlist.contains(id));
+        ids.truncate(AI_ENRICH_BATCH as usize);
+    }
+    if ids.is_empty() {
+        return false;
+    }
+    let Some(client) = crate::ai::AiClient::configured() else {
+        return false;
+    };
+    // Qwen is the fast usability layer. Operators can override the exact tag.
+    let client = std::env::var("AFM_FAST_ENRICH_MODEL")
+        .ok()
+        .filter(|model| !model.trim().is_empty())
+        .map(|model| client.clone().with_chat_model(model))
+        .unwrap_or_else(|| client.with_chat_model("qwen3.5:9b".into()));
+    for track in state.db.tracks_for_curation(&ids) {
+        // Re-check between songs so a newly started stream/download preempts
+        // the next job rather than waiting for the whole batch.
+        if state.connect.any_playing().await
+            || state
+                .imports
+                .jobs
+                .lock()
+                .await
+                .iter()
+                .any(|j| j.state == "queued" || j.state == "downloading")
+        {
+            break;
+        }
+        let mut external = musicbrainz(&track).await;
+        listenbrainz(&track, &mut external).await;
+        let lyrics: String = track.lyrics.chars().take(1200).collect();
+        let prompt = format!("Analyze this specific recording for music discovery. First reason from rhythm, instrumentation/production, vocals, structure, mood, and energy. Track-level audible evidence dominates. Artist, album, soundtrack placement, franchise, popularity, and the artist's usual style are identity context only and must not determine classification. Do not repeat numeric audio facts. Use 1-3 broad parents in genres and place subgenres or partial influences in specific_tags/influences; preserve sharp genre contrasts. Every label must be supported by supplied evidence. Do not promote a brief influence to a primary genre. Do not call a vocal recording instrumental. Do not invent regional scenes, eras, lyrical claims, or community provenance. Musical mood is not a literal reading of lyrics. Express uncertainty by omitting weak claims. Recommendations will use concrete musical properties, so production_descriptors should capture useful instrumentation, vocal, structural, and sound-design detail. Preferred broad vocabulary (the server also normalizes useful variants):\ngenres: {}\nmoods: {}\nvibes: {}\nmusical_traits: {}\nNever claim lyrical themes unless the lyrics excerpt is non-empty. Summary under 55 words.\nTitle: {}\nArtist: {}\nAlbum (identity only): {}\nSource genre (untrusted hint): {}\nYear: {}\nAuthoritative measured facts (read-only): bpm={:?}, energy={:?}, brightness={:?}, loudness={:?}, dynamic_range={:?}, rhythmic_activity={:?}, duration_seconds={:?}\nTrusted recording-level community tags: {}\nLyrics available: {}\nLyrics excerpt: {}",
+            CONTROLLED_GENRES.join(", "), CONTROLLED_MOODS.join(", "), CONTROLLED_VIBES.join(", "),
+            CONTROLLED_TRAITS.join(", "), track.title, track.artist, track.album, track.genre,
+            track.year.map(|y| y.to_string()).unwrap_or_default(), track.bpm, track.energy,
+            track.brightness, track.loudness, track.dynamic_range, track.rhythmic_activity,
+            track.duration_ms.map(|v| v as f64 / 1000.0), external.tags.join(", "),
+            !lyrics.trim().is_empty(), lyrics);
+        let schema = semantic_schema(false);
+        if let Ok(raw) = client.chat_json::<SemanticProfile>("You catalogue one specific recording from supplied evidence. Audible properties outrank identity context. Return semantic interpretation only; never output numeric measurements or unsupported claims.", &prompt, "attackfm_fast_profile_v4", schema.clone(), false).await {
+            let lyrics_available = !track.lyrics.trim().is_empty();
+            let mut info = raw.clone().normalize(lyrics_available);
+            let mut errors = semantic_validation_errors(&info, lyrics_available);
+            let mut repaired = false;
+            if !errors.is_empty() {
+                let repair_prompt = format!("Repair the candidate profile using the exact validator errors below. You are an editor, not a fresh classifier. Preserve every specific evidence-supported term and genre contrast. Do not add claims that are absent from the recording evidence. Broad fields should use the preferred vocabulary; useful subgenres belong in specific_tags. Return the complete corrected profile.\nValidator errors:\n- {}\nOriginal recording evidence:\n{}\nRejected candidate JSON:\n{}",
+                    errors.join("\n- "), prompt, serde_json::to_string(&raw).unwrap_or_default());
+                if let Ok(candidate) = client.chat_json::<SemanticProfile>("Repair only the supplied music profile. Preserve supported specificity, remove unsupported claims, and satisfy the schema.", &repair_prompt, "attackfm_fast_profile_repair_v1", schema, false).await {
+                    let normalized = candidate.normalize(lyrics_available);
+                    let candidate_errors = semantic_validation_errors(&normalized, lyrics_available);
+                    if candidate_errors.len() < errors.len() {
+                        info = normalized;
+                        repaired = true;
+                    }
+                }
+            }
+            enforce_specific_tag_boundaries(&mut info);
+            reconcile_specific_tags(state, &client, track.id, &mut info).await;
+            errors = semantic_validation_errors(&info, lyrics_available);
+            if !errors.is_empty() || info.summary.eq_ignore_ascii_case(&track.title) {
+                state.db.mark_ai_enrichment_rejected(track.id);
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
+            }
+            let confidence = info.set_deterministic_confidence(
+                lyrics_available,
+                !external.tags.is_empty(),
+                repaired,
+            );
+            let knowledge = format!("{}\nGenres and styles: {}\nMusical traits: {}\nMoods: {}\nLyrical themes: {}", info.summary, info.genres.join(", "), info.musical_traits.join(", "), info.moods.join(", "), info.lyrical_themes.join(", "));
+            let vector = embed_text(&knowledge).await;
+            let sonic_vector = embed_text(&format!(
+                "Genres: {}\nMeasured and supported sonic traits: {}\nMoods: {}",
+                info.genres.join(", "), info.musical_traits.join(", "), info.moods.join(", ")
+            )).await;
+            let lyrical_vector = if info.lyrical_themes.is_empty() { None } else {
+                embed_text(&format!("Lyrical themes: {}", info.lyrical_themes.join(", "))).await
+            };
+            let community_vector = if external.tags.is_empty() { None } else {
+                embed_text(&format!("Community catalogue tags: {}", external.tags.join(", "))).await
+            };
+            let mut sources = vec!["measured_audio".to_string()];
+            if !track.lyrics.trim().is_empty() { sources.push("lyrics".into()); }
+            sources.extend(external.sources.clone());
+            let _ = state.db.save_ai_enrichment(track.id, &info.summary, &info.genres, &info.moods,
+                &info.musical_traits, &info.lyrical_themes, confidence, &sources,
+                &external.tags, &external.musicbrainz_id,
+                &external.similar_recording_mbids, external.listen_count,
+                external.listener_count, sonic_vector.as_deref(),
+                lyrical_vector.as_deref(), community_vector.as_deref(),
+                vector.as_deref());
+            let _ = state.db.save_layered_profile(track.id, &info, None, &info,
+                client.chat_model(), FAST_PROMPT_VERSION, false);
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+    true
+}
+
+fn semantic_schema(patch: bool) -> serde_json::Value {
+    let terms = || json!({"type":"array","maxItems":12,"items":{"type":"string"}});
+    // Keep JSON structure strict but normalize semantic vocabulary server-side.
+    // Requiring enum membership here prevents useful subgenres and aliases from
+    // ever reaching the overflow/parent mapper.
+    let controlled_terms = |_values: &[&str], max: usize, require_value: bool| json!({"type":"array","minItems":if require_value { 1 } else { 0 },"maxItems":max,"items":{"type":"string"}});
+    let confidence = json!({"type":"object","additionalProperties":false,
+        "required":["genres","moods","vibes","musical_traits","lyrical_themes","specific_tags"],
+        "properties":{"genres":{"type":"number","minimum":0,"maximum":1},"moods":{"type":"number","minimum":0,"maximum":1},
+        "vibes":{"type":"number","minimum":0,"maximum":1},"musical_traits":{"type":"number","minimum":0,"maximum":1},
+        "lyrical_themes":{"type":"number","minimum":0,"maximum":1},"specific_tags":{"type":"number","minimum":0,"maximum":1}}});
+    let fields = |require_controlled_values: bool| {
+        let required = if require_controlled_values {
+            json!([
+                "genres",
+                "moods",
+                "vibes",
+                "musical_traits",
+                "lyrical_themes",
+                "specific_tags",
+                "scenes",
+                "movements",
+                "eras",
+                "influences",
+                "cultural_context",
+                "production_descriptors"
+            ])
+        } else {
+            json!([])
+        };
+        json!({"type":"object","additionalProperties":false,
+        "required":required,
+        "properties":{"genres":controlled_terms(CONTROLLED_GENRES,5,require_controlled_values),"moods":controlled_terms(CONTROLLED_MOODS,6,require_controlled_values),
+        "vibes":controlled_terms(CONTROLLED_VIBES,6,require_controlled_values),"musical_traits":controlled_terms(CONTROLLED_TRAITS,8,require_controlled_values),
+        "lyrical_themes":terms(),"specific_tags":terms(),
+        "scenes":terms(),"movements":terms(),"eras":terms(),"influences":terms(),"cultural_context":terms(),"production_descriptors":terms()}})
+    };
+    if patch {
+        json!({"type":"object","additionalProperties":false,"required":["add","remove","replace","summary","confidence","reasoning_summary"],
+            "properties":{"add":fields(false),"remove":fields(false),"replace":fields(false),"summary":{"type":["string","null"]},"confidence":confidence,"reasoning_summary":{"type":"string","maxLength":300}}})
+    } else {
+        let mut properties = fields(true)["properties"].clone();
+        properties["summary"] = json!({"type":"string","maxLength":420});
+        properties["confidence"] = confidence;
+        json!({"type":"object","additionalProperties":false,
+            "required":["genres","moods","vibes","musical_traits","lyrical_themes","specific_tags","scenes","movements","eras","influences","cultural_context","production_descriptors","summary","confidence"],
+            "properties":properties})
+    }
+}
+
+/// Gemma reviews the usable fast profile later and returns an explicit patch.
+/// It never holds up import, scan, playback, search, or the first DJ match.
+async fn refinement_cycle(state: &Arc<AppState>) -> bool {
+    if ai_url().is_none() || state.connect.any_playing().await {
+        return false;
+    }
+    let Some(base) = crate::ai::AiClient::configured() else {
+        return false;
+    };
+    let model = std::env::var("AFM_REFINEMENT_MODEL")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| "gemma4:12b".into());
+    let client = base.with_chat_model(model);
+    let allowed = std::env::var("AFM_ENRICH_TRACK_IDS")
+        .ok()
+        .map(|raw| {
+            raw.split(',')
+                .filter_map(|id| id.trim().parse::<i64>().ok())
+                .collect::<HashSet<i64>>()
+        })
+        .filter(|ids| !ids.is_empty());
+    let limit = if allowed.is_some() { i64::MAX } else { 1 };
+    let mut ids = state
+        .db
+        .tracks_needing_refinement(limit, now_ms() - AI_ENRICH_TTL_MS);
+    if let Some(allowed) = allowed {
+        ids.retain(|id| allowed.contains(id));
+        ids.truncate(1);
+    }
+    let Some(track) = state.db.tracks_for_curation(&ids).into_iter().next() else {
+        return false;
+    };
+    let Some(fast) = state.db.fast_profile(track.id) else {
+        return false;
+    };
+    let lyrics: String = track.lyrics.chars().take(2400).collect();
+    let mut external = musicbrainz(&track).await;
+    listenbrainz(&track, &mut external).await;
+    let prompt = format!("Audit the supplied profile claim by claim for accuracy. You are a skeptical reviewer, not a creative classifier. Remove claims that cannot be grounded in the evidence below. Identity metadata (artist, title, album, release year) identifies the recording but is NOT evidence for genre, era, scene, franchise aesthetics, instrumentation, or cultural context. Numeric measurements support only tempo/energy/brightness/dynamics/rhythmic claims; they cannot identify instruments. Lyrics support lyrical themes only, never instrumentation or musical mood. Community tags are noisy supporting hints, not truth: use them to corroborate an existing claim, never copy their list into the profile and never add a new specific_tag from them. A production or instrumentation claim with no supporting evidence must be removed or rewritten as a cautious measurable trait. Preserve sharp, supported genre contrasts and narrow tags. Prefer omission over plausible invention. Do not add era, scene, movement, influence, or cultural-context claims. Do not replace a narrow accurate term with a generic parent. Do not place broad genres, identity facts, lyrical phrases, personas, or production traits in specific_tags. The summary must obey the same evidence rules as structured fields and must not print raw numeric measurements. OMIT unchanged fields and empty arrays inside add/remove/replace. For any one field, use only one operation; replace only when the entire category is wrong. Keep reasoning_summary under 40 words and name the evidence used for every change.\nSource identity only: title={}, artist={}, album={}, source_genre={}, year={:?}\nAuthoritative measured facts (read-only): bpm={:?}, energy={:?}, brightness={:?}, loudness={:?}, dynamic_range={:?}, rhythmic_activity={:?}\nNoisy recording-level community hints (corroboration only): {}\nExisting Qwen fast profile: {}\nLyrics available: {}\nLyrics excerpt: {}",
+        track.title, track.artist, track.album, track.genre, track.year, track.bpm, track.energy, track.brightness,
+        track.loudness, track.dynamic_range, track.rhythmic_activity, external.tags.join(", "), serde_json::to_string(&fast).unwrap_or_default(),
+        !lyrics.trim().is_empty(), lyrics);
+    match client.chat_json::<RefinementPatch>("You are AttackFM's evidence auditor. Return only a conservative corrective patch. Delete unsupported claims; never fill gaps with world knowledge. Deterministic audio facts are immutable.",
+        &prompt, "attackfm_refinement_patch_v3", semantic_schema(true), false).await {
+        Ok(mut patch) => {
+            // Normalize every patch side through the same validator by applying
+            // it and storing both raw change intent and validated canonical.
+            patch.reasoning_summary = patch.reasoning_summary.trim().chars().take(300).collect();
+            prevent_reviewer_tag_expansion(&fast, &mut patch);
+            let lyrics_available = !track.lyrics.trim().is_empty();
+            let mut canonical = apply_patch(&fast, &patch, lyrics_available);
+            enforce_specific_tag_boundaries(&mut canonical);
+            reconcile_specific_tags(state, &client, track.id, &mut canonical).await;
+            let errors = semantic_validation_errors(&canonical, lyrics_available);
+            if errors.is_empty() {
+                canonical.set_reviewed_confidence(
+                    &fast,
+                    lyrics_available,
+                    !external.tags.is_empty(),
+                );
+                let _ = state.db.save_layered_profile(track.id, &fast, Some(&patch), &canonical,
+                    client.chat_model(), REFINEMENT_PROMPT_VERSION, true);
+            } else {
+                eprintln!("[enrichment] refinement rejected for {}: {}", track.id, errors.join("; "));
+            }
+        }
+        Err(error) => eprintln!("[enrichment] refinement failed for {}: {}", track.id, error),
+    }
+    true
 }
 
 /// One enrichment batch. Returns whether there was anything to do, which is
@@ -194,7 +651,11 @@ async fn enrich_cycle(state: &Arc<AppState>) -> bool {
                 None => None,
             }
         };
-        let vec = if track.has_vec { None } else { embed_track(&track).await };
+        let vec = if track.has_vec {
+            None
+        } else {
+            embed_track(&track).await
+        };
         if vec.is_some() {
             let mut s = state.curator.status.lock().await;
             s.embeddings = true;
@@ -257,7 +718,11 @@ async fn embed_track(track: &CurationTrack) -> Option<Vec<f32>> {
         .await
         .ok()?;
     let arr = reply.pointer("/data/0/embedding")?.as_array()?;
-    let v: Vec<f32> = arr.iter().filter_map(|x| x.as_f64()).map(|x| x as f32).collect();
+    let v: Vec<f32> = arr
+        .iter()
+        .filter_map(|x| x.as_f64())
+        .map(|x| x as f32)
+        .collect();
     (v.len() >= 32).then_some(v)
 }
 
@@ -332,7 +797,12 @@ pub(crate) fn taste_from(plays: &[i64], feats: &HashMap<i64, &TrackFeatures>) ->
         }
     }
 
-    Taste { centroid, tempo, genres, heard: plays.iter().copied().collect() }
+    Taste {
+        centroid,
+        tempo,
+        genres,
+        heard: plays.iter().copied().collect(),
+    }
 }
 
 /// How well one track answers a taste, in [0, 1]. Each term degrades to a
@@ -353,7 +823,11 @@ pub(crate) fn score(f: &TrackFeatures, taste: &Taste) -> f32 {
     } else {
         let g = f.genre.to_lowercase();
         // A share of 0.3 is a strong signal, so scale to reach 1 near there.
-        taste.genres.get(&g).map(|s| (s * 3.0).min(1.0)).unwrap_or(0.15)
+        taste
+            .genres
+            .get(&g)
+            .map(|s| (s * 3.0).min(1.0))
+            .unwrap_or(0.15)
     };
     0.45 * lyric + 0.3 * tempo + 0.25 * genre
 }
@@ -378,7 +852,6 @@ fn take_spread(mut ranked: Vec<(f32, &TrackFeatures)>, n: usize) -> Vec<i64> {
     out
 }
 
-
 /// How many distinct tracks a listener must have played inside the window
 /// before their taste has an answer. Named because the CLIENT shows it: the
 /// Discover page counts up to this ("2 of 4 songs") rather than inventing a
@@ -396,7 +869,12 @@ pub(crate) fn taste_heard(state: &Arc<AppState>, user: i64) -> usize {
 /// have played enough for the question to have an answer.
 pub(crate) fn taste_for(state: &Arc<AppState>, user: i64) -> Option<Taste> {
     let since = now_ms() - WINDOW_30D_MS;
-    let top: Vec<i64> = state.db.top_plays(user, since, 60).into_iter().map(|(id, _)| id).collect();
+    let top: Vec<i64> = state
+        .db
+        .top_plays(user, since, 60)
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
     if top.len() < TASTE_MIN_TRACKS {
         return None;
     }
@@ -453,7 +931,11 @@ pub(crate) async fn embed_text(words: &str) -> Option<Vec<f32>> {
         .await
         .ok()?;
     let arr = reply.pointer("/data/0/embedding")?.as_array()?;
-    let v: Vec<f32> = arr.iter().filter_map(|x| x.as_f64()).map(|x| x as f32).collect();
+    let v: Vec<f32> = arr
+        .iter()
+        .filter_map(|x| x.as_f64())
+        .map(|x| x as f32)
+        .collect();
     (v.len() >= 32).then_some(v)
 }
 
@@ -483,8 +965,12 @@ async fn curate_cycle(state: &Arc<AppState>) {
         // Taste is read from heavy rotation rather than the raw log: playing
         // one song forty times should weigh more than forty different songs
         // heard once, and top_plays already counts that way.
-        let top: Vec<i64> =
-            state.db.top_plays(user, since, 60).into_iter().map(|(id, _)| id).collect();
+        let top: Vec<i64> = state
+            .db
+            .top_plays(user, since, 60)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
         if top.len() < 4 {
             continue;
         }
@@ -546,7 +1032,10 @@ async fn curate_cycle(state: &Arc<AppState>) {
 
         if blend.len() >= 8 {
             let (n, b) = named.get(0).cloned().unwrap_or_else(|| {
-                ("Made for you".into(), "Built from what you have been playing.".into())
+                (
+                    "Made for you".into(),
+                    "Built from what you have been playing.".into(),
+                )
             });
             let _ = state.db.put_curated(user, "blend", &n, &b, &blend);
         }
@@ -563,9 +1052,14 @@ async fn curate_cycle(state: &Arc<AppState>) {
         }
         if echo_ids.len() >= 8 {
             let (n, b) = named.get(2).cloned().unwrap_or_else(|| {
-                ("Same wavelength".into(), "Songs about what your songs are about.".into())
+                (
+                    "Same wavelength".into(),
+                    "Songs about what your songs are about.".into(),
+                )
             });
-            let _ = state.db.put_curated(user, "lyrical-echo", &n, &b, &echo_ids);
+            let _ = state
+                .db
+                .put_curated(user, "lyrical-echo", &n, &b, &echo_ids);
         }
 
         // --- the families beyond the core three -----------------------------
@@ -577,7 +1071,9 @@ async fn curate_cycle(state: &Arc<AppState>) {
         // Fresh finds: what arrived this week, in arrival order - chronology
         // IS the ranking for a list whose point is newness. Adopted collector
         // pulls land here beside anyone's imports.
-        let arrivals = state.db.recent_track_ids(now_ms() - 7 * 24 * 60 * 60 * 1000, LIST_LEN as i64);
+        let arrivals = state
+            .db
+            .recent_track_ids(now_ms() - 7 * 24 * 60 * 60 * 1000, LIST_LEN as i64);
         if arrivals.len() >= 8 {
             let _ = state.db.put_curated(
                 user,
@@ -609,8 +1105,11 @@ async fn curate_cycle(state: &Arc<AppState>) {
             }),
         ];
         for (slug, name, blurb, fits) in moods {
-            let ranked: Vec<(f32, &TrackFeatures)> =
-                pool.iter().filter(|f| fits(f)).map(|f| (score(f, &taste), *f)).collect();
+            let ranked: Vec<(f32, &TrackFeatures)> = pool
+                .iter()
+                .filter(|f| fits(f))
+                .map(|f| (score(f, &taste), *f))
+                .collect();
             let ids = take_spread(ranked, LIST_LEN);
             if ids.len() >= 8 {
                 let _ = state.db.put_curated(user, slug, name, blurb, &ids);
@@ -654,8 +1153,11 @@ async fn curate_cycle(state: &Arc<AppState>) {
 
         // The decade station: where your rotation lives in time, heard tracks
         // welcome - a station is a place, not a surprise.
-        let mut years: Vec<i64> =
-            top.iter().filter_map(|id| by_id.get(id)).filter_map(|f| f.year).collect();
+        let mut years: Vec<i64> = top
+            .iter()
+            .filter_map(|id| by_id.get(id))
+            .filter_map(|f| f.year)
+            .collect();
         years.sort_unstable();
         if let Some(&mid) = years.get(years.len() / 2) {
             let d0 = (mid / 10) * 10;
@@ -716,7 +1218,9 @@ async fn name_lists(
          short sentence, warm and plain, no exclamation marks.\n\
          Answer with STRICT JSON and nothing else: \
          [{{\"title\":\"...\",\"blurb\":\"...\"}}, ...] in the order A, B, C.",
-        tempo.map(|t| format!("{t} BPM")).unwrap_or_else(|| "unknown".into()),
+        tempo
+            .map(|t| format!("{t} BPM"))
+            .unwrap_or_else(|| "unknown".into()),
         genre.clone().unwrap_or_else(|| "mixed".into()),
         describe(blend),
         describe(lane),
@@ -735,8 +1239,13 @@ async fn name_lists(
     else {
         return Vec::new();
     };
-    let Ok(body) = reply.json::<serde_json::Value>().await else { return Vec::new() };
-    let Some(content) = body.pointer("/choices/0/message/content").and_then(|c| c.as_str()) else {
+    let Ok(body) = reply.json::<serde_json::Value>().await else {
+        return Vec::new();
+    };
+    let Some(content) = body
+        .pointer("/choices/0/message/content")
+        .and_then(|c| c.as_str())
+    else {
         return Vec::new();
     };
     // Models wrap JSON in prose and fences; carve the array out, bounds-checked
@@ -747,7 +1256,9 @@ async fn name_lists(
     if end <= start {
         return Vec::new();
     }
-    let Some(slice) = content.get(start..=end) else { return Vec::new() };
+    let Some(slice) = content.get(start..=end) else {
+        return Vec::new();
+    };
     let Ok(parsed) = serde_json::from_str::<Vec<serde_json::Value>>(slice) else {
         return Vec::new();
     };
@@ -755,8 +1266,16 @@ async fn name_lists(
         .into_iter()
         .map(|v| {
             (
-                v.get("title").and_then(|x| x.as_str()).unwrap_or("").trim().to_string(),
-                v.get("blurb").and_then(|x| x.as_str()).unwrap_or("").trim().to_string(),
+                v.get("title")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .trim()
+                    .to_string(),
+                v.get("blurb")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .trim()
+                    .to_string(),
             )
         })
         .filter(|(t, _)| !t.is_empty())
@@ -779,10 +1298,10 @@ async fn discovery_cycle(state: &Arc<AppState>) -> bool {
 
 // --- endpoints ---------------------------------------------------------------
 
+use crate::auth;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
-use crate::auth;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -802,7 +1321,8 @@ pub async fn feed(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let caller =
+        auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
     let lists: Vec<CuratedOut> = state
         .db
         .curated_for(caller.id)
@@ -847,7 +1367,8 @@ pub async fn playlist_suggestions(
     headers: HeaderMap,
     axum::extract::Path(id): axum::extract::Path<i64>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let caller =
+        auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
     if state.db.playlist_owner(id) != Some(caller.id) {
         return Err((StatusCode::NOT_FOUND, "no such playlist".into()));
     }
