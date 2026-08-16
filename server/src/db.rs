@@ -20,6 +20,15 @@ pub struct Db {
     conn: Mutex<Connection>,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SpecificTagCandidate {
+    pub canonical_tag: String,
+    pub description: String,
+    pub status: String,
+    pub usage_count: i64,
+    pub similarity: f32,
+}
+
 /// A row of the library as the API hands it out.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Track {
@@ -110,7 +119,6 @@ pub struct User {
     pub is_admin: bool,
     pub stream_epoch: i64,
 }
-
 
 /// One user's Spotify link, as stored.
 pub struct SpotifyAccountRow {
@@ -416,6 +424,12 @@ CREATE TABLE IF NOT EXISTS track_features (
   -- it keeps the database a plain file anyone can copy.
   lyric_vec  BLOB,
   vec_dims   INTEGER NOT NULL DEFAULT 0,
+  sonic_vec BLOB,
+  sonic_vec_dims INTEGER NOT NULL DEFAULT 0,
+  lyrical_vec BLOB,
+  lyrical_vec_dims INTEGER NOT NULL DEFAULT 0,
+  community_vec BLOB,
+  community_vec_dims INTEGER NOT NULL DEFAULT 0,
   checked_at INTEGER NOT NULL DEFAULT 0,
   -- The audio analyser's half (features.rs): character measured off the file
   -- itself, on its own clock - `analyzed_at` of 0 is "not measured yet", the
@@ -425,9 +439,92 @@ CREATE TABLE IF NOT EXISTS track_features (
   energy      REAL,
   brightness  REAL,
   loudness    REAL,
-  analyzed_at INTEGER NOT NULL DEFAULT 0
+  dynamic_range REAL,
+  rhythmic_activity REAL,
+  audio_fingerprint BLOB,
+  audio_fingerprint_dims INTEGER NOT NULL DEFAULT 0,
+  audio_fingerprint_version INTEGER NOT NULL DEFAULT 0,
+  analyzed_at INTEGER NOT NULL DEFAULT 0,
+  ai_summary  TEXT NOT NULL DEFAULT '',
+  ai_genres   TEXT NOT NULL DEFAULT '',
+  ai_vibes    TEXT NOT NULL DEFAULT '',
+  ai_sonic_traits TEXT NOT NULL DEFAULT '',
+  ai_lyrical_themes TEXT NOT NULL DEFAULT '',
+  ai_confidence REAL NOT NULL DEFAULT 0,
+  ai_sources TEXT NOT NULL DEFAULT '',
+  external_tags TEXT NOT NULL DEFAULT '',
+  musicbrainz_id TEXT NOT NULL DEFAULT '',
+  listenbrainz_similar TEXT NOT NULL DEFAULT '',
+  listenbrainz_listens INTEGER NOT NULL DEFAULT 0,
+  listenbrainz_listeners INTEGER NOT NULL DEFAULT 0,
+  listenbrainz_checked_at INTEGER NOT NULL DEFAULT 0,
+  ai_enriched_at INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS features_checked ON track_features(checked_at);
+
+-- Layered semantic enrichment. The old ai_* columns above remain a canonical
+-- compatibility projection while clients and ranking code migrate gradually.
+CREATE TABLE IF NOT EXISTS song_profile_layers (
+  track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+  schema_version INTEGER NOT NULL DEFAULT 3,
+  fast_profile TEXT NOT NULL DEFAULT '',
+  refinement_patch TEXT NOT NULL DEFAULT '',
+  canonical_profile TEXT NOT NULL DEFAULT '',
+  provenance TEXT NOT NULL DEFAULT '',
+  fast_model TEXT NOT NULL DEFAULT '',
+  fast_prompt_version TEXT NOT NULL DEFAULT '',
+  fast_created_at INTEGER NOT NULL DEFAULT 0,
+  refinement_model TEXT NOT NULL DEFAULT '',
+  refinement_prompt_version TEXT NOT NULL DEFAULT '',
+  refined_at INTEGER NOT NULL DEFAULT 0,
+  migrated_from TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS song_profiles_fast_queue ON song_profile_layers(fast_created_at);
+CREATE INDEX IF NOT EXISTS song_profiles_refine_queue ON song_profile_layers(refined_at);
+
+-- A deliberately small, learned vocabulary for open-ended music descriptors.
+-- Model wording is never destroyed: aliases retain the observed phrase while
+-- canonical tags become stable discovery keys. New concepts begin provisional
+-- and earn established status through repeated use.
+CREATE TABLE IF NOT EXISTS specific_tag_registry (
+  id INTEGER PRIMARY KEY,
+  canonical_tag TEXT NOT NULL UNIQUE,
+  description TEXT NOT NULL DEFAULT '',
+  embedding BLOB,
+  embedding_dims INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'provisional',
+  usage_count INTEGER NOT NULL DEFAULT 0,
+  track_count INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  last_used_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS specific_tag_aliases (
+  normalized_alias TEXT PRIMARY KEY,
+  raw_alias TEXT NOT NULL,
+  tag_id INTEGER NOT NULL REFERENCES specific_tag_registry(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS track_specific_tag_evidence (
+  track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+  raw_tag TEXT NOT NULL,
+  normalized_tag TEXT NOT NULL,
+  canonical_tag TEXT NOT NULL DEFAULT '',
+  decision TEXT NOT NULL,
+  candidate_tags TEXT NOT NULL DEFAULT '[]',
+  decided_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY(track_id, raw_tag)
+);
+CREATE INDEX IF NOT EXISTS specific_tags_status_usage ON specific_tag_registry(status,usage_count DESC);
+
+-- Personal, human DJ judgement. Enrichment refreshes never overwrite it.
+CREATE TABLE IF NOT EXISTS track_dj_notes (
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  track_id   INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+  note       TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, track_id)
+);
 
 -- Music this listener does NOT own, harvested from the public catalogue and
 -- scored against their taste the same way their own library is. A row is a
@@ -843,6 +940,14 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+fn comma_terms(raw: String) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
 /// Whether a track has been listened to enough to be worth carrying.
 ///
 /// "Listened to twice" cannot just mean two rows in `plays`: that table
@@ -882,6 +987,7 @@ impl Db {
         let conn = Connection::open(path)?;
         conn.execute_batch(SCHEMA)?;
         Self::migrate(&conn)?;
+        Self::migrate_legacy_profiles(&conn)?;
         Self::backfill_search_index(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
@@ -906,7 +1012,68 @@ impl Db {
             ("energy", "energy REAL"),
             ("brightness", "brightness REAL"),
             ("loudness", "loudness REAL"),
+            ("dynamic_range", "dynamic_range REAL"),
+            ("rhythmic_activity", "rhythmic_activity REAL"),
+            ("audio_fingerprint", "audio_fingerprint BLOB"),
+            (
+                "audio_fingerprint_dims",
+                "audio_fingerprint_dims INTEGER NOT NULL DEFAULT 0",
+            ),
+            (
+                "audio_fingerprint_version",
+                "audio_fingerprint_version INTEGER NOT NULL DEFAULT 0",
+            ),
+            ("sonic_vec", "sonic_vec BLOB"),
+            (
+                "sonic_vec_dims",
+                "sonic_vec_dims INTEGER NOT NULL DEFAULT 0",
+            ),
+            ("lyrical_vec", "lyrical_vec BLOB"),
+            (
+                "lyrical_vec_dims",
+                "lyrical_vec_dims INTEGER NOT NULL DEFAULT 0",
+            ),
+            ("community_vec", "community_vec BLOB"),
+            (
+                "community_vec_dims",
+                "community_vec_dims INTEGER NOT NULL DEFAULT 0",
+            ),
             ("analyzed_at", "analyzed_at INTEGER NOT NULL DEFAULT 0"),
+            ("ai_summary", "ai_summary TEXT NOT NULL DEFAULT ''"),
+            ("ai_genres", "ai_genres TEXT NOT NULL DEFAULT ''"),
+            ("ai_vibes", "ai_vibes TEXT NOT NULL DEFAULT ''"),
+            (
+                "ai_sonic_traits",
+                "ai_sonic_traits TEXT NOT NULL DEFAULT ''",
+            ),
+            (
+                "ai_lyrical_themes",
+                "ai_lyrical_themes TEXT NOT NULL DEFAULT ''",
+            ),
+            ("ai_confidence", "ai_confidence REAL NOT NULL DEFAULT 0"),
+            ("ai_sources", "ai_sources TEXT NOT NULL DEFAULT ''"),
+            ("external_tags", "external_tags TEXT NOT NULL DEFAULT ''"),
+            ("musicbrainz_id", "musicbrainz_id TEXT NOT NULL DEFAULT ''"),
+            (
+                "listenbrainz_similar",
+                "listenbrainz_similar TEXT NOT NULL DEFAULT ''",
+            ),
+            (
+                "listenbrainz_listens",
+                "listenbrainz_listens INTEGER NOT NULL DEFAULT 0",
+            ),
+            (
+                "listenbrainz_listeners",
+                "listenbrainz_listeners INTEGER NOT NULL DEFAULT 0",
+            ),
+            (
+                "listenbrainz_checked_at",
+                "listenbrainz_checked_at INTEGER NOT NULL DEFAULT 0",
+            ),
+            (
+                "ai_enriched_at",
+                "ai_enriched_at INTEGER NOT NULL DEFAULT 0",
+            ),
         ] {
             if !have.iter().any(|c| c == name) {
                 conn.execute(&format!("ALTER TABLE track_features ADD COLUMN {decl}"), [])?;
@@ -923,7 +1090,10 @@ impl Db {
             .collect();
         for (name, decl) in [
             ("curator_user_id", "curator_user_id INTEGER"),
-            ("curator_promoted", "curator_promoted INTEGER NOT NULL DEFAULT 0"),
+            (
+                "curator_promoted",
+                "curator_promoted INTEGER NOT NULL DEFAULT 0",
+            ),
             ("chapters", "chapters TEXT NOT NULL DEFAULT ''"),
         ] {
             if !have.iter().any(|c| c == name) {
@@ -937,11 +1107,67 @@ impl Db {
         // shelf the books live on reads it back. The backfill catches files
         // already sitting in Audiobooks/ before this column existed.
         if !have.iter().any(|c| c == "kind") {
-            conn.execute("ALTER TABLE tracks ADD COLUMN kind TEXT NOT NULL DEFAULT 'music'", [])?;
+            conn.execute(
+                "ALTER TABLE tracks ADD COLUMN kind TEXT NOT NULL DEFAULT 'music'",
+                [],
+            )?;
             conn.execute(
                 "UPDATE tracks SET kind = 'book' WHERE rel_path LIKE 'Audiobooks/%'",
                 [],
             )?;
+        }
+        Ok(())
+    }
+
+    fn migrate_legacy_profiles(conn: &Connection) -> rusqlite::Result<()> {
+        let rows = {
+            let mut stmt = conn.prepare(
+                "SELECT f.track_id,f.ai_summary,f.ai_genres,f.ai_vibes,f.ai_sonic_traits,
+                 f.ai_lyrical_themes,f.ai_confidence,f.ai_enriched_at,length(trim(t.lyrics))>0
+                 FROM track_features f JOIN tracks t ON t.id=f.track_id
+                 LEFT JOIN song_profile_layers p ON p.track_id=f.track_id
+                 WHERE p.track_id IS NULL AND trim(f.ai_summary)<>''",
+            )?;
+            let mapped = stmt.query_map([], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
+                    r.get::<_, String>(5)?,
+                    r.get::<_, f32>(6)?,
+                    r.get::<_, i64>(7)?,
+                    r.get::<_, bool>(8)?,
+                ))
+            })?;
+            mapped.filter_map(Result::ok).collect::<Vec<_>>()
+        };
+        for (id, summary, genres, moods, traits, themes, confidence, at, has_lyrics) in rows {
+            let category = crate::enrichment::CategoryConfidence {
+                genres: confidence,
+                moods: confidence,
+                vibes: confidence,
+                musical_traits: confidence,
+                lyrical_themes: confidence,
+                specific_tags: confidence,
+            };
+            let profile = crate::enrichment::SemanticProfile {
+                summary,
+                genres: comma_terms(genres),
+                moods: comma_terms(moods),
+                musical_traits: comma_terms(traits),
+                lyrical_themes: comma_terms(themes),
+                confidence: category,
+                ..Default::default()
+            }
+            .normalize(has_lyrics);
+            let encoded = serde_json::to_string(&profile).unwrap_or_default();
+            let provenance = crate::enrichment::provenance(&profile, &profile, None).to_string();
+            conn.execute("INSERT OR IGNORE INTO song_profile_layers
+                (track_id,schema_version,fast_profile,canonical_profile,provenance,fast_model,fast_prompt_version,fast_created_at,migrated_from)
+                VALUES (?1,?2,?3,?3,?4,'legacy-unknown','legacy-v2',?5,'attackfm_song_profile_v2')",
+                params![id,crate::enrichment::PROFILE_SCHEMA_VERSION,encoded,provenance,at.max(1)])?;
         }
         Ok(())
     }
@@ -982,7 +1208,9 @@ impl Db {
 
     pub fn meta_get(&self, key: &str) -> Option<String> {
         self.lock()
-            .query_row("SELECT v FROM meta WHERE k = ?1", params![key], |r| r.get(0))
+            .query_row("SELECT v FROM meta WHERE k = ?1", params![key], |r| {
+                r.get(0)
+            })
             .optional()
             .ok()
             .flatten()
@@ -1029,7 +1257,13 @@ impl Db {
     }
 
     /// Bind a registry account to a local user as a member of this server.
-    pub fn add_registry_member(&self, sub: i64, user_id: i64, handle: &str, role: &str) -> rusqlite::Result<()> {
+    pub fn add_registry_member(
+        &self,
+        sub: i64,
+        user_id: i64,
+        handle: &str,
+        role: &str,
+    ) -> rusqlite::Result<()> {
         let conn = self.lock();
         conn.execute(
             "INSERT INTO registry_members (registry_sub, user_id, handle, role, joined_at)
@@ -1044,14 +1278,21 @@ impl Db {
     /// server, where the first person through the door becomes the owner.
     pub fn has_any_admin(&self) -> bool {
         let conn = self.lock();
-        conn.query_row("SELECT 1 FROM users WHERE is_admin = 1 LIMIT 1", [], |_| Ok(()))
-            .optional()
-            .ok()
-            .flatten()
-            .is_some()
+        conn.query_row("SELECT 1 FROM users WHERE is_admin = 1 LIMIT 1", [], |_| {
+            Ok(())
+        })
+        .optional()
+        .ok()
+        .flatten()
+        .is_some()
     }
 
-    pub fn create_user(&self, username: &str, pass_hash: &str, is_admin: bool) -> rusqlite::Result<i64> {
+    pub fn create_user(
+        &self,
+        username: &str,
+        pass_hash: &str,
+        is_admin: bool,
+    ) -> rusqlite::Result<i64> {
         let conn = self.lock();
         conn.execute(
             "INSERT INTO users (username, pass_hash, is_admin, created_at) VALUES (?1, ?2, ?3, ?4)",
@@ -1087,7 +1328,11 @@ impl Db {
     /// track ids it produced - what lets a client play an import on arrival.
     pub fn track_id_by_path(&self, rel_path: &str) -> Option<i64> {
         self.lock()
-            .query_row("SELECT id FROM tracks WHERE rel_path = ?1", params![rel_path], |r| r.get(0))
+            .query_row(
+                "SELECT id FROM tracks WHERE rel_path = ?1",
+                params![rel_path],
+                |r| r.get(0),
+            )
             .optional()
             .ok()
             .flatten()
@@ -1107,17 +1352,18 @@ impl Db {
 
     pub fn list_users(&self) -> Vec<(i64, String, bool)> {
         let conn = self.lock();
-        let Ok(mut stmt) = conn.prepare("SELECT id, username, is_admin FROM users ORDER BY id") else {
+        let Ok(mut stmt) = conn.prepare("SELECT id, username, is_admin FROM users ORDER BY id")
+        else {
             return Vec::new();
         };
-        let rows = stmt.query_map([], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0))
-        });
-        rows.map(|r| r.filter_map(Result::ok).collect()).unwrap_or_default()
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0)));
+        rows.map(|r| r.filter_map(Result::ok).collect())
+            .unwrap_or_default()
     }
 
     pub fn delete_user(&self, id: i64) -> rusqlite::Result<()> {
-        self.lock().execute("DELETE FROM users WHERE id = ?1", params![id])?;
+        self.lock()
+            .execute("DELETE FROM users WHERE id = ?1", params![id])?;
         Ok(())
     }
 
@@ -1135,7 +1381,8 @@ impl Db {
     /// surviving session token would just mint a fresh one on the client's
     /// next `/api/me`, quietly undoing the revoke.
     pub fn delete_tokens_for_user(&self, user_id: i64) -> rusqlite::Result<()> {
-        self.lock().execute("DELETE FROM tokens WHERE user_id = ?1", params![user_id])?;
+        self.lock()
+            .execute("DELETE FROM tokens WHERE user_id = ?1", params![user_id])?;
         Ok(())
     }
 
@@ -1182,14 +1429,14 @@ impl Db {
     /// the scanner can skip files that have not moved since last time.
     pub fn scan_fingerprints(&self) -> std::collections::HashMap<String, (i64, i64)> {
         let conn = self.lock();
-        let Ok(mut stmt) = conn.prepare("SELECT rel_path, mtime, size_bytes FROM tracks WHERE deleted = 0")
+        let Ok(mut stmt) =
+            conn.prepare("SELECT rel_path, mtime, size_bytes FROM tracks WHERE deleted = 0")
         else {
             return Default::default();
         };
-        let rows = stmt.query_map([], |r| {
-            Ok((r.get::<_, String>(0)?, (r.get(1)?, r.get(2)?)))
-        });
-        rows.map(|r| r.filter_map(Result::ok).collect()).unwrap_or_default()
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, (r.get(1)?, r.get(2)?))));
+        rows.map(|r| r.filter_map(Result::ok).collect())
+            .unwrap_or_default()
     }
 
     /// Every live track's identity - title, artist, album artist, album,
@@ -1206,7 +1453,8 @@ impl Db {
         let rows = stmt.query_map([], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
         });
-        rows.map(|r| r.filter_map(Result::ok).collect()).unwrap_or_default()
+        rows.map(|r| r.filter_map(Result::ok).collect())
+            .unwrap_or_default()
     }
 
     /// Inserts or refreshes one scanned file, stamping it with `rev`.
@@ -1240,10 +1488,30 @@ impl Db {
                  mtime = excluded.mtime, art_id = excluded.art_id,
                  rev = excluded.rev, deleted = 0",
             params![
-                t.rel_path, t.title, t.artist, t.album_artist, t.album, t.track_no, t.disc_no,
-                t.year, t.genre, t.lyrics, t.duration_ms, t.codec, t.lossless as i64,
-                t.sample_rate, t.bit_depth, t.channels, t.bitrate, t.size_bytes, t.mtime,
-                t.art_id, now_ms(), rev, kind_for(&t.rel_path), t.chapters
+                t.rel_path,
+                t.title,
+                t.artist,
+                t.album_artist,
+                t.album,
+                t.track_no,
+                t.disc_no,
+                t.year,
+                t.genre,
+                t.lyrics,
+                t.duration_ms,
+                t.codec,
+                t.lossless as i64,
+                t.sample_rate,
+                t.bit_depth,
+                t.channels,
+                t.bitrate,
+                t.size_bytes,
+                t.mtime,
+                t.art_id,
+                now_ms(),
+                rev,
+                kind_for(&t.rel_path),
+                t.chapters
             ],
         )?;
         Ok(())
@@ -1383,7 +1651,9 @@ impl Db {
 
     pub fn track_count(&self) -> i64 {
         self.lock()
-            .query_row("SELECT COUNT(*) FROM tracks WHERE deleted = 0", [], |r| r.get(0))
+            .query_row("SELECT COUNT(*) FROM tracks WHERE deleted = 0", [], |r| {
+                r.get(0)
+            })
             .unwrap_or(0)
     }
 
@@ -1471,10 +1741,13 @@ impl Db {
         let Ok(mut stmt) = conn.prepare(&sql) else {
             return Vec::new();
         };
-        let bound: Vec<&dyn rusqlite::ToSql> = ids.iter().map(|i| i as &dyn rusqlite::ToSql).collect();
-        stmt.query_map(bound.as_slice(), |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
-            .map(|r| r.filter_map(Result::ok).collect())
-            .unwrap_or_default()
+        let bound: Vec<&dyn rusqlite::ToSql> =
+            ids.iter().map(|i| i as &dyn rusqlite::ToSql).collect();
+        stmt.query_map(bound.as_slice(), |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+        })
+        .map(|r| r.filter_map(Result::ok).collect())
+        .unwrap_or_default()
     }
 
 /// One track's standing in a listener's history, for deciding what a hot
@@ -1590,8 +1863,8 @@ impl Db {
     /// Every playlist the user owns, each with its track ids in order.
     pub fn playlists(&self, user_id: i64) -> Vec<(i64, String, i64, Vec<i64>)> {
         let conn = self.lock();
-        let Ok(mut stmt) =
-            conn.prepare("SELECT id, name, updated_at FROM playlists WHERE user_id = ?1 ORDER BY name")
+        let Ok(mut stmt) = conn
+            .prepare("SELECT id, name, updated_at FROM playlists WHERE user_id = ?1 ORDER BY name")
         else {
             return Vec::new();
         };
@@ -1735,14 +2008,22 @@ impl Db {
         ) else {
             return Vec::new();
         };
-        stmt.query_map(params![user_id, since_ms, limit], |r| Ok((r.get(0)?, r.get(1)?)))
-            .map(|rows| rows.filter_map(Result::ok).collect())
-            .unwrap_or_default()
+        stmt.query_map(params![user_id, since_ms, limit], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
     }
 
     /// Plays inside one window of the past: what the rewind page calls "around
     /// this date, years ago". Same shape as `top_plays`, bounded both ends.
-    pub fn plays_between(&self, user_id: i64, from_ms: i64, to_ms: i64, limit: i64) -> Vec<(i64, i64)> {
+    pub fn plays_between(
+        &self,
+        user_id: i64,
+        from_ms: i64,
+        to_ms: i64,
+        limit: i64,
+    ) -> Vec<(i64, i64)> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
             "SELECT p.track_id, COUNT(*) AS n
@@ -1752,9 +2033,11 @@ impl Db {
         ) else {
             return Vec::new();
         };
-        stmt.query_map(params![user_id, from_ms, to_ms, limit], |r| Ok((r.get(0)?, r.get(1)?)))
-            .map(|rows| rows.filter_map(Result::ok).collect())
-            .unwrap_or_default()
+        stmt.query_map(params![user_id, from_ms, to_ms, limit], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
     }
 
     // --- friends -------------------------------------------------------
@@ -1796,7 +2079,9 @@ impl Db {
              JOIN users u ON u.id = {other}
              WHERE {whose} ORDER BY r.created_at DESC",
         );
-        let Ok(mut stmt) = conn.prepare(&sql) else { return Vec::new() };
+        let Ok(mut stmt) = conn.prepare(&sql) else {
+            return Vec::new();
+        };
         stmt.query_map(params![user_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
             .map(|rows| rows.filter_map(Result::ok).collect())
             .unwrap_or_default()
@@ -1897,9 +2182,11 @@ impl Db {
         ) else {
             return Vec::new();
         };
-        stmt.query_map(params![user_id, artist, limit], |r| Ok((r.get(0)?, r.get(1)?)))
-            .map(|rows| rows.filter_map(Result::ok).collect())
-            .unwrap_or_default()
+        stmt.query_map(params![user_id, artist, limit], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
     }
 
     /// Play counts grouped by artist inside the window, most-played first -
@@ -1917,9 +2204,11 @@ impl Db {
         ) else {
             return Vec::new();
         };
-        stmt.query_map(params![user_id, since_ms, limit], |r| Ok((r.get(0)?, r.get(1)?)))
-            .map(|rows| rows.filter_map(Result::ok).collect())
-            .unwrap_or_default()
+        stmt.query_map(params![user_id, since_ms, limit], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
     }
 
     /// Play counts grouped by genre inside the window, most-played first -
@@ -1935,9 +2224,11 @@ impl Db {
         ) else {
             return Vec::new();
         };
-        stmt.query_map(params![user_id, since_ms, limit], |r| Ok((r.get(0)?, r.get(1)?)))
-            .map(|rows| rows.filter_map(Result::ok).collect())
-            .unwrap_or_default()
+        stmt.query_map(params![user_id, since_ms, limit], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
     }
 
     /// Live tracks in a genre, newest first - genre-mix material.
@@ -1973,9 +2264,11 @@ impl Db {
             ) else {
                 return Vec::new();
             };
-            stmt.query_map(params![user_id, album_limit], |r| Ok((r.get(0)?, r.get(1)?)))
-                .map(|rows| rows.filter_map(Result::ok).collect())
-                .unwrap_or_default()
+            stmt.query_map(params![user_id, album_limit], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
         };
 
         let mut out = Vec::new();
@@ -2016,9 +2309,9 @@ impl Db {
     /// Newest live tracks by added_at, for the "recently added" shelf.
     pub fn recently_added(&self, limit: i64) -> Vec<i64> {
         let conn = self.lock();
-        let Ok(mut stmt) = conn.prepare(
-            "SELECT id FROM tracks WHERE deleted = 0 ORDER BY added_at DESC LIMIT ?1",
-        ) else {
+        let Ok(mut stmt) =
+            conn.prepare("SELECT id FROM tracks WHERE deleted = 0 ORDER BY added_at DESC LIMIT ?1")
+        else {
             return Vec::new();
         };
         stmt.query_map(params![limit], |r| r.get(0))
@@ -2040,7 +2333,12 @@ impl Db {
             .unwrap_or_default()
     }
 
-    pub fn set_play_state(&self, user_id: i64, track_id: i64, position_ms: i64) -> rusqlite::Result<()> {
+    pub fn set_play_state(
+        &self,
+        user_id: i64,
+        track_id: i64,
+        position_ms: i64,
+    ) -> rusqlite::Result<()> {
         self.lock().execute(
             "INSERT INTO play_state (user_id, track_id, position_ms, updated_at)
              VALUES (?1, ?2, ?3, ?4)
@@ -2143,16 +2441,24 @@ impl Db {
 
     pub fn spotify_synced(&self, user_id: i64) -> std::collections::HashMap<String, String> {
         let conn = self.lock();
-        let Ok(mut stmt) = conn.prepare("SELECT key, snapshot FROM spotify_synced WHERE user_id = ?1")
+        let Ok(mut stmt) =
+            conn.prepare("SELECT key, snapshot FROM spotify_synced WHERE user_id = ?1")
         else {
             return Default::default();
         };
-        stmt.query_map(params![user_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
-            .map(|rows| rows.filter_map(Result::ok).collect())
-            .unwrap_or_default()
+        stmt.query_map(params![user_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
     }
 
-    pub fn spotify_mark_synced(&self, user_id: i64, key: &str, snapshot: &str) -> rusqlite::Result<()> {
+    pub fn spotify_mark_synced(
+        &self,
+        user_id: i64,
+        key: &str,
+        snapshot: &str,
+    ) -> rusqlite::Result<()> {
         self.lock().execute(
             "INSERT INTO spotify_synced (user_id, key, snapshot) VALUES (?1, ?2, ?3)
              ON CONFLICT(user_id, key) DO UPDATE SET snapshot = excluded.snapshot",
@@ -2192,13 +2498,18 @@ impl Db {
         // Chunked rather than one giant IN list: SQLite's variable limit is
         // 999 by default and a big playlist blows straight past it.
         for chunk in ext_ids.chunks(400) {
-            let holes = std::iter::repeat("?").take(chunk.len()).collect::<Vec<_>>().join(",");
+            let holes = std::iter::repeat("?")
+                .take(chunk.len())
+                .collect::<Vec<_>>()
+                .join(",");
             let sql = format!(
                 "SELECT e.ext_id, e.track_id FROM track_ext_ids e
                  JOIN tracks t ON t.id = e.track_id
                  WHERE t.deleted = 0 AND e.source = ? AND e.ext_id IN ({holes})"
             );
-            let Ok(mut stmt) = conn.prepare(&sql) else { continue };
+            let Ok(mut stmt) = conn.prepare(&sql) else {
+                continue;
+            };
             let mut args: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(chunk.len() + 1);
             args.push(&source);
             for id in chunk {
@@ -2326,12 +2637,26 @@ impl Db {
                owner         = excluded.owner,
                image         = excluded.image,
                head_snapshot = excluded.head_snapshot",
-            params![user_id, key, kind, spotify_id, name, owner, image, head_snapshot],
+            params![
+                user_id,
+                key,
+                kind,
+                spotify_id,
+                name,
+                owner,
+                image,
+                head_snapshot
+            ],
         )?;
         Ok(())
     }
 
-    pub fn spotify_mirror_set_watch(&self, user_id: i64, key: &str, watch: bool) -> rusqlite::Result<()> {
+    pub fn spotify_mirror_set_watch(
+        &self,
+        user_id: i64,
+        key: &str,
+        watch: bool,
+    ) -> rusqlite::Result<()> {
         self.lock().execute(
             "UPDATE spotify_mirrors SET watch = ?3, next_check = 0 WHERE user_id = ?1 AND key = ?2",
             params![user_id, key, i64::from(watch)],
@@ -2387,7 +2712,15 @@ impl Db {
                checked_at   = ?6,
                synced_at    = CASE WHEN ?7 THEN ?6 ELSE synced_at END
              WHERE user_id = ?1 AND key = ?2",
-            params![user_id, key, snapshot, resolved_rev, next_check, now, synced],
+            params![
+                user_id,
+                key,
+                snapshot,
+                resolved_rev,
+                next_check,
+                now,
+                synced
+            ],
         )?;
         Ok(())
     }
@@ -2424,7 +2757,11 @@ impl Db {
 
     /// Recount a mirror from its items and write the counters onto the head,
     /// so the progress surface is restart-safe rather than in-memory.
-    pub fn spotify_mirror_recount(&self, user_id: i64, key: &str) -> rusqlite::Result<MirrorCounts> {
+    pub fn spotify_mirror_recount(
+        &self,
+        user_id: i64,
+        key: &str,
+    ) -> rusqlite::Result<MirrorCounts> {
         let conn = self.lock();
         let counts = conn.query_row(
             "SELECT COUNT(*),
@@ -2538,7 +2875,9 @@ impl Db {
         }
         // Anything no longer upstream leaves the mirror. Building the keep-set
         // as a temp table beats a 3,000-hole NOT IN list.
-        tx.execute_batch("CREATE TEMP TABLE IF NOT EXISTS _keep (uid TEXT, occ INTEGER); DELETE FROM _keep;")?;
+        tx.execute_batch(
+            "CREATE TEMP TABLE IF NOT EXISTS _keep (uid TEXT, occ INTEGER); DELETE FROM _keep;",
+        )?;
         {
             let mut ins = tx.prepare("INSERT INTO _keep (uid, occ) VALUES (?1, ?2)")?;
             for item in fetched {
@@ -2597,7 +2936,18 @@ impl Db {
                state = ?5, track_id = ?6, match_method = ?7, job_id = ?8,
                note = ?9, updated_at = ?10
              WHERE user_id = ?1 AND key = ?2 AND track_uid = ?3 AND occurrence = ?4",
-            params![user_id, key, uid, occurrence, state, track_id, method, job_id, note, now_ms()],
+            params![
+                user_id,
+                key,
+                uid,
+                occurrence,
+                state,
+                track_id,
+                method,
+                job_id,
+                note,
+                now_ms()
+            ],
         )?;
         Ok(())
     }
@@ -2705,14 +3055,25 @@ impl Db {
             return Vec::new();
         }
         let conn = self.lock();
-        let list = ids.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+        let list = ids
+            .iter()
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
         let sql = format!(
             "SELECT t.id, t.title, t.artist, t.album, t.genre, t.lyrics, t.duration_ms,
-                    f.bpm IS NOT NULL, COALESCE(f.vec_dims, 0) > 0
+                    f.bpm IS NOT NULL, COALESCE(f.vec_dims, 0) > 0, t.year,
+                    f.bpm, f.energy, f.brightness, f.loudness,
+                    f.dynamic_range, f.rhythmic_activity,
+                    COALESCE(f.ai_summary,''), COALESCE(f.ai_genres,''),
+                    COALESCE(f.ai_vibes,''), COALESCE(f.ai_sonic_traits,''),
+                    COALESCE(f.ai_lyrical_themes,''), COALESCE(f.ai_confidence,0)
              FROM tracks t LEFT JOIN track_features f ON f.track_id = t.id
              WHERE t.deleted = 0 AND t.id IN ({list})"
         );
-        let Ok(mut stmt) = conn.prepare(&sql) else { return Vec::new() };
+        let Ok(mut stmt) = conn.prepare(&sql) else {
+            return Vec::new();
+        };
         stmt.query_map([], |r| {
             Ok(CurationTrack {
                 id: r.get(0)?,
@@ -2724,10 +3085,46 @@ impl Db {
                 duration_ms: r.get(6)?,
                 has_bpm: r.get(7)?,
                 has_vec: r.get(8)?,
+                year: r.get(9)?,
+                bpm: r.get(10)?,
+                energy: r.get(11)?,
+                brightness: r.get(12)?,
+                loudness: r.get(13)?,
+                dynamic_range: r.get(14)?,
+                rhythmic_activity: r.get(15)?,
+                ai_summary: r.get(16)?,
+                ai_genres: comma_terms(r.get(17)?),
+                ai_moods: comma_terms(r.get(18)?),
+                ai_sonic_traits: comma_terms(r.get(19)?),
+                ai_lyrical_themes: comma_terms(r.get(20)?),
+                ai_confidence: r.get(21)?,
             })
         })
         .map(|rows| rows.filter_map(Result::ok).collect())
         .unwrap_or_default()
+    }
+
+    pub fn dj_note(&self, user_id: i64, track_id: i64) -> String {
+        self.lock()
+            .query_row(
+                "SELECT note FROM track_dj_notes WHERE user_id=?1 AND track_id=?2",
+                params![user_id, track_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .ok()
+            .flatten()
+            .unwrap_or_default()
+    }
+
+    pub fn set_dj_note(&self, user_id: i64, track_id: i64, note: &str) -> rusqlite::Result<()> {
+        let note: String = note.trim().chars().take(2000).collect();
+        self.lock().execute(
+            "INSERT INTO track_dj_notes (user_id,track_id,note,updated_at) VALUES (?1,?2,?3,?4)
+             ON CONFLICT(user_id,track_id) DO UPDATE SET note=excluded.note,updated_at=excluded.updated_at",
+            params![user_id, track_id, note, now_ms()],
+        )?;
+        Ok(())
     }
 
     /// The next tracks the enricher should look at: never-seen ones first,
@@ -2759,9 +3156,12 @@ impl Db {
         ) else {
             return Vec::new();
         };
-        stmt.query_map(params![limit, stale_before, vector_before, want_vectors], |r| r.get(0))
-            .map(|rows| rows.filter_map(Result::ok).collect())
-            .unwrap_or_default()
+        stmt.query_map(
+            params![limit, stale_before, vector_before, want_vectors],
+            |r| r.get(0),
+        )
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
     }
 
     /// Records what the lookup found. Nulls are a real answer ("looked, found
@@ -2794,37 +3194,364 @@ impl Db {
         Ok(())
     }
 
+    /// Next durable AI-enrichment jobs. A zero stamp is a newly indexed song;
+    /// old rows are revisited occasionally as tags and lyrics improve.
+    pub fn tracks_needing_ai_enrichment(&self, limit: i64, stale_before: i64) -> Vec<i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT t.id FROM tracks t LEFT JOIN track_features f ON f.track_id=t.id
+             WHERE t.deleted=0 AND (COALESCE(f.ai_enriched_at,0) < ?2
+                    OR (COALESCE(f.ai_enriched_at,0) > 0 AND COALESCE(f.ai_sources,'') = '')
+                    OR (COALESCE(f.musicbrainz_id,'') <> ''
+                        AND COALESCE(f.listenbrainz_checked_at,0) = 0
+                        AND COALESCE(f.ai_sources,'') <> 'rejected_v2')
+                    OR (COALESCE(f.ai_sources,'') <> ''
+                        AND COALESCE(f.ai_sources,'') <> 'rejected_v2'
+                        AND COALESCE(f.sonic_vec_dims,0) = 0))
+             ORDER BY CASE WHEN COALESCE(f.ai_sources,'') = '' THEN 0 ELSE 1 END,
+                      COALESCE(f.ai_enriched_at,0), t.added_at DESC LIMIT ?1",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![limit, stale_before], |r| r.get(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn tracks_needing_fast_profile(&self, limit: i64, stale_before: i64) -> Vec<i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT t.id FROM tracks t
+             LEFT JOIN song_profile_layers p ON p.track_id=t.id
+             LEFT JOIN track_features f ON f.track_id=t.id
+             WHERE t.deleted=0 AND COALESCE(p.fast_created_at,0) < ?2
+               AND NOT (COALESCE(f.ai_sources,'')='rejected_v3'
+                        AND COALESCE(f.ai_enriched_at,0) >= ?2)
+             ORDER BY COALESCE(p.fast_created_at,0), t.added_at DESC LIMIT ?1",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![limit, stale_before], |r| r.get(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn tracks_needing_refinement(&self, limit: i64, stale_before: i64) -> Vec<i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT t.id FROM tracks t JOIN song_profile_layers p ON p.track_id=t.id
+             WHERE t.deleted=0 AND p.fast_created_at>0 AND p.fast_profile<>''
+               AND (p.refined_at=0 OR p.refined_at < ?2)
+             ORDER BY p.refined_at, p.fast_created_at LIMIT ?1",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![limit, stale_before], |r| r.get(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn fast_profile(&self, track_id: i64) -> Option<crate::enrichment::SemanticProfile> {
+        let raw: String = self
+            .lock()
+            .query_row(
+                "SELECT fast_profile FROM song_profile_layers WHERE track_id=?1",
+                params![track_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .ok()
+            .flatten()?;
+        serde_json::from_str(&raw).ok()
+    }
+
+    pub fn save_layered_profile(
+        &self,
+        track_id: i64,
+        fast: &crate::enrichment::SemanticProfile,
+        patch: Option<&crate::enrichment::RefinementPatch>,
+        canonical: &crate::enrichment::SemanticProfile,
+        model: &str,
+        prompt_version: &str,
+        refinement: bool,
+    ) -> rusqlite::Result<()> {
+        let fast_json = serde_json::to_string(fast).unwrap_or_default();
+        let patch_json = patch
+            .and_then(|p| serde_json::to_string(p).ok())
+            .unwrap_or_default();
+        let canonical_json = serde_json::to_string(canonical).unwrap_or_default();
+        let provenance = crate::enrichment::provenance(fast, canonical, patch).to_string();
+        let now = now_ms();
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        tx.execute(
+            "INSERT INTO song_profile_layers (track_id,schema_version,fast_profile,refinement_patch,canonical_profile,provenance,fast_model,fast_prompt_version,fast_created_at,refinement_model,refinement_prompt_version,refined_at)
+             VALUES (?1,3,?2,?3,?4,?5,CASE WHEN ?7 THEN '' ELSE ?6 END,CASE WHEN ?7 THEN '' ELSE ?8 END,CASE WHEN ?7 THEN 0 ELSE ?9 END,CASE WHEN ?7 THEN ?6 ELSE '' END,CASE WHEN ?7 THEN ?8 ELSE '' END,CASE WHEN ?7 THEN ?9 ELSE 0 END)
+             ON CONFLICT(track_id) DO UPDATE SET schema_version=3,
+               fast_profile=CASE WHEN ?7 THEN song_profile_layers.fast_profile ELSE excluded.fast_profile END,
+               refinement_patch=CASE WHEN ?7 THEN excluded.refinement_patch ELSE '' END,
+               canonical_profile=excluded.canonical_profile,provenance=excluded.provenance,
+               fast_model=CASE WHEN ?7 THEN song_profile_layers.fast_model ELSE excluded.fast_model END,
+               fast_prompt_version=CASE WHEN ?7 THEN song_profile_layers.fast_prompt_version ELSE excluded.fast_prompt_version END,
+               fast_created_at=CASE WHEN ?7 THEN song_profile_layers.fast_created_at ELSE excluded.fast_created_at END,
+               refinement_model=CASE WHEN ?7 THEN excluded.refinement_model ELSE '' END,
+               refinement_prompt_version=CASE WHEN ?7 THEN excluded.refinement_prompt_version ELSE '' END,
+               refined_at=CASE WHEN ?7 THEN excluded.refined_at ELSE 0 END",
+            params![track_id,fast_json,patch_json,canonical_json,provenance,model,refinement,prompt_version,now])?;
+        // Compatibility projection: every existing consumer sees canonical.
+        tx.execute("INSERT INTO track_features (track_id,ai_summary,ai_genres,ai_vibes,ai_sonic_traits,ai_lyrical_themes,ai_confidence,ai_sources,ai_enriched_at)
+            VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)
+            ON CONFLICT(track_id) DO UPDATE SET ai_summary=excluded.ai_summary,ai_genres=excluded.ai_genres,
+              ai_vibes=excluded.ai_vibes,ai_sonic_traits=excluded.ai_sonic_traits,
+              ai_lyrical_themes=excluded.ai_lyrical_themes,ai_confidence=excluded.ai_confidence,
+              ai_sources=excluded.ai_sources,ai_enriched_at=excluded.ai_enriched_at",
+            params![track_id,canonical.summary,canonical.genres.join(", "),canonical.moods.join(", "),
+              canonical.musical_traits.join(", "),canonical.lyrical_themes.join(", "),canonical.confidence_average(),
+              if refinement { "layered:fast+refined" } else { "layered:fast" },now])?;
+        tx.commit()
+    }
+
+    pub fn specific_tag_exact(&self, normalized: &str) -> Option<String> {
+        self.lock().query_row(
+            "SELECT r.canonical_tag FROM specific_tag_aliases a JOIN specific_tag_registry r ON r.id=a.tag_id WHERE a.normalized_alias=?1
+             UNION ALL SELECT canonical_tag FROM specific_tag_registry WHERE canonical_tag=?1 LIMIT 1",
+            params![normalized], |r| r.get(0)
+        ).optional().ok().flatten()
+    }
+
+    pub fn specific_tag_candidates(
+        &self,
+        embedding: &[f32],
+        limit: usize,
+    ) -> Vec<SpecificTagCandidate> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare("SELECT canonical_tag,description,status,usage_count,embedding,embedding_dims FROM specific_tag_registry WHERE embedding IS NOT NULL") else { return Vec::new() };
+        let Ok(rows) = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, i64>(3)?,
+                r.get::<_, Vec<u8>>(4)?,
+                r.get::<_, i64>(5)?,
+            ))
+        }) else {
+            return Vec::new();
+        };
+        let mut out = rows
+            .filter_map(Result::ok)
+            .filter_map(|(tag, description, status, usage_count, bytes, dims)| {
+                if dims as usize != embedding.len() || bytes.len() != embedding.len() * 4 {
+                    return None;
+                }
+                let stored: Vec<f32> = bytes
+                    .chunks_exact(4)
+                    .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                    .collect();
+                let dot: f32 = stored.iter().zip(embedding).map(|(a, b)| a * b).sum();
+                let norms = stored.iter().map(|v| v * v).sum::<f32>().sqrt()
+                    * embedding.iter().map(|v| v * v).sum::<f32>().sqrt();
+                Some(SpecificTagCandidate {
+                    canonical_tag: tag,
+                    description,
+                    status,
+                    usage_count,
+                    similarity: if norms > 0.0 { dot / norms } else { 0.0 },
+                })
+            })
+            .collect::<Vec<_>>();
+        out.sort_by(|a, b| b.similarity.total_cmp(&a.similarity));
+        out.truncate(limit);
+        out
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn record_specific_tag_decision(
+        &self,
+        track_id: i64,
+        raw_tag: &str,
+        normalized: &str,
+        canonical: Option<&str>,
+        decision: &str,
+        candidates: &serde_json::Value,
+        decided_by: &str,
+        description: &str,
+        embedding: Option<&[f32]>,
+    ) -> rusqlite::Result<()> {
+        let now = now_ms();
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        if let Some(tag) = canonical {
+            let first_for_track: bool = !tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM track_specific_tag_evidence WHERE track_id=?1 AND canonical_tag=?2)",
+                params![track_id,tag], |r| r.get::<_,bool>(0))?;
+            let blob =
+                embedding.map(|v| v.iter().flat_map(|f| f.to_le_bytes()).collect::<Vec<_>>());
+            tx.execute("INSERT INTO specific_tag_registry (canonical_tag,description,embedding,embedding_dims,status,usage_count,track_count,created_at,last_used_at)
+                VALUES (?1,?2,?3,?4,'provisional',1,?5,?6,?6)
+                ON CONFLICT(canonical_tag) DO UPDATE SET usage_count=usage_count+1,track_count=track_count+?5,last_used_at=?6,
+                  status=CASE WHEN track_count+?5>=5 THEN 'established' ELSE status END,
+                  description=CASE WHEN description='' THEN excluded.description ELSE description END,
+                  embedding=COALESCE(embedding,excluded.embedding),embedding_dims=CASE WHEN embedding IS NULL THEN excluded.embedding_dims ELSE embedding_dims END",
+                params![tag,description,blob,embedding.map(|v|v.len() as i64).unwrap_or(0),i64::from(first_for_track),now])?;
+            let tag_id: i64 = tx.query_row(
+                "SELECT id FROM specific_tag_registry WHERE canonical_tag=?1",
+                params![tag],
+                |r| r.get(0),
+            )?;
+            tx.execute("INSERT OR IGNORE INTO specific_tag_aliases(normalized_alias,raw_alias,tag_id,created_at) VALUES(?1,?2,?3,?4)",params![normalized,raw_tag,tag_id,now])?;
+        }
+        tx.execute("INSERT OR REPLACE INTO track_specific_tag_evidence(track_id,raw_tag,normalized_tag,canonical_tag,decision,candidate_tags,decided_by,created_at)
+            VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",params![track_id,raw_tag,normalized,canonical.unwrap_or(""),decision,candidates.to_string(),decided_by,now])?;
+        tx.commit()
+    }
+
+    pub fn profile_debug(&self, track_id: i64) -> Option<serde_json::Value> {
+        self.lock().query_row(
+            "SELECT json_object('trackId',t.id,'sourceMetadata',json_object('title',t.title,'artist',t.artist,'album',t.album,'genre',t.genre,'year',t.year),
+             'measuredAudioFacts',json_object('bpm',f.bpm,'energy',f.energy,'brightness',f.brightness,'loudness',f.loudness,'dynamicRange',f.dynamic_range,'rhythmicActivity',f.rhythmic_activity,'durationSeconds',t.duration_ms/1000.0),
+             'fastProfile',json(CASE WHEN p.fast_profile='' THEN '{}' ELSE p.fast_profile END),
+             'refinementPatch',json(CASE WHEN p.refinement_patch='' THEN '{}' ELSE p.refinement_patch END),
+             'canonicalProfile',json(CASE WHEN p.canonical_profile='' THEN '{}' ELSE p.canonical_profile END),
+             'versions',json_object('schema',p.schema_version,'fastModel',p.fast_model,'fastPrompt',p.fast_prompt_version,'fastAt',p.fast_created_at,'refinementModel',p.refinement_model,'refinementPrompt',p.refinement_prompt_version,'refinedAt',p.refined_at,'migratedFrom',p.migrated_from))
+             FROM tracks t LEFT JOIN track_features f ON f.track_id=t.id LEFT JOIN song_profile_layers p ON p.track_id=t.id WHERE t.id=?1 AND t.deleted=0",
+            params![track_id], |r| r.get::<_,String>(0)
+        ).optional().ok().flatten().and_then(|raw| serde_json::from_str(&raw).ok())
+    }
+
+    pub fn save_ai_enrichment(
+        &self,
+        track_id: i64,
+        summary: &str,
+        genres: &[String],
+        vibes: &[String],
+        sonic_traits: &[String],
+        lyrical_themes: &[String],
+        confidence: f32,
+        sources: &[String],
+        external_tags: &[String],
+        musicbrainz_id: &str,
+        listenbrainz_similar: &[String],
+        listenbrainz_listens: i64,
+        listenbrainz_listeners: i64,
+        sonic_vector: Option<&[f32]>,
+        lyrical_vector: Option<&[f32]>,
+        community_vector: Option<&[f32]>,
+        vector: Option<&[f32]>,
+    ) -> rusqlite::Result<()> {
+        let blob: Option<Vec<u8>> =
+            vector.map(|v| v.iter().flat_map(|f| f.to_le_bytes()).collect());
+        let dims = vector.map(|v| v.len() as i64).unwrap_or(0);
+        let encode = |value: Option<&[f32]>| {
+            value.map(|v| v.iter().flat_map(|f| f.to_le_bytes()).collect::<Vec<u8>>())
+        };
+        let sonic_blob = encode(sonic_vector);
+        let lyrical_blob = encode(lyrical_vector);
+        let community_blob = encode(community_vector);
+        self.lock().execute(
+            "INSERT INTO track_features (track_id, lyric_vec, vec_dims, checked_at, ai_summary, ai_genres, ai_vibes, ai_sonic_traits, ai_lyrical_themes, ai_confidence, ai_sources, external_tags, musicbrainz_id, listenbrainz_similar, listenbrainz_listens, listenbrainz_listeners, listenbrainz_checked_at, ai_enriched_at, sonic_vec, sonic_vec_dims, lyrical_vec, lyrical_vec_dims, community_vec, community_vec_dims)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?4,?4,?17,?18,?19,?20,?21,?22)
+             ON CONFLICT(track_id) DO UPDATE SET
+               lyric_vec=COALESCE(excluded.lyric_vec,track_features.lyric_vec),
+               vec_dims=CASE WHEN excluded.lyric_vec IS NULL THEN track_features.vec_dims ELSE excluded.vec_dims END,
+               ai_summary=excluded.ai_summary, ai_genres=excluded.ai_genres,
+               ai_vibes=excluded.ai_vibes, ai_sonic_traits=excluded.ai_sonic_traits,
+               ai_lyrical_themes=excluded.ai_lyrical_themes, ai_confidence=excluded.ai_confidence,
+               ai_sources=excluded.ai_sources, external_tags=excluded.external_tags,
+               musicbrainz_id=excluded.musicbrainz_id,
+               listenbrainz_similar=excluded.listenbrainz_similar,
+               listenbrainz_listens=excluded.listenbrainz_listens,
+               listenbrainz_listeners=excluded.listenbrainz_listeners,
+               listenbrainz_checked_at=excluded.listenbrainz_checked_at,
+               sonic_vec=COALESCE(excluded.sonic_vec,track_features.sonic_vec),
+               sonic_vec_dims=CASE WHEN excluded.sonic_vec IS NULL THEN track_features.sonic_vec_dims ELSE excluded.sonic_vec_dims END,
+               lyrical_vec=COALESCE(excluded.lyrical_vec,track_features.lyrical_vec),
+               lyrical_vec_dims=CASE WHEN excluded.lyrical_vec IS NULL THEN track_features.lyrical_vec_dims ELSE excluded.lyrical_vec_dims END,
+               community_vec=COALESCE(excluded.community_vec,track_features.community_vec),
+               community_vec_dims=CASE WHEN excluded.community_vec IS NULL THEN track_features.community_vec_dims ELSE excluded.community_vec_dims END,
+               ai_enriched_at=excluded.ai_enriched_at",
+            params![track_id, blob, dims, now_ms(), summary, genres.join(", "), vibes.join(", "), sonic_traits.join(", "), lyrical_themes.join(", "), confidence, sources.join(", "), external_tags.join(", "), musicbrainz_id, listenbrainz_similar.join(","), listenbrainz_listens, listenbrainz_listeners, sonic_blob, sonic_vector.map(|v| v.len() as i64).unwrap_or(0), lyrical_blob, lyrical_vector.map(|v| v.len() as i64).unwrap_or(0), community_blob, community_vector.map(|v| v.len() as i64).unwrap_or(0)],
+        )?;
+        Ok(())
+    }
+
+    /// Record a structurally valid but low-quality model attempt without
+    /// replacing the last useful profile. This prevents one difficult track
+    /// from sitting at the front of the durable queue and hammering the model
+    /// and public catalogues every few seconds.
+    pub fn mark_ai_enrichment_rejected(&self, track_id: i64) {
+        let _ = self.lock().execute(
+            "INSERT INTO track_features (track_id, ai_enriched_at, ai_sources)
+             VALUES (?1, ?2, 'rejected_v3')
+             ON CONFLICT(track_id) DO UPDATE SET
+               ai_enriched_at=excluded.ai_enriched_at,
+               ai_sources=excluded.ai_sources",
+            params![track_id, now_ms()],
+        );
+    }
+
     /// Every live track's features, for the pass that scores a whole library
     /// against a taste. A few hundred floats per track: cheap to hold, and the
     /// alternative (a query per candidate) is far worse.
     pub fn all_features(&self) -> Vec<TrackFeatures> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
-            "SELECT f.track_id, f.bpm, f.lyric_vec, f.vec_dims, t.genre, t.artist,
-                     f.energy, f.brightness, t.year,
-                     (t.curator_user_id IS NOT NULL AND COALESCE(t.curator_promoted, 0) = 0)
-             FROM track_features f JOIN tracks t ON t.id = f.track_id AND t.deleted = 0",
+            "SELECT t.id, f.bpm, f.lyric_vec, COALESCE(f.vec_dims, 0), t.genre, t.artist,
+                     f.energy, f.brightness, f.dynamic_range, f.rhythmic_activity, t.year,
+                     COALESCE(f.musicbrainz_id,''), COALESCE(f.listenbrainz_similar,''),
+                     f.sonic_vec, COALESCE(f.sonic_vec_dims,0), f.lyrical_vec,
+                     COALESCE(f.lyrical_vec_dims,0), f.community_vec, COALESCE(f.community_vec_dims,0),
+                     (t.curator_user_id IS NOT NULL AND COALESCE(t.curator_promoted, 0) = 0),
+                     f.audio_fingerprint, COALESCE(f.audio_fingerprint_dims,0),
+                     COALESCE(f.ai_genres,''), COALESCE(f.ai_sonic_traits,'')
+             FROM tracks t LEFT JOIN track_features f ON f.track_id = t.id
+             WHERE t.deleted = 0",
         ) else {
             return Vec::new();
         };
         stmt.query_map([], |r| {
             let blob: Option<Vec<u8>> = r.get(2)?;
             let dims: i64 = r.get(3)?;
-            let vec = blob.filter(|b| dims > 0 && b.len() == dims as usize * 4).map(|b| {
-                b.chunks_exact(4)
-                    .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                    .collect::<Vec<f32>>()
-            });
+            let vec = blob
+                .filter(|b| dims > 0 && b.len() == dims as usize * 4)
+                .map(|b| {
+                    b.chunks_exact(4)
+                        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                        .collect::<Vec<f32>>()
+                });
+            let decode = |blob: Option<Vec<u8>>, dims: i64| {
+                blob.filter(|b| dims > 0 && b.len() == dims as usize * 4)
+                    .map(|b| {
+                        b.chunks_exact(4)
+                            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                            .collect()
+                    })
+            };
             Ok(TrackFeatures {
                 track_id: r.get(0)?,
                 bpm: r.get(1)?,
                 lyric_vec: vec,
                 genre: r.get(4)?,
+                ai_genres: comma_terms(r.get(22)?),
+                ai_sonic_traits: comma_terms(r.get(23)?),
                 artist: r.get(5)?,
                 energy: r.get(6)?,
                 brightness: r.get(7)?,
-                year: r.get(8)?,
-                quarantined: r.get::<_, i64>(9)? != 0,
+                dynamic_range: r.get(8)?,
+                rhythmic_activity: r.get(9)?,
+                year: r.get(10)?,
+                musicbrainz_id: r.get(11)?,
+                listenbrainz_similar: r
+                    .get::<_, String>(12)?
+                    .split(',')
+                    .filter(|id| !id.is_empty())
+                    .map(str::to_string)
+                    .collect(),
+                sonic_vec: decode(r.get(13)?, r.get(14)?),
+                lyrical_vec: decode(r.get(15)?, r.get(16)?),
+                community_vec: decode(r.get(17)?, r.get(18)?),
+                quarantined: r.get::<_, i64>(19)? != 0,
+                audio_fingerprint: decode(r.get(20)?, r.get(21)?),
             })
         })
         .map(|rows| rows.filter_map(Result::ok).collect())
@@ -2870,8 +3597,7 @@ impl Db {
     /// Everyone who has listened since `since_ms` - who the curator builds for.
     pub fn listeners_since(&self, since_ms: i64) -> Vec<i64> {
         let conn = self.lock();
-        let Ok(mut stmt) =
-            conn.prepare("SELECT DISTINCT user_id FROM plays WHERE played_at >= ?1")
+        let Ok(mut stmt) = conn.prepare("SELECT DISTINCT user_id FROM plays WHERE played_at >= ?1")
         else {
             return Vec::new();
         };
@@ -2956,7 +3682,10 @@ impl Db {
     /// anywhere, and a stale row would be retried on every send forever.
     pub fn retire_push_token(&self, token: &str) {
         let conn = self.lock();
-        let _ = conn.execute("DELETE FROM push_devices WHERE token = ?1", rusqlite::params![token]);
+        let _ = conn.execute(
+            "DELETE FROM push_devices WHERE token = ?1",
+            rusqlite::params![token],
+        );
     }
 
     /// Every device to send a given listener's notifications to.
@@ -3119,7 +3848,8 @@ impl Db {
     /// that spells things differently, and that rule lives with the feed.
     pub fn owned_names(&self) -> Vec<(String, String)> {
         let conn = self.lock();
-        let Ok(mut stmt) = conn.prepare("SELECT artist, title FROM tracks WHERE deleted = 0") else {
+        let Ok(mut stmt) = conn.prepare("SELECT artist, title FROM tracks WHERE deleted = 0")
+        else {
             return Vec::new();
         };
         stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
@@ -3149,7 +3879,18 @@ impl Db {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT(user_id, ext_id) DO UPDATE SET
                popularity = excluded.popularity, seed = excluded.seed",
-            params![user_id, ext_id, title, artist, cover, url, preview, seed, popularity, now_ms()],
+            params![
+                user_id,
+                ext_id,
+                title,
+                artist,
+                cover,
+                url,
+                preview,
+                seed,
+                popularity,
+                now_ms()
+            ],
         )?;
         Ok(())
     }
@@ -3243,7 +3984,8 @@ impl Db {
     pub fn discovery_counts(&self, user_id: i64) -> (i64, i64) {
         let conn = self.lock();
         let one = |sql: &str| -> i64 {
-            conn.query_row(sql, params![user_id], |r| r.get(0)).unwrap_or(0)
+            conn.query_row(sql, params![user_id], |r| r.get(0))
+                .unwrap_or(0)
         };
         (
             one("SELECT COUNT(*) FROM discoveries WHERE user_id = ?1"),
@@ -3384,8 +4126,10 @@ impl Db {
     }
 
     pub fn clear_recents(&self, user_id: i64) -> rusqlite::Result<()> {
-        self.lock()
-            .execute("DELETE FROM search_recents WHERE user_id = ?1", params![user_id])?;
+        self.lock().execute(
+            "DELETE FROM search_recents WHERE user_id = ?1",
+            params![user_id],
+        )?;
         Ok(())
     }
 
@@ -3620,9 +4364,11 @@ impl Db {
         ) else {
             return Vec::new();
         };
-        stmt.query_map(params![user_id, since, tz_min], |r| Ok((r.get(0)?, r.get(1)?)))
-            .map(|rows| rows.filter_map(Result::ok).collect())
-            .unwrap_or_default()
+        stmt.query_map(params![user_id, since, tz_min], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
     }
 
     /// Every distinct local day carrying at least one COMPLETED listen,
@@ -3699,7 +4445,9 @@ impl Db {
             .query_row(
                 "SELECT t.id, t.rel_path, t.duration_ms, f.bpm IS NOT NULL
                    FROM tracks t LEFT JOIN track_features f ON f.track_id = t.id
-                  WHERE t.deleted = 0 AND COALESCE(f.analyzed_at, 0) = 0
+                  WHERE t.deleted = 0 AND (COALESCE(f.analyzed_at, 0) = 0
+                        OR f.dynamic_range IS NULL OR f.rhythmic_activity IS NULL
+                        OR COALESCE(f.audio_fingerprint_version, 0) < 1)
                   ORDER BY t.added_at DESC LIMIT 1",
                 [],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
@@ -3720,10 +4468,16 @@ impl Db {
         energy: f64,
         brightness: f64,
         loudness: f64,
+        dynamic_range: f64,
+        rhythmic_activity: f64,
+        audio_fingerprint: Option<&[f32]>,
     ) -> rusqlite::Result<()> {
+        let fingerprint_blob: Option<Vec<u8>> =
+            audio_fingerprint.map(|v| v.iter().flat_map(|f| f.to_le_bytes()).collect());
+        let fingerprint_dims = audio_fingerprint.map(|v| v.len() as i64).unwrap_or(0);
         self.lock().execute(
-            "INSERT INTO track_features (track_id, bpm, bpm_source, energy, brightness, loudness, analyzed_at)
-             VALUES (?1, ?2, CASE WHEN ?2 IS NULL THEN '' ELSE 'dsp' END, ?3, ?4, ?5, ?6)
+            "INSERT INTO track_features (track_id, bpm, bpm_source, energy, brightness, loudness, dynamic_range, rhythmic_activity, audio_fingerprint, audio_fingerprint_dims, audio_fingerprint_version, analyzed_at)
+             VALUES (?1, ?2, CASE WHEN ?2 IS NULL THEN '' ELSE 'dsp' END, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1, ?10)
              ON CONFLICT(track_id) DO UPDATE SET
                bpm         = COALESCE(track_features.bpm, excluded.bpm),
                bpm_source  = CASE WHEN track_features.bpm IS NULL AND excluded.bpm IS NOT NULL
@@ -3731,8 +4485,13 @@ impl Db {
                energy      = excluded.energy,
                brightness  = excluded.brightness,
                loudness    = excluded.loudness,
+               dynamic_range = excluded.dynamic_range,
+               rhythmic_activity = excluded.rhythmic_activity,
+               audio_fingerprint = excluded.audio_fingerprint,
+               audio_fingerprint_dims = excluded.audio_fingerprint_dims,
+               audio_fingerprint_version = excluded.audio_fingerprint_version,
                analyzed_at = excluded.analyzed_at",
-            params![track_id, bpm, energy, brightness, loudness, now_ms()],
+            params![track_id, bpm, energy, brightness, loudness, dynamic_range, rhythmic_activity, fingerprint_blob, fingerprint_dims, now_ms()],
         )?;
         Ok(())
     }
@@ -3740,11 +4499,12 @@ impl Db {
     /// How far the audio analyser has got: (live tracks measured, live
     /// tracks). The gave-up sentinel counts as measured here - the number is
     /// progress toward done, and a track that will never analyse is done.
-    pub fn audio_feature_counts(&self) -> (i64, i64) {
+    pub fn audio_feature_counts(&self) -> (i64, i64, i64) {
         let conn = self.lock();
         let one = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap_or(0) };
         (
             one("SELECT COUNT(*) FROM track_features f JOIN tracks t ON t.id = f.track_id AND t.deleted = 0 WHERE f.analyzed_at > 0"),
+            one("SELECT COUNT(*) FROM track_features f JOIN tracks t ON t.id = f.track_id AND t.deleted = 0 WHERE f.audio_fingerprint_version >= 1 AND f.audio_fingerprint_dims = 48"),
             one("SELECT COUNT(*) FROM tracks WHERE deleted = 0"),
         )
     }
@@ -3771,7 +4531,11 @@ impl Db {
         Ok(())
     }
 
-    pub fn set_collector_exploration(&self, user_id: i64, exploration: f64) -> rusqlite::Result<()> {
+    pub fn set_collector_exploration(
+        &self,
+        user_id: i64,
+        exploration: f64,
+    ) -> rusqlite::Result<()> {
         self.lock().execute(
             "INSERT INTO collector_state (user_id, exploration, tuned_at) VALUES (?1, ?2, ?3)
              ON CONFLICT(user_id) DO UPDATE SET exploration = excluded.exploration, tuned_at = excluded.tuned_at",
@@ -3833,9 +4597,9 @@ impl Db {
     /// Pulls whose import is still out - what the landing check walks.
     pub fn open_pulls(&self) -> Vec<(i64, i64, String)> {
         let conn = self.lock();
-        let mut stmt = match conn
-            .prepare("SELECT id, user_id, job_id FROM curator_pulls WHERE state = 'queued' AND job_id != ''")
-        {
+        let mut stmt = match conn.prepare(
+            "SELECT id, user_id, job_id FROM curator_pulls WHERE state = 'queued' AND job_id != ''",
+        ) {
             Ok(s) => s,
             Err(_) => return Vec::new(),
         };
@@ -3864,7 +4628,11 @@ impl Db {
                     params![pull_id, id],
                 )?;
                 bytes += conn
-                    .query_row("SELECT size_bytes FROM tracks WHERE id = ?1", params![id], |r| r.get(0))
+                    .query_row(
+                        "SELECT size_bytes FROM tracks WHERE id = ?1",
+                        params![id],
+                        |r| r.get(0),
+                    )
                     .unwrap_or(0);
             }
         }
@@ -3876,8 +4644,10 @@ impl Db {
     }
 
     pub fn fail_pull(&self, pull_id: i64) -> rusqlite::Result<()> {
-        self.lock()
-            .execute("UPDATE curator_pulls SET state = 'failed' WHERE id = ?1", params![pull_id])?;
+        self.lock().execute(
+            "UPDATE curator_pulls SET state = 'failed' WHERE id = ?1",
+            params![pull_id],
+        )?;
         Ok(())
     }
 
@@ -3912,7 +4682,11 @@ impl Db {
     }
 
     /// The recent-pulls list the settings pane shows, newest first.
-    pub fn recent_pulls(&self, user_id: i64, limit: i64) -> Vec<(String, String, String, String, i64, String)> {
+    pub fn recent_pulls(
+        &self,
+        user_id: i64,
+        limit: i64,
+    ) -> Vec<(String, String, String, String, i64, String)> {
         let conn = self.lock();
         let mut stmt = match conn.prepare(
             "SELECT title, artist, kind, state, created_at, reason
@@ -3922,7 +4696,14 @@ impl Db {
             Err(_) => return Vec::new(),
         };
         stmt.query_map(params![user_id, limit], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+            ))
         })
         .map(|rows| rows.filter_map(Result::ok).collect())
         .unwrap_or_default()
@@ -4097,9 +4878,11 @@ impl Db {
         ) else {
             return Vec::new();
         };
-        stmt.query_map(params![limit], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
-            .map(|r| r.filter_map(Result::ok).collect())
-            .unwrap_or_default()
+        stmt.query_map(params![limit], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })
+        .map(|r| r.filter_map(Result::ok).collect())
+        .unwrap_or_default()
     }
 
     /// Disk by codec: (codec, bytes, tracks), heaviest first.
@@ -4120,7 +4903,11 @@ impl Db {
     /// listens) for albums with at most `max_plays` listen events, largest
     /// first. Listens are counted through track ids, so a retagged album
     /// keeps its history.
-    pub fn rarely_played_albums(&self, max_plays: i64, limit: i64) -> Vec<(String, String, i64, i64)> {
+    pub fn rarely_played_albums(
+        &self,
+        max_plays: i64,
+        limit: i64,
+    ) -> Vec<(String, String, i64, i64)> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
             "SELECT t.album, t.album_artist, COALESCE(SUM(t.size_bytes), 0) AS bytes,
@@ -4144,7 +4931,10 @@ impl Db {
 
     /// One user's playlists with the identity of every track, for the backup
     /// export: (name, [(rel_path, title, artist, album)]) in playlist order.
-    pub fn export_playlists(&self, user_id: i64) -> Vec<(String, Vec<(String, String, String, String)>)> {
+    pub fn export_playlists(
+        &self,
+        user_id: i64,
+    ) -> Vec<(String, Vec<(String, String, String, String)>)> {
         let conn = self.lock();
         let Ok(mut heads) =
             conn.prepare("SELECT id, name FROM playlists WHERE user_id = ?1 ORDER BY name")
@@ -4193,7 +4983,10 @@ impl Db {
 
     /// One playlist's rows as an M3U needs them: (title, artist, duration_ms,
     /// rel_path) in playlist order.
-    pub fn playlist_export_rows(&self, playlist_id: i64) -> Vec<(String, String, Option<i64>, String)> {
+    pub fn playlist_export_rows(
+        &self,
+        playlist_id: i64,
+    ) -> Vec<(String, String, Option<i64>, String)> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
             "SELECT t.title, t.artist, t.duration_ms, t.rel_path
@@ -4219,10 +5012,25 @@ pub struct CurationTrack {
     pub genre: String,
     pub lyrics: String,
     pub duration_ms: Option<i64>,
+    pub year: Option<i64>,
     /// Already measured - so a lyrics-only pass skips the audio analysis.
     pub has_bpm: bool,
     /// Already embedded.
     pub has_vec: bool,
+    pub bpm: Option<f64>,
+    pub energy: Option<f64>,
+    pub brightness: Option<f64>,
+    /// Difference between quiet and loud short windows, normalized to 0-1.
+    pub dynamic_range: Option<f64>,
+    /// Short-window spectral change, normalized to 0-1.
+    pub rhythmic_activity: Option<f64>,
+    pub loudness: Option<f64>,
+    pub ai_summary: String,
+    pub ai_genres: Vec<String>,
+    pub ai_moods: Vec<String>,
+    pub ai_sonic_traits: Vec<String>,
+    pub ai_lyrical_themes: Vec<String>,
+    pub ai_confidence: f64,
 }
 
 /// What is known about one track's sound and words.
@@ -4231,10 +5039,23 @@ pub struct TrackFeatures {
     pub bpm: Option<f64>,
     pub lyric_vec: Option<Vec<f32>>,
     pub genre: String,
+    pub ai_genres: Vec<String>,
+    pub ai_sonic_traits: Vec<String>,
     pub artist: String,
     /// The analyser's audio character (features.rs), None until measured.
     pub energy: Option<f64>,
     pub brightness: Option<f64>,
+    /// Difference between quiet and loud short windows, normalized to 0-1.
+    pub dynamic_range: Option<f64>,
+    /// Short-window spectral change, normalized to 0-1.
+    pub rhythmic_activity: Option<f64>,
+    pub musicbrainz_id: String,
+    pub listenbrainz_similar: Vec<String>,
+    pub sonic_vec: Option<Vec<f32>>,
+    pub lyrical_vec: Option<Vec<f32>>,
+    pub community_vec: Option<Vec<f32>>,
+    /// Versioned spectral/temporal fingerprint measured directly from audio.
+    pub audio_fingerprint: Option<Vec<f32>>,
     /// The tag's release year, for the decade stations.
     pub year: Option<i64>,
     /// Collector quarantine: an unadopted audition must not seed anyone's
@@ -4308,9 +5129,13 @@ pub struct DiscoveryRow {
 fn discovery_from_row(r: &rusqlite::Row) -> rusqlite::Result<DiscoveryRow> {
     let blob: Option<Vec<u8>> = r.get(9)?;
     let dims: i64 = r.get(10)?;
-    let vec = blob.filter(|b| dims > 0 && b.len() == dims as usize * 4).map(|b| {
-        b.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect::<Vec<f32>>()
-    });
+    let vec = blob
+        .filter(|b| dims > 0 && b.len() == dims as usize * 4)
+        .map(|b| {
+            b.chunks_exact(4)
+                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                .collect::<Vec<f32>>()
+        });
     Ok(DiscoveryRow {
         ext_id: r.get(0)?,
         title: r.get(1)?,
@@ -4326,11 +5151,14 @@ fn discovery_from_row(r: &rusqlite::Row) -> rusqlite::Result<DiscoveryRow> {
     })
 }
 
-
 /// Which shelf a file belongs to, decided by where it lives. The Audiobooks/
 /// folder IS the contract: the book importer files there, a listener dropping
 /// their own m4b/mp3 rips there gets the same treatment, and nothing outside
 /// it can ever be mistaken for a book.
 pub fn kind_for(rel_path: &str) -> &'static str {
-    if rel_path.starts_with("Audiobooks/") { "book" } else { "music" }
+    if rel_path.starts_with("Audiobooks/") {
+        "book"
+    } else {
+        "music"
+    }
 }

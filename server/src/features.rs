@@ -82,7 +82,9 @@ pub fn spawn(state: Arc<AppState>) {
                         // ffmpeg cannot read would be re-decoded every cycle
                         // until somebody deleted it. listen_sound (db.rs)
                         // knows to skip these when averaging.
-                        let _ = state.db.save_audio_features(id, None, 0.0, 0.0, -70.0);
+                        let _ = state
+                            .db
+                            .save_audio_features(id, None, 0.0, 0.0, -70.0, 0.0, 0.0, None);
                         failures.remove(&id);
                     }
                     tokio::time::sleep(FAIL_PAUSE).await;
@@ -108,18 +110,33 @@ async fn analyze_one(
         .ok_or_else(|| "ffmpeg produced no usable audio".to_string())?;
     // The DSP is CPU-bound and long enough to matter; keep it off the async
     // workers other requests are sharing (same reasoning as tempo.rs).
-    let (energy, brightness, loudness) = tokio::task::spawn_blocking(move || measure(&samples))
-        .await
-        .map_err(|e| e.to_string())?;
+    let (measurements, fingerprint) =
+        tokio::task::spawn_blocking(move || (measure(&samples), audio_fingerprint(&samples)))
+            .await
+            .map_err(|e| e.to_string())?;
+    let (energy, brightness, loudness, dynamic_range, rhythmic_activity) = measurements;
 
     // Tempo is tempo.rs's business, reused rather than re-invented - but only
     // asked for when the row has none, since the curator's enricher fills it
     // on its own schedule and an existing measurement always wins anyway.
-    let bpm = if has_bpm { None } else { tempo::analyze(&path).await };
+    let bpm = if has_bpm {
+        None
+    } else {
+        tempo::analyze(&path).await
+    };
 
     state
         .db
-        .save_audio_features(id, bpm, energy, brightness, loudness)
+        .save_audio_features(
+            id,
+            bpm,
+            energy,
+            brightness,
+            loudness,
+            dynamic_range,
+            rhythmic_activity,
+            fingerprint.as_deref(),
+        )
         .map_err(|e| e.to_string())
 }
 
@@ -133,12 +150,16 @@ async fn decode(path: &Path, duration_ms: Option<i64>) -> Option<Vec<f32>> {
     // -ss before -i seeks by index rather than decoding its way there (see
     // stream.rs) - on a big FLAC that is the whole cost of the middle.
     if let Some(ms) = duration_ms.filter(|&ms| ms > 0) {
-        command.arg("-ss").arg(format!("{:.3}", ms as f64 / 1000.0 * 0.25));
+        command
+            .arg("-ss")
+            .arg(format!("{:.3}", ms as f64 / 1000.0 * 0.25));
     }
     let out = command
         .arg("-i")
         .arg(path)
-        .args(["-t", TAKE_SECS, "-ac", "1", "-ar", "22050", "-f", "f32le", "-"])
+        .args([
+            "-t", TAKE_SECS, "-ac", "1", "-ar", "22050", "-f", "f32le", "-",
+        ])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .stdin(Stdio::null())
@@ -164,8 +185,11 @@ async fn decode(path: &Path, duration_ms: Option<i64>) -> Option<Vec<f32>> {
 /// - **brightness** is the average spectral centroid (Hann windows, 50%
 ///   overlap) normalised by Nyquist, then mapped so ~0.05 (all lows) reads 0
 ///   and ~0.35 (hissing bright) reads 1.
-fn measure(samples: &[f32]) -> (f64, f64, f64) {
-    let mean_sq = samples.iter().map(|s| (*s as f64) * (*s as f64)).sum::<f64>()
+fn measure(samples: &[f32]) -> (f64, f64, f64, f64, f64) {
+    let mean_sq = samples
+        .iter()
+        .map(|s| (*s as f64) * (*s as f64))
+        .sum::<f64>()
         / samples.len().max(1) as f64;
     // The floor keeps log10 finite on digital silence (~-120 dBFS).
     let loudness = 20.0 * mean_sq.sqrt().max(1e-6).log10();
@@ -173,12 +197,40 @@ fn measure(samples: &[f32]) -> (f64, f64, f64) {
 
     let centroid = spectral_centroid(samples);
     let brightness = ((centroid / (RATE as f64 / 2.0) - 0.05) / 0.30).clamp(0.0, 1.0);
+    let (dynamic_range, rhythmic_activity) = window_character(samples);
 
     (
         (energy * 1000.0).round() / 1000.0,
         (brightness * 1000.0).round() / 1000.0,
         (loudness * 100.0).round() / 100.0,
+        (dynamic_range * 1000.0).round() / 1000.0,
+        (rhythmic_activity * 1000.0).round() / 1000.0,
     )
+}
+
+/// Two complementary time-domain descriptors from 50 ms windows. Dynamic
+/// range is the 90th-to-10th percentile RMS gap; rhythmic activity is the
+/// average absolute change between adjacent windows. Both are normalized so
+/// they can participate in similarity scoring without library-wide fitting.
+fn window_character(samples: &[f32]) -> (f64, f64) {
+    let width = RATE / 20;
+    let mut rms: Vec<f64> = samples
+        .chunks_exact(width)
+        .map(|window| {
+            (window.iter().map(|s| (*s as f64).powi(2)).sum::<f64>() / width as f64).sqrt()
+        })
+        .collect();
+    if rms.len() < 4 {
+        return (0.0, 0.0);
+    }
+    let activity =
+        rms.windows(2).map(|w| (w[1] - w[0]).abs()).sum::<f64>() / (rms.len() - 1) as f64;
+    let rhythmic_activity = (activity / 0.035).clamp(0.0, 1.0);
+    rms.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let low = rms[rms.len() / 10].max(1e-6);
+    let high = rms[rms.len() * 9 / 10].max(low);
+    let gap_db = 20.0 * (high / low).log10();
+    ((gap_db / 18.0).clamp(0.0, 1.0), rhythmic_activity)
 }
 
 /// The average spectral centroid in Hz - where the "weight" of the spectrum
@@ -198,14 +250,23 @@ fn spectral_centroid(samples: &[f32]) -> f64 {
 
     let bins = FFT_SIZE / 2;
     let hz_per_bin = RATE as f64 / FFT_SIZE as f64;
-    let mut buf = vec![Complex { re: 0.0f32, im: 0.0f32 }; FFT_SIZE];
+    let mut buf = vec![
+        Complex {
+            re: 0.0f32,
+            im: 0.0f32
+        };
+        FFT_SIZE
+    ];
     let mut sum = 0.0f64;
     let mut frames = 0usize;
 
     let mut start = 0;
     while start + FFT_SIZE <= samples.len() {
         for i in 0..FFT_SIZE {
-            buf[i] = Complex { re: samples[start + i] * window[i], im: 0.0 };
+            buf[i] = Complex {
+                re: samples[start + i] * window[i],
+                im: 0.0,
+            };
         }
         fft.process(&mut buf);
 
@@ -222,7 +283,96 @@ fn spectral_centroid(samples: &[f32]) -> f64 {
         }
         start += HOP;
     }
-    if frames > 0 { sum / frames as f64 } else { 0.0 }
+    if frames > 0 {
+        sum / frames as f64
+    } else {
+        0.0
+    }
+}
+
+/// A compact, versioned fingerprint derived from the recording rather than
+/// tags or prose. Each FFT frame is reduced to 16 logarithmic frequency bands;
+/// the vector stores their mean distribution, variation, and average temporal
+/// change. L2 normalization makes cosine comparison insensitive to mastering
+/// level. This is deliberately model-free so it works on every AttackFM host.
+fn audio_fingerprint(samples: &[f32]) -> Option<Vec<f32>> {
+    use rustfft::{num_complex::Complex, FftPlanner};
+    const BANDS: usize = 16;
+    let fft = FftPlanner::<f32>::new().plan_fft_forward(FFT_SIZE);
+    let window: Vec<f32> = (0..FFT_SIZE)
+        .map(|i| {
+            let x = std::f32::consts::TAU * i as f32 / FFT_SIZE as f32;
+            0.5 - 0.5 * x.cos()
+        })
+        .collect();
+    let mut sum = [0.0f64; BANDS];
+    let mut sum_sq = [0.0f64; BANDS];
+    let mut delta = [0.0f64; BANDS];
+    let mut previous: Option<[f64; BANDS]> = None;
+    let mut frames = 0usize;
+    let mut buf = vec![
+        Complex {
+            re: 0.0f32,
+            im: 0.0f32
+        };
+        FFT_SIZE
+    ];
+
+    for frame in samples.windows(FFT_SIZE).step_by(HOP) {
+        for i in 0..FFT_SIZE {
+            buf[i] = Complex {
+                re: frame[i] * window[i],
+                im: 0.0,
+            };
+        }
+        fft.process(&mut buf);
+        let mut bands = [0.0f64; BANDS];
+        for (bin, value) in buf.iter().enumerate().take(FFT_SIZE / 2).skip(4) {
+            let hz = bin as f64 * RATE as f64 / FFT_SIZE as f64;
+            let position = (hz / 40.0).ln() / ((RATE as f64 / 2.0 / 40.0).ln());
+            let band = (position * BANDS as f64)
+                .floor()
+                .clamp(0.0, (BANDS - 1) as f64) as usize;
+            bands[band] += value.norm_sqr() as f64;
+        }
+        // Log power compresses peaks, then per-frame normalization captures
+        // timbre instead of simple loudness (already represented separately).
+        for value in &mut bands {
+            *value = (1.0 + *value).ln();
+        }
+        let norm = bands.iter().map(|v| v * v).sum::<f64>().sqrt();
+        if norm <= 1e-9 {
+            continue;
+        }
+        for value in &mut bands {
+            *value /= norm;
+        }
+        for i in 0..BANDS {
+            sum[i] += bands[i];
+            sum_sq[i] += bands[i] * bands[i];
+            if let Some(prev) = previous {
+                delta[i] += (bands[i] - prev[i]).abs();
+            }
+        }
+        previous = Some(bands);
+        frames += 1;
+    }
+    if frames < 8 {
+        return None;
+    }
+    let mut out = Vec::with_capacity(BANDS * 3);
+    for i in 0..BANDS {
+        out.push((sum[i] / frames as f64) as f32);
+    }
+    for i in 0..BANDS {
+        let mean = sum[i] / frames as f64;
+        out.push((sum_sq[i] / frames as f64 - mean * mean).max(0.0).sqrt() as f32);
+    }
+    for i in 0..BANDS {
+        out.push((delta[i] / (frames - 1) as f64) as f32);
+    }
+    let norm = out.iter().map(|v| v * v).sum::<f32>().sqrt();
+    (norm > 1e-9).then(|| out.into_iter().map(|v| v / norm).collect())
 }
 
 // --- status -----------------------------------------------------------------
@@ -231,6 +381,49 @@ fn spectral_centroid(samples: &[f32]) -> f64 {
 /// is the client's cue that these numbers will never move on this box.
 pub async fn status(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
     crate::auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
-    let (analyzed, total) = state.db.audio_feature_counts();
-    Ok(Json(json!({ "analyzed": analyzed, "total": total, "ffmpeg": state.ffmpeg })))
+    let (analyzed, fingerprinted, total) = state.db.audio_feature_counts();
+    Ok(Json(
+        json!({ "analyzed": analyzed, "fingerprinted": fingerprinted,
+            "fingerprintVersion": 1, "total": total, "ffmpeg": state.ffmpeg }),
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn steady_signal_has_little_dynamic_or_rhythmic_change() {
+        let samples = vec![0.25; RATE * 2];
+        let (dynamic_range, rhythmic_activity) = window_character(&samples);
+        assert!(dynamic_range < 0.01);
+        assert!(rhythmic_activity < 0.01);
+    }
+
+    #[test]
+    fn alternating_windows_register_as_dynamic_and_active() {
+        let width = RATE / 20;
+        let samples: Vec<f32> = (0..40)
+            .flat_map(|window| vec![if window % 2 == 0 { 0.02 } else { 0.5 }; width])
+            .collect();
+        let (dynamic_range, rhythmic_activity) = window_character(&samples);
+        assert!(dynamic_range > 0.9);
+        assert!(rhythmic_activity > 0.9);
+    }
+
+    #[test]
+    fn fingerprint_is_normalized_and_distinguishes_spectra() {
+        let tone = |hz: f32| {
+            (0..RATE * 2)
+                .map(|i| (std::f32::consts::TAU * hz * i as f32 / RATE as f32).sin() * 0.3)
+                .collect::<Vec<_>>()
+        };
+        let low = audio_fingerprint(&tone(110.0)).unwrap();
+        let nearby = audio_fingerprint(&tone(120.0)).unwrap();
+        let high = audio_fingerprint(&tone(6000.0)).unwrap();
+        let cosine = |a: &[f32], b: &[f32]| a.iter().zip(b).map(|(x, y)| x * y).sum::<f32>();
+        assert_eq!(low.len(), 48);
+        assert!((cosine(&low, &low) - 1.0).abs() < 0.001);
+        assert!(cosine(&low, &nearby) > cosine(&low, &high));
+    }
 }

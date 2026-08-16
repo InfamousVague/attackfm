@@ -9,6 +9,71 @@
   box-sizing: border-box;
 }
 
+/* AI DJ seed-trait selection and editable DJ notes. */
+.djTraitSheet__body {
+  width: min(760px, 100%);
+  margin: 0 auto;
+  padding: 4px 0 20px;
+}
+.djTraitListening {
+  min-height: 180px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+.djTraitListening svg { color: var(--color-accent, #ff4bd8); }
+.djTraitSummary { display: block; margin: 0 0 18px; }
+.djTraitError { display: block; padding: 12px 0; }
+.djTraitCloud {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+}
+.djTrait {
+  min-height: 52px;
+  padding: 9px 15px;
+  border: 1px solid color-mix(in srgb, currentColor 17%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-surface-2, #222) 82%, transparent);
+  color: inherit;
+  display: grid;
+  gap: 1px;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+.djTrait:hover { transform: translateY(-1px); }
+.djTrait[data-selected] {
+  border-color: color-mix(in srgb, var(--color-accent, #ff4bd8) 72%, white 12%);
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--color-accent, #ff4bd8) 24%, transparent),
+    color-mix(in srgb, #7357ff 20%, transparent));
+}
+.djTrait__label { font: inherit; font-weight: 650; }
+.djTrait__category { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; opacity: .62; }
+.djNoteEditor { display: grid; gap: 8px; margin-top: 20px; }
+.djNoteEditor label { font-size: 13px; font-weight: 650; }
+.djNoteEditor textarea {
+  min-height: 88px;
+  resize: vertical;
+  border: 1px solid var(--border-subtle, #45454d);
+  border-radius: 12px;
+  padding: 12px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.04);
+  font: inherit;
+}
+@media (max-width: 600px) {
+  .djTraitSheet__body { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .djTraitCloud { justify-content: flex-start; gap: 8px; }
+  .djTrait { min-height: 48px; padding: 8px 13px; }
+}
+
 html,
 body {
   margin: 0;

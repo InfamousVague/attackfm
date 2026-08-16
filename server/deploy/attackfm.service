@@ -54,7 +54,10 @@ Environment=AFM_SCAN_MINUTES=15
 # The ORIGIN only - the code appends /v1/embeddings and /v1/chat/completions.
 # Environment=AFM_AI_URL=http://127.0.0.1:11434
 # Environment=AFM_AI_EMBED_MODEL=nomic-embed-text
-# Environment=AFM_AI_MODEL=qwen2.5:0.5b
+# Gemma 4 is the recommended local DJ brain. Pick for the machine: e2b/e4b on
+# constrained hardware, 12b/26b/31b on larger boxes. Any compatible model works.
+# Environment=AFM_AI_MODEL=gemma4:e4b
+# Environment=AFM_AI_TIMEOUT_SECS=75
 
 WorkingDirectory=/opt/attackfm
 ExecStart=/opt/attackfm/bin/attackfm-server

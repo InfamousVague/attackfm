@@ -7,6 +7,7 @@ import {
   ListStart,
   Radio,
   SearchX,
+  Sparkles,
   Trash2,
 } from '@glacier/icons';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -18,6 +19,7 @@ import { useRadioOptional } from './radio.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { streamUrl, trackIdFromPath } from './server.ts';
 import { isTauri, type Track } from './tauri.ts';
+import { DjTraitSheet } from './DjTraitSheet.tsx';
 
 /**
  * The three things you can do to a song that are not "play it", wrapped around
@@ -53,6 +55,8 @@ export function TrackMenu({
   const radio = useRadioOptional();
   const [filing, setFiling] = useState(false);
   const [reporting, setReporting] = useState(false);
+  const [exploring, setExploring] = useState(false);
+  const [quickQueue, setQuickQueue] = useState(false);
   // Keeping a song is only offered where it means something: a phone or
   // desktop app (a browser tab has no disk of ours) holding a track that came
   // from a server (a local file is already on this machine).
@@ -114,6 +118,16 @@ export function TrackMenu({
                 Start radio from this
               </MenuItem>
             )}
+            {session && trackId !== null && (
+              <>
+                <MenuItem icon={<Sparkles size={15} />} onSelect={() => setQuickQueue(true)}>
+                  Generate custom queue
+                </MenuItem>
+                <MenuItem icon={<Sparkles size={15} />} onSelect={() => setExploring(true)}>
+                  Choose the sound for a mix…
+                </MenuItem>
+              </>
+            )}
             {/* The song, on this device: it plays with the hub off, the wifi
                 gone, or the plane door shut. Held songs offer the way back
                 out, since the whole point is that the space is yours. */}
@@ -156,6 +170,8 @@ export function TrackMenu({
         open={reporting}
         onClose={() => setReporting(false)}
       />
+      <DjTraitSheet track={track} open={exploring} onClose={() => setExploring(false)} />
+      <DjTraitSheet track={track} open={quickQueue} quick onClose={() => setQuickQueue(false)} />
     </>
   );
 }

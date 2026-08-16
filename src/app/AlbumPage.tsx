@@ -1,5 +1,5 @@
 import { Button, Text } from '@glacier/react';
-import { Check, Disc3, Play, Plus, Shuffle, X } from '@glacier/icons';
+import { Check, Disc3, Play, Plus, Shuffle, Sparkles, X } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
 import { useServerSession } from './serverSession.tsx';
@@ -14,6 +14,7 @@ import { setHeaderActions } from './headerActions.ts';
 import { albumCredit, byRunningOrder, fold, isBy } from './albums.ts';
 import { titleKey } from './owned.ts';
 import type { Track } from './tauri.ts';
+import { DjCollectionTraitSheet } from './DjTraitSheet.tsx';
 
 /**
  * One record, opened.
@@ -73,6 +74,7 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
   const { session } = useServerSession();
   const downloads = useDownloadsOptional();
   const acquire = useAcquire();
+  const [mixing, setMixing] = useState(false);
 
   // Every track on this record: the album name matches, and the artist is one
   // of its credits - the second half being what keeps two different records
@@ -290,6 +292,12 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
               <Shuffle size={15} />
               Shuffle
             </Button>
+            {session && list.length > 0 && (
+              <Button variant="ghost" size="sm" onClick={() => setMixing(true)}>
+                <Sparkles size={15} />
+                AI DJ
+              </Button>
+            )}
           </div>
         </div>
       </header>
@@ -379,6 +387,8 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
           </ol>
         </section>
       )}
+      <DjCollectionTraitSheet source="album" name={album} seedTracks={list}
+        open={mixing} onClose={() => setMixing(false)} />
     </div>
   );
 }
