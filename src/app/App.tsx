@@ -687,6 +687,7 @@ function AppMain({
   onOpenFriends,
   profileRoom,
   onProfileRoom,
+  onOpenDate,
   swipeRef,
 }: {
   /** The edge-swipe back gesture drags this element; App owns the hook. */
@@ -709,8 +710,10 @@ function AppMain({
   onOpenStats: () => void;
   onOpenFriends: () => void;
   /** Which of Profile's rooms is open, if any - a takeover within the tab. */
-  profileRoom: 'stats' | 'date' | null;
-  onProfileRoom: (room: 'stats' | 'date' | null) => void;
+  profileRoom: 'stats' | null;
+  onProfileRoom: (room: 'stats' | null) => void;
+  /** Opens Music Date's fullscreen layer, from the Booth's top card. */
+  onOpenDate: () => void;
 }) {
   const pages = usePluginPages();
   const activePage = detail ? null : (pages.find((pg) => pg.key === tab) ?? null);
@@ -811,26 +814,21 @@ function AppMain({
       ) : tab === 'booth' ? (
         // The Booth: the taste engine's one body - the DJ conversation, the
         // mixes it built, what it is doing right now, and its own preferences.
-        <BoothPage onPlay={onPlay} onOpenArtist={onOpenArtist} />
+        <BoothPage onPlay={onPlay} onOpenArtist={onOpenArtist} onOpenDate={onOpenDate} />
       ) : tab === 'friends' ? (
         // The people, their own page now - the grid of artist-backed cards
         // wants the whole screen. 'friends' was already the tab's old alias
         // for Profile, and pointing it here is the honest reading of the name.
         <FriendsPage />
       ) : tab === 'profile' ? (
-        // Profile: the "about you" home. Its rooms - This week (the stats),
-        // Dates (the collector's auditions) - are takeovers WITHIN the tab, a
-        // back bar returning to the profile, so the first-person surfaces live
-        // together instead of hiding in an overflow menu.
+        // Profile: the "about you" home. Its room - This week (the stats) -
+        // is a takeover WITHIN the tab, a back bar returning to the profile.
+        // Music Date used to be a second room here; it lives at the top of
+        // the Booth now, as a fullscreen layer.
         profileRoom === 'stats' ? (
           <div className="profileRoomHost">
             <RoomBar label="This week" onBack={() => onProfileRoom(null)} />
             <StatsPage onPlay={onPlay} onOpenArtist={onOpenArtist} />
-          </div>
-        ) : profileRoom === 'date' ? (
-          <div className="profileRoomHost">
-            <RoomBar label="Dates" onBack={() => onProfileRoom(null)} />
-            <DatePage />
           </div>
         ) : (
           <ProfilePage onOpenFriends={onOpenFriends} onOpenRoom={onProfileRoom} />
@@ -909,13 +907,17 @@ export function App() {
   // toggle, so the value stays 'summary'. Kept as state so AppMain's prop and
   // its type need no change if the flip returns elsewhere later.
   const [libraryView] = useState<'summary' | 'all'>('summary');
-  // Which of Profile's rooms is open - This week (stats) or Dates. Lives here
-  // rather than in ProfilePage because the player must hide for the Dates
-  // room (it runs its own audio pool), and because the old 'stats'/'date'
-  // TABS redirect into these rooms so every stored link keeps working.
-  const [profileRoom, setProfileRoom] = useState<'stats' | 'date' | null>(null);
+  // Which of Profile's rooms is open - This week (stats). Lives here rather
+  // than in ProfilePage because the old 'stats' TAB redirects into the room
+  // so every stored link keeps working.
+  const [profileRoom, setProfileRoom] = useState<'stats' | null>(null);
   // A system back swipe inside a room steps back to Profile, not out of it.
   useSystemBack(profileRoom !== null, () => setProfileRoom(null));
+  // Music Date, fullscreen: opened from the Booth's top card as a layer over
+  // whatever you stand on. The nav bar and the player both leave with it -
+  // the date runs its own audio pool and wants the whole screen, no chrome.
+  const [dateOpen, setDateOpen] = useState(false);
+  useSystemBack(dateOpen, () => setDateOpen(false));
   // Search, summoned: a pull down on any page (or ⌘K) drops the search over
   // whatever you were doing, and it retreats the same way - no tab, no lost
   // place. The pull gesture below sets this; so does the old 'search' route.
@@ -1106,12 +1108,19 @@ export function App() {
   /** A primary tab, from the nav bar - always lands on the tab's root. Accepts
    *  the core 'home'/'library' and any plugin page key. */
   const goTab = (next: string) => {
-    // The first-person pages folded into Profile as rooms; their old tab
-    // names still arrive from older surfaces (the Library's stats cards) and
-    // land inside the room they became, so no caller had to learn the move.
-    if (next === 'stats' || next === 'date') {
-      setProfileRoom(next);
+    // Stats folded into Profile as a room; its old tab name still arrives
+    // from older surfaces (the Library's stats cards) and lands inside the
+    // room it became, so no caller had to learn the move.
+    if (next === 'stats') {
+      setProfileRoom('stats');
       push({ tab: 'profile', detail: null });
+      return;
+    }
+    // Music Date moved twice - overflow menu, Profile room, and now the
+    // Booth's top card. The old route opens its fullscreen layer wherever
+    // you already are.
+    if (next === 'date') {
+      setDateOpen(true);
       return;
     }
     // The DJ page became the Booth; the old name still walks in the door.
@@ -1522,6 +1531,7 @@ export function App() {
                   onOpenFriends={() => goTab('friends')}
                   profileRoom={tab === 'profile' ? profileRoom : null}
                   onProfileRoom={setProfileRoom}
+                  onOpenDate={() => setDateOpen(true)}
                 />
               </PendingPlayProvider>
               </DjChatProvider>
@@ -1532,8 +1542,8 @@ export function App() {
                 bottom of the screen, so content scrolling under the nav
                 dissolves into frost toward the edge rather than cutting off at
                 a hard line. The scrim is aria-hidden - pure decoration. */}
-            {!DESKTOP && <div className="appNavScrim" aria-hidden="true" />}
-            {!DESKTOP && (
+            {!DESKTOP && !dateOpen && <div className="appNavScrim" aria-hidden="true" />}
+            {!DESKTOP && !dateOpen && (
               <PrimaryNav
                 variant="bar"
                 tab={tab}
@@ -1575,11 +1585,27 @@ export function App() {
               onQueueChange={setQueue}
               onOpenArtist={go}
               autoplay={autoplay}
-              hidden={tab === 'profile' && profileRoom === 'date'}
+              hidden={dateOpen}
             />
             {/* The import queue's one door: floats above the strip while
                 work is in flight or needs a hand, gone when idle. */}
             <DownloadsChip open={() => goTab('downloads')} current={tab === 'downloads'} />
+            {/* Music Date, fullscreen: over everything, chrome gone - no nav
+                bar, no player strip, just the introductions. A floating
+                chevron (and the system back) is the way out. */}
+            {dateOpen && (
+              <div className="dateLayer">
+                <button
+                  type="button"
+                  className="dateLayer__close"
+                  aria-label="Leave Music Date"
+                  onClick={() => setDateOpen(false)}
+                >
+                  <ChevronLeft size={20} />
+                </button>
+                <DatePage />
+              </div>
+            )}
             <IndexingStatus />
             {/* Summoned search: over whatever you were doing, gone the same
                 way. The page inside is the same SearchPage the old tab held -

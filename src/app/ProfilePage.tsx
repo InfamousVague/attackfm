@@ -399,7 +399,7 @@ export function ProfilePage({
 }: {
   onOpenFriends?: () => void;
   /** Opens one of Profile's rooms - the takeovers App hosts within this tab. */
-  onOpenRoom?: (room: 'stats' | 'date') => void;
+  onOpenRoom?: (room: 'stats') => void;
 }) {
   const { session } = useServerSession();
   const { session: registry, account, apply, signOut } = useRegistry();
@@ -432,19 +432,14 @@ export function ProfilePage({
         <AccountSetup onDone={apply} />
       )}
 
-      {/* The rooms: first-person surfaces that used to hide in the overflow
-          menu, now doors on the page that is about you. This week opens the
-          full stats; Dates opens the collector's auditions. */}
+      {/* The room door: This week opens the full stats as a takeover within
+          the tab. (Music Date used to have a door here too; it lives at the
+          top of the Booth now.) */}
       {onOpenRoom && session && (
         <div className="profileDoors">
           <button type="button" className="profileDoor" onClick={() => onOpenRoom('stats')}>
             <span className="profileDoor__title">This week</span>
             <span className="profileDoor__caption">Your listening, added up</span>
-            <ChevronRight size={16} className="profileDoor__chevron" />
-          </button>
-          <button type="button" className="profileDoor" onClick={() => onOpenRoom('date')}>
-            <span className="profileDoor__title">Dates</span>
-            <span className="profileDoor__caption">Meet what the collector found</span>
             <ChevronRight size={16} className="profileDoor__chevron" />
           </button>
         </div>
