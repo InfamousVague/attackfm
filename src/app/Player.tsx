@@ -3391,6 +3391,25 @@ export function Player({
                       to the phone's own buttons. */}
                 </div>
               </Popover>
+              {/* What plays next, one press from the strip. It was reachable
+                  only by opening Now Playing and then finding Queue inside it
+                  - two steps to answer a question people ask constantly. This
+                  lifts the sheet straight to the queue, so the panel and its
+                  drag-reorder stay the one implementation. */}
+              <IconButton
+                variant="ghost"
+                size="sm"
+                aria-label="Queue"
+                onClick={(event: React.MouseEvent) => {
+                  // The strip's dead space opens Now Playing plain; this is a
+                  // control, so it must not also ride that tap up.
+                  event.stopPropagation();
+                  setNpQueue(true);
+                  setNpOpen(true);
+                }}
+              >
+                <ListMusic size={18} />
+              </IconButton>
             </>
           ) : (
             <>

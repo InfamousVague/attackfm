@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { EllipsisVertical, Settings, UsersRound } from '@glacier/icons';
 import { usePluginPages } from '../plugins/runtime.tsx';
@@ -26,6 +26,20 @@ export function NavMoreMenu({
 }) {
   const pages = usePluginPages();
   const [open, setOpen] = useState(false);
+  /*
+   * When the scrim last closed the menu.
+   *
+   * The scrim is fixed over the whole window at z-40; the nav bar it covers
+   * sits at z-4 and cannot be raised out of it, because a child never escapes
+   * its parent's stacking context. So a second press on ⋮ lands on the SCRIM,
+   * which closes on pointerdown - and then the click that follows, the scrim
+   * having unmounted under the finger, is dispatched to the ⋮ beneath and
+   * toggles the menu straight back open. The menu blinked and stayed.
+   *
+   * The stamp lets the trigger recognise that click as the tail of the press
+   * that just closed it, rather than a new intent to open.
+   */
+  const closedByScrim = useRef(0);
 
   // The ⋮ lights when what is on screen lives in this menu.
   // Stats and Date are Profile's rooms now, so the drawer no longer claims
@@ -58,7 +72,12 @@ export function NavMoreMenu({
         aria-label="More"
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          // Longer than the gap between a press and its click, far shorter
+          // than anyone deliberately reopening a menu they just dismissed.
+          if (Date.now() - closedByScrim.current < 400) return;
+          setOpen((v) => !v);
+        }}
       >
         <span className="appNavBarTab__icon">
           <EllipsisVertical size={24} />
@@ -78,7 +97,14 @@ export function NavMoreMenu({
           <>
             {/* A tap anywhere else closes, which is the gesture people reach
                 for before they look for a button. */}
-            <div className="appNavMore__scrim" aria-hidden onPointerDown={() => setOpen(false)} />
+            <div
+              className="appNavMore__scrim"
+              aria-hidden
+              onPointerDown={() => {
+                closedByScrim.current = Date.now();
+                setOpen(false);
+              }}
+            />
             <div className="appNavMore__menu" role="menu" aria-label="More">
         {pages.map((pg) => (
           <button

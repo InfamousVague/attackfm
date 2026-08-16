@@ -7,6 +7,12 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.96
+
+- Tapping ⋯ a second time closes the menu instead of blinking it shut and open again
+- The mini player has a queue button beside the speaker one — one press to what's next
+- The lit tab on the bottom bar is a true squircle now, not a rounded box
+
 ## 0.3.95
 
 - Two 0.3.94s crossed in the air again; this one carries both halves
