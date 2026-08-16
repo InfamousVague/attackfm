@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.95
+
+- Two 0.3.94s crossed in the air again; this one carries both halves
+- The album page's full-height, tap-anywhere song rows, and the Booth's new instrument panel — the hero, the moods, the platter, the brain, the tune buttons — whichever your phone caught, it now has everything
+
 ## 0.3.94
 
 - Tapping a song on an album page plays it from anywhere in the row, not just exactly on its title
