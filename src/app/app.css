@@ -1589,30 +1589,24 @@ body:has(.npScreen[data-docked]) .appNavScrim {
   transition: background-color 0.16s var(--glacier-ease-out, ease), color 0.15s ease;
 }
 
-/*
- * The generous radius belongs to the squircle and must not outlive it.
- *
- * A superellipse needs a big corner or it is indistinguishable from the
- * rectangle it replaces - but that same 42% under plain `border-radius` is
- * four fat circular arcs, which on a 69x42 tab meet in the middle and draw a
- * blob. So the radius rides INSIDE the query with the shape it was chosen
- * for: Chromium takes both, WebKit takes neither and keeps the modest
- * rounded rectangle above, which is what it has always drawn here.
- */
-@supports (corner-shape: squircle) {
-  .appNavBarTab {
-    border-radius: 42%;
-    corner-shape: squircle;
-  }
-}
+/* (The lit background no longer paints the whole tab - the squircle lives on
+   .appNavBarTab__icon below, at a fixed size the label cannot stretch.) */
 
 /* The selected tab: a squircle behind the whole item - glyph AND name - in a
    faint wash of the accent, with the contents taking the accent colour. The
    mark of where you are should enclose the thing that names it; a disc around
    only the icon left the label sitting outside its own highlight. */
+/* The selected tab: the tab itself stays unpainted - the mark moved down to
+   a compact squircle around the GLYPH (below). Painted across the whole tab
+   it stretched with the label ("Discover" lit twice as wide as "Booth"),
+   which is exactly the box-with-corners-filed-off look the squircle was
+   brought in to kill. */
 .appNavBarTab[data-active] {
-  background: color-mix(in srgb, var(--glacier-accent-solid) 16%, transparent);
   color: var(--glacier-accent-text);
+}
+
+.appNavBarTab[data-active] .appNavBarTab__icon {
+  background: color-mix(in srgb, var(--glacier-accent-solid) 16%, transparent);
 }
 
 /*
@@ -1640,13 +1634,58 @@ body:has(.npScreen[data-docked]) .appNavScrim {
   color: var(--glacier-text-muted);
 }
 
-/* Just the glyph now. The highlight moved out to the tab (above), so this no
-   longer carries a disc of its own - it only has to hold the icon at its own
-   size and let the squircle around both do the lighting. */
+/* The glyph's seat IS the indicator: a fixed near-square, so the lit mark is
+   the same rounded square on every tab regardless of how long its name runs.
+   The label sits under it, lit by colour alone. */
 .appNavBarTab__icon {
+  position: relative;
   display: grid;
   place-items: center;
-  transition: color 0.16s ease;
+  inline-size: 2.75rem;
+  block-size: 2.1rem;
+  border-radius: 0.8rem;
+  transition:
+    color 0.16s ease,
+    background-color 0.16s var(--glacier-ease-out, ease);
+}
+
+/* A real squircle where the engine draws one (Chromium: Android + desktop);
+   WebKit keeps the rounded square above, which at this compact size already
+   reads right. */
+@supports (corner-shape: squircle) {
+  .appNavBarTab__icon {
+    border-radius: 42%;
+    corner-shape: squircle;
+  }
+}
+
+/* The count riding a nav glyph (the ⋮ while downloads pull) and the same
+   number beside the menu's Downloads row. */
+.appNavBadge {
+  position: absolute;
+  inset-block-start: -0.2rem;
+  inset-inline-end: -0.2rem;
+  min-inline-size: 1rem;
+  block-size: 1rem;
+  padding-inline: 0.2rem;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-on-accent, #fff);
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.appNavBadge[data-tone='failed'] {
+  background: var(--glacier-danger-solid, #b3261e);
+}
+
+.appNavBadge--row {
+  position: static;
+  margin-inline-start: auto;
 }
 
 
@@ -1698,8 +1737,13 @@ body:has(.npScreen[data-docked]) .appNavScrim {
      (space-2) + the safe area its chin covers + a step of air. */
   position: fixed;
   z-index: 41;
+  /* Mirrors the bar's own geometry piece by piece (inset + pad + island +
+     chin, see --app-nav-* on .appWindow) plus one space-2 of air, because
+     the old round "4rem + steps" overshot the real island and left the menu
+     floating a room's height above the bar it belongs to. */
   inset-block-end: calc(
-    env(safe-area-inset-bottom, 0px) + 4rem + var(--glacier-space-2) + var(--glacier-space-3)
+    var(--glacier-space-2) + var(--glacier-space-1) + 3.5rem +
+      env(safe-area-inset-bottom, 0px) * 0.75 + var(--glacier-space-2)
   );
   inset-inline-end: var(--glacier-space-2);
   display: flex;

@@ -7,6 +7,12 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.98
+
+- The ⋯ menu sits right on the bar now instead of floating a room's height above it
+- Downloads live in the ⋯ menu, with the count riding both the row and the ⋯ button itself — pink while pulling, red when something failed
+- The lit tab is finally a compact rounded square around the icon, the same size on every tab, instead of stretching with the name
+
 ## 0.3.97
 
 - A third pair of updates crossed mid-air today; this one carries both — the ⋯ menu toggle, the mini player's queue button, the squircle tab, and all the unfolded-screen fixes below

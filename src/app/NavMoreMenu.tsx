@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { EllipsisVertical, Settings, UsersRound } from '@glacier/icons';
+import { Download, EllipsisVertical, Settings, UsersRound } from '@glacier/icons';
+import { useDownloadsOptional } from '../plugins/importsBridge.ts';
 import { usePluginPages } from '../plugins/runtime.tsx';
 
 /**
@@ -26,6 +27,10 @@ export function NavMoreMenu({
 }) {
   const pages = usePluginPages();
   const [open, setOpen] = useState(false);
+  // The queue's presence, for the Downloads row and the count riding the ⋮.
+  const dl = useDownloadsOptional();
+  const pulling = dl?.active.length ?? 0;
+  const failed = dl?.jobs.filter((j) => j.state === 'error').length ?? 0;
   /*
    * When the scrim last closed the menu.
    *
@@ -81,6 +86,11 @@ export function NavMoreMenu({
       >
         <span className="appNavBarTab__icon">
           <EllipsisVertical size={24} />
+          {(pulling > 0 || failed > 0) && (
+            <span className="appNavBadge" data-tone={pulling === 0 ? 'failed' : undefined}>
+              {pulling > 0 ? pulling : failed}
+            </span>
+          )}
         </span>
         <span className="appNavBarTab__label">More</span>
       </button>
@@ -149,6 +159,31 @@ export function NavMoreMenu({
           </span>
           <span className="appNavBarPlugins__itemLabel">Friends</span>
         </button>
+
+        {/* The queue, whenever an importer exists at all - not only mid-pull:
+            the page holds history and retries, and a door that only exists
+            while work is running cannot be found when the work has failed.
+            The count rides as a badge: blue-lit while pulling, the failure
+            count in the warning tone when that is all that is left. */}
+        {dl && (
+          <button
+            type="button"
+            role="menuitem"
+            className="appNavBarPlugins__item"
+            data-active={tab === 'downloads' || undefined}
+            onClick={() => go('downloads')}
+          >
+            <span className="appNavBarPlugins__itemIcon" aria-hidden>
+              <Download size={18} />
+            </span>
+            <span className="appNavBarPlugins__itemLabel">Downloads</span>
+            {(pulling > 0 || failed > 0) && (
+              <span className="appNavBadge appNavBadge--row" data-tone={pulling === 0 ? 'failed' : undefined}>
+                {pulling > 0 ? pulling : failed}
+              </span>
+            )}
+          </button>
+        )}
 
         <button
           type="button"
