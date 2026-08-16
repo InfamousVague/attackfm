@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.97
+
+- A third pair of updates crossed mid-air today; this one carries both — the ⋯ menu toggle, the mini player's queue button, the squircle tab, and all the unfolded-screen fixes below
+
 ## 0.3.96
 
 - Tapping ⋯ a second time closes the menu instead of blinking it shut and open again
