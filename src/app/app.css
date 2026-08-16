@@ -1565,11 +1565,45 @@ body:has(.npScreen[data-docked]) .appNavScrim {
      inline so five of these still fit across a narrow phone. */
   padding: var(--glacier-space-1) var(--glacier-space-1);
   border: none;
+  /*
+   * A real squircle where the engine can draw one.
+   *
+   * border-radius alone is a rounded RECTANGLE: four circular arcs spliced
+   * onto straight edges, and at this size the straights dominate - the lit
+   * tab read as a box with its corners filed off. `corner-shape: squircle`
+   * makes the corner a superellipse instead, curvature easing continuously
+   * into the edge the way an app icon's does, and the radius below becomes
+   * how much of the side it eats rather than an arc bolted on.
+   *
+   * The radius is generous for the same reason: a squircle with a timid
+   * radius is indistinguishable from the rectangle it replaced.
+   *
+   * Progressive on purpose - Chromium draws the superellipse (so Android and
+   * the desktop app get it), WebKit ignores the line and keeps the rounded
+   * rectangle, which is the shape it has always drawn here.
+   */
   border-radius: var(--glacier-radius-lg, 0.9rem);
   background: none;
   cursor: pointer;
   color: var(--glacier-text-subtle);
   transition: background-color 0.16s var(--glacier-ease-out, ease), color 0.15s ease;
+}
+
+/*
+ * The generous radius belongs to the squircle and must not outlive it.
+ *
+ * A superellipse needs a big corner or it is indistinguishable from the
+ * rectangle it replaces - but that same 42% under plain `border-radius` is
+ * four fat circular arcs, which on a 69x42 tab meet in the middle and draw a
+ * blob. So the radius rides INSIDE the query with the shape it was chosen
+ * for: Chromium takes both, WebKit takes neither and keeps the modest
+ * rounded rectangle above, which is what it has always drawn here.
+ */
+@supports (corner-shape: squircle) {
+  .appNavBarTab {
+    border-radius: 42%;
+    corner-shape: squircle;
+  }
 }
 
 /* The selected tab: a squircle behind the whole item - glyph AND name - in a
