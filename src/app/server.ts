@@ -1649,6 +1649,9 @@ export async function fetchAlbumGaps(
  *  CatalogTrack below, which is an artist's top songs across everything. */
 export interface AlbumTrack {
   position: number;
+  /** Which disc of a set; absent from servers older than the field, so
+   *  read it as 1. Positions restart per disc on a set. */
+  disc?: number;
   title: string;
   /** The link an import takes. Empty when the catalogue gave none. */
   url: string;

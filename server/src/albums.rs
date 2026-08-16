@@ -35,6 +35,8 @@ const GAP: Duration = Duration::from_millis(250);
 pub struct MissingTrack {
     /// Where it sits on the record, when the catalogue says.
     pub position: Option<u32>,
+    /// Which disc of a set it sits on; 1 on anything that is not a set.
+    pub disc: u32,
     pub title: String,
     /// The link an import takes. Empty when the catalogue gave none.
     pub url: String,
@@ -59,6 +61,93 @@ fn client() -> reqwest::Client {
         .user_agent("AttackFM/0.1 (personal music server)")
         .build()
         .unwrap_or_default()
+}
+
+/// The catalogue entry that best answers to a library album's name.
+///
+/// Exact folded equality first. Failing that, candidates where one folded
+/// name is a prefix of the other are ranked by how much they share - so a tag
+/// reading "Album (Delux)" lands on the catalogue's "Album (Deluxe)" rather
+/// than plain "Album", which is also prefix-related but a shorter agreement.
+/// The old find-first took whichever prefix relative the catalogue listed
+/// earliest, which for a deluxe tag was usually the standard record - and a
+/// listener who owns all of the standard then hears "nothing missing" about
+/// an edition with a whole bonus disc.
+fn best_title_match<'a>(
+    catalogue: &'a [(u64, String, Option<String>)],
+    want: &str,
+) -> Option<&'a (u64, String, Option<String>)> {
+    if want.is_empty() {
+        return None;
+    }
+    let mut best: Option<(usize, &(u64, String, Option<String>))> = None;
+    for entry in catalogue {
+        let f = crate::discovery::fold(&entry.1);
+        if f.is_empty() {
+            continue;
+        }
+        let score = if f == want {
+            usize::MAX
+        } else if f.starts_with(want) || want.starts_with(&f) {
+            f.len().min(want.len())
+        } else {
+            continue;
+        };
+        // Strictly greater, so equal scores keep the catalogue's own order.
+        if best.map(|(s, _)| score > s).unwrap_or(true) {
+            best = Some((score, entry));
+        }
+    }
+    best.map(|(_, entry)| entry)
+}
+
+/// Albums found by searching the catalogue directly, for records the artist's
+/// own page does not list - a same-named artist split across catalogue pages,
+/// an alternate upload, a reissue filed apart. Joji's "Piss In The Wind" lives
+/// under a second Joji page and is invisible from the first one's album list.
+///
+/// The fielded search first (it is precise but literal - a misspelled tag
+/// returns nothing), then the loose one. Candidates are kept only when the
+/// catalogue's artist name folds equal to ours, so someone else's same-named
+/// record cannot answer.
+async fn deezer_search_albums(
+    c: &reqwest::Client,
+    artist: &str,
+    album: &str,
+) -> Vec<(u64, String, Option<String>)> {
+    let artist_fold = crate::discovery::fold(artist);
+    let mut out: Vec<(u64, String, Option<String>)> = Vec::new();
+    for q in [format!("artist:\"{artist}\" album:\"{album}\""), format!("{artist} {album}")] {
+        let Ok(reply) = c
+            .get("https://api.deezer.com/search/album")
+            .query(&[("q", q.as_str()), ("limit", "10")])
+            .send()
+            .await
+        else {
+            continue;
+        };
+        let Ok(v) = reply.json::<serde_json::Value>().await else {
+            continue;
+        };
+        if let Some(items) = v.get("data").and_then(|d| d.as_array()) {
+            out.extend(items.iter().filter_map(|a| {
+                let by = a.get("artist")?.get("name")?.as_str()?;
+                if crate::discovery::fold(by) != artist_fold {
+                    return None;
+                }
+                Some((
+                    a.get("id")?.as_u64()?,
+                    a.get("title")?.as_str()?.to_string(),
+                    a.get("cover_medium").and_then(|c| c.as_str()).map(String::from),
+                ))
+            }));
+        }
+        if !out.is_empty() {
+            break;
+        }
+        tokio::time::sleep(GAP).await;
+    }
+    out
 }
 
 /// The artist's albums as the catalogue lists them: id, title, cover.
@@ -99,11 +188,14 @@ async fn deezer_albums(c: &reqwest::Client, artist_id: u64) -> Vec<(u64, String,
 /// copy left this counting the array and calling the index a position - fine
 /// until a record is listed with a gap or out of order. It also takes a limit,
 /// where the embedded list is one page and a box set is longer than that.
-async fn deezer_tracklist(c: &reqwest::Client, album_id: u64) -> Vec<(Option<u32>, String, String)> {
+async fn deezer_tracklist(
+    c: &reqwest::Client,
+    album_id: u64,
+) -> Vec<(Option<u32>, u32, String, String)> {
     deezer_album_tracks(c, album_id)
         .await
         .into_iter()
-        .map(|(position, title, url)| (Some(position), title, url))
+        .map(|(position, disc, title, url)| (Some(position), disc, title, url))
         .collect()
 }
 
@@ -139,22 +231,16 @@ pub async fn gaps(
 
     let mut out: Vec<AlbumGap> = Vec::new();
     for (album, tracks) in mine.into_iter().take(MAX_ALBUMS) {
-        // The catalogue's entry for this record. Folded, because "Album
-        // (Deluxe Edition)" and "Album" are the same record to a listener.
+        // The catalogue's entry for this record: the artist's own page first,
+        // then a direct search for records that page does not list (an
+        // alternate page for the same name, a reissue filed apart).
         let want = crate::discovery::fold(&album);
-        let Some((id, cat_title, cover)) = catalogue
-            .iter()
-            .find(|(_, t, _)| crate::discovery::fold(t) == want)
-            .or_else(|| {
-                catalogue
-                    .iter()
-                    .find(|(_, t, _)| {
-                        let f = crate::discovery::fold(t);
-                        !f.is_empty() && (f.starts_with(&want) || want.starts_with(&f))
-                    })
-            })
-            .cloned()
-        else {
+        let mut hit = best_title_match(&catalogue, &want).cloned();
+        if hit.is_none() {
+            tokio::time::sleep(GAP).await;
+            hit = best_title_match(&deezer_search_albums(&c, &artist, &album).await, &want).cloned();
+        }
+        let Some((id, cat_title, cover)) = hit else {
             continue;
         };
         tokio::time::sleep(GAP).await;
@@ -166,9 +252,10 @@ pub async fn gaps(
             tracks.iter().map(|(t, _)| crate::discovery::title_key_public(t)).collect();
         let missing: Vec<MissingTrack> = list
             .iter()
-            .filter(|(_, title, _)| !held.contains(&crate::discovery::title_key_public(title)))
-            .map(|(position, title, url)| MissingTrack {
+            .filter(|(_, _, title, _)| !held.contains(&crate::discovery::title_key_public(title)))
+            .map(|(position, disc, title, url)| MissingTrack {
                 position: *position,
+                disc: *disc,
                 title: title.clone(),
                 url: url.clone(),
             })
@@ -204,6 +291,9 @@ pub async fn gaps(
 #[serde(rename_all = "camelCase")]
 pub struct CatalogTrack {
     pub position: u32,
+    /// Which disc of a set; 1 on anything that is not a set. Positions restart
+    /// per disc, so without this a deluxe's bonus disc collides with side one.
+    pub disc: u32,
     pub title: String,
     /// The link an import takes. Empty when the catalogue gave none.
     pub url: String,
@@ -220,7 +310,10 @@ pub struct TracksQuery {
 /// The full tracklist for one album, paged out of the catalogue's dedicated
 /// endpoint. `limit=300` because the album object's own embedded list stops at
 /// the first page, and a box set is longer than that.
-async fn deezer_album_tracks(c: &reqwest::Client, album_id: u64) -> Vec<(u32, String, String)> {
+async fn deezer_album_tracks(
+    c: &reqwest::Client,
+    album_id: u64,
+) -> Vec<(u32, u32, String, String)> {
     let Ok(reply) = c
         .get(format!("https://api.deezer.com/album/{album_id}/tracks"))
         .query(&[("limit", "300")])
@@ -247,8 +340,18 @@ async fn deezer_album_tracks(c: &reqwest::Client, album_id: u64) -> Vec<(u32, St
                         .and_then(|p| p.as_u64())
                         .map(|p| p as u32)
                         .unwrap_or((i + 1) as u32);
+                    // disk_number restarts track_position on every disc of a
+                    // set - a deluxe's bonus disc opens at 1 again - so a
+                    // position without its disc is ambiguous on any set.
+                    let disc = t
+                        .get("disk_number")
+                        .and_then(|d| d.as_u64())
+                        .map(|d| d as u32)
+                        .filter(|d| *d >= 1)
+                        .unwrap_or(1);
                     Some((
                         position,
+                        disc,
                         t.get("title")?.as_str()?.to_string(),
                         t.get("link").and_then(|l| l.as_str()).unwrap_or("").to_string(),
                     ))
@@ -279,26 +382,19 @@ pub async fn tracks(
     }
 
     let c = client();
-    let Some(artist_id) = crate::discovery::deezer_artist_id_public(&c, &artist).await else {
-        return Ok(Json(json!({ "album": album, "artist": artist, "tracks": [] })));
-    };
-    tokio::time::sleep(GAP).await;
-    let catalogue = deezer_albums(&c, artist_id).await;
-
-    // Same folded match the gap check uses, exact first then either-prefix, so
-    // "Album (Deluxe Edition)" finds "Album" and the reverse.
+    // The artist's own catalogue page first - the cheap, usually-right path -
+    // then a direct album search for the records that page does not list.
     let want = crate::discovery::fold(&album);
-    let Some((id, cat_title, cover)) = catalogue
-        .iter()
-        .find(|(_, t, _)| crate::discovery::fold(t) == want)
-        .or_else(|| {
-            catalogue.iter().find(|(_, t, _)| {
-                let f = crate::discovery::fold(t);
-                !f.is_empty() && (f.starts_with(&want) || want.starts_with(&f))
-            })
-        })
-        .cloned()
-    else {
+    let mut hit: Option<(u64, String, Option<String>)> = None;
+    if let Some(artist_id) = crate::discovery::deezer_artist_id_public(&c, &artist).await {
+        tokio::time::sleep(GAP).await;
+        hit = best_title_match(&deezer_albums(&c, artist_id).await, &want).cloned();
+    }
+    if hit.is_none() {
+        tokio::time::sleep(GAP).await;
+        hit = best_title_match(&deezer_search_albums(&c, &artist, &album).await, &want).cloned();
+    }
+    let Some((id, cat_title, cover)) = hit else {
         return Ok(Json(json!({ "album": album, "artist": artist, "tracks": [] })));
     };
 
@@ -313,9 +409,10 @@ pub async fn tracks(
 
     let out: Vec<CatalogTrack> = list
         .into_iter()
-        .map(|(position, title, url)| CatalogTrack {
+        .map(|(position, disc, title, url)| CatalogTrack {
             owned: held.contains(&crate::discovery::title_key_public(&title)),
             position,
+            disc,
             title,
             url,
         })
