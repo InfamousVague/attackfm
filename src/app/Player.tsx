@@ -78,6 +78,7 @@ import {
   updateMediaSessionState,
 } from './mediaSession.ts';
 import { BeatWave } from './BeatWave.tsx';
+import { usePlayerDismiss } from './playerDismiss.ts';
 import { initDockWave } from './dockWave.ts';
 
 /** No artwork for the blank idle stand-in, and the neutral fallback anywhere a
@@ -2539,6 +2540,8 @@ export function Player({
   // stays a strip.
   const openNowPlaying = (event: React.MouseEvent) => {
     if (!track || npDocked) return;
+    // A swipe ends in a click too; the gesture already had its meaning.
+    if (draggedRef.current) return;
     const el = event.target as HTMLElement;
     if (el.closest('button, a, input, [role="slider"], [role="menu"], [role="menuitem"]')) return;
     // The sheet has weight; lifting it should too. (The strip's dead space is
@@ -3147,6 +3150,11 @@ export function Player({
   const dispPosition = activeElsewhere ? remotePosition : position;
   const dispDuration = activeElsewhere ? (remoteTrack?.duration ?? 0) : duration;
   const dispArtwork = activeElsewhere ? (remoteTrack?.artwork ?? TRACK_ART) : artwork;
+  // Paused, the strip can be pushed off the bottom of the screen; it comes
+  // back by itself with the next sound. Reads dispPlaying rather than the
+  // local deck so a remote's playback holds the bar here too.
+  const { dismissed, shellRef, draggedRef } = usePlayerDismiss(dispPlaying);
+
   const onPlayingChangeDisp = activeElsewhere
     ? (p: boolean) => connect.sendCommand({ action: p ? 'play' : 'pause' })
     : setPlayingState;
@@ -3227,7 +3235,9 @@ export function Player({
           the layout the kit and the shell CSS assume - it only catches the
           bubbling tap. */}
       <div
+        ref={shellRef}
         className="playerBarShell"
+        data-dismissed={dismissed || undefined}
         onClick={mobileControls ? openNowPlaying : undefined}
       >
       <PlayerBar

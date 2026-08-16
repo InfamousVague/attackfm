@@ -1820,10 +1820,57 @@ html[data-platform='android'] .appWindow {
   z-index: 1;
 }
 
-/* The tap wrapper around the strip is layout-invisible; it only catches the
-   bubbling tap that lifts the full-screen player. */
+/*
+ * The wrapper around the strip. It catches the bubbling tap that lifts the
+ * full-screen player, and it is the plate the dismiss swipe pushes.
+ *
+ * It was display:contents while listening was all it did - nothing can be
+ * moved out of a layout it was never in, and the swipe needs something to
+ * move. A plain block lands exactly where the strip already sat: .appPlayer
+ * is an absolutely positioned band with padding and no flow of its own, so
+ * the wrapper fills its content box and the strip fills the wrapper.
+ *
+ * No transform at rest, deliberately: a transformed element becomes the
+ * containing block for any fixed-position descendant, and the strip carries
+ * popovers and menus. Only the two moving states below declare one, and
+ * neither can be open while one of them holds.
+ */
 .playerBarShell {
-  display: contents;
+  transition:
+    transform var(--player-ease, var(--glacier-duration-normal)) var(--glacier-ease-out),
+    opacity var(--player-ease, var(--glacier-duration-normal)) var(--glacier-ease-out);
+}
+
+/* Under the finger the offset IS the finger, so there is nothing to ease
+   towards - a duration here would drag the plate a frame behind the hand. */
+.playerBarShell[data-dragging] {
+  --player-ease: 0s;
+  transform: translateY(var(--player-drag, 0px));
+}
+
+/*
+ * Pushed away: out the bottom by the same distance playerRise brings it in
+ * from, so it leaves the way it came - down and behind the nav rather than
+ * across it. Declared after the dragging rule and at equal specificity, so
+ * on the one frame where both hold (React commits the attribute after the
+ * touch ends) this is what wins, and the plate carries on from where the
+ * finger let go instead of snapping back first.
+ *
+ * pointer-events off because a plate below the screen is still a plate, and
+ * its buttons would go on taking presses aimed at the nav above them.
+ */
+.playerBarShell[data-dismissed] {
+  --player-ease: var(--glacier-duration-normal);
+  transform: translateY(calc(100% + var(--app-nav-height) + var(--app-nav-gap, 0px)));
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ...and the band it was holding goes back to the page, the same discipline
+   as the no-strip and Date-mode rules above: a reservation must not outlive
+   the thing it reserves for. */
+.appWindow:has(.playerBarShell[data-dismissed]) {
+  --app-player-height: 0rem;
 }
 
 /* ── Liked & All songs: the library's two whole-collection views ────────────
