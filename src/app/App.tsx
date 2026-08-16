@@ -47,6 +47,7 @@ import { StatsPage } from './StatsPage.tsx';
 import { FriendsPage } from './FriendsPage.tsx';
 import { UpdateBanner } from './UpdateBanner.tsx';
 import { useHeaderActions, type HeaderActions } from './headerActions.ts';
+import { installShelfPan } from './shelfPan.ts';
 import { DjPage } from './DjPage.tsx';
 import { DjChatProvider } from './djChat.tsx';
 import { DatePage } from './DatePage.tsx';
@@ -1046,6 +1047,11 @@ export function App() {
   // to go back TO - with the stack at its root the edge belongs to the page.
   const swipeRef = useRef<HTMLElement | null>(null);
   useSwipeBack(swipeRef, back, !DESKTOP && nav.index > 0);
+
+  // Sideways drags on shelves, which the engine no longer performs itself -
+  // see shelfPan.ts and the touch-action rule it pairs with. Delegated from
+  // the document, so every shelf on every page is covered by this one line.
+  useEffect(() => installShelfPan(), []);
   // The phone's back gesture: a drag in from the left edge, with the page
   // following the thumb. Only armed when there is somewhere to go back TO -
   // otherwise the whole screen would slide and then think better of it.

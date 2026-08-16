@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.81
+
+- Shelves finally do both: swipe one sideways from anywhere on it, or pull down from the same spot to scroll the page
+
 ## 0.3.80
 
 - Shelves swipe sideways reliably again — scroll the page from the gaps between them

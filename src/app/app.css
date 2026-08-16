@@ -3133,23 +3133,24 @@ img.artPop:not([data-loading]) {
  * which is the "hard to swipe sideways" problem all over again. Reported
  * exactly that way.
  *
- * `pan-x` (here, chosen deliberately): horizontal is decisively the shelf's,
- * which is the axis a shelf exists for. THE COST IS REAL AND KNOWN: a vertical
- * drag that starts on a shelf is not passed up to the page, it is discarded -
- * so a shelf is a dead zone for scrolling down, and on a page of several
- * stacked shelves the thumb has to find the gaps between them. That was
- * reported as a bug in August and is being accepted now as the lesser one.
+ * `pan-x`: horizontal is decisively the shelf's, but a vertical drag starting
+ * on a shelf is discarded - so a page of shelves is a page of dead zones.
  *
- * The only way off the seesaw is to stop letting the engine choose: hold
- * `pan-y` here and drive scrollLeft from JS, so both axes move at once. That
- * trades the OS's horizontal momentum for hand-rolled inertia, which is why it
- * has not been done - not because it would not work.
+ * `pan-y` (here) IS NOT A THIRD SEAT ON THE SEESAW - it is getting off it, and
+ * it only reads correctly alongside shelfPan.ts. Vertical is the engine's, with
+ * its own momentum and overscroll chaining, because that is the app's primary
+ * gesture. Horizontal the engine now refuses entirely, and shelfPan drives
+ * scrollLeft from the touch events that reach it instead. Both axes work, from
+ * anywhere on a shelf.
+ *
+ * Do not "simplify" this back to pan-x or auto without deleting that module:
+ * on its own, this line means shelves do not scroll sideways at all.
  *
  * overscroll-behavior stays inline-only so a sideways fling never nudges the
  * page or triggers the OS back-swipe.
  */
 .homeShelfScroll [data-scrollbar-appearance] {
-  touch-action: pan-x;
+  touch-action: pan-y;
   overscroll-behavior-inline: contain;
 }
 
