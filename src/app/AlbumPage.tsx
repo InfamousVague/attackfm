@@ -187,22 +187,31 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
   // disc wearing a "Disc 1" heading is a label for a distinction that is not
   // being made.
   const discs = [...new Set(list.map((t) => t.discNo ?? 1))].sort((a, b) => a - b);
-  const multiDisc = discs.length > 1;
 
   /*
    * The record as it actually is: your songs, plus the ones the catalogue says
    * belong here and you do not have, dimmed and one tap from being pulled.
    *
-   * Only when the catalogue answered AND the record is single-disc. On a set
-   * the catalogue's flat numbering cannot be mapped onto disc-and-track
-   * without guessing which side of a boundary a number falls, and a track
-   * filed under the wrong disc is worse than one not shown - so a multi-disc
-   * record shows what you own and says nothing about holes.
+   * Grouped by the catalogue's own disc numbers, because positions restart on
+   * every disc of a set - a deluxe's bonus disc opens at track 1 again, and
+   * without the disc a hole there would land on top of side one. Discs the
+   * catalogue knows and this library has nothing from (that whole unowned
+   * bonus disc) get sections of their own after the ones you hold.
    */
   const missing =
-    multiDisc || catalogue.length === 0
+    catalogue.length === 0
       ? []
       : catalogue.filter((c) => !c.owned && !heldTitles.has(titleKey(c.title)));
+  const gapsByDisc = new Map<number, typeof missing>();
+  for (const row of missing) {
+    const disc = row.disc ?? 1;
+    gapsByDisc.set(disc, [...(gapsByDisc.get(disc) ?? []), row]);
+  }
+  const gapOnlyDiscs = [...gapsByDisc.keys()]
+    .filter((d) => !discs.includes(d))
+    .sort((a, b) => a - b);
+  const shownDiscs = [...discs, ...gapOnlyDiscs];
+  const labelDiscs = shownDiscs.length > 1;
 
   /**
    * Pull one missing song. The catalogue's own link is a Deezer one, which
@@ -211,7 +220,7 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
    * reason it takes a beat and can come back empty.
    */
   const addMissing = async (row: AlbumTrack) => {
-    const key = `${row.position}:${row.title}`;
+    const key = `${row.disc ?? 1}:${row.position}:${row.title}`;
     if (!session || adding[key]) return;
     setAdding((prev) => ({ ...prev, [key]: 'finding' }));
     const take = (url: string) => {
@@ -282,7 +291,7 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
               ? `${list.length} of ${list.length + missing.length} songs`
               : `${list.length} ${list.length === 1 ? 'song' : 'songs'}`}
             {totalSeconds > 0 ? ` · ${formatTotal(totalSeconds)}` : ''}
-            {multiDisc ? ` · ${discs.length} discs` : ''}
+            {labelDiscs ? ` · ${shownDiscs.length} discs` : ''}
             {year ? ` · ${year}` : ''}
           </Text>
           <div className="albumHead__actions">
@@ -305,13 +314,12 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
       </header>
       <div ref={sentinelRef} aria-hidden />
 
-      {discs.map((disc) => {
+      {shownDiscs.map((disc) => {
         // The record in running order, holes and all: what you own and what
         // you don't share one list, sorted by the sleeve's own numbers, so
-        // track 3 sits between 2 and 4 whether or not it is yours. `missing`
-        // is only ever non-empty on a single-disc record (the catalogue's
-        // flat numbering cannot be split across discs), so the merge is safe
-        // to do per-disc.
+        // track 3 sits between 2 and 4 whether or not it is yours. Each disc
+        // takes only its own holes - positions restart per disc, so a bonus
+        // disc's track 1 belongs beside its neighbours, not on side one.
         const rows: (
           | { kind: 'owned'; pos: number; track: (typeof list)[number]; fallback: number }
           | { kind: 'gap'; pos: number; row: (typeof missing)[number] }
@@ -323,13 +331,13 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
             fallback: index + 1,
             track,
           }));
-        if (disc === discs[0]) {
-          for (const row of missing) rows.push({ kind: 'gap', pos: row.position, row });
+        for (const row of gapsByDisc.get(disc) ?? []) {
+          rows.push({ kind: 'gap', pos: row.position, row });
         }
         rows.sort((a, b) => a.pos - b.pos || (a.kind === 'owned' ? -1 : 1));
         return (
           <section key={disc} className="albumDisc">
-            {multiDisc && (
+            {labelDiscs && (
               <Text tone="subtle" size="xs" className="albumDisc__label">
                 Disc {disc}
               </Text>
@@ -364,7 +372,7 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
                   );
                 }
                 const { row } = entry;
-                const key = `${row.position}:${row.title}`;
+                const key = `${row.disc ?? 1}:${row.position}:${row.title}`;
                 const state = adding[key];
                 return (
                   <li key={key} className="catalogTrack albumGapRow" data-state={state}>
