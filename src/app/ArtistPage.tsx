@@ -9,6 +9,7 @@ import { useServerSession } from './serverSession.tsx';
 import { IMPORTER_PLUGIN_ID, useAcquire } from '../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
 import type { AcquireTarget } from '../plugins/types.ts';
+import { groupAlbums, isBy } from './albums.ts';
 import { fetchAlbumArt } from './albumArt.ts';
 import { mosaicArts, useArtLoad, useTileArt } from './artLoad.ts';
 import { PROBE_URL, importable, resolveImportable } from './resolveImport.ts';
@@ -32,6 +33,9 @@ interface ArtistPageProps {
   /** Receives the opened track and the artist's list in its displayed order. */
   onPlay: (track: Track, queue: Track[]) => void;
   onOpenArtist: (artist: string) => void;
+  /** Opens a record you own. A cover is a door; playing it is what the play
+   *  button on the page behind it is for. */
+  onOpenAlbum?: (album: string, albumArtist: string) => void;
   /** Opens one of the listener's playlists - the "In your playlists" shelf. */
   onOpenPlaylist?: (id: string) => void;
 }
@@ -98,33 +102,32 @@ function PlaylistTile({ featured }: { featured: Track[] }) {
  * Everything catalogue-side is additive and best-effort: signed out, offline,
  * or on an older server, the page is exactly what it was before.
  */
-export function ArtistPage({ artist, onPlay, onOpenArtist, onOpenPlaylist }: ArtistPageProps) {
+export function ArtistPage({ artist, onPlay, onOpenArtist,
+  onOpenAlbum, onOpenPlaylist }: ArtistPageProps) {
   const { tracks } = useLibrary();
   const { playlists } = usePlaylists();
   const { session } = useServerSession();
   const acquire = useAcquire();
   const downloads = useDownloadsOptional();
   const owned = useOwned();
-  const theirs = useMemo(() => tracks.filter((t) => t.artist === artist), [tracks, artist]);
+  /**
+   * Everything of theirs, which is a wider net than it looks.
+   *
+   * A track counts as this artist's when EITHER credit names them: the track
+   * artist, or the album artist. Matching the track artist alone - which this
+   * did - loses every song with a guest on it ("X feat. Y" is not "X"), and
+   * with it whole records, because an album only appeared here if at least one
+   * of its songs was credited to the bare name. That is the same bug reading
+   * as three separate ones: too few songs in the count, too few albums on the
+   * shelf, and an album's own tally short of what is actually on the disk.
+   *
+   * Folded case-insensitively for the same reason the server's own artist
+   * queries are: two spellings of one name must not become two artists.
+   */
+  const theirs = useMemo(() => tracks.filter((t) => isBy(t, artist)), [tracks, artist]);
 
-  // One entry per album, taking the first cover the album offers, with the
-  // album's own tracks in disc order as its play-through queue.
-  const albums = useMemo(() => {
-    const byAlbum = new Map<string, { name: string; artwork: string | null; list: Track[] }>();
-    for (const track of theirs) {
-      const name = track.album || 'Unknown album';
-      const existing = byAlbum.get(name);
-      if (!existing) byAlbum.set(name, { name, artwork: track.artwork, list: [track] });
-      else {
-        existing.list.push(track);
-        if (!existing.artwork && track.artwork) existing.artwork = track.artwork;
-      }
-    }
-    for (const album of byAlbum.values()) {
-      album.list.sort((a, b) => (a.trackNo ?? 0) - (b.trackNo ?? 0));
-    }
-    return [...byAlbum.values()];
-  }, [theirs]);
+  // One entry per album, each in running order, as the play-through queue.
+  const albums = useMemo(() => groupAlbums(theirs), [theirs]);
 
   // The songs of theirs the listener actually reaches for: the server's
   // all-time play counts for this artist, resolved against the synced library.
@@ -567,7 +570,14 @@ export function ArtistPage({ artist, onPlay, onOpenArtist, onOpenPlaylist }: Art
       session !== null &&
       acquire.hasHandlers({ kind: 'album', title: row.title, artist, url: PROBE_URL });
     const act = row.owned
-      ? () => onPlay(row.owned!.list[0]!, row.owned!.list)
+      ? // A cover is a door. This used to play the record, which is the one
+        // thing already reachable from here (the page it opens leads with
+        // Play) and not what a tap on artwork means anywhere else in the app.
+        // Without a handler the old behaviour stands, rather than an enabled
+        // button that does nothing at all.
+        onOpenAlbum
+        ? () => onOpenAlbum(row.owned!.name, artist)
+        : () => onPlay(row.owned!.list[0]!, row.owned!.list)
       : canAdd && !state
         ? () => void addRecord(row)
         : undefined;
@@ -582,7 +592,7 @@ export function ArtistPage({ artist, onPlay, onOpenArtist, onOpenPlaylist }: Art
         disabled={!act}
         title={
           row.owned
-            ? `Play ${row.title}`
+            ? `Open ${row.title}`
             : state === 'missing'
               ? `${row.title} is not on Spotify to import`
               : canAdd

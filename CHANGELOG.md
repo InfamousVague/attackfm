@@ -7,6 +7,12 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.86
+
+- Tapping an album now opens it: the whole record, in running order, with its discs and its guests
+- Artist pages were missing songs and whole albums — anything with a guest credit did not count. Fixed, so the counts are right too
+- Search no longer splits one record into two when a guest sings on it
+
 ## 0.3.85
 
 - Two new notifications: songs the collector found waiting for a date, and a weekly recap of what you played

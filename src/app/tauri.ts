@@ -128,6 +128,18 @@ export interface Track {
   path: string;
   title: string;
   artist: string;
+  /**
+   * Who the ALBUM is by, which is not always who the track is by: a record
+   * with a guest on two songs has three different `artist` values and one
+   * album artist, and a compilation has one per track and "Various Artists"
+   * over all of them. Anything gathering an artist's work has to read this or
+   * it loses the records that are least uniform - which are usually the ones
+   * somebody cares most about.
+   *
+   * Absent for a local scan (the scanner has never read the tag) and from
+   * older servers, so every reader falls back to `artist`.
+   */
+  albumArtist?: string | null;
   album: string;
   /** Length in seconds, or null when the tags do not carry it. */
   duration: number | null;
@@ -138,6 +150,12 @@ export interface Track {
    * order, not alphabetical.
    */
   trackNo?: number | null;
+  /** The release year off the tags, where they carry one. */
+  year?: number | null;
+  /** Which disc, on a set that has more than one. Null/absent when untagged
+   *  or single-disc; an album's running order is (disc, track), never track
+   *  alone, or the second disc interleaves with the first. */
+  discNo?: number | null;
   /** When the file landed in the library, epoch milliseconds. */
   addedAt: number;
   /**

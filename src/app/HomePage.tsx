@@ -189,6 +189,7 @@ function Shelf({ title, children, count, action }: { title: string; children: Re
 export function HomePage({
   onPlay,
   onOpenArtist,
+  onOpenAlbum,
   onOpenStats,
   embedded = false,
   section = 'all',
@@ -197,6 +198,8 @@ export function HomePage({
   onPlay: (track: Track, queue: Track[]) => void;
   /** Opens an artist's page - the Top artists shelf links through here. */
   onOpenArtist: (artist: string) => void;
+  /** Opens a record. A cover is a door; the page it opens leads with Play. */
+  onOpenAlbum?: (album: string, albumArtist: string) => void;
   /** Opens the stats page - the Top artists shelf's header door. */
   onOpenStats?: () => void;
   /** Rendered inside another page (the Library tab): drop the greeting and the
@@ -498,7 +501,11 @@ export function HomePage({
           <AlbumCard
             key={album[0]!.path}
             track={album[0]!}
-            onOpen={() => onPlay(album[0]!, album)}
+            onOpen={() =>
+              onOpenAlbum
+                ? onOpenAlbum(album[0]!.album, album[0]!.albumArtist || album[0]!.artist)
+                : onPlay(album[0]!, album)
+            }
           />
         ))}
       </Shelf>
@@ -622,6 +629,7 @@ export function CuratorShelves(props: {
 export function HistoryShelves(props: {
   onPlay: (track: Track, queue: Track[]) => void;
   onOpenArtist: (artist: string) => void;
+  onOpenAlbum?: (album: string, albumArtist: string) => void;
   onOpenStats?: () => void;
 }) {
   return <HomePage {...props} embedded section="history" />;

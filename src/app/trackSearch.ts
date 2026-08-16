@@ -1,4 +1,5 @@
 import type { Track } from './tauri.ts';
+import { byRunningOrder } from './albums.ts';
 
 /**
  * The app's own local-library search, shared by the page-level search bars
@@ -39,6 +40,9 @@ export const flatten = (value: string): string =>
 interface Folded {
   title: string;
   artist: string;
+  /** Who the RECORD is by, folded - empty when untagged. What albums group on,
+   *  since the track credit varies across a record with a guest on it. */
+  albumArtist: string;
   album: string;
   genre: string;
   /** Title, artist, album and genre in one blob, for the word-AND. */
@@ -69,6 +73,7 @@ function foldTrack(track: Track): Folded {
     f = {
       title: flatten(track.title),
       artist: flatten(track.artist),
+      albumArtist: flatten(track.albumArtist ?? ''),
       album: flatten(track.album),
       genre: flatten(track.genre),
       meta,
@@ -366,10 +371,16 @@ interface Pass {
   songs: { rank: number; hit: TrackHit }[];
 }
 
-/** The album key: title AND artist, so two different records called "Greatest
- *  Hits" stay two records. Tracks with no album tag have no album. */
+/**
+ * The album key: title AND artist, so two different records called "Greatest
+ * Hits" stay two records. Tracks with no album tag have no album.
+ *
+ * The ALBUM artist where the tags carry one, falling back to the track's. On
+ * the track credit alone a record with a guest on two songs became two albums
+ * in the results, each with a fraction of the songs and a count to match.
+ */
 function albumKey(f: Folded): string | null {
-  return f.album ? `${f.album}\u001f${f.artist}` : null;
+  return f.album ? `${f.album}\u001f${f.albumArtist || f.artist}` : null;
 }
 
 /** A genre tag is comma-joined in the tags ("Hip-Hop, Rap"); each side of the
@@ -546,7 +557,7 @@ function rank(pass: Pass, q: Query): Omit<LibraryHits, 'approximate'> {
         artist: commonArtist(tracks),
         cover: firstCover(tracks),
         count: tracks.length,
-        tracks: [...tracks].sort((a, b) => (a.trackNo ?? 0) - (b.trackNo ?? 0)),
+        tracks: [...tracks].sort(byRunningOrder),
       },
     }))
     .sort((a, b) => a.rank - b.rank || b.item.count - a.item.count)
@@ -578,7 +589,12 @@ function rank(pass: Pass, q: Query): Omit<LibraryHits, 'approximate'> {
 /** The artist most of these tracks are credited to. */
 function commonArtist(tracks: readonly Track[]): string {
   const tally = new Map<string, number>();
-  for (const t of tracks) if (t.artist) tally.set(t.artist, (tally.get(t.artist) ?? 0) + 1);
+  // The album credit where a track carries one - it is the same on every song
+  // of a record, guests included, which is exactly the agreement being counted.
+  for (const t of tracks) {
+    const name = t.albumArtist || t.artist;
+    if (name) tally.set(name, (tally.get(name) ?? 0) + 1);
+  }
   let best = '';
   let most = 0;
   for (const [name, n] of tally) {

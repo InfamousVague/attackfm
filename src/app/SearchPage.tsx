@@ -379,10 +379,14 @@ function SongSub({ track, why, query }: { track: Track; why: Why; query: string 
 export function SearchPage({
   onPlay,
   onOpenArtist,
+  onOpenAlbum,
   onOpenPlaylist,
 }: {
   onPlay: (track: Track, queue: Track[]) => void;
   onOpenArtist: (artist: string) => void;
+  /** Opens a record rather than starting it: a result you searched for is
+   *  something to look at first. */
+  onOpenAlbum?: (album: string, albumArtist: string) => void;
   onOpenPlaylist: (id: string) => void;
 }) {
   const { tracks } = useLibrary();
@@ -561,7 +565,8 @@ export function SearchPage({
             cover: null,
             url: '',
           });
-          onPlay(first, item.album.tracks);
+          if (onOpenAlbum) onOpenAlbum(item.album.title, item.album.artist);
+          else onPlay(first, item.album.tracks);
           break;
         }
 
