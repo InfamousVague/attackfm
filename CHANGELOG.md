@@ -9,15 +9,12 @@ they are read on a phone, in a strip, one thumb away from a song.
 
 ## 0.3.96
 
-<<<<<<< HEAD
 - Tapping ⋯ a second time closes the menu instead of blinking it shut and open again
 - The mini player has a queue button beside the speaker one — one press to what's next
 - The lit tab on the bottom bar is a true squircle now, not a rounded box
-=======
 - Unfolded: everything respects the seam now — the DJ's spoken lines, dialogs, sheets and toasts stay in the app's half instead of sliding behind (or over) the Now Playing card
 - Unfolded: search, settings and the DJ conversation open beside the player instead of covering it, and tapping the card dismisses an open menu like tapping anywhere else
 - The Booth's DJ chat is properly fullscreen on the phone — no more player bar and nav bar sitting on top of the composer, and one back button instead of two
->>>>>>> 1c7097d (The dock is a contract now, and the DJ chat actually owns its screen)
 
 ## 0.3.95
 
