@@ -53,6 +53,7 @@ import { installShelfPan } from './shelfPan.ts';
 import { BoothPage } from './BoothPage.tsx';
 import { DjChatProvider } from './djChat.tsx';
 import { DatePage } from './DatePage.tsx';
+import { DjPage } from './DjPage.tsx';
 import { ListeningShareBridge } from './listeningShare.tsx';
 import { LibraryView } from './LibraryView.tsx';
 import { SongPage, type SongCollection } from './SongPage.tsx';
@@ -688,6 +689,7 @@ function AppMain({
   profileRoom,
   onProfileRoom,
   onOpenDate,
+  onOpenDj,
   swipeRef,
 }: {
   /** The edge-swipe back gesture drags this element; App owns the hook. */
@@ -714,6 +716,8 @@ function AppMain({
   onProfileRoom: (room: 'stats' | null) => void;
   /** Opens Music Date's fullscreen layer, from the Booth's top card. */
   onOpenDate: () => void;
+  /** Opens the DJ conversation's fullscreen layer; App hosts it too. */
+  onOpenDj: () => void;
 }) {
   const pages = usePluginPages();
   const activePage = detail ? null : (pages.find((pg) => pg.key === tab) ?? null);
@@ -814,7 +818,12 @@ function AppMain({
       ) : tab === 'booth' ? (
         // The Booth: the taste engine's one body - the DJ conversation, the
         // mixes it built, what it is doing right now, and its own preferences.
-        <BoothPage onPlay={onPlay} onOpenArtist={onOpenArtist} onOpenDate={onOpenDate} />
+        <BoothPage
+          onPlay={onPlay}
+          onOpenArtist={onOpenArtist}
+          onOpenDate={onOpenDate}
+          onOpenDj={onOpenDj}
+        />
       ) : tab === 'friends' ? (
         // The people, their own page now - the grid of artist-backed cards
         // wants the whole screen. 'friends' was already the tab's old alias
@@ -918,6 +927,13 @@ export function App() {
   // the date runs its own audio pool and wants the whole screen, no chrome.
   const [dateOpen, setDateOpen] = useState(false);
   useSystemBack(dateOpen, () => setDateOpen(false));
+  // The DJ conversation's fullscreen layer lives HERE, not in BoothPage: the
+  // page host wears a transform for the edge-swipe, which traps any fixed
+  // child in its stacking context - a "fullscreen" layer that the header,
+  // strip and nav all paint over. At the root it actually covers the app,
+  // and the chrome steps aside the same way it does for Music Date.
+  const [djOpen, setDjOpen] = useState(false);
+  useSystemBack(djOpen, () => setDjOpen(false));
   // Search, summoned: a pull down on any page (or ⌘K) drops the search over
   // whatever you were doing, and it retreats the same way - no tab, no lost
   // place. The pull gesture below sets this; so does the old 'search' route.
@@ -1532,7 +1548,24 @@ export function App() {
                   profileRoom={tab === 'profile' ? profileRoom : null}
                   onProfileRoom={setProfileRoom}
                   onOpenDate={() => setDateOpen(true)}
+                  onOpenDj={() => setDjOpen(true)}
                 />
+            {/* The DJ conversation, fullscreen: same layer, same rules. One
+                back control only - this layer covers the header, so its
+                floating chevron (or the system back) is the single way out. */}
+            {djOpen && (
+              <div className="dateLayer djLayer">
+                <button
+                  type="button"
+                  className="dateLayer__close"
+                  aria-label="Leave the conversation"
+                  onClick={() => setDjOpen(false)}
+                >
+                  <ChevronLeft size={20} />
+                </button>
+                <DjPage />
+              </div>
+            )}
               </PendingPlayProvider>
               </DjChatProvider>
             </div>
@@ -1542,8 +1575,8 @@ export function App() {
                 bottom of the screen, so content scrolling under the nav
                 dissolves into frost toward the edge rather than cutting off at
                 a hard line. The scrim is aria-hidden - pure decoration. */}
-            {!DESKTOP && !dateOpen && <div className="appNavScrim" aria-hidden="true" />}
-            {!DESKTOP && !dateOpen && (
+            {!DESKTOP && !dateOpen && !djOpen && <div className="appNavScrim" aria-hidden="true" />}
+            {!DESKTOP && !dateOpen && !djOpen && (
               <PrimaryNav
                 variant="bar"
                 tab={tab}
@@ -1585,7 +1618,7 @@ export function App() {
               onQueueChange={setQueue}
               onOpenArtist={go}
               autoplay={autoplay}
-              hidden={dateOpen}
+              hidden={dateOpen || djOpen}
             />
             {/* The import queue's one door: floats above the strip while
                 work is in flight or needs a hand, gone when idle. */}
