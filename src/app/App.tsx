@@ -69,6 +69,7 @@ import { DiscoverPage } from '../plugins/discover/DiscoverPage.tsx';
 import { ProfilePage } from './ProfilePage.tsx';
 import { JamProvider } from './jam.tsx';
 import { MobileAuthGate } from './MobileAuthGate.tsx';
+import { DownloadsChip } from './DownloadsChip.tsx';
 import { NavMoreMenu } from './NavMoreMenu.tsx';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
 import wordmark from '../assets/attack-white.png';
@@ -243,12 +244,6 @@ function PrimaryNav({
   // there is nothing to download, so the tab is absent rather than a dead end.
   const dl = useDownloadsOptional();
   const hasDownloads = dl !== null;
-  // Any queue at all, the importer's or a plugin's - what the Downloads tab
-  // itself is gated on, where `hasDownloads` stays "the music importer runs".
-  const hasQueue = useHasDownloadQueue();
-  // How many imports are in flight, for the rail item's badge - the one thing
-  // the old popover trigger said that a plain nav item would not.
-  const dlActive = dl?.active.length ?? 0;
   // Discover appears whenever there is ANY way to acquire music - an importer
   // to download through, or a Buy handler to purchase through. Only a build with
   // no acquire handlers at all (the plugin-free App-Review server) hides it.
@@ -337,24 +332,9 @@ function PrimaryNav({
         className="appNavRail"
         end={
           <div className="appNavRail__foot">
-            {/* The download queue is a PAGE, so its door in the rail is a nav
-                item like any other - not a popover that closes the moment you
-                look away from a ten-minute job. The badge carries the count
-                the old popover trigger wore. Absent when no importer runs, so
-                the foot is only ever Settings in that case. */}
-            {hasQueue && (
-              <NavBarItem
-                icon={
-                  <span className="appNavRail__dlIcon">
-                    <Download size={18} />
-                    {dlActive > 0 && <span className="appNavRail__dlBadge">{dlActive}</span>}
-                  </span>
-                }
-                label="Downloads"
-                active={tab === 'downloads'}
-                onClick={() => onTab('downloads')}
-              />
-            )}
+            {/* Downloads has no seat here: while anything is in flight the
+                chip above the strip is its door, and an idle queue offers no
+                door at all - see DownloadsChip. */}
             <NavBarItem icon={<Settings size={18} />} label="Settings" onClick={onSettings} />
           </div>
         }
@@ -1597,6 +1577,9 @@ export function App() {
               autoplay={autoplay}
               hidden={tab === 'profile' && profileRoom === 'date'}
             />
+            {/* The import queue's one door: floats above the strip while
+                work is in flight or needs a hand, gone when idle. */}
+            <DownloadsChip open={() => goTab('downloads')} current={tab === 'downloads'} />
             <IndexingStatus />
             {/* Summoned search: over whatever you were doing, gone the same
                 way. The page inside is the same SearchPage the old tab held -

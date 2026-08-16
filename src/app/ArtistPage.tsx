@@ -9,6 +9,7 @@ import { useServerSession } from './serverSession.tsx';
 import { IMPORTER_PLUGIN_ID, useAcquire } from '../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
 import type { AcquireTarget } from '../plugins/types.ts';
+import { AlbumMenu } from './AlbumMenu.tsx';
 import { groupAlbums, isBy } from './albums.ts';
 import { fetchAlbumArt } from './albumArt.ts';
 import { mosaicArts, useArtLoad, useTileArt } from './artLoad.ts';
@@ -582,7 +583,7 @@ export function ArtistPage({ artist, onPlay, onOpenArtist,
         ? () => void addRecord(row)
         : undefined;
     const cover = (row.owned && hiRes[row.owned.name]) || row.cover;
-    return (
+    const card = (
       <button
         key={row.key}
         type="button"
@@ -655,6 +656,16 @@ export function ArtistPage({ artist, onPlay, onOpenArtist,
                     .join(' · ')}
         </span>
       </button>
+    );
+    // A record you own answers a hold with its own verbs; one still in the
+    // catalogue has exactly one verb (the add badge) and no menu to offer.
+    // Keyed here, not on the button, so the wrap does not double the key.
+    return row.owned ? (
+      <AlbumMenu key={row.key} tracks={row.owned.list} onPlay={onPlay}>
+        {card}
+      </AlbumMenu>
+    ) : (
+      card
     );
   };
 

@@ -7,6 +7,7 @@ import {
   Modal,
   SortableList,
   Text,
+  useToast,
 } from '@glacier/react';
 import {
   EllipsisVertical,
@@ -76,6 +77,7 @@ function RowArt({ artwork }: { artwork: string | null }) {
 export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageProps) {
   const { tracks } = useLibrary();
   const { playlists, rename, remove, removeTrack, reorder, addTrack } = usePlaylists();
+  const { toast } = useToast();
   const { session } = useServerSession();
   // What else belongs here, from the server's own scoring of this list. Null
   // until asked; `ai` false means no model is reading lyrics, and the section
@@ -364,7 +366,17 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                   variant="ghost"
                   size="sm"
                   aria-label={`Remove ${row.track.title}`}
-                  onClick={() => removeTrack(playlist.id, row.id)}
+                  onClick={() => {
+                    // The whole order, captured before the cut: undo restores
+                    // through reorder, so the song lands back in ITS seat
+                    // rather than at the end like a re-add would put it.
+                    const before = [...playlist.paths];
+                    removeTrack(playlist.id, row.id);
+                    toast({
+                      message: `Removed “${row.track.title}” from ${playlist.name}`,
+                      action: { label: 'Undo', onPress: () => reorder(playlist.id, before) },
+                    });
+                  }}
                 >
                   <X size={15} />
                 </IconButton>

@@ -1,6 +1,7 @@
 import { Button, Pill, Text } from '@glacier/react';
 import { Cloud, ExternalLink, Laptop, Music, RefreshCw, Smartphone } from '@glacier/icons';
 import { useEffect, useState } from 'react';
+import { WhatsNew } from './WhatsNew.tsx';
 import { APP_VERSION, SHELL_VERSION } from './version.ts';
 import wordmark from '../assets/attack-white.png';
 import { openExternal } from './openExternal.ts';
@@ -202,6 +203,9 @@ export function AboutSettings() {
           </div>
         </div>
       )}
+
+      {/* The release history the update banner only ever showed one page of. */}
+      <WhatsNew />
 
       <Text tone="subtle" size="xs">
         Lyrics from LRCLIB · album art lookups via the iTunes Search API · downloads

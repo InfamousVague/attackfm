@@ -8,9 +8,9 @@
 //! kit's SortableList, which carries both drag and full keyboard reordering.
 
 import { useMemo } from 'react';
-import { Button, IconButton, Slider, SortableList, Text } from '@glacier/react';
+import { Button, IconButton, Slider, SortableList, Text, useToast } from '@glacier/react';
 import { ChevronDown, Music, Radio, X } from '@glacier/icons';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { artSized } from './server.ts';
 import { useArtLoad } from './artLoad.ts';
 import { useJamOptional } from './jam.tsx';
@@ -108,10 +108,48 @@ export function QueuePanel({
   // behind them.
   const reorder = (next: QueueRow[]) =>
     onQueueChange([...head, ...next.map((r) => r.track), ...upcoming.slice(UP_NEXT_SHOWN)]);
-  const remove = (path: string) => onQueueChange(queue.filter((t) => t.path !== path));
+  /*
+   * Undo works on the queue AS IT STANDS when pressed, not as it stood when
+   * the toast appeared: songs advance and reorders land inside the toast's
+   * few seconds, and restoring a stale snapshot would eat them. The ref
+   * always holds the latest pair, so the restore splices into the present.
+   */
+  const latest = useRef({ queue, onQueueChange });
+  latest.current = { queue, onQueueChange };
+  const { toast } = useToast();
+
+  const remove = (path: string) => {
+    const at = queue.findIndex((t) => t.path === path);
+    if (at < 0) return;
+    const track = queue[at]!;
+    onQueueChange(queue.filter((t) => t.path !== path));
+    toast({
+      message: `Removed “${track.title}” from the queue`,
+      action: {
+        label: 'Undo',
+        onPress: () => {
+          const { queue: now, onQueueChange: apply } = latest.current;
+          if (now.some((t) => t.path === path)) return; // re-queued by hand already
+          const back = [...now];
+          back.splice(Math.min(at, back.length), 0, track);
+          apply(back);
+        },
+      },
+    });
+  };
   /** Empty what is still to come. The song playing is not "next", so it keeps
-   *  playing - clearing the queue should never also stop the music. */
-  const clearUpcoming = () => onQueueChange(head);
+   *  playing - clearing the queue should never also stop the music. The whole
+   *  list is captured first: this is the panel's one sweeping act, and undo
+   *  puts back everything it swept. */
+  const clearUpcoming = () => {
+    const before = queue;
+    if (upcoming.length === 0) return;
+    onQueueChange(head);
+    toast({
+      message: `Cleared ${upcoming.length} upcoming ${upcoming.length === 1 ? 'song' : 'songs'}`,
+      action: { label: 'Undo', onPress: () => latest.current.onQueueChange(before) },
+    });
+  };
 
   return (
     <div className="queuePanel" role="dialog" aria-label="Queue">
