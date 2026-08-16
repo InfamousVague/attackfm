@@ -13,7 +13,7 @@ import { rememberServer } from './servers.ts';
 import { pickSource, startMirrorHeartbeat } from './mirrors.ts';
 import { startServerSync } from './serverSync.ts';
 import { startCacheSweeps } from './autoCache.ts';
-import { checkForBundle, reclaimEmbeddedIfNewer, reportBootOk } from './appUpdate.ts';
+import { checkForBundle, reclaimEmbeddedIfNewer, reportBootOk, stagedBundle } from './appUpdate.ts';
 import {
   artUrl,
   isRemotePath,
@@ -243,18 +243,23 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
   // come from the central registry, not the music server, so this needs no
   // session at all: a device signed into nothing still stays current.
   //
-  // Triggers, because a phone's clock barely runs: shortly after launch; a
-  // six-hour interval (which a backgrounded WebView rarely lives to see); and
-  // every return to the foreground - the one moment a phone reliably gives an
-  // app. The interval alone meant a device opened for two minutes at a time got
-  // a single 20-second window per launch, and a tick that fired while
-  // backgrounded was skipped and never retried.
+  // Triggers, because a phone's clock barely runs: shortly after launch; every
+  // couple of minutes WHILE THE APP IS ON SCREEN; and every return to the
+  // foreground - the one moment a phone reliably gives an app.
   //
-  // The foreground check is debounced by a MINUTE, not the hour it used to be.
-  // An hour meant that coming back to the app - the exact moment someone looks
-  // for a waiting update - almost never asked, because they had usually been in
-  // it within the hour. A minute is still ample protection against a rapid
-  // app-switch storm, and the request is one small conditional GET.
+  // That middle trigger used to be six hours, which left a hole exactly where
+  // somebody notices it: sit in the app and nothing between the 20-second
+  // launch check and the next morning would ask, so a version published while
+  // you were using the app went unseen until you happened to background and
+  // come back. Two minutes closes it. The request is one small conditional GET
+  // against a static VERSION file - cheaper than a single cover - and it stops
+  // entirely once something is staged, because there is nothing further to
+  // find until the app restarts.
+  //
+  // A hidden page never asks, so a backgrounded phone is not polling; the
+  // return-to-foreground trigger is what covers that gap, debounced to twenty
+  // seconds so an app-switch storm cannot turn into a request storm while
+  // still answering the moment somebody comes back to look.
   //
   // Both `visibilitychange` and `focus` are listened for, because the two do
   // not agree across the platforms this runs on: an embedded WebView can be
@@ -265,14 +270,17 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
     let lastAsk = 0;
     const ask = () => {
       if (!live || document.hidden) return;
+      // Something is already waiting for the next launch; asking again can
+      // only learn the same thing.
+      if (stagedBundle()) return;
       lastAsk = Date.now();
       void checkForBundle();
     };
     const first = window.setTimeout(ask, 20_000);
-    const timer = window.setInterval(ask, 6 * 60 * 60 * 1000);
+    const timer = window.setInterval(ask, 2 * 60 * 1000);
     const onReturn = () => {
       if (document.visibilityState !== 'visible') return;
-      if (Date.now() - lastAsk < 60 * 1000) return;
+      if (Date.now() - lastAsk < 20 * 1000) return;
       ask();
     };
     document.addEventListener('visibilitychange', onReturn);
