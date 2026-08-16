@@ -7,6 +7,12 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.100
+
+- The lit tab's squircle covers the icon and its name again — at one fixed size, so Discover's plate is exactly Booth's
+- The download counts are the kit's own badges now, so they match every other count in the app
+- The ⋯ icon sits at the same size as its neighbours, and the tabs spread evenly instead of packing left
+
 ## 0.3.99
 
 - The lit tab's square is actually square now — measured, not eyeballed
