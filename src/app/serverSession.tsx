@@ -29,6 +29,7 @@ import {
 } from './server.ts';
 import { effectsParam } from './effects.ts';
 import { setRemoteAudioResolver } from './tauri.ts';
+import { syncPushRegistration } from './notifications.ts';
 
 const SESSION_KEY = 'attackfm-server-session';
 const QUALITY_KEY = 'attackfm-server-quality';
@@ -312,6 +313,10 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
       // The session still applies for this run; it just will not survive a
       // relaunch.
     }
+    // Point this device's notifications at whoever is now signed in. A no-op
+    // until the platform can hand over a token, and it never blocks the
+    // sign-in it follows - see notifications.ts.
+    void syncPushRegistration(next);
   }, []);
 
   const connect = useCallback(

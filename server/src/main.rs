@@ -316,7 +316,7 @@ async fn main() {
     tokio::spawn(registry_auth::prime_verifier(state.clone()));
     // The digest's hourly walk. Costs a handful of queries against nobody
     // until a device registers, and sends nothing without an APNs key.
-    tokio::spawn(push::digest_sweep(state.clone()));
+    tokio::spawn(push::sweeps(state.clone()));
 
     // Index what is already there before taking requests, in the background so
     // a large library does not hold the port closed.

@@ -3043,6 +3043,53 @@ impl Db {
         .unwrap_or(0)
     }
 
+    /// Who is behind a batch of new arrivals, if anyone in particular: the
+    /// commonest artist among live rows added after a moment, with their
+    /// share. Turns "12 songs landed" into a sentence worth reading.
+    pub fn top_artist_added_since(&self, since_ms: i64) -> Option<(String, i64)> {
+        let conn = self.lock();
+        conn.query_row(
+            // NOCASE for the same reason top_artists uses it: two spellings of
+            // one name must not split the count and lose to a third artist.
+            "SELECT t.artist, COUNT(*) AS n FROM tracks t
+             WHERE t.deleted = 0 AND t.added_at > ?1 AND TRIM(t.artist) <> ''
+             GROUP BY t.artist COLLATE NOCASE ORDER BY n DESC LIMIT 1",
+            rusqlite::params![since_ms],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)),
+        )
+        .ok()
+    }
+
+    /// Auditions this listener has not met yet: collector pulls fetched FOR
+    /// them that no listen or heart has adopted. The same predicate Date mode
+    /// deals from, counted rather than listed.
+    pub fn auditions_waiting(&self, user_id: i64) -> i64 {
+        self.lock()
+            .query_row(
+                "SELECT COUNT(*) FROM tracks
+                 WHERE deleted = 0 AND curator_user_id = ?1
+                   AND COALESCE(curator_promoted, 0) = 0",
+                rusqlite::params![user_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
+    }
+
+    /// A window of listening, as (plays, milliseconds). Songs with no duration
+    /// on the row count toward the tally and contribute no time, which is the
+    /// honest way round - a recap may understate the hours, never invent them.
+    pub fn listening_since(&self, user_id: i64, since_ms: i64) -> (i64, i64) {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT COUNT(*), COALESCE(SUM(COALESCE(t.duration_ms, 0)), 0)
+             FROM plays p JOIN tracks t ON t.id = p.track_id AND t.deleted = 0
+             WHERE p.user_id = ?1 AND p.played_at >= ?2",
+            rusqlite::params![user_id, since_ms],
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
+        )
+        .unwrap_or((0, 0))
+    }
+
     /// Every (artist, title) this library holds, raw. Whoever compares them
     /// owns the folding - the discovery feed matches these against a catalogue
     /// that spells things differently, and that rule lives with the feed.

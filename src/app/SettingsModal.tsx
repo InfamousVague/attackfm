@@ -28,6 +28,7 @@ import {
   Info,
   LogOut,
   Mic2,
+  Bell,
   MonitorSpeaker,
   Music,
   Palette,
@@ -62,6 +63,7 @@ import { onlineMetadataEnabled, setOnlineMetadata } from './netPrefs.ts';
 import { usePlayback, type SleepTimer } from './playback.tsx';
 import { usePlugins, usePluginSettingsSections } from '../plugins/runtime.tsx';
 import { AboutSettings } from './AboutSettings.tsx';
+import { NotificationSettings } from './NotificationSettings.tsx';
 import { DevicesSettings } from './DevicesSettings.tsx';
 import { CuratorSettings } from './CuratorSettings.tsx';
 import { useConnect } from './playbackSync.tsx';
@@ -1351,6 +1353,15 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           ? `${online} ${online === 1 ? 'device' : 'devices'} online`
           : 'Connecting…',
       tint: 'green',
+      group: 1,
+    },
+    {
+      id: 'notifications',
+      label: 'Notifications',
+      icon: <Bell size={16} />,
+      content: <NotificationSettings />,
+      summary: session ? 'What the app may interrupt you for' : 'Needs a server',
+      tint: 'pink',
       group: 1,
     },
     // The importer contributes Downloads here, exactly where it has always
