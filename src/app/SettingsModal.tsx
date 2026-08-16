@@ -9,6 +9,7 @@ import {
   Pill,
   SegmentedControl,
   Select,
+  SearchField,
   Slider,
   Spinner,
   StatTile,
@@ -56,6 +57,7 @@ import {
   type RemotePluginListing,
 } from '../plugins/remote.ts';
 import { BRAND_ACCENTS } from './brandAccents.ts';
+import { noteSettingsPane, recentPanes, type RecentPane } from './settingsRecency.ts';
 import { clampScale, UI_SCALES, useAppearance } from './appearance.tsx';
 import { canPickFolder, isTauri } from './tauri.ts';
 import { useLibrary } from './library.tsx';
@@ -78,6 +80,38 @@ import { getThemePreset, THEME_PRESETS, type ThemePreference } from './themePres
 interface SettingsModalProps {
   open: boolean;
   onClose: () => void;
+  /** Open straight onto one pane - what the header's network dot does. */
+  pane?: string | null;
+}
+
+/**
+ * What the search field matches beyond the visible words: each pane's own
+ * vocabulary, written by hand because nothing else knows that "crossfade"
+ * lives in Playback or "invite" under Servers. Lowercase, space-separated;
+ * label and summary are always matched too.
+ */
+const PANE_KEYWORDS: Record<string, string> = {
+  appearance: 'theme dark light accent color colour scale text size dawn boreal ember midnight alpine',
+  general: 'haptics vibration folder music directory metadata artwork lyrics online',
+  playback: 'crossfade gapless sleep timer equalizer eq bands pause style shuffle repeat quality volume',
+  server: 'server connect sign in url mirror network invite join host latency devices speakers where you listen seat',
+  storage: 'cache offline downloads space disk limit pins clear',
+  notifications: 'push alerts recap weekly interrupt',
+  plugins: 'plugin extension import spotify buy discover sources',
+  about: 'version update check whats new shell licenses github',
+};
+
+function paneMatches(section: SettingsSection, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const hay = [
+    section.label,
+    typeof section.summary === 'string' ? section.summary : '',
+    PANE_KEYWORDS[section.id] ?? '',
+  ]
+    .join(' ')
+    .toLowerCase();
+  return q.split(/\s+/).every((word) => hay.includes(word));
 }
 
 /** Same coarse/narrow signal the player folds its rails on, so Settings turns
@@ -1227,7 +1261,7 @@ function PluginsSettings() {
  * rail beside a scrolling pane, on top of Modal - so this only supplies the
  * sections.
  */
-export function SettingsModal({ open, onClose }: SettingsModalProps) {
+export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
   // Static data only - no plugin hooks - so no scope is needed here, and the
   // modal survives a toggle without remounting out from under the user.
   const pluginSections = usePluginSettingsSections();
@@ -1312,15 +1346,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     },
     // The machine that listens along: the collector's ledger and switch, the
     // recent pulls, and how far the enrichment has read the library.
-    {
-      id: 'curator',
-      label: 'Curator',
-      icon: <Sparkles size={16} />,
-      content: <CuratorSettings />,
-      summary: session ? 'Autonomous downloads and mixes' : 'Needs a server',
-      tint: 'purple',
-      group: 1,
-    },
+    // The curator's preferences moved into the Booth - they are the taste
+    // engine's own, opened from its room, not a pane about an abstraction.
     {
       id: 'storage',
       label: 'Downloads & space',
@@ -1342,19 +1369,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       tint: 'green',
       group: 1,
     },
-    {
-      id: 'devices',
-      label: 'Devices',
-      icon: <MonitorSpeaker size={16} />,
-      content: <DevicesSettings />,
-      summary: !session
-        ? 'Needs a server'
-        : connected
-          ? `${online} ${online === 1 ? 'device' : 'devices'} online`
-          : 'Connecting…',
-      tint: 'green',
-      group: 1,
-    },
+    // Devices folded into the Servers pane: seats, mirrors and hosts are one
+    // question, answered on one page (and glanced from the header's dot).
     {
       id: 'notifications',
       label: 'Notifications',
@@ -1392,29 +1408,58 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   // id that no longer exists (the kit renders no pane at all for one). The
   // reset lands on Plugins, where the crash notice explains what just left.
   const [tab, setTab] = useState('appearance');
-  const sectionIds = sections.map((s) => s.id).join('\n');
+  // Search over the panes: label, live summary, and each pane's own hand-kept
+  // vocabulary. The RAIL narrows as you type; the structure never changes.
+  const [query, setQuery] = useState('');
   useEffect(() => {
-    if (!sectionIds.split('\n').includes(tab)) setTab('plugins');
-  }, [sectionIds, tab]);
+    if (!open) setQuery('');
+  }, [open]);
+  // Asked to open on a specific pane (the network dot's Manage): land there.
+  useEffect(() => {
+    if (open && pane) setTab(pane);
+  }, [open, pane]);
+  const shown = sections.filter((s) => paneMatches(s, query));
+  const shownIds = shown.map((s) => s.id).join('\n');
+  useEffect(() => {
+    const ids = shownIds.split('\n');
+    if (!ids.includes(tab)) setTab(ids[0] ?? 'plugins');
+  }, [shownIds, tab]);
+  // The chips are read once per open; opening a pane rewrites them.
+  const noteTab = (id: string) => {
+    const s = sections.find((x) => x.id === id);
+    if (s) noteSettingsPane(id, s.label);
+    setTab(id);
+  };
 
   // On touch the rail-beside-a-pane collapses to a drill-in: a full-screen list
   // of sections that pushes into the chosen pane, a back arrow returning to it.
   const mobile = useMediaQuery(MOBILE_QUERY);
   if (mobile) {
-    return <MobileSettings open={open} onClose={onClose} sections={sections} />;
+    return <MobileSettings open={open} onClose={onClose} sections={sections} initialId={pane ?? null} />;
   }
 
   return (
     <TabbedModal
       open={open}
       onClose={onClose}
-      title="Settings"
+      title={
+        <div className="settingsTitleRow">
+          <span>Settings</span>
+          <SearchField
+            className="settingsTitleRow__search"
+            value={query}
+            onValueChange={setQuery}
+            placeholder="Find a setting"
+            aria-label="Find a setting"
+          />
+        </div>
+      }
       value={tab}
-      onValueChange={setTab}
+      onValueChange={noteTab}
       // The rail and the pane read as one surface here, so the line between them
       // is dropped.
       divider={false}
-      sections={sections}
+      sections={shown}
     />
   );
 }
@@ -1429,16 +1474,36 @@ function MobileSettings({
   open,
   onClose,
   sections,
+  initialId = null,
 }: {
   open: boolean;
   onClose: () => void;
   sections: SettingsSection[];
+  /** Land straight on one pane when told to (the network dot's Manage). */
+  initialId?: string | null;
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
-  // Every fresh open lands on the list, never mid-drill on a stale section.
+  const [query, setQuery] = useState('');
+  // Read once per open: the panes this hand reaches for. Opening one below
+  // rewrites the store, but the row keeps this open's order - chips that
+  // reshuffle under a thumb read as a glitch, not a feature.
+  const [recents, setRecents] = useState<RecentPane[]>([]);
+  // Every fresh open lands on the list (or the pane it was aimed at), with a
+  // clean query - never mid-drill on a stale section.
   useEffect(() => {
-    if (!open) setActiveId(null);
-  }, [open]);
+    if (!open) {
+      setActiveId(null);
+      setQuery('');
+    } else {
+      setRecents(recentPanes());
+      if (initialId) setActiveId(initialId);
+    }
+  }, [open, initialId]);
+  const drill = (id: string) => {
+    const s = sections.find((x) => x.id === id);
+    if (s) noteSettingsPane(id, s.label);
+    setActiveId(id);
+  };
   // A section pulled from under us (a plugin crash) drops us back to the list
   // rather than onto a pane that no longer exists.
   const active = sections.find((s) => s.id === activeId) ?? null;
@@ -1486,13 +1551,41 @@ function MobileSettings({
             </button>
           </header>
           <nav className="settingsScreen__list">
+            {/* The hunt-killer pair: a field that matches each pane's own
+                vocabulary, and the panes this hand touched last as chips. */}
+            <SearchField
+              className="settingsScreen__search"
+              value={query}
+              onValueChange={setQuery}
+              placeholder="Find a setting"
+              aria-label="Find a setting"
+            />
+            {!query.trim() && recents.length > 0 && (
+              <div className="settingsScreen__recents" aria-label="Recently opened">
+                {recents
+                  .filter((r) => sections.some((s) => s.id === r.id))
+                  .map((r) => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      className="settingsScreen__recentChip"
+                      onClick={() => drill(r.id)}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+              </div>
+            )}
             {/* Rows cluster into cards by their group - the iOS-settings shape:
                 appearance and behaviour together, the server pair, the plugin
-                pair, then About on its own. */}
+                pair, then About on its own. A live query flattens the clusters
+                to just what matches. */}
             {sections
+              .filter((s) => paneMatches(s, query))
               .reduce<SettingsSection[][]>((clusters, s) => {
                 const last = clusters[clusters.length - 1];
-                if (last && (last[0]!.group ?? 99) === (s.group ?? 99)) last.push(s);
+                if (!query.trim() && last && (last[0]!.group ?? 99) === (s.group ?? 99)) last.push(s);
+                else if (query.trim() && last) last.push(s);
                 else clusters.push([s]);
                 return clusters;
               }, [])
@@ -1503,7 +1596,7 @@ function MobileSettings({
                       key={s.id}
                       type="button"
                       className="settingsScreen__row"
-                      onClick={() => setActiveId(s.id)}
+                      onClick={() => drill(s.id)}
                     >
                       {s.icon ? (
                         <span
@@ -1524,6 +1617,11 @@ function MobileSettings({
                   ))}
                 </div>
               ))}
+            {query.trim() && sections.every((s) => !paneMatches(s, query)) && (
+              <Text tone="muted" size="sm" className="settingsScreen__none">
+                Nothing matches “{query.trim()}”.
+              </Text>
+            )}
           </nav>
         </>
       )}

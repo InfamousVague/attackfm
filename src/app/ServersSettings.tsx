@@ -9,6 +9,7 @@ import {
 } from './ServerSettings.tsx';
 import { ServersPanel } from './ServersPage.tsx';
 import { WhereYouListen } from './WhereYouListen.tsx';
+import { DevicesSettings } from './DevicesSettings.tsx';
 
 /**
  * Everything about servers, in one pane, three chunks at a time.
@@ -73,6 +74,17 @@ export function ServersSettings() {
         <>
           <ServersPanel />
           <MirrorSection />
+          {/* The devices that play through this account - the old Devices
+              pane, folded in where it belongs: servers, mirrors and seats are
+              all one question ("where is my music?"), and this is its page. */}
+          <section className="serversSettings__part">
+            <header className="serversSettings__partHead">
+              <Heading level={3} noMargin>
+                Devices
+              </Heading>
+            </header>
+            <DevicesSettings />
+          </section>
         </>
       )}
 

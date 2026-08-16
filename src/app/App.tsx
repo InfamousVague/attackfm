@@ -8,7 +8,7 @@ import {
   TitleBar,
   ToastProvider,
 } from '@glacier/react';
-import { ChartNoAxesColumn, ChevronLeft, ChevronRight, CircleUserRound, Compass, Download, LibraryBig, Play, Search, Settings, Shuffle } from '@glacier/icons';
+import { ChartNoAxesColumn, ChevronLeft, ChevronRight, CircleUserRound, Compass, Disc3, Download, LibraryBig, Play, Search, Settings, Shuffle, X } from '@glacier/icons';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AppearanceProvider } from './appearance.tsx';
 import { LibraryProvider, useLibrary } from './library.tsx';
@@ -36,6 +36,7 @@ import type { Track } from './tauri.ts';
 import { AlbumPage } from './AlbumPage.tsx';
 import { Player } from './Player.tsx';
 import { QueueControlsBridge } from './queueControls.tsx';
+import { NetworkDot } from './NetworkDot.tsx';
 import { ArtistPage } from './ArtistPage.tsx';
 import { PlaylistPage } from './PlaylistPage.tsx';
 import { DownloadsPage } from './DownloadsPage.tsx';
@@ -49,7 +50,7 @@ import { FriendsPage } from './FriendsPage.tsx';
 import { UpdateBanner } from './UpdateBanner.tsx';
 import { useHeaderActions, type HeaderActions } from './headerActions.ts';
 import { installShelfPan } from './shelfPan.ts';
-import { DjPage } from './DjPage.tsx';
+import { BoothPage } from './BoothPage.tsx';
 import { DjChatProvider } from './djChat.tsx';
 import { DatePage } from './DatePage.tsx';
 import { ListeningShareBridge } from './listeningShare.tsx';
@@ -267,12 +268,11 @@ function PrimaryNav({
       tab !== 'friends' &&
       tab !== 'profile' &&
       tab !== 'search' &&
-      tab !== 'stats' &&
       // Built-in pages that own their own route. Without these the deny-list
-      // lights Library while you are standing on the DJ or the AI page - the
-      // trap of listing what is NOT library instead of what is.
-      tab !== 'dj' &&
-      tab !== 'date' &&
+      // lights Library while you are standing in the Booth - the trap of
+      // listing what is NOT library instead of what is. (Stats and Date are
+      // Profile's rooms now, not tabs.)
+      tab !== 'booth' &&
       !onPluginPage);
 
   const primaryItems = (
@@ -299,14 +299,14 @@ function PrimaryNav({
           the rail anchors the queue button to its foot, by Settings - see the
           `end` slot below. A queue you visit occasionally does not deserve a
           permanent seat in a bar of four. */}
-      {/* Search is a destination like Library and Discover: results you can
-          scroll, narrow and come back to, which a sheet over the page fought
-          on all three counts. */}
+      {/* Search stopped being a station: it is a summons now - pull down on
+          any page, or ⌘K - so its old seat belongs to the Booth, the taste
+          engine's one room. */}
       <NavBarItem
-        icon={<Search size={18} />}
-        label="Search"
-        active={tab === 'search'}
-        onClick={() => onTab('search')}
+        icon={<Disc3 size={18} />}
+        label="Booth"
+        active={tab === 'booth'}
+        onClick={() => onTab('booth')}
       />
       {/* Plugin pages ride the rail as their own items on the desktop, which
           has the vertical room; the phone bar folds them into its Plugins
@@ -375,12 +375,13 @@ function PrimaryNav({
   // up out of the bar - so the core tabs stay put however many plugins are on.
   return (
     <nav className="appNavBar" aria-label="Primary">
-      {/* A destination, so it lights like one. */}
+      {/* Search is a summons now (pull down anywhere); its old seat holds the
+          Booth - a real place, the taste engine's room. */}
       <BarTab
-        icon={<Search size={22} />}
-        label="Search"
-        active={tab === 'search'}
-        onClick={() => onTab('search')}
+        icon={<Disc3 size={22} />}
+        label="Booth"
+        active={tab === 'booth'}
+        onClick={() => onTab('booth')}
       />
       {canDiscover && (
         <BarTab
@@ -450,6 +451,8 @@ function HeaderIdent({ tab }: { tab: string }) {
           <span className="mobileHeader__title">Friends</span>
         ) : tab === 'profile' ? (
           <span className="mobileHeader__title">Profile</span>
+        ) : tab === 'booth' ? (
+          <span className="mobileHeader__title">The Booth</span>
         ) : (
           <img className="mobileHeader__logo" src={wordmark} alt={APP_NAME} />
         )}
@@ -675,6 +678,20 @@ type Detail =
  * the plugin pages the same way PrimaryNav does, so the two always agree on
  * what "active" means.
  */
+/** The slim bar over a Profile room: where you are, and the way back. */
+function RoomBar({ label, onBack }: { label: string; onBack: () => void }) {
+  return (
+    <div className="profileRoomBar">
+      <button type="button" className="profileRoomBar__back" onClick={onBack}>
+        <ChevronLeft size={18} />
+        <span>Profile</span>
+      </button>
+      <span className="profileRoomBar__label">{label}</span>
+      <span className="profileRoomBar__spacer" aria-hidden="true" />
+    </div>
+  );
+}
+
 function AppMain({
   detail,
   tab,
@@ -688,6 +705,8 @@ function AppMain({
   onOpenDownloads,
   onOpenStats,
   onOpenFriends,
+  profileRoom,
+  onProfileRoom,
   swipeRef,
 }: {
   /** The edge-swipe back gesture drags this element; App owns the hook. */
@@ -709,6 +728,9 @@ function AppMain({
   /** The stats mini-cards' destination. */
   onOpenStats: () => void;
   onOpenFriends: () => void;
+  /** Which of Profile's rooms is open, if any - a takeover within the tab. */
+  profileRoom: 'stats' | 'date' | null;
+  onProfileRoom: (room: 'stats' | 'date' | null) => void;
 }) {
   const pages = usePluginPages();
   const activePage = detail ? null : (pages.find((pg) => pg.key === tab) ?? null);
@@ -742,7 +764,7 @@ function AppMain({
         ? `playlist:${detail.id}`
         : detail?.kind === 'artist'
           ? `artist:${detail.artist}`
-          : !detail && (tab === 'home' || tab === 'library' || tab === 'discover' || tab === 'search')
+          : !detail && (tab === 'home' || tab === 'library' || tab === 'discover')
             ? tab
             : null;
 
@@ -806,42 +828,33 @@ function AppMain({
         // acquire handler (import or buy), so a build with no way to add through
         // (the plugin-free App-Review server) never surfaces it.
         <DiscoverPage onPlay={onPlay} onOpenArtist={onOpenArtist} />
-      ) : tab === 'search' ? (
-        // Search: everything you own, everyone you know, and what you could
-        // add - one query across all of them. Inside a plugin hook scope
-        // because it asks plugins for commands (a pasted link is an action,
-        // not a query); the scope's remount on a changed plugin set is what
-        // keeps that hook order legal.
-        <PluginHookScope>
-          <SearchPage
-            onPlay={onPlay}
-            onOpenArtist={onOpenArtist}
-            onOpenAlbum={onOpenAlbum}
-            onOpenPlaylist={onOpenPlaylist}
-          />
-        </PluginHookScope>
-      ) : tab === 'date' ? (
-        // The collector's auditions as introductions: snippet, swipe, verdict.
-        <DatePage />
-      ) : tab === 'dj' ? (
-        // The DJ, as a conversation. Not owner-gated: it reads the CALLER's own
-        // taste and the caller's own pulls, so it is correct for everyone on the
-        // hub - unlike the AI page below, which reports on the server itself.
-        <DjPage />
-      ) : tab === 'stats' ? (
-        // Stats: the listening, added up - fed by the same event log the
-        // curator tunes itself on.
-        <StatsPage onPlay={onPlay} onOpenArtist={onOpenArtist} />
+      ) : tab === 'booth' ? (
+        // The Booth: the taste engine's one body - the DJ conversation, the
+        // mixes it built, what it is doing right now, and its own preferences.
+        <BoothPage onPlay={onPlay} onOpenArtist={onOpenArtist} />
       ) : tab === 'friends' ? (
         // The people, their own page now - the grid of artist-backed cards
         // wants the whole screen. 'friends' was already the tab's old alias
         // for Profile, and pointing it here is the honest reading of the name.
         <FriendsPage />
       ) : tab === 'profile' ? (
-        // Profile: who you are - identity, live jams, your servers, your
-        // friends. 'friends' is the tab's old name, honoured so a stored
-        // session lands here rather than falling through to the library.
-        <ProfilePage onOpenFriends={onOpenFriends} />
+        // Profile: the "about you" home. Its rooms - This week (the stats),
+        // Dates (the collector's auditions) - are takeovers WITHIN the tab, a
+        // back bar returning to the profile, so the first-person surfaces live
+        // together instead of hiding in an overflow menu.
+        profileRoom === 'stats' ? (
+          <div className="profileRoomHost">
+            <RoomBar label="This week" onBack={() => onProfileRoom(null)} />
+            <StatsPage onPlay={onPlay} onOpenArtist={onOpenArtist} />
+          </div>
+        ) : profileRoom === 'date' ? (
+          <div className="profileRoomHost">
+            <RoomBar label="Dates" onBack={() => onProfileRoom(null)} />
+            <DatePage />
+          </div>
+        ) : (
+          <ProfilePage onOpenFriends={onOpenFriends} onOpenRoom={onProfileRoom} />
+        )
       ) : tab === 'downloads' && hasQueue ? (
         <DownloadsPage />
       ) : (
@@ -916,7 +929,26 @@ export function App() {
   // toggle, so the value stays 'summary'. Kept as state so AppMain's prop and
   // its type need no change if the flip returns elsewhere later.
   const [libraryView] = useState<'summary' | 'all'>('summary');
+  // Which of Profile's rooms is open - This week (stats) or Dates. Lives here
+  // rather than in ProfilePage because the player must hide for the Dates
+  // room (it runs its own audio pool), and because the old 'stats'/'date'
+  // TABS redirect into these rooms so every stored link keeps working.
+  const [profileRoom, setProfileRoom] = useState<'stats' | 'date' | null>(null);
+  // A system back swipe inside a room steps back to Profile, not out of it.
+  useSystemBack(profileRoom !== null, () => setProfileRoom(null));
+  // Search, summoned: a pull down on any page (or ⌘K) drops the search over
+  // whatever you were doing, and it retreats the same way - no tab, no lost
+  // place. The pull gesture below sets this; so does the old 'search' route.
+  const [searchOpen, setSearchOpen] = useState(false);
+  useSystemBack(searchOpen, () => setSearchOpen(false));
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Which pane Settings should open ON, when a surface aims it - the network
+  // dot's Manage lands on Servers; a plain open starts wherever it was.
+  const [settingsPane, setSettingsPane] = useState<string | null>(null);
+  const openSettings = (pane: string | null = null) => {
+    setSettingsPane(pane);
+    setSettingsOpen(true);
+  };
   // A system back swipe closes Settings before it touches the page history.
   useSystemBack(settingsOpen, () => setSettingsOpen(false));
   // The app-wide tap tick, bound to the Settings switch. Mounted only while the
@@ -1093,7 +1125,30 @@ export function App() {
   const closeDetail = () => push({ tab, detail: null });
   /** A primary tab, from the nav bar - always lands on the tab's root. Accepts
    *  the core 'home'/'library' and any plugin page key. */
-  const goTab = (next: string) => push({ tab: next, detail: null });
+  const goTab = (next: string) => {
+    // The first-person pages folded into Profile as rooms; their old tab
+    // names still arrive from older surfaces (the Library's stats cards) and
+    // land inside the room they became, so no caller had to learn the move.
+    if (next === 'stats' || next === 'date') {
+      setProfileRoom(next);
+      push({ tab: 'profile', detail: null });
+      return;
+    }
+    // The DJ page became the Booth; the old name still walks in the door.
+    if (next === 'dj') {
+      push({ tab: 'booth', detail: null });
+      return;
+    }
+    // Search stopped being a place: the old route now summons the overlay
+    // over wherever you already are.
+    if (next === 'search') {
+      setSearchOpen(true);
+      return;
+    }
+    // Walking to Profile the normal way always lands on the profile itself.
+    if (next === 'profile') setProfileRoom(null);
+    push({ tab: next, detail: null });
+  };
   const back = () => setNav((s) => (s.index > 0 ? { ...s, index: s.index - 1 } : s));
   // The phone's edge-swipe back: a drag in from the left walks the same stack
   // the header arrows do, with the page following the thumb. Touch-only and
@@ -1131,12 +1186,103 @@ export function App() {
     [],
   );
 
-  // The chord the field advertises: Cmd/Ctrl+K opens search from anywhere.
+  // The pull that summons search: a mostly-vertical drag DOWN from the top of
+  // whichever page is showing. Delegated from the content host the same way
+  // the shelf pan and the top scrim are, so every page is covered by one
+  // listener; armed only when the page's own scroller is already at its top,
+  // so ordinary scrolling never fights it. The rubber band is ours to spend -
+  // the root sets overscroll-behavior: none.
+  const [pullHint, setPullHint] = useState(false);
+  useEffect(() => {
+    const host = swipeRef.current;
+    if (!host) return;
+    let startY = 0;
+    let startX = 0;
+    let armed = false;
+    let pulling = false;
+    const pageOf = (target: EventTarget | null): HTMLElement | null => {
+      let el = target instanceof HTMLElement ? target : null;
+      while (el && el.parentElement !== host) el = el.parentElement;
+      return el;
+    };
+    const onStart = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (!t) return;
+      const page = pageOf(e.target);
+      armed = !!page && page.scrollTop <= 0;
+      pulling = false;
+      startY = t.clientY;
+      startX = t.clientX;
+    };
+    const onMove = (e: TouchEvent) => {
+      if (!armed) return;
+      const t = e.touches[0];
+      if (!t) return;
+      const dy = t.clientY - startY;
+      const dx = Math.abs(t.clientX - startX);
+      if (!pulling && dy > 28 && dy > dx * 1.5) {
+        pulling = true;
+        setPullHint(true);
+      } else if (pulling && dy < 16) {
+        pulling = false;
+        setPullHint(false);
+      }
+    };
+    const onEnd = (e: TouchEvent) => {
+      const t = e.changedTouches[0];
+      if (armed && pulling && t && t.clientY - startY >= 72) {
+        setSearchOpen(true);
+        try {
+          localStorage.setItem('attackfm-summon-known', '1');
+        } catch {
+          // The hint just lingers a launch longer.
+        }
+      }
+      armed = false;
+      pulling = false;
+      setPullHint(false);
+    };
+    host.addEventListener('touchstart', onStart, { passive: true });
+    host.addEventListener('touchmove', onMove, { passive: true });
+    host.addEventListener('touchend', onEnd, { passive: true });
+    host.addEventListener('touchcancel', onEnd, { passive: true });
+    return () => {
+      host.removeEventListener('touchstart', onStart);
+      host.removeEventListener('touchmove', onMove);
+      host.removeEventListener('touchend', onEnd);
+      host.removeEventListener('touchcancel', onEnd);
+    };
+  }, []);
+  // Until the pull has been used once, a small chip under the header says it
+  // exists - the one cost of retiring the Search tab.
+  const [summonHint, setSummonHint] = useState(() => {
+    try {
+      return localStorage.getItem('attackfm-summon-known') !== '1';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    if (searchOpen && summonHint) {
+      setSummonHint(false);
+      try {
+        localStorage.setItem('attackfm-summon-known', '1');
+      } catch {
+        // Fine; it dismisses for this launch regardless.
+      }
+    }
+  }, [searchOpen, summonHint]);
+
+  // The chord the field advertises: Cmd/Ctrl+K summons search from anywhere,
+  // and Escape sends it home (the overlay is not a kit Modal, so it minds its
+  // own key).
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'k') {
         event.preventDefault();
-        goTab('search');
+        setSearchOpen((v) => !v);
+      } else if (event.key === 'Escape') {
+        setSearchOpen(false);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -1297,8 +1443,9 @@ export function App() {
                 end={
                   <>
                     {/* Plugin actions have moved to the pages themselves, beside
-                        the heading they act on, so the chrome's end slot is
-                        settings alone. */}
+                        the heading they act on, so the chrome's end slot is the
+                        network light and settings. */}
+                    <NetworkDot onManage={() => openSettings('server')} />
                     <IconButton
                       variant="ghost"
                       size="sm"
@@ -1354,6 +1501,7 @@ export function App() {
                     row is already taller with its trailing half empty. */}
                 <span className="mobileHeader__actions">
                   <HeaderActionButtons />
+                  <NetworkDot onManage={() => openSettings('server')} />
                 </span>
               </header>
             )}
@@ -1392,6 +1540,8 @@ export function App() {
                   onOpenDownloads={() => goTab('downloads')}
                   onOpenStats={() => goTab('stats')}
                   onOpenFriends={() => goTab('friends')}
+                  profileRoom={tab === 'profile' ? profileRoom : null}
+                  onProfileRoom={setProfileRoom}
                 />
               </PendingPlayProvider>
               </DjChatProvider>
@@ -1445,10 +1595,69 @@ export function App() {
               onQueueChange={setQueue}
               onOpenArtist={go}
               autoplay={autoplay}
-              hidden={tab === 'date'}
+              hidden={tab === 'profile' && profileRoom === 'date'}
             />
             <IndexingStatus />
-            <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+            {/* Summoned search: over whatever you were doing, gone the same
+                way. The page inside is the same SearchPage the old tab held -
+                results, recents, paste-a-link import - inside a plugin hook
+                scope because a pasted link is a plugin's action. Navigating
+                OUT of a result closes the overlay; playing keeps it up. */}
+            {pullHint && (
+              <div className="summonPull" aria-hidden="true">
+                <Search size={14} /> Release to search
+              </div>
+            )}
+            {summonHint && !DESKTOP && !searchOpen && (tab === 'home' || tab === 'library') && (
+              <button
+                type="button"
+                className="summonHintChip"
+                onClick={() => setSearchOpen(true)}
+              >
+                <Search size={13} /> Pull down anywhere to search
+              </button>
+            )}
+            {searchOpen && (
+              <div className="searchSummon" role="dialog" aria-label="Search">
+                <div className="searchSummon__bar">
+                  <span className="searchSummon__grab" aria-hidden="true" />
+                  <IconButton
+                    variant="ghost"
+                    size="sm"
+                    aria-label="Close search"
+                    className="searchSummon__close"
+                    onClick={() => setSearchOpen(false)}
+                  >
+                    <X size={18} />
+                  </IconButton>
+                </div>
+                <PluginHookScope>
+                  <SearchPage
+                    onPlay={playFrom}
+                    onOpenArtist={(artist) => {
+                      setSearchOpen(false);
+                      go(artist);
+                    }}
+                    onOpenAlbum={(album, albumArtist) => {
+                      setSearchOpen(false);
+                      goAlbum(album, albumArtist);
+                    }}
+                    onOpenPlaylist={(id) => {
+                      setSearchOpen(false);
+                      goPlaylist(id);
+                    }}
+                  />
+                </PluginHookScope>
+              </div>
+            )}
+            <SettingsModal
+              open={settingsOpen}
+              onClose={() => {
+                setSettingsOpen(false);
+                setSettingsPane(null);
+              }}
+              pane={settingsPane}
+            />
             </div>
             </RadioProvider>
             </QueueControlsBridge>

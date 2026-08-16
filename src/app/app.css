@@ -2736,6 +2736,310 @@ html[data-platform='android'] .appWindow {
   -webkit-overflow-scrolling: touch;
 }
 
+/* The hunt-killers at the top of the list: the field, then the recent chips. */
+.settingsScreen__search {
+  flex: none;
+  margin-block-end: var(--glacier-space-2);
+}
+
+.settingsScreen__recents {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+  margin-block-end: var(--glacier-space-2);
+}
+
+.settingsScreen__recentChip {
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 600;
+  color: var(--glacier-accent-text);
+  background: color-mix(in oklab, var(--glacier-accent-solid) 14%, transparent);
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+}
+
+.settingsScreen__none {
+  padding: var(--glacier-space-3) var(--glacier-space-2);
+}
+
+/* --- the network dot ------------------------------------------------------- */
+/* One light in the header for "where is my music": green close, amber far or
+   laggy, grey unreachable. The popover names the host and offers the one
+   door into the network settings. */
+.netDot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2rem;
+  block-size: 2rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 50%;
+}
+
+.netDot__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-2);
+  min-inline-size: 13rem;
+}
+
+.netDot__row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.netDot__host {
+  font-weight: 650;
+  font-size: var(--glacier-font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- summoned search ------------------------------------------------------- */
+/* The overlay a pull (or ⌘K) drops over the page: the whole SearchPage,
+   sliding down from the top, gone the same way. Above the nav and player -
+   a summons owns the screen while it is up. */
+.searchSummon {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: var(--glacier-surface);
+  animation: summonDrop 0.26s var(--glacier-ease-out);
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+@keyframes summonDrop {
+  from {
+    opacity: 0;
+    transform: translateY(-14px);
+  }
+}
+
+.searchSummon__bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+}
+
+.searchSummon__grab {
+  inline-size: 2.4rem;
+  block-size: 0.3rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--glacier-text) 18%, transparent);
+}
+
+.searchSummon__close {
+  position: absolute;
+  inset-inline-end: var(--glacier-space-2);
+  inset-block-start: 50%;
+  translate: 0 -50%;
+}
+
+.searchSummon .searchPage {
+  flex: 1;
+  min-block-size: 0;
+}
+
+/* The mid-pull pill: appears while the finger is past the threshold. */
+.summonPull {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
+  left: 50%;
+  translate: -50% 0;
+  z-index: 59;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  box-shadow: var(--glacier-shadow-3);
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+  animation: summonDrop 0.18s var(--glacier-ease-out);
+}
+
+/* The one-time teacher: a chip under the header until the pull is used once. */
+.summonHintChip {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 3.4rem);
+  left: 50%;
+  translate: -50% 0;
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--glacier-font-size-xs);
+  font-weight: 600;
+  color: var(--glacier-accent-text);
+  background: color-mix(in oklab, var(--glacier-accent-solid) 14%, var(--glacier-surface-raised));
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  box-shadow: var(--glacier-shadow-2);
+}
+
+/* --- the Booth ------------------------------------------------------------- */
+/* One room for the taste engine: a head strip, the mixes it built, then the
+   conversation filling the rest. The chat owns the remaining height - DjPage's
+   transcript scrolls inside itself, so the page never double-scrolls. */
+.boothPage {
+  flex: 1;
+  min-block-size: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.boothHead {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-4) var(--glacier-space-4) var(--glacier-space-2);
+}
+
+.boothHead__title {
+  font-size: 1.3rem;
+  font-weight: 800;
+  margin: 0;
+}
+
+.boothShelves {
+  flex: none;
+  padding-inline: 0;
+}
+
+/* The embedded curator shelves bring their own paddings; cap their height so
+   an enthusiastic curator cannot squeeze the conversation out of the room. */
+.boothShelves .homeMixes {
+  max-block-size: 16rem;
+  overflow: hidden;
+}
+
+.boothChat {
+  flex: 1;
+  min-block-size: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.boothChat .djPage {
+  flex: 1;
+  min-block-size: 0;
+}
+
+/* --- Profile rooms --------------------------------------------------------- */
+/* The doors: first-person surfaces (stats, dates) as cards on the page that
+   is about you, replacing their overflow-menu rows. */
+.profileDoors {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--glacier-space-3);
+}
+
+.profileDoor {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  text-align: start;
+  padding: var(--glacier-space-3) var(--glacier-space-4);
+  padding-inline-end: 2.4rem;
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.profileDoor__title {
+  font-weight: 650;
+}
+
+.profileDoor__caption {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.profileDoor__chevron {
+  position: absolute;
+  inset-inline-end: var(--glacier-space-3);
+  inset-block-start: 50%;
+  translate: 0 -50%;
+  color: var(--glacier-text-muted);
+}
+
+/* The host that stacks a room's back bar over its full-page content. */
+.profileRoomHost {
+  flex: 1;
+  min-block-size: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.profileRoomBar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-2) var(--glacier-space-4);
+}
+
+.profileRoomBar__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  border: none;
+  background: none;
+  padding: 0.25rem 0.4rem 0.25rem 0;
+  font: inherit;
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-accent-text);
+  cursor: pointer;
+}
+
+.profileRoomBar__label {
+  font-weight: 650;
+  font-size: var(--glacier-font-size-sm);
+}
+
+.profileRoomBar__spacer {
+  flex: 1;
+}
+
+/* Desktop: the search rides the TabbedModal's title row. */
+.settingsTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-4);
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.settingsTitleRow__search {
+  inline-size: min(16rem, 50%);
+}
+
 /* Nothing in the list may shrink to fit it.
    A flex column that scrolls will still compress its items first - shrinking
    is a flex item's default - so with more sections than fit, the groups gave

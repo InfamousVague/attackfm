@@ -393,7 +393,14 @@ function hostOf(url: string): string {
 
 // --- the page ---------------------------------------------------------------
 
-export function ProfilePage({ onOpenFriends }: { onOpenFriends?: () => void }) {
+export function ProfilePage({
+  onOpenFriends,
+  onOpenRoom,
+}: {
+  onOpenFriends?: () => void;
+  /** Opens one of Profile's rooms - the takeovers App hosts within this tab. */
+  onOpenRoom?: (room: 'stats' | 'date') => void;
+}) {
   const { session } = useServerSession();
   const { session: registry, account, apply, signOut } = useRegistry();
 
@@ -423,6 +430,24 @@ export function ProfilePage({ onOpenFriends }: { onOpenFriends?: () => void }) {
         </header>
       ) : (
         <AccountSetup onDone={apply} />
+      )}
+
+      {/* The rooms: first-person surfaces that used to hide in the overflow
+          menu, now doors on the page that is about you. This week opens the
+          full stats; Dates opens the collector's auditions. */}
+      {onOpenRoom && session && (
+        <div className="profileDoors">
+          <button type="button" className="profileDoor" onClick={() => onOpenRoom('stats')}>
+            <span className="profileDoor__title">This week</span>
+            <span className="profileDoor__caption">Your listening, added up</span>
+            <ChevronRight size={16} className="profileDoor__chevron" />
+          </button>
+          <button type="button" className="profileDoor" onClick={() => onOpenRoom('date')}>
+            <span className="profileDoor__title">Dates</span>
+            <span className="profileDoor__caption">Meet what the collector found</span>
+            <ChevronRight size={16} className="profileDoor__chevron" />
+          </button>
+        </div>
       )}
 
       <YourWeek />
