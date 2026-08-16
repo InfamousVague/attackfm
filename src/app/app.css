@@ -5510,39 +5510,134 @@ body [class*='_panel_']:has(> .dlPanel) {
   }
 }
 
-/* A song the record has and this library does not: inline in the record's
-   own running order, only a shade quieter than the rows you own - the list
-   reads as one record with a few soft spots, the way the artist page's top
-   songs sit together, not as a bright half and a ghost half. Lifts to full
-   strength on hover: an offer you are reaching for should not stay greyed
-   out under the finger. */
-.albumGapRow {
-  opacity: 0.78;
+/* ── One record's songs ─────────────────────────────────────────────────────
+ *
+ * These rows used to borrow the artist page's CATALOGUE row, which is built
+ * for a list of songs you mostly do not own: a rank, a thumbnail, a title, an
+ * add badge. Two things went wrong in the borrowing. The row came out 30px
+ * tall with the play target only the height of one line of text - twenty
+ * pixels - so a thumb aimed anywhere but the words hit dead space and the
+ * song did not play. And it read as a catalogue listing rather than as this
+ * app's own song rows, which is what an album you own is made of.
+ *
+ * So: the app's row geometry, a comfortable touch target, and the whole row
+ * plays. Songs you own and holes in the record share the geometry exactly, so
+ * the numbers line up down one column and the record reads as ONE list.
+ */
+.albumTracks {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.albumTrack {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+  padding-inline: var(--glacier-space-2);
+}
+
+.albumTrack:hover {
+  background: var(--glacier-hover);
+}
+
+/* The play surface: everything but the duration. Its own padding is what
+   gives the row its height, so the target and the row are the same thing
+   rather than a small button floating inside a big row. */
+.albumTrack__play {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  flex: 1;
+  min-inline-size: 0;
+  /* Comfortably past the 44px a thumb wants, without the list going airy. */
+  min-block-size: 2.75rem;
+  padding: var(--glacier-space-1) 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+/* A hole has no play surface, so the row itself carries the height its
+   neighbours get from theirs. */
+.albumTrack--gap {
+  min-block-size: 2.75rem;
+  gap: var(--glacier-space-3);
+}
+
+.albumTrack__no {
+  flex: none;
+  inline-size: 1.5rem;
+  text-align: end;
+  color: var(--glacier-text-subtle);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--glacier-font-size-sm);
+}
+
+.albumTrack__text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.albumTrack__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The guest credit, under the title the way the song table stacks them. */
+.albumTrack__artist {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Rides inside the play button, so it is part of the target rather than a
+   dead column at the end of a live row. */
+.albumTrack__time {
+  flex: none;
+  margin-inline-start: var(--glacier-space-2);
+  color: var(--glacier-text-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--glacier-font-size-sm);
+}
+
+/* A song the record has and this library does not: present but plainly not
+   yours. Only the words dim - the number stays with its column, and the add
+   control stays at full strength because it is the one live thing in the
+   row. */
+.albumTrack--gap .albumTrack__text {
+  opacity: 0.6;
   transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
 }
 
-.albumGapRow .catalogTrack__title {
-  color: var(--glacier-text-muted);
-}
-
-.albumGapRow:hover,
-.albumGapRow:focus-within {
+.albumTrack--gap:hover .albumTrack__text,
+.albumTrack--gap:focus-within .albumTrack__text {
   opacity: 1;
 }
 
-/* Added and not-found are settled states, not offers; they stop responding to
-   the hover that means "you can still do something here". */
-.albumGapRow[data-state='added'],
-.albumGapRow[data-state='missing'] {
+/* Added and not-found are settled states, not offers. */
+.albumTrack--gap[data-state='added'] .albumTrack__text,
+.albumTrack--gap[data-state='missing'] .albumTrack__text {
   opacity: 0.6;
 }
 
-.albumGapRow__add {
+.albumTrack__add {
   display: grid;
   place-items: center;
+  flex: none;
   inline-size: 1.75rem;
   block-size: 1.75rem;
-  margin-inline-start: auto;
   border: 1px solid var(--glacier-border-subtle);
   border-radius: var(--glacier-radius-full);
   background: none;
@@ -5550,14 +5645,15 @@ body [class*='_panel_']:has(> .dlPanel) {
   cursor: pointer;
 }
 
-.albumGapRow__add:hover:not(:disabled) {
+.albumTrack__add:hover:not(:disabled) {
   color: var(--glacier-text);
   border-color: var(--glacier-border);
 }
 
-.albumGapRow__add:disabled {
+.albumTrack__add:disabled {
   cursor: default;
 }
+
 
 /* Sits in the heading, saying how much of the discography is actually yours. */
 .artistDiscCount {

@@ -342,31 +342,43 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
                 Disc {disc}
               </Text>
             )}
-            <ol className="catalogTracks">
+            <ol className="albumTracks">
               {rows.map((entry) => {
                 if (entry.kind === 'owned') {
                   const { track } = entry;
                   return (
                     <TrackMenu track={track} key={track.path}>
-                      <li className="catalogTrack">
-                        {/* The tagged position where there is one, so the numbers
-                            match the sleeve rather than counting what survived; a
-                            rip missing track 3 should read 1, 2, 4. */}
-                        <span className="catalogTrack__rank">{track.trackNo ?? entry.fallback}</span>
+                      <li className="albumTrack">
+                        {/* The whole row plays, not the title's text box. It
+                            used to be a bare button around the words - twenty
+                            pixels tall, the height of one line - so a thumb
+                            aimed anywhere else in the row hit the li and
+                            nothing happened. The number and the credit ride
+                            INSIDE the button for the same reason. */}
                         <button
                           type="button"
-                          className="catalogTrack__title catalogTrack__title--play"
+                          className="albumTrack__play"
                           onClick={() => onPlay(track, list)}
                         >
-                          {track.title}
+                          {/* The tagged position where there is one, so the
+                              numbers match the sleeve rather than counting what
+                              survived; a rip missing track 3 reads 1, 2, 4. */}
+                          <span className="albumTrack__no">{track.trackNo ?? entry.fallback}</span>
+                          <span className="albumTrack__text">
+                            <span className="albumTrack__title">{track.title}</span>
+                            {/* Only where it differs from the record's own
+                                credit - which is exactly the guest that used to
+                                make this whole album vanish from the artist
+                                page. */}
+                            {fold(track.artist) !== fold(credit) && (
+                              <span className="albumTrack__artist">{track.artist}</span>
+                            )}
+                          </span>
+                          {/* Inside the button, not beside it: a duration is
+                              the last thing in the row and a thumb that lands
+                              on it meant the song. */}
+                          <span className="albumTrack__time">{formatDuration(track.duration)}</span>
                         </button>
-                        {/* Only where it differs from the record's own credit -
-                            which is exactly the guest that used to make this whole
-                            album vanish from the artist page. */}
-                        {fold(track.artist) !== fold(credit) && (
-                          <span className="catalogTrack__plays">{track.artist}</span>
-                        )}
-                        <span className="catalogTrack__time">{formatDuration(track.duration)}</span>
                       </li>
                     </TrackMenu>
                   );
@@ -375,12 +387,17 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
                 const key = `${row.disc ?? 1}:${row.position}:${row.title}`;
                 const state = adding[key];
                 return (
-                  <li key={key} className="catalogTrack albumGapRow" data-state={state}>
-                    <span className="catalogTrack__rank">{row.position}</span>
-                    <span className="catalogTrack__title">{row.title}</span>
+                  <li key={key} className="albumTrack albumTrack--gap" data-state={state}>
+                    {/* Same geometry as a song you own, so the numbers line up
+                        down one column and the record reads as one list. No
+                        play button: there is nothing here to play yet. */}
+                    <span className="albumTrack__no">{row.position}</span>
+                    <span className="albumTrack__text">
+                      <span className="albumTrack__title">{row.title}</span>
+                    </span>
                     <button
                       type="button"
-                      className="albumGapRow__add"
+                      className="albumTrack__add"
                       disabled={!session || state === 'finding' || state === 'added'}
                       aria-label={`Add ${row.title}`}
                       title={
