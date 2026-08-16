@@ -92,35 +92,19 @@ async fn deezer_albums(c: &reqwest::Client, artist_id: u64) -> Vec<(u64, String,
 }
 
 /// One album's tracklist: position, title, link.
+///
+/// Through the DEDICATED tracks endpoint rather than the album object's
+/// embedded copy. The two differ in a way that matters: only the dedicated one
+/// carries `track_position` (verified against the live API), so the embedded
+/// copy left this counting the array and calling the index a position - fine
+/// until a record is listed with a gap or out of order. It also takes a limit,
+/// where the embedded list is one page and a box set is longer than that.
 async fn deezer_tracklist(c: &reqwest::Client, album_id: u64) -> Vec<(Option<u32>, String, String)> {
-    let Ok(reply) = c.get(format!("https://api.deezer.com/album/{album_id}")).send().await else {
-        return Vec::new();
-    };
-    let Ok(v) = reply.json::<serde_json::Value>().await else {
-        return Vec::new();
-    };
-    v.get("tracks")
-        .and_then(|t| t.get("data"))
-        .and_then(|d| d.as_array())
-        .map(|items| {
-            items
-                .iter()
-                .enumerate()
-                .filter_map(|(i, t)| {
-                    Some((
-                        // The position comes from the ORDER, not from a field:
-                        // this endpoint carries no track_position at all (checked
-                        // against the live API), but it does return the tracks in
-                        // album order, so the index is the honest answer and a
-                        // null number would have been a worse one.
-                        Some((i + 1) as u32),
-                        t.get("title")?.as_str()?.to_string(),
-                        t.get("link").and_then(|l| l.as_str()).unwrap_or("").to_string(),
-                    ))
-                })
-                .collect()
-        })
-        .unwrap_or_default()
+    deezer_album_tracks(c, album_id)
+        .await
+        .into_iter()
+        .map(|(position, title, url)| (Some(position), title, url))
+        .collect()
 }
 
 #[derive(serde::Deserialize)]
@@ -205,4 +189,142 @@ pub async fn gaps(
     // thing this page can offer, and the emptiest record is the least.
     out.sort_by_key(|a| a.missing.len());
     Ok(Json(json!({ "artist": artist, "albums": out })))
+}
+
+
+// ── One record's songs ───────────────────────────────────────────────────────
+//
+// An album object from the catalogue carries no tracklist, only a URL to one
+// (checked against the live API: the artist/albums reply has `tracklist` as a
+// link and no track data at all). So the songs on a record are always a second
+// call, per record - which is why this is its own endpoint rather than
+// something the artist reply could have included.
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogTrack {
+    pub position: u32,
+    pub title: String,
+    /// The link an import takes. Empty when the catalogue gave none.
+    pub url: String,
+    /// Whether this library already holds it.
+    pub owned: bool,
+}
+
+#[derive(serde::Deserialize)]
+pub struct TracksQuery {
+    pub artist: String,
+    pub album: String,
+}
+
+/// The full tracklist for one album, paged out of the catalogue's dedicated
+/// endpoint. `limit=300` because the album object's own embedded list stops at
+/// the first page, and a box set is longer than that.
+async fn deezer_album_tracks(c: &reqwest::Client, album_id: u64) -> Vec<(u32, String, String)> {
+    let Ok(reply) = c
+        .get(format!("https://api.deezer.com/album/{album_id}/tracks"))
+        .query(&[("limit", "300")])
+        .send()
+        .await
+    else {
+        return Vec::new();
+    };
+    let Ok(v) = reply.json::<serde_json::Value>().await else {
+        return Vec::new();
+    };
+    v.get("data")
+        .and_then(|d| d.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .enumerate()
+                .filter_map(|(i, t)| {
+                    // track_position when the catalogue carries it, else the
+                    // order it came in - this endpoint DOES carry the field,
+                    // unlike the one embedded in an album object.
+                    let position = t
+                        .get("track_position")
+                        .and_then(|p| p.as_u64())
+                        .map(|p| p as u32)
+                        .unwrap_or((i + 1) as u32);
+                    Some((
+                        position,
+                        t.get("title")?.as_str()?.to_string(),
+                        t.get("link").and_then(|l| l.as_str()).unwrap_or("").to_string(),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// `GET /api/album/tracks?artist=&album=` - the whole record as the catalogue
+/// lists it, each song marked with whether this library holds it.
+///
+/// The album page shows what you own; this is what turns that into what the
+/// record IS, with the holes visible. Empty `tracks` is a valid answer and
+/// means the catalogue could not be reached or does not list this album - the
+/// page falls back to showing only what it has, rather than claiming a record
+/// is complete because nobody said otherwise.
+pub async fn tracks(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(q): Query<TracksQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let artist = q.artist.trim().to_string();
+    let album = q.album.trim().to_string();
+    if artist.is_empty() || album.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "an artist and an album are required".into()));
+    }
+
+    let c = client();
+    let Some(artist_id) = crate::discovery::deezer_artist_id_public(&c, &artist).await else {
+        return Ok(Json(json!({ "album": album, "artist": artist, "tracks": [] })));
+    };
+    tokio::time::sleep(GAP).await;
+    let catalogue = deezer_albums(&c, artist_id).await;
+
+    // Same folded match the gap check uses, exact first then either-prefix, so
+    // "Album (Deluxe Edition)" finds "Album" and the reverse.
+    let want = crate::discovery::fold(&album);
+    let Some((id, cat_title, cover)) = catalogue
+        .iter()
+        .find(|(_, t, _)| crate::discovery::fold(t) == want)
+        .or_else(|| {
+            catalogue.iter().find(|(_, t, _)| {
+                let f = crate::discovery::fold(t);
+                !f.is_empty() && (f.starts_with(&want) || want.starts_with(&f))
+            })
+        })
+        .cloned()
+    else {
+        return Ok(Json(json!({ "album": album, "artist": artist, "tracks": [] })));
+    };
+
+    tokio::time::sleep(GAP).await;
+    let list = deezer_album_tracks(&c, id).await;
+    let held: HashSet<String> = state
+        .db
+        .album_track_titles(&artist, &album)
+        .iter()
+        .map(|t| crate::discovery::title_key_public(t))
+        .collect();
+
+    let out: Vec<CatalogTrack> = list
+        .into_iter()
+        .map(|(position, title, url)| CatalogTrack {
+            owned: held.contains(&crate::discovery::title_key_public(&title)),
+            position,
+            title,
+            url,
+        })
+        .collect();
+
+    Ok(Json(json!({
+        "album": cat_title,
+        "artist": artist,
+        "cover": cover,
+        "tracks": out,
+    })))
 }

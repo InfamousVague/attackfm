@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.87
+
+- An album page now shows the whole record: the songs you have, and the ones you don't, dimmed with a + to pull them
+- Missing-song numbers are the sleeve's own now, not a count of what survived
+
 ## 0.3.86
 
 - Tapping an album now opens it: the whole record, in running order, with its discs and its guests

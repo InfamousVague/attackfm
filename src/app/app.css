@@ -5029,6 +5029,49 @@ body [class*='_panel_']:has(> .dlPanel) {
   }
 }
 
+/* A song the record has and this library does not: present but plainly not
+   yours, so the list reads as one record with holes rather than two lists.
+   Lifts to full strength on hover, the same way the artist page's gap rows do -
+   an offer you are reaching for should not stay greyed out under the finger. */
+.albumGapRow {
+  opacity: 0.55;
+  transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.albumGapRow:hover,
+.albumGapRow:focus-within {
+  opacity: 1;
+}
+
+/* Added and not-found are settled states, not offers; they stop responding to
+   the hover that means "you can still do something here". */
+.albumGapRow[data-state='added'],
+.albumGapRow[data-state='missing'] {
+  opacity: 0.55;
+}
+
+.albumGapRow__add {
+  display: grid;
+  place-items: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  margin-inline-start: auto;
+  border: 1px solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-full);
+  background: none;
+  color: var(--glacier-text-muted);
+  cursor: pointer;
+}
+
+.albumGapRow__add:hover:not(:disabled) {
+  color: var(--glacier-text);
+  border-color: var(--glacier-border);
+}
+
+.albumGapRow__add:disabled {
+  cursor: default;
+}
+
 /* Sits in the heading, saying how much of the discography is actually yours. */
 .artistDiscCount {
   margin-inline-start: var(--glacier-space-2);
