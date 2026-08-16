@@ -3119,23 +3119,37 @@ img.artPop:not([data-loading]) {
   margin-inline: calc(-1 * var(--glacier-space-4));
 }
 
-/* Horizontal shelves were very hard to swipe sideways: the ScrollArea's
-   viewport ran with touch-action:auto, so inside a vertically-scrolling page
-   WebKit handed almost every gesture to the page and the shelf barely moved.
-   Naming the axes fixes that - but it has to name BOTH.
-
-   This was `pan-x` alone, which reads as "only horizontal panning happens
-   here", and that is exactly how it behaves: a vertical drag that STARTS on a
-   shelf is not passed up to the page, it is discarded. Since a shelf is as
-   wide as the screen and several deep on Discover, most of the page was a
-   dead zone where scrolling down did nothing - the thumb just had to miss the
-   artwork. Listing both axes still gives WebKit the explicit declaration that
-   made sideways drags work, while letting it lock to whichever direction the
-   gesture actually went. overscroll-behavior stays inline-only so a sideways
-   fling never nudges the page or triggers the OS back-swipe, and a vertical
-   fling still chains to the page the way it should. */
+/*
+ * A SEESAW, and this line is the side of it we have chosen. Read both halves
+ * before changing it, because it has now been flipped twice.
+ *
+ * `auto` (the original): the viewport is inside a vertically-scrolling page,
+ * so the engine hands almost every gesture to the page and the shelf barely
+ * moves. Sideways swiping is very hard.
+ *
+ * `pan-x pan-y` (Aug 14 - b82991e): names both axes and lets the engine lock
+ * to whichever way the finger went. Vertical drags starting on a shelf scroll
+ * the page again - but horizontal goes back to being the page's by default,
+ * which is the "hard to swipe sideways" problem all over again. Reported
+ * exactly that way.
+ *
+ * `pan-x` (here, chosen deliberately): horizontal is decisively the shelf's,
+ * which is the axis a shelf exists for. THE COST IS REAL AND KNOWN: a vertical
+ * drag that starts on a shelf is not passed up to the page, it is discarded -
+ * so a shelf is a dead zone for scrolling down, and on a page of several
+ * stacked shelves the thumb has to find the gaps between them. That was
+ * reported as a bug in August and is being accepted now as the lesser one.
+ *
+ * The only way off the seesaw is to stop letting the engine choose: hold
+ * `pan-y` here and drive scrollLeft from JS, so both axes move at once. That
+ * trades the OS's horizontal momentum for hand-rolled inertia, which is why it
+ * has not been done - not because it would not work.
+ *
+ * overscroll-behavior stays inline-only so a sideways fling never nudges the
+ * page or triggers the OS back-swipe.
+ */
 .homeShelfScroll [data-scrollbar-appearance] {
-  touch-action: pan-x pan-y;
+  touch-action: pan-x;
   overscroll-behavior-inline: contain;
 }
 
