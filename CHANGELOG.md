@@ -13,6 +13,10 @@ they are read on a phone, in a strip, one thumb away from a song.
 - Hold any album cover - home, artist page, search - for Play, Shuffle, queueing the whole record, and the artist
 - About now shows the whole release history, with a "you are here" on the version you're running
 - Downloads left the menus: while anything is pulling, a chip floats above the player saying so from every page - tap it for the queue
+- The Booth got rebuilt: Music Date up top, the DJ in his own card with the mascot and his openers, your mixes underneath — no more chat chrome floating in the dark
+- Music Date is properly fullscreen now: no nav bar, no player strip, just the introductions — the floating arrow (or a back swipe) leaves
+- Records the catalogue files under a second artist page (that Joji deluxe) now show their missing songs — the record is searched for itself, misspelled tag and all
+- Bonus discs count too: a deluxe's second disc shows its holes right where they sit, and the header says so — "21 of 30 songs · 2 discs"
 
 ## 0.3.91
 

@@ -248,6 +248,53 @@ export function DjPage() {
   const [draft, setDraft] = useState('');
   if (!chat) return null;
 
+  // Nobody has spoken yet. The seeded greeting and its chips render as a
+  // clean invitation - the mascot, one line, the suggestions - instead of a
+  // transcript cosplaying a messenger around two system messages. The
+  // transcript takes over with the first real exchange and keeps the whole
+  // history, opening included.
+  const virgin = !chat.messages.some((m) => m.authorId !== DJ_AUTHOR);
+  if (virgin) {
+    const greeting = chat.messages.find((m) => m.text)?.text;
+    const chips = chat.messages.flatMap((m) =>
+      m.embed?.kind === 'chips' ? m.embed.options : [],
+    );
+    return (
+      <div className="djPage">
+        <div className="djFresh">
+          <img className="djFresh__mascot" src={djMascot} alt="" />
+          {greeting && <p className="djFresh__line">{greeting}</p>}
+          <div className="djChips djFresh__chips">
+            {chips.map((o) => (
+              <button
+                key={o.label}
+                type="button"
+                className="djChip"
+                onClick={() => chat.send(o.send)}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <MessageBar
+          className="djComposer"
+          value={draft}
+          onValueChange={setDraft}
+          busy={chat.busy}
+          placeholder="Tell the DJ what you're after"
+          minRows={1}
+          maxRows={4}
+          onSend={({ text }) => {
+            if (!text.trim()) return;
+            chat.send(text);
+            setDraft('');
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="djPage">
       <ConversationView<DjMessage>
@@ -256,7 +303,6 @@ export function DjPage() {
         viewerId={session?.username ?? 'me'}
         label="DJ"
         stick
-        dayHeaders
         avatarFor={(id) =>
           id === DJ_AUTHOR ? <img className="djAvatar" src={djMascot} alt="" /> : undefined
         }

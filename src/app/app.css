@@ -2965,11 +2965,27 @@ html[data-platform='android'] .appWindow {
 /* One room for the taste engine: a head strip, the mixes it built, then the
    conversation filling the rest. The chat owns the remaining height - DjPage's
    transcript scrolls inside itself, so the page never double-scrolls. */
+/* The room reads top to bottom - the date invitation, the decks, the crates -
+   as one scrolling column. The first cut split the viewport between a capped
+   shelf band and a full-height messenger, which at any real size rendered as
+   an orphaned card floating over a void of chat chrome. */
 .boothPage {
   flex: 1;
   min-block-size: 0;
+  overflow-y: auto;
+  padding: var(--glacier-space-5) var(--glacier-space-4);
+  padding-block-end: calc(var(--app-player-height) + var(--app-nav-height, 0px));
   display: flex;
   flex-direction: column;
+  gap: var(--glacier-space-4);
+}
+
+/* One readable column on any width - the edge-to-edge stretch was half of
+   the old void. */
+.boothPage > * {
+  inline-size: 100%;
+  max-inline-size: 44rem;
+  margin-inline: auto;
 }
 
 .boothHead {
@@ -2978,7 +2994,6 @@ html[data-platform='android'] .appWindow {
   align-items: center;
   justify-content: space-between;
   gap: var(--glacier-space-3);
-  padding: var(--glacier-space-4) var(--glacier-space-4) var(--glacier-space-2);
 }
 
 .boothHead__title {
@@ -2987,28 +3002,85 @@ html[data-platform='android'] .appWindow {
   margin: 0;
 }
 
-.boothShelves {
-  flex: none;
-  padding-inline: 0;
+/* The invitation: one warm row, deliberately small - Music Date's real face
+   is the fullscreen layer, and a card that oversold it here would just be a
+   second version of the page it opens. */
+.boothDate {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3) var(--glacier-space-4);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: transform 0.12s var(--glacier-ease-out);
 }
 
-/* The embedded curator shelves bring their own paddings; cap their height so
-   an enthusiastic curator cannot squeeze the conversation out of the room. */
-.boothShelves .homeMixes {
-  max-block-size: 16rem;
+.boothDate:active {
+  transform: scale(0.99);
+}
+
+.boothDate__mark {
+  flex: none;
+  inline-size: 2.4rem;
+  block-size: 2.4rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--glacier-accent-text);
+  background: color-mix(in srgb, var(--glacier-accent-solid) 16%, transparent);
+}
+
+.boothDate__text {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.boothDate__title {
+  font-weight: 700;
+}
+
+.boothDate__caption {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.boothDate__chevron {
+  flex: none;
+  color: var(--glacier-text-muted);
+}
+
+/* The decks: the conversation in a card that ends where it ends - a bounded
+   chat inside the page, not a messenger wearing it. */
+.boothDj {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  block-size: clamp(20rem, 52dvh, 32rem);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
   overflow: hidden;
 }
 
-.boothChat {
+.boothDj .djPage {
   flex: 1;
   min-block-size: 0;
-  display: flex;
-  flex-direction: column;
+  padding: var(--glacier-space-3);
+  /* The standalone DJ page cleared the floating bars with its tail padding;
+     inside a card that clearance is just a hole over the composer. */
+  padding-block-end: var(--glacier-space-3);
 }
 
-.boothChat .djPage {
-  flex: 1;
-  min-block-size: 0;
+.boothShelves {
+  flex: none;
 }
 
 /* --- Profile rooms --------------------------------------------------------- */
@@ -3059,6 +3131,46 @@ html[data-platform='android'] .appWindow {
   min-block-size: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* --- Music Date, fullscreen ------------------------------------------------ */
+/* Over everything, chrome gone: App unmounts the nav bar and hides the player
+   while this is up, and the layer itself sits above the header. Just the
+   introductions, the notch kept clear, one floating way out. */
+.dateLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  background: var(--glacier-surface);
+  padding-block-start: env(safe-area-inset-top, 0px);
+  padding-block-end: env(safe-area-inset-bottom, 0px);
+}
+
+.dateLayer .datePage {
+  flex: 1;
+  min-block-size: 0;
+  /* The page's own tail padding ducks bars that are not here. */
+  padding-block-end: var(--glacier-space-4);
+}
+
+.dateLayer__close {
+  position: absolute;
+  inset-block-start: calc(env(safe-area-inset-top, 0px) + var(--glacier-space-3));
+  inset-inline-start: var(--glacier-space-3);
+  z-index: 2;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  display: grid;
+  place-items: center;
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--glacier-surface) 72%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: inherit;
+  cursor: pointer;
 }
 
 .profileRoomBar {
@@ -11745,6 +11857,38 @@ button.artistAlbum {
 .djTranscript {
   flex: 1;
   min-block-size: 0;
+}
+
+/* The fresh booth: nobody has spoken yet, so no transcript chrome - the
+   mascot, the DJ's one line, and the suggestions, centered in the card. */
+.djFresh {
+  flex: 1;
+  min-block-size: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--glacier-space-3);
+  text-align: center;
+  padding: var(--glacier-space-4);
+  overflow-y: auto;
+}
+
+.djFresh__mascot {
+  inline-size: 4.5rem;
+  aspect-ratio: 1;
+  object-fit: contain;
+}
+
+.djFresh__line {
+  margin: 0;
+  max-inline-size: 26rem;
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-sm);
+}
+
+.djFresh__chips {
+  justify-content: center;
 }
 
 .djAvatar {

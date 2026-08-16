@@ -3,14 +3,19 @@
 //! The same intelligence used to wear five costumes - a DJ page in the
 //! overflow menu, a DJ chip on the Library, a Curator settings pane, "Made for
 //! you" mixes on home, Discover's picks - and a listener could never form a
-//! model of WHO was doing all this. Now it has one body. The room holds the
-//! conversation (the DJ transcript, which survives navigation because its
-//! provider wraps the whole app), the mixes it built, one line about what it
-//! is doing right now, and its own preferences. Everywhere else the brain
-//! doesn't get a surface, it gets a sentence.
+//! model of WHO was doing all this. Now it has one body, and the room reads
+//! top to bottom like a room: the date invitation, the decks, the crates.
+//!
+//! The first cut of this page tried to be two apps in one column - a shelf
+//! band pinned over a full-height messenger - and at any real viewport that
+//! rendered as one orphaned card floating over a void of chat chrome. Now the
+//! page is a single scroller of three sections: Music Date as a compact card
+//! on top (its real face is a fullscreen layer App hosts), the DJ as a
+//! bounded chat card that ends where it ends, and the mixes at their natural
+//! shelf height below.
 
 import { IconButton, Modal, Text } from '@glacier/react';
-import { Settings2 } from '@glacier/icons';
+import { ChevronRight, Heart, Settings2 } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { DjPage } from './DjPage.tsx';
 import { CuratorShelves } from './HomePage.tsx';
@@ -39,9 +44,12 @@ function statusLine(feed: CuratorFeed | null): string | null {
 export function BoothPage({
   onPlay,
   onOpenArtist,
+  onOpenDate,
 }: {
   onPlay: (track: Track, queue?: Track[]) => void;
   onOpenArtist: (artist: string) => void;
+  /** Opens Music Date's fullscreen layer; App hosts it above all chrome. */
+  onOpenDate: () => void;
 }) {
   const { session } = useServerSession();
   const [feed, setFeed] = useState<CuratorFeed | null>(null);
@@ -72,15 +80,9 @@ export function BoothPage({
       <header className="boothHead">
         <div className="boothHead__text">
           <h1 className="boothHead__title">The Booth</h1>
-          {line ? (
-            <Text tone="muted" size="sm">
-              {line}
-            </Text>
-          ) : (
-            <Text tone="muted" size="sm">
-              Your taste, at the decks.
-            </Text>
-          )}
+          <Text tone="muted" size="sm">
+            {line ?? 'Your taste, at the decks.'}
+          </Text>
         </div>
         {session && (
           <IconButton
@@ -94,15 +96,30 @@ export function BoothPage({
         )}
       </header>
 
-      {/* The mixes it built - the same shelves home used to carry, spoken from
-          the room they come from. */}
+      {/* Music Date: a compact invitation, not the experience itself - that
+          is a fullscreen layer with the chrome gone. */}
+      {session && (
+        <button type="button" className="boothDate" onClick={onOpenDate}>
+          <span className="boothDate__mark" aria-hidden="true">
+            <Heart size={18} />
+          </span>
+          <span className="boothDate__text">
+            <span className="boothDate__title">Music Date</span>
+            <span className="boothDate__caption">Meet what the collector found — art and sound, no names</span>
+          </span>
+          <ChevronRight size={18} className="boothDate__chevron" aria-hidden="true" />
+        </button>
+      )}
+
+      {/* The decks: the conversation, in a card that ends where it ends. Its
+          transcript lives app-wide, so leaving the room forgets nothing. */}
+      <section className="boothDj" aria-label="Ask the DJ">
+        <DjPage />
+      </section>
+
+      {/* The crates: the mixes it built, at their natural height. */}
       <div className="boothShelves">
         <CuratorShelves onPlay={onPlay} onOpenArtist={onOpenArtist} />
-      </div>
-
-      {/* The conversation fills the rest; its transcript lives app-wide. */}
-      <div className="boothChat">
-        <DjPage />
       </div>
 
       {/* Its preferences are ITS, opened from the room - not a pane in the
