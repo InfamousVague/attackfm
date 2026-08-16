@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.99
+
+- The lit tab's square is actually square now — measured, not eyeballed
+
 ## 0.3.98
 
 - The ⋯ menu sits right on the bar now instead of floating a room's height above it
