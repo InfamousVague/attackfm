@@ -3146,12 +3146,20 @@ img.artPop:not([data-loading]) {
  * Do not "simplify" this back to pan-x or auto without deleting that module:
  * on its own, this line means shelves do not scroll sideways at all.
  *
- * overscroll-behavior stays inline-only so a sideways fling never nudges the
- * page or triggers the OS back-swipe.
+ * The overscroll pair is spelled out per-axis, and the block half is the line
+ * that actually made vertical work. The kit's ScrollArea used to seal BOTH
+ * axes with the `overscroll-behavior: contain` shorthand; a shelf has no
+ * vertical scroll of its own, so containing that axis did not keep anything
+ * inside the shelf, it stopped the drag reaching the page and the finger moved
+ * nothing at all. The kit is per-axis now, and this restates it so a future
+ * kit build cannot quietly take vertical away again.
  */
 .homeShelfScroll [data-scrollbar-appearance] {
   touch-action: pan-y;
+  /* sideways flings stay in the shelf */
   overscroll-behavior-inline: contain;
+  /* downward drags belong to the page */
+  overscroll-behavior-block: auto;
 }
 
 .homeShelfRow {

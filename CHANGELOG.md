@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.83
+
+- Dragging up or down on a row of albums scrolls the page again, instead of doing nothing
+
 ## 0.3.82
 
 - The app now notices a new version within a couple of minutes while you are using it, instead of only when you come back to it
