@@ -3,6 +3,7 @@ import { Check, Disc3, Music, Play, Plus, Shuffle, X } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
 import { setHeaderActions } from './headerActions.ts';
+import { fetchAlbumGaps, ServerError, type AlbumGap } from './server.ts';
 import { usePlaylists } from './playlists.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { IMPORTER_PLUGIN_ID, useAcquire } from '../plugins/runtime.tsx';
@@ -196,6 +197,30 @@ export function ArtistPage({ artist, onPlay, onOpenArtist, onOpenPlaylist }: Art
 
   // Embedded art is often a tiny thumbnail that blurs at this size, so resolve a
   // crisp cover per album from the iTunes Search API, cached in localStorage.
+  /**
+   * The records this artist has that you only own part of.
+   *
+   * The server has been able to answer this for a while and nothing ever
+   * asked. `null` means not loaded, `'old'` means a server from before the
+   * endpoint - worth saying, because an empty shelf would otherwise read as
+   * "you have everything".
+   */
+  const [gaps, setGaps] = useState<AlbumGap[] | 'old' | null>(null);
+  useEffect(() => {
+    if (!session) return;
+    const ctrl = new AbortController();
+    setGaps(null);
+    void fetchAlbumGaps(session, artist, ctrl.signal)
+      .then((rows) => {
+        if (!ctrl.signal.aborted) setGaps(rows);
+      })
+      .catch((e: unknown) => {
+        if (ctrl.signal.aborted) return;
+        setGaps(e instanceof ServerError && e.status === 404 ? 'old' : []);
+      });
+    return () => ctrl.abort();
+  }, [session, artist]);
+
   const [hiRes, setHiRes] = useState<Record<string, string>>({});
   useEffect(() => {
     let alive = true;
@@ -433,6 +458,46 @@ export function ArtistPage({ artist, onPlay, onOpenArtist, onOpenPlaylist }: Art
     }
     take('track', found.title, found.url);
     setAdding((prev) => ({ ...prev, [t.id]: 'added' }));
+  };
+
+  /**
+   * Pull one song that is missing from a record you already own part of.
+   *
+   * The gap rows carry the catalogue's own link, which the importer usually
+   * will not take (a whole tracklist arrives from Deezer), so this walks the
+   * same two steps everything else here does: try the link, and fall back to
+   * resolving the Spotify twin by name.
+   */
+  const addMissing = async (gap: AlbumGap, row: { position: number; title: string; url: string }) => {
+    const key = `gap:${gap.album}:${row.position}`;
+    if (!session || adding[key]) return;
+    setAdding((prev) => ({ ...prev, [key]: 'finding' }));
+    if (importable({ url: row.url } as CatalogTrack)) {
+      take('track', row.title, row.url);
+      setAdding((prev) => ({ ...prev, [key]: 'added' }));
+      return;
+    }
+    let found = null;
+    try {
+      found = await resolveImportable(session, 'track', artist, row.title);
+    } catch {
+      // Same outcome as not being there.
+    }
+    if (!found) {
+      setAdding((prev) => ({ ...prev, [key]: 'missing' }));
+      window.setTimeout(
+        () =>
+          setAdding((prev) => {
+            const next = { ...prev };
+            delete next[key];
+            return next;
+          }),
+        4000,
+      );
+      return;
+    }
+    take('track', found.title, found.url);
+    setAdding((prev) => ({ ...prev, [key]: 'added' }));
   };
 
   /**
@@ -762,6 +827,103 @@ export function ArtistPage({ artist, onPlay, onOpenArtist, onOpenPlaylist }: Art
           </ol>
         </section>
       )}
+
+      {/*
+        Records you own PART of, and the songs that would finish them.
+        
+        Everywhere else on this page a missing thing is a whole record or a
+        top-ten single; this is the gap inside a record you already have -
+        the case where "I own this album" and "most of it is missing" are both
+        true. The rows are dimmed because they are absences, and each carries
+        the plus that turns it into a download.
+      */}
+      {gaps === 'old' ? null : gaps && gaps.length > 0 ? (
+        <section className="homeShelf">
+          <h2 className="homeShelfTitle">
+            Missing from your albums
+            <span className="artistDiscCount">
+              {gaps.reduce((n, g) => n + g.missing.length, 0)} songs
+            </span>
+          </h2>
+          <div className="albumGaps">
+            {gaps.map((gap) => (
+              <div key={`${gap.album}:${gap.artist}`} className="albumGap">
+                <header className="albumGap__head">
+                  {gap.cover ? (
+                    <img className="albumGap__art" src={gap.cover} alt="" loading="lazy" />
+                  ) : (
+                    <span className="albumGap__art albumGap__art--glyph" aria-hidden>
+                      <Disc3 size={18} />
+                    </span>
+                  )}
+                  <span className="albumGap__meta">
+                    <span className="albumGap__title">{gap.album}</span>
+                    <span className="albumGap__count">
+                      {gap.owned} of {gap.total} · {gap.missing.length} missing
+                    </span>
+                  </span>
+                  {/* One tap for the whole gap, because "finish this record" is
+                      the thing somebody actually wants when nine of twelve are
+                      absent. Each row still has its own plus. */}
+                  <button
+                    type="button"
+                    className="albumGap__all"
+                    onClick={() => {
+                      for (const row of gap.missing) void addMissing(gap, row);
+                    }}
+                  >
+                    Add all
+                  </button>
+                </header>
+                <ol className="albumGap__list">
+                  {gap.missing.map((row) => {
+                    const key = `gap:${gap.album}:${row.position}`;
+                    const state = adding[key];
+                    return (
+                      <li key={key} className="albumGap__row" data-state={state}>
+                        <span className="albumGap__no">{row.position}</span>
+                        <span className="albumGap__name">{row.title}</span>
+                        <button
+                          type="button"
+                          className="catalogTrack__add"
+                          data-state={
+                            state === 'added'
+                              ? 'added'
+                              : state === 'missing'
+                                ? 'missing'
+                                : state === 'finding'
+                                  ? 'adding'
+                                  : 'idle'
+                          }
+                          disabled={!!state}
+                          aria-label={
+                            state === 'added'
+                              ? `${row.title} added to your downloads`
+                              : state === 'missing'
+                                ? `${row.title} could not be found to import`
+                                : `Add ${row.title}`
+                          }
+                          onClick={() => void addMissing(gap, row)}
+                        >
+                          {state === 'added' ? (
+                            <Check size={14} />
+                          ) : state === 'missing' ? (
+                            <X size={14} />
+                          ) : state === 'finding' ? (
+                            <span className="artistAlbumSpin" aria-hidden />
+                          ) : (
+                            <Plus size={14} />
+                          )}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {(discography.records.length > 0 || discography.singles.length > 0) && (
         <>

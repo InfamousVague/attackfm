@@ -1435,6 +1435,51 @@ export async function clearRecents(session: ServerSession): Promise<void> {
 
 /** One release on an artist's page: an album, EP, single or compilation. Its
  *  `url` is an album link the importer takes whole. */
+/**
+ * A record you own PART of, and what is missing from it.
+ *
+ * The server has answered this since the gaps work landed - which of an
+ * artist's albums you hold some of, the catalogue's tracklist for each, and
+ * the difference - and no client had ever asked. It is the honest shape for
+ * "most of this album is missing": positions and titles, so the gap can be
+ * shown as the songs it actually is rather than a count.
+ */
+export interface MissingTrack {
+  position: number;
+  title: string;
+  /** The catalogue's own link, which the importer may or may not take. */
+  url: string;
+}
+
+export interface AlbumGap {
+  album: string;
+  artist: string;
+  cover: string | null;
+  owned: number;
+  total: number;
+  missing: MissingTrack[];
+}
+
+/**
+ * Which of an artist's records you own part of, nearly-complete first.
+ *
+ * Throws ServerError(404) on a server from before this shipped; the caller
+ * says so plainly rather than showing an empty shelf that reads as "you have
+ * everything".
+ */
+export async function fetchAlbumGaps(
+  session: ServerSession,
+  artist: string,
+  signal?: AbortSignal,
+): Promise<AlbumGap[]> {
+  const reply = await request<{ albums: AlbumGap[] }>(
+    session.url,
+    `/api/albums/gaps?artist=${encodeURIComponent(artist)}`,
+    { token: session.token, signal },
+  );
+  return reply.albums ?? [];
+}
+
 export interface CatalogRelease {
   id: string;
   title: string;
