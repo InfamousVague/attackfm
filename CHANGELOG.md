@@ -7,6 +7,12 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.93
+
+- Two 0.3.92s went out minutes apart from two working sessions; this one carries both, so whichever your phone caught, nothing is missing
+- Undo for removals, hold-a-cover menus, the release history in About, the floating downloads chip
+- The rebuilt Booth with Music Date up top, its true fullscreen, and albums finding their missing songs across artist pages, misspellings and bonus discs
+
 ## 0.3.92
 
 - Removing a song from the queue, a playlist, or your likes now offers Undo for a few seconds - and puts it back exactly where it was
