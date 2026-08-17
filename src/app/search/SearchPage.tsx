@@ -25,6 +25,7 @@ import { useQueueControls } from '../player/queueControls.tsx';
 import { useRegistry } from '../servers/registrySession.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { artworkUrl, genreArtwork } from '../ux/artwork.ts';
+import { clearSpotifyLink, onSpotifyLink } from '../servers/deepLink.ts';
 import { usePluginCommands, useAcquire } from '../../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import { usePendingPlay } from '../player/pendingPlay.tsx';
@@ -128,6 +129,26 @@ export function SearchPage({
   const playPending = usePendingPlay();
   const recents = useSearchRecents();
   const [query, setQuery] = useState('');
+  /*
+   * A Spotify link the phone handed us instead of handing it to Spotify.
+   *
+   * Dropped into the field rather than given a page of its own, because the
+   * field ALREADY knows what to do with one: a pasted link is claimed by the
+   * acquire plugin and the page becomes that link's actions - the record, its
+   * art, and Add. Inventing a second surface for the same errand would mean
+   * two things to keep working and one of them rarely seen.
+   *
+   * Taken once. A link is an errand, not a state, and replaying it every time
+   * this page mounts would re-open the importer long after the fact.
+   */
+  useEffect(
+    () =>
+      onSpotifyLink((url) => {
+        setQuery(url);
+        clearSpotifyLink();
+      }),
+    [],
+  );
   const [filter, setFilter] = useState<Filter>('all');
   const [friends, setFriends] = useState<RegistryFriend[]>([]);
   // Which row the keyboard is on, as an index into the flat item list; -1 is

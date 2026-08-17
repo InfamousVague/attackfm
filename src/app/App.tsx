@@ -15,6 +15,7 @@ import type { Track } from './core/tauri.ts';
 import { NetworkDot } from './servers/NetworkDot.tsx';
 import { SettingsModal } from './settings/SettingsModal.tsx';
 import { SearchPage } from './search/SearchPage.tsx';
+import { onSpotifyLink } from './servers/deepLink.ts';
 import { installShelfPan } from './ux/shelfPan.ts';
 import { DjChatProvider } from './booth/djChat.tsx';
 import { DatePage } from './date/DatePage.tsx';
@@ -144,6 +145,15 @@ export function App() {
     searchOpen,
     setSearchOpen,
   } = useSearchSummon(swipeEl, () => libraryRefresh.current());
+  /*
+   * A Spotify link opens the search overlay, where the field claims it.
+   *
+   * Only the opening happens here - SearchPage takes the URL itself, so the
+   * link does not have to be threaded through this component to reach the one
+   * field that knows what it is.
+   */
+  useEffect(() => onSpotifyLink(() => setSearchOpen(true)), [setSearchOpen]);
+
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Which pane Settings should open ON, when a surface aims it - the network
   // dot's Manage lands on Servers; a plain open starts wherever it was.

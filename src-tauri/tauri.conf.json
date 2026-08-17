@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "AttackFM",
-  "version": "0.3.127",
+  "version": "0.3.133",
   "identifier": "com.mattssoftware.attackfm",
   "build": {
     "frontendDist": "../dist",
@@ -46,7 +46,24 @@
         "schemes": [
           "attackfm"
         ]
-      }
+      },
+      "mobile": [
+        {
+          "host": "open.spotify.com",
+          "pathPrefix": [
+            "/track",
+            "/album",
+            "/artist",
+            "/playlist"
+          ]
+        },
+        {
+          "host": "registry.attack.fm",
+          "pathPrefix": [
+            "/i"
+          ]
+        }
+      ]
     }
   },
   "bundle": {

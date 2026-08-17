@@ -1,4 +1,7 @@
-//! Invite links, delivered into the app.
+//! Links from outside, delivered into the app.
+//!
+//! Two kinds arrive here now: an invite to a server, and a Spotify link the
+//! phone was asked to open with AttackFM instead of Spotify.
 //!
 //! An invite is shared as `https://registry.attack.fm/i/<code>`. The registry's
 //! landing page offers an "Open in AttackFM" button pointing at the app's own
@@ -20,8 +23,46 @@ function codeFromUrl(url: string): string | null {
   return bare?.[1]?.trim() || null;
 }
 
+/**
+ * Whether this is a Spotify link, in either form the phone can hand us.
+ *
+ * `open.spotify.com/...` arrives when someone has turned off Spotify's own
+ * link handling; `spotify:track:...` arrives from the "open with" dialog,
+ * which is the door that works whether they have or not - a custom scheme
+ * cannot be verified away by the app that owns it.
+ */
+export function spotifyLink(url: string): string | null {
+  const u = url.trim();
+  if (/^spotify:(track|album|artist|playlist):/i.test(u)) return u;
+  if (/^https?:\/\/open\.spotify\.com\/(track|album|artist|playlist)\//i.test(u)) return u;
+  return null;
+}
+
 let pending: string | null = null;
 const subscribers = new Set<(code: string) => void>();
+let pendingLink: string | null = null;
+const linkSubscribers = new Set<(url: string) => void>();
+
+/**
+ * Be told when a Spotify link arrives - now, or the moment one does.
+ *
+ * Same replay-on-subscribe contract as the invites above, and for the same
+ * reason: opening the app FROM the link means the URL is in hand before any
+ * React tree that cares has mounted.
+ */
+export function onSpotifyLink(handler: (url: string) => void): () => void {
+  linkSubscribers.add(handler);
+  if (pendingLink) handler(pendingLink);
+  return () => {
+    linkSubscribers.delete(handler);
+  };
+}
+
+/** Taken once: a link is an errand, not a state, and replaying it on every
+ *  later subscribe would re-open the importer behind the user's back. */
+export function clearSpotifyLink(): void {
+  pendingLink = null;
+}
 
 /** Be told when an invite arrives - now, or the moment one does. Replays the
  *  last one on subscribe, so a screen that mounts after the link still gets it. */
@@ -34,6 +75,12 @@ export function onInvite(handler: (code: string) => void): () => void {
 }
 
 function deliver(url: string): void {
+  const link = spotifyLink(url);
+  if (link) {
+    pendingLink = link;
+    for (const handler of linkSubscribers) handler(link);
+    return;
+  }
   const code = codeFromUrl(url);
   if (!code) return;
   pending = code;
