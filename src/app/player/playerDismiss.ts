@@ -184,6 +184,16 @@ export function usePlayerDismiss(playing: boolean) {
 /** How far the sheet must travel to be let go of. It is a whole screen, not a
  *  plate across the bottom, so the mark is further down than the strip's. */
 const SHEET_THRESHOLD = 110;
+/**
+ * How far a FLICK must still have carried it.
+ *
+ * Speed alone was enough, which meant a quick short nudge - the kind you make
+ * brushing the screen, or starting a scroll on something that turned out not
+ * to scroll - closed a full-screen player. Distance is what says you meant it;
+ * speed only says you meant it QUICKLY. Under this, whatever the speed, the
+ * sheet goes back where it was.
+ */
+const FLICK_MIN = 48;
 
 /**
  * Pulling the Now Playing sheet back down.
@@ -285,7 +295,7 @@ export function installSheetDismiss(
   };
 
   const onEnd = () => {
-    const decided = claimed && (dy > SHEET_THRESHOLD || velocity > FLICK);
+    const decided = claimed && (dy > SHEET_THRESHOLD || (velocity > FLICK && dy > FLICK_MIN));
     if (decided) {
       // Cleared here, unlike the strip's: this sheet unmounts on dismissal
       // rather than animating out under a `dismissed` rule, so an offset left

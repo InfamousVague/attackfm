@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.129
+
+- A swipe down that doesn't go far enough now always springs the Now Playing screen back into place. A quick short nudge could close it on speed alone, which is not something you can mean to do
+
 ## 0.3.128
 
 - Pull the Now Playing screen down to close it. It follows your thumb and springs back if you change your mind — the only way out used to be a chevron in the top-left corner, which is the one corner you cannot reach holding a phone
