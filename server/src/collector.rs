@@ -32,6 +32,11 @@ use std::time::Duration;
 /// when there is nothing to do, and a pull per few minutes outruns anyone's
 /// listening.
 const CYCLE: Duration = Duration::from_secs(5 * 60);
+/// How long a failed pull blocks its candidate before it may be tried again.
+/// "The catalogue answered and did not have it" is a fact about the catalogue
+/// THAT day - tracks appear, matches improve - so a failure ages out instead
+/// of condemning the candidate forever. Long, because most failures do repeat.
+const FAILED_RETRY_AFTER_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 /// The listening window that makes someone a current listener.
 const WINDOW_30D_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 /// The default budget for unadopted auditions.
@@ -155,7 +160,11 @@ async fn pull_cycle(state: &Arc<AppState>) {
         if !enabled {
             continue;
         }
-        let pulled = state.db.pulled_ext_ids(user);
+        // Taste moved since these candidates were scored; re-rank the pool
+        // against who the listener is NOW before choosing from it. This is
+        // the caller rescore() spent months waiting for.
+        crate::discovery::rescore(state, user);
+        let pulled = state.db.pulled_ext_ids(user, now_ms() - FAILED_RETRY_AFTER_MS);
         let bar = threshold(exploration);
         let pick = state
             .db

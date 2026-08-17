@@ -70,6 +70,17 @@ fn client(secs: u64) -> reqwest::Client {
 /// a file's tags almost never agree character for character - "Beyoncé" against
 /// "Beyonce", "Don't" against "Dont" - and a filter that misses is a shelf
 /// offering music the listener already owns.
+/// fold(), then with the joiner words dropped: "&", "+" and "and" all read as
+/// nothing, so "Florence + The Machine" and "Florence and the Machine" carry
+/// the same key. Only for ARTIST identity matching - titles keep full fold().
+fn artist_key(value: &str) -> String {
+    fold(value)
+        .split_whitespace()
+        .filter(|w| *w != "and" && *w != "the")
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 pub fn fold(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     let mut gap = false;
@@ -342,7 +353,7 @@ async fn harvest_from(state: &Arc<AppState>, user: i64, seeds: Vec<(String, i64)
 
     for (seed_name, _) in seeds {
         // Your artist, in the catalogue's terms.
-        let Some(seed_id) = deezer_artist_id(&c, &seed_name).await else { continue };
+        let Some(seed_id) = deezer_artist_id(&c, &seed_name, true).await else { continue };
         tokio::time::sleep(GAP).await;
 
         // Their neighbours - and the seed itself, since their back catalogue is
@@ -390,7 +401,7 @@ struct CandidateTrack {
 /// The catalogue's id for an artist by name. Public so the album filler can
 /// reach the same lookup rather than keeping a second copy of it.
 pub async fn deezer_artist_id_public(c: &reqwest::Client, name: &str) -> Option<u64> {
-    deezer_artist_id(c, name).await
+    deezer_artist_id(c, name, false).await
 }
 
 /// A title reduced to the recording it names. Public for the same reason.
@@ -398,7 +409,7 @@ pub fn title_key_public(title: &str) -> String {
     title_key(title)
 }
 
-async fn deezer_artist_id(c: &reqwest::Client, name: &str) -> Option<u64> {
+async fn deezer_artist_id(c: &reqwest::Client, name: &str, strict: bool) -> Option<u64> {
     let v: serde_json::Value = c
         .get("https://api.deezer.com/search/artist")
         .query(&[("q", name), ("limit", "3")])
@@ -410,14 +421,29 @@ async fn deezer_artist_id(c: &reqwest::Client, name: &str) -> Option<u64> {
         .ok()?;
     let items = v.get("data")?.as_array()?;
     let want = name.to_lowercase();
-    items
-        .iter()
-        .find(|a| {
-            a.get("name").and_then(|n| n.as_str()).map(|n| n.to_lowercase() == want).unwrap_or(false)
-        })
-        .or_else(|| items.first())
-        .and_then(|a| a.get("id"))
-        .and_then(|i| i.as_u64())
+    /*
+     * A folded match is always PREFERRED; whether a miss may fall back to
+     * Deezer's first hit depends on who is asking. Harvest must not fall
+     * back: among small bands same-name collisions are the rule, and a wrong
+     * first hit means ingesting a stranger's entire catalog. The read-only
+     * callers (the Rabbit hole hop, the album-gaps shelf) keep the fallback -
+     * for them a wrong guess costs a bad suggestion, an empty answer costs
+     * the whole feature.
+     *
+     * The match key folds "&"/"+" against "and" too: "Simon & Garfunkel" in
+     * the tags versus "Simon and Garfunkel" in the catalogue would otherwise
+     * mismatch identically on every cycle - a permanent miss wearing the
+     * costume of a transient one.
+     */
+    let want_key = artist_key(&want);
+    let matched = items.iter().find(|a| {
+        a.get("name")
+            .and_then(|n| n.as_str())
+            .map(|n| artist_key(n) == want_key)
+            .unwrap_or(false)
+    });
+    let chosen = if strict { matched } else { matched.or_else(|| items.first()) };
+    chosen.and_then(|a| a.get("id")).and_then(|i| i.as_u64())
 }
 
 async fn deezer_related(c: &reqwest::Client, id: u64) -> Option<Vec<(u64, String)>> {
@@ -545,8 +571,7 @@ pub async fn listen_cycle(state: &Arc<AppState>, user: i64) -> bool {
             // hangs off is the genre signal, and it is already why it is here.
             None,
         ) as f64
-            // Popularity nudges, at a tenth of the weight of the rest.
-            + 0.1 * cand.popularity;
+            + pop_nudge(cand.popularity);
 
         let _ = state.db.save_discovery_features(user, &cand.ext_id, bpm, vec.as_deref(), score);
         tokio::time::sleep(GAP).await;
@@ -554,20 +579,35 @@ pub async fn listen_cycle(state: &Arc<AppState>, user: i64) -> bool {
     true
 }
 
+/// The popularity term, inverted.
+///
+/// This used to be `+ 0.1 * popularity` - a fame BONUS, in the one pipeline
+/// whose whole purpose is finding small artists. A candidate with no lyrics
+/// and no BPM scored neutral everywhere plus its fame, so famous unmeasured
+/// tracks floated over obscure measured ones. The nudge now rewards
+/// smallness, at half the old weight so taste still dominates: a perfect
+/// match stays a perfect match, and between two equal matches the smaller
+/// artist wins.
+fn pop_nudge(popularity: f64) -> f64 {
+    0.05 * (1.0 - popularity.clamp(0.0, 1.0))
+}
+
 /// Rescores everything already listened to. Taste moves; a pool scored against
 /// last month's listening would slowly stop being about you.
-///
-/// NOT WIRED UP. Nothing calls this, so the discovery pool keeps whatever
-/// score it was given the day each candidate was found. Kept rather than
-/// deleted because the reasoning above is still right and the work is done -
-/// it wants a caller (the collector's cycle is the obvious one), which is a
-/// behaviour change and not a warning cleanup.
-#[allow(dead_code)]
+/// Called from the collector's cycle, once per listener per pass, so the pool
+/// follows the listener rather than the day each candidate happened to land.
 pub fn rescore(state: &Arc<AppState>, user: i64) {
+    // Pool first, taste second: the pool is a bounded read, taste_for loads
+    // and decodes every track's feature blobs - a listener with nothing to
+    // rescore should not pay for the heavy half.
+    let pool = state.db.all_discoveries(user);
+    if pool.is_empty() {
+        return;
+    }
     let Some(taste) = taste_for(state, user) else { return };
-    for d in state.db.all_discoveries(user) {
+    for d in pool {
         let score = crate::curator::score_parts(&taste, d.lyric_vec.as_deref(), d.bpm, None) as f64
-            + 0.1 * d.popularity;
+            + pop_nudge(d.popularity);
         state.db.set_discovery_score(user, &d.ext_id, score);
     }
 }
@@ -846,7 +886,7 @@ pub async fn related(
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let _caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
     let c = client(15);
-    let Some(id) = deezer_artist_id(&c, &q.artist).await else {
+    let Some(id) = deezer_artist_id(&c, &q.artist, false).await else {
         return Ok(Json(json!({ "artists": [] })));
     };
     let Ok(reply) = c
