@@ -43,11 +43,11 @@ src-tauri/gen/android/**
 src-tauri/gen/android/app/src/main/java/com/mattssoftware/attackfm/generated/
 !src-tauri/gen/android/app/src/main/res/
 !src-tauri/gen/android/app/src/main/res/values/
-!src-tauri/gen/android/app/src/main/res/values/bools.xml
+!src-tauri/gen/android/app/src/main/res/values/**
 !src-tauri/gen/android/app/src/main/res/values-sw600dp/
-!src-tauri/gen/android/app/src/main/res/values-sw600dp/bools.xml
+!src-tauri/gen/android/app/src/main/res/values-sw600dp/**
 !src-tauri/gen/android/app/src/main/res/xml/
-!src-tauri/gen/android/app/src/main/res/xml/automotive_app_desc.xml
+!src-tauri/gen/android/app/src/main/res/xml/**
 
 # Song data never belongs in this repo. The library lives in the OS music
 # folder or on the streaming server; the one time audio appeared here it was
