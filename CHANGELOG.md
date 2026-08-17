@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.116
+
+- Pulling down from the top now has two stops: a short pull reveals the search bar, and holding it further brings up refresh. The short pull leaves the bar standing so you can tap it when you're ready, instead of dropping you straight into a full search page you didn't ask for
+- Pull far enough to refresh and the spinner now stays put while the library re-reads, so a hard pull no longer looks like nothing happened
+
 ## 0.3.115
 
 - Music Date recovers from a stuck song: ten silent seconds and the card re-finds its music from whichever of your servers is actually answering, instead of waiting on one that went dark mid-load

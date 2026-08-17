@@ -48,25 +48,6 @@
   min-block-size: 0;
 }
 
-/* The mid-pull pill: appears while the finger is past the threshold. */
-.summonPull {
-  position: fixed;
-  top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
-  left: 50%;
-  translate: -50% 0;
-  z-index: 59;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.35rem 0.9rem;
-  border-radius: 999px;
-  background: var(--glacier-surface-raised);
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
-  box-shadow: var(--glacier-shadow-3);
-  font-size: var(--glacier-font-size-sm);
-  color: var(--glacier-text-muted);
-  animation: summonDrop 0.18s var(--glacier-ease-out);
-}
 
 /* The one-time teacher: a chip under the header until the pull is used once. */
 .summonHintChip {
@@ -90,3 +71,125 @@
   box-shadow: var(--glacier-shadow-2);
 }
 
+
+/* ── The pull, in two stages ────────────────────────────────────────────────
+ *
+ * A downward drag at the top of a page means one of two things depending on
+ * how far it goes, and both are drawn here from the same live distance
+ * (--pull, set per-frame while a finger is down) so what is on screen is
+ * always exactly where the finger is.
+ *
+ * The deck hangs from the top and is pushed down by the pull, so the bar
+ * appears to be dragged out from behind the header rather than fading in on
+ * top of it - which is the whole difference between "something is under
+ * there" and "something appeared".
+ */
+.pullDeck {
+  position: fixed;
+  inset-inline: 0;
+  top: calc(env(safe-area-inset-top, 0px) + var(--app-header-height, 3.25rem));
+  z-index: 59;
+  display: grid;
+  justify-items: center;
+  pointer-events: none;
+  translate: 0 calc(var(--pull, 0px) - 100%);
+}
+
+/* Standing after the finger lifts: it stops tracking and settles just below
+   the header, where it can be read and tapped. */
+.pullDeck[data-standing] {
+  translate: 0 0;
+  transition: translate var(--glacier-duration-normal) var(--glacier-ease-out);
+}
+
+.pullDeck__search {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  inline-size: min(92vw, 34rem);
+  padding: var(--glacier-space-2) var(--glacier-space-4);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-glass-regular);
+  -webkit-backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
+  backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
+  box-shadow: var(--glacier-shadow-2);
+  color: var(--glacier-text-muted);
+  font: inherit;
+  font-size: var(--glacier-font-size-sm);
+  text-align: start;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.pullDeck__search[data-on] {
+  opacity: 1;
+}
+
+/* An invisible bar must not still be a target. While the refresh runs the bar
+   is faded out but sits under the mark at the same grid cell, so without this
+   a tap on the spinner opens search. */
+.pullDeck__search:not([data-on]) {
+  pointer-events: none;
+}
+
+/* Stage two fades in OVER the bar rather than beside it: they are two answers
+   to one gesture, and showing both as equals would ask the finger to choose
+   where it has already committed. The bar dims as the mark arrives. */
+.pullDeck[data-armed] .pullDeck__search {
+  opacity: 0.25;
+}
+
+.pullDeck__refresh {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-2) var(--glacier-space-4);
+  border-radius: var(--glacier-radius-full);
+  color: var(--glacier-accent-text);
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.pullDeck__refresh[data-on] {
+  opacity: 1;
+}
+
+.pullDeck__refresh[data-spinning] svg {
+  animation: pullSpin 900ms linear infinite;
+}
+
+@keyframes pullSpin {
+  to {
+    rotate: 1turn;
+  }
+}
+
+/* The mark's own word is for the moment of decision and the wait; at rest
+   there is nothing to say. */
+.pullDeck__word {
+  white-space: nowrap;
+}
+
+/* The deck is a touch affordance. A pointer has ⌘K and the header, and a
+   desktop window has no rubber band to spend. */
+@media (pointer: fine) {
+  .pullDeck {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pullDeck[data-standing] {
+    transition: none;
+  }
+
+  .pullDeck__refresh[data-spinning] svg {
+    animation: none;
+  }
+}

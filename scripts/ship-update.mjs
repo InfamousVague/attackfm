@@ -164,6 +164,28 @@ const ssh = (cmd) => {
   die(`remote command failed after 4 attempts: ${cmd}`);
 };
 
+/**
+ * The same retry, for a command whose OUTPUT is the point.
+ *
+ * The readbacks below used to be single-shot, and a connection the box refused
+ * under its ssh rate limit came back with empty stdout - which reads exactly
+ * like "the remote has different bytes". A good publish of 0.3.116 was
+ * reported as "checksums differ — a door does NOT have what was built" while
+ * both doors in fact held the right files. A failed CHECK is not a failed
+ * publish, so this retries before it is allowed to accuse anyone.
+ */
+const sshRead = (cmd) => {
+  for (let i = 0; i < 4; i += 1) {
+    const r = spawnSync('sshpass',
+      ['-e', 'ssh', '-o', 'StrictHostKeyChecking=no', `${user}@${host}`, cmd],
+      { encoding: 'utf8', env: { ...process.env, SSHPASS: e.AFM_DEPLOY_PASS } });
+    const out = String(r.stdout ?? '').trim();
+    if (r.status === 0 && out) return out;
+    if (i < 3) console.log(`    \x1b[33mretrying readback (${i + 1}/3)…\x1b[0m`);
+  }
+  die(`could not read back from the box after 4 attempts: ${cmd}\n    The publish itself may well have landed — check ${'`'}curl -s https://registry.attack.fm/v1/app/bundle${'`'} before re-shipping.`);
+};
+
 step('Uploading');
 ssh(`mkdir -p ${remote} ${legacy}`);
 let uploaded = false;
@@ -194,24 +216,20 @@ ssh(
 );
 
 step('Verifying both doors serve what we just built');
-const check = spawnSync('sshpass',
-  ['-e', 'ssh', '-o', 'StrictHostKeyChecking=no', `${user}@${host}`,
-   `sha256sum ${remote}/app.js ${remote}/app.css ${legacy}/app.js ${legacy}/app.css | awk '{print $1}'`],
-  { encoding: 'utf8', env: { ...process.env, SSHPASS: e.AFM_DEPLOY_PASS } });
-const remoteSums = String(check.stdout).trim().split('\n').map((l) => l.trim());
+const remoteSums = sshRead(
+  `sha256sum ${remote}/app.js ${remote}/app.css ${legacy}/app.js ${legacy}/app.css | awk '{print $1}'`,
+).split('\n').map((l) => l.trim());
 const localSums = files.map((f) => f.sha256);
 const same = localSums.every((s) => remoteSums.filter((r) => r === s).length === 2);
 if (!same) {
   die(`checksums differ — a door does NOT have what was built.\n    local:  ${localSums.join(' ')}\n    remote: ${remoteSums.join(' ')}`);
 }
 
-const state = spawnSync('sshpass',
-  ['-e', 'ssh', '-o', 'StrictHostKeyChecking=no', `${user}@${host}`,
-   // BYTES, not lines: NOTES is written without a trailing newline, so a
-   // one-line changelog reads as zero lines and once failed a good publish.
-   `cat ${remote}/VERSION; echo; cat ${legacy}/VERSION; echo; wc -c < ${remote}/NOTES`],
-  { encoding: 'utf8', env: { ...process.env, SSHPASS: e.AFM_DEPLOY_PASS } });
-const [publishedVersion, legacyVersion, noteBytes] = String(state.stdout).trim().split('\n').map((l) => l.trim());
+// BYTES, not lines: NOTES is written without a trailing newline, so a
+// one-line changelog reads as zero lines and once failed a good publish.
+const [publishedVersion, legacyVersion, noteBytes] = sshRead(
+  `cat ${remote}/VERSION; echo; cat ${legacy}/VERSION; echo; wc -c < ${remote}/NOTES`,
+).split('\n').map((l) => l.trim());
 if (publishedVersion !== version || legacyVersion !== version) {
   die(`published ${publishedVersion || '(nothing)'} / legacy ${legacyVersion || '(nothing)'}, wanted ${version}`);
 }
