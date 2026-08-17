@@ -1,5 +1,5 @@
-import { IconButton } from '@glacier/react';
-import { ChevronLeft, ChevronRight } from '@glacier/icons';
+import { IconButton, Menu, MenuItem } from '@glacier/react';
+import { ChevronLeft, ChevronRight, TableOfContents } from '@glacier/icons';
 import { useEffect, useRef, useState } from 'react';
 import {
   HANDBOOK_CHAPTERS,
@@ -19,10 +19,12 @@ const SLOP = 12;
 const EDGE = 28;
 
 /**
- * The handbook: a paged reader inside Settings. One idea per page, an icon
- * leading each, a chapter-segmented progress bar above and the pager below.
- * Pages turn by button, arrow key, or a sideways swipe on the page itself -
- * the same grammar as the rest of the app, pointed at prose.
+ * The handbook: a full-height reader inside Settings. The page fills the room
+ * between the chapter bar and the pager - no card around it, the pane IS the
+ * page - with the arrows pinned along the bottom where thumbs live. Pages
+ * turn by button, arrow key, or a sideways swipe on the page itself; the
+ * counter between the arrows opens the whole index, so any page is two taps
+ * from any other.
  */
 export function HandbookPane() {
   const pages = HANDBOOK_PAGES;
@@ -37,11 +39,16 @@ export function HandbookPane() {
   // Which way the page slides in - forward pages enter from the right.
   const [dir, setDir] = useState<'fwd' | 'back'>('fwd');
 
+  // The scroller the page lives in, so a turn starts the new page at its top -
+  // arriving halfway down a page you have not read yet reads as broken.
+  const hostRef = useRef<HTMLDivElement | null>(null);
+
   const go = (next: number) => {
     const clamped = Math.max(0, Math.min(pages.length - 1, next));
     if (clamped === index) return;
     setDir(clamped > index ? 'fwd' : 'back');
     setIndex(clamped);
+    hostRef.current?.scrollTo({ top: 0 });
     try {
       localStorage.setItem(PAGE_KEY, String(clamped));
     } catch {
@@ -90,7 +97,7 @@ export function HandbookPane() {
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
-      // No capture just means a drag that leaves the card stops following.
+      // No capture just means a drag that leaves the page stops following.
     }
   };
 
@@ -124,6 +131,10 @@ export function HandbookPane() {
     (c) => index >= c.start && index < c.start + c.count,
   )!;
 
+  // Controlled so picking a page closes the map - a menu that stays open
+  // over the page it just turned to is covering its own answer.
+  const [indexOpen, setIndexOpen] = useState(false);
+
   return (
     <div className="handbook">
       <div className="handbook__progress" role="tablist" aria-label="Chapters">
@@ -150,6 +161,7 @@ export function HandbookPane() {
       </div>
 
       <div
+        ref={hostRef}
         className="handbook__pageHost"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -196,14 +208,49 @@ export function HandbookPane() {
         >
           <ChevronLeft size={18} />
         </IconButton>
-        <button
-          type="button"
-          className="handbook__where"
-          onClick={() => go(0)}
-          title="Back to the contents"
+        {/* The counter is the index: every page of every chapter, one tap
+            away, so the bar's chapter jumps are the shortcut and this is the
+            whole map. */}
+        <Menu
+          aria-label="Handbook index"
+          className="handbookIndex"
+          placement="top"
+          open={indexOpen}
+          onOpenChange={setIndexOpen}
+          trigger={
+            <button type="button" className="handbook__where" title="Open the index">
+              <TableOfContents size={14} aria-hidden="true" />
+              <span>
+                {chapter.title} · {index + 1} / {pages.length}
+              </span>
+            </button>
+          }
         >
-          {chapter.title} · {index + 1} / {pages.length}
-        </button>
+          {HANDBOOK_CHAPTERS.map((c) => (
+            <div key={c.title} className="handbookIndex__chapter">
+              <div className="handbookIndex__head" aria-hidden="true">
+                {c.title}
+              </div>
+              {pages.slice(c.start, c.start + c.count).map((p, i) => (
+                <MenuItem
+                  key={p.id}
+                  icon={<span className="handbookIndex__icon">{p.icon}</span>}
+                  onSelect={() => {
+                    setIndexOpen(false);
+                    go(c.start + i);
+                  }}
+                >
+                  <span
+                    className="handbookIndex__label"
+                    data-here={c.start + i === index || undefined}
+                  >
+                    {p.title}
+                  </span>
+                </MenuItem>
+              ))}
+            </div>
+          ))}
+        </Menu>
         <IconButton
           variant="ghost"
           size="sm"

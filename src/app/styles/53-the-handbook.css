@@ -1,15 +1,20 @@
 /* THE HANDBOOK
-   Settings' own manual: one idea per page, an icon leading each, a
-   chapter-segmented progress bar above and the pager below. The reader
-   column stays narrow on purpose - these are pages, not a wiki - and
-   every colour comes off the theme tokens so the book reads the same
-   in Midnight as it does in Dawn. */
+   Settings' own manual, worn full-height: the chapter bar at the top, the
+   page filling everything between - no card around it, the pane IS the
+   page - and the pager pinned along the bottom where thumbs live. The
+   prose column stays narrow on purpose (these are pages, not a wiki), and
+   every colour comes off the theme tokens so the book reads the same in
+   Midnight as it does in Dawn. */
 
 .handbook {
   display: flex;
   flex-direction: column;
-  gap: var(--glacier-space-3);
-  max-width: 640px;
+  gap: var(--glacier-space-2);
+  /* Fill whatever room the host gives: the phone's settings sheet and the
+     desktop modal pane both size their children, and the pager belongs at
+     the BOTTOM of that room, not wherever the prose happens to end. */
+  height: 100%;
+  min-height: 0;
 }
 
 /* ── The chapter bar ─────────────────────────────────────────────── */
@@ -17,6 +22,7 @@
 .handbook__progress {
   display: flex;
   gap: var(--glacier-space-1);
+  flex: none;
 }
 
 /* Each chapter is a segment sized by its page count; the fill inside is
@@ -53,21 +59,27 @@
 
 /* ── The page ────────────────────────────────────────────────────── */
 
+/* The page's room: it scrolls VERTICALLY inside itself (the pager stays
+   put below), sideways belongs to the page-turn drag. */
 .handbook__pageHost {
-  /* Vertical scrolling stays the browser's; sideways is the pager's. */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
-  overflow: hidden;
-  border-radius: var(--glacier-radius-lg);
 }
 
+/* Bare prose on the pane - no border, no plate. The column caps out at a
+   readable measure and centres in whatever width the host has. */
 .handbook__page {
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-2);
-  padding: var(--glacier-space-4);
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
-  border-radius: var(--glacier-radius-lg);
-  background: var(--glacier-surface-raised);
+  width: 100%;
+  max-width: 620px;
+  margin-inline: auto;
+  padding: var(--glacier-space-3) var(--glacier-space-1) var(--glacier-space-4);
   animation: handbook-turn-fwd 0.22s var(--glacier-ease-out, ease-out);
 }
 .handbook__page[data-dir='back'] {
@@ -226,15 +238,26 @@
   font-size: var(--glacier-font-size-xs);
 }
 
-/* ── The pager ───────────────────────────────────────────────────── */
+/* ── The pager, pinned along the bottom ──────────────────────────── */
 
+/* The hosts already stand off the hardware inset (the settings sheet pads
+   itself by env(safe-area-inset-bottom)), so the env() here reads 0 there
+   and only steps in where a future host reaches the true screen edge -
+   belt and braces, never a double margin worth seeing. */
 .handbook__controls {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--glacier-space-2);
+  padding-top: var(--glacier-space-2);
+  padding-bottom: calc(var(--glacier-space-2) + env(safe-area-inset-bottom, 0px));
+  border-top: var(--glacier-hairline) solid var(--glacier-border-subtle);
 }
 .handbook__where {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
   border: none;
   background: none;
   padding: var(--glacier-space-1) var(--glacier-space-2);
@@ -245,4 +268,40 @@
 }
 .handbook__where:hover {
   color: var(--glacier-text);
+}
+
+/* ── The index menu ──────────────────────────────────────────────── */
+
+/* Twenty-eight rows is a tall menu: cap it and let it scroll inside. */
+.handbookIndex {
+  max-height: min(60vh, 26rem);
+  overflow-y: auto;
+}
+.handbookIndex__head {
+  padding: var(--glacier-space-2) var(--glacier-space-3) var(--glacier-space-1);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--glacier-text-subtle);
+}
+.handbookIndex__chapter + .handbookIndex__chapter .handbookIndex__head {
+  border-top: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  margin-top: var(--glacier-space-1);
+}
+/* The page glyphs arrive sized for the page header; menu rows wear them
+   small. */
+.handbookIndex__icon {
+  display: grid;
+  place-items: center;
+  color: var(--glacier-text-subtle);
+}
+.handbookIndex__icon svg {
+  width: 15px;
+  height: 15px;
+}
+/* The page you are on, marked so the map says "you are here". */
+.handbookIndex__label[data-here] {
+  color: var(--glacier-accent-solid);
+  font-weight: 600;
 }
