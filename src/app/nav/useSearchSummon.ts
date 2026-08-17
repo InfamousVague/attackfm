@@ -34,22 +34,68 @@ import { fireNativeHaptic } from '../core/haptics.ts';
  * re-attach when it mounts after onboarding.
  */
 
-/** Where the search bar starts to show. Past a scroll's slop, under a
- *  deliberate pull. */
-const SEARCH_AT = 34;
-/** Where the pull stops being about search and starts being about refreshing.
- *  Far enough that the first stage is comfortably usable on its own. */
-const REFRESH_AT = 116;
-/** How far the finger may travel before the pull is judged a scroll instead. */
+/*
+ * The thresholds are in FINGER TRAVEL, not in the damped distance the page
+ * moves. That distinction is the whole fix.
+ *
+ * They used to be read off the damped number, where `sqrt(dy) * 11` compresses
+ * everything: search was offered after 10px of travel and refresh armed after
+ * 111px. Ten pixels is the slop - the bar arrived the instant the gesture was
+ * recognised - and 111 is an ordinary pull-to-refresh flick, the one every
+ * other app has trained into the thumb. So the first stage existed for a
+ * hundred pixels of a gesture nobody performs slowly, and people sailed
+ * through it into a refresh they did not ask for.
+ *
+ * Now the hand has to make a decision it can feel:
+ */
+/** Where the pull stops being a scroll. */
 const SLOP = 10;
-/** As far as the page will travel, however hard it is pulled. */
-const CEILING = REFRESH_AT + 28;
+/** Where the bar is offered. Immediately after the gesture is recognised - it
+ *  should be seen EARLY; being missed was never about arriving late. */
+const SEARCH_AT = 18;
+/** Where the bar has fully arrived, sitting exactly where it will settle. */
+const REVEAL_END = 64;
+/** ...and where it stops sitting there. Between these two the page barely
+ *  moves: a detent, so a pull that would otherwise run straight through has
+ *  something to arrive at, and a thumb that keeps going has to mean it. */
+const HOLD_END = 156;
+/** Where refreshing arms. Past the detent and then some - so it is now a
+ *  deliberate act rather than the natural end of any downward flick. */
+const REFRESH_AT = 268;
+/** How far past the detent the gap will open, however hard it is pulled. */
+const CEILING_EXTRA = 84;
+/** How much of the finger's travel the page still spends past the detent.
+ *  Under half, so the gap keeps growing without chasing the hand. */
+const PAST_HOLD = 0.5;
+/** The crawl through the detent. Not zero - a page frozen under a moving
+ *  finger reads as a hang, not as resistance. */
+const THROUGH_HOLD = 0.1;
 
 /** Which answer the gesture is currently offering. */
 export type PullStage = 'idle' | 'search' | 'refresh';
 
-const stageFor = (d: number): PullStage =>
-  d >= REFRESH_AT ? 'refresh' : d >= SEARCH_AT ? 'search' : 'idle';
+const stageFor = (travel: number): PullStage =>
+  travel >= REFRESH_AT ? 'refresh' : travel >= SEARCH_AT ? 'search' : 'idle';
+
+/**
+ * Finger travel to the distance the page moves.
+ *
+ * `settled` is where the bar comes to rest (the measured gap), so the detent
+ * is not an arbitrary plateau - it is the bar arriving at exactly the place it
+ * will stay, and staying there while the finger decides. `already` is for a
+ * pull that starts with the bar standing: there is nothing left to reveal, so
+ * that pull only opens the gap the refresh mark needs.
+ */
+function distanceFor(travel: number, settled: number, already: boolean): number {
+  if (travel <= SLOP) return 0;
+  if (already) {
+    return travel <= HOLD_END ? 0 : Math.min((travel - HOLD_END) * PAST_HOLD, CEILING_EXTRA);
+  }
+  if (travel < REVEAL_END) return (settled * (travel - SLOP)) / (REVEAL_END - SLOP);
+  if (travel < HOLD_END) return settled + (travel - REVEAL_END) * THROUGH_HOLD;
+  const held = settled + (HOLD_END - REVEAL_END) * THROUGH_HOLD;
+  return held + Math.min((travel - HOLD_END) * PAST_HOLD, CEILING_EXTRA);
+}
 
 export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Promise<void> | void) {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -108,7 +154,11 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
     let armed = false;
     let pulling = false;
     let distance = 0;
+    let travel = 0;
+    let settled = 62;
+    let standing = false;
     let lastStage: PullStage = 'idle';
+    let landed = false;
     /*
      * The page a touch landed in.
      *
@@ -133,7 +183,17 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
       armed = !!page && page.scrollTop <= 0;
       pulling = false;
       distance = 0;
+      travel = 0;
       lastStage = 'idle';
+      landed = false;
+      // Read once per gesture rather than per frame: the detent should land
+      // the bar exactly where it will come to rest, and that height is
+      // measured from the bar itself.
+      standing = barOpenRef.current;
+      settled =
+        parseFloat(
+          getComputedStyle(document.documentElement).getPropertyValue('--app-pull-stand'),
+        ) || 62;
       startY = t.clientY;
       startX = t.clientX;
     };
@@ -158,37 +218,37 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
         if (dy > SLOP && dy > dx * 1.5) pulling = true;
         else return;
       }
-      /*
-       * Damped, not linear. A pull that tracks the finger 1:1 hits the refresh
-       * threshold while the hand still thinks it is scrolling; the square root
-       * makes the first centimetre cheap and every one after it dearer, which
-       * is the resistance every rubber-band scroll in the OS already has.
-       */
-      distance = dy <= 0 ? 0 : Math.min(Math.sqrt(dy) * 11, CEILING);
+      travel = dy;
+      distance = distanceFor(dy, settled, standing);
       paint(distance, true);
-      const next = stageFor(distance);
+      /*
+       * The detent, felt - at the moment the bar ARRIVES, not when it first
+       * peeks out. The tick is the whole point of the detent: it is what tells
+       * a thumb already in motion that something has come to rest under it and
+       * this is a place to stop. Fired at REVEAL_END rather than on the stage
+       * change, which happens 46px earlier while the bar is still on its way.
+       */
+      if (!landed && travel >= REVEAL_END) {
+        landed = true;
+        fireNativeHaptic('selection');
+      }
+      const next = stageFor(travel);
       if (next !== lastStage) {
-        /*
-         * The detents, felt. The gesture's premise is that one drag offers two
-         * answers and the finger can see which one it is holding - on a phone
-         * the hand knows that before the eye does, so each crossing gets the
-         * tick the OS would give it. Weighted: reaching search is a selection,
-         * arming a refresh is the heavier commitment.
-         */
-        if (next === 'search') fireNativeHaptic('selection');
-        else if (next === 'refresh') fireNativeHaptic('medium');
+        // Arming a refresh is the heavier commitment, and says so.
+        if (next === 'refresh') fireNativeHaptic('medium');
         lastStage = next;
         setStage(next);
       }
     };
     const onEnd = () => {
-      const settled = distance;
+      const reached = travel;
       armed = false;
       pulling = false;
       distance = 0;
+      travel = 0;
       paint(0, false);
       setStage('idle');
-      if (settled >= REFRESH_AT) {
+      if (reached >= REFRESH_AT) {
         // Past the far mark: refresh, and hold the gap open while it runs so
         // the gesture visibly did something.
         setRefreshing(true);
@@ -204,7 +264,7 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
             setRefreshing(false);
           }
         })();
-      } else if (settled >= SEARCH_AT) {
+      } else if (reached >= SEARCH_AT) {
         // Stage one: leave the bar standing. It is a door, not a flash - the
         // whole point is that it is there to be tapped after the finger lifts.
         setBarOpen(true);
