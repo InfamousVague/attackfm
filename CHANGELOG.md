@@ -7,6 +7,12 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.138
+
+- The pull-down is all about search now. Pull from the top and the search page itself fades in — field, recents, your genre cards — over the page you're leaving as it blurs; let go past the commit point and you're in, let go early and it all springs back. The refresh stage is gone
+- Search no longer throws the keyboard at you when it opens. The page arrives whole, and the keyboard waits for a tap on the field
+- Swipe the open search page down to put it away — it leaves as a card with the page resolving behind it, exactly like Now Playing
+
 ## 0.3.137
 
 - The page behind the Now Playing screen stays blurry for much more of the pull — it only fully sharpens once you've dragged about a third of the screen, instead of snapping clear just past the point of no return

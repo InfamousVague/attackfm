@@ -5,8 +5,8 @@
 // player/PlayerHost, car bridge → player/CarPlayBridge. The playback state
 // (current/queue) and the queue verbs stay HERE - they close over live state
 // through refs and everything else threads off them.
-import { IconButton, SearchField, TitleBar } from '@glacier/react';
-import { ChevronLeft, ChevronRight, RefreshCw, Search, Settings, X } from '@glacier/icons';
+import { IconButton, TitleBar } from '@glacier/react';
+import { ChevronLeft, ChevronRight, Search, Settings, X } from '@glacier/icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NowPlayingBackdrop } from './player/NowPlayingBackdrop.tsx';
 import { PluginHookScope } from '../plugins/runtime.tsx';
@@ -32,6 +32,7 @@ import { installTapHaptics, useHapticsPref } from './core/haptics.ts';
 import { installOverlayGuard } from './core/overlayGuard.ts';
 import { DownloadsChip } from './downloads/DownloadsChip.tsx';
 import { CarPlayBridge } from './player/CarPlayBridge.tsx';
+import { installSheetDismiss } from './player/playerDismiss.ts';
 import { ConnectPlayRouter, PlayerHost } from './player/PlayerHost.tsx';
 import { IndexingStatus } from './nav/IndexingStatus.tsx';
 import { PrimaryNav } from './nav/PrimaryNav.tsx';
@@ -105,27 +106,7 @@ export function App() {
   // run - the gesture hooks have to re-attach when it finally mounts, which
   // only a state-carried node can tell them.
   const [swipeEl, setSwipeEl] = useState<HTMLElement | null>(null);
-  /*
-   * The settled gap, taken from the bar itself.
-   *
-   * It used to be a hardcoded 3.1rem, which is a guess about a component this
-   * file does not own: the kit is free to change SearchField's height, a
-   * larger system font grows it, and the moment the guess is short the page
-   * does not move far enough and the bar sits on top of the music - exactly
-   * the thing this whole change was meant to stop. Measured, it cannot be
-   * wrong.
-   */
-  const barRef = useCallback((node: HTMLElement | null) => {
-    if (!node) return;
-    const write = () => {
-      const h = node.getBoundingClientRect().height;
-      if (h > 0) document.documentElement.style.setProperty('--app-pull-stand', `${h + 10}px`);
-    };
-    write();
-    const ro = new ResizeObserver(write);
-    ro.observe(node);
-    return () => ro.disconnect();
-  }, []);
+
   const swipeRef = useCallback((node: HTMLElement | null) => setSwipeEl(node), []);
   /*
    * What a full pull refreshes. App renders the LibraryProvider, so it cannot
@@ -137,14 +118,11 @@ export function App() {
   // Search, summoned: pull down on any page (or ⌘K) - state, gesture and
   // chord live in useSearchSummon.
   const {
-    stage,
-    barOpen,
-    setBarOpen,
-    refreshing,
+    pulling,
     summonHint,
     searchOpen,
     setSearchOpen,
-  } = useSearchSummon(swipeEl, () => libraryRefresh.current());
+  } = useSearchSummon(swipeEl);
   /*
    * A Spotify link opens the search overlay, where the field claims it.
    *
@@ -153,6 +131,20 @@ export function App() {
    * field that knows what it is.
    */
   useEffect(() => onSpotifyLink(() => setSearchOpen(true)), [setSearchOpen]);
+
+  /*
+   * The open search page leaves the way the Now Playing sheet does: pulled
+   * down as a card, springing back short of the mark, the page behind
+   * resolving from a blur. One gesture module drives both, so the two sheets
+   * can never drift apart in feel.
+   */
+  const summonDismissRef = useCallback(
+    (node: HTMLElement | null) => {
+      if (!node) return;
+      return installSheetDismiss(node, { onDismiss: () => setSearchOpen(false) });
+    },
+    [setSearchOpen],
+  );
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Which pane Settings should open ON, when a surface aims it - the network
@@ -637,73 +629,7 @@ export function App() {
                 results, recents, paste-a-link import - inside a plugin hook
                 scope because a pasted link is a plugin's action. Navigating
                 OUT of a result closes the overlay; playing keeps it up. */}
-            {/*
-                The pull, drawn.
 
-                The deck is the GAP the page leaves as it slides down - it is
-                sized by the same --app-pull the page is moved by, so the bar
-                is uncovered rather than laid over anything. It stays mounted
-                whenever there is something to uncover: a live gesture, a
-                standing bar, or a refresh in flight.
-
-                Stage one: the search bar is revealed and left standing when
-                the finger lifts - a door to be tapped, not a flash. Stage two:
-                the refresh mark takes the gap over, and takes the release.
-             */}
-            {!DESKTOP && (stage !== 'idle' || barOpen || refreshing) && (
-              <div
-                className="pullDeck"
-                data-stage={refreshing ? 'refresh' : stage}
-                data-spinning={refreshing || undefined}
-              >
-                {/* The kit's own SearchField, not a button dressed as one:
-                    this is the same control the search page itself wears, so
-                    it carries the kit's height, radius, focus ring and glass.
-                    It is inert here - the field never takes a keystroke, the
-                    wrapper takes the tap and hands the whole gesture to the
-                    search page, where a real field is waiting focused. */}
-                <div
-                  ref={barRef}
-                  className="pullDeck__search"
-                  role="button"
-                  tabIndex={0}
-                  aria-label="Search your library"
-                  onClick={() => {
-                    setBarOpen(false);
-                    setSearchOpen(true);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      setBarOpen(false);
-                      setSearchOpen(true);
-                    }
-                  }}
-                >
-                  {/* No size prop and the same class as the search page's
-                      own field: this is a preview of where the tap is going,
-                      so it should be the same object at the same size, not a
-                      larger cousin of it. */}
-                  <SearchField
-                    className="pageSearch"
-                    placeholder="Search your library"
-                    tabIndex={-1}
-                    aria-hidden="true"
-                    readOnly
-                  />
-                </div>
-                <span
-                  className="pullDeck__refresh"
-                  aria-hidden={!refreshing}
-                  role={refreshing ? 'status' : undefined}
-                >
-                  <RefreshCw size={16} />
-                  <span className="pullDeck__word">
-                    {refreshing ? 'Refreshing…' : 'Release to refresh'}
-                  </span>
-                </span>
-              </div>
-            )}
             {/* What the pull is opening onto.
 
                 The gap stops being a hole with a bar in it and becomes the top
@@ -716,8 +642,8 @@ export function App() {
                 is the mount, and paying it on every frame of a drag would cost
                 the drag. `!searchOpen` keeps it exclusive with the overlay, so
                 there is only ever one SearchPage alive. */}
-            {!DESKTOP && stage !== 'idle' && <div className="pullBehind" aria-hidden="true" />}
-            {!DESKTOP && !searchOpen && (stage !== 'idle' || barOpen) && (
+            {!DESKTOP && pulling && <div className="pullBehind" aria-hidden="true" />}
+            {!DESKTOP && pulling && !searchOpen && (
               <div className="pullPreview" aria-hidden="true">
                 <PluginHookScope>
                   <SearchPage
@@ -735,11 +661,21 @@ export function App() {
                 className="summonHintChip"
                 onClick={() => setSearchOpen(true)}
               >
-                <Search size={13} /> Pull down for search · further to refresh
+                <Search size={13} /> Pull down for search
               </button>
             )}
             {searchOpen && (
-              <div className="searchSummon" role="dialog" aria-label="Search">
+              <>
+                {/* Same behind-layer the Now Playing sheet uses - the dismiss
+                    gesture publishes --np-drag/data-np-dragging globally, so
+                    the identical class gives the identical resolving blur. */}
+                <div className="npScreen__behind" aria-hidden="true" />
+              <div
+                ref={summonDismissRef}
+                className="searchSummon"
+                role="dialog"
+                aria-label="Search"
+              >
                 <div className="searchSummon__bar">
                   <span className="searchSummon__grab" aria-hidden="true" />
                   <IconButton
@@ -770,6 +706,7 @@ export function App() {
                   />
                 </PluginHookScope>
               </div>
+              </>
             )}
             <SettingsModal
               open={settingsOpen}

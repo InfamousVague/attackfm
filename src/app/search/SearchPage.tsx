@@ -745,7 +745,13 @@ export function SearchPage({
         aria-controls="searchResults"
         aria-activedescendant={cursor >= 0 ? `searchHit-${cursor}` : undefined}
         autoComplete="off"
-        autoFocus
+        /* Only where a keyboard is already on the desk. On a phone, focusing
+           the field on open throws the software keyboard over half the page
+           you just revealed - the genre cards, the recents - before you have
+           said you want to type. The field is one tap away when you do. */
+        autoFocus={
+          typeof matchMedia !== 'undefined' && matchMedia('(pointer: fine)').matches
+        }
       />
 
       {searching && !claimed && available.some((f) => f.group === 'kind') && (

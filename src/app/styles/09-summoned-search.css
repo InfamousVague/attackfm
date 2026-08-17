@@ -72,34 +72,22 @@
 }
 
 
-/* ── The pull, in two stages ────────────────────────────────────────────────
+/* ── The pull, one stage ───────────────────────────────────────────────────
  *
- * The page moves. A downward drag at the top slides the whole content column
- * down and the deck is simply what was underneath it - not a panel floating
- * over the content, which is the difference between "something was under
- * there" and "something appeared on top".
- *
- * One number does it: --app-pull, written to the document element once per
- * frame while a finger is down. The page reads it as a translate, the deck
- * reads it as its own height, so the seam between them cannot drift.
+ * Pull down at the top of a page and the search page fades in over the
+ * blurring content. Two live numbers, both written per-frame by the gesture:
+ * --app-pull (the damped slide of the page being left) and --app-travel (raw
+ * finger travel, which the fade and the blur are keyed to so they spend
+ * themselves across the whole pull).
  */
 :root {
   --app-pull: 0px;
-  /* The gap the bar settles into once the finger lifts. Measured from the bar
-     itself at runtime (App writes it); this is only the first-frame fallback,
-     and is deliberately generous - too tall shows empty space for one frame,
-     too short puts the bar on top of the music. */
-  --app-pull-stand: 4rem;
 }
 
-/* The page, pushed down by exactly the gap. `translate` and not `transform`
-   deliberately - the edge-swipe back gesture owns `transform` on this same
-   element, and the two compose instead of clobbering each other.
- *
- * Only WHILE it is moving, though. Any translate at all - `0px` included -
- * makes this the containing block for every `position: fixed` descendant a
- * page might hold, so between gestures it goes back to `none` and the column
- * is an ordinary box again. */
+/* The page, sliding down a little under the finger - feedback, not the show.
+   `translate` not `transform` (the edge-swipe owns transform), and only while
+   moving: any persistent translate would become the containing block for
+   every fixed descendant. */
 .appContent {
   transition: translate var(--glacier-duration-normal) var(--glacier-ease-out);
 }
@@ -108,218 +96,60 @@
   translate: 0 var(--app-pull, 0px);
 }
 
-/* Under a finger there is no easing: the page is exactly where the hand is,
-   or the whole app reads as lagging. */
 :root[data-pulling] .appContent {
   transition: none;
 }
 
-/*
- * Standing, the gap is held by padding rather than by the translate.
- *
- * A translate would push the last rows of the page off the bottom of the
- * screen for as long as the bar stood - unreachable content, which is the one
- * bug this app keeps having to fix. Padding makes the page SHORTER instead,
- * so its own scroller still reaches its own end.
- */
-:root[data-pull-standing] .appContent {
-  padding-block-start: var(--app-pull-stand);
-  transition:
-    translate var(--glacier-duration-normal) var(--glacier-ease-out),
-    padding-block-start var(--glacier-duration-normal) var(--glacier-ease-out);
-}
-
-/*
- * The deck IS the gap: it occupies exactly the space the page vacated, hangs
- * from under the header, and clips whatever has not been uncovered yet. At
- * rest it is zero-high and there is nothing to see.
- */
-.pullDeck {
-  position: fixed;
-  inset-inline: 0;
-  /* Measured from the content column itself (the hook writes it), so the deck
-     and the gap cannot disagree about where the page starts. The calc is only
-     the first-frame fallback, before anything has been measured. */
-  top: var(--app-content-top, calc(env(safe-area-inset-top, 0px) + var(--app-header-height, 3.25rem)));
-  z-index: 2;
-  block-size: var(--app-pull, 0px);
-  overflow: hidden;
-  display: grid;
-  justify-items: center;
-  /* Centred in whatever space the page has opened up. Both properties are
-     needed - `align-items` places the bar inside its row, `align-content`
-     places that row inside the gap - and missing the second is what once let
-     the row sit at the top with the bar hanging out of the clip. */
-  align-items: center;
-  align-content: center;
-  pointer-events: none;
-  transition: block-size var(--glacier-duration-normal) var(--glacier-ease-out);
-}
-
-:root[data-pulling] .pullDeck {
-  transition: none;
-}
-
-/* Standing, and during a pull that starts from standing, the gap is the bar's
-   settled height plus whatever the finger adds. */
-:root[data-pull-standing] .pullDeck {
-  block-size: calc(var(--app-pull-stand) + var(--app-pull, 0px));
-}
-
-/* The wrapper is only a tap target and a width: everything you can see -
-   height, radius, border, fill, focus ring - is the kit's SearchField. The
-   old rule here hand-drew a pill at 2.5rem with its own border and glass,
-   which is how it ended up looking like a control this app invented and
-   sitting skinnier than every other field in the product. */
-.pullDeck__search {
-  pointer-events: auto;
-  /*
-   * The SAME cell as the refresh mark, explicitly.
-   *
-   * The mark asks for `grid-area: 1 / 1`; auto-placement will not put another
-   * item in a cell that is already claimed, so the bar was being pushed into
-   * an implicit second ROW. Two rows of 40 and 52 centred in a 62px gap
-   * overflow it, and the bar came to rest 20px below where it belonged -
-   * on top of the music. `align-content: end` had hidden this for as long as
-   * the bar happened to be the last row, which is not a property worth
-   * relying on. They are two answers to one gesture; they belong in one cell.
-   */
-  grid-area: 1 / 1;
-  display: block;
-  inline-size: min(92vw, 34rem);
-  cursor: pointer;
-  border-radius: var(--glacier-radius-full);
-  transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
-}
-
-/* Inert: the field is a picture of a field. Taps belong to the wrapper, which
-   hands the whole thing to the search page and its real, focused input.
-   The child selector is deliberate - the kit ships CSS-module class names
-   (`_wrap_34d6c_1`), so there is no stable class here to name. */
-.pullDeck__search > * {
-  pointer-events: none;
-}
-
-.pullDeck__search input {
-  cursor: pointer;
-}
-
-/* Stage two takes the gap over: they are two answers to one gesture, and
-   showing both as equals would ask the finger to choose where it has already
-   committed. */
-.pullDeck[data-stage='refresh'] .pullDeck__search {
-  opacity: 0;
-  /* An invisible bar must not still be a target - it shares the cell with the
-     mark, so without this a tap on the spinner opens search. */
-  pointer-events: none;
-}
-
-.pullDeck__refresh {
-  grid-area: 1 / 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--glacier-space-2);
-  block-size: 2.5rem;
-  color: var(--glacier-accent-text);
-  font-size: var(--glacier-font-size-sm);
-  font-weight: 600;
-  opacity: 0;
-  transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
-}
-
-.pullDeck[data-stage='refresh'] .pullDeck__refresh,
-.pullDeck[data-spinning] .pullDeck__refresh {
-  opacity: 1;
-}
-
-.pullDeck[data-spinning] .pullDeck__refresh svg {
-  animation: pullSpin 900ms linear infinite;
-}
-
-@keyframes pullSpin {
-  to {
-    rotate: 1turn;
-  }
-}
-
-/* The mark's own word is for the moment of decision and the wait. */
-.pullDeck__word {
-  white-space: nowrap;
-}
-
-/*
- * The page the pull is opening onto, clipped to what has been uncovered.
- *
- * Anchored under the bar and grown from there, so the deck's own layout is
- * left exactly as it is - the bar stays centred in its gap, and this fills
- * whatever is left below it. At rest and through the first stage there is
- * nothing left below it, so nothing shows; keep pulling and the search page
- * comes up out of the seam.
- *
- * `pointer-events: none` throughout: this is scenery until the pull is
- * released and the real overlay takes over. A half-revealed row that could be
- * tapped would be a target that moves under the finger holding it.
- */
+/* The search page arriving: the real SearchPage, full-bleed under the header,
+   fading in with finger travel. Inert until the release actually opens it -
+   a half-revealed row that could be tapped is a target moving under the
+   finger holding it. */
 .pullPreview {
   position: fixed;
   inset-inline: 0;
-  top: calc(var(--app-content-top, 0px) + var(--app-pull-stand, 3.4rem));
-  block-size: max(0px, calc(var(--app-pull, 0px) - var(--app-pull-stand, 3.4rem)));
-  z-index: 1;
+  top: var(--app-content-top, 0px);
+  bottom: 0;
+  z-index: 2;
   overflow: hidden;
   pointer-events: none;
-  /* Rises with the reveal rather than being simply unveiled - the difference
-     between a page arriving and a mask lifting off one that was already
-     there. */
-  opacity: clamp(0, calc(var(--app-pull, 0px) / var(--app-pull-stand, 3.4rem) - 1), 1);
+  opacity: clamp(0, calc((var(--app-travel, 0px) - 30px) / 170px), 1);
 }
 
-:root[data-pull-standing] .pullPreview {
-  top: calc(var(--app-content-top, 0px) + var(--app-pull-stand, 3.4rem) + var(--app-pull, 0px));
-}
-
-/*
- * And the page being left behind, blurred while the pull is live.
- *
- * The mirror of the Now Playing sheet's: hardest at the first millimetre and
- * resolving as the gesture commits. Here it runs the other way round, because
- * the thing being uncovered is what you are going TO - so the page underneath
- * softens as the search page arrives over it.
- */
+/* The page being left, softening as the search page arrives over it. Keyed to
+   travel, not the damped slide, so the blur builds across the whole gesture:
+   nothing at rest, full depth around the commit point. */
 .pullBehind {
   display: none;
   position: fixed;
   inset: 0;
-  z-index: 0;
+  z-index: 1;
   pointer-events: none;
 }
 
 :root[data-pulling] .pullBehind {
   display: block;
-  -webkit-backdrop-filter: blur(min(18px, var(--app-pull, 0px) * 0.16));
-  backdrop-filter: blur(min(18px, var(--app-pull, 0px) * 0.16));
+  -webkit-backdrop-filter: blur(min(16px, var(--app-travel, 0px) * 0.08));
+  backdrop-filter: blur(min(16px, var(--app-travel, 0px) * 0.08));
 }
 
-/* The deck is a touch affordance. A pointer has the header and Cmd-K, and a
-   desktop window has no rubber band to spend. */
-@media (pointer: fine) {
-  .pullDeck {
-    display: none;
-  }
+/* The open search page leaves the way the Now Playing sheet does: dragged
+   down as a card. The gesture module writes --np-drag on the element and
+   data-dragging while a finger is down; short of the mark the transition
+   springs it home. */
+.searchSummon {
+  translate: 0 var(--np-drag, 0px);
+  transition: translate 0.24s var(--glacier-ease-out);
+}
 
-  .appContent {
-    translate: none;
-  }
+.searchSummon[data-dragging] {
+  transition: none;
+  border-radius: var(--glacier-radius-xl, 1.25rem);
+  overflow: hidden;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .appContent,
-  .pullDeck {
+  .searchSummon {
     transition: none;
-  }
-
-  .pullDeck[data-spinning] .pullDeck__refresh svg {
-    animation: none;
   }
 }
