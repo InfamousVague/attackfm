@@ -7,13 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
-## 0.3.134
-
-- Every Spotify link opened in AttackFM now carries an "Open in Spotify" action, so you can always get across to Spotify — even if you picked AttackFM with "Always" and Android stopped asking
-
 ## 0.3.133
 
 - Spotify links can open in AttackFM. Your phone offers the choice, and the link lands in search already claimed — the record, its art, and Add
+- Every Spotify link opened in AttackFM carries an "Open in Spotify" action too, so you can always get across to Spotify — even if you picked AttackFM with "Always" and Android stopped asking
 - Needs the 0.3.133 APK: link handling is native, so an over-the-air update cannot carry it
 
 ## 0.3.132
