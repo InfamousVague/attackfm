@@ -7,6 +7,12 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.111
+
+- When your home server is unreachable, covers now come from whichever of your servers holds the song — the hot mirror steps in the way it already does for playback
+- Liked songs remember their last answer on the device: a dark server shows yesterday's hearts instead of an empty page, refreshed the moment it's back
+- (Your home server picks up the mirror-art trick after its next update; the attack.fm mirror speaks it already)
+
 ## 0.3.110
 
 - Fixed the launch that never finished: the app could open to skeletons forever (green dot and all) after a network hop or a cold start behind the lock screen — every request now has a deadline, the library cache can't wedge the first sync, and a stuck sync strip un-sticks itself
