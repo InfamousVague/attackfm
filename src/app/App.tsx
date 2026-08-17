@@ -352,6 +352,10 @@ export function App() {
       playNext={playNext}
       addToQueue={addToQueue}
     >
+      {/* Fills libraryRefresh with the real rescan. Without it mounted the
+          ref keeps its inert initial value, and a pull-to-refresh awaits a
+          function that does nothing - which is exactly what it was doing. */}
+      <RefreshBridge into={libraryRefresh} />
             {/* Every bottom clearance in the app is spent from
                 --app-player-height, and app.css collapses that one variable to
                 0 when no strip is mounted, which gives the lists their rows

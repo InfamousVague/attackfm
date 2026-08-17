@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSystemBack } from './systemBack.ts';
+import { fireNativeHaptic } from '../core/haptics.ts';
 
 /**
  * The pull from the top, in two stages - and it moves the PAGE.
@@ -59,6 +60,8 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
   const [barOpen, setBarOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [stage, setStage] = useState<PullStage>('idle');
+  const barOpenRef = useRef(barOpen);
+  barOpenRef.current = barOpen;
   const refreshRef = useRef(onRefresh);
   refreshRef.current = onRefresh;
 
@@ -105,6 +108,7 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
     let armed = false;
     let pulling = false;
     let distance = 0;
+    let lastStage: PullStage = 'idle';
     /*
      * The page a touch landed in.
      *
@@ -129,6 +133,7 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
       armed = !!page && page.scrollTop <= 0;
       pulling = false;
       distance = 0;
+      lastStage = 'idle';
       startY = t.clientY;
       startX = t.clientX;
     };
@@ -139,6 +144,17 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
       const dy = t.clientY - startY;
       const dx = Math.abs(t.clientX - startX);
       if (!pulling) {
+        /*
+         * The way back. A standing bar is dismissed by pushing it up again -
+         * the same gesture that revealed it, run backwards - so it never
+         * becomes a thing you have to go and find the way out of.
+         */
+        if (barOpenRef.current && dy < -SLOP && Math.abs(dy) > dx * 1.5) {
+          fireNativeHaptic('selection');
+          setBarOpen(false);
+          armed = false;
+          return;
+        }
         if (dy > SLOP && dy > dx * 1.5) pulling = true;
         else return;
       }
@@ -150,10 +166,20 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
        */
       distance = dy <= 0 ? 0 : Math.min(Math.sqrt(dy) * 11, CEILING);
       paint(distance, true);
-      setStage((s) => {
-        const next = stageFor(distance);
-        return s === next ? s : next;
-      });
+      const next = stageFor(distance);
+      if (next !== lastStage) {
+        /*
+         * The detents, felt. The gesture's premise is that one drag offers two
+         * answers and the finger can see which one it is holding - on a phone
+         * the hand knows that before the eye does, so each crossing gets the
+         * tick the OS would give it. Weighted: reaching search is a selection,
+         * arming a refresh is the heavier commitment.
+         */
+        if (next === 'search') fireNativeHaptic('selection');
+        else if (next === 'refresh') fireNativeHaptic('medium');
+        lastStage = next;
+        setStage(next);
+      }
     };
     const onEnd = () => {
       const settled = distance;
@@ -169,6 +195,11 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
         void (async () => {
           try {
             await refreshRef.current?.();
+            // The library is back. `success` is the one notification kind that
+            // means "the thing you asked for happened", which is all this is.
+            fireNativeHaptic('success');
+          } catch {
+            fireNativeHaptic('error');
           } finally {
             setRefreshing(false);
           }
@@ -179,6 +210,18 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
         setBarOpen(true);
       }
     };
+    /*
+     * And scrolling closes it. The bar sits above the page; the moment the
+     * page moves out from under it the bar describes somewhere you no longer
+     * are. Capture, because scroll does not bubble - the scrollers are the
+     * pages inside, not the host.
+     */
+    const onScroll = (e: Event) => {
+      if (!barOpenRef.current) return;
+      const t = e.target;
+      if (t instanceof Element && t.scrollTop > 2) setBarOpen(false);
+    };
+    host.addEventListener('scroll', onScroll, { capture: true, passive: true });
     host.addEventListener('touchstart', onStart, { passive: true });
     host.addEventListener('touchmove', onMove, { passive: true });
     host.addEventListener('touchend', onEnd, { passive: true });
@@ -188,6 +231,7 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
       host.removeEventListener('touchmove', onMove);
       host.removeEventListener('touchend', onEnd);
       host.removeEventListener('touchcancel', onEnd);
+      host.removeEventListener('scroll', onScroll, { capture: true });
       window.clearTimeout(settleTimer.current);
       document.documentElement.removeAttribute('data-pulling');
       document.documentElement.removeAttribute('data-pull-moving');
