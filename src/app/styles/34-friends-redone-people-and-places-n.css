@@ -1,0 +1,218 @@
+/* ---- Friends, redone: people and places, not rows ----------------------- */
+
+/* A person's mark: gradient from their own handle, initial on top. Sizes are
+   the three jobs it does - chip, card, and the profile strip. */
+.friendAvatar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: rgb(255 255 255 / 0.92);
+  font-weight: 700;
+  user-select: none;
+}
+
+.friendAvatar--sm {
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  font-size: 0.7rem;
+}
+
+.friendAvatar--md {
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  font-size: 1rem;
+}
+
+.friendAvatar--lg {
+  inline-size: 3.5rem;
+  block-size: 3.5rem;
+  font-size: 1.4rem;
+}
+
+/* Modal bodies: one calm column, whatever the flow. */
+.friendsModal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+/* The migration aside sits below a hairline so it reads as a footnote to the
+   invite, not a second invite. */
+.friendsModal__aside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding-block-start: var(--glacier-space-3);
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border);
+  align-items: flex-start;
+}
+
+/* The empty page's inline add form: centered with the art it follows. */
+.friendsEmptyAdd {
+  inline-size: min(100%, 22rem);
+  margin-inline: auto;
+}
+
+/* An ask is a decision, so it gets a card with the accent on its edge - the
+   one place on the page allowed to bid for attention. */
+.requestCards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+}
+
+.requestCard {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-accent-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-accent-soft);
+  /* Never wider than the page: a long handle gives way (ellipsis below), the
+     Accept and decline never leave the screen - the card exists for exactly
+     those two controls. */
+  max-inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.requestCard__handle {
+  font-weight: 600;
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.requestCard__actions {
+  flex: none;
+}
+
+.requestCard__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}
+
+/* The graph itself: a grid of people. Cards, coloured by their owners, with
+   the remove tucked into the corner where it waits without being the point. */
+.friendGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: var(--glacier-space-3);
+}
+
+.friendCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-4) var(--glacier-space-3) var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+  text-align: center;
+  /* The artist photo is clipped to the card's own corners. */
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* Whoever they played most this week, behind them.
+ *
+ * Held well back on purpose: this is a card about a PERSON, and a photograph
+ * at full strength would make it a card about a band with a name written over
+ * it. Dimmed, desaturated a little and faded out downward, it reads as colour
+ * and texture behind the handle - and the text above keeps its contrast
+ * without needing a scrim of its own. */
+.friendCard__backdrop {
+  position: absolute;
+  inset: 0;
+  object-fit: cover;
+  z-index: -1;
+  opacity: 0.28;
+  filter: saturate(0.85);
+  -webkit-mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.95), transparent 78%);
+  mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.95), transparent 78%);
+  pointer-events: none;
+}
+
+/* A photograph carries its own light, so the card no longer needs the
+   surface behind it to say "card". */
+.friendCard:has(.friendCard__backdrop) {
+  background: var(--glacier-surface-raised);
+}
+
+/* A green ring on the mark while they are around - presence worn where the
+   eye already is, not another line of text. */
+.friendCard[data-online] .friendCard__face {
+  box-shadow:
+    0 0 0 2px var(--glacier-bg),
+    0 0 0 4px oklch(0.72 0.17 150);
+}
+
+.friendCard__handle {
+  font-weight: 650;
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friendCard__meta {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The shared listening line: slightly brighter than the meta above it, so a
+   friend who shares reads as playing, not as more bookkeeping. */
+.friendCard__glance {
+  color: var(--glacier-text);
+  font-size: var(--glacier-font-size-xs);
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* An ask still in the air: the same card, worn as a ghost - dashed edge, no
+   remove, waiting to become solid the moment they say yes. */
+.friendCard--waiting {
+  border-style: dashed;
+  background: transparent;
+}
+
+.friendCard--waiting .friendCard__face {
+  opacity: 0.55;
+}
+
+.friendCard--waiting .friendCard__handle {
+  color: var(--glacier-text-muted);
+}
+
+.friendCard__remove {
+  position: absolute;
+  inset-block-start: var(--glacier-space-1);
+  inset-inline-end: var(--glacier-space-1);
+  opacity: 0;
+  transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.friendCard:hover .friendCard__remove,
+.friendCard__remove:focus-visible {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .friendCard__remove {
+    opacity: 0.6;
+  }
+}
+

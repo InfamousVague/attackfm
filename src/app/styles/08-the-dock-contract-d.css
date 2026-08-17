@@ -1,0 +1,114 @@
+/* The back and close targets: round, thumb-sized, ghosted until pressed. */
+.settingsScreen__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  border: none;
+  border-radius: var(--glacier-radius-full);
+  background: transparent;
+  color: var(--glacier-text);
+  cursor: pointer;
+}
+
+.settingsScreen__icon:active {
+  background: var(--glacier-surface-hover, rgba(128, 128, 128, 0.16));
+}
+
+.settingsScreen__title {
+  flex: 1;
+  min-inline-size: 0;
+  font-size: var(--glacier-font-size-lg);
+  font-weight: 650;
+  text-align: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Balances the single icon on the other end so the title stays centred. */
+.settingsScreen__headSpacer {
+  inline-size: 2.5rem;
+  flex: none;
+}
+
+/* The section list - the "sidebar", stacked as full-width rows on touch. */
+.settingsScreen__list {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  -webkit-overflow-scrolling: touch;
+}
+
+/* The hunt-killers at the top of the list: the field, then the recent chips. */
+.settingsScreen__search {
+  flex: none;
+  margin-block-end: var(--glacier-space-2);
+}
+
+.settingsScreen__recents {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+  margin-block-end: var(--glacier-space-2);
+}
+
+.settingsScreen__recentChip {
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 600;
+  color: var(--glacier-accent-text);
+  background: color-mix(in oklab, var(--glacier-accent-solid) 14%, transparent);
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+}
+
+.settingsScreen__none {
+  padding: var(--glacier-space-3) var(--glacier-space-2);
+}
+
+/* --- the network dot ------------------------------------------------------- */
+/* One light in the header for "where is my music": green close, amber far or
+   laggy, grey unreachable. The popover names the host and offers the one
+   door into the network settings. */
+.netDot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2rem;
+  block-size: 2rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 50%;
+}
+
+.netDot__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-2);
+  min-inline-size: 13rem;
+}
+
+.netDot__row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.netDot__host {
+  font-weight: 650;
+  font-size: var(--glacier-font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+

@@ -1,0 +1,103 @@
+/* --- the curator settings pane ------------------------------------------- */
+
+.curatorLedger {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  margin-block: var(--glacier-space-2);
+}
+
+.curatorLedger__rail {
+  block-size: 0.5rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface-sunken);
+  overflow: hidden;
+}
+
+.curatorLedger__fill {
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--glacier-accent-solid);
+  transition: inline-size 0.4s var(--glacier-ease-out);
+}
+
+/* Full is a state worth a colour change: the machine has stopped. */
+.curatorLedger__fill[data-full] {
+  background: var(--glacier-danger-solid, #b4423a);
+}
+
+.curatorLedger__label {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.curatorWarn {
+  color: var(--glacier-danger-text, #e08a82);
+}
+
+.curatorPulls {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.curatorPull {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-1) 0;
+}
+
+.curatorPull__glyph {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text-subtle);
+}
+
+.curatorPull[data-state='promoted'] .curatorPull__glyph {
+  color: var(--glacier-success-text, #7fd8b0);
+}
+
+.curatorPull[data-state='failed'] .curatorPull__glyph {
+  color: var(--glacier-danger-text, #e08a82);
+}
+
+.curatorPull__text {
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.curatorPull__title {
+  font-size: var(--glacier-font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The model's one line about WHY - the part that makes an autonomous pull
+   feel chosen rather than random. */
+.curatorPull__reason {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.curatorPull__when {
+  margin-inline-start: auto;
+  flex: none;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-subtle);
+}
+

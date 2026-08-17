@@ -1,0 +1,336 @@
+/* The progressive blur behind the nav. A stack of blur layers, each masked to
+   a different reach up the screen: the whole band is lightly frosted, and the
+   frost deepens toward the very bottom, so content does not cut off at a hard
+   line under the nav but dissolves into it. Full-width, taller than the bar,
+   purely decorative (pointer-events: none), and below the nav items (z 2 vs 3)
+   but above the content (z 1). */
+.appNavScrim {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+}
+
+/* With the player docked the app window ends early, but the frost band is
+   part of the SCREEN's floor, not the pane's: it reaches on under the
+   floating card to the true right edge, so the blur dissolves behind the
+   card instead of cutting off at the seam. */
+body:has(.npScreen[data-docked]) .appNavScrim {
+  inset-inline: 0 calc(-1 * var(--np-dock-width));
+}
+
+.appNavScrim {
+  /* The band reaches over whatever chrome is down there. With no song it is
+     the nav's own footprint; when the player arrives it grows by the strip's
+     height, so the frost rises with the bar and the content between the two
+     plates dissolves instead of showing through sharp. --app-player-height is
+     0 with nothing playing, so this is one expression for both states - and
+     because the height itself is what changes, the transition below carries
+     the gradient up alongside the strip rather than snapping it into place. */
+  block-size: calc(var(--app-nav-height) + var(--app-player-height));
+  transition: block-size var(--app-player-rise) var(--glacier-ease-out);
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* Two stacked layers give a smoother ramp than one: a gentle blur across the
+   whole band, and a heavier blur that only reaches the bottom third. Each is a
+   masked backdrop-filter - the mask fades the blurred layer's contribution out
+   toward the top, which reads as the blur "coming in" from the bottom edge. */
+.appNavScrim::before,
+.appNavScrim::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+.appNavScrim::before {
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  -webkit-mask-image: linear-gradient(to top, black 55%, transparent);
+  mask-image: linear-gradient(to top, black 55%, transparent);
+}
+
+.appNavScrim::after {
+  backdrop-filter: blur(18px) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(18px) saturate(var(--glacier-glass-saturate));
+  -webkit-mask-image: linear-gradient(to top, black 18%, transparent 60%);
+  mask-image: linear-gradient(to top, black 18%, transparent 60%);
+  /* A faint darkening toward the bottom lifts the icons off the frost. */
+  background: linear-gradient(to top, var(--glacier-glass-thin), transparent 70%);
+}
+
+/* The phone's primary navigation: a full-width tab bar along the bottom edge,
+   items spread edge to edge over the progressive blur. The bar itself carries
+   no plate - the scrim behind it is the surface - so it reads as tabs resting
+   on the frost, not a second floating slab under the player. Each tab stacks a
+   glyph over its name, the way a phone's system tab bar does, and the whole
+   band is kept short so it costs the list as little height as possible. */
+/* A rounded card held off the screen's edges by the same margin on all three
+   sides, with the app icon raised out of its centre - and a CHIN: the card runs
+   down over the home indicator's strip, its lower band empty of content, so
+   that dead space carries the nav instead of nothing. The chin's corners sweep
+   wider than the top's, following the curve the phone is already making down
+   there. */
+.appNavBar {
+  position: absolute;
+  inset-inline: var(--app-nav-inset);
+  /* Reach down to the screen's edge and drape a chin over the home-indicator
+     strip, so the card contours to the bottom of the glass rather than floating
+     above it. Held --app-nav-inset off the physical edge, which the bottom
+     corners' wider radius then runs concentric with. */
+  inset-block-end: var(--app-nav-inset);
+  z-index: 4;
+  /* Border-box, so the tabs centre in the island band and the chin is padding
+     below them rather than height stolen from them. */
+  block-size: calc(var(--app-nav-island-height) + var(--app-nav-chin) + var(--app-nav-pad-top));
+  padding-block-start: var(--app-nav-pad-top);
+  padding-block-end: var(--app-nav-chin);
+  /* An even row. It was a three-cell grid with a fixed middle, which existed
+     only to land the raised brand disc dead-centre; with the library an
+     ordinary tab there is no privileged cell, and every tab gets the same
+     share of the bar. */
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  gap: var(--glacier-space-1);
+  padding-inline: var(--glacier-space-2);
+  /* The chin's corners take a wider sweep than the top's: down at the screen's
+     edge the phone is already curving away, and a corner that opens out to meet
+     it reads as one continuous bottom rather than a card set on top of one. */
+  border-radius: var(--glacier-radius-2xl, 1.75rem) var(--glacier-radius-2xl, 1.75rem)
+    var(--app-nav-chin-radius) var(--app-nav-chin-radius);
+  /* The card: a near-opaque frosted panel, a hairline edge, and a real shadow
+     so it reads as lifted off the content that scrolls behind it. */
+  background: var(--glacier-glass-thick);
+  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  box-shadow: var(--glacier-shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.42));
+  /* Nothing overhangs the plate now, but the menus that cascade up out of it
+     still must not be clipped. */
+  overflow: visible;
+}
+
+[data-swipe-committed] {
+  box-shadow: var(--glacier-shadow-lg, -18px 0 42px rgb(0 0 0 / 0.45));
+}
+
+/* Fixed, not flex-1 - and SQUARE: the plate must be the same object on every
+   tab (a tab sized by its label lit "Discover" twice as wide as "Booth"),
+   and equal sides are what the eye checks. The island above grew to hold
+   this height. */
+.appNavBar .appNavBarTab {
+  min-inline-size: 0;
+  flex: none;
+  inline-size: 3.4rem;
+  block-size: 3.4rem;
+}
+
+.appNavBar .appNavBarTab__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-inline-size: 100%;
+}
+
+/* A flanking tab: glyph over a small label, lit crimson when it is the page. */
+.appNavBarTab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  /* Padding is the SEAT the selected squircle is drawn on, so it is here on the
+     tab rather than on the glyph - the whole item lights, name included. Tight
+     inline so five of these still fit across a narrow phone. */
+  padding: var(--glacier-space-1) var(--glacier-space-1);
+  border: none;
+  /*
+   * A real squircle where the engine can draw one.
+   *
+   * border-radius alone is a rounded RECTANGLE: four circular arcs spliced
+   * onto straight edges, and at this size the straights dominate - the lit
+   * tab read as a box with its corners filed off. `corner-shape: squircle`
+   * makes the corner a superellipse instead, curvature easing continuously
+   * into the edge the way an app icon's does, and the radius below becomes
+   * how much of the side it eats rather than an arc bolted on.
+   *
+   * The radius is generous for the same reason: a squircle with a timid
+   * radius is indistinguishable from the rectangle it replaced.
+   *
+   * Progressive on purpose - Chromium draws the superellipse (so Android and
+   * the desktop app get it), WebKit ignores the line and keeps the rounded
+   * rectangle - so the fallback radius below is generous too, deep enough to
+   * read app-icon-soft even as plain arcs on a 3.4rem square.
+   */
+  border-radius: 1.15rem;
+  background: none;
+  cursor: pointer;
+  color: var(--glacier-text-subtle);
+  transition: background-color 0.16s var(--glacier-ease-out, ease), color 0.15s ease;
+}
+
+/* The generous radius belongs to the squircle and must not outlive it: a
+   superellipse needs a big corner or it reads as the rectangle it replaced,
+   but that same share under plain border-radius is four fat arcs. Chromium
+   takes both lines; WebKit keeps the modest rounded square above. */
+@supports (corner-shape: squircle) {
+  .appNavBarTab {
+    border-radius: 45%;
+    corner-shape: squircle;
+  }
+}
+
+/* The selected tab: a squircle behind the whole item - glyph AND name - in a
+   faint wash of the accent, with the contents taking the accent colour. The
+   mark of where you are should enclose the thing that names it; a disc around
+   only the icon left the label sitting outside its own highlight. */
+/* The selected tab: one squircle plate over glyph AND name - but at a FIXED
+   width, which is what every earlier cut missed. Painted on a tab that sizes
+   from its label, "Discover" lit twice as wide as "Booth" and the shape read
+   as a stretched box no matter how super its ellipse was. Fixed, every tab's
+   plate is the same object. */
+.appNavBarTab[data-active] {
+  background: color-mix(in srgb, var(--glacier-accent-solid) 16%, transparent);
+  color: var(--glacier-accent-text);
+}
+
+/*
+ * An inactive tab in light mode.
+ *
+ * The glyphs above take --glacier-text-subtle, which is the ONE text token
+ * that holds the same value in both themes - oklch(0.535 0.012 260) light and
+ * dark alike, where text/muted/disabled all flip. It is the ramp's gray-9
+ * step, so that sameness is the kit's intent rather than a bug in it, but the
+ * consequence here is that the bar's icons wear a grey picked against a
+ * near-black plate and then wear it again on a near-white one.
+ *
+ * --glacier-text-muted is the neighbouring token that DOES flip (0.498 light,
+ * 0.805 dark), so light mode gets ink chosen for a light bar. Scoped to light
+ * on purpose: dark mode's subtle grey is right where it is, and lifting it to
+ * muted there would make every inactive tab read as lit.
+ */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .appNavBarTab:not([data-active]) {
+    color: var(--glacier-text-muted);
+  }
+}
+
+:root[data-theme='light'] .appNavBarTab:not([data-active]) {
+  color: var(--glacier-text-muted);
+}
+
+/* The glyph's seat: plain, relative only so a corner badge can ride it. The
+   lit plate lives on the tab (above). */
+.appNavBarTab__icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  transition: color 0.16s ease;
+}
+
+/* Placement only - the badge itself is the kit's CounterBadge, so its fill,
+   type and capsule are the standard ones, not a hand-rolled copy. */
+.appNavBadge--corner {
+  position: absolute;
+  inset-block-start: -0.3rem;
+  inset-inline-end: -0.45rem;
+}
+
+.appNavBadge--row {
+  margin-inline-start: auto;
+}
+
+
+
+.appNavBarTab__label {
+  font-size: var(--app-nav-label-size);
+  font-weight: 550;
+  line-height: 1;
+}
+
+/* The Plugins button on the bar, and the menu that cascades up out of it. The
+   trigger wears .appNavBarTab, so it sits and lights like any core tab; the
+   menu floats above (the bar's overflow is visible), a glass card matching the
+   bar's own, its rows rising in a quick stagger. */
+/* The ⋮ menu. Our own markup and our own box - NOT the kit's Popover.
+   That popover was fought four times over this exact bug: its panel carries a
+   min-width of 12rem and a max-width of min(24rem, 100vw - 2rem), which on a
+   375px phone is 343px - 91% of the screen, i.e. "the whole width". Every
+   override worked in a desktop-emulated preview and none of them held on the
+   device, and without the device's DOM there was no way to see why. A menu of
+   five rows does not need a positioning engine: it is anchored to a button in
+   a bar that is already fixed to the bottom-right, so it is an absolutely
+   positioned box hung off that button, and its width is simply its content. */
+/* flex: none, like the tabs it stands among - when they stopped stretching
+   this kept its old flex:1 and quietly swallowed the whole bar's leftover,
+   packing the other four against the left edge. */
+.appNavMore__anchor {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  min-inline-size: 0;
+  flex: none;
+}
+
+/* Catches the tap that dismisses. Below the menu, above everything else. */
+.appNavMore__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.appNavMore__menu {
+  /* FIXED, not absolute: this is portalled to the body so its blur can reach
+     the page (see NavMoreMenu). That also puts the app's --app-* vars out of
+     scope - they live on .appWindow - so the insets below are rebuilt from kit
+     tokens and env() the way the Now Playing sheet does it.
+     Height of the bar's island (4rem) + the gap it keeps off the screen
+     (space-2) + the safe area its chin covers + a step of air. */
+  position: fixed;
+  z-index: 41;
+  /* Mirrors the bar's own geometry piece by piece (inset + pad + island +
+     chin, see --app-nav-* on .appWindow) plus one space-2 of air, because
+     the old round "4rem + steps" overshot the real island and left the menu
+     floating a room's height above the bar it belongs to. */
+  inset-block-end: calc(
+    var(--glacier-space-2) + var(--glacier-space-1) + var(--app-nav-island-height) +
+      env(safe-area-inset-bottom, 0px) * 0.75 + var(--glacier-space-2)
+  );
+  inset-inline-end: var(--glacier-space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  /* As wide as its longest row and no wider - the rows nowrap, so "Downloads"
+     sets it - with a ceiling so a long plugin name cannot span the screen. */
+  inline-size: max-content;
+  max-inline-size: min(15rem, 62vw);
+  padding: var(--glacier-space-2);
+  /* The bar's own material, so the menu reads as part of it. */
+  border-radius: var(--glacier-radius-xl, 1.25rem);
+  background: var(--glacier-glass-thick);
+  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  box-shadow: var(--glacier-shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.42));
+  /* Its own entrance, not the sheet's: npRise travels translateY(100%), which
+     for a small menu means starting a whole menu-height below where it belongs.
+     A few pixels is all a menu this size needs.
+
+     Deliberately NO fill-mode: with `both` the element holds the FROM frame
+     until the animation starts, and that frame is opacity 0 - so anywhere the
+     animation does not actually advance (a throttled or backgrounded webview,
+     which is exactly what the dev preview turned out to be) the menu is
+     invisible rather than merely unanimated. Without a fill the element's own
+     styles stand, and the entrance is the only thing at risk. */
+  animation: navMoreRise 0.16s var(--glacier-ease-out);
+}
+
+/* With Now Playing docked on the right, the viewport's right edge belongs to
+   the sheet, not the app: the menu slides left of the dock so it opens over
+   the pane that owns its trigger, instead of vanishing underneath (menu z 41,
+   dock z 50). */
+body:has(.npScreen[data-docked]) .appNavMore__menu {
+  inset-inline-end: calc(var(--np-dock-width) + var(--glacier-space-2));
+}
+

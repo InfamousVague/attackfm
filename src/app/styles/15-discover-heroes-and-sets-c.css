@@ -1,0 +1,371 @@
+/* Unity is 100 of the fader's 150, measured up the travel rather than up the
+   box: the thumb's centre stops half a thumb short at each end, so a line laid
+   at a flat two thirds of the box would sit off the detent it marks. */
+.volUnityTick {
+  position: absolute;
+  bottom: calc(var(--vol-thumb) / 2 + (100% - var(--vol-thumb)) * 0.6667);
+  left: 50%;
+  inline-size: 1.5rem;
+  block-size: var(--glacier-hairline);
+  transform: translateX(-50%);
+  background: var(--glacier-border);
+  pointer-events: none;
+}
+
+/* The reading, in a pill under the rail. Tabular digits and a floor wide enough
+   for the longest reading ("-33.9 dB") keep the pill still while the number
+   moves - the panel is only as wide as its widest child, so a pill that grew
+   with the text would make the whole popover breathe as the fader is dragged. */
+.volReadout {
+  min-inline-size: 3.75rem;
+  padding: 0.125rem var(--glacier-space-1);
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface-sunken);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  text-align: center;
+}
+
+/* The lyrics popover: a tall reading pane rather than the panel's default
+   squat proportions. The wrapper owns the height - the kit Lyrics fills
+   whatever box it is given and scrolls inside it. */
+.lyricsPopoverPanel {
+  padding: 0;
+}
+
+.lyricsPopover {
+  inline-size: 19rem;
+  max-inline-size: 100%;
+  block-size: min(20rem, 55vh);
+}
+
+.eqPopover {
+  inline-size: 26rem;
+  max-inline-size: 100%;
+}
+
+/* The phone's overflow panel: the equalizer over the flat volume row, behind
+   the bar's one trailing button. Width leans on the EQ, capped to the phone.
+   The backing runs firmer than the kit's glass: this panel opens over the
+   busiest part of the song list, and EQ handles need to read at a glance. */
+.morePopoverPanel {
+  max-inline-size: min(26rem, calc(100vw - 2rem));
+  background: color-mix(in srgb, var(--glacier-bg) 88%, transparent);
+  /* Same guard as the EQ panel above: anything that can outgrow the screen has
+     to be scrollable from the inside, or reaching for its bottom dismisses it. */
+  max-block-size: min(70dvh, 34rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+.morePopover {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+/* On a phone every popover becomes a near-sheet: pinned to both side gutters
+   and spanning the width between them, at whatever height its trigger put it.
+   Anchored floating panels are a pointer idiom; under a thumb the narrow panel
+   wastes the screen and half-hides its content. The kit's positioner carries
+   inline left/top from its floating math, so the side pins need !important;
+   the structural positioner>panel pair scopes this to popovers (tooltips and
+   plain portals use different bones) without leaning on hashed class names. */
+@media (pointer: coarse) and (max-width: 699px), (max-width: 540px) {
+  body > [class*='_positioner_']:has(> [class*='_panel_']) {
+    left: var(--glacier-space-3) !important;
+    right: var(--glacier-space-3) !important;
+    inline-size: auto !important;
+  }
+
+  body > [class*='_positioner_'] > [class*='_panel_'] {
+    inline-size: 100%;
+    max-inline-size: none;
+  }
+}
+
+/* The downloads queue is a wall of moving progress bars and track lists; read
+   through the kit's frosted-glass popover, whatever scrolls behind it muddies
+   it. So this one panel is opaque - a solid raised surface, blur off - while
+   every other popover keeps the glass. Scoped by the panel that actually holds
+   the queue, so nothing else is affected, and done from the app rather than the
+   plugin so it needs no republish. */
+body [class*='_panel_']:has(> .dlPanel) {
+  background: var(--glacier-surface-raised, var(--glacier-surface)) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* The chooser the overflow opens on: three rows, each a doorway to its panel.
+   Thumb-height rows - this menu exists because the bar is read by thumb. */
+.moreMenu {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 13rem;
+}
+
+.moreMenuItem {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  min-block-size: 2.75rem;
+  padding-inline: var(--glacier-space-2);
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  background: transparent;
+  color: var(--glacier-text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.moreMenuItem:hover,
+.moreMenuItem:focus-visible {
+  background: var(--glacier-surface-sunken);
+}
+
+.moreMenuItem svg {
+  color: var(--glacier-text-muted);
+}
+
+/* The way back from a panel to the chooser: a slim row naming where you are,
+   with the chevron pointing home. */
+.moreBack {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  align-self: flex-start;
+  padding: var(--glacier-space-1) var(--glacier-space-2);
+  border: none;
+  border-radius: var(--glacier-radius-full);
+  background: transparent;
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-sm);
+  cursor: pointer;
+}
+
+.moreBack:hover,
+.moreBack:focus-visible {
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text);
+}
+
+/* The lying-down fader: mute, rail, reading in one row. The rail takes what
+   the equalizer's width leaves; the readout pill is the vertical panel's. */
+.volRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.volRowRailWrap {
+  --vol-thumb: 0.875rem;
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.volRowRail {
+  inline-size: 100%;
+  --slider-length: 100%;
+  --slider-thumb: var(--vol-thumb);
+  --slider-track: 0.3125rem;
+}
+
+/* Unity, upright against a horizontal travel - same half-thumb correction as
+   the vertical tick, worked from the left. */
+.volRowUnityTick {
+  position: absolute;
+  left: calc(var(--vol-thumb) / 2 + (100% - var(--vol-thumb)) * 0.6667);
+  top: 50%;
+  block-size: 1.25rem;
+  inline-size: var(--glacier-hairline);
+  transform: translateY(-50%);
+  background: var(--glacier-border);
+  pointer-events: none;
+}
+
+/* The New Playlist tile wears the kit's frosted-glass material: translucent,
+   blurred over whatever sits behind it, with a hairline edge and top highlight. */
+.tileAdd {
+  background: var(--glacier-glass-thin);
+  backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
+  color: var(--glacier-text);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  box-shadow: inset 0 var(--glacier-hairline) 0 var(--glacier-glass-highlight);
+}
+
+.playlistTileName {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: start;
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 600;
+}
+
+/* The playlist modal's track list: a column of clickable rows, art then a
+   title/artist block then the running time. */
+.playlistModalList {
+  display: flex;
+  flex-direction: column;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.playlistModalRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  width: 100%;
+  padding: var(--glacier-space-2);
+  background: none;
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+
+.playlistModalRow:hover {
+  background: var(--glacier-hover);
+}
+
+.playlistModalMeta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.playlistModalTime {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A user playlist's row plus its remove control: siblings in a flex row, not
+   nested buttons - the row is already one. The row keeps the full-width feel;
+   the X rides its trailing edge. */
+.playlistModalItem {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}
+
+.playlistModalItem .playlistModalRow {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The way out of a playlist entirely: quiet until hovered, then plainly a
+   deletion. Sits under the list, clear of the rows it removes. */
+.playlistSaveCopy,
+.playlistDelete {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  margin-block-start: var(--glacier-space-3);
+  padding: var(--glacier-space-2);
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  background: transparent;
+  color: var(--glacier-text-muted);
+  font: inherit;
+  font-size: var(--glacier-font-size-sm);
+  cursor: pointer;
+}
+
+/* Saving a copy is the constructive sibling of delete: same seat, accent
+   rather than danger, because it makes something instead of unmaking it. */
+.playlistSaveCopy {
+  color: var(--glacier-accent-text);
+}
+
+
+.playlistDelete:hover,
+.playlistDelete:focus-visible {
+  background: color-mix(in srgb, var(--glacier-danger, #e5484d) 12%, transparent);
+  color: var(--glacier-danger, #e5484d);
+}
+
+/* Naming a new playlist: the field takes the width, the button takes the end. */
+.playlistCreate {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.playlistCreate > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The context-menu wrapper around the title cell: invisible in the layout,
+   the cell inside keeps its own flex. */
+.songTitleMenuTarget {
+  display: block;
+  min-width: 0;
+}
+
+/* The library table fills the content area edge to edge - no card frame, since
+   it is the screen rather than a panel on it - and its own body scrolls under
+   the sticky header. The bottom pad is the floating player's height, so the
+   last rows can rise clear of it rather than staying trapped underneath. */
+/* On the artist page the song table is a SECTION of a page that already
+   scrolls, not the page itself - so it must not bring its own scroller. Two
+   scrollers stacked is the thing that feels broken under a thumb: the inner one
+   swallows the gesture until it hits its end, the page only starts moving after
+   that, and flicking back up stops halfway for the same reason.
+   
+   The Library's "All" view is the opposite case and keeps its own scroller:
+   there the table IS the page, filling the window under a sticky header. */
+.artistPage .libraryBody {
+  /* Not a flex column here: nothing on this page wants to fill a height, and
+     `min-height: 0` is what let the table be squeezed to a scrollable box in
+     the first place. */
+  display: block;
+  min-block-size: auto;
+}
+
+.artistPage .songTable {
+  block-size: auto;
+  /* !important because the kit's grid writes `max-height: 100%` as an INLINE
+     style, and an inline style outranks any selector. This is the one way a
+     stylesheet can answer it. */
+  max-block-size: none !important;
+  /* BOTH axes, and the x one clipped rather than visible. `overflow-y: visible`
+     alone does nothing: a `visible` paired with anything that is not `visible`
+     or `clip` computes back to `auto`, so the longhand silently kept the
+     scroller. `clip` on x keeps a wide table from bleeding sideways while
+     letting y genuinely go visible. */
+  overflow-x: clip;
+  overflow-y: visible;
+  /* The page already reserves the player and nav clearance at its foot; the
+     table repeating it would strand a screen of blank space mid-page. */
+  padding-block-end: 0;
+}
+
+.songTable {
+  height: 100%;
+  border: none;
+  border-radius: 0;
+  /* The one border kept, and it is a mask, not a line: the scroller's top edge
+     lands on a fractional pixel (the fluid hero above it measures in clamp()s),
+     and the compositor anti-aliases the scroll clip there, letting a device
+     pixel of whatever is behind the pane shine through over the sticky header.
+     Nothing inside the scroller can cover that - the clip's edge applies to
+     the header too - but a border is outside the clip, so it owns the seam
+     pixel outright. Painted in the page background, it is invisible as a line. */
+  border-block-start: 1px solid var(--glacier-bg);
+  padding-block-end: calc(var(--app-player-height) + var(--app-nav-height, 0px));
+}
+

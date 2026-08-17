@@ -1,0 +1,131 @@
+/* ---- Album filler -------------------------------------------------------
+   Your artists as a pickable grid, then each half-finished record with the
+   songs it is missing. */
+.afArtists {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+}
+
+.afArtist {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: 999px;
+  background: var(--glacier-surface-raised);
+  color: var(--glacier-text);
+  font: inherit;
+  font-size: var(--glacier-font-size-sm);
+  cursor: pointer;
+}
+
+.afArtist[data-active] {
+  border-color: var(--glacier-accent-solid);
+  color: var(--glacier-accent-text);
+}
+
+.afArtist__count {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.afAlbum {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding-block: var(--glacier-space-3);
+  border-block-end: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.afAlbum__head {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+.afAlbum__art {
+  inline-size: 3rem;
+  block-size: 3rem;
+  border-radius: var(--glacier-radius-md);
+  object-fit: cover;
+  flex: none;
+}
+
+.afAlbum__text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.afAlbum__title {
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.afRows {
+  display: flex;
+  flex-direction: column;
+}
+
+/* A missing song: tick it to include it in the next fetch. */
+.afRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2);
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.afRow[data-picked] {
+  background: color-mix(in srgb, var(--glacier-accent-solid) 14%, transparent);
+  color: var(--glacier-accent-text);
+}
+
+.afRow:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.afRow__no {
+  inline-size: 1.5rem;
+  text-align: end;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  flex: none;
+}
+
+.afRow__title {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.afRow__mark {
+  flex: none;
+  inline-size: 1rem;
+}
+
+/* The commit bar: sticks to the bottom of the page so a long list of albums
+   never puts the button out of reach. */
+.afBar {
+  position: sticky;
+  inset-block-end: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-3) 0;
+  background: linear-gradient(to top, var(--glacier-bg) 60%, transparent);
+}
+

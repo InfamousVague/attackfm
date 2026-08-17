@@ -1,0 +1,163 @@
+/* --- the radar ----------------------------------------------------------- */
+
+.radarFig {
+  margin: 0;
+}
+
+.radar {
+  inline-size: 100%;
+  block-size: auto;
+  max-inline-size: 20rem;
+  display: block;
+  margin-inline: auto;
+  overflow: visible;
+}
+
+/* Hairline, solid, one shade off the surface. Never dashed. */
+.radar__ring,
+.radar__spoke {
+  fill: none;
+  stroke: var(--glacier-border-subtle);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.radar__ring {
+  stroke: var(--glacier-border-subtle);
+}
+
+.radar__area {
+  fill: color-mix(in oklab, var(--glacier-accent-solid) 26%, transparent);
+  stroke: none;
+}
+
+.radar__edge {
+  fill: none;
+  stroke: var(--glacier-accent-solid);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* 8px markers, ringed in the surface so an overlap still reads as two. */
+.radar__node {
+  fill: var(--glacier-accent-solid);
+  stroke: var(--glacier-surface);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.radar__label {
+  fill: var(--glacier-text-muted);
+  font-size: 6.5px;
+  font-weight: 600;
+}
+
+.radarKey {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 2px var(--glacier-space-4);
+  margin: var(--glacier-space-2) 0 0;
+}
+
+.radarKey__row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+  font-size: var(--glacier-font-size-xs);
+}
+
+.radarKey__label {
+  color: var(--glacier-text);
+  font-weight: 600;
+}
+
+.radarKey__detail {
+  color: var(--glacier-text-muted);
+  text-align: end;
+}
+
+/* --- the day ------------------------------------------------------------- */
+
+.dayFig {
+  margin: 0;
+}
+
+.dayStrip {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  /* A 2px surface gap between fills rather than borders around them. */
+  gap: 2px;
+  block-size: 2.25rem;
+}
+
+.dayStrip__cell {
+  display: block;
+  border-radius: 3px;
+  background: var(--glacier-accent-solid);
+  min-inline-size: 0;
+}
+
+.dayStrip__cell[data-peak] {
+  outline: 2px solid var(--glacier-accent-text);
+  outline-offset: 1px;
+}
+
+.dayAxis {
+  position: relative;
+  display: block;
+  block-size: 1rem;
+  margin: 4px 0 0;
+}
+
+.dayAxis__tick {
+  position: absolute;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- ranked bars --------------------------------------------------------- */
+
+.genreBars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.genreBar {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr auto;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.genreBar__name {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.genreBar__track {
+  block-size: 8px;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface-sunken);
+  overflow: hidden;
+}
+
+/* Rounded data-end, anchored to the baseline. */
+.genreBar__fill {
+  display: block;
+  block-size: 100%;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-solid);
+}
+
+.genreBar__value {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+

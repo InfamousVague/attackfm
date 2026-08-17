@@ -1,0 +1,361 @@
+/* The heart answering the hand: the success triplet in the thumb was firing
+   against a static glyph - the app's loudest haptic over its flattest visual.
+   Now the glyph pops (standalone `scale`, so nothing else it wears is
+   disturbed) and a ring blooms off it, on the way IN only - the same rule the
+   haptic itself follows: keeping a song is the celebration, letting one go is
+   not. */
+@keyframes heartPop {
+  0% { scale: 1; }
+  30% { scale: 1.28; }
+  55% { scale: 0.92; }
+  100% { scale: 1; }
+}
+
+@keyframes heartRing {
+  from { scale: 0.4; opacity: 0.5; }
+  to { scale: 1.7; opacity: 0; }
+}
+
+.npScreen__heart[aria-pressed='true'] svg {
+  animation: heartPop 0.36s var(--glacier-ease-out);
+}
+
+.npScreen__heart {
+  position: relative;
+}
+
+.npScreen__heart[aria-pressed='true']::after {
+  content: '';
+  position: absolute;
+  inset: 15%;
+  border-radius: 50%;
+  border: 2px solid var(--glacier-accent-text);
+  pointer-events: none;
+  opacity: 0;
+  animation: heartRing 0.45s var(--glacier-ease-out);
+}
+
+.npScreen__scrub {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.npScreen__times {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.npScreen__transport {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+  padding-inline: var(--glacier-space-1);
+}
+
+/* The active shuffle/repeat wear the accent; the play button is the one big
+   thing, a solid accent circle. */
+.npScreen__transport [data-on] {
+  color: var(--glacier-accent-solid);
+}
+
+/* The secondary action row under the transport: the device hand-off and the
+   equalizer, centred and quieter than the controls above them. */
+.npScreen__actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--glacier-space-5);
+  flex: none;
+  padding-block-start: var(--glacier-space-2);
+  color: var(--glacier-text-muted);
+}
+
+/* Lyrics as a full-screen view OVER the Now Playing sheet - it fills the whole
+   sheet (which is fixed inset:0), not a popover pinned to the bottom rail that
+   sat too low. Portalled with the sheet, so the safe-area insets come straight
+   from env() - the --app-safe-* vars are out of scope here (see .npScreen). */
+.npScreen__lyricsView {
+  position: absolute;
+  /* Big, but deliberately NOT the whole screen. Full-bleed it ran under the
+     notch and its close button went with it, so the panel could be opened and
+     not shut. Inset from every edge instead: the sheet underneath frames it,
+     the header sits well clear of the notch, and the margin around it is
+     itself a way out (tapping it dismisses). Sitting a further tenth of the
+     screen down leaves the song it belongs to visible above the words. */
+  top: 22%;
+  right: var(--glacier-space-4);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--glacier-space-4));
+  left: var(--glacier-space-4);
+  z-index: 11;
+  display: flex;
+  flex-direction: column;
+  padding: var(--glacier-space-4);
+  background: var(--glacier-surface);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-xl);
+  box-shadow: var(--glacier-shadow-5);
+  animation: npRise 0.24s var(--glacier-ease-out);
+}
+
+/* The catcher behind the panel: a tap anywhere off it closes, which is the
+   gesture people reach for before they look for a button. */
+.npScreen__lyricsScrim {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: rgba(9, 9, 10, 0.5);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  animation: npCanvasIn 0.24s ease both;
+}
+
+.npScreen__lyricsHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+  flex: none;
+  margin-block-end: var(--glacier-space-3);
+}
+
+.npScreen__lyricsTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+  font-size: 1.05rem;
+}
+
+/* The words own the rest of the sheet and scroll within it; the kit Lyrics
+   fills whatever height it is given. */
+.npScreen__lyricsBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* The queue sheet: same frame as the lyrics view (inset from every edge, the
+   margin around it a way out), but the QueuePanel owns the inside so this only
+   positions and dresses the plate. */
+.npScreen__queueView {
+  position: absolute;
+  top: 12%;
+  right: var(--glacier-space-4);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--glacier-space-4));
+  left: var(--glacier-space-4);
+  z-index: 11;
+  display: flex;
+  background: var(--glacier-surface);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-xl);
+  box-shadow: var(--glacier-shadow-5);
+  animation: npRise 0.24s var(--glacier-ease-out);
+  overflow: hidden;
+}
+
+.queuePanel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--glacier-space-4);
+}
+
+.queuePanel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+  flex: none;
+  margin-block-end: var(--glacier-space-3);
+}
+
+.queuePanel__title {
+  font-weight: 650;
+  font-size: 1.05rem;
+}
+
+.queuePanel__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.queueNow {
+  margin-block-end: var(--glacier-space-4);
+}
+
+.queueNow__label,
+/* The heading row: the label, and Clear pushed to the far end where a
+   destructive-ish control belongs - away from the rows it empties. */
+.queueUp__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+  margin-block-end: var(--glacier-space-2);
+}
+
+.queueUp__label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--glacier-text-muted);
+}
+
+/* What is queued past the drawn rows, summed up rather than listed. */
+.queueUp__more {
+  display: block;
+  padding: var(--glacier-space-2) var(--glacier-space-1) 0;
+}
+
+.queueUp__empty {
+  display: block;
+  padding: var(--glacier-space-2) 0;
+}
+
+.queueSortable {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.queueRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  min-width: 0;
+}
+
+.queueRow--now {
+  padding: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-lg);
+  background: color-mix(in oklab, var(--glacier-accent-solid) 14%, transparent);
+}
+
+.queueRow__play {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  flex: 1;
+  min-width: 0;
+  padding: var(--glacier-space-1) 0;
+  background: none;
+  border: none;
+  text-align: start;
+  cursor: pointer;
+  color: inherit;
+}
+
+.queueRow__cover {
+  flex: none;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  border-radius: var(--glacier-radius-md);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--glacier-surface-2, rgba(255, 255, 255, 0.06));
+  color: var(--glacier-text-muted);
+}
+
+.queueRow__cover img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.queueRow__meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.queueRow__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 550;
+}
+
+.queueRow__artist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82rem;
+  color: var(--glacier-text-muted);
+}
+
+.npScreen__play {
+  inline-size: 4.5rem;
+  block-size: 4.5rem;
+  border-radius: 50%;
+  border: none;
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-on-accent, #fff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.12s var(--glacier-ease-out);
+}
+
+.npScreen__play:active {
+  transform: scale(0.94);
+}
+
+/* ── Mobile settings ────────────────────────────────────────────────────────
+   The touch settings surface: a full-screen sheet that opens on the section
+   list and pushes into a pane. Portalled to the body like Now Playing, so the
+   env() insets stand in for the out-of-scope --app-safe-* vars. */
+.settingsScreen {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  padding: calc(env(safe-area-inset-top, 0px) + var(--glacier-space-3))
+    var(--glacier-space-4)
+    calc(env(safe-area-inset-bottom, 0px) + var(--glacier-space-4));
+  gap: var(--glacier-space-3);
+  background: var(--glacier-bg);
+  color: var(--glacier-text);
+  animation: npRise 0.28s var(--glacier-ease-out);
+}
+
+/* A pane drilled into slides in from the right; the list it replaced was the
+   home the back arrow returns to. */
+.settingsScreen[data-view='detail'] .settingsScreen__pane {
+  animation: settingsPush 0.24s var(--glacier-ease-out);
+}
+
+@keyframes settingsPush {
+  from {
+    transform: translateX(12%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.settingsScreen__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+  flex: none;
+}
+

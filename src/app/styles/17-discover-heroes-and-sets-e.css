@@ -1,0 +1,233 @@
+/* The play surface: everything but the duration. Its own padding is what
+   gives the row its height, so the target and the row are the same thing
+   rather than a small button floating inside a big row. */
+.albumTrack__play {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  flex: 1;
+  min-inline-size: 0;
+  /* Comfortably past the 44px a thumb wants, without the list going airy. */
+  min-block-size: 2.75rem;
+  padding: var(--glacier-space-1) 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+/* A hole has no play surface, so the row itself carries the height its
+   neighbours get from theirs. */
+.albumTrack--gap {
+  min-block-size: 2.75rem;
+  gap: var(--glacier-space-3);
+}
+
+.albumTrack__no {
+  flex: none;
+  inline-size: 1.5rem;
+  text-align: end;
+  color: var(--glacier-text-subtle);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--glacier-font-size-sm);
+}
+
+.albumTrack__text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.albumTrack__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The guest credit, under the title the way the song table stacks them. */
+.albumTrack__artist {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Rides inside the play button, so it is part of the target rather than a
+   dead column at the end of a live row. */
+.albumTrack__time {
+  flex: none;
+  margin-inline-start: var(--glacier-space-2);
+  color: var(--glacier-text-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--glacier-font-size-sm);
+}
+
+/* A song the record has and this library does not: present but plainly not
+   yours. Only the words dim - the number stays with its column, and the add
+   control stays at full strength because it is the one live thing in the
+   row. */
+.albumTrack--gap .albumTrack__text {
+  opacity: 0.6;
+  transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.albumTrack--gap:hover .albumTrack__text,
+.albumTrack--gap:focus-within .albumTrack__text {
+  opacity: 1;
+}
+
+/* Added and not-found are settled states, not offers. */
+.albumTrack--gap[data-state='added'] .albumTrack__text,
+.albumTrack--gap[data-state='missing'] .albumTrack__text {
+  opacity: 0.6;
+}
+
+.albumTrack__add {
+  display: grid;
+  place-items: center;
+  flex: none;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border: 1px solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-full);
+  background: none;
+  color: var(--glacier-text-muted);
+  cursor: pointer;
+}
+
+.albumTrack__add:hover:not(:disabled) {
+  color: var(--glacier-text);
+  border-color: var(--glacier-border);
+}
+
+.albumTrack__add:disabled {
+  cursor: default;
+}
+
+
+/* Sits in the heading, saying how much of the discography is actually yours. */
+.artistDiscCount {
+  margin-inline-start: var(--glacier-space-2);
+  color: var(--glacier-text-subtle);
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.artistAlbum {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--glacier-space-1);
+  min-inline-size: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+/* A record you can neither play nor pull is still part of the story - it just
+   does not pretend to be a control. */
+.artistAlbum:disabled {
+  cursor: default;
+}
+
+.artistAlbum:disabled .artistAlbumArt {
+  opacity: 0.55;
+}
+
+.artistAlbumArt {
+  position: relative;
+  inline-size: 100%;
+  aspect-ratio: 1;
+  display: block;
+  border-radius: var(--glacier-radius-md);
+  overflow: hidden;
+  background: var(--glacier-surface-sunken);
+  transition: transform var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.artistAlbum:hover:not(:disabled) .artistAlbumArt,
+.artistAlbum:focus-visible .artistAlbumArt {
+  transform: translateY(-2px);
+}
+
+.artistAlbumCover--glyph {
+  display: grid;
+  place-items: center;
+  color: var(--glacier-text-subtle);
+}
+
+/* Owned gets a mark; an addable record gets an offer. Anything else is left
+   unbadged rather than wearing a glyph that means "no". */
+.artistAlbumBadge {
+  position: absolute;
+  inset-block-end: var(--glacier-space-1);
+  inset-inline-end: var(--glacier-space-1);
+  display: grid;
+  place-items: center;
+  inline-size: 1.375rem;
+  block-size: 1.375rem;
+  border-radius: var(--glacier-radius-full);
+  background: rgb(0 0 0 / 0.6);
+  color: #fff;
+  backdrop-filter: blur(6px);
+}
+
+.artistAlbumBadge[data-have] {
+  background: var(--glacier-success-solid, #1d9e75);
+}
+
+.artistAlbumBadge[data-busy] {
+  background: var(--glacier-accent-solid);
+}
+
+.artistAlbumBadge[data-missing] {
+  background: var(--glacier-danger-solid, #b4423a);
+}
+
+/* Spins while the record is being looked up on Spotify - the search is a
+   network round trip, and a button that sat still through it would read as one
+   that had not registered the tap. */
+.artistAlbumSpin {
+  inline-size: 0.75rem;
+  block-size: 0.75rem;
+  /* The ring wears the ink of whatever it sits on: white inside the accent
+     badge, theme ink on the bare song-row button - a literal white here was
+     invisible on light. */
+  border: 2px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-top-color: currentColor;
+  border-radius: var(--glacier-radius-full);
+  animation: artistAlbumSpin 0.7s linear infinite;
+}
+
+@keyframes artistAlbumSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artistAlbumSpin {
+    animation-duration: 2.4s;
+  }
+}
+
+/* A record mid-flight or just added is not a dimmed one - the state IS the
+   point, so it reads at full strength like an owned record does. */
+.artistAlbum[data-state] .artistAlbumArt {
+  opacity: 1;
+}
+
+.artistAlbum[data-state='added'] .artistAlbumName,
+.artistAlbum[data-state='finding'] .artistAlbumName {
+  color: var(--glacier-text);
+}
+

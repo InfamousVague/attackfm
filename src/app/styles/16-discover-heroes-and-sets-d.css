@@ -1,0 +1,373 @@
+/* The kit sizes the grid table to its content, so it neither fills the pane nor
+   contains long titles; pinning it to the full width lets table-layout:fixed
+   share the leftover space between Title and Album and clip the rest. */
+.songTable > table {
+  width: 100%;
+}
+
+/* The sticky header sits at top:0; sub-pixel scrolling leaves a 1px sliver of the
+   row above it, so pull it up a pixel to swallow that seam. */
+.songTable thead {
+  inset-block-start: -1px;
+}
+
+/* The kit hangs the divider off the sticky header (border-bottom on the header
+   cell); as rows scroll under it, sub-pixel rounding lets a 1px sliver bleed
+   through. Move the divider onto the list - the header edge stays clean and the
+   line scrolls with the rows it separates.
+
+   The shadow is the header's own lid. Every other guard here reasons about
+   where the browser puts an edge - the sticky offset, the scroll clip, the
+   wrap's border - and engines disagree about all of them by a device pixel
+   (the strip is Chromium in the browser and WebKit in the app). A shadow is
+   pinned to the header itself: wherever the cells actually rasterize, it
+   paints two opaque pixels straight up from that, and the header sits above
+   the rows in the stack, so the sliver has nowhere left to shine. */
+.songTable thead th {
+  border-bottom: none;
+  box-shadow: 0 -2px 0 var(--glacier-bg);
+}
+
+.songTable tbody tr:first-child td {
+  border-top: var(--glacier-hairline) solid var(--glacier-border);
+}
+
+/* The table is the screen, not a panel: paint it on the window background rather
+   than the kit's lighter surface (which read as a raised card), and lift a
+   hovered row only to that surface so it is a gentle step, not a bright band. */
+.songTable,
+.songTable > table,
+.songTable thead th {
+  background-color: var(--glacier-bg);
+}
+
+.songTable tbody tr:hover {
+  background-color: var(--glacier-surface);
+}
+
+/* The sorted header keeps the kit's own accent-text - the accent lightened
+   until small text passes contrast (the solid sits near 3.7:1 here, shy of
+   AA for text this size). An app override to the solid pink lived here once;
+   the lighter hue is both the kit default and the accessible choice. */
+
+/* The plugin marketplace: listings on a shelf rather than switches in a list.
+   Cards flow into as many columns as the pane affords and stay equal-height
+   within a row, which is what makes a shelf read as one. */
+.pluginMarket {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--glacier-space-4);
+}
+
+/* The card is a doorway with one control standing on it, so it anchors two
+   layers: a stretched, invisible button over everything (the doorway), and
+   the switch lifted above that button so a flip is never a navigation. */
+.pluginCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+.pluginCardOpen {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: var(--glacier-radius-xl);
+}
+
+.pluginCardOpen:focus-visible {
+  outline: 2px solid var(--glacier-focus-ring);
+  outline-offset: 2px;
+}
+
+.pluginCardSwitch {
+  position: relative;
+  z-index: 1;
+}
+
+.pluginCardTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+}
+
+/* The squircle the glyph sits in - the same accent-washed tile language as
+   the playlist shelf above the song table, so a plugin reads as a thing the
+   app carries rather than a settings row. */
+.pluginCardIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  flex: none;
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-solid);
+}
+
+.pluginCardName {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+/* Two lines, then an ellipsis: the card is a shelf label, the dialog is where
+   the prose lives, and a long description must not stretch its whole row. */
+.pluginCardBlurb {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  min-block-size: calc(2 * var(--glacier-leading-sm) * 1em);
+}
+
+.pluginCardTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-1);
+  /* pinned to the card's floor so ragged blurbs cannot stagger the tag rows */
+  margin-block-start: auto;
+}
+
+/* The detail dialog's header: the same squircle beside the name, the byline
+   tucked under it. */
+.pluginDetailTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+.pluginDetailByline {
+  display: block;
+  margin-block-start: var(--glacier-space-1);
+}
+
+.pluginDetail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-4);
+}
+
+.pluginDetailAdds {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.pluginDetailList {
+  margin: 0;
+  padding-inline-start: var(--glacier-space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.songTitleCell {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  min-width: 0;
+}
+
+.songArt {
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  border-radius: var(--glacier-radius-sm);
+  object-fit: cover;
+  background: var(--glacier-surface-sunken);
+}
+
+.songTitleText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.songTitle {
+  color: var(--glacier-text);
+  font-weight: var(--glacier-font-weight-medium);
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.songArtist,
+.songMuted {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-sm);
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The artist reads as a link into its own page: a bare button that underlines
+   on hover, no button chrome. */
+.songArtistLink {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.songArtistLink:hover {
+  color: var(--glacier-text);
+  text-decoration: underline;
+}
+
+/* The discography grid. This was a sideways shelf of what you own; it is now
+   the whole body of work, so it wraps and is read rather than skimmed past. */
+.artistDisc {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+  gap: var(--glacier-space-4) var(--glacier-space-3);
+}
+
+/* ── One record, opened ─────────────────────────────────────────────────────
+   Built on the playlist head's proportions, because they answer the same
+   shape of question - a cover, what it is, and the two buttons - and two
+   pages that read alike should not be two different layouts. */
+.albumHead {
+  display: flex;
+  gap: var(--glacier-space-4);
+  align-items: flex-end;
+  padding: var(--glacier-space-4);
+  padding-block-start: var(--glacier-space-2);
+}
+
+.albumHead__cover {
+  inline-size: 8.5rem;
+  block-size: 8.5rem;
+  flex: none;
+  object-fit: cover;
+  border-radius: var(--glacier-radius-lg);
+  box-shadow: var(--glacier-shadow-3);
+  background: var(--glacier-surface-2);
+}
+
+.albumHead__cover--glyph {
+  display: grid;
+  place-items: center;
+  color: var(--glacier-text-subtle);
+}
+
+.albumHead__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  min-inline-size: 0;
+}
+
+.albumHead__kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.albumHead__name {
+  margin: 0;
+  font-size: var(--glacier-font-size-2xl);
+  font-weight: 700;
+  line-height: 1.1;
+  /* A long title wraps rather than pushing the head wider than the window. */
+  overflow-wrap: anywhere;
+}
+
+/* The credit is a link in everything but decoration: same colour as the text
+   it sits in, underlined only when reached, so it does not shout over the
+   title above it. */
+.albumHead__artist {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+  cursor: pointer;
+}
+
+.albumHead__artist:hover,
+.albumHead__artist:focus-visible {
+  color: var(--glacier-text);
+  text-decoration: underline;
+}
+
+.albumHead__actions {
+  display: flex;
+  gap: var(--glacier-space-2);
+  margin-block-start: var(--glacier-space-2);
+}
+
+.albumDisc {
+  padding-inline: var(--glacier-space-4);
+}
+
+.albumDisc__label {
+  display: block;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-block: var(--glacier-space-3) var(--glacier-space-1);
+}
+
+/* The phone has no room for a 8.5rem plate beside the text; the cover leads
+   and the words sit under it, which is the shape every other hero on a small
+   screen already uses. */
+@media (max-width: 540px) {
+  .albumHead {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .albumHead__cover {
+    inline-size: 10rem;
+    block-size: 10rem;
+  }
+}
+
+/* ── One record's songs ─────────────────────────────────────────────────────
+ *
+ * These rows used to borrow the artist page's CATALOGUE row, which is built
+ * for a list of songs you mostly do not own: a rank, a thumbnail, a title, an
+ * add badge. Two things went wrong in the borrowing. The row came out 30px
+ * tall with the play target only the height of one line of text - twenty
+ * pixels - so a thumb aimed anywhere but the words hit dead space and the
+ * song did not play. And it read as a catalogue listing rather than as this
+ * app's own song rows, which is what an album you own is made of.
+ *
+ * So: the app's row geometry, a comfortable touch target, and the whole row
+ * plays. Songs you own and holes in the record share the geometry exactly, so
+ * the numbers line up down one column and the record reads as ONE list.
+ */
+.albumTracks {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.albumTrack {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+  padding-inline: var(--glacier-space-2);
+}
+
+.albumTrack:hover {
+  background: var(--glacier-hover);
+}
+

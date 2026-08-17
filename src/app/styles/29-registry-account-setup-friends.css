@@ -1,0 +1,369 @@
+/* ---- Registry: account setup + friends --------------------------------- */
+
+.registrySetup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-4);
+}
+
+.registrySetup__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  max-inline-size: 26rem;
+  margin-inline: auto;
+  inline-size: 100%;
+}
+
+.registrySetup__submit {
+  margin-block-start: var(--glacier-space-1);
+}
+
+/* ── The Profile page ───────────────────────────────────────────────────────
+   You, at the top; then the live layer, the servers, the people. The hero is
+   deliberately quiet - an avatar, a handle, one line of where you are - so the
+   page's weight stays on the sections that DO things. */
+.profileHero {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  margin-block-end: var(--glacier-space-4);
+}
+
+/* The lg avatar, grown into a hero face - one place, so the friend grid's
+   own lg stays its size. */
+.profileHero__face.friendAvatar--lg {
+  inline-size: 4rem;
+  block-size: 4rem;
+  font-size: 1.5rem;
+}
+
+.profileHero__body {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profileHero__handle {
+  margin: 0;
+  font-size: var(--glacier-font-size-lg);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profileHero__caption {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Where you listen: one column of rows, not a grid of squares - a server is a
+   named place with verbs on the end, which is a ROW's shape. */
+.serverCards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.serverCard {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+/* The one you are on: edged in accent rather than filled with it, so the
+   badge stays the loudest thing on the row. */
+.serverCard[data-current] {
+  border-color: color-mix(in srgb, var(--glacier-accent-solid) 45%, transparent);
+}
+
+.serverCard--verb {
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+  background: transparent;
+  border-style: dashed;
+  transition: background var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.serverCard--verb:hover {
+  background: var(--glacier-hover);
+}
+
+.serverCard__glyph {
+  flex: none;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text-muted);
+}
+
+.serverCard__glyph--accent {
+  color: var(--glacier-accent-text);
+}
+
+.serverCard__body {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.serverCard__name {
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.serverCard__meta {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.serverCard__live {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  color: var(--glacier-accent-text);
+  font-size: var(--glacier-font-size-xs);
+  font-weight: 650;
+}
+
+.serverCard__dot {
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-solid);
+  animation: serverLivePulse 2.4s ease-in-out infinite;
+}
+
+@keyframes serverLivePulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .serverCard__dot {
+    animation: none;
+  }
+}
+
+.serverCard__actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}
+
+/* The Friends section head: the title with its one verb on the end, now that
+   the old page-wide header is the profile hero's job. */
+.friendsBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+}
+
+.friendsBar .homeShelfTitle {
+  margin: 0;
+}
+
+.friendCard__visit {
+  margin-block-start: var(--glacier-space-1);
+}
+
+.registryFriends {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-4);
+}
+
+.joinServer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-3);
+  border: 1px solid var(--glacier-border);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface);
+}
+
+.joinServer__preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+  flex-wrap: wrap;
+}
+
+.registryFriends__inviteLink {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.registryFriends__inviteLink > :first-child {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+/* The bare code, for reading aloud or typing into the eight boxes on the other
+   end. Monospace and spaced so the two groups of four read at a glance. */
+.registryFriends__inviteCode {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--glacier-text-muted);
+}
+
+.registryFriends__inviteCode strong {
+  font-family: var(--glacier-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 1.05rem;
+  letter-spacing: 0.12em;
+  color: var(--glacier-text);
+}
+
+/* The header's shadow over scrolled content: a black gradient pinned to the
+   top of the content area, opacity driven from the page's scrollTop by
+   TopScrim (0 parked at the top, 1 a few dozen pixels in) - so content
+   dissolves into the header's edge the way the bottom nav's scrim dissolves
+   it below, and a page at rest shows no chrome at all. */
+.appTopScrim {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  block-size: 3.25rem;
+  z-index: 5;
+  pointer-events: none;
+  opacity: 0;
+  /* The page's own background, not black: on light themes a black smudge
+     over white content read as dirt. color-mix keeps the alpha ramp. */
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--glacier-bg) 92%, transparent),
+    color-mix(in srgb, var(--glacier-bg) 50%, transparent) 45%,
+    transparent
+  );
+}
+
+/* ---- Plugins: updates, browse, sources --------------------------------- */
+
+/* The update notice sits above the tabs, tinted so it reads as news rather
+   than as another section. Nothing here updates on its own, so this banner is
+   the only thing that says a new version exists. */
+.pluginUpdates {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-3);
+  border: 1px solid var(--glacier-accent-6);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-accent-2);
+}
+
+.pluginUpdatesHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+}
+
+.pluginUpdateRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding-block-start: var(--glacier-space-2);
+  border-block-start: 1px solid var(--glacier-accent-6);
+}
+
+.pluginBrowse,
+.pluginSources {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+/* Browse rows stand alone rather than under a repository heading, so each
+   needs its own frame instead of the divider the repo list uses. */
+.pluginBrowse .pluginRepoRow {
+  padding: var(--glacier-space-3);
+  border: 1px solid var(--glacier-border);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface);
+}
+
+/* ---- The curator ------------------------------------------------------- */
+
+/* Said while the curator is still reading the library, so a thin shelf reads
+   as work in progress rather than a verdict on your taste. */
+.curatorNote {
+  margin: 0;
+  padding: 0 var(--glacier-space-4);
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-sm);
+}
+
+/* "Suggested for this playlist": what else belongs, under the list itself -
+   the same row shape as the playlist's own, so it reads as a continuation
+   rather than an advert bolted to the bottom. Its rows carry a + instead of an
+   × and no drag handle: they are not part of the order until you say so. */
+.playlistSuggest {
+  padding: var(--glacier-space-5) var(--glacier-space-4) var(--glacier-space-6);
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border);
+  margin-block-start: var(--glacier-space-4);
+}
+
+.playlistSuggest__title {
+  margin: 0;
+  font-size: var(--glacier-font-size-lg);
+}
+
+.playlistSuggest__blurb {
+  display: block;
+  margin-block-end: var(--glacier-space-3);
+}
+
+.playlistSuggest__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The playlist's own rows sit inside the kit's sortable item, which supplies
+   the padding; these stand alone and need their own. */
+.playlistSuggest__row {
+  padding: var(--glacier-space-1) var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+}
+
+.playlistSuggest__row:hover {
+  background: var(--glacier-hover);
+}
+

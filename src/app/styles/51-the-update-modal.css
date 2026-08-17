@@ -1,0 +1,170 @@
+/* --- the update modal ----------------------------------------------------- */
+/*
+ * What an update looks like when it arrives: the whole changelog, each line
+ * badged with the KIND of change it is. The strip above is what remains after
+ * this has had its one turn - see UpdateModal.tsx.
+ */
+.updateModal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-4);
+}
+
+.updateModal__hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  text-align: center;
+}
+
+/* The mark: a lit accent disc, with a soft ring standing in for the glow a
+   shadow cannot carry on a translucent panel. */
+.updateModal__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 3.25rem;
+  block-size: 3.25rem;
+  margin-block-end: var(--glacier-space-1);
+  border-radius: 50%;
+  color: var(--glacier-on-accent, #fff);
+  background: var(--glacier-accent-solid);
+  box-shadow: 0 0 0 6px color-mix(in oklab, var(--glacier-accent-solid) 18%, transparent);
+}
+
+/* Already applied: the same disc in a settled green, because "done" and
+   "waiting for you" should not look identical. */
+.updateModal__mark.is-done {
+  background: var(--glacier-success-solid, #2f9e63);
+  box-shadow: 0 0 0 6px color-mix(in oklab, var(--glacier-success-solid, #2f9e63) 18%, transparent);
+}
+
+.updateModal__title {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.updateModal__version {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.updateModal__from {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.updateModal__arrow {
+  opacity: 0.6;
+}
+
+.updateModal__to {
+  font-weight: 650;
+  color: var(--glacier-accent-text);
+}
+
+/* The changelog. A list, but no bullets: every line already carries a glyph
+   that says more than a dot would. Capped so a big release scrolls inside the
+   panel instead of pushing the buttons off a phone. */
+.updateModal__notes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  max-block-size: min(42vh, 22rem);
+  overflow-y: auto;
+}
+
+.updateModal__note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--glacier-space-3);
+  font-size: var(--glacier-font-size-sm);
+  line-height: 1.4;
+}
+
+.updateModal__noteIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border-radius: var(--glacier-radius-md);
+  color: var(--glacier-accent-text);
+  background: color-mix(in oklab, var(--glacier-accent-solid) 15%, transparent);
+}
+
+/* Each kind gets its own hue, so a list of changes can be read by colour
+   before it is read by word: fixes settle, devices and looks cool off, the
+   unclaimed "new" keeps the accent. */
+.updateModal__note[data-kind='fix'] .updateModal__noteIcon {
+  color: var(--glacier-success-text, #4ac07f);
+  background: color-mix(in oklab, var(--glacier-success-solid, #2f9e63) 16%, transparent);
+}
+
+.updateModal__note[data-kind='device'] .updateModal__noteIcon,
+.updateModal__note[data-kind='server'] .updateModal__noteIcon {
+  color: var(--glacier-info-text, #6aa9ff);
+  background: color-mix(in oklab, var(--glacier-info-solid, #3b82f6) 16%, transparent);
+}
+
+.updateModal__note[data-kind='look'] .updateModal__noteIcon {
+  color: #c08cff;
+  background: color-mix(in oklab, #8b5cf6 18%, transparent);
+}
+
+.updateModal__note[data-kind='speed'] .updateModal__noteIcon {
+  color: var(--glacier-warning-text, #e3b341);
+  background: color-mix(in oklab, var(--glacier-warning-solid, #d29922) 16%, transparent);
+}
+
+.updateModal__noteText {
+  min-inline-size: 0;
+}
+
+/* The "Fixed:" / "Android:" prefix the changelog writes in prose, lifted into
+   a tag so the sentence keeps only its own words. */
+.updateModal__noteTag {
+  display: inline-block;
+  margin-inline-end: var(--glacier-space-2);
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--glacier-radius-sm);
+  background: color-mix(in oklab, var(--glacier-text) 12%, transparent);
+  font-size: var(--glacier-font-size-xs);
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  vertical-align: 1px;
+}
+
+.updateModal__quiet {
+  margin: 0;
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+  text-align: center;
+}
+
+.updateModal__actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+/* On a phone the pair goes full width and stacks the primary on top: a
+   restart is the reason the panel is up, and it should not be the smaller
+   half of a cramped row. */
+@media (max-width: 30rem) {
+  .updateModal__actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+}
+

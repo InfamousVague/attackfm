@@ -1,0 +1,82 @@
+/* --- Friends -------------------------------------------------------------- */
+
+.friendsAdd {
+  display: flex;
+  gap: var(--glacier-space-2);
+  align-items: center;
+}
+
+.friendsAdd__field {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.friendsNote {
+  font-size: var(--glacier-font-size-sm);
+}
+
+.friendsNote--ok {
+  color: var(--glacier-success-text, var(--glacier-text-muted));
+}
+
+.friendsNote--bad {
+  color: var(--glacier-danger-text, var(--glacier-text-muted));
+}
+
+/* The delete-playlist confirmation's buttons: pushed to the end so the
+   destructive one is not where a thumb rests by default. */
+.playlistDeleteActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--glacier-space-2);
+  margin-block-start: var(--glacier-space-4);
+}
+
+/* The bottom-third blur behind the Now Playing controls. A canvas is moving
+   footage of anything at all, so the transport can land on a bright frame and
+   lose its contrast; this rises from nothing at the top of the band to a full
+   blur plus a dark wash at the very bottom. Masked rather than a hard edge,
+   or the blur announces itself as a rectangle across the artwork.
+
+   z-index -1 keeps it in the background layer beside the canvas (later in the
+   DOM, so it paints over it) while every control, being in normal flow, stays
+   above. */
+.npScreen__veil {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  /* Tall enough to reach up past the seek bar and the title, not just the
+     transport - those read against the clip too, and a blur that stopped
+     under them left the words fighting the footage. */
+  block-size: 55%;
+  z-index: -1;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(22px) saturate(1.1);
+  backdrop-filter: blur(22px) saturate(1.1);
+  background: linear-gradient(to bottom, transparent, rgba(9, 9, 10, 0.55));
+  /* The fade takes the whole upper half of the band now, so a taller veil
+     still arrives gradually rather than as a visible seam across the art. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 55%);
+  mask-image: linear-gradient(to bottom, transparent, #000 55%);
+}
+
+/* --- Now Playing without a disc -------------------------------------------
+   The art block carries `flex: 1`, so it was the thing absorbing the sheet's
+   free space and holding the meta and transport down at the bottom. With a
+   Canvas playing that block is gone, and everything collapsed to the top.
+   An auto leading margin puts the free space back above the meta. Harmless
+   when the art IS present: it has already taken the space, so there is none
+   left for this to claim. */
+.npScreen__meta {
+  margin-block-start: auto;
+}
+
+/* The lyric words on this sheet start at the very top. The shared band sits
+   them 12% down, which is right for the desktop hero (whose upper half reads
+   as the title) and wrong here, where the sheet is theirs and the space above
+   is simply empty. Scoped to the words-only variant so the hero keeps its
+   own framing. */
+.nowPlayingBackdrop[data-words-only] .npWords {
+  inset-block-start: 0;
+}
+

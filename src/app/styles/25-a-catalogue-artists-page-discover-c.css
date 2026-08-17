@@ -1,0 +1,85 @@
+/* ── Plugin repositories ─────────────────────────────────────────────── */
+
+/* One repository: its address row, then the plugins it offers. */
+.pluginRepo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-3);
+  border: 1px solid var(--glacier-border);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface);
+}
+
+.pluginRepoHead {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.pluginRepoUrl {
+  flex: 1;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.pluginRepoRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding-block-start: var(--glacier-space-2);
+  border-block-start: 1px solid var(--glacier-border);
+}
+
+.pluginRepoRowText {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+/* The add row: field takes the room, button rides along. */
+.pluginRepoAdd {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.pluginRepoAdd > :first-child {
+  flex: 1;
+}
+
+/* A pasted music link, caught by a search field and handed to the queue.
+   Tinted like the update banner so it reads as "something is happening"
+   rather than as a search result. */
+.searchImport {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3);
+  margin-block-start: var(--glacier-space-2);
+  border: 1px solid var(--glacier-accent-6);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-accent-2);
+}
+
+.searchImport__body {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* The library page's own action row: the download queue's icon, sitting above
+   the shelves and pinned to the trailing edge so it reads as page chrome
+   rather than as the first item of the first shelf. */
+/* The library page's action row: the download queue's icon on the left, the DJ
+   taking everything after it. Aligned to the top rather than centred, so the
+   DJ's spoken line can hang below its button without dragging the icon down
+   with it. */
+.libraryActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--glacier-space-1);
+}
+

@@ -1,0 +1,351 @@
+/* An artist on the Top artists shelf: a round cover over a centered name,
+   the shape that reads "person" the way a square reads "release". */
+.artistCard {
+  flex: none;
+  /* Two thirds of the old 8rem, matching the square cards' reduction. */
+  inline-size: var(--card-artist);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.artistCardArt {
+  inline-size: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 50%;
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  transition: transform 0.18s var(--glacier-ease-out);
+}
+
+.artistCard:hover .artistCardArt,
+.artistCard:focus-visible .artistCardArt {
+  transform: translateY(-2px) scale(1.02);
+}
+
+.artistCardName {
+  font-size: 0.875rem;
+  font-weight: 550;
+  text-align: center;
+  max-inline-size: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A mix: bigger than a song, cover mosaic over a title and a one-line blurb.
+   These are the page's hero objects. */
+.mixCard {
+  flex: none;
+  /* Two thirds, with the album cards it sits beside - a mosaic of four covers
+     is still a cover, and left at full size it dwarfed the shrunken shelf. */
+  inline-size: var(--card-mix);
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.mixCardCover {
+  inline-size: 100%;
+  aspect-ratio: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  overflow: hidden;
+  border-radius: var(--glacier-radius-lg);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  transition: transform 0.18s var(--glacier-ease-out);
+}
+
+.mixCard:hover .mixCardCover,
+.mixCard:focus-visible .mixCardCover {
+  transform: translateY(-2px) scale(1.02);
+}
+
+.mixCardCover img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.mixCardCover--glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-accent-text);
+}
+
+/* One generated object as the whole face - a single frame, not mosaic cells.
+   The object rides a bold gradient of the mix's own hue: the shots' white
+   grounds multiply away, so the frosted object sits ON the colour rather
+   than on a white card. */
+.mixCardCover--object {
+  position: relative;
+  display: block;
+  background: linear-gradient(
+    140deg,
+    hsl(var(--mixHue, 280) 68% 54%),
+    hsl(calc(var(--mixHue, 280) + 50) 62% 40%)
+  );
+}
+
+/* Two passes of the same shot: multiply burns the white ground into the
+   gradient, and a screened copy over it puts the object's own highlights
+   back - frosted glass reads as glass again instead of a flat tint. */
+/* Both passes wear the cover's own rounding: the shelves ride the same
+   entrance wave as the genre tiles, and a composited layer does not get the
+   parent's clip - see .searchGenre__objectArt. */
+.mixCardCover--object img {
+  mix-blend-mode: multiply;
+  border-radius: inherit;
+}
+
+.mixCardCover--object::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--objectArt) center / cover no-repeat;
+  mix-blend-mode: screen;
+  opacity: 0.28;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.mixCardTitle {
+  max-inline-size: 100%;
+  margin-block-start: var(--glacier-space-1);
+  font-size: 0.95rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  /* A plain block with an honest ellipsis: as a flex row sharing space with
+     the AI pill, long names clipped mid-letter with no sign of the cut. The
+     pill lives on the artwork now. */
+  text-overflow: ellipsis;
+}
+
+/* Anchors the pill to the artwork's corner - the same seat the source pill
+   takes on a Discover card. */
+.mixCardCoverWrap {
+  position: relative;
+  display: block;
+  inline-size: 100%;
+}
+
+.mixCardBlurb {
+  font-size: 0.75rem;
+  color: var(--glacier-text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.libraryBody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* With the search field stacked above it, the table takes the rest of the
+   height and scrolls within it rather than pushing the field off screen. */
+.libraryBody > .songTable {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+}
+
+.libraryBody > .pageSearch {
+  margin: var(--glacier-space-3) var(--glacier-space-4);
+  /* Not the base rule's 100%: with side margins on top of that the field runs
+     past the window's right edge. Auto lets the flex column stretch it to the
+     body's width MINUS the margins. */
+  inline-size: auto;
+}
+
+/* A tile is a bare button: the squircle does the talking, the caption is a
+   quiet line beneath it - no card frame around either. */
+/* The showcase laid out as a grid: fixed-width tracks (the shared card
+   width, same as the rails), wrapping to fill, all playlists visible. The
+   block cap is five rows of tile + caption; past that the grid scrolls
+   inside itself rather than pushing the library's shelves off the page. */
+.showcaseGrid {
+  display: grid;
+  /* minmax + 1fr instead of fixed tracks and space-between: tiles stretch a
+     little to swallow the leftover width, so every row runs edge to edge and
+     the slack lives INSIDE the covers instead of between them as gutters. */
+  grid-template-columns: repeat(auto-fill, minmax(var(--card-track), 1fr));
+  gap: var(--glacier-space-3) var(--glacier-space-2);
+}
+
+/* Inside the grid a tile fills the track the grid dealt it (the art is
+   width:100% + aspect-ratio:1, so it scales with the tile); on the sideways
+   rails the fixed width below still rules. */
+.showcaseGrid .playlistTile {
+  width: 100%;
+}
+
+/* The grid gets its own scroll ONLY where a pointer can deliberately leave
+   it. It used to be capped at five rows and scrollable everywhere, with
+   `overscroll-behavior: contain` on top - which on a phone was a trap: five
+   rows is ~45rem, taller than the visible page, so the grid filled the screen,
+   every touch landed inside it, and `contain` refused to pass the scroll on
+   when it hit the end. The shelves below the playlists became unreachable,
+   and the only cure was owning fewer playlists.
+   On touch the grid simply grows and the PAGE scrolls through it, which is
+   what a phone expects. No containment either way: a scroll that reaches the
+   end of a box should carry on to what holds it. */
+@media (pointer: fine) {
+  .showcaseGrid {
+    /* Tracks can stretch past --card-track now (minmax above), so the cap
+       allows ~12% of growth per row; it only ever needed to read as "about
+       five rows before the grid scrolls". */
+    max-block-size: calc(5 * (var(--card-track) * 1.12 + 2.1rem) + 4 * var(--glacier-space-3));
+    overflow-y: auto;
+  }
+}
+
+.playlistTile {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--glacier-space-1);
+  flex: 0 0 auto;
+  /* The same footprint as every other card on the page (.trackCard): the
+     playlists are peers of the shelves, not a runt row of chips. The shared
+     variable is what makes "moves with it" true rather than a hope. */
+  width: var(--card-track);
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+/* The squircle: a superellipse-ish tile, icon centred. It grows a touch on
+   hover, the tile's only chrome. */
+.tileSquircle {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: var(--glacier-radius-lg);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  overflow: hidden;
+  color: var(--glacier-accent-contrast, #fff);
+  transition: transform var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+/* One cover standing for the whole list, filling the square. */
+.tileCoverFull img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.playlistTile:hover .tileSquircle {
+  transform: translateY(-2px) scale(1.02);
+}
+
+.playlistTile:focus-visible {
+  outline: none;
+}
+
+.playlistTile:focus-visible .tileSquircle {
+  outline: 2px solid var(--glacier-focus-ring);
+  outline-offset: 2px;
+}
+
+/* The 2x2 mosaic of favourite covers, seamless. */
+.tileLikedGrid {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 0;
+}
+
+.tileLikedGrid img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tileRecent {
+  background: linear-gradient(135deg, var(--glacier-surface-raised) 0%, var(--glacier-surface-sunken) 100%);
+  color: var(--glacier-text);
+}
+
+/* The kit's Popover panel caps at 24rem, too narrow for eight EQ bands; widen it
+   here (still clamped to the window) so the curve and bands are not pinched. */
+.eqPopoverPanel {
+  max-inline-size: min(30rem, calc(100vw - 2rem));
+  /* And a height, which is what was missing. The kit's preset row wraps, so a
+     rack with a decent number of presets grew taller than the screen - and a
+     panel that overflows the viewport cannot be scrolled from the inside, so
+     the drag that went looking for the rest of it landed on the PAGE, which
+     the popover correctly read as a press outside itself and closed on. That
+     is why scrolling the presets shut the equalizer.
+     Capped and scrolled internally, the gesture stays in the panel. */
+  max-block-size: min(70dvh, 34rem);
+  overflow-y: auto;
+  /* A flick that reaches the end stays here rather than chaining to the page
+     underneath and dismissing on the way. */
+  overscroll-behavior: contain;
+  /* Say plainly that a vertical drag on this panel is a scroll, so the touch
+     is never claimed by anything else mid-gesture. */
+  touch-action: pan-y;
+}
+
+/* The volume popover: one fader and its reading, so the panel is only as wide
+   as the rail. The kit's panel floors at 12rem - the width a menu or a form
+   needs - which leaves a single vertical fader stranded in a sheet. */
+.volPanel {
+  min-width: 0;
+  min-inline-size: 0;
+  inline-size: max-content;
+  /* tighter across than down: the panel's width is the reading's, and there is
+     no reason for the sides to hold more air than the pill needs */
+  padding: var(--glacier-space-3) var(--glacier-space-2);
+}
+
+.volBody {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+/* The rail and the unity mark share a box, so the mark is placed against the
+   fader's travel rather than against the panel. The two measurements the mark
+   needs are stated here rather than read off the fader: the kit sets them on
+   the fader itself, where a sibling cannot see them. */
+.volRailWrap {
+  --vol-length: 9rem;
+  --vol-thumb: 0.875rem;
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.volRail {
+  --slider-length: var(--vol-length);
+  --slider-thumb: var(--vol-thumb);
+  --slider-track: 0.3125rem;
+}
+

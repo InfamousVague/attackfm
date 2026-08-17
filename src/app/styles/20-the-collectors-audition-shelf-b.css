@@ -1,0 +1,351 @@
+/* A small glass pill above the player that reports the background indexer's
+   progress. Present only while it runs, so it never competes with the list once
+   the library is settled. */
+.indexingBar {
+  position: absolute;
+  z-index: 3;
+  /* Sits above the floating player and in from the right edge by the same gap,
+     so it reads as evenly inset from both the player and the window side. */
+  inset-block-end: calc(var(--app-player-height) + var(--app-nav-height, 0px) + var(--glacier-space-2));
+  inset-inline-end: var(--glacier-space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-1) var(--glacier-space-3);
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-glass-regular);
+  border: var(--glacier-hairline, 1px) solid var(--glacier-glass-border);
+  box-shadow:
+    inset 0 var(--glacier-hairline, 1px) 0 var(--glacier-glass-highlight),
+    var(--glacier-shadow-3);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  pointer-events: none;
+}
+
+/* A quietly pulsing accent dot that marks the strip as live work in progress. */
+.indexingBar__dot {
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-solid);
+  animation: indexingPulse 1.4s var(--glacier-ease-in-out, ease-in-out) infinite;
+}
+
+.indexingBar__label {
+  white-space: nowrap;
+}
+
+/* The thin rail the fill runs along, showing how far the pass has to go. */
+.indexingBar__track {
+  inline-size: 4rem;
+  block-size: 0.25rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-glass-border);
+  overflow: hidden;
+}
+
+.indexingBar__fill {
+  display: block;
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--glacier-accent-solid);
+  transition: inline-size var(--glacier-duration-normal) var(--glacier-ease-out);
+}
+
+@keyframes indexingPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* The server-sync variant: a delta sync's total is unknown until it is over,
+   so the fill sweeps instead of pretending to a percent. The track already
+   clips, so the runner can slide clean off both ends. */
+.indexingBar__fill--sweep {
+  inline-size: 45%;
+  animation: indexingSweep 1.2s var(--glacier-ease-in-out, ease-in-out) infinite;
+}
+
+@keyframes indexingSweep {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(240%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .indexingBar__dot {
+    animation: none;
+  }
+
+  /* Still moving would defeat the setting; a full quiet bar reads as "busy"
+     the same way the dot does. */
+  .indexingBar__fill--sweep {
+    animation: none;
+    inline-size: 100%;
+  }
+}
+
+/* ── Downloads popover ────────────────────────────────────────────────── */
+
+/* The top-bar trigger carries a small count badge in its corner. */
+.dlTrigger {
+  position: relative;
+  overflow: visible;
+}
+
+.dlTrigger__badge {
+  position: absolute;
+  inset-block-start: -0.15rem;
+  inset-inline-end: -0.15rem;
+  pointer-events: none;
+}
+
+/* The popover panel: a column of import cards under the trigger. */
+.dlPanel {
+  inline-size: 22rem;
+  max-inline-size: 90vw;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.dlPanel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+}
+
+.dlPanel__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}
+
+.dlPanel__title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  font-size: var(--glacier-font-size-sm);
+  font-weight: var(--glacier-font-weight-semibold);
+  color: var(--glacier-text);
+}
+
+/* The paused notice: a glyph and its sentence on one line. */
+.dlPanel__note {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}
+
+.dlPanel__empty {
+  padding-block: var(--glacier-space-4);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+/* The empty queue's mark: the download glyph in a quiet ring, so the panel
+   reads as a place with nothing in it rather than a missing feature. */
+.dlPanel__emptyGlyph {
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--glacier-radius-full);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text-muted);
+}
+
+.dlList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-block-size: 24rem;
+  overflow-y: auto;
+}
+
+.dlCard {
+  display: flex;
+  gap: var(--glacier-space-3);
+  align-items: flex-start;
+  padding: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+}
+
+.dlCard:hover {
+  background: var(--glacier-hover);
+}
+
+/* The art carries the job's verdict on its corner, so the frame is the
+   anchor the badge rides. */
+.dlCard__artWrap {
+  position: relative;
+  flex: none;
+}
+
+.dlCard__art {
+  display: block;
+  inline-size: 3rem;
+  block-size: 3rem;
+  border-radius: var(--glacier-radius-sm);
+  object-fit: cover;
+  background: var(--glacier-surface-sunken);
+}
+
+/* The state, worn where every card in the app wears its verdict: a frosted
+   chip on the artwork corner - spinner, check, cross, clock. No words. */
+.dlCard__badge {
+  position: absolute;
+  inset-block-end: -0.3rem;
+  inset-inline-end: -0.3rem;
+  inline-size: 1.15rem;
+  block-size: 1.15rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface, rgba(0, 0, 0, 0.55));
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  color: var(--glacier-text-muted);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.dlCard__badge[data-state='done'] {
+  color: var(--glacier-success-text, var(--glacier-text));
+  border-color: var(--glacier-success-text, var(--glacier-border-subtle));
+}
+
+.dlCard__badge[data-state='error'] {
+  color: var(--glacier-danger-text, var(--glacier-text));
+  border-color: var(--glacier-danger-text, var(--glacier-border-subtle));
+}
+
+.dlCard__badge[data-state='downloading'] {
+  color: var(--glacier-accent-text, var(--glacier-accent-solid));
+}
+
+.dlCard__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.dlCard__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--glacier-font-size-sm);
+  font-weight: var(--glacier-font-weight-medium);
+  color: var(--glacier-text);
+}
+
+/* One quiet line of source and counts: the subtitle gives way, the chips
+   never do. */
+.dlCard__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  min-width: 0;
+}
+
+.dlCard__sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+/* A count with its glyph: songs landed, songs already owned. */
+.dlChip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--glacier-radius-full);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  background: var(--glacier-surface);
+  font-size: var(--glacier-font-size-2xs, 0.65rem);
+  font-variant-numeric: tabular-nums;
+  color: var(--glacier-text-muted);
+}
+
+.dlCard__track,
+.dlCard__error {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.dlCard__track {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  color: var(--glacier-text);
+}
+
+.dlCard__error {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  color: var(--glacier-danger-text, var(--glacier-text-muted));
+  white-space: normal;
+}
+
+.dlCard__bar {
+  margin-block-start: 0.15rem;
+}
+
+.dlCard__actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+/* A per-job action button on the Downloads page (retry / cancel / remove). */
+.dlCard__act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.9rem;
+  block-size: 1.9rem;
+  border: none;
+  border-radius: var(--glacier-radius-full);
+  background: transparent;
+  color: var(--glacier-text-muted);
+  cursor: pointer;
+}
+
+.dlCard__act:hover {
+  background: var(--glacier-surface-hover, rgba(128, 128, 128, 0.14));
+  color: var(--glacier-text);
+}
+
+/* ── Downloads tab ──────────────────────────────────────────────────────────
+   The import queue as a full page; inherits .homePage's scroll/gutter. */

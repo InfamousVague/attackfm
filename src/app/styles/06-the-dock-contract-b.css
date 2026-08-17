@@ -1,0 +1,352 @@
+/* The object, worn as the tile's face rather than sat beside the words:
+   multiply so it tints INTO the gradient the way a Browse tile's does, and
+   contain so a shape photographed against nothing keeps its silhouette
+   instead of being cropped to fill. It leans to the trailing edge, leaving
+   the leading half for the words to sit clear. */
+.libChip__art {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: -8%;
+  /* Larger than before (was 62%) so the object reads as the chip's face, not a
+     stamp in the corner. */
+  inline-size: 74%;
+  block-size: 100%;
+  object-fit: contain;
+  mix-blend-mode: multiply;
+  opacity: 0.95;
+  pointer-events: none;
+  /* See .searchGenre__objectArt: a child that is already round has no square
+     corners to flash past the parent's radius mid-entrance-animation. */
+  border-radius: inherit;
+}
+
+/* A few degrees of tilt each, opposite ways, so the pair reads as objects set
+   down by hand rather than two flat fills. The chip's overflow crops the turn. */
+.libChip--all .libChip__art {
+  transform: rotate(7deg);
+}
+
+/* Liked's art, set down by hand like its neighbour - opposite turn, a touch
+   larger. The glossy heart rides the row's own multiply on the crimson
+   gradient; the neon variant tried a dark ground and a screen blend here and
+   Matt sent it back. */
+.libChip--liked .libChip__art {
+  transform: rotate(-8deg) scale(1.14);
+}
+
+.libChip__name {
+  position: relative;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+}
+
+.libChip__count {
+  position: relative;
+  z-index: 1;
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+
+/* ── Full-screen Now Playing ────────────────────────────────────────────────
+   The mini-strip blown up: cover, title, scrubber, transport, fader. Fixed to
+   the viewport, above everything, sliding up from the bottom. */
+/* The sheet is forced dark via data-theme on its own root. The token layer's
+   dark block flips the COLOR RAMPS on any [data-theme='dark'] element - but
+   the semantic aliases (--glacier-text, --glacier-bg, the borders, the status
+   families) are declared only on :root, so their light values arrive here
+   already computed. Re-declaring the ramp-referencing aliases inside the
+   scope makes them resolve against the ramps the kit just flipped. Literal
+   aliases (the contrasts, surfaces, glass) are declared by the kit's own dark
+   block and are deliberately NOT repeated here - this rule's higher
+   specificity would otherwise shadow them with light values. */
+.npScreen[data-theme='dark'] {
+  /* The accent this app actually wears, restored over the kit's default -
+     see the snapshot at :root. Without these twelve the sheet's heart, its
+     scrubber and its lit controls all come out blue. */
+  --glacier-accent-1: var(--afm-accent-1);
+  --glacier-accent-2: var(--afm-accent-2);
+  --glacier-accent-3: var(--afm-accent-3);
+  --glacier-accent-4: var(--afm-accent-4);
+  --glacier-accent-5: var(--afm-accent-5);
+  --glacier-accent-6: var(--afm-accent-6);
+  --glacier-accent-7: var(--afm-accent-7);
+  --glacier-accent-8: var(--afm-accent-8);
+  --glacier-accent-9: var(--afm-accent-9);
+  --glacier-accent-10: var(--afm-accent-10);
+  --glacier-accent-11: var(--afm-accent-11);
+  --glacier-accent-12: var(--afm-accent-12);
+  --glacier-bg: var(--glacier-gray-1);
+  --glacier-hover: var(--glacier-gray-3);
+  --glacier-active: var(--glacier-gray-4);
+  --glacier-selection: var(--glacier-accent-5);
+  --glacier-border-subtle: var(--glacier-gray-4);
+  --glacier-border: var(--glacier-gray-6);
+  --glacier-border-strong: var(--glacier-gray-8);
+  --glacier-text: var(--glacier-gray-12);
+  --glacier-text-muted: var(--glacier-gray-11);
+  --glacier-text-subtle: var(--glacier-gray-9);
+  --glacier-text-disabled: var(--glacier-gray-8);
+  --glacier-accent-solid-hover: var(--glacier-accent-10);
+  --glacier-accent-soft: var(--glacier-accent-3);
+  --glacier-accent-soft-hover: var(--glacier-accent-4);
+  --glacier-accent-border: var(--glacier-accent-7);
+  --glacier-accent-text: var(--glacier-accent-11);
+  --glacier-focus-ring: var(--glacier-accent-8);
+  --glacier-danger-solid: var(--glacier-red-9);
+  --glacier-danger-soft: var(--glacier-red-3);
+  --glacier-danger-border: var(--glacier-red-7);
+  --glacier-danger-text: var(--glacier-red-11);
+  --glacier-success-solid: var(--glacier-green-9);
+  --glacier-success-soft: var(--glacier-green-3);
+  --glacier-success-border: var(--glacier-green-7);
+  --glacier-success-text: var(--glacier-green-11);
+  --glacier-warning-solid: var(--glacier-amber-9);
+  --glacier-warning-soft: var(--glacier-amber-3);
+  --glacier-warning-border: var(--glacier-amber-7);
+  --glacier-warning-text: var(--glacier-amber-11);
+  --glacier-info-solid: var(--glacier-blue-9);
+  --glacier-info-soft: var(--glacier-blue-3);
+  --glacier-info-border: var(--glacier-blue-7);
+  --glacier-info-text: var(--glacier-blue-11);
+}
+
+.npScreen {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  /* The sheet is forced dark (data-theme on its root); the tokens re-scope
+     automatically but INHERITED ink does not - without this line the text
+     color arrives already computed from the light page outside. Naming the
+     token here makes it re-resolve inside the dark scope. */
+  color: var(--glacier-text);
+  /* Portalled to the body, so the app's --app-safe-* vars are out of scope
+     here - the notch/home-indicator insets come straight from env(). An
+     undefined var in this shorthand would drop the whole thing (that is how
+     the padding once read as zero). */
+  padding: calc(env(safe-area-inset-top, 0px) + var(--glacier-space-3)) var(--glacier-space-6, 1.75rem)
+    calc(env(safe-area-inset-bottom, 0px) + var(--glacier-space-6, 1.75rem));
+  gap: var(--glacier-space-4);
+  overflow: hidden;
+  background: var(--glacier-bg);
+  color: var(--glacier-text);
+  animation: npRise 0.28s var(--glacier-ease-out);
+}
+
+/* The inactivity veil over the Now Playing sheet: the screen stays awake (the
+   native idle timer is parked while the sheet is up and playing), and this
+   near-black wash is the "dim" - a slow fade in, an instant lift on touch.
+   Inert until dimmed so it never eats a tap meant for the controls. */
+.npScreen__dim {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  /* The waking touch lifts it near-instantly; the fade IN gets its own, far
+     slower clock on the dimmed state below. */
+  transition: opacity 0.25s ease;
+}
+.npScreen__dim[data-dim] {
+  /* A whisper of a dim - enough to read as "resting", not a blackout. The art
+     and controls stay fully visible; the screen just eases back a touch. */
+  opacity: 0.22;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: opacity 2.4s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .npScreen__dim {
+    transition: none;
+  }
+}
+
+/* The title/heart row and the scrubber want a touch more room from the edges
+   than the screen's own gutter - they read as the sheet's content, set in
+   from the art above and the transport below. */
+.npScreen__meta,
+.npScreen__scrub {
+  padding-inline: var(--glacier-space-2);
+}
+
+@keyframes npRise {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* The cover, enlarged and blurred, as the surface behind the controls. A dark
+   veil over it keeps the white text and the icons legible on any art. */
+.npScreen__bg {
+  position: absolute;
+  inset: -10%;
+  z-index: -1;
+  background-size: cover;
+  background-position: center;
+  filter: blur(48px) saturate(1.3) brightness(0.55);
+  transform: scale(1.1);
+}
+
+.npScreen__bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.25), rgba(0, 0, 0, 0.6));
+}
+
+.npScreen__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+}
+
+.npScreen__source {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 550;
+  color: var(--glacier-text);
+  max-inline-size: 60%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+.npScreen__headSpacer {
+  inline-size: 2.5rem;
+}
+
+/* The artwork owns the middle: a big square that grows to fill the space left
+   between the header and the controls, capped so it never crowds them. */
+.npScreen__art {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The art chooser wraps EITHER the flat cover or the turning CD, and is the
+   square box both fill. Sizing the square here (not on the art) is what keeps
+   the disc a true circle - a non-square parent is exactly what stretched it to
+   an oval before. The side is the largest square the width cap and the row's
+   height both allow. */
+.npScreen__coverTarget {
+  display: flex;
+  aspect-ratio: 1;
+  block-size: min(78vw, 22rem);
+  max-block-size: 100%;
+  max-inline-size: 100%;
+}
+
+@keyframes artFaceIn {
+  from { opacity: 0; scale: 0.96; }
+  to { opacity: 1; scale: 1; }
+}
+
+.npScreen__coverTarget > * {
+  animation: artFaceIn 0.24s var(--glacier-ease-out);
+}
+
+.npScreen__coverTarget > * {
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.npScreen__cover {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  border-radius: 22px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+.npScreen__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  flex: none;
+}
+
+.npScreen__lines {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.npScreen__title {
+  font-size: 1.4rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.npScreen__artist {
+  font-size: 1rem;
+  color: var(--glacier-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Where you are in a book, under the author line: the skip buttons walk these
+   chapters, and this says which one you are in. Quiet - a locator, not a title. */
+.npScreen__chapter {
+  margin-block-start: 0.15rem;
+  font-size: var(--glacier-font-size-sm, 0.875rem);
+  color: var(--glacier-text-subtle, var(--glacier-text-muted));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Shown only while the deck has genuinely run dry, under the artist line.
+   Quiet on purpose: it is an explanation for a pause the ear already noticed,
+   not an alarm. */
+.npScreen__buffering {
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-subtle, var(--glacier-text-muted));
+  animation: npBufferPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes npBufferPulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
+/* The artist line as a link into their page: the same line, tappable. */
+.npScreen__artistLink {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.npScreen__artistLink:active {
+  color: var(--glacier-text);
+  text-decoration: underline;
+}
+
+.npScreen__heart {
+  flex: none;
+}
+
+/* Saved reads as accent, matching the strip's own heart and the kit's rule for
+   any toggle that is on. Filled-but-grey is the shape of "saved" without the
+   colour of it, which at a glance is the same as not saved at all. */
+.npScreen__heart[aria-pressed='true'] {
+  color: var(--glacier-accent-text);
+}
+

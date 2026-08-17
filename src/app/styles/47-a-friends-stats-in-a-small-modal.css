@@ -1,0 +1,65 @@
+/* --- a friend's stats, in a small modal ----------------------------------- */
+
+.friendCard__actions {
+  display: flex;
+  gap: var(--glacier-space-1);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.friendStats {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-4);
+}
+
+.friendStats__week {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+.friendStats__hero {
+  display: flex;
+  align-items: baseline;
+  gap: var(--glacier-space-2);
+}
+
+.friendStats__minutes {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.friendStats__label {
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+}
+
+.friendStats__tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+  gap: var(--glacier-space-2);
+}
+
+.friendStats__artist {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  margin: 0;
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+}
+
+.friendStats__artist strong {
+  color: var(--glacier-text);
+  font-weight: 600;
+}
+
+.friendStats__artist svg {
+  color: var(--glacier-accent-text);
+  flex: none;
+}
+

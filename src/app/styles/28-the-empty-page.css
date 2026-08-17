@@ -1,0 +1,271 @@
+/* ---- The empty page ----------------------------------------------------- */
+
+/* What you opened last time. A scrolling row rather than a grid: it is a
+   shortcut, and a shortcut that pushes the rest of the page down has stopped
+   being one. */
+.searchRecents {
+  display: flex;
+  gap: var(--glacier-space-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-block-end: var(--glacier-space-1);
+}
+
+.searchRecents::-webkit-scrollbar {
+  display: none;
+}
+
+.searchRecent {
+  position: relative;
+  flex: none;
+  inline-size: 7.5rem;
+}
+
+.searchRecent__body {
+  inline-size: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: var(--glacier-space-2);
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.searchRecent__body:hover,
+.searchRecent__body:focus-visible {
+  background: var(--glacier-surface-sunken);
+}
+
+.searchRecent__art {
+  inline-size: 100%;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  margin-block-end: var(--glacier-space-1);
+  border-radius: var(--glacier-radius-sm);
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text-subtle);
+}
+
+.searchRecent__art[data-round] {
+  border-radius: var(--glacier-radius-full);
+}
+
+.searchRecent__art img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.searchRecent__title,
+.searchRecent__sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.searchRecent__title {
+  font-size: 0.8125rem;
+  font-weight: 550;
+}
+
+.searchRecent__sub {
+  font-size: 0.75rem;
+  color: var(--glacier-text-muted);
+}
+
+/* The forget button only appears on the tile it belongs to, so a row of twenty
+   is not a row of twenty crosses. */
+.searchRecent__forget {
+  position: absolute;
+  inset-block-start: var(--glacier-space-3);
+  inset-inline-end: var(--glacier-space-3);
+  display: grid;
+  place-items: center;
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  border: none;
+  border-radius: var(--glacier-radius-full);
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.searchRecent:hover .searchRecent__forget,
+.searchRecent:focus-within .searchRecent__forget {
+  opacity: 1;
+}
+
+/* The genres your own library is made of, as somewhere to start. Each keeps
+   one colour, derived from its name, so the wall is stable between visits. */
+/* Browse takes whatever the page has left. A wall that stops a third of the way
+   down reads as a page that failed to load rather than a place to start, so the
+   section grows and its rows share the height between them. `1 0 auto` and not
+   `1`: it may grow into spare room, but a tall wall on a short window must
+   overflow into the scroll rather than being squeezed. */
+#searchResults,
+.searchSection--browse {
+  flex: 1 0 auto;
+  min-block-size: 0;
+}
+
+.searchBrowse {
+  display: grid;
+  /* Two up, however many rows that takes - the count of genres is what varies,
+     not the width. */
+  grid-template-columns: repeat(2, 1fr);
+  /* The floor keeps a tile readable when there are more genres than the window
+     has room for; above it, the rows divide whatever is going. */
+  grid-auto-rows: minmax(5.5rem, 1fr);
+  gap: var(--glacier-space-2);
+  flex: 1;
+  min-block-size: 0;
+}
+
+.searchGenre {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0.125rem;
+  min-block-size: 5rem;
+  padding: var(--glacier-space-3);
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  background: linear-gradient(
+    140deg,
+    hsl(var(--searchTileHue, 280) 62% 48%),
+    hsl(calc(var(--searchTileHue, 280) + 42) 56% 32%)
+  );
+  color: #fff;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+/* A corner of real artwork, tilted into the tile - enough to say this is your
+   music rather than a colour swatch, not enough to fight the label. */
+.searchGenre__art {
+  position: absolute;
+  inset-block-start: -0.75rem;
+  inset-inline-end: -0.75rem;
+  inline-size: 3.75rem;
+  block-size: 3.75rem;
+  border-radius: var(--glacier-radius-sm);
+  object-fit: cover;
+  transform: rotate(22deg);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.28);
+}
+
+.searchGenre__name {
+  position: relative;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+}
+
+.searchGenre__count {
+  position: relative;
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+
+/* A generated object as the whole tile face: full bleed under the label. It
+   MULTIPLIES into the tile's own gradient, so the shot's white ground burns
+   off and the frosted object sits on the genre's colour - the tint is the
+   background now, not a thing hidden behind a photo. */
+.searchGenre__objectArt {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  mix-blend-mode: multiply;
+  /* The tile's own rounding, worn by the picture too. The entrance wave
+     animates opacity and scale, which puts the tile on its own compositing
+     layer - and mid-animation the parent's overflow clip is not applied to
+     the layer, so a square picture flashed its white corners past the
+     radius. A child that is already round has no corners to show. */
+  border-radius: inherit;
+}
+
+/* The tile's gradient gets bolder wherever an object rides it - a deeper,
+   more saturated ground so the multiply has something to bite into. */
+.searchGenre:has(.searchGenre__objectArt) {
+  background: linear-gradient(
+    140deg,
+    hsl(var(--searchTileHue, 280) 78% 56%),
+    hsl(calc(var(--searchTileHue, 280) + 48) 68% 34%)
+  );
+}
+
+.searchGenre:has(.searchGenre__objectArt)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgb(0 0 0 / 0.5), transparent 55%);
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.searchGenre__name,
+.searchGenre__count {
+  z-index: 1;
+}
+
+/* ---- Chips and See all -------------------------------------------------- */
+
+.searchChipWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+/* Between the scopes and the kinds: one row, two questions. */
+.searchChipRule {
+  inline-size: var(--glacier-hairline);
+  block-size: 1.125rem;
+  background: var(--glacier-border-subtle);
+}
+
+.searchSeeAll {
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--glacier-accent-text);
+  font: inherit;
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+/* Two auto margins in one flex line would split the free space and strand the
+   count in the middle: when a count is already holding the end of the heading,
+   the See all just sits beside it. */
+.searchSection__count ~ .searchSeeAll {
+  margin-inline-start: var(--glacier-space-3);
+}
+
+.searchSeeAll:hover {
+  text-decoration: underline;
+}
+
+#searchResults {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-5);
+}
+

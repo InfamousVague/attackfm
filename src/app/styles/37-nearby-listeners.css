@@ -1,0 +1,95 @@
+/* ---- Nearby listeners ---------------------------------------------------- */
+
+.nearby {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+}
+
+.nearby__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+}
+
+.nearby__title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  font-weight: 650;
+}
+
+.nearbyList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.nearbyRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-1) var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+}
+
+.nearbyRow:hover {
+  background: var(--glacier-hover);
+}
+
+.nearbyRow__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.nearbyRow__handle {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nearbyRow__sub {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+}
+
+/* The lid over the charts: one row that says what is under it. Sits below every
+   personal shelf, because the charts are identical for every account here. */
+.discoverCharts__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  inline-size: 100%;
+  padding: var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  color: var(--glacier-text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.discoverCharts__hint {
+  margin-inline-start: auto;
+  font-weight: 500;
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+}
+
+/* The equalizer panel: the preset field over the sliders. */
+.eqPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+

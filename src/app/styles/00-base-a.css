@@ -1,0 +1,360 @@
+/*
+ * App-level layout. Component look comes from Glacier; this file only arranges
+ * the square window shell. Every value is a Glacier token.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* AI DJ seed-trait selection and editable DJ notes. */
+.djTraitSheet__body {
+  width: min(760px, 100%);
+  margin: 0 auto;
+  padding: 4px 0 20px;
+}
+.djTraitListening {
+  min-height: 180px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+.djTraitListening svg { color: var(--color-accent, #ff4bd8); }
+.djTraitSummary { display: block; margin: 0 0 18px; }
+.djTraitError { display: block; padding: 12px 0; }
+.djTraitCloud {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+}
+.djTrait {
+  min-height: 52px;
+  padding: 9px 15px;
+  border: 1px solid color-mix(in srgb, currentColor 17%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-surface-2, #222) 82%, transparent);
+  color: inherit;
+  display: grid;
+  gap: 1px;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+.djTrait:hover { transform: translateY(-1px); }
+.djTrait[data-selected] {
+  border-color: color-mix(in srgb, var(--color-accent, #ff4bd8) 72%, white 12%);
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--color-accent, #ff4bd8) 24%, transparent),
+    color-mix(in srgb, #7357ff 20%, transparent));
+}
+.djTrait__label { font: inherit; font-weight: 650; }
+.djTrait__category { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; opacity: .62; }
+.djNoteEditor { display: grid; gap: 8px; margin-top: 20px; }
+.djNoteEditor label { font-size: 13px; font-weight: 650; }
+.djNoteEditor textarea {
+  min-height: 88px;
+  resize: vertical;
+  border: 1px solid var(--border-subtle, #45454d);
+  border-radius: 12px;
+  padding: 12px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.04);
+  font: inherit;
+}
+@media (max-width: 600px) {
+  .djTraitSheet__body { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .djTraitCloud { justify-content: flex-start; gap: 8px; }
+  .djTrait { min-height: 48px; padding: 8px 13px; }
+}
+
+html,
+body {
+  margin: 0;
+  /* The base typeface and text color for any plain content outside a kit
+     component. Components pin their own font, so this is just the backstop. */
+  font-family: var(--glacier-font-sans);
+  color: var(--glacier-text);
+  background: var(--glacier-bg);
+}
+
+/*
+ * Filled icons, everywhere.
+ *
+ * Glacier's icons are outlines that stroke in `currentColor` and leave their
+ * interior empty. Its `IconBackfill` atom is the kit's answer to wanting them
+ * solid: it stacks a second copy of the glyph behind the outline, filled and
+ * stroked in the SAME resolved color at 33% opacity, so a muted icon fills
+ * muted and an accent icon fills accent - the fill is never a color of its own.
+ *
+ * This is that recipe as one rule instead of a wrapper around each of the ~190
+ * glyphs the app draws. The reason is not just churn: `IconBackfill` is a span
+ * that pads the glyph by 2px on every side, and a great many of these icons are
+ * flex children carrying their own margins and `flex: none`, or are handed to a
+ * kit component as an `icon` prop where no wrapper of ours can reach them. A
+ * rule on the glyph itself fills all of them and moves none of them.
+ *
+ * `color-mix` rather than `fill-opacity` on purpose: a few glyphs fill parts of
+ * themselves outright (the dot inside a marker, say). Those carry their own
+ * `fill` attribute, which this never overrides, so they stay solid - where an
+ * inherited `fill-opacity` would have faded them to a third along with
+ * everything else.
+ *
+ * The `.lucide` hook is Glacier's icon internals showing through - the package
+ * proxies lucide today and says so. When the kit's own pack lands, this is the
+ * one selector to repoint.
+ */
+svg.lucide {
+  fill: color-mix(in srgb, currentColor 33%, transparent);
+}
+
+/* The shell owns the viewport and never adds a window scrollbar. */
+#root {
+  height: 100vh;
+  /* Phones move their browser chrome as you scroll, so `vh` is the height the
+     viewport WILL be, not the one it is - which leaves the player bar parked
+     under the address bar for the first scroll. `dvh` is the live figure.
+     Declared second so it simply wins where it is understood. */
+  height: 100dvh;
+}
+
+/* Nothing here should rubber-band or double-tap-zoom: this is an app, and a
+   drag on the seek bar or the volume fader is a control gesture, not a scroll. */
+@supports (-webkit-touch-callout: none) {
+  html,
+  body {
+    overscroll-behavior: none;
+    -webkit-text-size-adjust: 100%;
+  }
+}
+
+/*
+ * A long press belongs to the app, not to the system.
+ *
+ * On a phone the browser claims that gesture twice over: held on text it
+ * starts a selection with grab handles, and held on an image it raises the
+ * "Save Image / Copy" sheet. Both fire before the app sees anything, so the
+ * gestures this app puts on a long press - the artwork chooser on a cover, a
+ * song row's menu - could never happen on the one platform they were designed
+ * for. Nothing here is a document to select from, so the whole app opts out
+ * and the few places where selecting IS the point opt back in below.
+ */
+html {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  /* Android's WebView paints its own highlight rectangle over anything
+     tapped - the blue flash around play/pause. The app draws its own pressed
+     states; the OS one is noise on top of them. Inherited, so the root is the
+     one place to say it. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* A tap can leave real :focus behind it, and some webviews draw that as an
+   outline box on the button just pressed. Keyboard focus keeps its ring -
+   :focus-visible still matches - but focus a finger left behind shows
+   nothing. */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Typing and editing need selection, and on a phone the paste callout lives on
+   this very gesture - so every field keeps both. */
+input,
+textarea,
+select,
+[contenteditable],
+[contenteditable] * {
+  -webkit-touch-callout: default;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* An image is never a thing to save out of here: every one is a cover the app
+   has its own gesture for. Drag is refused for the same reason - the desktop
+   window's own drag must win over dragging a picture out of it. */
+img {
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/*
+ * The square desktop window: a vertical stack of the title bar and the content
+ * area that takes the rest of the height.
+ */
+.appWindow {
+  /* Anchors the floating player, which is taken out of flow so the song list
+     runs the full height behind it. */
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--glacier-bg);
+  color: var(--glacier-text);
+  /* Roughly the floating player's height; the list clears its last rows by it. */
+  --app-player-height: 5.75rem;
+  /* How long the strip takes to rise into place on the first song of a session.
+     Shared with the blur scrim behind it, which grows over the same clock so
+     the frost arrives under the plate rather than after it. */
+  --app-player-rise: 0.36s;
+  /* The notch, the rounded corners and the home indicator, as four numbers the
+     chrome below can spend. Zero everywhere that has no such thing, so the
+     desktop layout is untouched by their existence. */
+  --app-safe-top: env(safe-area-inset-top, 0px);
+  --app-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --app-safe-left: env(safe-area-inset-left, 0px);
+  --app-safe-right: env(safe-area-inset-right, 0px);
+}
+
+/*
+ * Card footprints, on the root because a card can be rendered into a portal
+ * (the Now Playing sheet, a modal) and would otherwise lose them.
+ *
+ * These are named rather than written into each rule because the shelf
+ * skeletons hold a seat at exactly these sizes: ShelfSkeleton reads the same
+ * variables, so a card that is resized takes its own stand-in with it. Every
+ * card's art is `inline-size: 100%; aspect-ratio: 1`, so the footprint is the
+ * art size too, and one number per family is the whole geometry. The last time
+ * these lived in two places the shelves shrank by a third and their skeletons
+ * did not, so a loading page jumped when it settled.
+ */
+:root {
+  /* A song, and the playlist tiles that stand beside it as peers.
+     Gently fluid rather than fixed: covers give a little with the window so
+     rows pack tighter instead of leaving gutters. The arithmetic lands on
+     ~5.9rem on a phone (one more card in every row), the OLD 6.35rem almost
+     exactly at a 1280px desktop (nothing moves there), and ~7.4rem unfolded,
+     where fixed little squares used to float in white space. */
+  --card-track: clamp(5.9rem, 4.6rem + 2.2vw, 7.4rem);
+  /* A mix. Sized as a song card and a playlist tile are, rather than the wider
+     hero it used to be: the mixes sit between the playlists and the shelves,
+     and three different widths down one page read as three different kinds of
+     thing when they are all just "something to play". */
+  --card-mix: var(--card-track);
+  /* An artist: a round portrait. Wider than it used to be - a circle reads
+     smaller than a square of the same measure, so matching the release cards
+     numerically made the faces look shrunken beside them. */
+  --card-artist: 6.5rem;
+}
+
+/*
+ * The header for every surface with no window to decorate - the phone builds
+ * and the browser. It carries the same cluster the desktop title bar does
+ * (search, plugin actions, settings), minus everything that is about a window:
+ * no drag region, no traffic-light gutter, no wordmark competing for width.
+ */
+/*
+ * The accent ramp, copied under a name the kit will not touch.
+ *
+ * The named presets that carry AttackFM's crimson are scoped to `:root`
+ * (tokens.css), so they cannot reach a nested element - while the kit's plain
+ * `[data-theme='dark']` block CAN, and redefines all twelve accent steps back
+ * to its default blue on any element that carries the attribute. Now Playing
+ * carries it (it forces a dark sheet over the album art), so everything accent
+ * inside it came out blue - the heart most visibly.
+ *
+ * Custom properties inherit their COMPUTED value, so a copy taken here holds
+ * the ramp the preset resolved, and a nested scope can put it back. Only the
+ * accent is restored; the greys and surfaces SHOULD go dark down there.
+ */
+:root {
+  --afm-accent-1: var(--glacier-accent-1);
+  --afm-accent-2: var(--glacier-accent-2);
+  --afm-accent-3: var(--glacier-accent-3);
+  --afm-accent-4: var(--glacier-accent-4);
+  --afm-accent-5: var(--glacier-accent-5);
+  --afm-accent-6: var(--glacier-accent-6);
+  --afm-accent-7: var(--glacier-accent-7);
+  --afm-accent-8: var(--glacier-accent-8);
+  --afm-accent-9: var(--glacier-accent-9);
+  --afm-accent-10: var(--glacier-accent-10);
+  --afm-accent-11: var(--glacier-accent-11);
+  --afm-accent-12: var(--glacier-accent-12);
+}
+
+.mobileHeader {
+  flex: none;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+  padding-inline: var(--glacier-space-3);
+  padding-block: var(--glacier-space-2);
+  /* Clears the notch on a phone; adds nothing anywhere else. */
+  padding-block-start: calc(var(--glacier-space-2) + var(--app-safe-top));
+  padding-inline-start: calc(var(--glacier-space-3) + var(--app-safe-left));
+  padding-inline-end: calc(var(--glacier-space-3) + var(--app-safe-right));
+}
+
+/*
+ * The wordmark ships as white artwork, which is right against the desktop
+ * title bar and invisible against a light theme's background - as the first
+ * iOS build showed, on a phone defaulting to light. There is no dark version of
+ * the asset, so the light themes flip the one there is.
+ *
+ * `data-theme` is absent under the system preset and set to `light`/`dark`
+ * otherwise (see appearance.tsx), so both cases have to be covered: the media
+ * query catches a system-following app on a light phone, and the attribute
+ * rules override it in either direction when a theme is pinned.
+ */
+.mobileHeader__logo {
+  block-size: 1.125rem;
+  inline-size: auto;
+  opacity: 0.9;
+  /* Decorative: the list below already says what app this is. */
+  pointer-events: none;
+}
+
+/* Library and Downloads put their name where the wordmark sits on Home, so the
+   page is named once, up top, instead of spending body space on a heading. */
+.mobileHeader__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  /* With a thumbnail before it and Play after it, a long collection name is
+     what gives way: it truncates rather than pushing either off the edge. */
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .mobileHeader__logo {
+    filter: invert(1);
+  }
+}
+
+:root[data-theme='light'] .mobileHeader__logo {
+  filter: invert(1);
+}
+
+:root[data-theme='dark'] .mobileHeader__logo {
+  filter: none;
+}
+
+/*
+ * The header's identity, and the swap between two of them: the tab's name (or
+ * the wordmark) until a page below lends its own, then that page's name.
+ *
+ * One grid cell holding both layers. Stacked rather than swapped so the cell
+ * is already as wide as the wider of the two and nothing on either side moves
+ * while the words change - the back arrows keep their place, and so does Play.
+ * Opacity is the only thing that travels.
+ */
+.mobileHeader__ident {
+  display: grid;
+  min-inline-size: 0;
+}
+

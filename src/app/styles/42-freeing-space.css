@@ -1,0 +1,161 @@
+/* --- Freeing space ------------------------------------------------------- */
+
+.storage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-4);
+  padding-block-end: calc(var(--app-player-height) + var(--app-nav-height, 0px));
+  /* The list is the page: it gets whatever the chrome does not use. */
+  block-size: 100%;
+  min-block-size: 0;
+}
+
+.storage__head {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.storage__controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.storage__sorts {
+  display: flex;
+  gap: var(--glacier-space-1);
+}
+
+.storage__sort {
+  font-size: var(--glacier-font-size-sm);
+  padding-inline: var(--glacier-space-3);
+  padding-block: var(--glacier-space-1);
+  border-radius: var(--glacier-radius-full);
+}
+
+.storage__sort[data-active] {
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-accent-on-solid, #fff);
+}
+
+.storage__bulk {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+}
+
+.storage__list {
+  flex: 1;
+  min-block-size: 12rem;
+  border-radius: var(--glacier-radius-lg);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.storageRow {
+  display: flex;
+  inline-size: 100%;
+  box-sizing: border-box;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding-inline: var(--glacier-space-3);
+  block-size: 60px;
+  cursor: pointer;
+  border-block-end: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.storageRow[data-picked] {
+  background: var(--glacier-hover);
+}
+
+.storageRow__text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.storageRow__title,
+.storageRow__sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.storageRow__sub {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+/* The one distinction that matters before deleting: is this the last copy? */
+.storageRow__only {
+  color: var(--glacier-warning-text, var(--glacier-text));
+}
+
+.storageRow__size {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+  flex: none;
+}
+
+.storage__foot,
+.storage__trash {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+  flex-wrap: wrap;
+}
+
+.storage__trash {
+  padding: var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.storage__confirm {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  flex-wrap: wrap;
+}
+
+.storage__warn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-warning-text, var(--glacier-text-muted));
+}
+
+.serversPage__saved {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-4);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) dashed var(--glacier-border);
+}
+
+.serversPage__savedRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+}
+
+/* --- the device cache ---------------------------------------------------- */
+
+
+.cacheActions {
+  display: flex;
+  gap: var(--glacier-space-2);
+  flex-wrap: wrap;
+}
+
