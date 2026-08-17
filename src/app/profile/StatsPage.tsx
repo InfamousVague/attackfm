@@ -1,5 +1,4 @@
 import {
-  Users,
   AudioWaveform,
   ChevronDown,
   ChevronUp,
@@ -11,32 +10,30 @@ import {
   Tag,
   User,
 } from '@glacier/icons';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLibrary } from '../library/library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
-import {
-  Button,
-  Heatmap,
-  ProgressRing,
-  SegmentedBar,
-  StatTile,
-  Switch,
-  TimeSeriesChart,
-} from '@glacier/react';
-import { useRegistry } from '../servers/registrySession.tsx';
-import { fetchFriends, type RegistryFriend } from '../servers/registry.ts';
-import { setSharing, useSharing } from './listeningShare.tsx';
-import { artSized, trackIdFromPath } from '../server.ts';
-import { useArtLoad } from '../ux/artLoad.ts';
+import { Button, StatTile, TimeSeriesChart } from '@glacier/react';
+import { trackIdFromPath } from '../server.ts';
 import { artworkHue, artworkUrl, genreArtwork } from '../ux/artwork.ts';
 import {
   fetchStatsSummary,
   fmtMinutes,
-  clamp01,
   type StatsRange,
   type StatsSummary,
 } from './stats.ts';
 import type { Track } from '../core/tauri.ts';
+import {
+  AXIS_HOURS,
+  MONTHS,
+  RANGES,
+  dayToLocalMs,
+  fmtAxisMinutes,
+  fmtHour,
+} from './statsFormat.ts';
+import { ArtChip, GENRE_TONES, Heading, RowArt } from './StatsBits.tsx';
+import { StatsMore } from './StatsMore.tsx';
+import { FriendsThisWeek } from './FriendsThisWeek.tsx';
 import './StatsPage.css';
 
 /**
@@ -53,162 +50,11 @@ import './StatsPage.css';
  * stats" fold: rates, genres, albums, the sound profile, a year in squares.
  * Everything renders from a normalised summary (stats.ts), so a missing or
  * partial field is an empty section here, never a crash.
- */
-
-const RANGES: { id: StatsRange; label: string }[] = [
-  { id: 'week', label: 'This week' },
-  { id: 'month', label: 'This month' },
-  { id: 'year', label: 'This year' },
-  { id: 'all', label: 'All time' },
-];
-
-/** The hours the clock's axis names. Four is enough to orient by. */
-const AXIS_HOURS = new Set([0, 6, 12, 18]);
-
-/** An hour as people say it: 0 → "12a", 14 → "2p". */
-function fmtHour(hour: number): string {
-  if (hour === 0) return '12a';
-  if (hour < 12) return `${hour}a`;
-  if (hour === 12) return '12p';
-  return `${hour - 12}p`;
-}
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/** "2026-08-11" → "Aug 11". Split by hand: `new Date` on a bare date string
- *  parses it as UTC midnight, which shifts the label a day west of Greenwich. */
-function fmtDay(day: string): string {
-  const [, m, d] = day.split('-');
-  const month = MONTHS[Number(m) - 1];
-  return month ? `${month} ${Number(d)}` : day;
-}
-
-/** "2026-08-11" → local epoch ms, for the chart's time axis. Same hand-split,
- *  same reason: the constructor's string parse would land at UTC midnight. */
-function dayToLocalMs(day: string): number {
-  const [y, m, d] = day.split('-').map(Number);
-  return new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1).getTime();
-}
-
-/** Chart-axis minutes: whole hours once the numbers are big. */
-function fmtAxisMinutes(v: number): string {
-  if (v >= 120) return `${Math.round(v / 60)}h`;
-  return `${Math.round(v)}m`;
-}
-
-/** A section heading in the search page's idiom: glyph, then the words. */
-function Heading({ icon, children }: { icon: ReactNode; children: ReactNode }) {
-  return (
-    <h2 className="statsSection__title">
-      <span className="statsSection__glyph" aria-hidden>
-        {icon}
-      </span>
-      {children}
-    </h2>
-  );
-}
-
-/** A rank row's cover. The rows render inside maps, where hooks cannot live,
- *  so the art - skeleton, pop, and the 160 thumb variant - keeps a component
- *  of its own. The fallback glyph is the caller's: a person for artists, a
- *  note for songs. */
-function RowArt({
-  artwork,
-  shape,
-  glyph,
-}: {
-  artwork: string | null;
-  shape: 'circle' | 'square';
-  glyph: ReactNode;
-}) {
-  const src = artSized(artwork, 160);
-  const art = useArtLoad(src, '');
-  return (
-    <span className="statsRow__art" data-shape={shape}>
-      {artwork ? <img {...art} src={src ?? undefined} alt="" loading="lazy" /> : glyph}
-    </span>
-  );
-}
-
-/**
- * A fact wearing its own cover: the label chip this page leads with.
  *
- * The art is the point - "top artist" lands differently when it is their face
- * on the chip - so the cover takes the leading slot and the words ride beside
- * it. Chips whose subject has no cover (peak hour, streak) wear a glyph on a
- * hue instead, so the row still reads as one family. A chip with somewhere to
- * go (an artist page, a play) is a button; the rest are labels.
+ * Split across siblings: formatters in statsFormat.ts, presentational atoms
+ * in StatsBits.tsx, the fold's content in StatsMore.tsx, the friends
+ * leaderboard in FriendsThisWeek.tsx.
  */
-function ArtChip({
-  label,
-  value,
-  artwork,
-  shape = 'square',
-  glyph,
-  hue,
-  onClick,
-}: {
-  label: string;
-  value: string;
-  artwork?: string | null;
-  shape?: 'circle' | 'square';
-  glyph?: ReactNode;
-  /** Backdrop hue for glyph chips, from the generated-art family. */
-  hue?: number | null;
-  onClick?: () => void;
-}) {
-  const src = artSized(artwork ?? null, 160);
-  const art = useArtLoad(src, '');
-  const body = (
-    <>
-      <span
-        className="statsArtChip__art"
-        data-shape={shape}
-        style={hue != null ? ({ '--chip-hue': String(hue) } as React.CSSProperties) : undefined}
-        aria-hidden
-      >
-        {artwork ? <img {...art} src={src ?? undefined} alt="" loading="lazy" /> : glyph}
-      </span>
-      <span className="statsArtChip__text">
-        <span className="statsArtChip__label">{label}</span>
-        <span className="statsArtChip__value">{value}</span>
-      </span>
-    </>
-  );
-  return onClick ? (
-    <button type="button" className="statsArtChip" onClick={onClick}>
-      {body}
-    </button>
-  ) : (
-    <span className="statsArtChip">{body}</span>
-  );
-}
-
-/** A labelled 0..1 fill - the sound profile wears these. */
-function SoundMeter({ label, value }: { label: string; value: number }) {
-  const pct = Math.round(clamp01(value) * 100);
-  return (
-    <div className="statsMeter">
-      <span className="statsMeter__label">
-        {label} {pct}%
-      </span>
-      <span className="statsMeter__rail" aria-hidden>
-        <span className="statsMeter__fill" style={{ inlineSize: `${pct}%` }} />
-      </span>
-    </div>
-  );
-}
-
-/** The inks the genre bar cycles through, and the same list the legend dots
- *  read, so the two cannot disagree. */
-const GENRE_TONES = ['accent', 'success', 'warning', 'danger', 'neutral'] as const;
-const GENRE_DOT: Record<(typeof GENRE_TONES)[number], string> = {
-  accent: 'var(--glacier-accent-solid)',
-  success: 'var(--glacier-success-solid)',
-  warning: 'var(--glacier-warning-solid)',
-  danger: 'var(--glacier-danger-solid)',
-  neutral: 'var(--glacier-border)',
-};
 
 export function StatsPage({
   onPlay,
@@ -606,235 +452,16 @@ export function StatsPage({
       </div>
 
       {more && (
-        <>
-          <section className="statsSection">
-            <Heading icon={<Play size={14} />}>How you listen</Heading>
-            <div className="statsRings">
-              <div className="statsRing">
-                <ProgressRing
-                  value={Math.round(clamp01(summary.completionRate) * 100)}
-                  max={100}
-                  size={76}
-                  thickness={8}
-                  tone="accent"
-                  showValue
-                  aria-label="Songs finished"
-                />
-                <span className="statsRing__label">finished</span>
-              </div>
-              <div className="statsRing">
-                <ProgressRing
-                  value={Math.round(clamp01(summary.skipRate) * 100)}
-                  max={100}
-                  size={76}
-                  thickness={8}
-                  tone="warning"
-                  showValue
-                  aria-label="Songs skipped"
-                />
-                <span className="statsRing__label">skipped</span>
-              </div>
-              <div className="statsRing" data-wide>
-                <span className="statsRing__big">{summary.firstListens.toLocaleString()}</span>
-                <span className="statsRing__label">
-                  {summary.firstListens === 1 ? 'song' : 'songs'} new to you
-                </span>
-              </div>
-            </div>
-          </section>
-
-          {genres.length > 0 && (
-            <section className="statsSection">
-              <Heading icon={<Tag size={14} />}>Genres</Heading>
-              <SegmentedBar data={genreSegments} size="md" rounded aria-label="Listening by genre" />
-              <ol className="statsSmallRows">
-                {genreSegments.map((seg, i) => (
-                  <li key={`${seg.label}:${i}`} className="statsSmallRow">
-                    <span className="statsSmallRow__body" data-dotted>
-                      <span
-                        className="statsGenreDot"
-                        style={{ background: GENRE_DOT[seg.tone as keyof typeof GENRE_DOT] }}
-                        aria-hidden
-                      />
-                      <span className="statsSmallRow__name">{seg.label}</span>
-                    </span>
-                    <span className="statsSmallRow__meta">
-                      {genreTotal > 0 ? `${Math.round((seg.value / genreTotal) * 100)}%` : ''} ·{' '}
-                      {fmtMinutes(seg.value)}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            </section>
-          )}
-
-          {albums.length > 0 && (
-            <section className="statsSection">
-              <Heading icon={<Disc3 size={14} />}>Top albums</Heading>
-              <ol className="statsRows">
-                {albums.map((row, i) => (
-                  <li key={`${row.album}:${row.artist}:${i}`} className="statsRow">
-                    <span className="statsRow__rank">{i + 1}</span>
-                    <RowArt
-                      artwork={albumArt.get(row.album.toLowerCase()) ?? null}
-                      shape="square"
-                      glyph={<Disc3 size={16} aria-hidden />}
-                    />
-                    <span className="statsRow__body">
-                      <span className="statsRow__name" data-plain>
-                        {row.album || 'Unknown album'}
-                      </span>
-                      <span className="statsRow__sub">{row.artist}</span>
-                    </span>
-                    <span className="statsRow__meta">
-                      {row.plays.toLocaleString()} {row.plays === 1 ? 'play' : 'plays'}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            </section>
-          )}
-
-          {summary.sound && (
-            <section className="statsSection">
-              <Heading icon={<AudioWaveform size={14} />}>Your sound</Heading>
-              <div className="statsSound">
-                <div className="statsTempo">
-                  <span className="statsTempo__value">{Math.round(summary.sound.bpm)}</span>
-                  <span className="statsTempo__label">BPM</span>
-                </div>
-                <SoundMeter label="Energy" value={summary.sound.energy} />
-                <SoundMeter label="Brightness" value={summary.sound.brightness} />
-              </div>
-            </section>
-          )}
-
-          {yearDays && yearDays.some((d) => d.minutes > 0) && (
-            <section className="statsSection">
-              <Heading icon={<Flame size={14} />}>A year of listening</Heading>
-              <div className="statsHeat">
-                <Heatmap
-                  data={yearDays.map((d) => ({ date: fmtDay(d.day), value: d.minutes }))}
-                  rows={7}
-                  legend
-                  aria-label="Minutes listened per day over the last year"
-                />
-              </div>
-            </section>
-          )}
-        </>
+        <StatsMore
+          summary={summary}
+          genreSegments={genreSegments}
+          genreTotal={genreTotal}
+          albumArt={albumArt}
+          yearDays={yearDays}
+        />
       )}
 
       <FriendsThisWeek myMinutes={range === 'week' ? summary.minutes : null} myStreak={range === 'week' ? summary.streakDays : null} />
     </div>
-  );
-}
-
-/**
- * The leaderboard, such as it is: your week beside the friends who share
- * theirs. Strictly opt-in both ways - the switch here controls whether YOUR
- * numbers go out (see listeningShare.tsx for how off = silence), and a friend
- * with the switch off simply has no row. No registry identity, no section.
- */
-function FriendsThisWeek({
-  myMinutes,
-  myStreak,
-}: {
-  /** Passed through when the page already holds the week summary; fetched
-   *  quietly otherwise so the card is per-week whatever the chips show. */
-  myMinutes: number | null;
-  myStreak: number | null;
-}) {
-  const { session: registry } = useRegistry();
-  const { session: server } = useServerSession();
-  const sharing = useSharing();
-  const [friends, setFriends] = useState<RegistryFriend[]>([]);
-  const [week, setWeek] = useState<{ minutes: number; streak: number } | null>(
-    myMinutes === null ? null : { minutes: myMinutes, streak: myStreak ?? 0 },
-  );
-
-  useEffect(() => {
-    if (myMinutes !== null) {
-      setWeek({ minutes: myMinutes, streak: myStreak ?? 0 });
-      return;
-    }
-    if (!server) return;
-    const ctrl = new AbortController();
-    void fetchStatsSummary(server, 'week', ctrl.signal)
-      .then((s) => setWeek({ minutes: s.minutes, streak: s.streakDays }))
-      .catch(() => {});
-    return () => ctrl.abort();
-  }, [myMinutes, myStreak, server]);
-
-  useEffect(() => {
-    if (!registry) return;
-    let live = true;
-    void fetchFriends(registry.token)
-      .then((feed) => live && setFriends(feed.friends))
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [registry, sharing]);
-
-  if (!registry) return null;
-
-  const sharers = friends
-    .filter((f) => typeof f.weekMinutes === 'number')
-    .sort((a, b) => (b.weekMinutes ?? 0) - (a.weekMinutes ?? 0));
-  const rows: { who: string; minutes: number; streak: number | null; top: string | null; me: boolean }[] = [
-    ...(sharing && week
-      ? [{ who: 'You', minutes: week.minutes, streak: week.streak, top: null, me: true }]
-      : []),
-    ...sharers.map((f) => ({
-      who: `@${f.handle}`,
-      minutes: f.weekMinutes ?? 0,
-      streak: f.streakDays ?? null,
-      top: f.weekTopArtist ?? null,
-      me: false,
-    })),
-  ].sort((a, b) => b.minutes - a.minutes);
-  const most = rows[0]?.minutes ?? 0;
-
-  return (
-    <section className="statsSection">
-      <Heading icon={<Users size={14} />}>Friends this week</Heading>
-      <Switch
-        label="Share my listening with friends"
-        checked={sharing}
-        onCheckedChange={setSharing}
-      />
-      <p className="statsFriendsNote">
-        {sharing
-          ? 'Sharing minutes, streak and top artist — nothing more. Switch off and it fades from friends within the week.'
-          : 'Off: your numbers stay home. Friends who share still show below.'}
-      </p>
-      {rows.length === 0 ? (
-        <p className="statsFriendsNote">
-          {friends.length === 0
-            ? 'No friends on the registry yet.'
-            : 'None of your friends share their listening yet.'}
-        </p>
-      ) : (
-        <ol className="statsFriends">
-          {rows.map((row) => (
-            <li key={row.who} className="statsFriendRow" data-me={row.me || undefined}>
-              <span className="statsFriendRow__who">{row.who}</span>
-              <span className="statsFriendRow__rail" aria-hidden>
-                <span
-                  className="statsFriendRow__fill"
-                  style={{ inlineSize: most > 0 ? `${(row.minutes / most) * 100}%` : '0%' }}
-                />
-              </span>
-              <span className="statsFriendRow__meta">
-                {fmtMinutes(row.minutes)}
-                {row.streak != null && row.streak > 1 && ` · ${row.streak}d streak`}
-                {row.top && ` · ${row.top}`}
-              </span>
-            </li>
-          ))}
-        </ol>
-      )}
-    </section>
   );
 }

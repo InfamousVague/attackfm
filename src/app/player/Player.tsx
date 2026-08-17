@@ -1,13 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import {
-  ContextMenu,
-  IconButton,
-  Lyrics,
-  MenuItem,
-  PlayerBar,
-  Popover,
-  SeekBar,
   createAnalyserMeter,
   useBeat,
   useLiveLevels,
@@ -15,262 +7,49 @@ import {
   useToast,
 } from '@glacier/react';
 import type { AnalyserMeter, LoudnessMeter, PlayerRepeat } from '@glacier/react';
-import {
-  AudioLines,
-  Check,
-  ChevronDown,
-  ChevronLeft,
-  Disc3,
-  EyeOff,
-  EllipsisVertical,
-  Heart,
-  Image as ImageIcon,
-  ListMusic,
-  ListPlus,
-  Mic,
-  MonitorSpeaker,
-  Pause,
-  Play,
-  Repeat,
-  Repeat1,
-  Shuffle,
-  SkipBack,
-  SkipForward,
-  Volume2,
-} from '@glacier/icons';
 import { isIOS, isMobile } from '../core/platform.ts';
-import { EqPanel } from './EqPanel.tsx';
-import { PluginSlot } from '../../plugins/runtime.tsx';
-import { SpinningDisc } from './SpinningDisc.tsx';
-import { fetchLyrics, type TrackLyrics } from './lyrics.ts';
 import { useLibrary } from '../library/library.tsx';
 import { useEqualizer } from './equalizer.tsx';
 import { usePlayback } from './playback.tsx';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
-import { VolumeControl, VolumeRow, VOLUME_MAX, VOLUME_UNITY } from './VolumeControl.tsx';
-import npPlaceholderArt from '../../assets/attack-wave.png';
-import { NowPlayingBackdrop } from './NowPlayingBackdrop.tsx';
+import { VOLUME_UNITY } from './VolumeControl.tsx';
 import { useEffects } from './effects.ts';
 import { loadAudioUrl, reactivateAudioSession, systemOutputVolume, type Track } from '../core/tauri.ts';
-import { notePlaybackAudible } from '../downloads/autoCache.ts';
-import {
-  bindAudioFocus,
-  bindNativeTransport,
-  setNativeNowPlaying,
-  setNativePlaybackState,
-  setNativePlaying,
-} from './androidAudio.ts';
 import { isPendingPath } from './pendingPlay.tsx';
-import { fetchCanvas, fetchPlayStates, isRemotePath, reportPlay, reportPosition, trackIdFromPath } from '../server.ts';
+import { isRemotePath } from '../server.ts';
 import { fireNativeHaptic } from '../core/haptics.ts';
-import { createListenReporter, type ListenSnapshot } from './listens.ts';
 import { loadScrubTape } from './scrubTape.ts';
 import { useConnect } from './playbackSync.tsx';
-import { DeviceList, DevicePicker, useDevicesAvailable } from './DevicePicker.tsx';
 import { AddToPlaylistDialog } from '../playlists/AddToPlaylist.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
-import { onCarPlayRemote, pushCarPlayNowPlaying, setIdleTimerDisabled } from './carplay.ts';
 import { useJamOptional } from './jam.tsx';
-import { QueuePanel } from './QueuePanel.tsx';
 import { useSystemBack } from '../nav/systemBack.ts';
-import {
-  bindMediaSessionHandlers,
-  updateMediaSessionMetadata,
-  updateMediaSessionState,
-} from './mediaSession.ts';
-import { BeatWave } from './BeatWave.tsx';
 import { usePlayerDismiss } from './playerDismiss.ts';
 import { initDockWave } from './dockWave.ts';
-
-/** No artwork for the blank idle stand-in, and the neutral fallback anywhere a
- *  cover is missing. */
-const TRACK_ART: string | null = null;
-
-/**
- * Android WebView reports `Infinity` for the duration of some streamed audio
- * responses.  That is a valid media-element sentinel (the stream looks live),
- * but it is not a usable player timeline: position / Infinity pins every
- * scrubber at zero while the elapsed clock continues to advance.  Prefer the
- * element's duration when it is real, otherwise keep the duration indexed in
- * the library for this track.
- */
-function timelineDuration(mediaDuration: number, trackDuration?: number | null): number {
-  if (Number.isFinite(mediaDuration) && mediaDuration > 0) return mediaDuration;
-  if (trackDuration != null && Number.isFinite(trackDuration) && trackDuration > 0) {
-    return trackDuration;
-  }
-  return 0;
-}
-
-/**
- * A blank stand-in for the surfaces that need a non-null Track while nothing is
- * loaded - the deck visuals key off `.path`, and publish() wants a shape. It is
- * deliberately empty and unplayable: an idle device must advertise "nothing,"
- * not a demo song, and there is no URL here for a stray play to ever start.
- */
-const IDLE_TRACK: Track = {
-  path: '',
-  title: '',
-  artist: '',
-  album: '',
-  duration: null,
-  addedAt: 0,
-  artwork: null,
-  genre: '',
-  lyrics: '',
-};
-
-/** Where the fader starts. The element opens at full, so it is told this too. */
-/** Where a fresh install opens: unity, the same place the phone sits. Nothing
- *  is quieter than the file it is playing until somebody says so. */
-const INITIAL_VOLUME = VOLUME_UNITY;
-
-/** The deck's remembered dials - shuffle, repeat, the fader - one key each so
- * a bad value spoils only its own dial. */
-function readDeckPref(name: string): string | null {
-  try {
-    return localStorage.getItem(`attackfm-deck-${name}`);
-  } catch {
-    return null;
-  }
-}
-
-function writeDeckPref(name: string, value: string): void {
-  try {
-    localStorage.setItem(`attackfm-deck-${name}`, value);
-  } catch {
-    // Storage refused: the dial just resets next launch, as it always did.
-  }
-}
-
-/**
- * The fader's 0-100 read as a beat intensity. Loud lifts the bar higher, but the
- * response is floored well above zero so a quiet track still visibly moves - the
- * fader sets the ceiling, not whether the bar reacts at all. Muting, or a fader
- * on the floor, is the only thing that holds it still: nothing is coming out, so
- * nothing moves. The floor and ceiling both sit inside `SEEK_MAX_INTENSITY` (3).
- *
- * `system` is the phone's own hardware level (0-1), applied AFTER the app's
- * graph - so it, not the in-app fader, is what says how loud the room actually
- * is. It scales the result on the same curve, which means turning the volume
- * buttons down calms the bar and turning them up drives it, and the two faders
- * compound the way the ear hears them. It is 1 wherever there is no separate
- * system fader to read (desktop, the browser), leaving the old behaviour
- * exactly as it was. Silenced hardware holds the bar still for the same reason
- * a muted app does: nothing is coming out.
- */
-const beatIntensity = (volume: number, muted: boolean, system = 1) => {
-  if (muted || volume <= 0 || system <= 0) return 0;
-  // The app fader's own curve, untouched: ~1.76 wide open.
-  const app = 0.28 * volume ** 0.398;
-  // The device's own level, as a multiplier that sweeps nearly the whole way
-  // down. An earlier pass floored this at 0.35, which left the bar swinging
-  // between 1.75 and 0.90 across the entire hardware range - a difference you
-  // have to measure rather than see. The small floor that remains keeps a bar
-  // that is still audible from reading as dead; silence is handled above.
-  // At system = 1 this is exactly 1, so anywhere without a separate hardware
-  // fader (desktop, the browser) lands on the original number.
-  const hardware = 0.12 + 0.88 * system ** 0.8;
-  return app * hardware;
-};
-
-/**
- * The turntable ramp: how far the speed bends and how long the motor takes in
- * each direction. The floor sits at half speed - an octave is as far as a stop
- * needs to fall to read as one - and the rest of it is carried by a gain fade
- * on the audio clock, so the ear hears the pitch dive INTO silence.
- *
- * The bend is the graph's, not the element's: `playbackRate` is the media
- * engine's own resampler, re-tuned on every write and reset across a pause on
- * WebKit, which is why the deck used to glitch and then stop being audible at
- * all after the first stop. See `rampSpeed` in the kit's analyser meter.
- */
-const RATE_FLOOR = 0.5;
-const SPIN_UP_MS = 380;
-const SPIN_DOWN_MS = 320;
-/**
- * How fast the level comes back when the platter picks up. Short on purpose:
- * the music has to be simply there when the button is pressed, so that what is
- * heard afterwards is the pitch climbing rather than a fade-in. Matched to the
- * spin-up, the climb happens under a fade and neither the press nor the effect
- * lands - the button feels slow and the ramp cannot be heard at all.
- */
-const SPIN_UP_FADE_MS = 90;
-/**
- * The blink of silence a play pressed mid-brake pays to drop the deck's
- * backlog before climbing (see the catch branch of setPlayingState). Long
- * enough for the gain to truly reach zero before the line is snapped, short
- * enough to read as the platter being caught rather than a stutter.
- */
-const CATCH_FLUSH_MS = 45;
-
-/** How the artwork is worn: a turning CD, the flat cover, or - on the big
- *  sheet - nothing at all, letting the canvas and the words have the room.
- *  The mini strip ignores 'hidden' and shows the cover: its square is also
- *  the tap target that lifts this sheet, and a hole in the strip reads as a
- *  layout bug, not a preference. */
-type ArtView = 'cd' | 'cover' | 'hidden';
-
-const ART_VIEW_KEY = 'attackfm-art-view';
-
-// The stored choice, defaulting to the disc; anything unrecognised also lands
-// there rather than blanking the square.
-function readArtView(): ArtView {
-  try {
-    const stored = localStorage.getItem(ART_VIEW_KEY);
-    return stored === 'cover' || stored === 'hidden' ? stored : 'cd';
-  } catch {
-    return 'cd';
-  }
-}
-
-/**
- * The mic popover's inside: the track's lyrics, fetched when the panel first
- * opens (the popover mounts its panel per open, so the effect is the lazy
- * trigger) and cached across opens by the lyrics module. Synced lines light
- * with playback and seek on press; plain-only lyrics read as static text -
- * no position, so nothing lights, and no handler, so nothing pretends to be
- * a button; and the waits and the misses are the same surface, empty, saying
- * which of the two it is.
- */
-function LyricsPanel({
-  track,
-  position,
-  onSeek,
-}: {
-  track: Track;
-  position: number;
-  onSeek: (time: number) => void;
-}) {
-  const [lyrics, setLyrics] = useState<TrackLyrics | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    void fetchLyrics(track).then((found) => {
-      if (!cancelled) setLyrics(found);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [track]);
-
-  if (lyrics === null) return <Lyrics lines={[]} emptyLabel="Searching for lyrics…" aria-label="Lyrics" />;
-  if (lyrics.synced) {
-    return (
-      <Lyrics
-        lines={lyrics.synced}
-        position={position}
-        onLineSelect={(line) => onSeek(line.time)}
-        aria-label="Lyrics"
-      />
-    );
-  }
-  if (lyrics.plain) {
-    return (
-      <Lyrics lines={lyrics.plain.map((text) => ({ time: 0, text }))} aria-label="Lyrics" />
-    );
-  }
-  return <Lyrics lines={[]} aria-label="Lyrics" />;
-}
+import { useMediaQuery } from '../ux/useMediaQuery.ts';
+import {
+  ART_VIEW_KEY,
+  CATCH_FLUSH_MS,
+  IDLE_TRACK,
+  INITIAL_VOLUME,
+  MOBILE_PLAYER_QUERY,
+  RATE_FLOOR,
+  SPIN_DOWN_MS,
+  SPIN_UP_FADE_MS,
+  SPIN_UP_MS,
+  TRACK_ART,
+  readArtView,
+  readDeckPref,
+  timelineDuration,
+  writeDeckPref,
+  type ArtView,
+} from './deckShared.ts';
+import { useSystemNowPlaying } from './useSystemNowPlaying.ts';
+import { useListenReporting } from './useListenReporting.ts';
+import { useNpChrome } from './useNpChrome.ts';
+import { usePlayerConnect, type PlayerLiveState } from './usePlayerConnect.ts';
+import { NowPlayingSheet, npArtMenuItems } from './NowPlayingSheet.tsx';
+import { PlayerStrip } from './PlayerStrip.tsx';
 
 /**
  * The station strip along the bottom of the window. The kit's PlayerBar owns
@@ -280,47 +59,13 @@ function LyricsPanel({
  * here, where the bar's shuffle and repeat toggles live, and the chosen track
  * is handed up through onTrackChange rather than loaded directly - the app
  * owns what is playing; this owns what comes next.
- */
-/**
- * Tracks a media query as state. The player reshapes itself for touch - the
- * auxiliary controls fold behind one overflow button - and the same question
- * gates the CSS that grows the transport, so the query string is shared with
- * app.css rather than derived from the platform: a narrow desktop window
- * deserves the tidier bar too.
- */
-function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia(query).matches,
-  );
-  useEffect(() => {
-    const mql = window.matchMedia(query);
-    const onChange = () => setMatches(mql.matches);
-    onChange();
-    mql.addEventListener('change', onChange);
-    // The resize listener repeats the question the mql should be answering:
-    // some embedded webviews resize the viewport without dispatching mql
-    // change events, and a phone never fires either (pointer: coarse holds),
-    // so the duplicate costs nothing where it is not needed.
-    window.addEventListener('resize', onChange);
-    return () => {
-      mql.removeEventListener('change', onChange);
-      window.removeEventListener('resize', onChange);
-    };
-  }, [query]);
-  return matches;
-}
-
-/**
- * When the player folds its rails for touch. Kept beside the hook so the CSS
- * block in app.css quoting the same condition has one source to match.
  *
- * Coarse pointer is the real signal - a phone in any orientation, a tablet.
- * The width arm exists for browsers (previews included), and it stops at
- * 540px because the DESKTOP window can be as narrow as 560 (tauri.conf.json
- * minWidth): a squarish desktop window must never inherit the phone's bar.
+ * Split for size: the pure constants live in deckShared.ts, the presentation
+ * in PlayerStrip.tsx / NowPlayingSheet.tsx / LyricsPanel.tsx, and the side
+ * channels in useSystemNowPlaying / useListenReporting / useNpChrome /
+ * usePlayerConnect. The audio deck core - the closure web over the shared
+ * refs - deliberately stays here whole.
  */
-const MOBILE_PLAYER_QUERY = '(pointer: coarse), (max-width: 540px)';
-
 export function Player({
   track,
   queue = [],
@@ -461,32 +206,8 @@ export function Player({
   };
   // One menu, three doorways: the strip's square, the sheet's art, and the
   // Canvas clip itself all open this same chooser, so the setting stays one
-  // setting no matter where the press lands.
-  const npArtMenu = (
-    <>
-      <MenuItem
-        icon={<Disc3 size={15} />}
-        shortcut={artView === 'cd' ? <Check size={14} /> : undefined}
-        onSelect={() => chooseArtView('cd')}
-      >
-        Spinning CD
-      </MenuItem>
-      <MenuItem
-        icon={<ImageIcon size={15} />}
-        shortcut={artView === 'cover' ? <Check size={14} /> : undefined}
-        onSelect={() => chooseArtView('cover')}
-      >
-        Album cover
-      </MenuItem>
-      <MenuItem
-        icon={<EyeOff size={15} />}
-        shortcut={artView === 'hidden' ? <Check size={14} /> : undefined}
-        onSelect={() => chooseArtView('hidden')}
-      >
-        Hidden
-      </MenuItem>
-    </>
-  );
+  // setting no matter where the press lands. (Items live in NowPlayingSheet.)
+  const npArtMenu = npArtMenuItems(artView, chooseArtView);
 
   // The EQ gains ride the graph's filters; kept in a ref so a freshly built
   // meter can be seeded with them without waiting for a render.
@@ -505,25 +226,11 @@ export function Player({
   // lives in the left pane (appWindow shrinks by --np-dock-width, app.css).
   const npWide = useMediaQuery('(min-width: 700px)');
   const npDocked = mobileControls && npWide && allowDock;
-  // The overflow popover opens on a chooser - Equalizer, Lyrics, Volume -
-  // and each pick swaps the panel in behind a back row. Controlled, so every
-  // open starts back at the chooser rather than wherever the last visit left
-  // off.
-  const [moreOpen, setMoreOpen] = useState(false);
-  // 'lyrics' and 'volume' are the phone's views; 'devices' is the desktop's -
-  // one state serves both because only one trailing branch renders at a time.
-  const [moreView, setMoreView] = useState<'menu' | 'eq' | 'lyrics' | 'volume' | 'devices'>('menu');
-  // Whether the overflow offers the device hand-off row at all.
-  const devicesAvailable = useDevicesAvailable();
+  // The overflow popover state now lives in PlayerStrip.
   // The song being filed into a playlist, or null when that sheet is shut.
   const [filing, setFiling] = useState<Track | null>(null);
   // The full-screen Now Playing surface, opened by tapping the strip on touch.
   const [npOpen, setNpOpen] = useState(false);
-  // The playing track's Spotify Canvas (a short looping clip), when the server
-  // is set up to fetch one and the track has one. Null the rest of the time,
-  // and on every track change until the next answer lands, so a clip never
-  // lingers over the wrong song. Only fetched while the full sheet is open.
-  const [npCanvas, setNpCanvas] = useState<string | null>(null);
   // The lyrics, opened over the Now Playing sheet as a full-screen view rather
   // than a popover anchored to the bottom rail (which sat too low).
   const [npLyrics, setNpLyrics] = useState(false);
@@ -536,42 +243,8 @@ export function Player({
   useSystemBack(npQueue, () => setNpQueue(false));
   useSystemBack(npLyrics, () => setNpLyrics(false));
   useSystemBack(npOpen, () => setNpOpen(false));
-  // The Spotify move: while this sheet is up and the music is going, the phone
-  // must not lock - but a screen at full brightness all song long is rude, so
-  // after a quiet half-minute the sheet pulls a near-black veil over itself.
-  // Any touch lifts it. Paused or closed, the OS idle timer is handed back and
-  // the phone dims and locks like it always did.
-  const [npDimmed, setNpDimmed] = useState(false);
-  const npDimTimer = useRef<number | null>(null);
-  const pokeNpDim = () => {
-    if (npDimTimer.current !== null) window.clearTimeout(npDimTimer.current);
-    npDimTimer.current = window.setTimeout(() => setNpDimmed(true), 30_000);
-  };
-  // A bad merge once swallowed the lock-screen effect INTO this callback -
-  // hooks inside an effect body, an invalid-hook crash the moment it ran, and
-  // the whole app went black on play. The lock-screen effect lives further
-  // down now (it needs `audible`, which does not exist yet up here).
-  const keepAwake = npOpen && playing;
-  useEffect(() => {
-    void setIdleTimerDisabled(keepAwake);
-    if (!keepAwake) {
-      if (npDimTimer.current !== null) {
-        window.clearTimeout(npDimTimer.current);
-        npDimTimer.current = null;
-      }
-      setNpDimmed(false);
-      return;
-    }
-    pokeNpDim();
-    return () => {
-      if (npDimTimer.current !== null) {
-        window.clearTimeout(npDimTimer.current);
-        npDimTimer.current = null;
-      }
-      void setIdleTimerDisabled(false);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- pokeNpDim only touches refs
-  }, [keepAwake]);
+  // The dim veil, the return-to-app move and the Canvas fetch live in
+  // useNpChrome, called below once `audible` and the play session exist.
   // Bumped on every seek so the Connect report effect refires (a seek moves the
   // clock without changing play/track). A ref mirrors it for closures.
   const [seekTick, setSeekTick] = useState(0);
@@ -887,42 +560,6 @@ export function Player({
   // keep moving even while silenced; freeze it when muted or on the floor so
   // "nothing coming out" still reads as "nothing moving".
   const audible = playing && !muted && volume > 0;
-
-  /**
-   * Coming back to the app while music is playing lands on Now Playing.
-   *
-   * This is the lock-screen widget, Control Center, the CarPlay card and the
-   * headphone tap - every "audio spot" that opens the app. There is no API
-   * that says WHICH of them did it, or even that one of them did: iOS hands a
-   * launch from the now-playing artwork to the app exactly like any other
-   * launch. So the signal is the honest proxy - the app came forward and sound
-   * is coming out of it - and the guards below are what keep that from
-   * hijacking an ordinary app switch.
-   *
-   * Two seconds in the background is the floor: a share sheet, a permission
-   * prompt or the app switcher flashing past are all shorter than that, and
-   * none of them should land you in a full-screen player.
-   *
-   * `remoteOnly` stands in for activeElsewhere (defined later from it): when
-   * another device holds the audio, this player is not what you came back for.
-   */
-  const npReturnAt = useRef(0);
-  useEffect(() => {
-    if (!mobileControls) return;
-    const onVisible = () => {
-      if (document.visibilityState === 'hidden') {
-        npReturnAt.current = Date.now();
-        return;
-      }
-      const away = Date.now() - npReturnAt.current;
-      npReturnAt.current = 0;
-      if (away < 2000) return;
-      if (!audible || remoteOnly) return;
-      setNpOpen(true);
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [mobileControls, audible, remoteOnly]);
   const beat = useBeat({ meter, active: audible, at: progress });
 
 
@@ -1133,273 +770,33 @@ export function Player({
   const renewSessionRef = useRef(renewSession);
   renewSessionRef.current = renewSession;
 
-  // The EVENT log rides beside the play counter below: the counter keeps the
-  // legacy shelves (artist top songs) fed, while events - with their length,
-  // completion and skip verdicts - feed the stats page and the curator's
-  // self-tuning. Same honesty rules, same privacy switch. The reporter samples
-  // this snapshot once a second and owns all the bookkeeping.
-  const listenSnapRef = useRef<ListenSnapshot>({
-    track: null,
-    audible: false,
-    duration: 0,
-    session: null,
-    record: false,
-  });
-  listenSnapRef.current = {
+  // The Now Playing sheet's housekeeping: the dim veil, the return-to-app
+  // move, and the Canvas clip fetch. No audio coupling - see useNpChrome.
+  const { npDimmed, setNpDimmed, pokeNpDim, npCanvas } = useNpChrome({
+    npOpen,
+    playing,
+    mobileControls,
+    audible,
+    remoteOnly,
     track,
-    audible: audible && !scrubbing.current,
+    playSession,
+    setNpOpen,
+  });
+
+  // CarPlay, the media session and Android's transport bindings - see
+  // useSystemNowPlaying. carPlayControls.current is reassigned every render
+  // further down (after the handlers exist) so the hook's mount-once
+  // listeners always act through fresh closures; positionRef is shared with
+  // the other side channels here.
+  const { carPlayControls, positionRef } = useSystemNowPlaying({
+    track,
+    playing,
+    position,
+    coarsePosition,
     duration,
-    session: playSession,
-    record: playbackRef.current.saveHistory,
-  };
-  useEffect(() => {
-    const reporter = createListenReporter(() => listenSnapRef.current);
-    return reporter.dispose;
-  }, []);
-
-  // The Canvas clip for whatever is open. Cleared on every change first, so a
-  // previous song's clip is never left playing over a new one; a null answer -
-  // no clip, or a server with no Spotify session set up - simply leaves the
-  // blurred cover in place. Only while the sheet is open, since the clip is a
-  // full-screen surface nobody sees from the mini strip.
-  useEffect(() => {
-    setNpCanvas(null);
-    if (!npOpen || !track || !playSession) return;
-    const controller = new AbortController();
-    void fetchCanvas(
-      playSession,
-      track.title,
-      track.artist,
-      controller.signal,
-      trackIdFromPath(track.path),
-    ).then((url) => {
-      if (!controller.signal.aborted) setNpCanvas(url);
-    });
-    return () => controller.abort();
-  }, [npOpen, track?.title, track?.artist, playSession]);
-  const listened = useRef({ path: '' as string, seconds: 0, prev: 0, reported: false });
-  useEffect(() => {
-    if (!track) return;
-    const l = listened.current;
-    if (l.path !== track.path) {
-      listened.current = { path: track.path, seconds: 0, prev: coarsePosition, reported: false };
-      return;
-    }
-    const delta = coarsePosition - l.prev;
-    l.prev = coarsePosition;
-    // Only forward, only a natural tick's worth (<=2s), only while genuinely
-    // playing and not scrubbing - anything larger is a seek and buys no
-    // credit. A backward jump (rewind) re-arms the report for the next spin.
-    // The rearm also restarts the tally: without the reset, seconds already
-    // past the threshold would log a duplicate play the instant a rewind
-    // lands, rather than after another genuine listen-through.
-    if (delta < 0) {
-      l.reported = false;
-      l.seconds = 0;
-    }
-    if (playing && !scrubbing.current && delta > 0 && delta <= 2) {
-      l.seconds += delta;
-    }
-    if (l.reported) return;
-    const threshold = Math.min(30, Math.max(5, (duration || 60) / 2));
-    if (l.seconds < threshold) return;
-    l.reported = true;
-    // The privacy switch: with history off the listen is simply never written.
-    // Marked reported all the same, so flipping the switch mid-song does not
-    // retroactively log a listen that began under "off".
-    if (!playbackRef.current.saveHistory) return;
-    const id = trackIdFromPath(track.path);
-    if (id !== null && playSessionRef.current) reportPlay(playSessionRef.current, id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the clock drives it; the rest ride refs or are stable per tick
-  }, [coarsePosition, playing, track, duration]);
-
-  // ── The audiobook bookmark ───────────────────────────────────────────────
-  //
-  // A book is a place you return to, so the server learns where the listener
-  // got to: every twenty seconds while a book section plays, and once more the
-  // moment it pauses or the track changes. Music never reports - resuming a
-  // song mid-verse is nobody's habit, and the chatter would buy nothing. The
-  // position rides a ref so the interval never re-arms on every tick.
-  useEffect(() => {
-    if (!track || track.kind !== 'book') return;
-    const id = trackIdFromPath(track.path);
-    if (id === null) return;
-    const send = () => {
-      const s = playSessionRef.current;
-      if (s) void reportPosition(s, id, positionRef.current * 1000).catch(() => {});
-    };
-    let timer: number | undefined;
-    if (playing) {
-      timer = window.setInterval(send, 20_000);
-    }
-    return () => {
-      if (timer !== undefined) window.clearInterval(timer);
-      // The parting word: pause, track change, or the sheet closing all land
-      // the latest position before the interval dies.
-      send();
-    };
-  }, [track, playing]);
-
-  // The other half of the bookmark: a book section OPENS where the listener
-  // left it. Runs once per track, only after the deck has learned a real
-  // duration (seeking before the source is ready gets clobbered by the load),
-  // and only for a spot worth returning to - past the first few seconds,
-  // short of the end. commitSeek is the same door the scrubber uses, so every
-  // clock, crossfade guard and republish rides along.
-  const resumedPath = useRef<string | null>(null);
-  useEffect(() => {
-    if (!track || track.kind !== 'book' || !(duration > 0)) return;
-    if (resumedPath.current === track.path) return;
-    resumedPath.current = track.path;
-    const id = trackIdFromPath(track.path);
-    const s = playSessionRef.current;
-    if (id === null || !s) return;
-    let live = true;
-    void fetchPlayStates(s)
-      .then((states) => {
-        if (!live) return;
-        const mine = states.find((st) => st.trackId === id);
-        if (!mine) return;
-        const to = mine.positionMs / 1000;
-        if (to > 15 && to < duration - 15) commitSeek(to);
-      })
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- commitSeek is rebuilt every render; the guard ref keeps this once-per-track
-  }, [track, duration]);
-
-  // ── CarPlay / system now-playing ─────────────────────────────────────────
-  //
-  // The native side (carplay.m) owns MPNowPlayingInfoCenter and the remote
-  // command center; this feeds it and obeys it. Pushes go out only on
-  // discontinuities - track change, play/pause, seek - because iOS runs the
-  // clock itself from position + rate; obeying happens through one mount-once
-  // listener that reads the latest controls through a ref, since the control
-  // functions below are rebuilt every render and the listener is not.
-  const carPlayControls = useRef<{
-    setPlaying: (next: boolean) => void;
-    next: () => void;
-    previous: () => void;
-    seek: (to: number) => void;
-  } | null>(null);
-  const positionRef = useRef(position);
-  positionRef.current = position;
-  const playingLiveRef = useRef(playing);
-  playingLiveRef.current = playing;
-  // Where the last push left the clock, so a seek (a jump the extrapolated
-  // clock cannot have made) is recognisable against ordinary playback.
-  const carPlaySentPos = useRef(-10);
-
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let dead = false;
-    void onCarPlayRemote((command) => {
-      const controls = carPlayControls.current;
-      if (!controls) return;
-      if (command === 'play') controls.setPlaying(true);
-      else if (command === 'pause') controls.setPlaying(false);
-      else if (command === 'toggle') controls.setPlaying(!playingLiveRef.current);
-      else if (command === 'next') controls.next();
-      else if (command === 'previous') controls.previous();
-      else if (command.startsWith('seek:')) {
-        const to = Number(command.slice(5));
-        if (Number.isFinite(to) && to >= 0) controls.seek(to);
-      }
-    }).then((stop) => {
-      if (dead) stop();
-      else unlisten = stop;
-    });
-    return () => {
-      dead = true;
-      unlisten?.();
-    };
-  }, []);
-
-  // The system transport, wired through WebKit's own media session - the path
-  // the lock screen and Control Center use EVERYWHERE, iOS included: with
-  // playback running through the <audio> elements, WebKit claims the OS
-  // now-playing session and its claim beats carplay.m's native writes (the
-  // phone showed the generic "AttackFM" card with ±10s skips - WebKit's
-  // defaults - whenever this stayed unbound). Feeding the claim is the only
-  // move that sticks. Double-delivery with the native command targets is not
-  // a risk in practice: while WebKit holds the claim its handlers are the
-  // ones iOS calls, and the native targets only matter when it does not.
-  useEffect(() => {
-    bindMediaSessionHandlers({
-      play: () => carPlayControls.current?.setPlaying(true),
-      pause: () => carPlayControls.current?.setPlaying(false),
-      next: () => carPlayControls.current?.next(),
-      previous: () => carPlayControls.current?.previous(),
-      seek: (seconds) => carPlayControls.current?.seek(seconds),
-    });
-  }, []);
-
-  // The discontinuities the extrapolated clock cannot cover: a new track, a
-  // play or pause, a duration finally learned from metadata. The media session
-  // is the claimant everywhere (see the binding above); on iOS the native push
-  // ALSO goes out, because carplay.m feeds the car's own templates from it and
-  // it is the standing fallback for the moments WebKit holds no claim.
-  useEffect(() => {
-    if (!track) return;
-    carPlaySentPos.current = positionRef.current;
-    updateMediaSessionMetadata({
-      title: track.title,
-      artist: track.artist,
-      album: track.album,
-      artwork: artwork?.startsWith('http') ? artwork : null,
-    });
-    updateMediaSessionState({ duration, position: positionRef.current, playing });
-    // Android's half of the same sentence: a WebView does not publish the
-    // page's mediaSession to the system, so without this the lock screen, the
-    // notification and an Android Auto dashboard know nothing. No-ops
-    // everywhere else.
-    setNativeNowPlaying({
-      title: track.title,
-      artist: track.artist,
-      album: track.album,
-      durationSecs: duration,
-    });
-    setNativePlaybackState(playing, positionRef.current);
-    if (isIOS) {
-      void pushCarPlayNowPlaying({
-        title: track.title,
-        artist: track.artist,
-        album: track.album,
-        artUrl: artwork?.startsWith('http') ? artwork : '',
-        duration,
-        position: positionRef.current,
-        playing,
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on identity, state, and length; position rides along
-  }, [track, playing, duration]);
-
-  // Seeks: the coarse clock jumping further than a second of playback could
-  // carry it. Scrubs land here through commitSeek's setPosition.
-  useEffect(() => {
-    if (!track) return;
-    if (Math.abs(coarsePosition - carPlaySentPos.current) <= 2.5) {
-      carPlaySentPos.current = coarsePosition;
-      return;
-    }
-    carPlaySentPos.current = coarsePosition;
-    updateMediaSessionState({ duration, position: coarsePosition, playing });
-    setNativePlaybackState(playing, coarsePosition);
-    if (isIOS) {
-      void pushCarPlayNowPlaying({
-        title: track.title,
-        artist: track.artist,
-        album: track.album,
-        artUrl: artwork?.startsWith('http') ? artwork : '',
-        duration,
-        position: coarsePosition,
-        playing,
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the jump detector runs on the clock alone
-  }, [coarsePosition]);
+    artwork,
+    audible,
+  });
 
   // Push EQ edits onto the live filters as they happen.
   useEffect(() => {
@@ -2858,52 +2255,22 @@ export function Player({
     seek: commitSeek,
   };
 
-  // ── Android background playback ──────────────────────────────────────────
-  //
-  // Two things Android needs that no other platform does, both living in
-  // MainActivity and reached through androidAudio.ts (a no-op everywhere else).
-  //
-  // Telling it whether sound is coming out is what starts and stops the
-  // foreground service - the contract that stops the process being treated as
-  // spare memory the moment navigation wants some. `audible` rather than
-  // `playing`, so a deck that is paused, muted or handed to another device does
-  // not leave an ongoing notification standing over silence.
-  useEffect(() => {
-    setNativePlaying(audible);
-    // The cache sweep widens to six download lanes on an idle deck and
-    // narrows back to two under a song - this is the signal it sizes by.
-    notePlaybackAudible(audible);
-  }, [audible]);
-
-  // And obeying focus when the system needs the speaker. These are the player's
-  // own play and pause, so an interruption steers the deck exactly as a button
-  // would and everything downstream follows. A duck never arrives here - Android
-  // lowers and restores the volume itself, and pausing for one is what makes a
-  // spoken direction stop the music for the rest of the drive.
-  useEffect(
-    () =>
-      bindAudioFocus({
-        pause: () => carPlayControls.current?.setPlaying(false),
-        resume: () => carPlayControls.current?.setPlaying(true),
-      }),
-    [],
-  );
-
-  // The MediaSession's buttons - a steering wheel, an Android Auto dashboard,
-  // the lock screen, the notification's own row. They arrive in the service and
-  // are handed here by MainActivity; these are the player's own controls, so a
-  // press out there is the same press as one in here.
-  useEffect(
-    () =>
-      bindNativeTransport({
-        play: () => carPlayControls.current?.setPlaying(true),
-        pause: () => carPlayControls.current?.setPlaying(false),
-        next: () => carPlayControls.current?.next(),
-        previous: () => carPlayControls.current?.previous(),
-        seek: (seconds) => carPlayControls.current?.seek(seconds),
-      }),
-    [],
-  );
+  // The listening log - play counts, listen events, and the audiobook
+  // bookmark - reads the deck through the same refs the deck writes; see
+  // useListenReporting. Called here so commitSeek exists to hand it.
+  useListenReporting({
+    track,
+    playing,
+    audible,
+    duration,
+    coarsePosition,
+    playSession,
+    playSessionRef,
+    scrubbing,
+    playbackRef,
+    positionRef,
+    commitSeek,
+  });
 
   // The fader no longer touches the element: it rides the gain after the
   // analyser, so turning down what you hear never turns down what the bar reads.
@@ -2934,16 +2301,12 @@ export function Player({
 
   // ── AttackFM Connect ──────────────────────────────────────────────────────
   //
-  // This device is either the ACTIVE one (it plays and publishes state) or a
-  // REMOTE (it mirrors what plays elsewhere and its controls send commands).
-  // The seam is small on purpose: the controller below routes hub commands into
-  // the same local handlers a tap would, and one effect republishes state on
-  // each discontinuity. Off a server the provider is inert and all of this is
-  // a no-op, so a lone device just plays.
-  // (connect is read near the top of the component - see remoteOnly.)
+  // The Connect / jam seam itself lives in usePlayerConnect; what stays here
+  // is the ref it acts through. (connect is read near the top of the
+  // component - see remoteOnly.)
   // The controller is registered once but must act through the current render's
   // handlers and values, so it reaches them all through this ref.
-  const liveRef = useRef({
+  const liveRef = useRef<PlayerLiveState>({
     playing, position, duration, track, shuffle, repeat, volume, queue,
     setPlayingState, skipForward, skipBack, commitSeek, setVolumeState,
     libraryTracks, onTrackChange, onQueueChange,
@@ -2954,219 +2317,34 @@ export function Player({
     libraryTracks, onTrackChange, onQueueChange,
   };
   // A cross-track "play here": the track is loaded via onTrackChange, then this
-  // remembered seek+play is applied once it has actually loaded (below).
+  // remembered seek+play is applied once it has actually loaded (in the hook).
   const resumeRef = useRef<{ trackId: number; positionMs: number; play: boolean } | null>(null);
 
-  useEffect(() => {
-    const findByConnectId = (id: number) =>
-      liveRef.current.libraryTracks.find((t) => trackIdFromPath(t.path) === id) ?? null;
-    connect.registerController({
-      play: () => liveRef.current.setPlayingState(true),
-      pause: () => liveRef.current.setPlayingState(false),
-      toggle: () => liveRef.current.setPlayingState(!liveRef.current.playing),
-      next: () => liveRef.current.skipForward(),
-      prev: () => liveRef.current.skipBack(),
-      seek: (ms) => liveRef.current.commitSeek(ms / 1000),
-      // A remote's fader obeys the same ceiling as the local one: without the
-      // clamp a Connect command could push the gain past the boost cap (or to
-      // arbitrary amplitudes) regardless of the setting.
-      setVolume: (v) =>
-        liveRef.current.setVolumeState(
-          Math.max(0, Math.min(v, playbackRef.current.volumeBoost ? VOLUME_MAX : VOLUME_UNITY)),
-        ),
-      setQueue: (ids, index) => {
-        // A remote picked a song (and the list it came from) for this active
-        // device to play. Rebuild the whole play context from the library so
-        // this device's own skips walk the new list, load the picked track,
-        // and start it - the pick plays here, and the report that follows
-        // changes the song on every device without moving audio control.
-        const tracks = ids
-          .map(findByConnectId)
-          .filter((t): t is Track => t != null);
-        const pick = tracks[index] ?? tracks[0];
-        if (!pick) return;
-        const pickId = trackIdFromPath(pick.path);
-        if (tracks.length > 0) liveRef.current.onQueueChange?.(tracks);
-        if (pickId != null) {
-          resumeRef.current = { trackId: pickId, positionMs: 0, play: true };
-        }
-        liveRef.current.onTrackChange?.(pick);
-      },
-      becomeActive: (state) => {
-        const cur = liveRef.current.track;
-        if (state.trackId == null) return;
-        // The server froze the position at the moment of the hand-off; add the
-        // little that has elapsed since (network + load) so playback resumes
-        // where the song actually is, not a beat behind. Capped so a skewed
-        // client clock can nudge but never fling the playhead.
-        const elapsedMs = state.playing
-          ? Math.min(15000, Math.max(0, Date.now() - state.updatedAt))
-          : 0;
-        const positionMs = state.positionMs + elapsedMs;
-        if (cur && trackIdFromPath(cur.path) === state.trackId) {
-          liveRef.current.commitSeek(positionMs / 1000);
-          liveRef.current.setPlayingState(!!state.playing);
-          return;
-        }
-        const t = findByConnectId(state.trackId);
-        if (t) {
-          resumeRef.current = { trackId: state.trackId, positionMs, play: !!state.playing };
-          liveRef.current.onTrackChange?.(t);
-        }
-      },
-
-      release: () => liveRef.current.setPlayingState(false),
-    });
-    return () => connect.registerController(null);
-  }, [connect]);
-
-  // --- jams ---------------------------------------------------------------
-  //
-  // A jam is the same idea as a Connect hand-off, pointed at another PERSON
-  // rather than another of your own devices: the host's deck is the clock and
-  // everyone else steers to it. Two halves, and a device is only ever one of
-  // them.
-  //
-  // Hosting: report where this deck is, on the room's own rhythm. The context
-  // throttles the write, so this can afford to run on a plain interval and
-  // stay ignorant of what has changed.
-  useEffect(() => {
-    if (!jam?.current || !jam.hosting) return;
-    const beat = () => {
-      const live = liveRef.current;
-      const id = live.track ? trackIdFromPath(live.track.path) : null;
-      void jam
-        .hostBeat({
-          trackId: id,
-          positionMs: Math.round(positionRef.current * 1000),
-          playing: live.playing,
-          queue: live.queue
-            .map((t: Track) => trackIdFromPath(t.path))
-            .filter((n): n is number => n != null),
-        })
-        .then((additions) => {
-          // Fold in what the room asked for. Resolve each id against this
-          // library (host and members share the server's, so they land), drop
-          // anything already queued, and append - the next beat carries the
-          // grown queue back out to everyone.
-          if (!additions.length) return;
-          const now = liveRef.current;
-          const have = new Set(now.queue.map((t: Track) => t.path));
-          const add = additions
-            .map((aid) => now.libraryTracks.find((t: Track) => trackIdFromPath(t.path) === aid))
-            .filter((t): t is Track => !!t && !have.has(t.path));
-          if (add.length) now.onQueueChange?.([...now.queue, ...add]);
-        });
-    };
-    beat();
-    const timer = window.setInterval(beat, 2500);
-    return () => window.clearInterval(timer);
-  }, [jam?.current?.id, jam?.hosting]);
-
-  // Following: steer to the host. A different song loads and resumes at their
-  // position (the same resumeRef the Connect hand-off uses); the same song
-  // only corrects when it has drifted far enough to hear, since nudging the
-  // playhead every few seconds is worse than a little slip. The position the
-  // server hands over is already carried forward to the moment it was read.
-  useEffect(() => {
-    const room = jam?.current;
-    if (!room || jam.hosting || room.trackId == null) return;
-    const live = liveRef.current;
-    const wanted = room.trackId;
-    const currentId = live.track ? trackIdFromPath(live.track.path) : null;
-
-    if (currentId !== wanted) {
-      const t = live.libraryTracks.find((x) => trackIdFromPath(x.path) === wanted);
-      // Not in this listener's library: nothing to play, so the room simply
-      // moves on without them rather than the app inventing a track.
-      if (!t) return;
-      resumeRef.current = { trackId: wanted, positionMs: room.positionMs, play: room.playing };
-      live.onTrackChange?.(t);
-      return;
-    }
-
-    const driftSec = Math.abs(positionRef.current - room.positionMs / 1000);
-    if (driftSec > 3) live.commitSeek(room.positionMs / 1000);
-    if (live.playing !== room.playing) live.setPlayingState(room.playing);
-    // Keyed on updatedAt so this runs once per report from the host rather
-    // than on every render of this component.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jam?.current?.updatedAt, jam?.current?.trackId, jam?.hosting]);
-
-  // Apply a pending cross-track resume once the handed track has loaded.
-  useEffect(() => {
-    const r = resumeRef.current;
-    if (!r || !track || duration <= 0) return;
-    if (trackIdFromPath(track.path) !== r.trackId) return;
-    commitSeek(r.positionMs / 1000);
-    if (r.play) setPlayingState(true);
-    resumeRef.current = null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires on the load that satisfies the resume
-  }, [track, duration]);
-
-  // Publish this device's state to the hub on each discontinuity - but only
-  // while it is the one playing (or already holds the seat). A mere app-open
-  // never claims the seat; pressing play does, which is how playback starts
-  // cold. Position is not a dep (the server extrapolates); seekTick stands in
-  // for the one position jump extrapolation cannot follow.
-  const ownsPlayback = connect.activeDeviceId === connect.thisDeviceId;
-  const shouldReport = connect.connected && !!track && (playing || ownsPlayback);
-  useEffect(() => {
-    if (!shouldReport || !track) return;
-    // Starting playback here while ANOTHER device holds the seat (a song picked
-    // on a remote) claims it first: the hub only accepts state from the active
-    // device, so without the claim the song would play here while the other
-    // device kept playing too. The transfer releases (pauses) the other one.
-    if (
-      playing &&
-      connect.activeDeviceId !== null &&
-      connect.activeDeviceId !== connect.thisDeviceId
-    ) {
-      connect.transfer(connect.thisDeviceId);
-    }
-    const id = trackIdFromPath(track.path);
-    connect.reportState({
-      trackId: id,
-      positionMs: Math.round(positionRef.current * 1000),
-      playing,
-      shuffle,
-      repeat,
-      volume,
-      queue: queue
-        .map((t) => trackIdFromPath(t.path))
-        .filter((x): x is number => x !== null),
-      queueIndex: Math.max(0, queue.findIndex((t) => t.path === track.path)),
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- discontinuities only; position rides refs
-  }, [shouldReport, track, playing, shuffle, repeat, volume, seekTick]);
+  const { remoteTrack, activeDeviceName, remotePosition } = usePlayerConnect({
+    connect,
+    jam,
+    liveRef,
+    positionRef,
+    playbackRef,
+    resumeRef,
+    track,
+    playing,
+    shuffle,
+    repeat,
+    volume,
+    queue,
+    seekTick,
+    duration,
+    remoteOnly,
+    libraryTracks,
+    commitSeek,
+    setPlayingState,
+  });
 
   // Playback lives on another device: this one is a remote. It shows that
   // device's now-playing (resolved from the library) and its transport sends
   // commands rather than driving local audio.
   const activeElsewhere = remoteOnly;
-  const remoteTrack =
-    activeElsewhere && connect.session?.trackId != null
-      ? (libraryTracks.find((t) => trackIdFromPath(t.path) === connect.session!.trackId) ?? null)
-      : null;
-  const activeDeviceName =
-    activeElsewhere
-      ? (connect.devices.find((d) => d.id === connect.session?.activeDeviceId)?.name ?? 'another device')
-      : null;
-
-  // A remote's clock ticks locally between hub updates, extrapolated from the
-  // last true position while the shared state says it is playing.
-  const [, setRemoteTick] = useState(0);
-  useEffect(() => {
-    if (!activeElsewhere || !connect.session?.playing) return;
-    const iv = window.setInterval(() => setRemoteTick((t) => t + 1), 1000);
-    return () => window.clearInterval(iv);
-  }, [activeElsewhere, connect.session?.playing, connect.session?.updatedAt]);
-  const remotePosition = (() => {
-    const s = connect.session;
-    if (!s) return 0;
-    const base = s.positionMs / 1000;
-    return s.playing ? base + Math.max(0, (Date.now() - s.updatedAt) / 1000) : base;
-  })();
 
   // Becoming a remote pauses local audio, even if the explicit release did not
   // arrive (a seat claimed out from under this device).
@@ -3206,50 +2384,6 @@ export function Player({
     : commitSeek;
   const onScrubDisp = activeElsewhere ? () => {} : onScrub;
 
-  // The strip's artwork square, defined once because both strips wear it: the
-  // kit's bar on the desktop and the phone's own row. A right-click (or a long
-  // press) offers the turning CD or the flat cover; a track without art gets
-  // the station mark, so the square is never empty.
-  const playerArtwork = (
-        <ContextMenu
-          aria-label="Artwork style"
-          className="artViewTarget"
-          content={npArtMenu}
-        >
-          {artView === 'cd' ? (
-            <SpinningDisc
-              art={dispArtwork}
-              spinning={activeElsewhere ? dispPlaying : audible}
-              // A dry buffer spins the platter up rather than stalling it.
-              spooling={buffering || downloading}
-              beat={beat}
-              // The platter and the sound share a motor: the disc brakes and
-              // catches up over the same stretch the audio does, whichever
-              // stop the pause style buys - the turntable's ramp, the fade's
-              // short fall, or the cut's plain halt.
-              spinUpMs={
-                playback.pauseStyle === 'turntable'
-                  ? SPIN_UP_MS
-                  : playback.pauseStyle === 'fade'
-                    ? 250
-                    : 0
-              }
-              spinDownMs={
-                playback.pauseStyle === 'turntable'
-                  ? SPIN_DOWN_MS
-                  : playback.pauseStyle === 'fade'
-                    ? 200
-                    : 0
-              }
-            />
-          ) : artwork ? (
-            <img className="artViewCover" src={artwork} alt="" />
-          ) : (
-            <BeatWave className="artViewCover" beat={beat} />
-          )}
-        </ContextMenu>
-  );
-
   return (
     <>
       {/* crossOrigin keeps the analyser readable: both the asset protocol and
@@ -3263,627 +2397,114 @@ export function Player({
           as its twin; preload=auto because when it has a src at all, that file
           is about to be needed inside a fade window. */}
       <audio ref={audioBRef} src={srcB} crossOrigin="anonymous" preload="auto" />
-      {/* On touch the strip's dead space is a handle: a tap lifts the
-          full-screen Now Playing. display:contents keeps the wrapper out of
-          the layout the kit and the shell CSS assume - it only catches the
-          bubbling tap. */}
-      <div
-        ref={shellRef}
-        className="playerBarShell"
-        data-dismissed={dismissed || undefined}
-        onClick={mobileControls ? openNowPlaying : undefined}
-      >
-      <PlayerBar
-        // The shell already insets the strip from the window edges, so it reads
-        // as a plate lifted off the background rather than welded to the sill.
-        position="floating"
-        density="compact"
-        // Until the list has loaded the strip stands as placeholders rather than
-        // showing a track that is not settled yet.
-        skeleton={listLoading}
-        // The strip's artwork square wears the cover as a turning CD or as
-        // the flat album art - a right-click on it offers the choice. A track
-        // without art gets the station mark instead, so the square never
-        // stands empty. The art itself is decorative: the title beside it
-        // already names what is playing.
-        artwork={playerArtwork}
-        // disp* swap between local playback and mirroring the active device -
-        // see the AttackFM Connect block above. Alone or active, these are the
-        // local track and handlers; as a remote, the other device's now-playing
-        // and controls that command it.
-        title={dispTrack?.title ?? 'Funky Chunk'}
-        subtitle={
-          activeElsewhere
-            ? `${dispTrack?.artist ?? ''}${activeDeviceName ? ` · on ${activeDeviceName}` : ''}`
-            : (track?.artist ?? 'Kevin MacLeod')
-        }
-        duration={dispDuration}
-        value={dispPosition}
-        onValueChange={onScrubDisp}
-        onSeekEnd={onSeekEndDisp}
-        playing={dispPlaying}
-        onPlayingChange={onPlayingChangeDisp}
-        // Skip moves between tracks in the list, not within the current one.
-        onSkipBack={onSkipBackDisp}
-        onSkipForward={onSkipForwardDisp}
-        shuffle={shuffle}
-        onShuffleChange={setShuffle}
-        repeat={repeat}
-        onRepeatChange={setRepeat}
-        favorite={favorite}
-        onFavoriteChange={toggleFavoriteFelt}
-        // The mic sits just right of the heart, in the strip's leading rail:
-        // the heart is how you feel about the song, the mic is the song's own
-        // words. Synced lines light with playback and a press seeks to that
-        // line - the seek goes through commitSeek, the same path the bar's
-        // own scrubber lands on.
-        // On touch the mic folds into the overflow chooser with the rest of
-        // the options; the heart the kit renders keeps the leading rail.
-        leading={
-          mobileControls ? undefined : (
-          <Popover
-            placement="top"
-            aria-label="Lyrics"
-            className="lyricsPopoverPanel"
-            trigger={
-              <IconButton variant="ghost" size="sm" aria-label="Lyrics" skeleton={listLoading}>
-                <Mic size={16} />
-              </IconButton>
-            }
-          >
-            <div className="lyricsPopover">
-              {/* Keyed by the track, so a change of song while the popover is
-                  open tears the panel down whole: no window where the old
-                  song's lines sit clickable over the new song's audio, and no
-                  scroll position inherited from a sheet that no longer exists. */}
-              <LyricsPanel
-                key={(track ?? IDLE_TRACK).path}
-                track={track ?? IDLE_TRACK}
-                position={position}
-                onSeek={commitSeek}
-              />
-            </div>
-          </Popover>
-          )
-        }
-        levels={levels}
+      {/* The docked strip, extracted whole into PlayerStrip: same shell, same
+          PlayerBar, every handler passed down. */}
+      <PlayerStrip
+        shellRef={shellRef}
+        dismissed={dismissed}
+        mobileControls={mobileControls}
+        openNowPlaying={openNowPlaying}
+        listLoading={listLoading}
+        npArtMenu={npArtMenu}
+        artView={artView}
+        track={track}
+        artwork={artwork}
+        dispArtwork={dispArtwork}
+        activeElsewhere={activeElsewhere}
+        activeDeviceName={activeDeviceName}
+        dispTrack={dispTrack}
+        dispDuration={dispDuration}
+        dispPosition={dispPosition}
+        dispPlaying={dispPlaying}
+        audible={audible}
+        buffering={buffering}
+        downloading={downloading}
         beat={beat}
-        // The equalizer and the custom volume fader share the trailing rail; the
-        // kit's own volume is dropped (no volume props) since it stops at 100%.
-        // On touch the pair folds behind one overflow button - the phone's
-        // hardware buttons carry the volume moment to moment, so neither
-        // deserves a permanent seat the transport could be spending.
-        trailing={
-          // iPhone folds into the same mobile overflow as everywhere else now
-          // that the graph (and so the equalizer) always runs there.
-          mobileControls ? (
-            <>
-              {/* No device picker on the strip: the "playing on" button lives on
-                  the full-screen Now Playing sheet, which has the room for it. */}
-              <PluginSlot id="player-trailing" />
-              <Popover
-                placement="top-end"
-                aria-label="Player options"
-                className="morePopoverPanel"
-                open={moreOpen}
-                onOpenChange={(open) => {
-                  setMoreOpen(open);
-                  if (open) setMoreView('menu');
-                }}
-                trigger={
-                  /* Where the ⋮ used to be. The strip's one trailing control is
-                      now the thing you actually reach for mid-song on a phone -
-                      where is this playing - rather than a menu of panels. The
-                      equalizer moved to the Now Playing sheet with the other
-                      playback controls; lyrics already open full-screen from
-                      there; and volume belongs to the phone's own buttons (see
-                      the mobile volume note). */
-                  <IconButton variant="ghost" size="sm" aria-label="Playing on">
-                    <MonitorSpeaker size={18} />
-                  </IconButton>
-                }
-              >
-                <div className="morePopover">
-                  {moreView === 'menu' && <DeviceList />}
-                  {/* The strip's popover is the device list and nothing else
-                      now. Equalizer, lyrics and volume each left for a better
-                      home: the first two to the Now Playing sheet, and volume
-                      to the phone's own buttons. */}
-                </div>
-              </Popover>
-              {/* What plays next, one press from the strip. It was reachable
-                  only by opening Now Playing and then finding Queue inside it
-                  - two steps to answer a question people ask constantly. This
-                  lifts the sheet straight to the queue, so the panel and its
-                  drag-reorder stay the one implementation. */}
-              <IconButton
-                variant="ghost"
-                size="sm"
-                aria-label="Queue"
-                onClick={(event: React.MouseEvent) => {
-                  // The strip's dead space opens Now Playing plain; this is a
-                  // control, so it must not also ride that tap up.
-                  event.stopPropagation();
-                  setNpQueue(true);
-                  setNpOpen(true);
-                }}
-              >
-                <ListMusic size={18} />
-              </IconButton>
-            </>
-          ) : (
-            <>
-              {/* Plugin controls lead the app's own cluster, mirroring how the
-                  title bar seats plugins ahead of settings. Empty when none
-                  contribute. */}
-              <PluginSlot id="player-trailing" />
-              {/* The equalizer, playlist filing, and device hand-off fold
-                  behind one overflow: five trailing buttons were crowding the
-                  bar, and none of the three is a moment-to-moment reach.
-                  Volume is, so the fader keeps its own seat. */}
-              <Popover
-                placement="top-end"
-                aria-label="Player options"
-                className="eqPopoverPanel"
-                open={moreOpen}
-                onOpenChange={(open) => {
-                  setMoreOpen(open);
-                  if (open) setMoreView('menu');
-                }}
-                trigger={
-                  <IconButton variant="ghost" size="sm" aria-label="Player options">
-                    <EllipsisVertical size={18} />
-                  </IconButton>
-                }
-              >
-                <div className="morePopover">
-                  {moreView === 'menu' && (
-                    <div className="moreMenu">
-                      <button
-                        type="button"
-                        className="moreMenuItem"
-                        onClick={() => setMoreView('eq')}
-                      >
-                        <AudioLines size={16} />
-                        Equalizer
-                      </button>
-                      {/* Filing the song that is playing, without going to
-                          find its row in the table first. The dialog wants the
-                          whole sheet, so the pick leaves the popover. */}
-                      {track && (
-                        <button
-                          type="button"
-                          className="moreMenuItem"
-                          onClick={() => {
-                            setMoreOpen(false);
-                            setFiling(track);
-                          }}
-                        >
-                          <ListPlus size={16} />
-                          Add to playlist
-                        </button>
-                      )}
-                      {devicesAvailable && (
-                        <button
-                          type="button"
-                          className="moreMenuItem"
-                          onClick={() => setMoreView('devices')}
-                        >
-                          <MonitorSpeaker size={16} />
-                          Connect to a device
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  {moreView !== 'menu' && (
-                    <button
-                      type="button"
-                      className="moreBack"
-                      onClick={() => setMoreView('menu')}
-                    >
-                      <ChevronLeft size={14} />
-                      {moreView === 'devices' ? 'Devices' : 'Equalizer'}
-                    </button>
-                  )}
-                  {moreView === 'eq' && (
-                    <div className="eqPopover">
-                      <EqPanel />
-                    </div>
-                  )}
-                  {moreView === 'devices' && <DeviceList />}
-                </div>
-              </Popover>
-              <VolumeControl
-                value={volume}
-                muted={muted}
-                onValueChange={setVolumeState}
-                onMutedChange={setMutedState}
-              />
-            </>
-          )
-        }
-        // The shadow trailing the beat under the played run; nothing is drawn
-        // without a beat to trail, so it is safe to leave on.
-        tracer
-        // The bar moves as hard as the station is playing.
-        intensity={beatIntensity(volume, muted, systemVolume)}
+        levels={levels}
+        pauseStyle={playback.pauseStyle}
+        onScrubDisp={onScrubDisp}
+        onSeekEndDisp={onSeekEndDisp}
+        onPlayingChangeDisp={onPlayingChangeDisp}
+        onSkipBackDisp={onSkipBackDisp}
+        onSkipForwardDisp={onSkipForwardDisp}
+        shuffle={shuffle}
+        setShuffle={setShuffle}
+        repeat={repeat}
+        setRepeat={setRepeat}
+        favorite={favorite}
+        toggleFavoriteFelt={toggleFavoriteFelt}
+        position={position}
+        commitSeek={commitSeek}
+        volume={volume}
+        muted={muted}
+        systemVolume={systemVolume}
+        setVolumeState={setVolumeState}
+        setMutedState={setMutedState}
+        setNpQueue={setNpQueue}
+        setNpOpen={setNpOpen}
+        setFiling={setFiling}
       />
-      </div>
 
-      {/* The full-screen Now Playing surface, on touch only. Portalled to the
-          body so its stacking is the viewport's, not the mini-strip's plate
-          (which sits below the nav bar) - otherwise the nav would paint over
-          it. It reuses every handler the strip does, so the two never diverge. */}
-      {mobileControls && (npOpen || npDocked) && createPortal(
-        <div
-          className="npScreen"
-          role="dialog"
-          aria-label="Now playing"
-          // Always the dark palette, whatever the app wears: this surface lives
-          // over album art and its own backdrop, where light-theme ink is
-          // unreadable and the lyric layers (white + screen-blend) vanish.
-          // The token layer scopes [data-theme] on any element, so one
-          // attribute re-themes the whole subtree.
-          data-theme="dark"
-          data-open={npOpen || undefined}
-          data-docked={npDocked || undefined}
-          // Capture phase, so ANY touch on the sheet - a control, the art, the
-          // veil itself - counts as activity: the dim lifts and its clock
-          // restarts. The veil below swallows its own tap so a wake-up touch
-          // never also presses whatever sat under it.
-          onPointerDownCapture={() => {
-            setNpDimmed(false);
-            if (playing) pokeNpDim();
-          }}
-        >
-          {/* The song's own cover, blown up and blurred, as the surface behind
-              the controls - the same move the mini-strip's backdrop makes,
-              scoped to this sheet. */}
-          <div
-            className="npScreen__bg"
-            aria-hidden="true"
-            style={artwork ? { backgroundImage: `url(${JSON.stringify(artwork)})` } : undefined}
-          />
-          {/* The Spotify Canvas, when the track has one: a muted loop over this
-              sheet's blurred cover, keyed on its URL so a new clip restarts
-              cleanly. Absent - the common case - it is simply not rendered and
-              the cover shows instead. Wrapped in the same artwork-style
-              chooser the art carries, so a press-and-hold on the clip itself
-              offers the switch - the one that matters most here, since
-              'hidden' leaves the clip as the only thing to press. */}
-          {npCanvas ? (
-            <ContextMenu
-              aria-label="Artwork style"
-              className="npScreen__canvasWrap"
-              content={npArtMenu}
-            >
-              <video
-                key={npCanvas}
-                className="npScreen__canvas"
-                src={npCanvas}
-                autoPlay
-                loop
-                muted
-                playsInline
-                aria-hidden="true"
-              />
-            </ContextMenu>
-          ) : artView === 'hidden' ? (
-            // No clip and no art: the sheet's open middle still answers the
-            // press-and-hold, so 'hidden' is never a state you need the mini
-            // strip to climb back out of.
-            <ContextMenu
-              aria-label="Artwork style"
-              className="npScreen__canvasWrap"
-              content={npArtMenu}
-            />
-          ) : null}
-          {/* The lyric words run the full height of the sheet, behind the
-              controls. Drawn AFTER the clip on purpose: a canvas is a backdrop,
-              not a cover, and the words are the thing worth reading over it. */}
-          <NowPlayingBackdrop wordsOnly artwork={artwork ?? npPlaceholderArt} seed={track?.path ?? 'np'} />
-          {/* A blur that rises through the bottom third, so the transport, the
-              times and the title read against something settled instead of
-              against whatever frame the clip happens to be on. Sits over the
-              canvas and the words, under every control. */}
-          <div className="npScreen__veil" aria-hidden="true" />
-          <header className="npScreen__head">
-            <IconButton
-              variant="ghost"
-              aria-label="Close now playing"
-              onClick={() => {
-                setNpOpen(false);
-                setNpLyrics(false);
-              }}
-            >
-              <ChevronDown size={22} />
-            </IconButton>
-            <span className="npScreen__source">{track?.album || 'Now playing'}</span>
-            {/* Where the close button's counterweight was: filing the song is
-                the one action worth a permanent seat up here, and this sheet
-                has the room the mini-strip's rail does not. */}
-            {track ? (
-              <IconButton
-                variant="ghost"
-                aria-label="Add to playlist"
-                onClick={() => setFiling(track)}
-              >
-                <ListPlus size={20} />
-              </IconButton>
-            ) : (
-              <span className="npScreen__headSpacer" aria-hidden="true" />
-            )}
-          </header>
-
-          {/* The artwork, per the chosen face - and no longer standing down
-              for a Canvas: the disc turns OVER the clip now, because the
-              platter is an instrument (scratch, flick) and an instrument that
-              vanishes when a video shows up is a broken promise. Anyone who
-              prefers the clip unobstructed picks Hidden - the third face. */}
-          {artView !== 'hidden' && (
-          <div className="npScreen__art">
-            {/* The hero art follows the same artView the mini-strip does, so the
-                choice is one setting in two places. A press (long-press on
-                touch) opens the chooser. */}
-            <ContextMenu
-              aria-label="Artwork style"
-              className="npScreen__coverTarget"
-              content={npArtMenu}
-            >
-              {artView === 'cd' ? (
-                <SpinningDisc
-                  art={dispArtwork}
-                  spinning={activeElsewhere ? dispPlaying : audible}
-                  spooling={buffering || downloading}
-                  beat={beat}
-                  onScratchStart={onScratchBegin}
-                  onScratch={onScratch}
-                  onScratchEnd={onScratchEnd}
-                  
-                  spinUpMs={
-                    playback.pauseStyle === 'turntable'
-                      ? SPIN_UP_MS
-                      : playback.pauseStyle === 'fade'
-                        ? 250
-                        : 0
-                  }
-                  spinDownMs={
-                    playback.pauseStyle === 'turntable'
-                      ? SPIN_DOWN_MS
-                      : playback.pauseStyle === 'fade'
-                        ? 200
-                        : 0
-                  }
-                />
-              ) : (
-                <img
-                  className="npScreen__cover"
-                  src={artwork ?? npPlaceholderArt}
-                  alt=""
-                />
-              )}
-            </ContextMenu>
-          </div>
-          )}
-
-          <div className="npScreen__meta">
-            <div className="npScreen__lines">
-              <span className="npScreen__title">{track?.title ?? ''}</span>
-              {onOpenArtist && track ? (
-                <button
-                  type="button"
-                  className="npScreen__artist npScreen__artistLink"
-                  onClick={() => {
-                    // The page opens under the sheet, so the sheet steps aside.
-                    setNpOpen(false);
-                    onOpenArtist(track.artist);
-                  }}
-                >
-                  {track.artist}
-                </button>
-              ) : (
-                <span className="npScreen__artist">{track?.artist ?? ''}</span>
-              )}
-              {chapterLabel && <span className="npScreen__chapter">{chapterLabel}</span>}
-              {/* A downloading placeholder says so; otherwise only while the
-                  buffer is actually dry - silence with the transport still
-                  showing play is the mystery this whole path exists to end. */}
-              {(downloading || buffering) && (
-                <span className="npScreen__buffering" role="status">
-                  {downloading ? 'Downloading…' : 'Buffering…'}
-                </span>
-              )}
-            </div>
-            <IconButton
-              variant="ghost"
-              aria-label={favorite ? 'Remove from favourites' : 'Add to favourites'}
-              aria-pressed={favorite}
-              className="npScreen__heart"
-              onClick={toggleFavoriteFelt}
-            >
-              <Heart size={22} fill={favorite ? 'currentColor' : 'none'} />
-            </IconButton>
-          </div>
-
-          {/* No scrubber while downloading - there is no timeline yet. */}
-          {!downloading && (
-          <div className="npScreen__scrub">
-            {/* The kit's live bar, not a plain slider: the same waveform the
-                mini strip wears, driven by the same levels and beat, so the
-                now-playing screen deforms in time with the music. Pushed toward
-                the hero end of the intensity range (max 3) since this bar IS
-                the surface's focus, and set on a raised-card rail so the run
-                ahead stays legible over the blurred cover behind it. */}
-            <SeekBar
-              duration={Math.max(1, duration)}
-              value={position}
-              aria-label="Seek"
-              shape="swell"
-              tone="accent"
-              fill="solid"
-              rail="contrast"
-              levels={levels}
-              beat={beat}
-              tracer
-              intensity={Math.min(3, beatIntensity(volume, muted, systemVolume) * 1.6)}
-              onValueChange={onScrub}
-              onSeekEnd={commitSeek}
-            />
-            <div className="npScreen__times">
-              <span>{formatClock(position)}</span>
-              <span>-{formatClock(Math.max(0, duration - position))}</span>
-            </div>
-          </div>
-          )}
-
-          <div className="npScreen__transport">
-            <IconButton
-              variant="ghost"
-              aria-label="Shuffle"
-              aria-pressed={shuffle}
-              data-on={shuffle || undefined}
-              onClick={() => setShuffle((s) => !s)}
-            >
-              <Shuffle size={20} />
-            </IconButton>
-            <IconButton variant="ghost" aria-label="Previous" disabled={!canSkip} onClick={skipBack}>
-              <SkipBack size={26} fill="currentColor" />
-            </IconButton>
-            <button
-              type="button"
-              className="npScreen__play"
-              aria-label={downloading ? 'Downloading' : playing ? 'Pause' : 'Play'}
-              disabled={downloading}
-              onClick={() => setPlayingState(!playing)}
-            >
-              {playing ? <Pause size={30} fill="currentColor" /> : <Play size={30} fill="currentColor" />}
-            </button>
-            <IconButton variant="ghost" aria-label="Next" disabled={!canSkip} onClick={skipForward}>
-              <SkipForward size={26} fill="currentColor" />
-            </IconButton>
-            <IconButton
-              variant="ghost"
-              aria-label={`Repeat: ${repeat}`}
-              data-on={repeat !== 'off' || undefined}
-              onClick={cycleRepeat}
-            >
-              {repeat === 'one' ? <Repeat1 size={20} /> : <Repeat size={20} />}
-            </IconButton>
-          </div>
-
-          {/* The secondary controls the strip has no room for: lyrics, the
-              device hand-off (only when there is somewhere to send it), the
-              equalizer, and the volume fader. The transport above already
-              carries shuffle/repeat/skip, and favourite and filing sit on the
-              meta and header rows. */}
-          <div className="npScreen__actions">
-            <IconButton variant="ghost" aria-label="Queue" onClick={() => setNpQueue(true)}>
-              <ListMusic size={20} />
-            </IconButton>
-            <IconButton variant="ghost" aria-label="Lyrics" onClick={() => setNpLyrics(true)}>
-              <Mic size={20} />
-            </IconButton>
-            <DevicePicker />
-            <Popover
-              placement="top"
-              aria-label="Equalizer"
-              className="eqPopoverPanel"
-              trigger={
-                <IconButton variant="ghost" aria-label="Equalizer">
-                  <AudioLines size={20} />
-                </IconButton>
-              }
-            >
-              <div className="eqPopover">
-                <EqPanel narrow={narrowEq} />
-              </div>
-            </Popover>
-            {/* No fader on a phone: volume is pinned at unity there and the
-                handset's own buttons are the control, so a slider that cannot
-                move would be a lie. Desktop, which has no hardware keys of its
-                own, keeps it. */}
-            {!isMobile && (
-              <Popover
-                placement="top"
-                aria-label="Volume"
-                className="morePopoverPanel"
-                trigger={
-                  <IconButton variant="ghost" aria-label="Volume">
-                    <Volume2 size={20} />
-                  </IconButton>
-                }
-              >
-                <VolumeRow
-                  value={volume}
-                  muted={muted}
-                  onValueChange={setVolumeState}
-                  onMutedChange={setMutedState}
-                />
-              </Popover>
-            )}
-          </div>
-
-          {/* Lyrics fill the whole sheet rather than a low popover: a header to
-              step back to the art, and the words scrolling below it. */}
-          {npLyrics && (
-            <div
-              className="npScreen__lyricsScrim"
-              aria-hidden="true"
-              onPointerDown={() => setNpLyrics(false)}
-            />
-          )}
-          {npLyrics && (
-            <div className="npScreen__lyricsView" role="dialog" aria-label="Lyrics">
-              <header className="npScreen__lyricsHead">
-                <span className="npScreen__lyricsTitle">{track?.title ?? 'Lyrics'}</span>
-                <IconButton variant="ghost" aria-label="Close lyrics" onClick={() => setNpLyrics(false)}>
-                  <ChevronDown size={22} />
-                </IconButton>
-              </header>
-              <div className="npScreen__lyricsBody">
-                <LyricsPanel
-                  key={(track ?? IDLE_TRACK).path}
-                  track={track ?? IDLE_TRACK}
-                  position={position}
-                  onSeek={commitSeek}
-                />
-              </div>
-            </div>
-          )}
-          {/* The queue, over the same sheet the same way: what plays next, drag-
-              reorderable, each row a jump. */}
-          {npQueue && (
-            <div
-              className="npScreen__lyricsScrim"
-              aria-hidden="true"
-              onPointerDown={() => setNpQueue(false)}
-            />
-          )}
-          {npQueue && (
-            <div className="npScreen__queueView">
-              <QueuePanel
-                queue={queue}
-                current={track}
-                onQueueChange={(next) => onQueueChange?.(next)}
-                onPlayTrack={(t) => onTrackChange?.(t)}
-                onClose={() => setNpQueue(false)}
-              />
-            </div>
-          )}
-          {/* The inactivity veil: near-black, fading in over everything on
-              this sheet. It takes pointer events only while dimmed, so the
-              waking tap lands here and nowhere else. */}
-          <div
-            className="npScreen__dim"
-            data-dim={npDimmed || undefined}
-            aria-hidden="true"
-            onPointerDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-          />
-        </div>,
-        document.body,
+      {/* The full-screen Now Playing surface, on touch only - extracted whole
+          into NowPlayingSheet (which portals itself to the body). It reuses
+          every handler the strip does, so the two never diverge. */}
+      {mobileControls && (npOpen || npDocked) && (
+        <NowPlayingSheet
+          npOpen={npOpen}
+          npDocked={npDocked}
+          npDimmed={npDimmed}
+          setNpDimmed={setNpDimmed}
+          pokeNpDim={pokeNpDim}
+          npCanvas={npCanvas}
+          npLyrics={npLyrics}
+          setNpLyrics={setNpLyrics}
+          npQueue={npQueue}
+          setNpQueue={setNpQueue}
+          setNpOpen={setNpOpen}
+          npArtMenu={npArtMenu}
+          artView={artView}
+          track={track}
+          artwork={artwork}
+          dispArtwork={dispArtwork}
+          activeElsewhere={activeElsewhere}
+          dispPlaying={dispPlaying}
+          playing={playing}
+          audible={audible}
+          buffering={buffering}
+          downloading={downloading}
+          beat={beat}
+          levels={levels}
+          pauseStyle={playback.pauseStyle}
+          onScratchBegin={onScratchBegin}
+          onScratch={onScratch}
+          onScratchEnd={onScratchEnd}
+          onOpenArtist={onOpenArtist}
+          chapterLabel={chapterLabel}
+          favorite={favorite}
+          toggleFavoriteFelt={toggleFavoriteFelt}
+          duration={duration}
+          position={position}
+          volume={volume}
+          muted={muted}
+          systemVolume={systemVolume}
+          onScrub={onScrub}
+          commitSeek={commitSeek}
+          shuffle={shuffle}
+          setShuffle={setShuffle}
+          canSkip={canSkip}
+          skipBack={skipBack}
+          skipForward={skipForward}
+          setPlayingState={setPlayingState}
+          repeat={repeat}
+          cycleRepeat={cycleRepeat}
+          narrowEq={narrowEq}
+          setVolumeState={setVolumeState}
+          setMutedState={setMutedState}
+          queue={queue}
+          onQueueChange={onQueueChange}
+          onTrackChange={onTrackChange}
+          setFiling={setFiling}
+        />
       )}
 
       {/* One sheet for both phone entry points - the strip's overflow and the
@@ -3891,14 +2512,4 @@ export function Player({
       <AddToPlaylistDialog track={filing} open={filing !== null} onClose={() => setFiling(null)} />
     </>
   );
-}
-
-/** mm:ss for the Now Playing clock. */
-function formatClock(seconds: number): string {
-  // A deck reports Infinity (transcode stream) or NaN duration until metadata
-  // lands, and Math.max(0, ...) passes both through - show the zero clock
-  // instead of "Infinity:NaN".
-  if (!Number.isFinite(seconds)) return '0:00';
-  const t = Math.max(0, Math.floor(seconds));
-  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
 }
