@@ -7,6 +7,12 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.109
+
+- The Handbook fills the screen now — no card around the page, and the arrows live along the bottom where thumbs are
+- The counter between the arrows opens the whole index: every page of every chapter, one tap from anywhere, with a "you are here"
+- Long handbook pages scroll inside themselves, and a page turn always starts you at its top
+
 ## 0.3.108
 
 - Artist pages fetch missing covers again — 0.3.107 shipped with the lookup's wiring half-connected
