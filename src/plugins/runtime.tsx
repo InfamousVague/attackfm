@@ -17,7 +17,7 @@ import {
   pruneDeprecatedPlugins,
   readInstalled,
 } from './remote.ts';
-import { useServerSession } from '../app/serverSession.tsx';
+import { useServerSession } from '../app/servers/serverSession.tsx';
 import { useDownloadsOptional } from './importsBridge.ts';
 import { PluginsContext, usePlugins, type PluginsContextValue } from './pluginsContext.ts';
 import type {

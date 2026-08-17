@@ -1,21 +1,21 @@
 import { Text } from '@glacier/react';
 import { ChevronLeft, Check, Disc3, Music, Play, Plus, User, X } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useRippleWave } from '../../app/rippleWave.ts';
-import { useServerSession } from '../../app/serverSession.tsx';
+import { useRippleWave } from '../../app/ux/rippleWave.ts';
+import { useServerSession } from '../../app/servers/serverSession.tsx';
 import {
   fetchCatalogArtist,
   type CatalogArtist,
   type CatalogRelease,
   type CatalogTrack,
 } from '../../app/server.ts';
-import { useOwned } from '../../app/owned.ts';
-import { useArtLoad } from '../../app/artLoad.ts';
-import { PROBE_URL, resolveImportable } from '../../app/resolveImport.ts';
+import { useOwned } from '../../app/library/owned.ts';
+import { useArtLoad } from '../../app/ux/artLoad.ts';
+import { PROBE_URL, resolveImportable } from '../../app/search/resolveImport.ts';
 import { useDownloadsOptional } from '../importsBridge.ts';
 import { IMPORTER_PLUGIN_ID, useAcquire } from '../runtime.tsx';
 import type { AcquireTarget } from '../types.ts';
-import type { Track } from '../../app/tauri.ts';
+import type { Track } from '../../app/core/tauri.ts';
 
 /**
  * One catalogue artist, opened from a Discover search row: who they are, how
