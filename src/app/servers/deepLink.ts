@@ -35,7 +35,19 @@ export function spotifyLink(url: string): string | null {
   const u = url.trim();
   if (/^spotify:(track|album|artist|playlist):/i.test(u)) return u;
   if (/^https?:\/\/open\.spotify\.com\/(track|album|artist|playlist)\//i.test(u)) return u;
-  return null;
+  /*
+   * A link with a sentence around it.
+   *
+   * Spotify's Share does not hand over a URL, it hands over "Listen to X by Y
+   * on Spotify: https://…". MainActivity already picks the URL out before
+   * calling in, but relying on that would make this correct only for the one
+   * caller that happens to pre-clean its input - and a share sheet is exactly
+   * where unprepared text arrives.
+   */
+  const found = u.match(
+    /(?:https?:\/\/open\.spotify\.com\/(?:track|album|artist|playlist)\/[^\s]+|spotify:(?:track|album|artist|playlist):[A-Za-z0-9]+)/i,
+  );
+  return found ? found[0].replace(/[.,)\]]+$/, '') : null;
 }
 
 /**
@@ -112,6 +124,27 @@ let started = false;
 export async function initDeepLinks(): Promise<void> {
   if (started) return;
   started = true;
+  /*
+   * Android's share sheet, which is a separate road entirely.
+   *
+   * The deep-link plugin only carries VIEW intents. A share is ACTION_SEND,
+   * and MainActivity picks the URL out of the shared text and calls this - or
+   * holds it, if the app was cold-launched from the share and no page existed
+   * yet, which is why we also ASK on startup.
+   */
+  interface SharedBridge {
+    takeSharedLink?: () => string;
+  }
+  const bridge = (window as unknown as { AFMNative?: SharedBridge }).AFMNative;
+  (window as unknown as { __AFM_SHARED_LINK__?: (url: string) => void }).__AFM_SHARED_LINK__ = (
+    url: string,
+  ) => deliver(url);
+  try {
+    const held = bridge?.takeSharedLink?.();
+    if (held) deliver(held);
+  } catch {
+    // No bridge here (desktop, the browser preview) - nothing was shared.
+  }
   try {
     const mod = await import('@tauri-apps/plugin-deep-link');
     // The link the app was cold-launched with, if any…

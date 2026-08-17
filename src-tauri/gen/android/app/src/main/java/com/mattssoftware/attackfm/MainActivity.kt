@@ -2,6 +2,7 @@ package com.mattssoftware.attackfm
 
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import android.content.Intent
 import android.os.Bundle
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
@@ -72,6 +73,15 @@ class MainActivity : TauriActivity() {
       PlaybackService.publishArtwork(bmp)
     }
 
+    /** Asked for by the page as it starts, so a cold launch from a share does
+     *  not lose the link it was launched with. */
+    @JavascriptInterface
+    fun takeSharedLink(): String {
+      val link = shared ?: return ""
+      shared = null
+      return link
+    }
+
     @JavascriptInterface
     fun setPlaying(next: Boolean) {
       if (playing == next) return
@@ -116,6 +126,9 @@ class MainActivity : TauriActivity() {
   companion object {
     /** The activity currently on screen, so the service can reach its page. */
     private var live: MainActivity? = null
+
+    /** A shared link waiting for the web layer to exist. */
+    private var shared: String? = null
 
     /**
      * Hand a transport command to the page.
@@ -201,6 +214,59 @@ class MainActivity : TauriActivity() {
     super.onCreate(savedInstanceState)
     live = this
     applyOrientationLock()
+    // The share that launched us, if that is how we were started.
+    shared = linkFrom(intent)
+  }
+
+  /**
+   * A link shared INTO the app - "Share -> AttackFM" from Spotify or anywhere
+   * else - rather than tapped as a link.
+   *
+   * This is the door that actually works. An https link to open.spotify.com is
+   * a verified App Link belonging to Spotify, so Android hands it straight to
+   * Spotify and never offers us; the spotify: scheme does reach a chooser but
+   * is not the form anyone shares. The share sheet is neither: it asks every
+   * time, it needs nothing turned off, and Spotify's own Share menu puts us in
+   * it.
+   *
+   * Held rather than delivered when there is no page yet - a cold launch from
+   * a share runs this long before any JavaScript exists, and the web layer
+   * collects it when it starts.
+   */
+  private fun linkFrom(intent: Intent?): String? {
+    if (intent?.action != Intent.ACTION_SEND) return null
+    if (intent.type != "text/plain") return null
+    val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim() ?: return null
+    // Shared text is usually a sentence WITH a link in it ("Listen to X by Y
+    // on Spotify: https://..."), so take the URL rather than the message.
+    val url = Regex("(https?://\\S+|spotify:\\S+)").find(text)?.value ?: return null
+    return url.trimEnd('.', ',', ')')
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    val link = linkFrom(intent) ?: return
+    shared = link
+    deliverShared()
+  }
+
+  /** Hands the held share to the page, if there is a page to hand it to. */
+  private fun deliverShared() {
+    val link = shared ?: return
+    val wv = webView ?: return
+    runOnUiThread {
+      wv.onResume()
+      val escaped = link.replace("\\", "\\\\").replace("'", "\\'")
+      wv.evaluateJavascript(
+        "window.__AFM_SHARED_LINK__ ? (window.__AFM_SHARED_LINK__('" + escaped + "'), 'ok') : 'no'",
+      ) { result ->
+        // Cleared only once it actually landed; otherwise it waits for the
+        // page to come up and ask for it.
+        if (result == "\"ok\"") shared = null
+        else android.util.Log.i("AFMedia", "shared link held: page not ready ($result)")
+      }
+    }
   }
 
   /**

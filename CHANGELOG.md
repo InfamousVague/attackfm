@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.136
+
+- Share a Spotify link to AttackFM. In Spotify: Share → AttackFM, and the song lands in search ready to add. This works with Spotify left exactly as it is — tapping an open.spotify.com link can never reach us, because Android gives verified links to the app that owns the domain
+- Needs the 0.3.136 APK: share handling is native
+
 ## 0.3.135
 
 - Pulling the Now Playing screen down now reveals what is behind it gradually: heavily blurred at the first millimetre, resolving into the page as you commit
