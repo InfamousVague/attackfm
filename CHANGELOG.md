@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.141
+
+- The search card's top bar breathes like the rest of the app: a full-size close button with proper spacing off the corner, matching the Now Playing sheet it mirrors
+- Under the hood the DJ stopped poisoning its own pool: quarantined auditions can no longer sneak into a mix, the discovery shelf re-scores itself as your taste moves, fame is no longer a scoring bonus in the one place meant to find small artists, and a song the catalogue lacked once gets another chance a month later
+
 ## 0.3.140
 
 - The pulled-in search and the open search page sit under the ATTACK logo again, starting exactly where the page content does — a rewrite had let them climb to the very top of the screen, over the header
