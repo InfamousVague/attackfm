@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.133
+
+- Spotify links can open in AttackFM. Your phone offers the choice, and the link lands in search already claimed — the record, its art, and Add
+- Needs the 0.3.133 APK: link handling is native, so an over-the-air update cannot carry it
+
 ## 0.3.132
 
 - The lyrics on the Now Playing screen sit in the middle now, over the disc, instead of running down the right-hand edge where long words were being cut in half
