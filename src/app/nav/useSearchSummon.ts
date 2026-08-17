@@ -55,13 +55,28 @@ const SLOP = 10;
 const SEARCH_AT = 18;
 /** Where the bar has fully arrived, sitting exactly where it will settle. */
 const REVEAL_END = 64;
-/** ...and where it stops sitting there. Between these two the page barely
- *  moves: a detent, so a pull that would otherwise run straight through has
- *  something to arrive at, and a thumb that keeps going has to mean it. */
-const HOLD_END = 156;
-/** Where refreshing arms. Past the detent and then some - so it is now a
- *  deliberate act rather than the natural end of any downward flick. */
-const REFRESH_AT = 268;
+/**
+ * ...and where it stops sitting there. Between these two the page barely
+ * moves: a detent, so a pull that would otherwise run straight through has
+ * something to arrive at, and a thumb that keeps going has to mean it.
+ *
+ * Widened from 156. Ninety-two pixels of resistance was not enough of a stop
+ * for a hand already in motion - the bar was still being carried past into a
+ * refresh nobody asked for, which is the same complaint the detent was added
+ * to answer, just quieter. The stop has to outlast the momentum of the
+ * gesture, not merely interrupt it.
+ */
+const HOLD_END = 240;
+/**
+ * Where refreshing arms. Past the detent and then some - so it is a deliberate
+ * act rather than the natural end of any downward flick.
+ *
+ * Moved out with HOLD_END rather than independently: the run from the detent
+ * to the refresh stays 112px, which is what a second pull costs on a standing
+ * bar (STANDING_REFRESH_AT below is this gap). Widening the first stage should
+ * not quietly make the shortcut longer too.
+ */
+const REFRESH_AT = 352;
 /** How far past the detent the gap will open, however hard it is pulled. */
 const CEILING_EXTRA = 84;
 /** How much of the finger's travel the page still spends past the detent.

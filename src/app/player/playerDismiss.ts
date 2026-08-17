@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { makeRatchet } from '../ux/ratchet.ts';
 
 /**
  * Swiping the paused strip away.
@@ -225,10 +226,15 @@ export function installSheetDismiss(
   let velocity = 0;
   let lastY = 0;
   let lastAt = 0;
+  /* The same run-up the pull from the top has. A sheet with a threshold in it
+     is the same problem: the hand is already moving and wants to know the
+     line is coming, not that it has gone. */
+  const ratchet = makeRatchet();
 
   const release = () => {
     touchId = null;
     claimed = false;
+    ratchet.reset();
     delete sheet.dataset.dragging;
     sheet.style.removeProperty('--np-drag');
   };
@@ -272,8 +278,13 @@ export function installSheetDismiss(
         return;
       }
       claimed = true;
+      ratchet.reset();
       sheet.dataset.dragging = 'true';
     }
+
+    // Ticking toward the point of no return, then landing on it.
+    ratchet.feel(dy, SLOP, SHEET_THRESHOLD, event.timeStamp);
+    if (dy >= SHEET_THRESHOLD) ratchet.arrive('medium');
 
     if (event.cancelable) event.preventDefault();
     // Damped past the mark: the sheet keeps answering the finger after the
