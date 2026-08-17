@@ -2,6 +2,7 @@ import { Button, Input, Modal, ScrollArea, Text } from '@glacier/react';
 import { Check, ListMusic, Plus, Search } from '@glacier/icons';
 import { useMemo, useState } from 'react';
 import { useLibrary } from '../library/library.tsx';
+import { MosaicCover } from './PlaylistShowcase.tsx';
 import { usePlaylists } from './playlists.tsx';
 import type { Track } from '../core/tauri.ts';
 
@@ -32,6 +33,7 @@ function AddToPlaylistPanel({ track, onDone }: { track: Track; onDone: () => voi
   // Only the songs the library still resolves count toward a list's length, so
   // the number here matches what opening the playlist actually shows.
   const known = useMemo(() => new Set(tracks.map((t) => t.path)), [tracks]);
+  const byPath = useMemo(() => new Map(tracks.map((t) => [t.path, t])), [tracks]);
 
   const createWithTrack = () => {
     if (draft === null || busy) return;
@@ -104,6 +106,9 @@ function AddToPlaylistPanel({ track, onDone }: { track: Track; onDone: () => voi
             filtered.map((playlist) => {
               const has = playlist.paths.includes(track.path);
               const count = playlist.paths.filter((p) => known.has(p)).length;
+              const covers = playlist.paths
+                .map((p) => byPath.get(p))
+                .filter((t): t is Track => t !== undefined);
               return (
                 <button
                   key={playlist.id}
@@ -118,8 +123,10 @@ function AddToPlaylistPanel({ track, onDone }: { track: Track; onDone: () => voi
                     else addTrack(playlist.id, track.path);
                   }}
                 >
-                  <span className="addPlaylistRow__icon">
-                    <ListMusic size={15} />
+                  {/* The playlist's own face - the same four-cover mosaic
+                      its Library tile wears - instead of a generic glyph. */}
+                  <span className="addPlaylistRow__icon addPlaylistRow__icon--art">
+                    <MosaicCover tracks={covers} fallback={<ListMusic size={15} />} tone="tileRecent" />
                   </span>
                   <span className="addPlaylistRow__body">
                     <span className="addPlaylistRow__name">{playlist.name}</span>
