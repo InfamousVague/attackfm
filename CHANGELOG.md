@@ -7,6 +7,12 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.120
+
+- Pull-to-refresh actually refreshes now. It asks your server to re-read its own folder and then pulls in whatever that found — before this it was wired to a placeholder and did nothing at all
+- Push the search bar back up, or just scroll, and it goes away — the same gesture that revealed it, run backwards
+- The pull is felt as well as seen: a tick when the search bar is within reach, a firmer one when you have pulled far enough to refresh, and a confirmation when the library comes back
+
 ## 0.3.119
 
 - The search bar sits centred in the space the pull opens, and no longer overlaps your music. It was landing a row too low and, on a phone specifically, was also measuring the top of the screen twice — so the status bar's height became overlap
