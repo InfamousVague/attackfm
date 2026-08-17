@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.121
+
+- The search bar is much harder to miss. It now arrives and *stays* partway down the pull — the page all but stops while it sits there, with a tick when it lands — so a normal pull finds it instead of sliding straight past
+- Refreshing takes a longer, deliberate pull than before. It used to arm at about the length of an ordinary flick, which is why you kept getting a refresh when you wanted the search bar
+
 ## 0.3.120
 
 - Pull-to-refresh actually refreshes now. It asks your server to re-read its own folder and then pulls in whatever that found — before this it was wired to a placeholder and did nothing at all
