@@ -7,6 +7,13 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.105
+
+- Playlists sort by whichever is newer — your last edit or this device's last listen — so last night's list is at your thumb
+- The add-to-playlist popup shows each playlist's own four-cover face, flush rows instead of padded buttons
+- The lock screen, notification and Android Auto finally get the album cover (needs the new app install, not just this update)
+- Under the hood: the whole app was spring-cleaned — dead code stripped, a hundred flat files folded into rooms, the giants split — nothing should look or behave differently
+
 ## 0.3.104
 
 - The lit tab's square got the softer, deeper corner curve — properly squircle now, on every engine
