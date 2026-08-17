@@ -314,7 +314,10 @@ pub fn run_scan(db: &Db, music_root: &Path, art_dir: &Path, progress: &ScanProgr
     progress.removed.store(0, Ordering::Relaxed);
 
     let files = walk(music_root);
-    progress.total.store(files.len() as i64, Ordering::Relaxed);
+    // Taken before the walk's list is consumed below - the guard on the
+    // tombstone pass needs to know whether this scan saw anything at all.
+    let found = files.len();
+    progress.total.store(found as i64, Ordering::Relaxed);
 
     let known = db.scan_fingerprints();
     // Every pass that changes anything stamps its rows with one new revision,
@@ -352,7 +355,35 @@ pub fn run_scan(db: &Db, music_root: &Path, art_dir: &Path, progress: &ScanProgr
         }
     }
 
-    let removed = db.tombstone_missing(&present, rev);
+    /*
+     * A scan that found NOTHING never removes anything.
+     *
+     * `tombstone_missing` marks every indexed row whose file the walk did not
+     * see, which is right when files really went away and catastrophic when
+     * the walk itself failed: an unmounted drive, a renamed or moved library
+     * folder, a permissions change, or a music root pointed somewhere empty
+     * all produce the same empty set, and one pass then tombstones the entire
+     * library. The files are untouched on disk - this is an index wipe, not a
+     * delete - but from the app it is indistinguishable from every song you
+     * own being erased at once.
+     *
+     * Zero files with a non-empty index is never a legitimate state worth
+     * acting on: a library that truly emptied is one rescan away from being
+     * recorded correctly, while a library that is merely unreachable is one
+     * rescan away from being wrong about everything. So the ambiguous case
+     * resolves the recoverable way, loudly.
+     */
+    let removed = if found == 0 && db.live_track_count() > 0 {
+        eprintln!(
+            "[attackfm] scan found no audio under {} but the library holds {} tracks - \
+             refusing to tombstone. Check the folder is mounted and readable.",
+            music_root.display(),
+            db.live_track_count(),
+        );
+        0
+    } else {
+        db.tombstone_missing(&present, rev)
+    };
     // A scan is when a moved file reappears under its new path, so it is also
     // when a heart stranded on the old row can find its way home.
     let rebound = db.rebind_orphaned_favorites();
@@ -391,4 +422,40 @@ pub fn spawn_scan(
     tokio::task::spawn_blocking(move || {
         run_scan(&db, &music_root, &art_dir, &progress);
     });
+}
+
+#[cfg(test)]
+mod empty_scan_guard {
+    //! A scan that found nothing must not empty the index.
+
+    #[test]
+    fn zero_files_with_a_populated_library_removes_nothing() {
+        let dir = std::env::temp_dir().join(format!("afm-guard-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = crate::db::Db::open(&dir.join("t.sqlite")).unwrap();
+
+        // A library holding one track whose file is NOT on disk - the exact
+        // shape an unmounted drive presents to the walk.
+        let mut track = crate::db::ScannedTrack::default();
+        track.rel_path = "Artist/Album/song.flac".to_string();
+        track.title = "Song".to_string();
+        track.artist = "Artist".to_string();
+        track.album = "Album".to_string();
+        db.upsert_track(&track, 1).unwrap();
+        assert_eq!(db.live_track_count(), 1, "setup: the track should be live");
+
+        // An empty music root: the walk finds nothing at all.
+        let music = dir.join("music");
+        std::fs::create_dir_all(&music).unwrap();
+        let progress = crate::scan::ScanProgress::default();
+        crate::scan::run_scan(&db, &music, &dir.join("art"), &progress);
+
+        assert_eq!(
+            db.live_track_count(),
+            1,
+            "an empty scan tombstoned the library - the guard is not holding",
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
