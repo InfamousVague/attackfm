@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.131
+
+- Pulling down from the top now has two stops: a short pull reveals the search bar, and holding it further brings up refresh. The short pull leaves the bar standing so you can tap it when you're ready, instead of dropping you straight into a full search page you didn't ask for
+- Pull far enough to refresh and the spinner now stays put while the library re-reads, so a hard pull no longer looks like nothing happened
+
 ## 0.3.130
 
 - Much more room between the search bar and the refresh on a first pull. The bar now sits there for nearly twice as long before the pull starts becoming a refresh, so it stops being something you sail past on the way
@@ -71,11 +76,6 @@ they are read on a phone, in a strip, one thumb away from a song.
 - The pull now moves the page. A drag from the top slides the whole page down and the search bar is uncovered underneath it, instead of a bar appearing on top of your music — pull further and the page keeps going to make room for refresh
 - Starting that pull on artwork or an icon works now. It only ever armed when your thumb happened to land on plain background, which on a screen made of album covers was most of the time
 - The app itself no longer bounces on Android. The rule that stops it was behind an iOS-only check, so every Android build had a rubber-banding document under the app
-
-## 0.3.116
-
-- Pulling down from the top now has two stops: a short pull reveals the search bar, and holding it further brings up refresh. The short pull leaves the bar standing so you can tap it when you're ready, instead of dropping you straight into a full search page you didn't ask for
-- Pull far enough to refresh and the spinner now stays put while the library re-reads, so a hard pull no longer looks like nothing happened
 
 ## 0.3.116
 
