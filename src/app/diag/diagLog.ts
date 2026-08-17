@@ -56,13 +56,41 @@ function load(): DiagEntry[] {
   }
 }
 
-function persist(): void {
+/**
+ * Write the ring out, at most every few seconds.
+ *
+ * The unreachable case is a failure PER BEAT of the reachability heartbeat,
+ * which now runs at one beat per second - so an undebounced write meant a
+ * synchronous stringify-and-store on the main thread every second, forever,
+ * on a phone that is already having a bad time. The in-memory ring is the one
+ * the pane reads, so a few seconds of lag in the copy on disk costs nothing;
+ * the flush below closes the only gap that matters.
+ */
+const PERSIST_EVERY_MS = 5000;
+let persistTimer: number | null = null;
+
+function writeNow(): void {
+  persistTimer = null;
   try {
     localStorage.setItem(KEY, JSON.stringify(entries));
   } catch {
     // A full or disabled store is not worth failing a playback path over; the
     // in-memory ring still serves the pane for this run.
   }
+}
+
+function persist(): void {
+  if (persistTimer !== null) return;
+  if (typeof window === 'undefined') return writeNow();
+  persistTimer = window.setTimeout(writeNow, PERSIST_EVERY_MS);
+}
+
+/** Write immediately, losing nothing when the app is killed or backgrounded -
+ *  which on a phone is most of the time, and is precisely when the launch
+ *  failures worth reading were recorded. */
+export function flushDiag(): void {
+  if (persistTimer !== null) window.clearTimeout(persistTimer);
+  writeNow();
 }
 
 /**
@@ -88,16 +116,36 @@ export function redactUrl(raw: string): string {
   }
 }
 
+/**
+ * How far back a repeat may fold. The heartbeat probes every configured
+ * server on one beat, so a device that has lost the network emits an
+ * interleaved A, B, A, B… of distinct failures. Folding only against the
+ * PREVIOUS entry (which is all this did at first) never matches under that
+ * pattern, and at one beat per second the whole ring churns in a minute -
+ * evicting exactly the crashes and request failures someone came here to
+ * read. Looking back a few entries folds each server's line onto its own.
+ */
+const FOLD_WINDOW = 8;
+
 /** Append one failure. Cheap enough to call from any catch block. */
 export function recordDiag(kind: string, detail: string): void {
   const line = detail.length > MAX_DETAIL ? `${detail.slice(0, MAX_DETAIL)}…` : detail;
-  const last = entries[entries.length - 1];
-  // A probe failing on a heartbeat writes the same line forever. Collapse the
-  // repeat into a count so twenty minutes of one fault does not push every
-  // other clue out of the ring.
-  if (last && last.kind === kind && stripCount(last.detail) === line) {
-    const n = countOf(last.detail) + 1;
-    entries[entries.length - 1] = { at: Date.now(), kind, detail: `${line}  (×${n})` };
+  // Search back over the window for this same failure rather than only at the
+  // tail, so interleaved repeats still collapse into one counted line.
+  let foldAt = -1;
+  for (let i = entries.length - 1; i >= 0 && i >= entries.length - FOLD_WINDOW; i--) {
+    const e = entries[i]!;
+    if (e.kind === kind && stripCount(e.detail) === line) {
+      foldAt = i;
+      break;
+    }
+  }
+  if (foldAt >= 0) {
+    const n = countOf(entries[foldAt]!.detail) + 1;
+    // Moved to the end as well as counted: "still happening" is the useful
+    // reading, and it keeps the ring ordered by when each fault was last seen.
+    entries.splice(foldAt, 1);
+    entries.push({ at: Date.now(), kind, detail: `${line}  (×${n})` });
   } else {
     entries.push({ at: Date.now(), kind, detail: line });
     if (entries.length > MAX_ENTRIES) entries = entries.slice(-MAX_ENTRIES);
@@ -120,7 +168,9 @@ export function diagEntries(): readonly DiagEntry[] {
 
 export function clearDiag(): void {
   entries = [];
-  persist();
+  // Straight through: clearing is a deliberate act and must survive a kill
+  // in the next five seconds.
+  flushDiag();
   for (const cb of listeners) cb();
 }
 
@@ -188,5 +238,12 @@ export function installGlobalDiag(): void {
   });
   window.addEventListener('unhandledrejection', (e) => {
     recordDiag('promise', describeFailure(e.reason));
+  });
+  // The debounced write's safety net. `pagehide` and a hidden `visibilitychange`
+  // are the only events a mobile webview reliably gets before it is frozen or
+  // killed - `beforeunload` is not delivered on iOS.
+  window.addEventListener('pagehide', flushDiag);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) flushDiag();
   });
 }
