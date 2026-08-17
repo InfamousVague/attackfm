@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.140
+
+- The pulled-in search and the open search page sit under the ATTACK logo again, starting exactly where the page content does — a rewrite had let them climb to the very top of the screen, over the header
+
 ## 0.3.139
 
 - The pulled-in search page arrives out of frost: for the first stretch of the pull you mostly see the screen you're on, then search fades in and sharpens as you commit — and its cards no longer play their own entrance animation against the pull
