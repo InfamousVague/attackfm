@@ -1,21 +1,11 @@
-import { Button, Pill, ScrollArea, SearchField, Text } from '@glacier/react';
-import { ChartNoAxesColumn, SlidersHorizontal, Sparkles } from '@glacier/icons';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Button, Pill, SearchField, Text } from '@glacier/react';
+import { ChartNoAxesColumn, SlidersHorizontal } from '@glacier/icons';
+import { useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
-import { mosaicArts, useArtLoad, useCardArt, useTileArt } from '../ux/artLoad.ts';
-import { artworkHue, artworkUrl, mixArtwork } from '../ux/artwork.ts';
 import { useRippleWave } from '../ux/rippleWave.ts';
 import { usePlaylists } from '../playlists/playlists.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
-import {
-  fetchCurator,
-  fetchHome,
-  trackIdFromPath,
-  type CuratorFeed,
-  type HomeFeed,
-} from '../server.ts';
 import { filterTracks } from '../search/trackSearch.ts';
-import { readFeedCache, writeFeedCache } from './feedCache.ts';
 import { ShelfSkeleton } from '../ux/ShelfSkeleton.tsx';
 import { PlaylistModal } from '../playlists/PlaylistModal.tsx';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
@@ -23,8 +13,17 @@ import { isMusicImportLink } from '../../plugins/importsBridge.ts';
 import { usePlugins } from '../../plugins/runtime.tsx';
 import type { Track } from '../core/tauri.ts';
 import { ImportFromSearch } from '../search/ImportFromSearch.tsx';
-import { AlbumMenu } from '../albumArtist/AlbumMenu.tsx';
-import { TrackMenu } from './TrackMenu.tsx';
+import {
+  AlbumCard,
+  ArtistCard,
+  MixCover,
+  Shelf,
+  TrackCard,
+  greetingFor,
+  mixArt,
+  type ResolvedMix,
+} from '../home/homeCards.tsx';
+import { useHomeFeed } from '../home/useHomeFeed.ts';
 
 /**
  * The front door. A greeting, then shelves: the mixes made from the
@@ -36,174 +35,11 @@ import { TrackMenu } from './TrackMenu.tsx';
  * Signed out (a local library), the history shelves have no account to read
  * from; the page keeps the greeting and builds what it can from the library
  * itself - newest additions and liked songs - rather than going blank.
+ *
+ * The card atoms and shelf frame live in ../home/homeCards.tsx, the feed
+ * machinery in ../home/useHomeFeed.ts; this file keeps the orchestrator and
+ * the CuratorShelves/HistoryShelves wrappers.
  */
-
-const REFRESH_MS = 5 * 60 * 1000;
-
-function greetingFor(hour: number): string {
-  if (hour < 5) return 'Up late';
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
-}
-
-/** Blank line the skeleton holds so the card keeps its exact height. */
-const NBSP = ' ';
-
-/** One square track card on a shelf. */
-function TrackCard({ track, onOpen }: { track: Track; onOpen: () => void }) {
-  const { src, loaded, onLoad, onError } = useCardArt(track.artwork);
-  const idle = !loaded || undefined;
-  return (
-    <TrackMenu track={track}>
-      <button type="button" className="trackCard" onClick={onOpen}>
-        <img className="trackCardArt artPop" src={src} alt="" loading="lazy" data-loading={idle} onLoad={onLoad} onError={onError} />
-        <span className="trackCardTitle" data-loading={idle}>{loaded ? track.title : NBSP}</span>
-        <span className="trackCardArtist" data-loading={idle}>{loaded ? track.artist : NBSP}</span>
-      </button>
-    </TrackMenu>
-  );
-}
-
-/** An album card: cover over the album name and artist. Jump-back-in wears it. */
-function AlbumCard({
-  track,
-  tracks,
-  onOpen,
-  onPlay,
-  onOpenArtist,
-}: {
-  track: Track;
-  /** The whole record, for the menu's Play/Shuffle/queue verbs. */
-  tracks: Track[];
-  onOpen: () => void;
-  onPlay: (track: Track, queue: Track[]) => void;
-  onOpenArtist?: (artist: string) => void;
-}) {
-  const { src, loaded, onLoad, onError } = useCardArt(track.artwork);
-  const idle = !loaded || undefined;
-  return (
-    <AlbumMenu
-      tracks={tracks}
-      onPlay={onPlay}
-      onOpenArtist={onOpenArtist}
-      artistName={track.albumArtist || track.artist}
-    >
-      <button type="button" className="trackCard" onClick={onOpen}>
-        <img className="trackCardArt artPop" src={src} alt="" loading="lazy" data-loading={idle} onLoad={onLoad} onError={onError} />
-        <span className="trackCardTitle" data-loading={idle}>{loaded ? track.album || track.title : NBSP}</span>
-        <span className="trackCardArtist" data-loading={idle}>{loaded ? track.artist : NBSP}</span>
-      </button>
-    </AlbumMenu>
-  );
-}
-
-/** An artist card: a round cover over the name, linking into the artist page. */
-function ArtistCard({ name, cover, onOpen }: { name: string; cover: string | null; onOpen: () => void }) {
-  const { src, loaded, onLoad, onError } = useCardArt(cover);
-  const idle = !loaded || undefined;
-  return (
-    <button type="button" className="artistCard" onClick={onOpen}>
-      <img className="artistCardArt artPop" src={src} alt="" loading="lazy" data-loading={idle} onLoad={onLoad} onError={onError} />
-      <span className="artistCardName" data-loading={idle}>{loaded ? name : NBSP}</span>
-    </button>
-  );
-}
-
-/** A mix's cover: the generated object its name earns (a decade, a mood, a
- *  genre - or the curator's own faces for AI-made lists), else the 2x2
- *  mosaic of its first artworks, glyph fallback. */
-function MixCover({ tracks, art }: { tracks: Track[]; art?: { src: string; hue: number } | null }) {
-  // A served object that fails to arrive (old server, missing piece) steps
-  // the cover back down to the mosaic rather than leaving a broken image.
-  const [dead, setDead] = useState(false);
-  const object = !dead && art ? art : null;
-  const arts = mosaicArts(tracks.map((t) => t.artwork));
-  // Under four covers the glyph stands in, and a glyph never loads - the tile
-  // hook watches exactly the urls the grid below will draw.
-  const { loaded, hostRef } = useTileArt(object || arts.length < 4 ? [] : arts);
-  const served = useArtLoad(object?.src ?? null, '');
-  if (object) {
-    return (
-      <div
-        className="mixCardCover mixCardCover--object"
-        aria-hidden
-        style={
-          {
-            '--mixHue': `${object.hue}`,
-            '--objectArt': `url("${object.src}")`,
-          } as React.CSSProperties
-        }
-      >
-        <img
-          {...served}
-          src={object.src}
-          alt=""
-          loading="lazy"
-          onError={() => {
-            served.onError();
-            setDead(true);
-          }}
-        />
-      </div>
-    );
-  }
-  if (arts.length < 4) {
-    return (
-      <div className="mixCardCover mixCardCover--glyph" aria-hidden>
-        <Sparkles size={28} />
-      </div>
-    );
-  }
-  return (
-    <div ref={hostRef} className="mixCardCover" aria-hidden data-tile-pop="" data-tile-loading={!loaded || undefined}>
-      {arts.map((art, i) => (
-        <img key={i} src={art} alt="" loading="lazy" />
-      ))}
-    </div>
-  );
-}
-
-interface ResolvedMix {
-  id: string;
-  title: string;
-  blurb: string;
-  flavor: 'ai' | 'heuristic';
-  tracks: Track[];
-}
-
-/** The object a mix's name earns - its URL and the hue of the ground it sits
- *  on - or null when the mix keeps its track mosaic. */
-function mixArt(
-  title: string,
-  opts: { id: string; curated?: boolean; flavor?: 'ai' | 'heuristic' },
-): { src: string; hue: number } | null {
-  const slug = mixArtwork(title, opts);
-  return slug ? { src: artworkUrl(slug), hue: artworkHue(slug) } : null;
-}
-
-/** A shelf: a heading and a horizontal run of cards. Renders nothing when
- * it has nothing - an empty rail is clutter, not information. A shelf can
- * carry one action on the heading's right - a door related to what the rail
- * shows, sitting where the eye finishes reading the title. */
-function Shelf({ title, children, count, action }: { title: string; children: React.ReactNode; count: number; action?: React.ReactNode }) {
-  if (count === 0) return null;
-  return (
-    <section className="homeShelf">
-      {action ? (
-        <div className="homeShelfHead">
-          <h2 className="homeShelfTitle">{title}</h2>
-          {action}
-        </div>
-      ) : (
-        <h2 className="homeShelfTitle">{title}</h2>
-      )}
-      <ScrollArea orientation="horizontal" className="homeShelfScroll" hideScrollbar>
-        <div className="homeShelfRow">{children}</div>
-      </ScrollArea>
-    </section>
-  );
-}
 
 export function HomePage({
   onPlay,
@@ -245,160 +81,35 @@ export function HomePage({
   const { tracks, favoriteTracks } = useLibrary();
   const { create: createPlaylist } = usePlaylists();
   const { session } = useServerSession();
-  // Every feed seeds from the last launch's answer, so the shelves paint at
-  // full size on the first frame and the refresh below swaps content in place
-  // - the page must never assemble itself in front of the listener twice.
   // The entrance wave, when this page stands alone; embedded, the Library
   // page's own observer covers these shelves (first registration wins).
   const rippleRoot = useRef<HTMLDivElement>(null);
   useRippleWave(rippleRoot);
 
-  const [feed, setFeed] = useState<HomeFeed | null>(() => readFeedCache<HomeFeed>(session, 'home'));
-  // What the always-running curator has built for this listener, and how far
-  // its reading of the library has got. Polled on the same rhythm as the feed.
-  const [curator, setCurator] = useState<CuratorFeed | null>(() =>
-    readFeedCache<CuratorFeed>(session, 'curator'),
-  );
-  // The first launch on this account has no cache to stand on, so the shelves
-  // hold as skeletons for a beat (and until their feeds answer) rather than
-  // popping in one by one. `held` releases after the hold; nothing about it
-  // recurs once a cache exists.
-  const firstLaunch = useRef(session !== null && readFeedCache(session, 'home') === null);
-  const [held, setHeld] = useState(firstLaunch.current);
-  useEffect(() => {
-    if (!held) return;
-    const t = window.setTimeout(() => setHeld(false), 1000);
-    return () => window.clearTimeout(t);
-  }, [held]);
+  const {
+    feed,
+    curator,
+    recent,
+    heavy,
+    fresh,
+    mixes,
+    curated,
+    madeForYou,
+    jumpBack,
+    topArtists,
+    quiet,
+    skelFeed,
+    skelCurator,
+    anySkeleton,
+  } = useHomeFeed(tracks, session);
+
   const [openMix, setOpenMix] = useState<ResolvedMix | null>(null);
   // The home search filters the local library in place: while it holds a query
   // the shelves stand aside and the matches take the page.
   const [query, setQuery] = useState('');
-  const sessionRef = useRef(session);
-  sessionRef.current = session;
-
-  const refresh = useCallback(async () => {
-    const s = sessionRef.current;
-    if (!s) return;
-    try {
-      const fresh = await fetchHome(s);
-      setFeed(fresh);
-      writeFeedCache(s, 'home', fresh);
-    } catch {
-      // Unreachable right now; whatever is on screen stays.
-    }
-    try {
-      const fresh = await fetchCurator(s);
-      setCurator(fresh);
-      writeFeedCache(s, 'curator', fresh);
-    } catch {
-      // An older server with no curator, or one that is busy. The shelf simply
-      // does not appear; nothing else on the page depends on it.
-    }
-  }, []);
-
-  // On mount, on a slow clock, and when the app comes back to the front -
-  // the same rhythm the library keeps.
-  useEffect(() => {
-    void refresh();
-    const interval = window.setInterval(() => void refresh(), REFRESH_MS);
-    const wake = () => {
-      if (document.visibilityState === 'visible') void refresh();
-    };
-    document.addEventListener('visibilitychange', wake);
-    return () => {
-      window.clearInterval(interval);
-      document.removeEventListener('visibilitychange', wake);
-    };
-  }, [refresh]);
-
-  // The id -> track map the feed's shelves resolve through. Ids the library
-  // has not synced yet simply drop out.
-  const byId = useMemo(() => {
-    const map = new Map<number, Track>();
-    for (const t of tracks) {
-      const id = trackIdFromPath(t.path);
-      if (id !== null) map.set(id, t);
-    }
-    return map;
-  }, [tracks]);
-
-  const resolve = useCallback(
-    (ids: number[] | undefined): Track[] =>
-      (ids ?? []).map((id) => byId.get(id)).filter((t): t is Track => t !== undefined),
-    [byId],
-  );
-
-  const recent = resolve(feed?.recent);
-  const heavy = resolve(feed?.heavy);
-  // Signed out there is no feed; the library's own newest still make a shelf.
-  const fresh = feed
-    ? resolve(feed.fresh)
-    : [...tracks].sort((a, b) => b.addedAt - a.addedAt).slice(0, 24);
-  const mixes: ResolvedMix[] = (feed?.mixes ?? [])
-    .map((m) => ({ id: m.id, title: m.title, blurb: m.blurb, flavor: m.flavor, tracks: resolve(m.trackIds) }))
-    .filter((m) => m.tracks.length >= 4);
-
-  // The curator's own lists, resolved against the synced library. Kept
-  // separate from the home feed's mixes: those are built when the page asks,
-  // these are built by a process that has been reading this listener's history
-  // and the library's tempos and lyrics in the background since boot.
-  const curated: ResolvedMix[] = (curator?.lists ?? [])
-    .map((l) => ({
-      id: `curated-${l.slug}`,
-      title: l.name,
-      blurb: l.blurb,
-      flavor: (curator?.status.ai ? 'ai' : 'heuristic') as 'ai' | 'heuristic',
-      tracks: resolve(l.trackIds),
-    }))
-    .filter((l) => l.tracks.length >= 4);
-
-  // One shelf, not two. "From your curator" and "Made for you" were two rails
-  // of identical cards that differed only in WHICH PROCESS built them - a
-  // distinction with no meaning to the person reading it. Merged, the curator's
-  // own lists first (they are built from a longer look at the library), deduped
-  // by title so a mix that both halves produced appears once.
-  const madeForYou = useMemo(() => {
-    const out: { mix: ResolvedMix; curated: boolean }[] = [];
-    const seen = new Set<string>();
-    for (const mix of curated) {
-      seen.add(mix.title.trim().toLowerCase());
-      out.push({ mix, curated: true });
-    }
-    for (const mix of mixes) {
-      if (seen.has(mix.title.trim().toLowerCase())) continue;
-      out.push({ mix, curated: false });
-    }
-    return out;
-  }, [curated, mixes]);
-
-  // Jump back in: each album arrives as its own ordered id list (the server
-  // grouped by album artist and sorted by disc/track), so the client just
-  // resolves and plays it - no name matching, no way to merge two albums that
-  // share a title. The first track carries the card's cover and album name.
-  const jumpBack = useMemo(
-    () =>
-      (feed?.jumpBackIn ?? [])
-        .map((ids) => resolve(ids))
-        .filter((album) => album.length > 0),
-    [feed, resolve],
-  );
-
-  // Top artists: a name plus a cover found in the library (first track by that
-  // artist that has art). Tapping opens the artist's page.
-  const topArtists = useMemo(() => {
-    return (feed?.topArtists ?? [])
-      .map((name) => {
-        const cover = tracks.find((t) => t.artist === name && t.artwork)?.artwork ?? null;
-        return { name, cover };
-      })
-      .filter((a) => tracks.some((t) => t.artist === a.name));
-  }, [feed, tracks]);
 
   const hour = new Date().getHours();
   const name = session?.username;
-  const quiet =
-    recent.length === 0 && heavy.length === 0 && mixes.length === 0 && jumpBack.length === 0;
 
   // A pasted link is an instruction, not a search term: no library contains
   // the text of a URL, so running it as a query could only ever answer "no
@@ -408,15 +119,6 @@ export function HomePage({
     () => (searching ? filterTracks(tracks, query) : []),
     [searching, tracks, query],
   );
-
-  // Which shelves still wait on their first answer. The held beat covers the
-  // first launch whole; after it, a feed that has not answered keeps its own
-  // skeleton, so a slow reply swaps in place instead of popping the page.
-  // Signed out none of this runs - there are no feeds to wait for.
-  const wantsFeed = session !== null;
-  const skelFeed = held || (wantsFeed && feed === null);
-  const skelCurator = held || (wantsFeed && curator === null);
-  const anySkeleton = skelFeed || skelCurator;
 
   return (
     <div className={embedded ? 'homeMixes' : 'homePage'} ref={rippleRoot}>

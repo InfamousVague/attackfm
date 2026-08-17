@@ -1,0 +1,152 @@
+import { useEffect, useRef, useState } from 'react';
+import { onSystemBack } from './systemBack.ts';
+import type { Detail, SongCollection } from './AppMain.tsx';
+
+// Page history as a stack with a cursor, so back and forward move through
+// the places visited rather than just toggling. A place is a primary tab
+// plus, within it, an optional detail page - the tab is what the nav bar
+// lights, whether or not a detail is open on top of it. The tab is 'home',
+// 'library', or a plugin page's namespaced `${pluginId}:${pageId}` key; the
+// nav and the content host resolve the last kind against the running plugins.
+type Place = { tab: string; detail: Detail | null };
+
+/**
+ * The app's page history, extracted whole from App. goTab's legacy-route
+ * redirects (stats/date/search became overlays or rooms) fire through the
+ * injected callbacks so the hook itself stays pure navigation.
+ */
+export function useNavStack({
+  openStats,
+  openDate,
+  openSearch,
+  closeProfileRoom,
+}: {
+  /** The old 'stats' tab landed inside Profile's room; this opens the room. */
+  openStats: () => void;
+  /** The old 'date' tab opens Music Date's fullscreen layer. */
+  openDate: () => void;
+  /** The old 'search' tab summons the search overlay. */
+  openSearch: () => void;
+  /** Walking to Profile the normal way closes any open room. */
+  closeProfileRoom: () => void;
+}) {
+  const sameDetail = (a: Detail | null | undefined, b: Detail | null) =>
+    a?.kind !== b?.kind
+      ? false
+      : a?.kind === 'artist' && b?.kind === 'artist'
+        ? a.artist === b.artist
+        : a?.kind === 'album' && b?.kind === 'album'
+          ? a.album === b.album && a.artist === b.artist
+        : a?.kind === 'playlist' && b?.kind === 'playlist'
+          ? a.id === b.id
+          : a?.kind === 'songs' && b?.kind === 'songs'
+            ? a.view === b.view
+            : true;
+  const samePlace = (a: Place | undefined, b: Place) =>
+    a?.tab === b.tab && sameDetail(a?.detail ?? null, b.detail);
+  const [nav, setNav] = useState<{ stack: Place[]; index: number }>({
+    stack: [{ tab: 'home', detail: null }],
+    index: 0,
+  });
+  const place = nav.stack[nav.index] ?? { tab: 'home', detail: null };
+  const detail = place.detail;
+  const tab = place.tab;
+  const canBack = nav.index > 0;
+  const canForward = nav.index < nav.stack.length - 1;
+
+  // Opening a place truncates any forward history and pushes the new view, the
+  // way a browser does. Reopening the current view is a no-op.
+  // A long session visits a lot of places; keep the back-history bounded so
+  // the stack cannot grow without limit. The cap is generous - far past any
+  // real back-button reach - and only ever drops the oldest entries.
+  const NAV_HISTORY_CAP = 100;
+  const push = (next: Place) =>
+    setNav((s) => {
+      if (samePlace(s.stack[s.index], next)) return s;
+      let stack = s.stack.slice(0, s.index + 1);
+      stack.push(next);
+      if (stack.length > NAV_HISTORY_CAP) stack = stack.slice(stack.length - NAV_HISTORY_CAP);
+      return { stack, index: stack.length - 1 };
+    });
+  /** An artist page, opened inside whichever tab is current. */
+  const go = (next: string | null) =>
+    push({ tab, detail: next === null ? null : { kind: 'artist', artist: next } });
+  /** A playlist page, likewise stacked inside the current tab. */
+  const goAlbum = (album: string, albumArtist: string) =>
+    push({ tab, detail: { kind: 'album', album, artist: albumArtist } });
+  const goPlaylist = (id: string) => push({ tab, detail: { kind: 'playlist', id } });
+  /** A whole-collection song page - Liked or every song - stacked the same way.
+   *  The library's own views, opened full instead of in a sheet. */
+  const goSongs = (view: SongCollection) => push({ tab, detail: { kind: 'songs', view } });
+  /** Steps off a detail page back to its tab's root - what a deleted playlist
+   *  does, since there is no page left to stand on. */
+  const closeDetail = () => push({ tab, detail: null });
+  /** A primary tab, from the nav bar - always lands on the tab's root. Accepts
+   *  the core 'home'/'library' and any plugin page key. */
+  const goTab = (next: string) => {
+    // Stats folded into Profile as a room; its old tab name still arrives
+    // from older surfaces (the Library's stats cards) and lands inside the
+    // room it became, so no caller had to learn the move.
+    if (next === 'stats') {
+      openStats();
+      push({ tab: 'profile', detail: null });
+      return;
+    }
+    // Music Date moved twice - overflow menu, Profile room, and now the
+    // Booth's top card. The old route opens its fullscreen layer wherever
+    // you already are.
+    if (next === 'date') {
+      openDate();
+      return;
+    }
+    // The DJ page became the Booth; the old name still walks in the door.
+    if (next === 'dj') {
+      push({ tab: 'booth', detail: null });
+      return;
+    }
+    // Search stopped being a place: the old route now summons the overlay
+    // over wherever you already are.
+    if (next === 'search') {
+      openSearch();
+      return;
+    }
+    // Walking to Profile the normal way always lands on the profile itself.
+    if (next === 'profile') closeProfileRoom();
+    push({ tab: next, detail: null });
+  };
+  const back = () => setNav((s) => (s.index > 0 ? { ...s, index: s.index - 1 } : s));
+  const forward = () => setNav((s) => (s.index < s.stack.length - 1 ? { ...s, index: s.index + 1 } : s));
+
+  // The SYSTEM back gesture (Android hands it in through systemBack.ts): walk
+  // the same stack the header arrows and the edge-swipe do. Registered once at
+  // mount - before any overlay can open - so it sits at the bottom of the
+  // handler stack: sheets and modals get the gesture first, this catches what
+  // is left, and an unconsumed back at the root lets native background the app.
+  // The ref keeps the one registered closure reading live nav state.
+  const sysBackRef = useRef({ canBack, back });
+  sysBackRef.current = { canBack, back };
+  useEffect(
+    () =>
+      onSystemBack(() => {
+        if (!sysBackRef.current.canBack) return false;
+        sysBackRef.current.back();
+        return true;
+      }),
+    [],
+  );
+
+  return {
+    detail,
+    tab,
+    canBack,
+    canForward,
+    go,
+    goAlbum,
+    goPlaylist,
+    goSongs,
+    closeDetail,
+    goTab,
+    back,
+    forward,
+  };
+}

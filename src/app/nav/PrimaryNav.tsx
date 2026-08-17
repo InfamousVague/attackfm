@@ -1,0 +1,214 @@
+import { NavBar, NavBarItem } from '@glacier/react';
+import { CircleUserRound, Compass, Disc3, LibraryBig, Settings } from '@glacier/icons';
+import type { ReactNode } from 'react';
+import { useAcquire, usePluginPages } from '../../plugins/runtime.tsx';
+import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
+import { NavMoreMenu } from './NavMoreMenu.tsx';
+
+/**
+ * The primary navigation, in the shape each platform holds: a vertical icon
+ * rail on the desktop, a floating horizontal bar on the phone. Both carry the
+ * same items - the core Home and Library tabs, then one per plugin page in
+ * registration order - so a plugin's page is a first-class destination
+ * wherever the app runs.
+ *
+ * It reads the plugin pages itself (usePluginPages) rather than taking them as
+ * a prop, so it must render inside the provider tree - which it does, seated
+ * below PluginsProvider like PluginSlot. The current tab and the callbacks are
+ * plain props from App, whose state lives above the plugin providers and so
+ * survives a plugin toggle untouched.
+ */
+export function PrimaryNav({
+  variant,
+  tab,
+  onTab,
+  onSettings,
+}: {
+  variant: 'rail' | 'bar';
+  /** The active tab: 'home', 'library', or a plugin page's `${id}:${page}` key. */
+  tab: string;
+  onTab: (tab: string) => void;
+  onSettings: () => void;
+}) {
+  const pages = usePluginPages();
+  // Downloads is a plugin surface, not a core one: the tab appears only while an
+  // importer is actually running (it provides the downloads bridge). With no
+  // importer - a fresh install, or anyone who has not added a plugin source -
+  // there is nothing to download, so the tab is absent rather than a dead end.
+  const dl = useDownloadsOptional();
+  const hasDownloads = dl !== null;
+  // Discover appears whenever there is ANY way to acquire music - an importer
+  // to download through, or a Buy handler to purchase through. Only a build with
+  // no acquire handlers at all (the plugin-free App-Review server) hides it.
+  const canDiscover = hasDownloads || useAcquire().hasAny;
+  // A tab pointing at a plugin page whose plugin was just switched off reads as
+  // Home - the same fallback the content host makes - so the lit item never
+  // disagrees with what is actually on screen.
+  const onPluginPage = pages.some((pg) => pg.key === tab);
+  // The library is the app's home now: the default tab and the catch for any
+  // tab that is not an explicit destination, so its nav item lights whenever
+  // the library (mixes and all) is what is on screen.
+  const libraryActive =
+    tab === 'library' ||
+    tab === 'home' ||
+    (tab !== 'discover' &&
+      tab !== 'downloads' &&
+      tab !== 'friends' &&
+      tab !== 'profile' &&
+      tab !== 'search' &&
+      // Built-in pages that own their own route. Without these the deny-list
+      // lights Library while you are standing in the Booth - the trap of
+      // listing what is NOT library instead of what is. (Stats and Date are
+      // Profile's rooms now, not tabs.)
+      tab !== 'booth' &&
+      !onPluginPage);
+
+  const primaryItems = (
+    <>
+      {/* Library leads: the music you actually own, plus the mixes made from it.
+          Discover sits beside it as the place you go to find what you do NOT
+          have - and appears whenever there is a way to acquire (import or buy). */}
+      <NavBarItem
+        icon={<LibraryBig size={18} />}
+        label="Library"
+        active={libraryActive}
+        onClick={() => onTab('library')}
+      />
+      {canDiscover && (
+        <NavBarItem
+          icon={<Compass size={18} />}
+          label="Discover"
+          active={tab === 'discover'}
+          onClick={() => onTab('discover')}
+        />
+      )}
+      {/* Downloads is NOT a nav destination. On the phone it is an icon on the
+          library page (where the music it is fetching ends up); on the desktop
+          the rail anchors the queue button to its foot, by Settings - see the
+          `end` slot below. A queue you visit occasionally does not deserve a
+          permanent seat in a bar of four. */}
+      {/* Search stopped being a station: it is a summons now - pull down on
+          any page, or ⌘K - so its old seat belongs to the Booth, the taste
+          engine's one room. */}
+      <NavBarItem
+        icon={<Disc3 size={18} />}
+        label="Booth"
+        active={tab === 'booth'}
+        onClick={() => onTab('booth')}
+      />
+      {/* Plugin pages ride the rail as their own items on the desktop, which
+          has the vertical room; the phone bar folds them into its Plugins
+          button (cascading up out of the bar) instead. */}
+      <NavBarItem
+        icon={<CircleUserRound size={18} />}
+        label="Profile"
+        active={tab === 'profile'}
+        onClick={() => onTab('profile')}
+      />
+      {pages.map((pg) => (
+        <NavBarItem
+          key={pg.key}
+          icon={pg.icon}
+          label={pg.label}
+          active={tab === pg.key}
+          onClick={() => onTab(pg.key)}
+        />
+      ))}
+    </>
+  );
+
+  if (variant === 'rail') {
+    return (
+      <NavBar
+        orientation="vertical"
+        aria-label="Primary"
+        className="appNavRail"
+        end={
+          <div className="appNavRail__foot">
+            {/* Downloads has no seat here: while anything is in flight the
+                chip above the strip is its door, and an idle queue offers no
+                door at all - see DownloadsChip. */}
+            <NavBarItem icon={<Settings size={18} />} label="Settings" onClick={onSettings} />
+          </div>
+        }
+      >
+        {primaryItems}
+      </NavBar>
+    );
+  }
+
+  // The phone bar: a floating island of even tabs. It had a raised brand disc
+  // in the middle for the library, which made the library look like a different
+  // KIND of thing from Search and Friends when it is simply another
+  // destination - and cost the plate a band of height to overhang into. It is
+  // an ordinary tab now, in its place in the row, lit like any other.
+  //
+  // Plugin pages do NOT take their own bar seats: they gather behind the one
+  // Plugins button in the right group (PluginsBarButton), which cascades them
+  // up out of the bar - so the core tabs stay put however many plugins are on.
+  return (
+    <nav className="appNavBar" aria-label="Primary">
+      {/* Search is a summons now (pull down anywhere); its old seat holds the
+          Booth - a real place, the taste engine's room. */}
+      <BarTab
+        icon={<Disc3 size={22} />}
+        label="Booth"
+        active={tab === 'booth'}
+        onClick={() => onTab('booth')}
+      />
+      {canDiscover && (
+        <BarTab
+          icon={<Compass size={22} />}
+          label="Discover"
+          active={tab === 'discover'}
+          onClick={() => onTab('discover')}
+        />
+      )}
+      {/* The library: where the music you own lives, and the app's home. */}
+      <BarTab
+        icon={<LibraryBig size={22} />}
+        label="Library"
+        active={libraryActive}
+        onClick={() => onTab('library')}
+      />
+      <BarTab
+        icon={<CircleUserRound size={22} />}
+        label="Profile"
+        active={tab === 'profile'}
+        onClick={() => onTab('profile')}
+      />
+      {/* The overflow: the ⋮ menu cascades up the plugin pages plus Stats,
+          Downloads and Settings. */}
+      <NavMoreMenu tab={tab} onTab={onTab} onSettings={onSettings} />
+      {/* Settings left the bar for the header's top-right (mobileHeader), so
+          this side holds two tabs like the other - three was a crowd. */}
+    </nav>
+  );
+}
+
+/** One tab in the floating phone bar: a glyph over a small label, lit when
+ *  it is the page you are on. */
+function BarTab({
+  icon,
+  label,
+  active,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  active?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="appNavBarTab"
+      data-active={active || undefined}
+      aria-current={active ? 'page' : undefined}
+      onClick={onClick}
+    >
+      <span className="appNavBarTab__icon">{icon}</span>
+      <span className="appNavBarTab__label">{label}</span>
+    </button>
+  );
+}

@@ -1,21 +1,14 @@
 import { SearchField, Text } from '@glacier/react';
 import {
-  Check,
-  ChevronRight,
   Compass,
   Disc3,
-  ListEnd,
   ListMusic,
-  ListStart,
   Music,
-  Play,
   Plus,
-  Quote,
   Search,
   Tag,
   User,
   Users,
-  X,
 } from '@glacier/icons';
 import {
   useCallback,
@@ -23,40 +16,43 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type KeyboardEvent,
-  type ReactNode,
 } from 'react';
 import { useLibrary } from '../library/library.tsx';
 import { useRippleWave } from '../ux/rippleWave.ts';
-import { usePlaylists, type Playlist } from '../playlists/playlists.tsx';
+import { usePlaylists } from '../playlists/playlists.tsx';
 import { useQueueControls } from '../player/queueControls.tsx';
 import { useRegistry } from '../servers/registrySession.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { artworkUrl, genreArtwork } from '../ux/artwork.ts';
-import { IMPORTER_PLUGIN_ID, usePluginCommands, useAcquire, usePlugins } from '../../plugins/runtime.tsx';
+import { usePluginCommands, useAcquire } from '../../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
-import { usePendingPlay, placeholderTrack } from '../player/pendingPlay.tsx';
-import { PROBE_URL, importable, resolveImportable } from './resolveImport.ts';
-import type { AcquireTarget } from '../../plugins/types.ts';
-import {
-  flatten,
-  lyricExcerpt,
-  parseQuery,
-  searchLibrary,
-  type LocalAlbum,
-  type LocalArtist,
-  type LocalGenre,
-  type Why,
-} from './trackSearch.ts';
+import { usePendingPlay } from '../player/pendingPlay.tsx';
+import { parseQuery, searchLibrary, type LocalGenre } from './trackSearch.ts';
 import { useOwned } from '../library/owned.ts';
 import { useSearchRecents, type Recent } from './searchRecents.ts';
 import { fetchFriends, type RegistryFriend } from '../servers/registry.ts';
-import { artSized, searchCatalog, type SearchResult } from '../server.ts';
-import { mosaicArts, useArtLoad, useTileArt } from '../ux/artLoad.ts';
-import { AlbumMenu } from '../albumArtist/AlbumMenu.tsx';
-import { TrackMenu } from '../library/TrackMenu.tsx';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
+import {
+  BESIDE,
+  BROWSE,
+  CHIPS,
+  COLLAPSED,
+  EXPANDED,
+  FIELD_ID,
+  SEP,
+  albumKey,
+  hueOf,
+  isAbout,
+  type Filter,
+  type Item,
+  type Section,
+} from './searchModel.tsx';
+import { GenreArt, Heading } from './SearchBits.tsx';
+import { TopCard } from './TopCard.tsx';
+import { RecentTile } from './RecentTile.tsx';
+import { useCatalogSearch } from './useCatalogSearch.ts';
+import { renderRow, type RowCtx } from './SearchRows.tsx';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -89,291 +85,14 @@ import type { Track } from '../core/tauri.ts';
  * results while you keep typing (this is a combobox, not a listbox you fall
  * into), Enter takes the row's main door, and Q/N/A are the verbs of whatever
  * row the cursor is on.
+ *
+ * Split for size: types/constants/pure helpers live in searchModel.tsx, the
+ * small presentational bits in SearchBits.tsx, the hero card in TopCard.tsx,
+ * the Recent tile in RecentTile.tsx, the row renderer in SearchRows.tsx, and
+ * the remote catalogue half (debounced fetch + Add verb) in useCatalogSearch.ts;
+ * the sections array, the keyboard walk and the JSX stay here, on purpose -
+ * they must be built from the exact arrays that render.
  */
-
-/** The id ⌘K and the arrow keys work against. */
-const FIELD_ID = 'searchPageField';
-
-/** How much of a section shows before it needs a See all. */
-const COLLAPSED = 4;
-/** And how much a promoted section shows. */
-const EXPANDED = 60;
-/** Songs shown beside the Top result. */
-const BESIDE = 4;
-/** Genre tiles the empty page offers to browse. */
-const BROWSE = 12;
-
-/** Joins the two halves of an album's identity. A control character, because
- *  any printable separator is something a real album title contains. */
-const SEP = '\u001f';
-
-type Filter =
-  | 'all'
-  | 'mine'
-  | 'songs'
-  | 'artists'
-  | 'albums'
-  | 'playlists'
-  | 'genres'
-  | 'friends'
-  | 'catalog';
-
-/** Scopes answer "where from"; kinds answer "what". They share one row with a
- *  rule between them, so it reads as two questions rather than nine chips.
- *  The group travels with the chip because chips drop out when a query has
- *  nothing for them - the rule has to follow the last surviving scope, not a
- *  fixed index into a list that no longer looks like this one. */
-const CHIPS: { id: Filter; label: string; icon: ReactNode; group: 'scope' | 'kind' }[] = [
-  { id: 'all', label: 'All', icon: <Search size={13} />, group: 'scope' },
-  { id: 'mine', label: 'Yours', icon: <Check size={13} />, group: 'scope' },
-  { id: 'catalog', label: 'To add', icon: <Compass size={13} />, group: 'scope' },
-  { id: 'songs', label: 'Songs', icon: <Music size={13} />, group: 'kind' },
-  { id: 'artists', label: 'Artists', icon: <User size={13} />, group: 'kind' },
-  { id: 'albums', label: 'Albums', icon: <Disc3 size={13} />, group: 'kind' },
-  { id: 'playlists', label: 'Playlists', icon: <ListMusic size={13} />, group: 'kind' },
-  { id: 'genres', label: 'Genres', icon: <Tag size={13} />, group: 'kind' },
-  { id: 'friends', label: 'Friends', icon: <Users size={13} />, group: 'kind' },
-];
-
-/* -------------------------------------------------------------------- items */
-
-/**
- * One thing on the page, whatever kind it is. Sections hold these and the
- * keyboard layer walks them flat, so the order you arrow through is the order
- * you read - by construction, rather than by two lists agreeing.
- */
-type Item =
-  | { t: 'action'; id: string; label: string; group?: string; run: () => void }
-  | { t: 'song'; id: string; track: Track; why: Why }
-  | { t: 'artist'; id: string; artist: LocalArtist }
-  | { t: 'album'; id: string; album: LocalAlbum }
-  | { t: 'playlist'; id: string; playlist: Playlist }
-  | { t: 'genre'; id: string; genre: LocalGenre }
-  | { t: 'friend'; id: string; friend: RegistryFriend }
-  | { t: 'catalog'; id: string; result: SearchResult; mine: Track | null };
-
-interface Section {
-  /** The chip its See all turns on. */
-  key: Filter;
-  title: string;
-  icon: ReactNode;
-  /** How many exist, which is what the count beside the heading says. */
-  total: number;
-  items: Item[];
-}
-
-/** What an importer would be handed for a catalogue row. */
-function targetOf(result: SearchResult): AcquireTarget {
-  return {
-    kind: result.kind === 'album' ? 'album' : 'track',
-    title: result.title,
-    artist: result.subtitle,
-    url: result.url,
-  };
-}
-
-/** The key an album is filed under: title AND artist, so two records called
- *  "Greatest Hits" stay two records. */
-const albumKey = (album: { title: string; artist: string }): string =>
-  `${album.title}${SEP}${album.artist}`;
-
-function kindWord(kind: SearchResult['kind']): string {
-  return kind === 'artist' ? 'Artist' : kind === 'album' ? 'Album' : 'Song';
-}
-
-/** Whether a catalogue row's name is what the query was reaching for: the
- *  same name, the start of it, or all of it and then some ("ethel" finding
- *  Ethel Cain, "ethel cain" finding her too). Deliberately stricter than the
- *  library's own matching - this promotes a row above everything else, so a
- *  loose word-scatter match is not enough. */
-function isAbout(name: string, phrase: string): boolean {
-  if (!phrase) return false;
-  const n = flatten(name);
-  return n === phrase || n.startsWith(phrase) || phrase.startsWith(n);
-}
-
-/** A stable hue per name, so "Shoegaze" is the same colour every time it is
- *  drawn without anybody keeping a table of genres. */
-function hueOf(name: string): CSSProperties {
-  let h = 0;
-  for (let i = 0; i < name.length; i += 1) h = (h * 31 + name.charCodeAt(i)) % 360;
-  return { '--searchTileHue': `${h}` } as CSSProperties;
-}
-
-/** Up to four covers from a playlist's tracks, for its mosaic. */
-function coversOf(playlist: Playlist, tracks: readonly Track[]): string[] {
-  const want = new Set(playlist.paths);
-  const out: string[] = [];
-  for (const t of tracks) {
-    if (out.length === 4) break;
-    if (want.has(t.path) && t.artwork) out.push(t.artwork);
-  }
-  return out;
-}
-
-/* --------------------------------------------------------------------- bits */
-
-/** A section's heading: its glyph, its name, how many it found, and - when it
- *  is showing fewer than it has - the way to see the rest. */
-function Heading({
-  icon,
-  children,
-  count,
-  onSeeAll,
-}: {
-  icon: ReactNode;
-  children: ReactNode;
-  count?: number;
-  onSeeAll?: () => void;
-}) {
-  return (
-    <h2 className="searchSection__title">
-      <span className="searchSection__glyph" aria-hidden>
-        {icon}
-      </span>
-      {children}
-      {count !== undefined && <span className="searchSection__count">{count}</span>}
-      {onSeeAll && (
-        <button type="button" className="searchSeeAll" onClick={onSeeAll}>
-          See all
-          <ChevronRight size={14} />
-        </button>
-      )}
-    </h2>
-  );
-}
-
-/**
- * The artwork square, in the shape its kind wears everywhere else in the app:
- * people are round, songs and albums are squares, a playlist is a soft-cornered
- * mosaic of what is in it, and a genre is a tinted tile. Shape is how you tell
- * what a row IS before you have read a word of it, which is the entire point of
- * putting eight kinds of thing on one page.
- */
-function Glyph({
-  shape,
-  cover,
-  covers,
-  fallback,
-  tint,
-}: {
-  shape: 'circle' | 'square' | 'mosaic' | 'tile';
-  cover?: string | null;
-  /** Up to four, for the mosaic. */
-  covers?: readonly string[];
-  fallback: ReactNode;
-  /** Seeds the tile's gradient, so one genre keeps one colour. */
-  tint?: string;
-}) {
-  // Both loaders run for every shape - a glyph can change face as results
-  // refine, and the hook order has to survive that. A mosaic skeletons and
-  // reveals as one artwork; a single cover is a row thumb, so the 160 variant.
-  const four = shape === 'mosaic' ? mosaicArts(covers ?? []) : [];
-  const { loaded: tiled, hostRef: tileRef } = useTileArt(four);
-  const sized = shape === 'mosaic' || shape === 'tile' ? null : artSized(cover ?? null, 160);
-  const art = useArtLoad(sized, '');
-  // A genre with a generated object wears it over the gradient; the tint
-  // stays beneath as the loading face and the fallback for unmapped genres -
-  // and for a served object that fails to arrive.
-  const [tileDead, setTileDead] = useState(false);
-  const tileSlug = shape === 'tile' && tint ? genreArtwork(tint) : null;
-  const tileSrc = tileSlug && !tileDead ? artworkUrl(tileSlug) : null;
-  const tileLoad = useArtLoad(tileSrc, '');
-  if (shape === 'mosaic') {
-    return (
-      <span className="searchRow__glyph" data-shape="mosaic">
-        {four.length > 0 ? (
-          <span
-            ref={tileRef}
-            className="searchMosaic"
-            data-n={four.length}
-            data-tile-pop=""
-            data-tile-loading={!tiled || undefined}
-          >
-            {four.map((c, i) => (
-              <img key={`${c}:${i}`} src={c} alt="" loading="lazy" />
-            ))}
-          </span>
-        ) : (
-          fallback
-        )}
-      </span>
-    );
-  }
-  if (shape === 'tile') {
-    return (
-      <span className="searchRow__glyph" data-shape="tile" style={hueOf(tint ?? '')}>
-        {tileSrc ? (
-          <img
-            {...tileLoad}
-            src={tileSrc}
-            alt=""
-            loading="lazy"
-            onError={() => {
-              tileLoad.onError();
-              setTileDead(true);
-            }}
-          />
-        ) : (
-          fallback
-        )}
-      </span>
-    );
-  }
-  return (
-    <span className="searchRow__glyph" data-shape={shape}>
-      {sized ? <img {...art} src={sized} alt="" loading="lazy" /> : fallback}
-    </span>
-  );
-}
-
-/** A Browse tile's cover, split out of the map so each tile owns its own
- *  skeleton hook. Tiles are grid-sized, so the 640 variant. `raw` is a served
- *  generated object: no size variants, and it IS the tile face rather than
- *  the corner card the library cover plays. A served object that fails (an
- *  old server, a missing piece) steps down to the library cover rather than
- *  leaving a broken image on the tile. */
-function GenreArt({ src, raw, fallback }: { src: string; raw?: boolean; fallback?: string | null }) {
-  const [dead, setDead] = useState(false);
-  const object = raw && !dead;
-  const active = raw && dead ? (fallback ?? null) : src;
-  const sized = active === null ? null : object ? active : artSized(active, 640);
-  const art = useArtLoad(sized, object ? 'searchGenre__objectArt' : 'searchGenre__art');
-  if (sized === null) return null;
-  return (
-    <img
-      {...art}
-      src={sized}
-      alt=""
-      loading="lazy"
-      onError={() => {
-        art.onError();
-        if (object) setDead(true);
-      }}
-    />
-  );
-}
-
-/** What a song row says under its title: normally the artist, but when the
- *  match came from the lyrics, the line that matched - because "why is this
- *  here" is the question a lyric hit always raises. */
-function SongSub({ track, why, query }: { track: Track; why: Why; query: string }) {
-  const line = why === 'lyrics' ? lyricExcerpt(track, query) : null;
-  if (line) {
-    return (
-      <span className="searchRow__sub" data-lyric>
-        <Quote size={11} aria-hidden />
-        <span className="searchRow__lyric">{line}</span>
-      </span>
-    );
-  }
-  return (
-    <span className="searchRow__sub">
-      Song · {track.artist}
-      {track.lossless && <span className="searchQuality">Lossless</span>}
-    </span>
-  );
-}
 
 /* --------------------------------------------------------------------- page */
 
@@ -411,16 +130,9 @@ export function SearchPage({
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [friends, setFriends] = useState<RegistryFriend[]>([]);
-  // null while the catalogue fetch for a query is in flight, [] when it came
-  // back empty.
-  const [catalog, setCatalog] = useState<SearchResult[] | null>(null);
   // Which row the keyboard is on, as an index into the flat item list; -1 is
   // "none". The field keeps DOM focus throughout, so typing never stops.
   const [cursor, setCursor] = useState(-1);
-  // What a tapped catalogue row is doing. An album usually reaches us as a
-  // Deezer link the importer will not take, so the tap looks for its Spotify
-  // twin first - a beat of network that has to be visible on the row.
-  const [adding, setAdding] = useState<Record<string, 'finding' | 'added' | 'missing'>>({});
 
   // ⌘K from anywhere reaches this tab (App handles that); pressed while already
   // here it should put the caret back in the field and select what is there, so
@@ -453,32 +165,6 @@ export function SearchPage({
     };
   }, [registry]);
 
-  // The catalogue, debounced - a fresh keystroke cancels the pending fetch and
-  // aborts one already in flight, so only the last query in a burst is sent.
-  const serverRef = useRef(server);
-  serverRef.current = server;
-  useEffect(() => {
-    const q = query.trim();
-    const s = serverRef.current;
-    if (!q || !s) {
-      setCatalog(null);
-      return;
-    }
-    setCatalog(null);
-    const ctrl = new AbortController();
-    const timer = window.setTimeout(() => {
-      void searchCatalog(s, q, ctrl.signal)
-        .then(setCatalog)
-        .catch(() => {
-          if (!ctrl.signal.aborted) setCatalog([]);
-        });
-    }, 350);
-    return () => {
-      window.clearTimeout(timer);
-      ctrl.abort();
-    };
-  }, [query]);
-
   const plugin = usePluginCommands({ query, close: () => setQuery('') });
 
   const parsed = useMemo(() => parseQuery(query), [query]);
@@ -496,25 +182,20 @@ export function SearchPage({
     return playlists.filter((p) => p.name.toLowerCase().includes(q));
   }, [playlists, query]);
 
-  // A catalogue row whose copy is already listed above would be the same song
-  // twice; it stands aside. Matched through the library index, so a row goes
-  // only when the very track it resolves to is one of the ones shown.
   const shown = useMemo(() => new Set(lib.songs.map((s) => s.track.path)), [lib.songs]);
-  const outside = useMemo(() => {
-    const rows = (catalog ?? []).filter((r) => {
-      if (r.kind !== 'track') return true;
-      const mine = owned.find(r.subtitle, r.title);
-      return !mine || !shown.has(mine.path);
-    });
-    // The server sends artists LAST - tracks are the rows you can add in a
-    // tap, so they lead - but the collapsed section only shows a handful, and
-    // an artist sitting nineteenth may as well not exist. Typing a name is
-    // asking for the PERSON, so whoever's name is the query comes first: the
-    // door to their catalogue is the answer, and the tracks are still right
-    // behind it.
-    const lead = rows.filter((r) => r.kind === 'artist' && isAbout(r.title, parsed.phrase));
-    return lead.length > 0 ? [...lead, ...rows.filter((r) => !lead.includes(r))] : rows;
-  }, [catalog, owned, shown, parsed.phrase]);
+
+  // The remote half: the debounced catalogue fetch, the dedupe against the
+  // songs already shown, and the Add verb - see useCatalogSearch.ts.
+  const { catalog, outside, adding, acquireResult } = useCatalogSearch({
+    query,
+    parsedPhrase: parsed.phrase,
+    shownPaths: shown,
+    owned,
+    acquire,
+    downloads,
+    playPending,
+    server,
+  });
 
   const searching = parsed.active;
   const claimed = plugin.exclusive;
@@ -637,72 +318,6 @@ export function SearchPage({
     },
     [acquire, onOpenArtist, onOpenPlaylist, onPlay, songQueue, touch],
   );
-
-  /**
-   * Pull a catalogue row.
-   *
-   * A track from `/api/search` already carries a Spotify link (the server drops
-   * the ones that do not), but an ALBUM usually arrives from Deezer, which the
-   * importer refuses as primary input - so those are looked up by name first.
-   * Either way the link goes down the importer's own queue when it is running:
-   * a tap on Add should start a download, not open a chooser.
-   */
-  const acquireResult = async (r: SearchResult) => {
-    if (adding[r.id]) return;
-    const kind = r.kind === 'album' ? 'album' : 'track';
-    const hand = async (title: string, url: string) => {
-      const target: AcquireTarget = { kind, title, artist: r.subtitle, url };
-      const viaImporter = acquire.handlersFor(target).some((h) => h.pluginId === IMPORTER_PLUGIN_ID);
-      if (viaImporter && downloads) {
-        try {
-          // A single tapped track is now-playing (reserved slot); an album is a
-          // background set.
-          const job = await downloads.enqueue(url, kind === 'track');
-          // A single tapped track opens Now Playing on it, downloading, and
-          // plays when it lands; an album is a set, so it just queues. The
-          // placeholder wears the ROW's own art/name, even if the download URL
-          // came from a resolved twin.
-          if (kind === 'track') {
-            playPending?.(
-              placeholderTrack({ jobId: job.id, title: r.title, artist: r.subtitle, artwork: r.cover }),
-              job.id,
-            );
-          }
-        } catch {
-          // Enqueue refused; the row's 'added' state is the only feedback.
-        }
-      } else acquire.acquire(target);
-    };
-
-    if (importable(r)) {
-      await hand(r.title, r.url);
-      setAdding((prev) => ({ ...prev, [r.id]: 'added' }));
-      return;
-    }
-    if (!server) return;
-    setAdding((prev) => ({ ...prev, [r.id]: 'finding' }));
-    let found = null;
-    try {
-      found = await resolveImportable(server, kind, r.subtitle, r.title);
-    } catch {
-      // Offline or refused; the row cannot tell the difference from absent.
-    }
-    if (!found) {
-      setAdding((prev) => ({ ...prev, [r.id]: 'missing' }));
-      window.setTimeout(
-        () =>
-          setAdding((prev) => {
-            const next = { ...prev };
-            delete next[r.id];
-            return next;
-          }),
-        4000,
-      );
-      return;
-    }
-    await hand(found.title, found.url);
-    setAdding((prev) => ({ ...prev, [r.id]: 'added' }));
-  };
 
   /* ----------------------------------------------------------- sections --- */
 
@@ -988,235 +603,22 @@ export function SearchPage({
 
   /* ---------------------------------------------------------------- rows --- */
 
-  /** Rendered as a plain call rather than a component, so a keystroke does not
-   *  replace every row's element type - which would drop the open context menu
-   *  and reset each row on every letter. */
-  const renderRow = (item: Item): ReactNode => {
-    const n = position.get(item.id);
-    const active = n !== undefined && n === cursor;
-    const seat = {
-      id: n === undefined ? undefined : `searchHit-${n}`,
-      className: 'searchRow',
-      role: 'option' as const,
-      'aria-selected': active,
-      'data-active': active || undefined,
-      // The pointer drives the same cursor, so the highlight is never in two
-      // places at once.
-      onMouseEnter: () => n !== undefined && setCursor(n),
-    };
-
-    switch (item.t) {
-      case 'action':
-        return (
-          <button key={item.id} type="button" {...seat} onClick={() => open(item)}>
-            <Glyph shape="square" fallback={<Plus size={18} />} />
-            <span className="searchRow__text">
-              <span className="searchRow__title">{item.label}</span>
-              {item.group && <span className="searchRow__sub">{item.group}</span>}
-            </span>
-            <ChevronRight size={16} className="searchRow__end" />
-          </button>
-        );
-
-      case 'song':
-        return (
-          // Long-press or right-click for the same menu every song in the app
-          // carries; the two verbs are also spelled out on hover, and on Q/N.
-          <TrackMenu key={item.id} track={item.track}>
-            <div className="searchRowSeat">
-              <button type="button" {...seat} onClick={() => open(item)}>
-                <Glyph shape="square" cover={item.track.artwork} fallback={<Music size={18} />} />
-                <span className="searchRow__text">
-                  <span className="searchRow__title">{item.track.title}</span>
-                  <SongSub track={item.track} why={item.why} query={query} />
-                </span>
-              </button>
-              <span className="searchRow__verbs">
-                <button
-                  type="button"
-                  className="searchVerb"
-                  title="Play next (N)"
-                  aria-label={`Play ${item.track.title} next`}
-                  onClick={() => queue.playNext(item.track)}
-                >
-                  <ListStart size={15} />
-                </button>
-                <button
-                  type="button"
-                  className="searchVerb"
-                  title="Add to queue (Q)"
-                  aria-label={`Add ${item.track.title} to the queue`}
-                  onClick={() => queue.addToQueue(item.track)}
-                >
-                  <ListEnd size={15} />
-                </button>
-              </span>
-            </div>
-          </TrackMenu>
-        );
-
-      case 'artist':
-        return (
-          <button key={item.id} type="button" {...seat} onClick={() => open(item)}>
-            <Glyph shape="circle" cover={item.artist.cover} fallback={<User size={18} />} />
-            <span className="searchRow__text">
-              <span className="searchRow__title">{item.artist.name}</span>
-              <span className="searchRow__sub">
-                Artist · {item.artist.count === 1 ? '1 song' : `${item.artist.count} songs`}
-              </span>
-            </span>
-            <ChevronRight size={16} className="searchRow__end" />
-          </button>
-        );
-
-      case 'album':
-        return (
-          <AlbumMenu
-            key={item.id}
-            tracks={item.album.tracks}
-            onPlay={onPlay}
-            onOpenArtist={onOpenArtist}
-            artistName={item.album.artist}
-          >
-            <button type="button" {...seat} onClick={() => open(item)}>
-              <Glyph shape="square" cover={item.album.cover} fallback={<Disc3 size={18} />} />
-              <span className="searchRow__text">
-                <span className="searchRow__title">{item.album.title}</span>
-                <span className="searchRow__sub">
-                  Album · {item.album.artist} ·{' '}
-                  {item.album.count === 1 ? '1 song' : `${item.album.count} songs`}
-                </span>
-              </span>
-              <Play size={16} className="searchRow__end" />
-            </button>
-          </AlbumMenu>
-        );
-
-      case 'playlist':
-        return (
-          <button key={item.id} type="button" {...seat} onClick={() => open(item)}>
-            <Glyph
-              shape="mosaic"
-              covers={coversOf(item.playlist, tracks)}
-              fallback={<ListMusic size={18} />}
-            />
-            <span className="searchRow__text">
-              <span className="searchRow__title">{item.playlist.name}</span>
-              <span className="searchRow__sub">
-                Playlist ·{' '}
-                {item.playlist.paths.length === 1
-                  ? '1 song'
-                  : `${item.playlist.paths.length} songs`}
-              </span>
-            </span>
-            <ChevronRight size={16} className="searchRow__end" />
-          </button>
-        );
-
-      case 'genre':
-        return (
-          <button key={item.id} type="button" {...seat} onClick={() => open(item)}>
-            <Glyph shape="tile" tint={item.genre.name} fallback={<Tag size={18} />} />
-            <span className="searchRow__text">
-              <span className="searchRow__title">{item.genre.name}</span>
-              <span className="searchRow__sub">
-                Genre · {item.genre.count === 1 ? '1 song' : `${item.genre.count} songs`}
-              </span>
-            </span>
-            <ChevronRight size={16} className="searchRow__end" />
-          </button>
-        );
-
-      case 'friend':
-        return (
-          <div key={item.id} className="searchRow" data-static>
-            <Glyph shape="circle" fallback={<Users size={18} />} />
-            <span className="searchRow__text">
-              <span className="searchRow__title">@{item.friend.handle}</span>
-              <span className="searchRow__sub">
-                Friend
-                {item.friend.songs > 0 ? ` · ${item.friend.songs.toLocaleString()} songs` : ''}
-              </span>
-            </span>
-          </div>
-        );
-
-      case 'catalog': {
-        const state = adding[item.result.id];
-        // An artist row is a door; a track or album is an Add, live whenever
-        // anything could take a link - the tap finds a usable one if this row's
-        // own link is not (a Deezer album, say).
-        const isArtist = item.result.kind === 'artist';
-        const can =
-          !isArtist &&
-          acquire.hasHandlers({ ...targetOf(item.result), url: PROBE_URL }) &&
-          state !== 'missing';
-        const have = item.mine !== null;
-        const inside = (
-          <>
-            <Glyph
-              shape={item.result.kind === 'artist' ? 'circle' : 'square'}
-              cover={item.result.cover}
-              fallback={
-                item.result.kind === 'artist' ? (
-                  <User size={18} />
-                ) : item.result.kind === 'album' ? (
-                  <Disc3 size={18} />
-                ) : (
-                  <Music size={18} />
-                )
-              }
-            />
-            <span className="searchRow__text">
-              <span className="searchRow__title">{item.result.title}</span>
-              <span className="searchRow__sub">
-                {/* An artist row's subtitle from the server is the word
-                    "Artist" itself, so saying the kind twice is all it would
-                    ever do; say where it leads instead. */}
-                {isArtist
-                  ? 'Artist · not in your library'
-                  : `${kindWord(item.result.kind)} · ${item.result.subtitle}`}
-                {item.result.source && (
-                  <span className={`searchSource searchSource--${item.result.source}`}>
-                    {item.result.source === 'deezer' ? 'Deezer' : 'Spotify'}
-                  </span>
-                )}
-              </span>
-            </span>
-          </>
-        );
-        if (!isArtist && !can && state === undefined) {
-          return (
-            <div key={item.id} className="searchRow" data-static>
-              {inside}
-              {have && <Check size={16} className="searchRow__end" data-ok />}
-            </div>
-          );
-        }
-        return (
-          <button key={item.id} type="button" {...seat} onClick={() => open(item)}>
-            {inside}
-            {isArtist ? (
-              <ChevronRight size={16} className="searchRow__end" />
-            ) : have || state === 'added' ? (
-              <Check size={16} className="searchRow__end" data-ok />
-            ) : state === 'finding' ? (
-              <span className="searchAdd" data-busy>
-                <span className="artistAlbumSpin" aria-hidden /> Finding
-              </span>
-            ) : state === 'missing' ? (
-              <span className="searchAdd" data-missing>
-                <X size={14} /> Not on Spotify
-              </span>
-            ) : (
-              <span className="searchAdd">
-                <Plus size={14} /> Add
-              </span>
-            )}
-          </button>
-        );
-      }
-    }
+  // The seat every row draws from, built plain per render like the walk above,
+  // so a row always reflects this render's cursor and adding state. The row
+  // renderer itself lives in SearchRows.tsx - still a plain call, never a
+  // component, for the reason documented there.
+  const rowCtx: RowCtx = {
+    position,
+    cursor,
+    setCursor,
+    open,
+    queue,
+    adding,
+    acquire,
+    onPlay,
+    onOpenArtist,
+    query,
+    tracks,
   };
 
   /* -------------------------------------------------------------- browse --- */
@@ -1431,7 +833,7 @@ export function SearchPage({
                 >
                   Songs
                 </Heading>
-                <div className="searchRows">{beside.map(renderRow)}</div>
+                <div className="searchRows">{beside.map((i) => renderRow(i, rowCtx))}</div>
               </div>
             )}
           </section>
@@ -1448,7 +850,7 @@ export function SearchPage({
             >
               {s.title}
             </Heading>
-            <div className="searchRows">{s.items.map(renderRow)}</div>
+            <div className="searchRows">{s.items.map((i) => renderRow(i, rowCtx))}</div>
           </section>
         ))}
 
@@ -1465,211 +867,6 @@ export function SearchPage({
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ pieces */
-
-/**
- * The Top result, as a card rather than a row: big art, what it is, and the one
- * verb that matters for its kind. It is the answer the page is most confident
- * about, so it gets the room to look like one.
- */
-function TopCard({
-  item,
-  tracks,
-  id,
-  active,
-  onOpen,
-  onHover,
-}: {
-  item: Item;
-  tracks: readonly Track[];
-  id?: string;
-  active: boolean;
-  onOpen: () => void;
-  onHover: () => void;
-}) {
-  const face = (() => {
-    switch (item.t) {
-      case 'artist':
-        return {
-          shape: 'circle' as const,
-          cover: item.artist.cover,
-          fallback: <User size={34} />,
-          title: item.artist.name,
-          sub: `Artist · ${item.artist.count === 1 ? '1 song' : `${item.artist.count} songs`}`,
-          play: false,
-        };
-      case 'album':
-        return {
-          shape: 'square' as const,
-          cover: item.album.cover,
-          fallback: <Disc3 size={34} />,
-          title: item.album.title,
-          sub: `Album · ${item.album.artist}`,
-          play: true,
-        };
-      case 'song':
-        return {
-          shape: 'square' as const,
-          cover: item.track.artwork,
-          fallback: <Music size={34} />,
-          title: item.track.title,
-          sub: `Song · ${item.track.artist}`,
-          play: true,
-        };
-      case 'playlist':
-        return {
-          shape: 'mosaic' as const,
-          cover: null,
-          fallback: <ListMusic size={34} />,
-          title: item.playlist.name,
-          sub: `Playlist · ${item.playlist.paths.length} songs`,
-          play: false,
-        };
-      // A catalogue artist can lead the page when the library holds nothing
-      // by them - the same card, saying plainly that this one is a door out
-      // to their catalogue rather than a shelf of yours.
-      case 'catalog':
-        return item.result.kind === 'artist'
-          ? {
-              shape: 'circle' as const,
-              cover: item.result.cover,
-              fallback: <User size={34} />,
-              title: item.result.title,
-              sub: 'Artist · not in your library',
-              play: false,
-            }
-          : null;
-      default:
-        return null;
-    }
-  })();
-  // Hooks sit before the null gate: React needs them called on every render,
-  // whatever kind this card resolves to. The hero cover is big, so 640.
-  const mosaic = item.t === 'playlist' ? mosaicArts(coversOf(item.playlist, tracks)) : [];
-  const { loaded: tiled, hostRef: tileRef } = useTileArt(mosaic);
-  const sized = artSized(face?.cover ?? null, 640);
-  const art = useArtLoad(sized, '');
-  if (!face) return null;
-
-  return (
-    <button
-      type="button"
-      id={id}
-      role="option"
-      aria-selected={active}
-      className="searchTopCard"
-      data-active={active || undefined}
-      onMouseEnter={onHover}
-      onClick={onOpen}
-    >
-      <span className="searchTopCard__art" data-shape={face.shape}>
-        {mosaic.length > 0 ? (
-          <span
-            ref={tileRef}
-            className="searchMosaic"
-            data-n={mosaic.length}
-            data-tile-pop=""
-            data-tile-loading={!tiled || undefined}
-          >
-            {mosaic.map((c, i) => (
-              <img key={`${c}:${i}`} src={c} alt="" loading="lazy" />
-            ))}
-          </span>
-        ) : sized ? (
-          <img {...art} src={sized} alt="" loading="lazy" />
-        ) : (
-          face.fallback
-        )}
-      </span>
-      <span className="searchTopCard__title">{face.title}</span>
-      <span className="searchTopCard__sub">{face.sub}</span>
-      <span className="searchTopCard__verb">
-        {face.play ? <Play size={15} /> : <ChevronRight size={15} />}
-        {face.play ? 'Play' : 'Open'}
-      </span>
-    </button>
-  );
-}
-
-/**
- * One tile in the Recent row. Its artwork is resolved live from the library
- * rather than remembered: a local file's cover is an object URL and a server's
- * carries a stream token, so either one stored a week ago would be a dead image
- * today. Only a catalogue result - a plain public URL - keeps its own.
- */
-function RecentTile({
-  recent,
-  tracks,
-  playlists,
-  onOpen,
-  onForget,
-}: {
-  recent: Recent;
-  tracks: readonly Track[];
-  playlists: readonly Playlist[];
-  onOpen: () => void;
-  onForget: () => void;
-}) {
-  const cover = useMemo(() => {
-    switch (recent.kind) {
-      case 'track':
-        return tracks.find((t) => t.path === recent.key)?.artwork ?? null;
-      case 'artist':
-        return tracks.find((t) => t.artist === recent.key && t.artwork)?.artwork ?? null;
-      case 'album': {
-        const [title, artist] = recent.key.split(SEP);
-        return (
-          tracks.find((t) => t.album === title && (!artist || t.artist === artist) && t.artwork)
-            ?.artwork ?? null
-        );
-      }
-      case 'playlist': {
-        const list = playlists.find((p) => p.id === recent.key);
-        if (!list) return null;
-        const want = new Set(list.paths);
-        return tracks.find((t) => want.has(t.path) && t.artwork)?.artwork ?? null;
-      }
-      default:
-        return recent.cover;
-    }
-  }, [playlists, recent, tracks]);
-
-  // Recents draw small tiles, so the 160 variant; a null cover (nothing in
-  // the library to resolve it from anymore) keeps the kind's glyph below.
-  const sized = artSized(cover, 160);
-  const art = useArtLoad(sized, '');
-
-  return (
-    <div className="searchRecent">
-      <button type="button" className="searchRecent__body" onClick={onOpen}>
-        <span className="searchRecent__art" data-round={recent.kind === 'artist' || undefined}>
-          {cover ? (
-            <img {...art} src={sized ?? undefined} alt="" loading="lazy" />
-          ) : recent.kind === 'artist' ? (
-            <User size={22} />
-          ) : recent.kind === 'playlist' ? (
-            <ListMusic size={22} />
-          ) : recent.kind === 'genre' ? (
-            <Tag size={22} />
-          ) : (
-            <Music size={22} />
-          )}
-        </span>
-        <span className="searchRecent__title">{recent.title}</span>
-        <span className="searchRecent__sub">{recent.subtitle}</span>
-      </button>
-      <button
-        type="button"
-        className="searchRecent__forget"
-        aria-label={`Forget ${recent.title}`}
-        onClick={onForget}
-      >
-        <X size={13} />
-      </button>
     </div>
   );
 }

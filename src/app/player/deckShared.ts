@@ -1,0 +1,170 @@
+/**
+ * The deck's pure top layer, shared by the Player core and its extracted
+ * surfaces (PlayerStrip, NowPlayingSheet): stateless constants and helpers
+ * with no audio coupling.
+ */
+import type { Track } from '../core/tauri.ts';
+import { VOLUME_UNITY } from './VolumeControl.tsx';
+
+/** No artwork for the blank idle stand-in, and the neutral fallback anywhere a
+ *  cover is missing. */
+export const TRACK_ART: string | null = null;
+
+/**
+ * Android WebView reports `Infinity` for the duration of some streamed audio
+ * responses.  That is a valid media-element sentinel (the stream looks live),
+ * but it is not a usable player timeline: position / Infinity pins every
+ * scrubber at zero while the elapsed clock continues to advance.  Prefer the
+ * element's duration when it is real, otherwise keep the duration indexed in
+ * the library for this track.
+ */
+export function timelineDuration(mediaDuration: number, trackDuration?: number | null): number {
+  if (Number.isFinite(mediaDuration) && mediaDuration > 0) return mediaDuration;
+  if (trackDuration != null && Number.isFinite(trackDuration) && trackDuration > 0) {
+    return trackDuration;
+  }
+  return 0;
+}
+
+/**
+ * A blank stand-in for the surfaces that need a non-null Track while nothing is
+ * loaded - the deck visuals key off `.path`, and publish() wants a shape. It is
+ * deliberately empty and unplayable: an idle device must advertise "nothing,"
+ * not a demo song, and there is no URL here for a stray play to ever start.
+ */
+export const IDLE_TRACK: Track = {
+  path: '',
+  title: '',
+  artist: '',
+  album: '',
+  duration: null,
+  addedAt: 0,
+  artwork: null,
+  genre: '',
+  lyrics: '',
+};
+
+/** Where the fader starts. The element opens at full, so it is told this too. */
+/** Where a fresh install opens: unity, the same place the phone sits. Nothing
+ *  is quieter than the file it is playing until somebody says so. */
+export const INITIAL_VOLUME = VOLUME_UNITY;
+
+/** The deck's remembered dials - shuffle, repeat, the fader - one key each so
+ * a bad value spoils only its own dial. */
+export function readDeckPref(name: string): string | null {
+  try {
+    return localStorage.getItem(`attackfm-deck-${name}`);
+  } catch {
+    return null;
+  }
+}
+
+export function writeDeckPref(name: string, value: string): void {
+  try {
+    localStorage.setItem(`attackfm-deck-${name}`, value);
+  } catch {
+    // Storage refused: the dial just resets next launch, as it always did.
+  }
+}
+
+/**
+ * The fader's 0-100 read as a beat intensity. Loud lifts the bar higher, but the
+ * response is floored well above zero so a quiet track still visibly moves - the
+ * fader sets the ceiling, not whether the bar reacts at all. Muting, or a fader
+ * on the floor, is the only thing that holds it still: nothing is coming out, so
+ * nothing moves. The floor and ceiling both sit inside `SEEK_MAX_INTENSITY` (3).
+ *
+ * `system` is the phone's own hardware level (0-1), applied AFTER the app's
+ * graph - so it, not the in-app fader, is what says how loud the room actually
+ * is. It scales the result on the same curve, which means turning the volume
+ * buttons down calms the bar and turning them up drives it, and the two faders
+ * compound the way the ear hears them. It is 1 wherever there is no separate
+ * system fader to read (desktop, the browser), leaving the old behaviour
+ * exactly as it was. Silenced hardware holds the bar still for the same reason
+ * a muted app does: nothing is coming out.
+ */
+export const beatIntensity = (volume: number, muted: boolean, system = 1) => {
+  if (muted || volume <= 0 || system <= 0) return 0;
+  // The app fader's own curve, untouched: ~1.76 wide open.
+  const app = 0.28 * volume ** 0.398;
+  // The device's own level, as a multiplier that sweeps nearly the whole way
+  // down. An earlier pass floored this at 0.35, which left the bar swinging
+  // between 1.75 and 0.90 across the entire hardware range - a difference you
+  // have to measure rather than see. The small floor that remains keeps a bar
+  // that is still audible from reading as dead; silence is handled above.
+  // At system = 1 this is exactly 1, so anywhere without a separate hardware
+  // fader (desktop, the browser) lands on the original number.
+  const hardware = 0.12 + 0.88 * system ** 0.8;
+  return app * hardware;
+};
+
+/**
+ * The turntable ramp: how far the speed bends and how long the motor takes in
+ * each direction. The floor sits at half speed - an octave is as far as a stop
+ * needs to fall to read as one - and the rest of it is carried by a gain fade
+ * on the audio clock, so the ear hears the pitch dive INTO silence.
+ *
+ * The bend is the graph's, not the element's: `playbackRate` is the media
+ * engine's own resampler, re-tuned on every write and reset across a pause on
+ * WebKit, which is why the deck used to glitch and then stop being audible at
+ * all after the first stop. See `rampSpeed` in the kit's analyser meter.
+ */
+export const RATE_FLOOR = 0.5;
+export const SPIN_UP_MS = 380;
+export const SPIN_DOWN_MS = 320;
+/**
+ * How fast the level comes back when the platter picks up. Short on purpose:
+ * the music has to be simply there when the button is pressed, so that what is
+ * heard afterwards is the pitch climbing rather than a fade-in. Matched to the
+ * spin-up, the climb happens under a fade and neither the press nor the effect
+ * lands - the button feels slow and the ramp cannot be heard at all.
+ */
+export const SPIN_UP_FADE_MS = 90;
+/**
+ * The blink of silence a play pressed mid-brake pays to drop the deck's
+ * backlog before climbing (see the catch branch of setPlayingState). Long
+ * enough for the gain to truly reach zero before the line is snapped, short
+ * enough to read as the platter being caught rather than a stutter.
+ */
+export const CATCH_FLUSH_MS = 45;
+
+/** How the artwork is worn: a turning CD, the flat cover, or - on the big
+ *  sheet - nothing at all, letting the canvas and the words have the room.
+ *  The mini strip ignores 'hidden' and shows the cover: its square is also
+ *  the tap target that lifts this sheet, and a hole in the strip reads as a
+ *  layout bug, not a preference. */
+export type ArtView = 'cd' | 'cover' | 'hidden';
+
+export const ART_VIEW_KEY = 'attackfm-art-view';
+
+// The stored choice, defaulting to the disc; anything unrecognised also lands
+// there rather than blanking the square.
+export function readArtView(): ArtView {
+  try {
+    const stored = localStorage.getItem(ART_VIEW_KEY);
+    return stored === 'cover' || stored === 'hidden' ? stored : 'cd';
+  } catch {
+    return 'cd';
+  }
+}
+
+/**
+ * When the player folds its rails for touch. Kept beside the hook so the CSS
+ * block in app.css quoting the same condition has one source to match.
+ *
+ * Coarse pointer is the real signal - a phone in any orientation, a tablet.
+ * The width arm exists for browsers (previews included), and it stops at
+ * 540px because the DESKTOP window can be as narrow as 560 (tauri.conf.json
+ * minWidth): a squarish desktop window must never inherit the phone's bar.
+ */
+export const MOBILE_PLAYER_QUERY = '(pointer: coarse), (max-width: 540px)';
+
+/** mm:ss for the Now Playing clock. */
+export function formatClock(seconds: number): string {
+  // A deck reports Infinity (transcode stream) or NaN duration until metadata
+  // lands, and Math.max(0, ...) passes both through - show the zero clock
+  // instead of "Infinity:NaN".
+  if (!Number.isFinite(seconds)) return '0:00';
+  const t = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+}
