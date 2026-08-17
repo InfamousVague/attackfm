@@ -165,29 +165,53 @@ export function setNativePlaybackState(playing: boolean, positionSecs: number): 
  * out there steers the deck exactly as a press in here would and everything
  * downstream follows.
  */
-export function bindNativeTransport(handlers: {
-  play: () => void;
-  pause: () => void;
-  next: () => void;
-  previous: () => void;
-  seek: (seconds: number) => void;
+interface TransportHandlers {
+  play?: () => void;
+  pause?: () => void;
+  next?: () => void;
+  previous?: () => void;
+  seek?: (seconds: number) => void;
   /** A collection tapped in the car's browse list: 'liked' | 'all' | 'shuffle'. */
   playCollection?: (id: string) => void;
-}): () => void {
+}
+
+/*
+ * Several binders, not one.
+ *
+ * This used to assign `window.__AFM_TRANSPORT__` outright, which forced every
+ * command to be answered by a single component - and the only component
+ * holding the transport controls is the Player, which PlayerHost does not
+ * mount until something is already playing. So in a car, from cold, the browse
+ * list drew its three rows, a tap travelled the whole chain correctly, and
+ * arrived at a global that did not exist yet. Every row dead until you had
+ * already started something by hand, which is the one thing a dashboard is for
+ * not making you do.
+ *
+ * A set of partial handlers lets the piece that is ALWAYS mounted answer for
+ * the collections while the Player answers for the transport, without either
+ * clobbering the other on mount order.
+ */
+const bound = new Set<TransportHandlers>();
+
+export function bindNativeTransport(handlers: TransportHandlers): () => void {
+  bound.add(handlers);
   window.__AFM_TRANSPORT__ = (command) => {
-    if (command === 'play') handlers.play();
-    else if (command === 'pause') handlers.pause();
-    else if (command === 'next') handlers.next();
-    else if (command === 'previous') handlers.previous();
-    else if (command.startsWith('seek:')) {
-      const secs = Number(command.slice(5));
-      if (Number.isFinite(secs)) handlers.seek(secs);
-    } else if (command.startsWith('collection:')) {
-      handlers.playCollection?.(command.slice('collection:'.length));
+    for (const h of bound) {
+      if (command === 'play') h.play?.();
+      else if (command === 'pause') h.pause?.();
+      else if (command === 'next') h.next?.();
+      else if (command === 'previous') h.previous?.();
+      else if (command.startsWith('seek:')) {
+        const secs = Number(command.slice(5));
+        if (Number.isFinite(secs)) h.seek?.(secs);
+      } else if (command.startsWith('collection:')) {
+        h.playCollection?.(command.slice('collection:'.length));
+      }
     }
   };
   return () => {
-    delete window.__AFM_TRANSPORT__;
+    bound.delete(handlers);
+    if (bound.size === 0) delete window.__AFM_TRANSPORT__;
   };
 }
 

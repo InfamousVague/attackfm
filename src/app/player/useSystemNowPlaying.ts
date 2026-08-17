@@ -148,7 +148,19 @@ export function useSystemNowPlaying({
     // bitmap until a different song is published, then clears it itself).
     if (artSentFor.current !== track.path) {
       artSentFor.current = track.path;
-      setNativeArtwork(artwork?.startsWith('http') ? artwork : null);
+      /*
+       * ANY scheme, unlike the three http-only sends around it.
+       *
+       * Those are right to be strict: the web session and the CarPlay bridge
+       * hand a URL to something outside this WebView, which cannot resolve a
+       * blob. This one does not - it fetches the image here and sends bytes.
+       * The `startsWith('http')` copied onto it was therefore not a safety
+       * check but a silent filter, and it filtered nearly everything: the art
+       * cache hands out `blob:` URLs (artCache.ts, createObjectURL), so every
+       * cover the app had already loaded - which is to say the normal case -
+       * was turned into `null` on its way to the lock screen.
+       */
+      setNativeArtwork(artwork ?? null);
     }
     setNativePlaybackState(playing, positionRef.current);
     if (isIOS) {
