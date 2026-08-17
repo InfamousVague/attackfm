@@ -21,7 +21,7 @@
 //! Read-only, and answerable to a stream token as well as a session, because
 //! the thing that asks is another server rather than a signed-in browser.
 
-use crate::{auth, AppState};
+use crate::{AppState};
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;

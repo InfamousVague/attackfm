@@ -645,13 +645,21 @@ pub async fn keep(
     headers: HeaderMap,
     Json(body): Json<KeepBody>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    auth::require_admin(&state.db, &headers).map_err(|s| (s, "admins only".to_string()))?;
+    let caller =
+        auth::require_admin(&state.db, &headers).map_err(|s| (s, "admins only".to_string()))?;
 
     let (chosen, old_id, staging) = {
         let jobs = state.refetch.jobs.lock().await;
         let job = jobs
             .get(&id)
             .ok_or_else(|| bad(StatusCode::NOT_FOUND, "no such hunt"))?;
+        // The rule `owner` was added for, finally applied. A hunt is a
+        // half-finished judgement about someone else's library, and committing
+        // one you did not start swaps a file out from under the person who was
+        // still listening to the candidates.
+        if job.owner != caller.id {
+            return Err(bad(StatusCode::NOT_FOUND, "no such hunt"));
+        }
         let cand = job
             .candidates
             .get(body.index)
@@ -736,8 +744,21 @@ pub async fn scrap(
     AxumPath(id): AxumPath<String>,
     headers: HeaderMap,
 ) -> ApiResult<Json<serde_json::Value>> {
-    auth::require_admin(&state.db, &headers).map_err(|s| (s, "admins only".to_string()))?;
-    let job = state.refetch.jobs.lock().await.remove(&id);
+    let caller =
+        auth::require_admin(&state.db, &headers).map_err(|s| (s, "admins only".to_string()))?;
+    // Taken under the same lock as the ownership test, so a hunt cannot change
+    // hands between the check and the removal.
+    let mut jobs = state.refetch.jobs.lock().await;
+    match jobs.get(&id) {
+        Some(job) if job.owner != caller.id => {
+            // Same answer as a hunt that does not exist: whose hunts are
+            // running is not something to leak by probing ids.
+            return Err(bad(StatusCode::NOT_FOUND, "no such hunt"));
+        }
+        _ => {}
+    }
+    let job = jobs.remove(&id);
+    drop(jobs);
     if let Some(job) = job {
         let _ = std::fs::remove_dir_all(&job.staging);
     }

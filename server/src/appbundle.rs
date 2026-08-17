@@ -11,13 +11,12 @@
 //! device's checksum test and quarantine a perfectly good version.
 
 use crate::{auth, AppState};
-use axum::extract::{Path as AxumPath, Query, State};
+use axum::extract::{Path as AxumPath, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
 use std::sync::Arc;
 
 type ApiError = (StatusCode, String);
