@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.122
+
+- The pulled-down search bar is the same size as the one on the search page now, rather than a larger version of it — and the space the page makes for it shrank to match
+
 ## 0.3.121
 
 - The search bar is much harder to miss. It now arrives and *stays* partway down the pull — the page all but stops while it sits there, with a tick when it lands — so a normal pull finds it instead of sliding straight past
