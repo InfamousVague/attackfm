@@ -16,6 +16,7 @@
 
 import type { Plugin } from './types.ts';
 import { HOST_API_VERSION, installHostRuntime } from './hostRuntime.ts';
+import { normalizeServerUrl } from '../app/api/http.ts';
 
 const SOURCES_KEY = 'attackfm-plugin-sources';
 const INSTALLED_KEY = 'attackfm-plugins-installed';
@@ -141,12 +142,9 @@ function writeSources(sources: string[]): void {
   }
 }
 
-export function normalizeSourceUrl(raw: string): string {
-  const trimmed = raw.trim().replace(/\/+$/, '');
-  if (!trimmed) return '';
-  if (!/^https?:\/\//i.test(trimmed)) return `https://${trimmed}`;
-  return trimmed;
-}
+/** A source address is normalized exactly like a server address - it was the
+ *  same four lines, copied; now it is the same function, named for this door. */
+export const normalizeSourceUrl = normalizeServerUrl;
 
 export function addSource(url: string): string[] {
   const origin = normalizeSourceUrl(url);

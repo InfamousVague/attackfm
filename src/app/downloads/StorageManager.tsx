@@ -12,6 +12,7 @@ import {
   type TrashState,
 } from '../server.ts';
 import { loadHoldings, trackKey } from '../servers/mirrors.ts';
+import { formatBytes } from '../ux/format.ts';
 
 /**
  * Freeing space on one server, song by song.
@@ -28,14 +29,6 @@ import { loadHoldings, trackKey } from '../servers/mirrors.ts';
  * gigabytes back and forty lossless albums are the answer, not four hundred
  * singles.
  */
-
-function size(bytes: number): string {
-  const g = bytes / 1024 ** 3;
-  if (g >= 1) return `${g.toFixed(1)} GB`;
-  const m = bytes / 1024 ** 2;
-  if (m >= 1) return `${Math.round(m)} MB`;
-  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-}
 
 type Sort = 'largest' | 'oldest' | 'artist';
 
@@ -146,7 +139,7 @@ export function StorageManager({
       const result = await removeTracks(target, [...picked]);
       setPicked(new Set());
       setNote(
-        `Moved ${result.removed.toLocaleString()} ${result.removed === 1 ? 'song' : 'songs'} to the trash. Empty it below to get the ${size(result.bytes)} back.`,
+        `Moved ${result.removed.toLocaleString()} ${result.removed === 1 ? 'song' : 'songs'} to the trash. Empty it below to get the ${formatBytes(result.bytes)} back.`,
       );
       await reload();
     } catch (e) {
@@ -161,7 +154,7 @@ export function StorageManager({
     setNote(null);
     try {
       const result = await purgeTrash(target);
-      setNote(`Freed ${size(result.bytes)}.`);
+      setNote(`Freed ${formatBytes(result.bytes)}.`);
       setConfirmPurge(false);
       await reload();
     } catch (e) {
@@ -184,7 +177,7 @@ export function StorageManager({
             Free up space
           </Heading>
           <Text size="sm" tone="muted">
-            {name} · {tracks.length.toLocaleString()} songs · {size(total)}
+            {name} · {tracks.length.toLocaleString()} songs · {formatBytes(total)}
           </Text>
         </div>
       </header>
@@ -235,7 +228,7 @@ export function StorageManager({
         />
         {picked.size > 0 && (
           <Text size="sm" tone="muted">
-            {picked.size.toLocaleString()} selected · {size(pickedBytes)}
+            {picked.size.toLocaleString()} selected · {formatBytes(pickedBytes)}
           </Text>
         )}
       </div>
@@ -264,7 +257,7 @@ export function StorageManager({
                   )}
                 </span>
               </span>
-              <span className="storageRow__size">{size(t.sizeBytes)}</span>
+              <span className="storageRow__size">{formatBytes(t.sizeBytes)}</span>
             </label>
           );
         }}
@@ -285,7 +278,7 @@ export function StorageManager({
         )}
         <Button variant="danger" disabled={picked.size === 0 || busy} onClick={() => void remove()}>
           <Trash2 size={16} />
-          {picked.size > 0 ? `Remove ${picked.size.toLocaleString()} · ${size(pickedBytes)}` : 'Remove'}
+          {picked.size > 0 ? `Remove ${picked.size.toLocaleString()} · ${formatBytes(pickedBytes)}` : 'Remove'}
         </Button>
       </footer>
 
@@ -294,7 +287,7 @@ export function StorageManager({
           <div>
             <Text>In the trash</Text>
             <Text size="sm" tone="muted">
-              {trash.files.toLocaleString()} files · {size(trash.bytes)} recoverable until emptied
+              {trash.files.toLocaleString()} files · {formatBytes(trash.bytes)} recoverable until emptied
             </Text>
           </div>
           {confirmPurge ? (
@@ -311,7 +304,7 @@ export function StorageManager({
             </div>
           ) : (
             <Button variant="outline" onClick={() => setConfirmPurge(true)} disabled={busy}>
-              Empty trash · {size(trash.bytes)}
+              Empty trash · {formatBytes(trash.bytes)}
             </Button>
           )}
         </section>

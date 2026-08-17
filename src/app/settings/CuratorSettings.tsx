@@ -9,6 +9,7 @@ import {
   type CollectorStatus,
   type CuratorFeed,
 } from '../server.ts';
+import { formatBytes } from '../ux/format.ts';
 
 /**
  * The curator's control room: the one place the machine accounts for itself.
@@ -22,10 +23,6 @@ import {
  * The off switch stops the DOWNLOADING only. The mixes, the suggestions and
  * the enrichment keep running - they spend nothing but electricity.
  */
-
-function gb(bytes: number): string {
-  return `${(bytes / 1e9).toFixed(bytes >= 1e10 ? 0 : 1)} GB`;
-}
 
 function timeAgo(ms: number): string {
   const mins = Math.max(0, Math.round((Date.now() - ms) / 60_000));
@@ -109,7 +106,7 @@ export function CuratorSettings() {
           </Text>
 
           {/* The ledger: what unadopted music is holding, against the cap. */}
-          <div className="curatorLedger" role="img" aria-label={`Budget: ${gb(status.ledgerBytes)} of ${gb(status.capBytes)} holding auditions`}>
+          <div className="curatorLedger" role="img" aria-label={`Budget: ${formatBytes(status.ledgerBytes)} of ${formatBytes(status.capBytes)} holding auditions`}>
             <div className="curatorLedger__rail">
               <div
                 className="curatorLedger__fill"
@@ -118,7 +115,7 @@ export function CuratorSettings() {
               />
             </div>
             <span className="curatorLedger__label">
-              {gb(status.ledgerBytes)} of {gb(status.capBytes)} auditioning
+              {formatBytes(status.ledgerBytes)} of {formatBytes(status.capBytes)} auditioning
             </span>
           </div>
 

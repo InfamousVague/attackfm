@@ -17,6 +17,7 @@
 
 import type { RemoteTrack, ServerSession } from '../server.ts';
 import { loadCachedIndex, syncLibrary } from '../server.ts';
+import { fold } from '../core/fold.ts';
 
 const KEY = 'attackfm-mirrors';
 
@@ -35,35 +36,15 @@ export interface Mirror {
 // --- matching a song across two servers ------------------------------------
 
 /**
- * The client's half of the server's `discovery::fold`.
- *
+ * The client's half of the server's `discovery::fold` - the house fold
+ * (core/fold.ts), re-exported under the name this module's callers know.
  * Two servers give the same song two different row ids, so the only durable
- * join is the tags - and tags disagree about apostrophes, accents, casing and
- * punctuation constantly. This has to fold EXACTLY as the Rust does or the
- * availability map quietly misses: the mirror's own de-duplication uses the
- * same key, so a disagreement here means the app believes a mirror lacks a
- * song the mirror declined to copy because it already had it.
+ * join is the tags, and this has to fold EXACTLY as the Rust does or the
+ * availability map quietly misses. This module used to carry its own
+ * hand-rolled character loop that reached the same answer; one shared
+ * implementation is one fewer copy to drift.
  */
-export function fold(value: string): string {
-  let out = '';
-  let gap = false;
-  // NFD splits an accented letter into letter + combining mark, so dropping
-  // the marks is the deaccent - the same answer the Rust reaches by table.
-  const plain = value.normalize('NFD').replace(/[̀-ͯ]/g, '');
-  for (const ch of plain) {
-    // Dropped, not spaced: "Don't" and "Dont" are one song, and one tagger in
-    // three leaves it out.
-    if (ch === "'" || ch === '’' || ch === 'ʼ') continue;
-    if (/[\p{L}\p{N}]/u.test(ch)) {
-      if (gap && out.length > 0) out += ' ';
-      gap = false;
-      out += ch.toLowerCase();
-    } else {
-      gap = true;
-    }
-  }
-  return out;
-}
+export { fold };
 
 /** The join key: folded artist, folded title. Matches the server's. */
 export function trackKey(artist: string, title: string): string {

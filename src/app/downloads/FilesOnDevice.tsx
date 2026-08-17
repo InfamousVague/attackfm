@@ -14,6 +14,7 @@ import { offlineEntries, onOfflineChange, unpinTrack, type OfflineEntry } from '
 import { autoCachedKeys, denyKey, onCacheChange } from './autoCache.ts';
 import { artSized, loadCachedIndex, remotePath, toTrack } from '../server.ts';
 import { isTauri, type Track } from '../core/tauri.ts';
+import { formatBytes } from '../ux/format.ts';
 
 /**
  * The Files chunk: everything held on the device, as a browser.
@@ -34,12 +35,6 @@ import { isTauri, type Track } from '../core/tauri.ts';
  * the tree is rebuilt when the folder changes. Nothing here keeps its own
  * ledger.
  */
-
-function size(bytes: number): string {
-  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(bytes >= 1e10 ? 0 : 1)} GB`;
-  if (bytes >= 1e6) return `${Math.max(1, Math.round(bytes / 1e6))} MB`;
-  return `${Math.max(1, Math.round(bytes / 1e3))} KB`;
-}
 
 type View = 'tree' | 'biggest';
 
@@ -94,8 +89,14 @@ export function FilesOnDevice() {
   const [fixture, setFixture] = useState<Row[] | null>(readFixture);
 
   useEffect(() => {
+    // Stamped per read: a burst of deletes or pins can resolve out of order,
+    // and only the freshest folder listing may land.
+    let stamp = 0;
     const refresh = () => {
-      void offlineEntries().then(setEntries);
+      const mine = ++stamp;
+      void offlineEntries().then((e) => {
+        if (mine === stamp) setEntries(e);
+      });
       setOwned(autoCachedKeys());
     };
     refresh();
@@ -187,7 +188,7 @@ export function FilesOnDevice() {
         <span className="deviceFiles__label">
           <span className="deviceFiles__name">{row.track?.title ?? row.key}</span>
           <span className="deviceFiles__meta">
-            {size(row.bytes)}
+            {formatBytes(row.bytes)}
             {row.auto ? ' · automatic' : ' · kept'}
           </span>
         </span>
@@ -216,7 +217,7 @@ export function FilesOnDevice() {
             <span className="deviceFiles__label">
               <span className="deviceFiles__name">{artist}</span>
               <span className="deviceFiles__meta">
-                {a.count} {a.count === 1 ? 'song' : 'songs'} · {size(a.bytes)}
+                {a.count} {a.count === 1 ? 'song' : 'songs'} · {formatBytes(a.bytes)}
               </span>
             </span>
           ),
@@ -246,7 +247,7 @@ export function FilesOnDevice() {
                   <span className="deviceFiles__label">
                     <span className="deviceFiles__name">{album || 'Singles'}</span>
                     <span className="deviceFiles__meta">
-                      {al.rows.length} {al.rows.length === 1 ? 'song' : 'songs'} · {size(al.bytes)}
+                      {al.rows.length} {al.rows.length === 1 ? 'song' : 'songs'} · {formatBytes(al.bytes)}
                     </span>
                   </span>
                 ),
@@ -280,7 +281,7 @@ export function FilesOnDevice() {
           <span className="deviceFiles__label">
             <span className="deviceFiles__name">{row.track?.title ?? row.key}</span>
             <span className="deviceFiles__meta">
-              {row.track?.artist ?? 'No longer in the library'} · {size(row.bytes)}
+              {row.track?.artist ?? 'No longer in the library'} · {formatBytes(row.bytes)}
               {row.auto ? ' · automatic' : ' · kept'}
             </span>
           </span>
@@ -352,7 +353,7 @@ export function FilesOnDevice() {
         title={`Delete ${pending?.label ?? ''} from this device?`}
         description={
           pending
-            ? `${pending.rows.length} ${pending.rows.length === 1 ? 'song' : 'songs'} · ${size(pendingBytes)} freed.` +
+            ? `${pending.rows.length} ${pending.rows.length === 1 ? 'song' : 'songs'} · ${formatBytes(pendingBytes)} freed.` +
               (pendingAuto > 0 ? ' Automatic downloads will not be re-downloaded.' : '') +
               ' Nothing is removed from the library — only from this phone.'
             : ''

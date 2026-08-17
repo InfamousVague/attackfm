@@ -24,14 +24,16 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useLibrary } from '../library/library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { mosaicArts, useArtLoad, useTileArt } from '../ux/artLoad.ts';
-import { artSized, fetchPlaylistSuggestions, remotePath } from '../server.ts';
+import { fetchPlaylistSuggestions, remotePath } from '../server.ts';
+import { formatClock, formatTotal } from '../ux/format.ts';
+import { shuffled } from '../ux/shuffle.ts';
+import { RowArt } from './RowArt.tsx';
 import { usePlaylists } from './playlists.tsx';
 import { notePlaylistPlayed } from './playlistRecency.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
 import { TrackMenu } from '../library/TrackMenu.tsx';
 import { setHeaderActions } from '../nav/headerActions.ts';
 import type { Track } from '../core/tauri.ts';
-import placeholderArt from '../../assets/attack-wave.png';
 import { DjCollectionTraitSheet } from '../booth/DjTraitSheet.tsx';
 
 interface PlaylistPageProps {
@@ -43,28 +45,6 @@ interface PlaylistPageProps {
   onGone: () => void;
 }
 
-function formatDuration(seconds: number | null): string {
-  if (seconds == null || !Number.isFinite(seconds)) return '--:--';
-  const total = Math.round(seconds);
-  return `${Math.floor(total / 60)}:${(total % 60).toString().padStart(2, '0')}`;
-}
-
-/** The running time of the whole list, in the units it deserves. */
-function formatTotal(seconds: number): string {
-  const mins = Math.round(seconds / 60);
-  if (mins < 60) return `${mins} min`;
-  const hours = Math.floor(mins / 60);
-  return `${hours} hr ${mins % 60} min`;
-}
-
-/** One row's cover thumb: skeleton while the bytes come, pop on arrival. A
- *  component of its own so the hook lives outside the render callbacks that
- *  draw the rows. */
-function RowArt({ artwork }: { artwork: string | null }) {
-  const src = artSized(artwork, 160) ?? placeholderArt;
-  const art = useArtLoad(src, 'songArt');
-  return <img {...art} src={src} alt="" loading="lazy" />;
-}
 
 /**
  * One playlist, opened as a page: everything you can do to a list lives here.
@@ -198,17 +178,28 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
     return () => setHeaderActions(null);
   }, [stuck, lentName, rows.length, covers]);
 
-  if (!playlist) return null;
-
-  const listTracks = rows.map((r) => r.track);
-  const totalSeconds = listTracks.reduce((sum, t) => sum + (t.duration ?? 0), 0);
-
+  // Derived above the early return so they can be memos (hooks must be), and
+  // memoized because the whole page re-renders once a second while music
+  // plays under it - the header clock alone should not re-resolve a
+  // suggestion list against the library. Membership is a Set: the old
+  // `paths.includes` scan was O(suggested × members) on every render.
+  const listTracks = useMemo(() => rows.map((r) => r.track), [rows]);
+  const totalSeconds = useMemo(
+    () => listTracks.reduce((sum, t) => sum + (t.duration ?? 0), 0),
+    [listTracks],
+  );
   // The suggestions, resolved against the synced library. Shown only where a
   // model is reading lyrics, and only once the list has a character to match.
-  const suggestions: Track[] = (suggested?.ai ? (suggested?.trackIds ?? []) : [])
-    .map((tid) => byPath.get(remotePath(tid)))
-    .filter((t): t is Track => t !== undefined)
-    .filter((t) => !playlist.paths.includes(t.path));
+  const suggestions: Track[] = useMemo(() => {
+    const member = new Set(playlist?.paths ?? []);
+    return (suggested?.ai ? (suggested?.trackIds ?? []) : [])
+      .map((tid) => byPath.get(remotePath(tid)))
+      .filter((t): t is Track => t !== undefined)
+      .filter((t) => !member.has(t.path));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- memberKey stands in for the fresh-every-render playlist object
+  }, [memberKey, suggested, byPath]);
+
+  if (!playlist) return null;
 
   const playAll = () => {
     notePlaylistPlayed(id);
@@ -221,18 +212,9 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
     notePlaylistPlayed(id);
     // Shuffled here rather than by flipping the player's shuffle switch: this
     // is "play these in a jumbled order", not a change to how the app plays.
-    const shuffled = [...listTracks];
-    for (let i = shuffled.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
-      const a = shuffled[i];
-      const b = shuffled[j];
-      if (a && b) {
-        shuffled[i] = b;
-        shuffled[j] = a;
-      }
-    }
-    const first = shuffled[0];
-    if (first) onPlay(first, shuffled);
+    const order = shuffled(listTracks);
+    const first = order[0];
+    if (first) onPlay(first, order);
   };
 
   // Not a hook - just handing the published callbacks the current closures.
@@ -363,7 +345,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                   {row.track.artist}
                 </button>
                 <span className="songMuted playlistRow__time">
-                  {formatDuration(row.track.duration)}
+                  {formatClock(row.track.duration, '--:--')}
                 </span>
                 <IconButton
                   variant="ghost"
@@ -415,7 +397,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                   >
                     {t.artist}
                   </button>
-                  <span className="songMuted playlistRow__time">{formatDuration(t.duration)}</span>
+                  <span className="songMuted playlistRow__time">{formatClock(t.duration, '--:--')}</span>
                   <IconButton
                     variant="ghost"
                     size="sm"

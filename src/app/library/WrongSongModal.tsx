@@ -13,6 +13,7 @@ import {
   type RefetchJob,
 } from '../server.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
+import { formatClock } from '../ux/format.ts';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -302,10 +303,7 @@ function CandidateRow({
   );
 }
 
-/** m:ss, the way a track length is always written. */
+/** m:ss from milliseconds - the house clock, with the unit converted here. */
 function fmt(ms: number): string {
-  const total = Math.max(0, Math.round(ms / 1000));
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
+  return formatClock(ms / 1000);
 }

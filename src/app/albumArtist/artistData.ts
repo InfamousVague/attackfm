@@ -125,7 +125,17 @@ export function useHiResCovers(artist: string, albums: AlbumGroup[]): Record<str
       for (const album of albums) {
         if (!album.name || album.name === 'Unknown album') continue;
         const key = `attackfm-art:${artist}|${album.name}`;
-        const cached = localStorage.getItem(key);
+        // Guarded reads and writes: this cache grows a key per album with no
+        // ceiling, so it is exactly the writer a QuotaExceededError finds
+        // first - and an uncaught throw out of this async loop would kill
+        // the rest of the page's covers with it. Full means the page just
+        // re-fetches; it must never mean the page breaks.
+        let cached: string | null = null;
+        try {
+          cached = localStorage.getItem(key);
+        } catch {
+          // Storage refused: treat as a miss.
+        }
         if (cached) {
           setHiRes((prev) => (prev[album.name] ? prev : { ...prev, [album.name]: cached }));
           continue;
@@ -133,7 +143,11 @@ export function useHiResCovers(artist: string, albums: AlbumGroup[]): Record<str
         const url = await fetchAlbumArt(artist, album.name);
         if (!alive) return;
         if (url) {
-          localStorage.setItem(key, url);
+          try {
+            localStorage.setItem(key, url);
+          } catch {
+            // Quota: the cover still shows this visit, just uncached.
+          }
           setHiRes((prev) => ({ ...prev, [album.name]: url }));
         }
       }

@@ -9,7 +9,7 @@ import {
   useBeat,
   useLiveLevels,
 } from '@glacier/react';
-import type { PlayerRepeat } from '@glacier/react';
+import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
 import {
   AudioLines,
   Check,
@@ -40,6 +40,8 @@ import { VolumeRow } from './VolumeControl.tsx';
 import { LyricsPanel } from './LyricsPanel.tsx';
 import type { PauseStyle } from './playback.tsx';
 import {
+  FADE_DOWN_MS,
+  FADE_UP_MS,
   IDLE_TRACK,
   SPIN_DOWN_MS,
   SPIN_UP_MS,
@@ -114,8 +116,8 @@ export function NowPlayingSheet({
   audible,
   buffering,
   downloading,
-  beat,
-  levels,
+  meter,
+  progress,
   pauseStyle,
   onScratchBegin,
   onScratch,
@@ -169,8 +171,11 @@ export function NowPlayingSheet({
   audible: boolean;
   buffering: boolean;
   downloading: boolean;
-  beat: ReturnType<typeof useBeat>;
-  levels: ReturnType<typeof useLiveLevels>;
+  /** The deck's loudness meter; the sheet runs its own beat/levels off it so
+   *  the 60fps pulse re-renders this surface, never the whole Player. */
+  meter: LoudnessMeter | null;
+  /** Playhead as a 0-1 fraction, so ripples leave the playhead. */
+  progress: number;
   pauseStyle: PauseStyle;
   onScratchBegin: () => void;
   onScratch: (deltaSeconds: number) => void;
@@ -202,6 +207,11 @@ export function NowPlayingSheet({
   onTrackChange?: (track: Track) => void;
   setFiling: (track: Track | null) => void;
 }) {
+  // Subscribed HERE rather than handed down - same reasoning as the strip:
+  // whichever component calls useBeat re-renders per animation frame, and it
+  // should be the surface drawing the pulse, not the whole deck core.
+  const beat = useBeat({ meter, active: audible, at: progress });
+  const levels = useLiveLevels({ meter, progress, active: audible });
   return createPortal(
     <div
       className="npScreen"
@@ -332,14 +342,14 @@ export function NowPlayingSheet({
                 pauseStyle === 'turntable'
                   ? SPIN_UP_MS
                   : pauseStyle === 'fade'
-                    ? 250
+                    ? FADE_UP_MS
                     : 0
               }
               spinDownMs={
                 pauseStyle === 'turntable'
                   ? SPIN_DOWN_MS
                   : pauseStyle === 'fade'
-                    ? 200
+                    ? FADE_DOWN_MS
                     : 0
               }
             />

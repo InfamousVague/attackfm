@@ -7,6 +7,7 @@ import wordmark from '../../assets/attack-white.png';
 import { openExternal } from '../core/openExternal.ts';
 import { isDesktopApp, isIOS } from '../core/platform.ts';
 import { fetchServerStats, type ServerStats } from '../server.ts';
+import { uptimeLabel } from '../servers/serverFormat.ts';
 import { useLibrary } from '../library/library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { isTauri } from '../core/tauri.ts';
@@ -19,16 +20,6 @@ import {
 } from './appUpdate.ts';
 
 const REPO_URL = 'https://github.com/InfamousVague/attackfm';
-
-/** "2d 4h" / "3h 12m" / "45m" - the shape uptime is read at a glance. */
-function uptimeLabel(secs: number): string {
-  const days = Math.floor(secs / 86_400);
-  const hours = Math.floor((secs % 86_400) / 3_600);
-  const minutes = Math.floor((secs % 3_600) / 60);
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
-}
 
 /**
  * About: what this build is, where it is running, and what it is connected

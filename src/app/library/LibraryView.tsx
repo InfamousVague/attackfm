@@ -185,7 +185,7 @@ export function LibraryView({
   // The entrance wave: cards ripple in as they meet the view, each landing
   // with a soft tick - see rippleWave.ts. Watching the page root covers the
   // shelves, the playlist grid, and the embedded Home below all at once.
-  const rippleRoot = useRef<HTMLDivElement>(null);
+  const [rippleRoot, setRippleRoot] = useState<HTMLDivElement | null>(null);
   useRippleWave(rippleRoot);
 
   const emptyAtMount = useRef(tracks.length === 0);
@@ -241,7 +241,7 @@ export function LibraryView({
   }, [tracks]);
 
   return (
-    <div className="homePage libraryPage" ref={rippleRoot}>
+    <div className="homePage libraryPage" ref={setRippleRoot}>
       {/* The desktop's copy of the action row. Everywhere else these two live
           in the app header (see App.tsx) - but the desktop has no such header,
           it has a title bar and a rail, so the page keeps them. */}

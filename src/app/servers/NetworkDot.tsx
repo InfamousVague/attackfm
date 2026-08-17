@@ -16,19 +16,17 @@ import { useEffect, useState } from 'react';
 import { useServerSession } from './serverSession.tsx';
 import { useConnect } from '../player/playbackSync.tsx';
 import { healthOf, mirrorList, mirrorsActive } from './mirrors.ts';
+import { LATENCY_CLOSE_MS, latencyBand } from './serverFormat.ts';
 
 function hostOf(url: string): string {
   return url.replace(/^https?:\/\//, '').replace(/\/$/, '');
 }
 
-/** The latency, in the words a person would use. */
+/** The latency, in the words a person would use - the Servers page's bands. */
 function nearLabel(latencyMs: number | null, ok: boolean): string {
   if (!ok) return 'unreachable — cached songs only';
   if (latencyMs == null) return 'checking…';
-  if (latencyMs < 40) return `${Math.round(latencyMs)}ms · same network`;
-  if (latencyMs < 150) return `${Math.round(latencyMs)}ms · close`;
-  if (latencyMs < 400) return `${Math.round(latencyMs)}ms · far`;
-  return `${Math.round(latencyMs)}ms · very far`;
+  return `${Math.round(latencyMs)}ms · ${latencyBand(latencyMs).label}`;
 }
 
 export function NetworkDot({ onManage }: { onManage: () => void }) {
@@ -49,7 +47,7 @@ export function NetworkDot({ onManage }: { onManage: () => void }) {
   const latency = health?.latencyMs ?? null;
   const tone: 'success' | 'warning' | 'neutral' = !ok
     ? 'neutral'
-    : latency != null && latency >= 150
+    : latency != null && latency >= LATENCY_CLOSE_MS
       ? 'warning'
       : 'success';
   const mirrors = mirrorList();

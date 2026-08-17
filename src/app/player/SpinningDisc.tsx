@@ -2,6 +2,7 @@ import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react
 import stationMark from '../../assets/attack-wave.png';
 import { BeatWave, type BeatWaveBeat } from './BeatWave.tsx';
 import { fireMicroTick, fireNativeHaptic } from '../core/haptics.ts';
+import { REDUCED_MOTION_QUERY } from '../ux/useReducedMotion.ts';
 
 /** One revolution every six seconds - the pace the old CSS keyframes set. */
 const FULL_DEG_PER_SEC = 360 / 6;
@@ -185,7 +186,7 @@ export function SpinningDisc({
     // Stillness asked for is stillness given: the disc holds its face. (This
     // also disables the flick: with no loop there is nothing to freewheel, and
     // the release path knows to fall back to a plain stop.)
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    if (window.matchMedia?.(REDUCED_MOTION_QUERY).matches) return;
     cancelAnimationFrame(frame.current);
     last.current = performance.now();
     const tick = (now: number) => {

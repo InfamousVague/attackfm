@@ -25,7 +25,11 @@ import { nudgeSweep } from '../downloads/autoCache.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { pushCarPlayLibrary } from '../player/carplay.ts';
 
-const STORAGE_KEY = 'attackfm-music-dir';
+/** Where the chosen music folder lives. Exported because librarySync watches
+ *  the same folder - two literals of this key once drifted a rename away from
+ *  the sync silently watching the wrong one. */
+export const MUSIC_DIR_KEY = 'attackfm-music-dir';
+const STORAGE_KEY = MUSIC_DIR_KEY;
 const FAVORITES_KEY = 'attackfm-favorites';
 
 // Shown in the browser, where there is no filesystem to name a real default in.
@@ -250,7 +254,11 @@ function LocalLibrary({ children }: { children: ReactNode }) {
       toggleFavorite: (path: string) =>
         setFavorites((prev) => {
           const next = prev.includes(path) ? prev.filter((p) => p !== path) : [path, ...prev];
-          localStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
+          try {
+            localStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
+          } catch {
+            // Storage refused: the heart still applies for this run.
+          }
           return next;
         }),
       scanning,
@@ -264,11 +272,19 @@ function LocalLibrary({ children }: { children: ReactNode }) {
         if (!picked) return;
         await ensureDir(picked);
         setCustom(picked);
-        localStorage.setItem(STORAGE_KEY, picked);
+        try {
+          localStorage.setItem(STORAGE_KEY, picked);
+        } catch {
+          // The pick still applies for this run; next launch asks again.
+        }
       },
       reset: async () => {
         setCustom(null);
-        localStorage.removeItem(STORAGE_KEY);
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+        } catch {
+          // Same story as choose(): the reset holds for this run.
+        }
         const dir = await defaultMusicDir();
         if (dir) await ensureDir(dir);
       },

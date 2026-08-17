@@ -115,7 +115,7 @@ export function SearchPage({
   // with the same soft ticks the Library's shelves ride - see rippleWave.ts.
   // Rows React reuses across keystrokes keep their landed state; only truly
   // NEW results ripple, so typing refines rather than re-parades.
-  const rippleRoot = useRef<HTMLDivElement>(null);
+  const [rippleRoot, setRippleRoot] = useState<HTMLDivElement | null>(null);
   useRippleWave(rippleRoot);
   const { session: registry } = useRegistry();
   const { session: server } = useServerSession();
@@ -685,7 +685,7 @@ export function SearchPage({
     (catalog !== null || !server);
 
   return (
-    <div className="homePage searchPage" ref={rippleRoot}>
+    <div className="homePage searchPage" ref={setRippleRoot}>
       <SearchField
         id={FIELD_ID}
         className="pageSearch"

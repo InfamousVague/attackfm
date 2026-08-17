@@ -3,10 +3,9 @@ import { TrackMenu } from '../library/TrackMenu.tsx';
 import {
   ListPlus, Trash2, X } from '@glacier/icons';
 import { EmptyArt, type EmptyArtName } from '../ux/EmptyArt.tsx';
-import { useArtLoad } from '../ux/artLoad.ts';
-import { artSized } from '../server.ts';
+import { RowArt } from './RowArt.tsx';
+import { formatClock } from '../ux/format.ts';
 import type { Track } from '../core/tauri.ts';
-import placeholderArt from '../../assets/attack-wave.png';
 
 interface PlaylistModalProps {
   open: boolean;
@@ -30,21 +29,6 @@ interface PlaylistModalProps {
    * curator's own line keeps regenerating; the copy is theirs to edit.
    */
   onSaveCopy?: () => void;
-}
-
-function formatDuration(seconds: number | null): string {
-  if (seconds == null || !Number.isFinite(seconds)) return '--:--';
-  const total = Math.round(seconds);
-  return `${Math.floor(total / 60)}:${(total % 60).toString().padStart(2, '0')}`;
-}
-
-/** One row's cover thumb: skeleton while the bytes come, pop on arrival. A
- *  component of its own so the hook lives outside the map that draws the
- *  rows. */
-function RowArt({ artwork }: { artwork: string | null }) {
-  const src = artSized(artwork, 160) ?? placeholderArt;
-  const art = useArtLoad(src, 'songArt');
-  return <img {...art} src={src} alt="" loading="lazy" />;
 }
 
 /**
@@ -116,7 +100,7 @@ export function PlaylistModal({
                     <span className="songArtist">{track.artist}</span>
                   )}
                 </span>
-                <span className="songMuted playlistModalTime">{formatDuration(track.duration)}</span>
+                <span className="songMuted playlistModalTime">{formatClock(track.duration, '--:--')}</span>
               </button>
               {onRemoveTrack && (
                 <IconButton

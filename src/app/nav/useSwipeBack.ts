@@ -45,6 +45,9 @@ export function useSwipeBack(
     let id: number | null = null;
     let startX = 0;
     let startY = 0;
+    // The settle/commit timer, held at effect scope so unmounting mid-gesture
+    // actually cancels it - a return value from an event handler goes nowhere.
+    let settle = 0;
     // Null until the drag has proven itself horizontal; false once it has
     // proven itself vertical, and then we stay out of the way for good.
     let horizontal: boolean | null = null;
@@ -118,11 +121,12 @@ export function useSwipeBack(
       const dx = horizontal ? move(e.clientX) : 0;
       const go = dx >= COMMIT;
       const back = live.current.onBack;
+      window.clearTimeout(settle);
       if (go) {
         // Let the page finish leaving before the new one replaces it, so the
         // gesture reads as one movement rather than a jump at the end.
         paint(window.innerWidth, true);
-        window.setTimeout(() => {
+        settle = window.setTimeout(() => {
           clear();
           back();
         }, 140);
@@ -131,10 +135,9 @@ export function useSwipeBack(
         return;
       }
       paint(0, true);
-      const t = window.setTimeout(clear, 240);
+      settle = window.setTimeout(clear, 240);
       id = null;
       horizontal = null;
-      return () => window.clearTimeout(t);
     };
 
     // Non-passive because the horizontal case calls preventDefault to keep the
@@ -148,6 +151,7 @@ export function useSwipeBack(
       el.removeEventListener('pointermove', onMove);
       el.removeEventListener('pointerup', onUp);
       el.removeEventListener('pointercancel', onUp);
+      window.clearTimeout(settle);
       clear();
     };
   }, [el]);

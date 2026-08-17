@@ -17,6 +17,7 @@ import {
 } from './autoCache.ts';
 import { offlineSpace, onOfflineChange } from './offline.ts';
 import { isTauri } from '../core/tauri.ts';
+import { formatBytes } from '../ux/format.ts';
 
 /**
  * The Overview chunk: one picture of the space, then the levers.
@@ -32,12 +33,9 @@ import { isTauri } from '../core/tauri.ts';
  * The file-by-file half lives in the Files chunk; this page never lists songs.
  */
 
-function size(bytes: number): string {
-  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(bytes >= 1e10 ? 0 : 1)} GB`;
-  if (bytes >= 1e6) return `${Math.max(1, Math.round(bytes / 1e6))} MB`;
-  return `${Math.max(1, Math.round(bytes / 1e3))} KB`;
-}
-
+// Bytes render through the shared BINARY formatter: this line pairs a usage
+// with the limit it counts against, and the limit is set in 1024-based GB -
+// the old decimal copy here made a full 15 GB cache read "16 GB of 15 GB".
 function gbLabel(bytes: number): string {
   if (bytes === 0) return 'Off';
   return `${Math.round(bytes / 1024 ** 3)} GB`;
@@ -87,12 +85,18 @@ export function StorageOverview() {
     };
   }, [refresh]);
 
+  // A sweep that dies before writing its report used to un-busy the button
+  // and say nothing; the reason lands here instead, beside the button.
+  const [sweepError, setSweepError] = useState<string | null>(null);
   const update = async () => {
     if (!session) return;
     setBusy(true);
+    setSweepError(null);
     setProgress({ done: 0, total: 0 });
     try {
       await sweepCache(session, { onProgress: (done, total) => setProgress({ done, total }) });
+    } catch (e) {
+      setSweepError(e instanceof Error ? e.message : 'The check did not finish.');
     } finally {
       setBusy(false);
       setProgress(null);
@@ -120,10 +124,10 @@ export function StorageOverview() {
       <div className="prefsSection">
         <Label>On this device</Label>
         <div className="storageBreak__totals">
-          <span className="storageBreak__big">{size(total)}</span>
+          <span className="storageBreak__big">{formatBytes(total)}</span>
           <Text size="sm" tone="muted">
             {count.toLocaleString()} {count === 1 ? 'song' : 'songs'}
-            {space?.freeBytes != null ? ` · ${size(space.freeBytes)} free on the phone` : ''}
+            {space?.freeBytes != null ? ` · ${formatBytes(space.freeBytes)} free on the phone` : ''}
           </Text>
         </div>
         {total > 0 ? (
@@ -143,14 +147,14 @@ export function StorageOverview() {
                 {/* The limit is set in binary GB (15 * 1024³); rounding the same
                     way the slider labels do keeps this from reading as a second,
                     different setting. */}
-                Automatic · {size(usage?.bytes ?? 0)} of {gbLabel(limit)}
+                Automatic · {formatBytes(usage?.bytes ?? 0)} of {gbLabel(limit)}
               </span>
               <span className="storageBreak__key" data-tone="success">
-                Kept by hand · {size(usage?.pinnedBytes ?? 0)}
+                Kept by hand · {formatBytes(usage?.pinnedBytes ?? 0)}
               </span>
               {debris > 0 && (
                 <span className="storageBreak__key" data-tone="neutral">
-                  Still downloading · {size(debris)}
+                  Still downloading · {formatBytes(debris)}
                 </span>
               )}
             </div>
@@ -274,6 +278,11 @@ export function StorageOverview() {
             Clear automatic downloads
           </Button>
         </div>
+        {sweepError && (
+          <Text size="xs" tone="danger">
+            {sweepError}
+          </Text>
+        )}
       </div>
 
       {plan.length > 0 && (

@@ -5,13 +5,7 @@ import { useArtLoad } from '../ux/artLoad.ts';
 import type { Track } from '../core/tauri.ts';
 import type { AddingState } from './artistAcquire.ts';
 import type { PopularRow } from './artistData.ts';
-
-// mm:ss for the top-songs rows; the table below formats its own.
-function fmtDuration(seconds: number | null): string {
-  if (seconds == null || !Number.isFinite(seconds)) return '--:--';
-  const total = Math.round(seconds);
-  return `${Math.floor(total / 60)}:${(total % 60).toString().padStart(2, '0')}`;
-}
+import { formatClock } from '../ux/format.ts';
 
 /** A popular row's thumbnail: the same treatment at list size. */
 function CatalogArt({ src }: { src: string }) {
@@ -90,7 +84,7 @@ export function ArtistPopular({
                   {plays.toLocaleString()} {plays === 1 ? 'play' : 'plays'}
                 </span>
               )}
-              <span className="catalogTrack__time">{fmtDuration(t.duration)}</span>
+              <span className="catalogTrack__time">{formatClock(t.duration, '--:--')}</span>
               {/* Nothing to add for a song you already have, and nothing to
                   add when this row came from your own library in the first
                   place (the catalogue was unreachable). */}

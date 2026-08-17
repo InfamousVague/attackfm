@@ -68,6 +68,26 @@ export function safeUnlisten(unlisten: () => void | PromiseLike<void>): void {
   })();
 }
 
+/**
+ * One guarded invoke: null off Tauri, null when the binary lacks the command
+ * (an older shell), null when the platform has no layer beneath it. Updates,
+ * nearby and offline each carried this verbatim before it lived here - and
+ * the shared contract is the comment they all reached for: on a null, the
+ * app behaves exactly as it did before the feature existed.
+ */
+export async function tauriCall<T>(
+  cmd: string,
+  args?: Record<string, unknown>,
+): Promise<T | null> {
+  if (!isTauri()) return null;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return (await invoke(cmd, args)) as T;
+  } catch {
+    return null;
+  }
+}
+
 /** The subfolder AttackFM keeps its music in, under the OS audio directory. */
 const LIBRARY_FOLDER = 'AttackFM';
 

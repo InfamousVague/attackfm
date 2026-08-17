@@ -58,6 +58,7 @@ import {
   type FeaturesStatus,
 } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
+import { formatBytes } from '../ux/format.ts';
 import djMascot from '../../assets/dj-mascot.png';
 
 /** A glyph for each trait category the analyzer can emit - the icon system
@@ -74,11 +75,6 @@ const TRAIT_GLYPH: Record<string, typeof Waves> = {
   instrumentation: Piano,
   scene_culture: Users,
 };
-
-/** Bytes as a short human size for the collector line. */
-function gb(bytes: number): string {
-  return `${(bytes / 1_073_741_824).toFixed(bytes >= 10_737_418_240 ? 0 : 1)} GB`;
-}
 
 /** The pill's one line: the curator loop's phase, in its own voice. */
 function pulseLine(feed: CuratorFeed | null): { Icon: typeof Ear; text: string } {
@@ -339,7 +335,7 @@ export function BoothPage({
               <span className="boothBrain__icon" data-tint="green" aria-hidden="true">
                 <HardDrive size={13} />
               </span>
-              Collector holds {gb(pulls.ledgerBytes)} of {gb(pulls.capBytes)}
+              Collector holds {formatBytes(pulls.ledgerBytes)} of {formatBytes(pulls.capBytes)}
               {pulls.halted === 'cap' && <span className="boothBrain__tag">paused — budget spent</span>}
             </span>
           )}

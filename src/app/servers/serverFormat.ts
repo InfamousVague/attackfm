@@ -12,3 +12,21 @@ export function gbLabel(bytes: number): string {
   const gb = bytes / (1024 * 1024 * 1024);
   return gb >= 100 ? `${Math.round(gb)} GB` : `${gb.toFixed(1)} GB`;
 }
+
+/** Where "close" stops: the header light goes amber from here. */
+export const LATENCY_CLOSE_MS = 150;
+
+/**
+ * The latency bands, in the words a person would use. ONE definition, because
+ * the header's dot links to the Servers page that explains it - the light and
+ * the page must never disagree about what "close" means.
+ */
+export function latencyBand(ms: number): {
+  label: string;
+  tone: 'best' | 'good' | 'ok' | 'slow';
+} {
+  if (ms < 40) return { label: 'same network', tone: 'best' };
+  if (ms < LATENCY_CLOSE_MS) return { label: 'close', tone: 'good' };
+  if (ms < 400) return { label: 'far', tone: 'ok' };
+  return { label: 'very far', tone: 'slow' };
+}

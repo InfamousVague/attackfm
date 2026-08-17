@@ -10,7 +10,7 @@
 //! typing removed.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { isTauri } from '../core/tauri.ts';
+import { isTauri, tauriCall } from '../core/tauri.ts';
 
 export interface NearbyPeer {
   handle: string;
@@ -23,16 +23,6 @@ export function nearbySupported(): boolean {
   return isTauri();
 }
 
-async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T | null> {
-  if (!isTauri()) return null;
-  try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    return (await invoke(cmd, args)) as T;
-  } catch {
-    // An older build without the commands, or a platform without the layer.
-    return null;
-  }
-}
 
 /** How often to ask the native side who it can see. Discovery is chatty by
  *  nature; three seconds is fast enough to feel live and slow enough to
@@ -56,7 +46,7 @@ export function useNearby(handle: string, code: string | null) {
     live.current = false;
     setOn(false);
     setPeers([]);
-    void call('nearby_stop');
+    void tauriCall('nearby_stop');
   }, []);
 
   const start = useCallback(() => {
@@ -68,9 +58,9 @@ export function useNearby(handle: string, code: string | null) {
   useEffect(() => {
     if (!on) return;
     let alive = true;
-    void call('nearby_start', { handle, code: code ?? null });
+    void tauriCall('nearby_start', { handle, code: code ?? null });
     const tick = async () => {
-      const raw = await call<string>('nearby_peers');
+      const raw = await tauriCall<string>('nearby_peers');
       if (!alive || !raw) return;
       try {
         const list = JSON.parse(raw) as NearbyPeer[];
@@ -91,7 +81,7 @@ export function useNearby(handle: string, code: string | null) {
 
   // Leaving the page stops the broadcast; nothing keeps advertising behind
   // the listener's back.
-  useEffect(() => () => void call('nearby_stop'), []);
+  useEffect(() => () => void tauriCall('nearby_stop'), []);
 
   return { on, peers, start, stop };
 }

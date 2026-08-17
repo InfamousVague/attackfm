@@ -25,8 +25,16 @@
  * every launch used to.
  */
 
-/** Feed answers cached per server+account. The only thing dropped here. */
-const CACHE_PREFIX = 'attackfm-cache-';
+/**
+ * Feed answers cached per server+account. The only thing dropped here.
+ *
+ * Matched by the VERSIONED form (`attackfm-cache-v1:`), not the bare prefix:
+ * `attackfm-cache-deny` and `attackfm-cache-limit` are STATE - the hand-pruned
+ * denial list and the chosen storage ceiling - and a bare-prefix sweep was
+ * quietly resetting both on every cold launch, resurrecting songs the user
+ * had deleted. Feeds must keep the `v<n>:` shape to be swept.
+ */
+const CACHE_RE = /^attackfm-cache-v\d+:/;
 
 /** Set for as long as this web view lives; absent means a fresh process. */
 const WARM_KEY = 'attackfm-warm';
@@ -48,7 +56,7 @@ export function isColdStart(): boolean {
 }
 
 /**
- * Drop the cached feeds. Deliberately keyed off one prefix rather than a list
+ * Drop the cached feeds. Deliberately keyed off one pattern rather than a list
  * of names: feeds get added, and a cache nobody remembers to clear is exactly
  * the stale shelf this is here to prevent.
  */
@@ -57,7 +65,7 @@ export function clearFeedCaches(): void {
     const doomed: string[] = [];
     for (let i = 0; i < localStorage.length; i += 1) {
       const key = localStorage.key(i);
-      if (key?.startsWith(CACHE_PREFIX)) doomed.push(key);
+      if (key && CACHE_RE.test(key)) doomed.push(key);
     }
     // Collected first: removing during the walk renumbers the keys behind it.
     for (const key of doomed) localStorage.removeItem(key);

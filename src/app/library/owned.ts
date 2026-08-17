@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { useLibrary } from './library.tsx';
+import { fold } from '../core/fold.ts';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -18,19 +19,9 @@ import type { Track } from '../core/tauri.ts';
  * different songs and claiming otherwise would hide music the listener wants.
  */
 
-/** Lowercase, unaccented, punctuation folded to single spaces. Apostrophes are
- *  dropped rather than spaced - "Don't" and "Dont" are the same song, and one
- *  tagger in three leaves it out. Kept in step with `fold` in
- *  server/src/discovery.rs, which filters the same feed at the source. */
-export function fold(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/gu, '')
-    .replace(/['\u2019\u02bc]/gu, '')
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim();
-}
+/** The house fold (core/fold.ts), re-exported because this module's callers
+ *  reach for it here - the owned-check and the fold are one idea to them. */
+export { fold };
 
 /** Asides that say nothing about WHICH recording this is. Deliberately short:
  *  "remix", "live", "acoustic" and "version" are all absent, because a track

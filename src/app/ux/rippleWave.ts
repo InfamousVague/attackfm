@@ -1,4 +1,5 @@
-import { useEffect, type RefObject } from 'react';
+import { useEffect } from 'react';
+import { REDUCED_MOTION_QUERY } from './useReducedMotion.ts';
 
 /**
  * The scroll-driven wave: cards ripple into place as they ENTER THE VIEW -
@@ -43,11 +44,18 @@ const STEP_MS = 35;
  *  within half a second rather than trickling. */
 const MAX_STEPS = 14;
 
-export function useRippleWave(root: RefObject<HTMLElement | null>): void {
+/**
+ * Takes the host NODE (state-carried via a callback ref), not a ref object:
+ * a ref object never changes identity, so an effect keyed on one runs exactly
+ * once and stays bound to whatever element existed at first mount - which is
+ * a detached node the moment a page like Discover swaps its content out and
+ * back (its catalogue-artist round trip does exactly that). Keyed on the
+ * element itself, the observers follow the DOM they are meant to watch.
+ */
+export function useRippleWave(host: HTMLElement | null): void {
   useEffect(() => {
-    const host = root.current;
     if (!host) return;
-    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    const still = window.matchMedia?.(REDUCED_MOTION_QUERY).matches ?? false;
 
     // The batch under assembly: everything the observer reports in one beat
     // lands as one wave. Flushed on a frame so two callback bursts within
@@ -178,5 +186,5 @@ export function useRippleWave(root: RefObject<HTMLElement | null>): void {
       for (const t of settle) window.clearTimeout(t);
       if (flush) cancelAnimationFrame(flush);
     };
-  }, [root]);
+  }, [host]);
 }

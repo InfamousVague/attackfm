@@ -14,15 +14,7 @@ import type { Track } from '../core/tauri.ts';
 import { artSized, trackIdFromPath } from '../server.ts';
 import { useArtLoad } from '../ux/artLoad.ts';
 import placeholderArt from '../../assets/attack-wave.png';
-
-// mm:ss, with the leading minutes never zero-padded (3:59, not 03:59).
-function formatDuration(seconds: number | null): string {
-  if (seconds == null || !Number.isFinite(seconds)) return '--:--';
-  const total = Math.round(seconds);
-  const mins = Math.floor(total / 60);
-  const secs = total % 60;
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
+import { formatClock } from '../ux/format.ts';
 
 const DATE_FORMAT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 
@@ -110,7 +102,7 @@ const COLUMNS: DataGridColumn[] = [
     sortable: true,
     width: '5rem',
     sortValue: (row) => (row.duration as number | null) ?? 0,
-    render: (row) => <span className="songMuted">{formatDuration(row.duration as number | null)}</span>,
+    render: (row) => <span className="songMuted">{formatClock(row.duration as number | null, '--:--')}</span>,
   },
 ];
 
@@ -222,15 +214,23 @@ export function SongTable({
     [onOpenArtist, narrow, byPath, plays],
   );
 
-  const rows: DataGridRow[] = tracks.map((track) => ({
-    id: track.path,
-    title: track.title,
-    artist: track.artist,
-    album: track.album,
-    addedAt: track.addedAt,
-    duration: track.duration,
-    artwork: track.artwork,
-  }));
+  // Memoized on the library, not rebuilt per render: the grid memoizes its
+  // own O(n log n) sort on the data's IDENTITY, so a fresh array here made it
+  // re-sort the whole library on every render - twice per track change, with
+  // `displayed` below doing the other one.
+  const rows: DataGridRow[] = useMemo(
+    () =>
+      tracks.map((track) => ({
+        id: track.path,
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        addedAt: track.addedAt,
+        duration: track.duration,
+        artwork: track.artwork,
+      })),
+    [tracks],
+  );
 
   // The tracks in the order the grid is showing them, mirroring its sort so
   // "play through the list" means the list as it stands on screen. Row and
