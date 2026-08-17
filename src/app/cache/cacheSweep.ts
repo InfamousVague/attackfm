@@ -247,7 +247,7 @@ export async function sweepCache(
       key,
       title: remote.title,
       artist: remote.artist,
-      art: remote.artId ? artUrl(session, remote.artId) : null,
+      art: remote.artId ? artUrl(session, remote.artId, remote.id) : null,
       bytes: remote.sizeBytes || 0,
       state: heldPath(key) ? ('done' as const) : ('waiting' as const),
     };

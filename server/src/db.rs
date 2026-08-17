@@ -1623,6 +1623,20 @@ impl Db {
         (live, removed, max_rev)
     }
 
+    /// The cover behind one track, for the by-track art route: a mirror's
+    /// client knows this server's TRACK ids (from the holdings map) but not
+    /// its art ids, which are named per-server.
+    pub fn track_art_id(&self, id: i64) -> Option<String> {
+        self.lock()
+            .query_row(
+                "SELECT art_id FROM tracks WHERE id = ?1 AND deleted = 0",
+                params![id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .ok()
+            .flatten()
+    }
+
     pub fn track(&self, id: i64) -> Option<Track> {
         let sql = format!(
             "SELECT {} FROM tracks WHERE id = ?1 AND deleted = 0",

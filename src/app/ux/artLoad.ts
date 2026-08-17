@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { artSized } from '../server.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
+import { artFallbackUrl } from '../servers/mirrors.ts';
 import placeholderArt from '../../assets/attack-wave.png';
 
 /**
@@ -76,7 +77,7 @@ export function useCardArt(artwork: string | null): {
   const wanted = artSized(artwork, 640) ?? placeholderArt;
   const [src, setSrc] = useState(wanted);
   const [loaded, setLoaded] = useState(false);
-  const { renew } = useServerSession();
+  const { renew, session } = useServerSession();
   useEffect(() => {
     setSrc(wanted);
     setLoaded(false);
@@ -87,16 +88,19 @@ export function useCardArt(artwork: string | null): {
     src,
     loaded,
     onLoad: () => setLoaded(true),
-    // A dead cover URL swaps to the placeholder once (which then loads and
-    // reveals); if the placeholder itself is what failed, just reveal. Server
-    // art failing usually means the stream token in its URL has aged out, so
-    // one renewal is asked for - latched to once a minute in the provider, a
-    // wall of failing covers costs one /api/me, and the refreshed session
-    // re-renders every card with working URLs.
+    // The error ladder, one rung per failure: the session server's URL, then
+    // the same cover from a mirror that holds the song (the secondary cache
+    // a dark home server leaves you leaning on), then the placeholder. A
+    // failing server URL also asks for one token renewal - latched to once a
+    // minute in the provider - since an aged stream token is the usual
+    // benign explanation.
     onError: () => {
       if (src === placeholderArt) setLoaded(true);
-      else {
+      else if (src === wanted) {
         if (artwork && /[?&]t=/.test(artwork)) void renew().catch(() => {});
+        const mirror = session ? artFallbackUrl(session, wanted) : null;
+        setSrc(mirror ?? placeholderArt);
+      } else {
         setSrc(placeholderArt);
       }
     },
@@ -113,6 +117,7 @@ export function useCardArt(artwork: string | null): {
  * the tile reveals whole.
  */
 export function useTileArt(urls: readonly (string | null)[]): {
+  // (session is only read for the mirror fallback below)
   loaded: boolean;
   /** Attach to the tile's wrapper: preloading waits until it nears the
    *  viewport, so a shelf of fifty playlists does not fetch two hundred
@@ -126,6 +131,7 @@ export function useTileArt(urls: readonly (string | null)[]): {
   const [loaded, setLoaded] = useState(real.length === 0);
   const [host, setHost] = useState<Element | null>(null);
   const [near, setNear] = useState(false);
+  const { session } = useServerSession();
   useEffect(() => {
     if (near) return;
     // No host attached (a call site that forgot the ref) falls back to
@@ -165,7 +171,18 @@ export function useTileArt(urls: readonly (string | null)[]): {
     const images = wanted.map((u) => {
       const img = new Image();
       img.onload = done;
-      img.onerror = done;
+      // One rung of fallback per cover: a mirror that holds the song serves
+      // its copy when the session server's art will not come; a second
+      // failure counts the cover done like before.
+      img.onerror = () => {
+        const mirror = session ? artFallbackUrl(session, u) : null;
+        if (mirror && img.src !== mirror) {
+          img.onerror = done;
+          img.src = mirror;
+        } else {
+          done();
+        }
+      };
       img.src = u;
       return img;
     });

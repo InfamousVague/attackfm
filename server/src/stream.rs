@@ -236,6 +236,28 @@ fn build_art_variant(original: &Path, dest: &Path, size: u32) -> bool {
 /// `ETag`, an `If-None-Match` hit is a 304 with no disk touched, and a
 /// `?size=160` variant is derived once, cached beside the original, and is
 /// just as immutable as its source.
+/// `GET /api/art/track/{id}` - the same cover, addressed by TRACK id.
+///
+/// Art ids are per-server: two boxes holding the same song name its cover
+/// differently, so a client falling back to a mirror cannot reuse the art id
+/// its session server taught it. The track id from the mirror's own holdings
+/// map is what it does have - this route closes the gap by resolving the
+/// track's art here and answering exactly as /api/art/{id} would.
+pub async fn art_by_track(
+    State(state): State<Arc<AppState>>,
+    AxumPath(track_id): AxumPath<i64>,
+    Query(params): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+    request: Request<Body>,
+) -> Result<Response, StatusCode> {
+    caller_from_either(&state, &headers, &params)?;
+    let art_id = state
+        .db
+        .track_art_id(track_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+    art(State(state), AxumPath(art_id), Query(params), headers, request).await
+}
+
 pub async fn art(
     State(state): State<Arc<AppState>>,
     AxumPath(art_id): AxumPath<String>,

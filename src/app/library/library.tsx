@@ -399,16 +399,33 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
     return () => window.clearInterval(interval);
   }, [hydrated, sync]);
 
-  // Favourites live on the server, so they follow the account between devices.
+  // Favourites live on the server, so they follow the account between
+  // devices - and the last successful answer lives on THIS device, so a
+  // server that is dark at launch costs freshness, not the whole Liked page.
   useEffect(() => {
     let live = true;
+    const cacheKey = `attackfm-remote-favorites:${session.url}`;
+    try {
+      const cached = JSON.parse(localStorage.getItem(cacheKey) ?? '[]') as unknown;
+      if (Array.isArray(cached) && cached.every((n) => typeof n === 'number')) {
+        setFavorites(cached as number[]);
+      }
+    } catch {
+      // A torn cache is an empty Liked page until the fetch answers - the
+      // exact behavior this cache exists to improve, not a new failure.
+    }
     void (async () => {
       try {
         const ids = await fetchRemoteFavorites(session);
-        if (live) setFavorites(ids);
+        if (!live) return;
+        setFavorites(ids);
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify(ids));
+        } catch {
+          // Storage refusing only means the next dark launch shows empty.
+        }
       } catch {
-        // Not fatal: the library still plays, hearts just show empty until the
-        // next successful fetch.
+        // Not fatal: the cached hearts above stand until a fetch lands.
       }
     })();
     return () => {
