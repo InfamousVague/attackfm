@@ -115,9 +115,7 @@ export function App() {
   // Search, summoned: pull down on any page (or ⌘K) - state, gesture and
   // chord live in useSearchSummon.
   const {
-    pull,
-    searchAt,
-    refreshAt,
+    stage,
     barOpen,
     setBarOpen,
     refreshing,
@@ -605,28 +603,27 @@ export function App() {
                 scope because a pasted link is a plugin's action. Navigating
                 OUT of a result closes the overlay; playing keeps it up. */}
             {/*
-                The pull, drawn. One element per stage, both reading the same
-                live distance so what is on screen is where the finger is.
+                The pull, drawn.
 
-                Stage one: the search bar rides down from behind the header,
-                and is left standing when the finger lifts - it is a door to
-                be tapped, not a flash. Stage two: the refresh mark fades in
-                over it, and takes the release.
+                The deck is the GAP the page leaves as it slides down - it is
+                sized by the same --app-pull the page is moved by, so the bar
+                is uncovered rather than laid over anything. It stays mounted
+                whenever there is something to uncover: a live gesture, a
+                standing bar, or a refresh in flight.
+
+                Stage one: the search bar is revealed and left standing when
+                the finger lifts - a door to be tapped, not a flash. Stage two:
+                the refresh mark takes the gap over, and takes the release.
              */}
-            {!DESKTOP && (pull > 0 || barOpen || refreshing) && (
+            {!DESKTOP && (stage !== 'idle' || barOpen || refreshing) && (
               <div
                 className="pullDeck"
-                style={{ '--pull': `${Math.min(pull, refreshAt + 24)}px` } as React.CSSProperties}
-                data-armed={pull >= refreshAt || refreshing || undefined}
-                /* Standing while the refresh runs too, or the deck slides
-                   back behind the header and takes the spinner with it -
-                   a hard pull would read as "nothing happened". */
-                data-standing={barOpen || refreshing || undefined}
+                data-stage={refreshing ? 'refresh' : stage}
+                data-spinning={refreshing || undefined}
               >
                 <button
                   type="button"
                   className="pullDeck__search"
-                  data-on={(barOpen || pull >= searchAt) && !refreshing || undefined}
                   onClick={() => {
                     setBarOpen(false);
                     setSearchOpen(true);
@@ -637,8 +634,6 @@ export function App() {
                 </button>
                 <span
                   className="pullDeck__refresh"
-                  data-on={pull >= refreshAt || refreshing || undefined}
-                  data-spinning={refreshing || undefined}
                   aria-hidden={!refreshing}
                   role={refreshing ? 'status' : undefined}
                 >

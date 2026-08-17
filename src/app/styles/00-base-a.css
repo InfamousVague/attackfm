@@ -82,6 +82,16 @@ body {
   font-family: var(--glacier-font-sans);
   color: var(--glacier-text);
   background: var(--glacier-bg);
+  /*
+   * The document itself never rubber-bands. This is repeated inside the
+   * `-webkit-touch-callout` block below, but that query is the well-known
+   * iOS-only hack - it is false in Blink, so Android's WebView never got the
+   * rule and the whole document bounced. It showed up the moment the pull
+   * gesture started moving the page: a hard pull rubber-banded the document
+   * too and carried the fixed header down with it, so the app's own chrome
+   * drifted while the page moved. The app is an app on every platform.
+   */
+  overscroll-behavior: none;
 }
 
 /*
