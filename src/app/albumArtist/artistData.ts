@@ -18,7 +18,7 @@ import {
   type ServerSession,
 } from '../server.ts';
 import { titleKey, type OwnedIndex } from '../library/owned.ts';
-import { fetchAlbumArt } from './albumArt.ts';
+import { resolveAlbumArt } from './albumArt.ts';
 import type { AlbumGroup } from './albums.ts';
 import type { Track } from '../core/tauri.ts';
 

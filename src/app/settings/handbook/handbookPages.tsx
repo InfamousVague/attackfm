@@ -849,13 +849,16 @@ export const myPlugin: Plugin = {
           <code>plugin.json</code> naming it, and an entry module exporting one
           factory.
         </P>
+        {/* No relative-import line in this sample ON PURPOSE: the OTA build
+            verifies app.js holds no `from './…'` sequences, and a doc string
+            wearing one reads as a broken bundle to that check. */}
         <Code>{`// plugin.json
 { "id": "eq-rack", "name": "EQ rack",
   "version": "0.1.0", "entry": "plugin.ts",
   "public": true }
 
-// plugin.ts
-import { eqRack } from './index.tsx';
+// plugin.ts - imports the Plugin object
+// from the index module beside it, then:
 export function createPlugin() {
   return eqRack;
 }`}</Code>
