@@ -133,6 +133,25 @@
   background: var(--glacier-bg);
   color: var(--glacier-text);
   animation: npRise 0.28s var(--glacier-ease-out);
+  /* The pull-down-to-close drag. `translate` rather than `transform` so it
+     composes with anything the sheet's own animation does, and a transition
+     that only bites when the finger is NOT down - which is what makes a drag
+     short of the mark spring back on its own. */
+  translate: 0 var(--np-drag, 0px);
+  transition: translate 0.24s var(--glacier-ease-out);
+}
+
+.npScreen[data-dragging] {
+  transition: none;
+  /* Rounding the corners as it leaves says "this is a sheet being put back",
+     which is the whole reason the gesture reads as reversible. */
+  border-radius: var(--glacier-radius-xl, 1.25rem);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .npScreen {
+    transition: none;
+  }
 }
 
 /* The inactivity veil over the Now Playing sheet: the screen stays awake (the

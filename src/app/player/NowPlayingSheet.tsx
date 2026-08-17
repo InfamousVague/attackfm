@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
+import { installSheetDismiss } from './playerDismiss.ts';
+import { fireNativeHaptic } from '../core/haptics.ts';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -219,6 +221,28 @@ export function NowPlayingSheet({
    * "ready" and flash its empty box at full opacity, which is the bug this
    * gate exists to remove, only faster.
    */
+  /*
+   * The sheet's own way out.
+   *
+   * It rose from the strip and the only way back was a chevron in the top-LEFT
+   * corner - the one corner a thumb holding a phone cannot reach. Pushing it
+   * back where it came from is how every full-screen player on the platform
+   * closes, and it was the one gesture this one did not have.
+   */
+  const sheetRef = useCallback(
+    (node: HTMLElement | null) => {
+      if (!node) return;
+      return installSheetDismiss(node, {
+        onDismiss: () => {
+          fireNativeHaptic('light');
+          setNpOpen(false);
+          setNpLyrics(false);
+        },
+      });
+    },
+    [setNpOpen, setNpLyrics],
+  );
+
   const [readyCanvas, setReadyCanvas] = useState<string | null>(null);
   const canvasReady = readyCanvas !== null && readyCanvas === npCanvas;
   const setCanvasReady = (on: boolean) => setReadyCanvas(on ? npCanvas : null);
@@ -227,6 +251,7 @@ export function NowPlayingSheet({
   const levels = useLiveLevels({ meter, progress, active: audible });
   return createPortal(
     <div
+      ref={sheetRef}
       className="npScreen"
       role="dialog"
       aria-label="Now playing"
