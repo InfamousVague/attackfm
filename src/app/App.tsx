@@ -141,7 +141,11 @@ export function App() {
   const summonDismissRef = useCallback(
     (node: HTMLElement | null) => {
       if (!node) return;
-      return installSheetDismiss(node, { onDismiss: () => setSearchOpen(false) });
+      return installSheetDismiss(node, {
+        onDismiss: () => setSearchOpen(false),
+        // Nearly everything on this page is a button; see the option's note.
+        dragAnywhere: true,
+      });
     },
     [setSearchOpen],
   );

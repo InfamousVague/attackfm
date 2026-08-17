@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.139
+
+- The pulled-in search page arrives out of frost: for the first stretch of the pull you mostly see the screen you're on, then search fades in and sharpens as you commit — and its cards no longer play their own entrance animation against the pull
+- The open search page drags down as a card from anywhere on it, including rows and genre tiles — it only refused drags that started on its buttons before, which was most of the page
+
 ## 0.3.138
 
 - The pull-down is all about search now. Pull from the top and the search page itself fades in — field, recents, your genre cards — over the page you're leaving as it blurs; let go past the commit point and you're in, let go early and it all springs back. The refresh stage is gone
