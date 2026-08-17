@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.123
+
+- The pull is felt building. Instead of one tick when you arrive, the run-up to each stop ticks softly and far apart at first, then closer and firmer as it comes — so your thumb knows a stop is approaching rather than only that it has passed one
+
 ## 0.3.122
 
 - The pulled-down search bar is the same size as the one on the search page now, rather than a larger version of it — and the space the page makes for it shrank to match

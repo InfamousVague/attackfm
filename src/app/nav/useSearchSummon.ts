@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSystemBack } from './systemBack.ts';
-import { fireNativeHaptic } from '../core/haptics.ts';
+import { fireMicroTick, fireNativeHaptic } from '../core/haptics.ts';
 
 /**
  * The pull from the top, in two stages - and it moves the PAGE.
@@ -70,6 +70,22 @@ const PAST_HOLD = 0.5;
 /** The crawl through the detent. Not zero - a page frozen under a moving
  *  finger reads as a hang, not as resistance. */
 const THROUGH_HOLD = 0.1;
+
+/*
+ * The ratchet.
+ *
+ * A single tick at each detent is a fact, not a feeling: it tells you where
+ * the line was AFTER you crossed it. The hand wants to know it is coming, the
+ * way a dial's notches tighten as it nears a stop - so the run-up to each
+ * detent is ticked, softly and far apart at first, closer and firmer as it
+ * arrives, and the detent itself is the one you can properly feel.
+ */
+/** Notch spacing at the start of a run-up, and at the end of it. */
+const NOTCH_FAR = 24;
+const NOTCH_NEAR = 9;
+/** No two ticks closer together than this, however fast the finger moves.
+ *  The Taptic Engine will happily queue a flood and play it as mush. */
+const TICK_FLOOR_MS = 28;
 
 /** Which answer the gesture is currently offering. */
 export type PullStage = 'idle' | 'search' | 'refresh';
@@ -159,6 +175,8 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
     let standing = false;
     let lastStage: PullStage = 'idle';
     let landed = false;
+    let lastTickAt = 0;
+    let lastTickMs = 0;
     /*
      * The page a touch landed in.
      *
@@ -186,6 +204,8 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
       travel = 0;
       lastStage = 'idle';
       landed = false;
+      lastTickAt = 0;
+      lastTickMs = 0;
       // Read once per gesture rather than per frame: the detent should land
       // the bar exactly where it will come to rest, and that height is
       // measured from the bar itself.
@@ -222,20 +242,48 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
       distance = distanceFor(dy, settled, standing);
       paint(distance, true);
       /*
-       * The detent, felt - at the moment the bar ARRIVES, not when it first
-       * peeks out. The tick is the whole point of the detent: it is what tells
-       * a thumb already in motion that something has come to rest under it and
-       * this is a place to stop. Fired at REVEAL_END rather than on the stage
-       * change, which happens 46px earlier while the bar is still on its way.
+       * The run-up. Whichever detent is next, the travel toward it is ticked:
+       * `p` is how far into that approach the finger is, and it both tightens
+       * the notches and picks up the weight - soft texture at the start, a
+       * selection tick in the middle, a light impact just before arrival.
+       * Silent across the detent itself (REVEAL_END..HOLD_END), because that
+       * stretch is the rest, not a journey.
        */
-      if (!landed && travel >= REVEAL_END) {
+      const runUp = standing
+        ? travel >= HOLD_END
+          ? { from: HOLD_END, to: REFRESH_AT }
+          : null
+        : travel < REVEAL_END
+          ? { from: SLOP, to: REVEAL_END }
+          : travel >= HOLD_END && travel < REFRESH_AT
+            ? { from: HOLD_END, to: REFRESH_AT }
+            : null;
+      if (runUp && travel < REFRESH_AT) {
+        const p = Math.min(1, Math.max(0, (travel - runUp.from) / (runUp.to - runUp.from)));
+        const spacing = NOTCH_FAR - (NOTCH_FAR - NOTCH_NEAR) * p;
+        const now = performance.now();
+        if (travel - lastTickAt >= spacing && now - lastTickMs >= TICK_FLOOR_MS) {
+          lastTickAt = travel;
+          lastTickMs = now;
+          if (p < 0.45) fireMicroTick();
+          else if (p < 0.8) fireNativeHaptic('selection');
+          else fireNativeHaptic('light');
+        }
+      }
+      // The detents themselves: the bar coming to rest, and the refresh
+      // arming. These are the two the ramp has been leading up to, so they are
+      // the two that land properly.
+      if (!landed && !standing && travel >= REVEAL_END) {
         landed = true;
-        fireNativeHaptic('selection');
+        lastTickAt = travel;
+        fireNativeHaptic('medium');
       }
       const next = stageFor(travel);
       if (next !== lastStage) {
-        // Arming a refresh is the heavier commitment, and says so.
-        if (next === 'refresh') fireNativeHaptic('medium');
+        if (next === 'refresh') {
+          lastTickAt = travel;
+          fireNativeHaptic('heavy');
+        }
         lastStage = next;
         setStage(next);
       }
