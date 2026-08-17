@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.106
+
+- The edge-swipe back and pull-to-search work on the very first run now — they used to play dead until the app was reopened once after onboarding
+
 ## 0.3.105
 
 - Playlists sort by whichever is newer — your last edit or this device's last listen — so last night's list is at your thumb

@@ -79,11 +79,16 @@ export function App() {
   const [djOpen, setDjOpen] = useState(false);
   useSystemBack(djOpen, () => setDjOpen(false));
   // The edge-swipe back gesture's drag target: AppMain's content host. Owned
-  // here because the pull-to-search gesture listens on the same element.
-  const swipeRef = useRef<HTMLElement | null>(null);
+  // here because the pull-to-search gesture listens on the same element. Held
+  // in STATE, not a ref: on a fresh phone the onboarding gate renders instead
+  // of AppMain, so the host does not exist when this component's effects first
+  // run - the gesture hooks have to re-attach when it finally mounts, which
+  // only a state-carried node can tell them.
+  const [swipeEl, setSwipeEl] = useState<HTMLElement | null>(null);
+  const swipeRef = useCallback((node: HTMLElement | null) => setSwipeEl(node), []);
   // Search, summoned: pull down on any page (or ⌘K) - state, gesture and
   // chord live in useSearchSummon.
-  const { pullHint, summonHint, searchOpen, setSearchOpen } = useSearchSummon(swipeRef);
+  const { pullHint, summonHint, searchOpen, setSearchOpen } = useSearchSummon(swipeEl);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Which pane Settings should open ON, when a surface aims it - the network
   // dot's Manage lands on Servers; a plain open starts wherever it was.
@@ -234,7 +239,7 @@ export function App() {
   // the header arrows do, with the page following the thumb. Touch-only and
   // edge-only (the hook guards both), and enabled only when there is anywhere
   // to go back TO - with the stack at its root the edge belongs to the page.
-  useSwipeBack(swipeRef, back, !DESKTOP && canBack);
+  useSwipeBack(swipeEl, back, !DESKTOP && canBack);
 
   // Sideways drags on shelves, which the engine no longer performs itself -
   // see shelfPan.ts and the touch-action rule it pairs with. Delegated from

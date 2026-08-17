@@ -5,10 +5,11 @@ import { useSystemBack } from './systemBack.ts';
  * Search, summoned: a pull down on any page (or ⌘K) drops the search over
  * whatever you were doing, and it retreats the same way - no tab, no lost
  * place. The pull gesture below sets `searchOpen`; so does the old 'search'
- * route. Extracted whole from App; `hostRef` is the content host the gesture
- * listens on (the same element the edge-swipe drags).
+ * route. Extracted whole from App; `host` is the content host the gesture
+ * listens on (the same element the edge-swipe drags) - the node itself, not a
+ * ref object, so the listeners re-attach when it mounts after onboarding.
  */
-export function useSearchSummon(hostRef: { current: HTMLElement | null }) {
+export function useSearchSummon(host: HTMLElement | null) {
   const [searchOpen, setSearchOpen] = useState(false);
   useSystemBack(searchOpen, () => setSearchOpen(false));
 
@@ -20,7 +21,6 @@ export function useSearchSummon(hostRef: { current: HTMLElement | null }) {
   // the root sets overscroll-behavior: none.
   const [pullHint, setPullHint] = useState(false);
   useEffect(() => {
-    const host = hostRef.current;
     if (!host) return;
     let startY = 0;
     let startX = 0;
@@ -78,7 +78,7 @@ export function useSearchSummon(hostRef: { current: HTMLElement | null }) {
       host.removeEventListener('touchend', onEnd);
       host.removeEventListener('touchcancel', onEnd);
     };
-  }, []);
+  }, [host]);
   // Until the pull has been used once, a small chip under the header says it
   // exists - the one cost of retiring the Search tab.
   const [summonHint, setSummonHint] = useState(() => {

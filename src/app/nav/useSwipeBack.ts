@@ -26,18 +26,20 @@ const COMMIT = 72;
 const SLOP = 12;
 
 export function useSwipeBack(
-  /** The element that moves. */
-  ref: React.RefObject<HTMLElement | null>,
+  /** The element that moves. Passed as the NODE (state-carried, not a ref
+   *  object) so the listeners follow it: on a fresh phone the content host
+   *  mounts only after onboarding is skipped, well after this hook's first
+   *  effect has run and found nothing to listen on. */
+  el: HTMLElement | null,
   onBack: () => void,
   enabled: boolean,
 ): void {
-  // Held in a ref so the listeners are installed once and still see the current
-  // answer - `enabled` flips on every navigation.
+  // Held in a ref so the listeners are installed once per element and still
+  // see the current answer - `enabled` flips on every navigation.
   const live = useRef({ onBack, enabled });
   live.current = { onBack, enabled };
 
   useEffect(() => {
-    const el = ref.current;
     if (!el) return;
 
     let id: number | null = null;
@@ -148,5 +150,5 @@ export function useSwipeBack(
       el.removeEventListener('pointercancel', onUp);
       clear();
     };
-  }, [ref]);
+  }, [el]);
 }
