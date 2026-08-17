@@ -216,7 +216,24 @@ const FLICK_MIN = 48;
  */
 export function installSheetDismiss(
   sheet: HTMLElement,
-  { onDismiss }: { onDismiss: () => void },
+  {
+    onDismiss,
+    dragAnywhere = false,
+  }: {
+    onDismiss: () => void;
+    /**
+     * Claim vertical drags that START on buttons and inputs too.
+     *
+     * The Now Playing sheet keeps them excluded - its buttons are the
+     * transport, and a drag that begins on Play should belong to Play. The
+     * search sheet is the opposite case: nearly its whole surface is buttons
+     * (result rows, genre tiles, chips) and a text field, so excluding them
+     * left the card draggable only from the gaps - which reads as "doesn't
+     * properly drag". A tap still lands either way: the claim needs slop plus
+     * vertical dominance, and only a claimed drag eats the click.
+     */
+    dragAnywhere?: boolean;
+  },
 ): () => void {
   let touchId: number | null = null;
   let startX = 0;
@@ -246,7 +263,10 @@ export function installSheetDismiss(
   /** Whether this touch belongs to something else on the sheet. */
   const spokenFor = (target: HTMLElement | null): boolean => {
     if (!target) return false;
-    if (target.closest('[role="slider"], .spinningDisc, input, button')) return true;
+    const owned = dragAnywhere
+      ? '[role="slider"], .spinningDisc'
+      : '[role="slider"], .spinningDisc, input, button';
+    if (target.closest(owned)) return true;
     // A scroller that is not at its top is scrolling, not dismissing.
     for (let el: HTMLElement | null = target; el && el !== sheet; el = el.parentElement) {
       if (el.scrollHeight > el.clientHeight + 1 && el.scrollTop > 0) return true;

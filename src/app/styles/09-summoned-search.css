@@ -112,7 +112,32 @@
   z-index: 2;
   overflow: hidden;
   pointer-events: none;
-  opacity: clamp(0, calc((var(--app-travel, 0px) - 30px) / 170px), 1);
+  /* Late and steep rather than early and even: for the first 70px of travel
+     the main screen still owns the view, then the search page comes through.
+     A fade that started immediately read as the page already being there. */
+  opacity: clamp(0, calc((var(--app-travel, 0px) - 70px) / 150px), 1);
+  /* And it arrives out of frost: the incoming content is blurred hardest
+     when it is faintest, resolving to sharp as the fade completes - the
+     same move the page behind makes, run in the opposite direction. */
+  filter: blur(max(0px, 12px - var(--app-travel, 0px) * 0.055));
+}
+
+/*
+ * The wave-in stands down inside the preview.
+ *
+ * Cards normally ripple in on their own clock as they meet the view. Under a
+ * pull that clock is wrong twice over: items would animate from transparent
+ * while the LAYER is also fading in (two fades multiply into "fully
+ * transparent when they animate in"), and a time-based entrance ignores the
+ * finger, which is the only clock this surface has. Inside the preview every
+ * item stands already-landed and the pull drives the one fade there is.
+ */
+.pullPreview [data-ripple-seen]:not([data-rippled]) {
+  opacity: 1;
+}
+
+.pullPreview [data-rippled] {
+  animation: none;
 }
 
 /* The page being left, softening as the search page arrives over it. Keyed to
@@ -145,6 +170,8 @@
   transition: none;
   border-radius: var(--glacier-radius-xl, 1.25rem);
   overflow: hidden;
+  /* Lifted off the page, so the card reads as a card against the blur. */
+  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.45);
 }
 
 @media (prefers-reduced-motion: reduce) {
