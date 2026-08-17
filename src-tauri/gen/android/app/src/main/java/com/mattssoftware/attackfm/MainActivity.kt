@@ -1,5 +1,7 @@
 package com.mattssoftware.attackfm
 
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.os.Bundle
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
@@ -160,10 +162,45 @@ class MainActivity : TauriActivity() {
     if (playing || syncing) webView?.onResume()
   }
 
+  /**
+   * Portrait on a phone, whatever the device likes on anything bigger.
+   *
+   * The decision is a resource, not a measurement taken here: res/values
+   * says no and res/values-sw600dp says yes, so Android's own definition of
+   * "big enough" picks the answer and a television - far past 600dp - keeps
+   * the landscape it can only ever be in.
+   *
+   * UNSPECIFIED rather than a landscape or sensor value on the large side:
+   * that is what this activity had before any lock existed, so tablets keep
+   * exactly the behaviour they have today, the device's own rotation setting
+   * included.
+   */
+  private fun applyOrientationLock() {
+    requestedOrientation =
+      if (resources.getBoolean(R.bool.afm_rotate)) ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+      else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+  }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     live = this
+    applyOrientationLock()
+  }
+
+  /**
+   * Re-decided whenever the screen itself changes shape.
+   *
+   * The manifest lists screenLayout and smallestScreenSize among the changes
+   * this activity handles, which means Android hands them over instead of
+   * recreating the activity - so a lock set once at startup would outlive the
+   * screen it was chosen for. A foldable opened out is exactly that case: it
+   * crosses 600dp mid-session and would otherwise stay pinned to the phone's
+   * portrait on a tablet-sized display.
+   */
+  override fun onConfigurationChanged(newConfig: Configuration) {
+    super.onConfigurationChanged(newConfig)
+    applyOrientationLock()
   }
 
   override fun onDestroy() {
