@@ -4,13 +4,21 @@
    a summons owns the screen while it is up. */
 .searchSummon {
   position: fixed;
-  inset: 0;
+  /* A sheet under the header, not a screen over it: it begins exactly where
+     the page content does - the measured line the pull preview also uses - so
+     the ATTACK mark stays visible above it and the field lands where the
+     preview showed it. The fallback is the header's own arithmetic, for the
+     first frame before anything has been measured. */
+  inset-inline: 0;
+  bottom: 0;
+  top: var(--app-content-top, calc(env(safe-area-inset-top, 0px) + var(--app-header-height, 3.25rem)));
   z-index: 60;
   display: flex;
   flex-direction: column;
   background: var(--glacier-surface);
+  border-start-start-radius: var(--glacier-radius-xl, 1.25rem);
+  border-start-end-radius: var(--glacier-radius-xl, 1.25rem);
   animation: summonDrop 0.26s var(--glacier-ease-out);
-  padding-top: env(safe-area-inset-top, 0px);
 }
 
 @keyframes summonDrop {

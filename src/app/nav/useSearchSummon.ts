@@ -157,6 +157,36 @@ export function useSearchSummon(host: HTMLElement | null) {
     };
   }, [host, paint]);
 
+  /*
+   * Where the content column starts, published for the layers that align to
+   * it: the pull preview and the open search sheet both begin exactly where
+   * the page does - under the header, under the status bar - and neither is a
+   * child of the page, so the position has to travel by custom property.
+   *
+   * Dropped once in a rewrite, which put the preview and the sheet at the top
+   * of the SCREEN, over the logo. Never read mid-drag: the rect includes the
+   * page's own translate, which would feed the drag back into the anchor.
+   */
+  useEffect(() => {
+    if (!host) return;
+    const write = () => {
+      if (document.documentElement.hasAttribute('data-pull-moving')) return;
+      const { top } = host.getBoundingClientRect();
+      document.documentElement.style.setProperty('--app-content-top', `${top.toFixed(1)}px`);
+    };
+    write();
+    const ro = new ResizeObserver(write);
+    ro.observe(host);
+    window.addEventListener('resize', write);
+    window.addEventListener('orientationchange', write);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', write);
+      window.removeEventListener('orientationchange', write);
+      document.documentElement.style.removeProperty('--app-content-top');
+    };
+  }, [host]);
+
   // Until the pull has been used once, a small chip under the header says it
   // exists - the one cost of retiring the Search tab.
   const [summonHint, setSummonHint] = useState(() => {
