@@ -61,6 +61,25 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="spotify" />
             </intent-filter>
+
+            <!--
+              The share sheet, which is the door that actually works.
+
+              Tapping an https://open.spotify.com link can never reach us while
+              Spotify is installed: Spotify has VERIFIED that domain, and a
+              verified App Link goes to its owner without a chooser. The
+              spotify: scheme above does reach a chooser, but almost nothing
+              hands out links in that form.
+
+              Sharing asks the user every time, needs nothing turned off, and
+              Spotify's own Share menu lists whatever declares this. text/plain
+              because that is what every app shares a link as.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
             <!-- DEEP LINK PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
             <intent-filter android:autoVerify="true" >
                 <action android:name="android.intent.action.VIEW" />
