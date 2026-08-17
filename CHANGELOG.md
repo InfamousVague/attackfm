@@ -7,6 +7,12 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.108
+
+- Artist pages fetch missing covers again — 0.3.107 shipped with the lookup's wiring half-connected
+- Cover lookups are remembered for a month, misses included, so an artist page asks Apple once instead of on every visit
+- The cover cache lives in one tidy entry now instead of one browser key per album; old keys are swept up on first use
+
 ## 0.3.107
 
 - Settings grew a Handbook: how the app works and how to build plugins for it, 28 illustrated pages you can swipe, arrow, or jump through
