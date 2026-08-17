@@ -16,6 +16,7 @@ interface NativeBridge {
   setPlaying: (playing: boolean) => void;
   /** Present from 0.3.68; absent on an older shell, hence the optionals. */
   setNowPlaying?: (title: string, artist: string, album: string, durationMs: number) => void;
+  setArtwork?: (base64: string) => void;
   setSyncing?: (active: boolean) => void;
   setPlaybackState?: (playing: boolean, positionMs: number) => void;
 }
@@ -102,6 +103,48 @@ export function setNativeNowPlaying(meta: {
   } catch {
     // Best-effort, exactly like the rest of this bridge.
   }
+}
+
+/**
+ * The cover, shrunk and handed over as bytes.
+ *
+ * The native side prints the song's words on the lock screen and the
+ * notification, but a media session without METADATA_KEY_ALBUM_ART draws a
+ * grey square there - the system never sees the web layer's art. This
+ * fetches the cover the app is already showing (same cache, same auth),
+ * shrinks it to system size, and sends it across as base64: the bridge
+ * stays a string pipe and Kotlin never grows a network stack.
+ *
+ * Art loads race skips: only the newest request is allowed to land, so a
+ * fast next-next-next cannot dress the current song in an old sleeve.
+ * (The native side also clears art whenever a different song is published,
+ * so the failure mode of a dropped send is a missing cover, never a wrong
+ * one.)
+ */
+let artGeneration = 0;
+export function setNativeArtwork(url: string | null): void {
+  if (!window.AFMNative?.setArtwork) return;
+  const mine = ++artGeneration;
+  if (!url) return;
+  void (async () => {
+    try {
+      const blob = await (await fetch(url)).blob();
+      const bitmap = await createImageBitmap(blob);
+      const side = Math.min(512, Math.max(bitmap.width, bitmap.height));
+      const scale = side / Math.max(bitmap.width, bitmap.height);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      canvas.getContext('2d')?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close();
+      if (mine !== artGeneration) return;
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+      if (base64) window.AFMNative?.setArtwork?.(base64);
+    } catch {
+      // A cover that fails to fetch or decode just stays off the lock screen.
+    }
+  })();
 }
 
 /** Whether it is playing and where, for the car's scrubber and the row's icon. */

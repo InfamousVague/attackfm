@@ -244,6 +244,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
     val playing = lastState == PlaybackStateCompat.STATE_PLAYING
     val builder = NotificationCompat.Builder(this, CHANNEL)
       .setSmallIcon(android.R.drawable.ic_media_play)
+      .setLargeIcon(lastArt)
       .setContentTitle(if (!playing && syncing) "Downloading your music" else lastTitle ?: getString(R.string.app_name))
       .setContentText(if (!playing && syncing) "Keeping songs on this phone" else lastArtist ?: "")
       .setContentIntent(open)
@@ -332,6 +333,10 @@ class PlaybackService : MediaBrowserServiceCompat() {
     private var lastAlbum: String? = null
     private var lastDuration = 0L
     private var lastPosition = 0L
+    /** The cover for the CURRENT song, decoded from bytes the web layer sent.
+     *  Cleared the moment a different song is published, so a slow art fetch
+     *  can never dress the next track in the last one's sleeve. */
+    private var lastArt: android.graphics.Bitmap? = null
     private var lastState = PlaybackStateCompat.STATE_NONE
     /** True while the web layer's cache sweep is downloading. */
     @Volatile var syncing = false
@@ -344,21 +349,43 @@ class PlaybackService : MediaBrowserServiceCompat() {
      * with no length and refuses to seek.
      */
     fun publishMetadata(title: String, artist: String, album: String, durationMs: Long) {
+      if (title != lastTitle || artist != lastArtist) lastArt = null
       lastTitle = title
       lastArtist = artist
       lastAlbum = album
       lastDuration = durationMs
-      active?.setMetadata(
-        MediaMetadataCompat.Builder()
-          .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
-          .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
-          .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, album)
-          .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, title)
-          .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, artist)
-          .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, durationMs)
-          .build(),
-      )
+      pushMetadata()
       instance?.refreshNotification()
+    }
+
+    /**
+     * The cover, arriving on its own wire.
+     *
+     * Art always lands AFTER the words - the web layer fetches and shrinks it
+     * once the song is already announced - so it is its own publish rather
+     * than a parameter the metadata call would have to wait on. The bitmap
+     * rides METADATA_KEY_ALBUM_ART, which is the field the lock screen, the
+     * notification's MediaStyle and an Android Auto dashboard all read.
+     */
+    fun publishArtwork(art: android.graphics.Bitmap) {
+      lastArt = art
+      pushMetadata()
+      instance?.refreshNotification()
+    }
+
+    private fun pushMetadata() {
+      val b = MediaMetadataCompat.Builder()
+        .putString(MediaMetadataCompat.METADATA_KEY_TITLE, lastTitle)
+        .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, lastArtist)
+        .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, lastAlbum)
+        .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, lastTitle)
+        .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, lastArtist)
+        .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, lastDuration)
+      lastArt?.let {
+        b.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, it)
+        b.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, it)
+      }
+      active?.setMetadata(b.build())
     }
 
     /**

@@ -26,6 +26,7 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { mosaicArts, useArtLoad, useTileArt } from '../ux/artLoad.ts';
 import { artSized, fetchPlaylistSuggestions, remotePath } from '../server.ts';
 import { usePlaylists } from './playlists.tsx';
+import { notePlaylistPlayed } from './playlistRecency.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
 import { TrackMenu } from '../library/TrackMenu.tsx';
 import { setHeaderActions } from '../nav/headerActions.ts';
@@ -210,12 +211,14 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
     .filter((t) => !playlist.paths.includes(t.path));
 
   const playAll = () => {
+    notePlaylistPlayed(id);
     const first = listTracks[0];
     if (first) onPlay(first, listTracks);
   };
 
   const shuffleAll = () => {
     if (listTracks.length === 0) return;
+    notePlaylistPlayed(id);
     // Shuffled here rather than by flipping the player's shuffle switch: this
     // is "play these in a jumbled order", not a change to how the app plays.
     const shuffled = [...listTracks];

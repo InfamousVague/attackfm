@@ -57,6 +57,21 @@ class MainActivity : TauriActivity() {
       PlaybackService.publishState(playing, positionMs)
     }
 
+    /**
+     * The cover, as bytes. The web layer already holds the image (cached,
+     * authenticated, resized); base64 keeps the bridge a string pipe and
+     * spares this side a network stack. Decode failures drop silently -
+     * a missing cover is a state the system surfaces render fine.
+     */
+    @JavascriptInterface
+    fun setArtwork(base64: String) {
+      val bytes = try {
+        android.util.Base64.decode(base64, android.util.Base64.DEFAULT)
+      } catch (_: Exception) { return }
+      val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return
+      PlaybackService.publishArtwork(bmp)
+    }
+
     @JavascriptInterface
     fun setPlaying(next: Boolean) {
       if (playing == next) return

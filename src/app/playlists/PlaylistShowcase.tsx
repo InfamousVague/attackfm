@@ -8,6 +8,7 @@ import { usePlaylists } from './playlists.tsx';
 import { PluginFence, usePlugins } from '../../plugins/runtime.tsx';
 import type { PluginPlaylistTile } from '../../plugins/types.ts';
 import { PlaylistModal } from './PlaylistModal.tsx';
+import { playlistPlayedAt, notePlaylistPlayed } from './playlistRecency.ts';
 import likedChip from '../../assets/chip-liked.png';
 import allSongsChip from '../../assets/chip-all-songs.png';
 import onRepeatChip from '../../assets/chip-on-repeat.png';
@@ -258,7 +259,17 @@ export function PlaylistShowcase({
               }
               onOpen={() => setOpen('recent')}
             />
-            {playlists.map((playlist) => (
+            {/* Freshest first: the last edit (the server's stamp) or the
+                last listen (this device's own memory), whichever is newer -
+                so the list you had on last night is at your thumb, not
+                wherever creation order left it. */}
+            {[...playlists]
+              .sort(
+                (a, b) =>
+                  Math.max(b.createdAt, playlistPlayedAt(b.id)) -
+                  Math.max(a.createdAt, playlistPlayedAt(a.id)),
+              )
+              .map((playlist) => (
               <Tile
                 key={playlist.id}
                 name={playlist.name}
@@ -272,7 +283,7 @@ export function PlaylistShowcase({
                 onOpen={() => onOpenPlaylist(playlist.id)}
                 onDelete={() => setDeleting({ id: playlist.id, name: playlist.name })}
               />
-            ))}
+              ))}
             <Tile
               name="New Playlist"
               cover={
