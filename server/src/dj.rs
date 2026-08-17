@@ -182,11 +182,25 @@ pub async fn station(
     // Score the whole library, hold back the very-recently-played so the DJ does
     // not replay the last hour, and cap per artist.
     let held: HashSet<i64> = taste.heard.clone();
-    let mut ranked: Vec<(f32, i64)> = feats
-        .iter()
-        .filter(|f| !held.contains(&f.track_id))
-        .map(|f| (score(f, &taste), f.track_id))
-        .collect();
+    // Same jitter the trait queue gets: without it the station is fully
+    // deterministic - same taste, same set, every single time. The rng lives
+    // in its own block because station awaits the patter model later and
+    // ThreadRng must not be held across an await.
+    let mut ranked: Vec<(f32, i64)> = {
+        let mut rng = rand::thread_rng();
+        feats
+            .iter()
+            // `!quarantined` is the same clause the trait queue applies: an
+            // audition under quarantine is a judgement not yet made, and the
+            // DB's own invariant says it must never seed a mix. Station
+            // forgot it.
+            .filter(|f| !held.contains(&f.track_id) && !f.quarantined)
+            .map(|f| {
+                let jitter = rng.gen_range(-QUEUE_SCORE_JITTER..=QUEUE_SCORE_JITTER);
+                (score(f, &taste) + jitter, f.track_id)
+            })
+            .collect()
+    };
     ranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
     let artist_of: HashMap<i64, String> = feats

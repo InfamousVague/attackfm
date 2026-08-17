@@ -4717,24 +4717,56 @@ impl Db {
         job_id: &str,
     ) -> rusqlite::Result<i64> {
         let conn = self.lock();
+        /*
+         * UPSERT, not INSERT. curator_pulls is UNIQUE(user_id, ext_id), so a
+         * retry of an aged-out failure cannot "record a fresh row" - a plain
+         * INSERT errors, both callers swallow the error, and the two halves
+         * of the retry break differently: the still-missing branch re-fails
+         * the OLD row without touching created_at (so it never re-blocks and
+         * retries every cycle forever), and the success branch imports a job
+         * no 'queued' row tracks (so it bypasses audition and the budget).
+         * Re-arming the existing row - state back to queued, fresh clock,
+         * fresh job - is what a retry actually means here.
+         */
         conn.execute(
             "INSERT INTO curator_pulls (user_id, ext_id, kind, title, artist, url, reason, score, job_id, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             ON CONFLICT(user_id, ext_id) DO UPDATE SET
+               state = 'queued', job_id = excluded.job_id, url = excluded.url,
+               reason = excluded.reason, score = excluded.score, bytes = 0,
+               created_at = excluded.created_at",
             params![user_id, ext_id, kind, title, artist, url, reason, score, job_id, now_ms()],
         )?;
-        Ok(conn.last_insert_rowid())
+        // last_insert_rowid lies on the UPDATE arm; ask for the row properly.
+        conn.query_row(
+            "SELECT id FROM curator_pulls WHERE user_id = ?1 AND ext_id = ?2",
+            params![user_id, ext_id],
+            |r| r.get(0),
+        )
     }
 
-    /// Everything ever pulled for this user, for the "would buying this be
-    /// buying it twice" check - failed pulls included, deliberately: a link
-    /// that failed once fails again, and retrying forever is a loop.
-    pub fn pulled_ext_ids(&self, user_id: i64) -> std::collections::HashSet<String> {
+    /// Everything currently blocking a re-buy for this user.
+    ///
+    /// Live pulls (queued/landed/promoted) block forever - buying twice is
+    /// buying twice. FAILED pulls block only until `failed_retry_before_ms`:
+    /// a failure used to condemn its candidate permanently, but "the
+    /// catalogue did not have it" is a fact about the catalogue that day, and
+    /// a transient miss was burning good candidates for good. A failure older
+    /// than the cutoff simply stops blocking; a retry records a fresh row.
+    pub fn pulled_ext_ids(
+        &self,
+        user_id: i64,
+        failed_retry_before_ms: i64,
+    ) -> std::collections::HashSet<String> {
         let conn = self.lock();
-        let mut stmt = match conn.prepare("SELECT ext_id FROM curator_pulls WHERE user_id = ?1") {
+        let mut stmt = match conn.prepare(
+            "SELECT ext_id FROM curator_pulls
+             WHERE user_id = ?1 AND (state != 'failed' OR created_at >= ?2)",
+        ) {
             Ok(s) => s,
             Err(_) => return Default::default(),
         };
-        stmt.query_map(params![user_id], |r| r.get::<_, String>(0))
+        stmt.query_map(params![user_id, failed_retry_before_ms], |r| r.get::<_, String>(0))
             .map(|rows| rows.filter_map(Result::ok).collect())
             .unwrap_or_default()
     }
@@ -5305,5 +5337,54 @@ pub fn kind_for(rel_path: &str) -> &'static str {
         "book"
     } else {
         "music"
+    }
+}
+
+#[cfg(test)]
+mod pull_retry_window {
+    //! A failed pull ages out of the exclusion set; live pulls never do.
+
+    #[test]
+    fn failed_pulls_become_retryable_after_the_window() {
+        let dir = std::env::temp_dir().join(format!("afm-pulls-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = super::Db::open(&dir.join("t.sqlite")).unwrap();
+        let user = db.create_user("puller", "x", false).unwrap();
+
+        // A live pull, a fresh failure, and an old failure.
+        db.record_pull(user, "live", "track", "T", "A", "u", "", 0.5, "").unwrap();
+        let fresh = db.record_pull(user, "fresh-fail", "track", "T", "A", "u", "", 0.5, "").unwrap();
+        db.fail_pull(fresh).unwrap();
+        let old = db.record_pull(user, "old-fail", "track", "T", "A", "u", "", 0.5, "").unwrap();
+        db.fail_pull(old).unwrap();
+        db.lock()
+            .execute("UPDATE curator_pulls SET created_at = 1 WHERE id = ?1", super::params![old])
+            .unwrap();
+
+        let cutoff = super::now_ms() - 1000; // failures older than a second may retry
+        let blocking = db.pulled_ext_ids(user, cutoff);
+        assert!(blocking.contains("live"), "live pulls block forever");
+        assert!(blocking.contains("fresh-fail"), "a recent failure still blocks");
+        assert!(!blocking.contains("old-fail"), "an aged failure stops blocking");
+
+        // The retry itself: re-recording the SAME ext_id must re-arm the row -
+        // one row, state queued, fresh clock - not error against the UNIQUE
+        // constraint or leave the old failure in charge.
+        let rearmed = db.record_pull(user, "old-fail", "track", "T", "A", "u2", "", 0.7, "job9")
+            .expect("a retry must not violate UNIQUE(user_id, ext_id)");
+        assert_eq!(rearmed, old, "the retry re-arms the existing row, not a duplicate");
+        let (state, job): (String, String) = db
+            .lock()
+            .query_row(
+                "SELECT state, job_id FROM curator_pulls WHERE id = ?1",
+                super::params![rearmed],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(state, "queued");
+        assert_eq!(job, "job9");
+        assert!(db.pulled_ext_ids(user, cutoff).contains("old-fail"), "re-armed rows block again");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
