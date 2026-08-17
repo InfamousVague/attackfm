@@ -207,7 +207,7 @@ async fn buy(state: &Arc<AppState>, user: i64, d: &DiscoveryRow) -> bool {
         return false;
     };
 
-    let reason = reason_for(state, d).await;
+    let reason = reason_for(d).await;
     match crate::imports::enqueue_internal(state, &hit.url, &d.title, &d.artist, "collector", user)
         .await
     {
@@ -232,7 +232,7 @@ async fn buy(state: &Arc<AppState>, user: i64, d: &DiscoveryRow) -> bool {
 /// Why the curator chose it: the model's one line when a chat model is
 /// configured, the seed artist's plain sentence when not. Failure is the
 /// plain sentence too - a missing reason should never cost a pull.
-async fn reason_for(state: &Arc<AppState>, d: &DiscoveryRow) -> String {
+async fn reason_for(d: &DiscoveryRow) -> String {
     let plain = if d.seed.trim().is_empty() {
         String::new()
     } else {

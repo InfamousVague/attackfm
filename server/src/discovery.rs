@@ -28,7 +28,7 @@
 //! there. Acting on one is the app's existing import path; dismissing one
 //! forgets it.
 
-use crate::curator::{cosine, taste_for};
+use crate::curator::{taste_for};
 use crate::AppState;
 use serde::Serialize;
 use serde_json::json;
@@ -556,6 +556,13 @@ pub async fn listen_cycle(state: &Arc<AppState>, user: i64) -> bool {
 
 /// Rescores everything already listened to. Taste moves; a pool scored against
 /// last month's listening would slowly stop being about you.
+///
+/// NOT WIRED UP. Nothing calls this, so the discovery pool keeps whatever
+/// score it was given the day each candidate was found. Kept rather than
+/// deleted because the reasoning above is still right and the work is done -
+/// it wants a caller (the collector's cycle is the obvious one), which is a
+/// behaviour change and not a warning cleanup.
+#[allow(dead_code)]
 pub fn rescore(state: &Arc<AppState>, user: i64) {
     let Some(taste) = taste_for(state, user) else { return };
     for d in state.db.all_discoveries(user) {

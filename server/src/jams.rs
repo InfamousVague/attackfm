@@ -65,7 +65,6 @@ pub struct Jam {
     pub added_by: HashMap<i64, String>,
     /// When position_ms was true. Members extrapolate forward from here.
     pub updated_at: i64,
-    pub created_at: i64,
 }
 
 impl Jam {
@@ -149,7 +148,6 @@ pub async fn create(State(state): State<Arc<AppState>>, headers: HeaderMap) -> A
         additions: Vec::new(),
         added_by: HashMap::new(),
         updated_at: now_ms(),
-        created_at: now_ms(),
     };
     let out = jam.to_json();
     jams.insert(jam.id.clone(), jam);
@@ -198,9 +196,12 @@ pub async fn join(
     let mut jams = state.jams.jams.lock().unwrap();
     state.jams.sweep(&mut jams);
 
-    let Some(jam) = jams.get(&id) else {
+    // Existence only - the jam itself is taken again below, mutably, after the
+    // sweep of the other rooms. Checked FIRST so a dead id cannot evict you
+    // from the room you are actually in.
+    if !jams.contains_key(&id) {
         return Err((StatusCode::NOT_FOUND, "that jam has ended".into()));
-    };
+    }
     // One jam at a time: joining leaves whatever you were in.
     for other in jams.values_mut() {
         if other.id != id {
