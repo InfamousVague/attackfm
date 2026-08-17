@@ -359,7 +359,12 @@ export function setRoutingPref(on: boolean): void {
 
 /** How often to re-time the boxes. Latency changes when the phone changes
  *  network, which is an event measured in minutes, not seconds. */
-const PROBE_EVERY_MS = 60_000;
+// One second, by request: the dot is a live heartbeat now, not a minute-old
+// reading. The probe is a tiny cache-busted /api/server GET, it stands down
+// whenever the app is hidden (the check below runs per tick), and the
+// holdings refresh keeps its own fifteen-minute clock - only the health
+// reading runs hot.
+const PROBE_EVERY_MS = 1_000;
 /** How often to re-ask a mirror what it holds. A mirror gains songs slowly
  *  (a sync run), and the delta makes a settled pass nearly free. */
 const HOLDINGS_EVERY_MS = 15 * 60_000;
@@ -375,9 +380,22 @@ export function startMirrorHeartbeat(session: ServerSession): () => void {
   let stopped = false;
   const control = new AbortController();
   let lastHoldings = 0;
+  // At one beat per second, a probe outliving its tick must not stack: a
+  // server slow enough to hang the probe is exactly when the next ticks
+  // arrive before the last answer - one beat in flight at a time.
+  let beating = false;
 
   const beat = async () => {
-    if (stopped || document.hidden) return;
+    if (stopped || beating || document.hidden) return;
+    beating = true;
+    try {
+      await beatOnce();
+    } finally {
+      beating = false;
+    }
+  };
+
+  const beatOnce = async () => {
     const mirrors = read();
     // The session server is probed even with NO mirrors configured: the
     // header's dot reads this heartbeat, and skipping the probe left the

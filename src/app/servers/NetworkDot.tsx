@@ -36,7 +36,7 @@ export function NetworkDot({ onManage }: { onManage: () => void }) {
   // often enough that the light never lags a state change by long.
   const [, setTick] = useState(0);
   useEffect(() => {
-    const t = window.setInterval(() => setTick((n) => n + 1), 10_000);
+    const t = window.setInterval(() => setTick((n) => n + 1), 1_000);
     return () => window.clearInterval(t);
   }, []);
 

@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.134
+
+- The little server light in the header beats once a second now — a live pulse, not a minute-old reading
+
 ## 0.3.133
 
 - Spotify links can open in AttackFM. Your phone offers the choice, and the link lands in search already claimed — the record, its art, and Add
