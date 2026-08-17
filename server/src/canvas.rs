@@ -122,7 +122,7 @@ fn stock_canvas(track_id: Option<i64>, title: &str, artist: &str) -> String {
     ];
     let seed = match track_id {
         Some(id) => id.to_string(),
-        None => format!("{}\u{{0}}{}", artist.to_lowercase(), title.to_lowercase()),
+        None => format!("{}\u{0}{}", artist.to_lowercase(), title.to_lowercase()),
     };
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for b in seed.bytes() {
