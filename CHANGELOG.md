@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.130
+
+- Much more room between the search bar and the refresh on a first pull. The bar now sits there for nearly twice as long before the pull starts becoming a refresh, so it stops being something you sail past on the way
+- Pulling the Now Playing screen down is felt as well as seen: soft ticks that close up and firm up as you approach the point where letting go closes it
+
 ## 0.3.129
 
 - A swipe down that doesn't go far enough now always springs the Now Playing screen back into place. A quick short nudge could close it on speed alone, which is not something you can mean to do
