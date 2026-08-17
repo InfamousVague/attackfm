@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.114
+
+- The DJ conversation keeps the app's own header instead of floating a second back button over it — one arrow, where it always is
+
 ## 0.3.113
 
 - Album art is kept on the phone now: when your server is unreachable, your covers are still there instead of grey squares
