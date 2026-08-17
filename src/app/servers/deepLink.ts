@@ -38,6 +38,24 @@ export function spotifyLink(url: string): string | null {
   return null;
 }
 
+/**
+ * The same link as a web address, whatever form it arrived in.
+ *
+ * Handing `spotify:track:…` back to the system from inside AttackFM would
+ * come straight back to AttackFM - we register that scheme now, so the app
+ * would be answering its own knock. The https form goes to Spotify instead,
+ * and reliably: Spotify has VERIFIED open.spotify.com, which is the same fact
+ * that stops us intercepting those links and is exactly what makes them a
+ * dependable way back out.
+ */
+export function spotifyWebUrl(url: string): string | null {
+  const link = spotifyLink(url);
+  if (!link) return null;
+  const uri = link.match(/^spotify:(track|album|artist|playlist):([A-Za-z0-9]+)/i);
+  if (uri) return `https://open.spotify.com/${uri[1]!.toLowerCase()}/${uri[2]}`;
+  return link;
+}
+
 let pending: string | null = null;
 const subscribers = new Set<(code: string) => void>();
 let pendingLink: string | null = null;

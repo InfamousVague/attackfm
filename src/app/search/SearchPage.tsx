@@ -25,7 +25,8 @@ import { useQueueControls } from '../player/queueControls.tsx';
 import { useRegistry } from '../servers/registrySession.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { artworkUrl, genreArtwork } from '../ux/artwork.ts';
-import { clearSpotifyLink, onSpotifyLink } from '../servers/deepLink.ts';
+import { clearSpotifyLink, onSpotifyLink, spotifyWebUrl } from '../servers/deepLink.ts';
+import { openExternal } from '../core/openExternal.ts';
 import { usePluginCommands, useAcquire } from '../../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import { usePendingPlay } from '../player/pendingPlay.tsx';
@@ -408,6 +409,30 @@ export function SearchPage({
     group: c.group,
     run: () => plugin.run(c.id),
   }));
+
+  /*
+   * The way back out to Spotify.
+   *
+   * Once the phone can be told to open Spotify links here, "open it in
+   * Spotify" stops being something Android is reliably willing to offer -
+   * pick AttackFM once with Always and the choice is gone, and clearing that
+   * lives four screens deep in Settings. So the choice lives on the link
+   * itself, where it cannot be lost: whichever app caught it, both doors are
+   * on this row.
+   *
+   * Always the https form. The `spotify:` scheme is one this app now answers,
+   * so handing that back to the system would just return here.
+   */
+  const spotifyWeb = spotifyWebUrl(query);
+  if (spotifyWeb) {
+    commandItems.push({
+      t: 'action',
+      id: 'open-in-spotify',
+      label: 'Open in Spotify',
+      group: 'Actions',
+      run: () => void openExternal(spotifyWeb),
+    });
+  }
 
   // Likewise plain: these are slices of arrays that are already ranked and
   // memoised, so rebuilding them costs nothing next to what it buys - the
