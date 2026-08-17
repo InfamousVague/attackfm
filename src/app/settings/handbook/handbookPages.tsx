@@ -101,8 +101,9 @@ export const HANDBOOK_PAGES: readonly HandbookPage[] = [
         </P>
         <P>
           Turn pages with the arrows below, the ← → keys, or a sideways swipe
-          on the page itself. The bar above tracks where you are; tap a segment
-          to jump to that chapter, or any entry in the contents here.
+          on the page itself. The bar above tracks where you are - tap a
+          segment to jump to that chapter - and the counter between the arrows
+          opens the whole index, every page of every chapter, from anywhere.
         </P>
       </>
     ),
