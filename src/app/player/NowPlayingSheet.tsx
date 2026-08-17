@@ -250,9 +250,18 @@ export function NowPlayingSheet({
   const beat = useBeat({ meter, active: audible, at: progress });
   const levels = useLiveLevels({ meter, progress, active: audible });
   return createPortal(
-    <div
-      ref={sheetRef}
-      className="npScreen"
+    <>
+      {/* What is behind the sheet, while the sheet is being pushed off it.
+
+          A sibling rather than a child: the sheet paints its own opaque
+          background, and nothing inside it can sit behind that. Mounted only
+          while a drag is live, because a full-screen backdrop-filter is not
+          something to leave running under an opaque surface for the hours a
+          player is open. */}
+      <div className="npScreen__behind" aria-hidden="true" />
+      <div
+        ref={sheetRef}
+        className="npScreen"
       role="dialog"
       aria-label="Now playing"
       // Always the dark palette, whatever the app wears: this surface lives
@@ -631,7 +640,8 @@ export function NowPlayingSheet({
           e.stopPropagation();
         }}
       />
-    </div>,
+      </div>
+    </>,
     document.body,
   );
 }

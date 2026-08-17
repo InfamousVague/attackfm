@@ -704,6 +704,31 @@ export function App() {
                 </span>
               </div>
             )}
+            {/* What the pull is opening onto.
+
+                The gap stops being a hole with a bar in it and becomes the top
+                of the search page: the same SearchPage the overlay mounts,
+                clipped to whatever the pull has uncovered, so the recents and
+                the field below the bar are the real ones arriving rather than
+                a picture of them.
+
+                Mounted for the whole gesture rather than per frame - the cost
+                is the mount, and paying it on every frame of a drag would cost
+                the drag. `!searchOpen` keeps it exclusive with the overlay, so
+                there is only ever one SearchPage alive. */}
+            {!DESKTOP && stage !== 'idle' && <div className="pullBehind" aria-hidden="true" />}
+            {!DESKTOP && !searchOpen && (stage !== 'idle' || barOpen) && (
+              <div className="pullPreview" aria-hidden="true">
+                <PluginHookScope>
+                  <SearchPage
+                    onPlay={playFrom}
+                    onOpenArtist={go}
+                    onOpenAlbum={goAlbum}
+                    onOpenPlaylist={goPlaylist}
+                  />
+                </PluginHookScope>
+              </div>
+            )}
             {summonHint && !DESKTOP && !searchOpen && (tab === 'home' || tab === 'library') && (
               <button
                 type="button"
