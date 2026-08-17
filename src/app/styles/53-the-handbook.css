@@ -1,0 +1,248 @@
+/* THE HANDBOOK
+   Settings' own manual: one idea per page, an icon leading each, a
+   chapter-segmented progress bar above and the pager below. The reader
+   column stays narrow on purpose - these are pages, not a wiki - and
+   every colour comes off the theme tokens so the book reads the same
+   in Midnight as it does in Dawn. */
+
+.handbook {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  max-width: 640px;
+}
+
+/* ── The chapter bar ─────────────────────────────────────────────── */
+
+.handbook__progress {
+  display: flex;
+  gap: var(--glacier-space-1);
+}
+
+/* Each chapter is a segment sized by its page count; the fill inside is
+   how far through it the reader stands. A button, because tapping a
+   chapter should go there. */
+.handbook__seg {
+  position: relative;
+  height: 14px; /* the touch target; the visible bar is the ::before */
+  flex-basis: 0;
+  border: none;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+  border-radius: var(--glacier-radius-full);
+}
+.handbook__seg::before {
+  content: '';
+  position: absolute;
+  inset: 5px 0;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface-sunken);
+}
+.handbook__segFill {
+  position: absolute;
+  inset: 5px auto 5px 0;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-solid);
+  transition: width var(--glacier-duration-fast, 0.15s) var(--glacier-ease-out, ease-out);
+}
+.handbook__seg:focus-visible {
+  outline: 2px solid var(--glacier-accent-solid);
+  outline-offset: 2px;
+}
+
+/* ── The page ────────────────────────────────────────────────────── */
+
+.handbook__pageHost {
+  /* Vertical scrolling stays the browser's; sideways is the pager's. */
+  touch-action: pan-y;
+  overflow: hidden;
+  border-radius: var(--glacier-radius-lg);
+}
+
+.handbook__page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-4);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  animation: handbook-turn-fwd 0.22s var(--glacier-ease-out, ease-out);
+}
+.handbook__page[data-dir='back'] {
+  animation-name: handbook-turn-back;
+}
+@keyframes handbook-turn-fwd {
+  from {
+    opacity: 0;
+    transform: translate3d(24px, 0, 0);
+  }
+}
+@keyframes handbook-turn-back {
+  from {
+    opacity: 0;
+    transform: translate3d(-24px, 0, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .handbook__page {
+    animation: none;
+  }
+}
+
+/* The page's glyph: the accent at chip strength, whatever the theme. */
+.handbook__glyph {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: color-mix(in oklab, var(--glacier-accent-solid) 14%, transparent);
+  color: var(--glacier-accent-solid);
+}
+
+.handbook__kicker {
+  font-size: var(--glacier-font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--glacier-text-subtle);
+}
+
+.handbook__title {
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--glacier-text);
+}
+
+.handbook__prose {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+.handbook__p {
+  margin: 0;
+  font-size: var(--glacier-font-size-sm);
+  line-height: 1.6;
+  color: var(--glacier-text-muted);
+}
+.handbook__prose code {
+  font-size: 0.85em;
+  padding: 0.1em 0.35em;
+  border-radius: var(--glacier-radius-sm);
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text);
+}
+
+/* Icon-led facts - the handbook's bullet points. */
+.handbook__facts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+.handbook__facts li {
+  display: flex;
+  gap: var(--glacier-space-2);
+  align-items: flex-start;
+  font-size: var(--glacier-font-size-sm);
+  line-height: 1.5;
+  color: var(--glacier-text-muted);
+}
+.handbook__factIcon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-top: 1px;
+  border-radius: var(--glacier-radius-sm);
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text-subtle);
+}
+
+/* A short code block - a manifest, a build command. Scrolls sideways
+   inside itself rather than widening the page. */
+.handbook__code {
+  margin: 0;
+  padding: var(--glacier-space-3);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface-sunken);
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.handbook__code code {
+  padding: 0;
+  background: none;
+  color: var(--glacier-text);
+}
+
+/* ── The contents, on the cover ──────────────────────────────────── */
+
+.handbook__toc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  margin-top: var(--glacier-space-2);
+}
+.handbook__tocRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text);
+  cursor: pointer;
+  text-align: left;
+  font-size: var(--glacier-font-size-sm);
+}
+.handbook__tocRow:hover {
+  background: var(--glacier-hover);
+}
+.handbook__tocIcon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--glacier-accent-solid);
+}
+.handbook__tocIcon svg {
+  width: 18px;
+  height: 18px;
+}
+.handbook__tocTitle {
+  flex: 1;
+  font-weight: 500;
+}
+.handbook__tocPages {
+  color: var(--glacier-text-subtle);
+  font-size: var(--glacier-font-size-xs);
+}
+
+/* ── The pager ───────────────────────────────────────────────────── */
+
+.handbook__controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+}
+.handbook__where {
+  border: none;
+  background: none;
+  padding: var(--glacier-space-1) var(--glacier-space-2);
+  border-radius: var(--glacier-radius-sm);
+  color: var(--glacier-text-subtle);
+  font-size: var(--glacier-font-size-xs);
+  cursor: pointer;
+}
+.handbook__where:hover {
+  color: var(--glacier-text);
+}

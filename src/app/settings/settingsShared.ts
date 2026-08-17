@@ -18,6 +18,8 @@ export const PANE_KEYWORDS: Record<string, string> = {
   notifications: 'push alerts recap weekly interrupt',
   plugins: 'plugin extension import spotify buy discover sources',
   about: 'version update check whats new shell licenses github',
+  handbook:
+    'handbook guide manual documentation docs how it works help plugin develop developer api build publish gestures',
 };
 
 export function paneMatches(section: SettingsSection, query: string): boolean {
