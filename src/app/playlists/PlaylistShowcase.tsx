@@ -21,7 +21,7 @@ import type { Track } from '../core/tauri.ts';
  * whole square; none at all, the given glyph. Liked and every user playlist
  * wear this same cover, at the same size as every other card on the page.
  */
-function MosaicCover({ tracks, fallback, tone }: { tracks: Track[]; fallback: ReactNode; tone: string }) {
+export function MosaicCover({ tracks, fallback, tone }: { tracks: Track[]; fallback: ReactNode; tone: string }) {
   const arts = mosaicArts(tracks.map((t) => t.artwork));
   // The tile skeletons until every cover it will actually draw has answered -
   // the whole 2x2, or just the first when fewer than four fill the square.

@@ -288,7 +288,10 @@
   align-items: center;
   gap: var(--glacier-space-3);
   inline-size: 100%;
-  padding: var(--glacier-space-2);
+  /* Flush rows: the list reads as rows of covers, not inset buttons - the
+     tap target keeps its height from the art, and block padding alone
+     separates neighbours. */
+  padding: var(--glacier-space-1) 0;
   background: none;
   border: none;
   border-radius: var(--glacier-radius-md);
@@ -312,6 +315,19 @@
   flex: none;
   border-radius: var(--glacier-radius-md);
   background: var(--glacier-surface-raised, var(--glacier-hover));
+}
+
+/* The row wearing the playlist's own four-cover face: the tile squircle
+   scaled to row size, its radius reined in to match. */
+.addPlaylistRow__icon--art {
+  background: none;
+  overflow: hidden;
+}
+
+.addPlaylistRow__icon--art .tileSquircle {
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: var(--glacier-radius-md);
   color: var(--glacier-text-muted);
 }
 
