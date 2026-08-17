@@ -15,6 +15,7 @@ import {
   Server,
   Settings,
   Sparkles,
+  Stethoscope,
 } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { APP_VERSION } from '../core/version.ts';
@@ -25,6 +26,8 @@ import { useLibrary } from '../library/library.tsx';
 import { usePlayback } from '../player/playback.tsx';
 import { usePlugins, usePluginSettingsSections } from '../../plugins/runtime.tsx';
 import { AboutSettings } from './AboutSettings.tsx';
+import { DiagnosticsPane } from './DiagnosticsPane.tsx';
+import { diagEntries } from '../diag/diagLog.ts';
 import { HandbookPane } from './handbook/HandbookPane.tsx';
 import { HANDBOOK_PAGES } from './handbook/handbookPages.tsx';
 import { NotificationSettings } from './NotificationSettings.tsx';
@@ -89,6 +92,9 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
   // The rail's one-line reading of the vault. Subscribed rather than read once:
   // pinning happens from song menus while Settings is open behind them.
   const [offlineHeld, setOfflineHeld] = useState(() => heldCount());
+  // Read straight from the ring rather than subscribed to: the modal
+  // remounts on open, which is the only moment this summary is looked at.
+  const diagCount = diagEntries().length;
   const [heldBytes, setHeldBytes] = useState<number | null>(null);
   useEffect(() => {
     // Stamped per read: two pins in quick succession can resolve out of
@@ -206,6 +212,18 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       content: <HandbookPane />,
       summary: `How it all works, in ${HANDBOOK_PAGES.length} pages`,
       tint: 'blue',
+      group: 3,
+    },
+    // What broke, in the listener's own hands. Lives beside the handbook and
+    // About because it is the same kind of page - reference, reached when
+    // something has already gone wrong, never part of the daily loop.
+    {
+      id: 'diagnostics',
+      label: 'Diagnostics',
+      icon: <Stethoscope size={16} />,
+      content: <DiagnosticsPane />,
+      summary: diagCount > 0 ? `${diagCount} recent ${diagCount === 1 ? 'problem' : 'problems'}` : 'Nothing to report',
+      tint: 'slate',
       group: 3,
     },
     {

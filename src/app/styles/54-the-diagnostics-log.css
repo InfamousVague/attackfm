@@ -1,0 +1,97 @@
+/*
+ * The diagnostics log.
+ *
+ * A pane that exists to be read on a phone and pasted into a chat window, so
+ * it is built around the two things that serves: a monospace block that can
+ * actually be selected, and rows that stay readable when the detail is a
+ * sixty-character URL.
+ */
+
+.diagPane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  min-inline-size: 0;
+}
+
+.diagPane__actions {
+  display: flex;
+  gap: var(--glacier-space-2);
+  flex-wrap: wrap;
+}
+
+/* The fallback that is always available. `user-select` is set explicitly
+   rather than left to the base rule's textarea exemption: this is the one
+   control on the page whose entire job is being selected, and it should not
+   depend on a selector somewhere else continuing to list textareas. */
+.diagPane__report {
+  inline-size: 100%;
+  min-block-size: 8rem;
+  max-block-size: 14rem;
+  resize: vertical;
+  padding: var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface-sunken, var(--glacier-glass-thin));
+  color: var(--glacier-text-muted);
+  font-family: var(--glacier-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  white-space: pre;
+  overflow: auto;
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+.diagPane__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  min-inline-size: 0;
+}
+
+/* Time and kind hold their width; the detail takes what is left and wraps.
+   A URL with no spaces in it would otherwise push the row wider than the
+   pane and put a sideways scrollbar on the whole modal. */
+.diagRow {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: var(--glacier-space-2);
+  align-items: baseline;
+  padding: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-sm);
+  background: var(--glacier-glass-thin);
+  font-size: var(--glacier-font-size-xs);
+}
+
+.diagRow__time {
+  color: var(--glacier-text-subtle);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.diagRow__kind {
+  padding: 0 var(--glacier-space-1);
+  border-radius: var(--glacier-radius-sm);
+  background: var(--glacier-glass-thin);
+  color: var(--glacier-text-muted);
+  text-transform: uppercase;
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* The two that mean "the app itself broke" read hotter than a server that
+   simply did not answer - that one is usually the network, not a bug. */
+.diagRow__kind[data-kind='crash'],
+.diagRow__kind[data-kind='promise'] {
+  background: var(--glacier-danger-soft, var(--glacier-glass-thin));
+  color: var(--glacier-danger-text, var(--glacier-text));
+}
+
+.diagRow__detail {
+  min-inline-size: 0;
+  color: var(--glacier-text);
+  overflow-wrap: anywhere;
+}

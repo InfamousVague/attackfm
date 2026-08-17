@@ -18,6 +18,7 @@
 import type { RemoteTrack, ServerSession } from '../server.ts';
 import { loadCachedIndex, syncLibrary } from '../server.ts';
 import { fold } from '../core/fold.ts';
+import { describeFailure, recordDiag } from '../diag/diagLog.ts';
 
 const KEY = 'attackfm-mirrors';
 
@@ -137,11 +138,15 @@ export async function probe(url: string, signal?: AbortSignal): Promise<number |
       prior?.latencyMs == null ? sample : prior.latencyMs * (1 - EWMA_ALPHA) + sample * EWMA_ALPHA;
     health.set(url, { latencyMs: smoothed, ok: true, checkedAt: Date.now() });
     return smoothed;
-  } catch {
+  } catch (err) {
     // Keep the last known latency: a box that just failed one probe from a
     // flaky network has not become permanently far away.
     const prior = health.get(url);
     health.set(url, { latencyMs: prior?.latencyMs ?? null, ok: false, checkedAt: Date.now() });
+    // This catch used to swallow the reason, and the grey dot's "unreachable"
+    // was everything the device could say afterwards. The reason is the only
+    // part anyone can act on, so it goes in the log the listener can hand over.
+    recordDiag('probe', describeFailure(err, `${url}/api/server`));
     return null;
   }
 }

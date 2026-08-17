@@ -7,6 +7,13 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.112
+
+- Settings → Diagnostics: every failure this device has hit, with the reason it failed — and a Copy report button, so "it says unreachable" can become something you can paste to someone
+- Unreachable now says why. The reachability check used to throw the reason away, so a grey dot was the whole story; it now names the address it tried and what came back
+- A server that answers with a sign-in page instead of your music — hotel Wi-Fi, captive portals — is caught and named instead of failing silently
+- Nothing leaves the device, and stream tokens are stripped out of the report before you can copy it
+
 ## 0.3.111
 
 - When your home server is unreachable, covers now come from whichever of your servers holds the song — the hot mirror steps in the way it already does for playback
