@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useLibrary } from '../library/library.tsx';
 import { onCarPlayPlay } from './carplay.ts';
+import { bindNativeTransport } from './androidAudio.ts';
 import { remotePath } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
 
@@ -86,5 +87,23 @@ export function CarPlayBridge({ onPlay }: { onPlay: (track: Track, queue: Track[
     window.addEventListener('afm-car-collection', onCollection);
     return () => window.removeEventListener('afm-car-collection', onCollection);
   }, []);
+
+  /*
+   * And the car's own hand on that lever.
+   *
+   * Bound HERE rather than in the Player, because this component is mounted
+   * for the whole life of the app and the Player is not - PlayerHost renders
+   * nothing until a track is playing, so a dashboard tapped from cold used to
+   * find no handler at all. A car that can only start music once music is
+   * already started is not much of a car.
+   */
+  useEffect(
+    () =>
+      bindNativeTransport({
+        playCollection: (id) =>
+          window.dispatchEvent(new CustomEvent('afm-car-collection', { detail: id })),
+      }),
+    [],
+  );
   return null;
 }
