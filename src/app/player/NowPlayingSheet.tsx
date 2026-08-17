@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -210,6 +211,18 @@ export function NowPlayingSheet({
   // Subscribed HERE rather than handed down - same reasoning as the strip:
   // whichever component calls useBeat re-renders per animation frame, and it
   // should be the surface drawing the pulse, not the whole deck core.
+  /*
+   * Whether the clip on screen is actually showing frames.
+   *
+   * Keyed off the clip's own URL so a track change puts it straight back to
+   * false - otherwise the next song's video would inherit the last one's
+   * "ready" and flash its empty box at full opacity, which is the bug this
+   * gate exists to remove, only faster.
+   */
+  const [readyCanvas, setReadyCanvas] = useState<string | null>(null);
+  const canvasReady = readyCanvas !== null && readyCanvas === npCanvas;
+  const setCanvasReady = (on: boolean) => setReadyCanvas(on ? npCanvas : null);
+
   const beat = useBeat({ meter, active: audible, at: progress });
   const levels = useLiveLevels({ meter, progress, active: audible });
   return createPortal(
@@ -255,15 +268,28 @@ export function NowPlayingSheet({
           className="npScreen__canvasWrap"
           content={npArtMenu}
         >
+          {/* Hidden until it is genuinely running.
+
+              The fade used to start when the ELEMENT mounted, which is a
+              promise about the network the network had not made: for the
+              second or so the clip spent arriving, a transparent video box
+              faded up over the sheet and whatever sat behind it - the cover
+              still loading, the app's own mark blown up to fill a phone -
+              showed through, warped by the backdrop's motion. Waiting for
+              `playing` means the first thing anyone sees of a Canvas is the
+              Canvas. Until then the blurred cover holds, which is what the
+              no-clip case looks like anyway. */}
           <video
             key={npCanvas}
             className="npScreen__canvas"
+            data-ready={canvasReady || undefined}
             src={npCanvas}
             autoPlay
             loop
             muted
             playsInline
             aria-hidden="true"
+            onPlaying={() => setCanvasReady(true)}
           />
         </ContextMenu>
       ) : artView === 'hidden' ? (

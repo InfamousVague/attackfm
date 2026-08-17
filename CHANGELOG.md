@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.126
+
+- No more flash before a Canvas appears. The clip stays hidden until it is actually showing frames, so the blurred cover holds that space instead of the app's own mark stretched across your screen
+- Canvas clips are kept on the device now, like your songs. A song you play often fetches its clip once instead of every time, and it starts instantly after that — including with the server unreachable
+
 ## 0.3.125
 
 - Android Auto works from the dashboard. Tapping Liked, All songs or Shuffle all in the car starts them — the rows were drawn but every tap was landing nowhere, and from a cold start there was nothing listening at all

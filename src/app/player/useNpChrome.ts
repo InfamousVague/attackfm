@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { fetchCanvas, trackIdFromPath, type ServerSession } from '../server.ts';
+import { cachedCanvas, keepCanvas } from '../cache/canvasCache.ts';
 import { setIdleTimerDisabled } from './carplay.ts';
 import type { Track } from '../core/tauri.ts';
 
@@ -125,8 +126,32 @@ export function useNpChrome({
       track.artist,
       controller.signal,
       trackIdFromPath(track.path),
-    ).then((url) => {
-      if (!controller.signal.aborted) setNpCanvas(url);
+    ).then(async (url) => {
+      if (controller.signal.aborted) return;
+      if (!url) {
+        setNpCanvas(null);
+        return;
+      }
+      /*
+       * The held copy first, and it is worth the wait for the lookup.
+       *
+       * A clip is megabytes, and the ones that matter are the songs played
+       * often - which were being pulled down again every single time. A blob
+       * out of the cache is bytes already in memory, so the <video> starts
+       * from it without a Range request and the sheet opens with the clip
+       * already running rather than catching up to itself.
+       */
+      const held = await cachedCanvas(url);
+      if (controller.signal.aborted) return;
+      if (held) {
+        setNpCanvas(held);
+        return;
+      }
+      // Not held: fetch it once, keep it, and play from those same bytes. The
+      // plain URL is the fallback for a device with no Cache API and for a
+      // clip that would not come down.
+      const kept = await keepCanvas(url);
+      if (!controller.signal.aborted) setNpCanvas(kept ?? url);
     });
     return () => controller.abort();
   }, [npOpen, track?.title, track?.artist, playSession]);
