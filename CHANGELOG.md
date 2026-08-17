@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.132
+
+- The lyrics on the Now Playing screen sit in the middle now, over the disc, instead of running down the right-hand edge where long words were being cut in half
+
 ## 0.3.131
 
 - The AI DJ button left the playlist page — the playlist's own Play and Shuffle are the page's verbs, and the DJ lives in the Booth
