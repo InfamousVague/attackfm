@@ -5,7 +5,7 @@
 // player/PlayerHost, car bridge → player/CarPlayBridge. The playback state
 // (current/queue) and the queue verbs stay HERE - they close over live state
 // through refs and everything else threads off them.
-import { IconButton, TitleBar } from '@glacier/react';
+import { IconButton, SearchField, TitleBar } from '@glacier/react';
 import { ChevronLeft, ChevronRight, RefreshCw, Search, Settings, X } from '@glacier/icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NowPlayingBackdrop } from './player/NowPlayingBackdrop.tsx';
@@ -104,6 +104,27 @@ export function App() {
   // run - the gesture hooks have to re-attach when it finally mounts, which
   // only a state-carried node can tell them.
   const [swipeEl, setSwipeEl] = useState<HTMLElement | null>(null);
+  /*
+   * The settled gap, taken from the bar itself.
+   *
+   * It used to be a hardcoded 3.1rem, which is a guess about a component this
+   * file does not own: the kit is free to change SearchField's height, a
+   * larger system font grows it, and the moment the guess is short the page
+   * does not move far enough and the bar sits on top of the music - exactly
+   * the thing this whole change was meant to stop. Measured, it cannot be
+   * wrong.
+   */
+  const barRef = useCallback((node: HTMLElement | null) => {
+    if (!node) return;
+    const write = () => {
+      const h = node.getBoundingClientRect().height;
+      if (h > 0) document.documentElement.style.setProperty('--app-pull-stand', `${h + 10}px`);
+    };
+    write();
+    const ro = new ResizeObserver(write);
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, []);
   const swipeRef = useCallback((node: HTMLElement | null) => setSwipeEl(node), []);
   /*
    * What a full pull refreshes. App renders the LibraryProvider, so it cannot
@@ -621,17 +642,38 @@ export function App() {
                 data-stage={refreshing ? 'refresh' : stage}
                 data-spinning={refreshing || undefined}
               >
-                <button
-                  type="button"
+                {/* The kit's own SearchField, not a button dressed as one:
+                    this is the same control the search page itself wears, so
+                    it carries the kit's height, radius, focus ring and glass.
+                    It is inert here - the field never takes a keystroke, the
+                    wrapper takes the tap and hands the whole gesture to the
+                    search page, where a real field is waiting focused. */}
+                <div
+                  ref={barRef}
                   className="pullDeck__search"
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Search your library"
                   onClick={() => {
                     setBarOpen(false);
                     setSearchOpen(true);
                   }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setBarOpen(false);
+                      setSearchOpen(true);
+                    }
+                  }}
                 >
-                  <Search size={15} aria-hidden="true" />
-                  <span>Search your library</span>
-                </button>
+                  <SearchField
+                    size="lg"
+                    placeholder="Search your library"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    readOnly
+                  />
+                </div>
                 <span
                   className="pullDeck__refresh"
                   aria-hidden={!refreshing}
