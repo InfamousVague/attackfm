@@ -100,8 +100,12 @@ export function transcodeUrl(
   return `${session.url}/api/transcode/${trackId}?t=${encodeURIComponent(session.streamToken)}&bitrate=${bitrate}${at}${with_fx}`;
 }
 
-export function artUrl(session: ServerSession, artId: string): string {
-  return `${session.url}/api/art/${encodeURIComponent(artId)}?t=${encodeURIComponent(session.streamToken)}`;
+export function artUrl(session: ServerSession, artId: string, trackId: number): string {
+  // The track id rides along as an inert extra param: the server ignores it,
+  // but a FAILING art URL then still says which song it was for - which is
+  // what lets the loader ask a mirror for the same cover (mirrors share
+  // track identity through holdings, never art ids).
+  return `${session.url}/api/art/${encodeURIComponent(artId)}?t=${encodeURIComponent(session.streamToken)}&track=${trackId}`;
 }
 
 /**
@@ -141,7 +145,7 @@ export function toTrack(session: ServerSession, remote: RemoteTrack): Track {
     discNo: remote.discNo,
     year: remote.year,
     addedAt: remote.addedAt,
-    artwork: remote.artId ? artUrl(session, remote.artId) : null,
+    artwork: remote.artId ? artUrl(session, remote.artId, remote.id) : null,
     genre: remote.genre,
     lyrics: remote.lyrics,
     lossless: remote.lossless,

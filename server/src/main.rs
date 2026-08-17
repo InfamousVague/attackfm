@@ -550,6 +550,7 @@ async fn main() {
         .route("/api/upload/{id}/finish", post(upload::finish))
         .route("/api/stream/{id}", get(stream::stream))
         .route("/api/art/{id}", get(stream::art))
+        .route("/api/art/track/{id}", get(stream::art_by_track))
         .route("/api/transcode/{id}", get(stream::transcode))
         .route("/api/spotify/status", get(spotify::status))
         .route("/api/spotify/connect", post(spotify::connect))

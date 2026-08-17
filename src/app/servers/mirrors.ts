@@ -213,6 +213,33 @@ export async function refreshHoldings(mirror: Mirror, signal?: AbortSignal): Pro
   }
 }
 
+/**
+ * A cover from whichever OTHER server holds this song, for when the session
+ * server's art will not come. The failing URL names its track (the inert
+ * `track` param art URLs carry for exactly this moment); the holdings map
+ * names that song on each mirror; any HEALTHY holder qualifies - this is a
+ * fallback for a dark server, not a race for a fast one, so the first
+ * reachable candidate wins. Answers null when nobody else holds it, which
+ * is the caller's cue to fall through to the placeholder as before.
+ */
+export function artFallbackUrl(session: ServerSession, failedArtUrl: string): string | null {
+  if (!failedArtUrl.startsWith(session.url)) return null;
+  const trackId = Number(/[?&]track=(\d+)/.exec(failedArtUrl)?.[1]);
+  if (!Number.isFinite(trackId)) return null;
+  const size = /[?&]size=(\d+)/.exec(failedArtUrl)?.[1];
+  const key = keyForTrackId(session.url, trackId);
+  if (!key) return null;
+  for (const mirror of read()) {
+    const id = loadHoldings(mirror.url).get(key);
+    if (id === undefined) continue;
+    const h = health.get(mirror.url);
+    if (h && h.ok === false) continue;
+    const sized = size ? `&size=${size}` : '';
+    return `${mirror.url}/api/art/track/${id}?t=${encodeURIComponent(mirror.streamToken)}${sized}`;
+  }
+  return null;
+}
+
 // --- routing ---------------------------------------------------------------
 
 export interface Source {
