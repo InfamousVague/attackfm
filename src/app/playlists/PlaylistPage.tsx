@@ -15,7 +15,6 @@ import {
   Pencil,
   Play,
   Shuffle,
-  Sparkles,
   Plus,
   Trash2,
   X,
@@ -34,7 +33,6 @@ import { EmptyArt } from '../ux/EmptyArt.tsx';
 import { TrackMenu } from '../library/TrackMenu.tsx';
 import { setHeaderActions } from '../nav/headerActions.ts';
 import type { Track } from '../core/tauri.ts';
-import { DjCollectionTraitSheet } from '../booth/DjTraitSheet.tsx';
 
 interface PlaylistPageProps {
   id: string;
@@ -67,7 +65,6 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
   const playlist = playlists.find((p) => p.id === id);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [mixing, setMixing] = useState(false);
 
   // Deleted from another device while open here: the heartbeat drops it from
   // the list and the page steps back rather than rendering against nothing.
@@ -273,12 +270,6 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
               <Shuffle size={15} />
               Shuffle
             </Button>
-            {session && rows.length > 0 && (
-              <Button variant="ghost" size="sm" onClick={() => setMixing(true)}>
-                <Sparkles size={15} />
-                AI DJ
-              </Button>
-            )}
             <Menu
               aria-label="Playlist actions"
               trigger={
@@ -464,8 +455,6 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
           </div>
         </div>
       </Modal>
-      <DjCollectionTraitSheet source="playlist" name={playlist.name} seedTracks={listTracks}
-        open={mixing} onClose={() => setMixing(false)} />
     </div>
   );
 }
