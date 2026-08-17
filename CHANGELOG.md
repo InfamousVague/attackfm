@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.110
+
+- Fixed the launch that never finished: the app could open to skeletons forever (green dot and all) after a network hop or a cold start behind the lock screen — every request now has a deadline, the library cache can't wedge the first sync, and a stuck sync strip un-sticks itself
+- The header dot earned its color: it now actually checks your server before showing green, and says "Checking…" instead of guessing while it hasn't
+
 ## 0.3.109
 
 - The Handbook fills the screen now — no card around the page, and the arrows live along the bottom where thumbs are
