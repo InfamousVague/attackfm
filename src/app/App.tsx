@@ -242,7 +242,48 @@ export function App() {
   // the header arrows do, with the page following the thumb. Touch-only and
   // edge-only (the hook guards both), and enabled only when there is anywhere
   // to go back TO - with the stack at its root the edge belongs to the page.
-  useSwipeBack(swipeEl, back, !DESKTOP && canBack);
+  /*
+   * Back, for everything that is a step.
+   *
+   * The DJ conversation is an overlay rather than a history entry, so the
+   * header's own arrow knew nothing about it and the layer had to float a
+   * second chevron of its own - two back buttons in the same corner, one of
+   * them the app's and one of them not. The header's arrow is the app's one
+   * way back on every page; when the conversation is up, it closes the
+   * conversation, and there is nothing else to draw.
+   */
+  const backFromAnywhere = useCallback(() => {
+    if (djOpen) {
+      setDjOpen(false);
+      return;
+    }
+    back();
+  }, [djOpen, back]);
+  const canGoBack = djOpen || canBack;
+
+  useSwipeBack(swipeEl, backFromAnywhere, !DESKTOP && canGoBack);
+
+  /*
+   * The header's real height, published for the layers that must begin below
+   * it. Measured rather than assumed: it carries the notch inset, and a
+   * foldable changes both when it opens - a hardcoded number is wrong on
+   * exactly the device this app is used on. Observed rather than measured
+   * once, for the same reason.
+   */
+  const [headerEl, setHeaderEl] = useState<HTMLElement | null>(null);
+  const headerRef = useCallback((node: HTMLElement | null) => setHeaderEl(node), []);
+  useEffect(() => {
+    if (!headerEl) return;
+    const publish = () =>
+      document.documentElement.style.setProperty(
+        '--app-header-height',
+        `${Math.round(headerEl.getBoundingClientRect().height)}px`,
+      );
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(headerEl);
+    return () => observer.disconnect();
+  }, [headerEl]);
 
   // Sideways drags on shelves, which the engine no longer performs itself -
   // see shelfPan.ts and the touch-action rule it pairs with. Delegated from
@@ -302,8 +343,8 @@ export function App() {
                         variant="ghost"
                         size="sm"
                         aria-label="Back"
-                        disabled={!canBack}
-                        onClick={back}
+                        disabled={!canGoBack}
+                        onClick={backFromAnywhere}
                       >
                         <ChevronLeft size={18} />
                       </IconButton>
@@ -355,7 +396,7 @@ export function App() {
               // and the browser. Without it the settings button - and so the
               // whole server connection - is unreachable off the desktop, which
               // is exactly backwards for the platform that needs a server most.
-              <header className="mobileHeader">
+              <header className="mobileHeader" ref={headerRef}>
                 <span className="mobileHeader__nav">
                   {/* The desktop back/forward pair lives in a title bar this
                       build does not render, so the phone carries its own. Both
@@ -367,8 +408,8 @@ export function App() {
                     variant="ghost"
                     size="sm"
                     aria-label="Back"
-                    disabled={!canBack}
-                    onClick={back}
+                    disabled={!canGoBack}
+                    onClick={backFromAnywhere}
                   >
                     <ChevronLeft size={18} />
                   </IconButton>
@@ -439,16 +480,12 @@ export function App() {
             {/* The DJ conversation, fullscreen: same layer, same rules. One
                 back control only - this layer covers the header, so its
                 floating chevron (or the system back) is the single way out. */}
+            {/* The conversation sits UNDER the header rather than over it, so
+                the app's own back arrow is the way out - see backFromAnywhere.
+                It used to cover the header and float a chevron of its own,
+                which put two back buttons in the same corner. */}
             {djOpen && (
               <div className="dateLayer djLayer">
-                <button
-                  type="button"
-                  className="dateLayer__close"
-                  aria-label="Leave the conversation"
-                  onClick={() => setDjOpen(false)}
-                >
-                  <ChevronLeft size={20} />
-                </button>
                 <DjPage />
               </div>
             )}

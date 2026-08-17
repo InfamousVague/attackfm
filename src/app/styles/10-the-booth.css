@@ -484,13 +484,37 @@
   cursor: pointer;
 }
 
-/* The conversation's fullscreen layer: the date layer's grammar, and the DJ
-   page's floating-bar clearance zeroed - the layer owns the viewport. */
+/*
+ * The conversation's layer sits UNDER the app's header, not over it.
+ *
+ * It borrows the date layer's grammar, but Music Date is deliberately
+ * chrome-free - it is a full-screen thing you leave - while the conversation
+ * is a place inside the app. Over the header it had to float a back chevron
+ * of its own, which put two back buttons in the same corner: the app's, and
+ * one that looked like it.
+ *
+ * z-index 1 keeps it above the page and below the header's 2, so the header
+ * paints on top and stays pressable; the top inset is the header's own
+ * height, so the conversation begins where the header ends instead of
+ * running underneath it. The height is measured by App and published as
+ * --app-header-height; the fallback covers the frame before the first
+ * measurement lands.
+ */
+/* Both classes, deliberately: .dateLayer's `inset: 0` and `z-index: 70` live
+   in a later chapter (11), so a single-class rule here loses on order no
+   matter what it says. Two classes outrank one wherever the file sits. */
+.dateLayer.djLayer {
+  z-index: 1;
+  inset-block-start: var(--app-header-height, calc(var(--app-safe-top) + 3.25rem));
+}
+
 .djLayer .djPage {
   flex: 1;
   min-block-size: 0;
   padding-block-end: var(--glacier-space-3);
-  padding-block-start: calc(var(--glacier-space-5) + 2.25rem);
+  /* No floating chevron to clear any more - the header above owns that
+     corner - so the conversation starts at the top of its own layer. */
+  padding-block-start: var(--glacier-space-3);
 }
 
 /* --- Profile rooms --------------------------------------------------------- */
