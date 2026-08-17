@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from 'react';
-import type { Track } from '../app/tauri.ts';
+import type { Track } from '../app/core/tauri.ts';
 
 /**
  * The contract between the app's chrome and the plugins that extend it.

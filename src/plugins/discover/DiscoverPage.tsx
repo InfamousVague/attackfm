@@ -1,11 +1,11 @@
 import { Button, Modal, ScrollArea, Text } from '@glacier/react';
 import { Check, Compass, ListMusic, Music, Play, Plus, Sparkles } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRippleWave } from '../../app/rippleWave.ts';
-import { useServerSession } from '../../app/serverSession.tsx';
-import { useLibrary } from '../../app/library.tsx';
-import { useOwned } from '../../app/owned.ts';
-import type { Track } from '../../app/tauri.ts';
+import { useRippleWave } from '../../app/ux/rippleWave.ts';
+import { useServerSession } from '../../app/servers/serverSession.tsx';
+import { useLibrary } from '../../app/library/library.tsx';
+import { useOwned } from '../../app/library/owned.ts';
+import type { Track } from '../../app/core/tauri.ts';
 import {
   artSized,
   fetchDiscover,
@@ -14,17 +14,17 @@ import {
   type Discovery,
   type Suggestion,
 } from '../../app/server.ts';
-import { useArtLoad } from '../../app/artLoad.ts';
-import { EmptyArt } from '../../app/EmptyArt.tsx';
-import { TrackMenu } from '../../app/TrackMenu.tsx';
+import { useArtLoad } from '../../app/ux/artLoad.ts';
+import { EmptyArt } from '../../app/ux/EmptyArt.tsx';
+import { TrackMenu } from '../../app/library/TrackMenu.tsx';
 import type { AcquireTarget, PluginPageProps } from '../types.ts';
 import { IMPORTER_PLUGIN_ID, useAcquire } from '../runtime.tsx';
 import { useDownloadsOptional } from '../importsBridge.ts';
-import { usePendingPlay, placeholderTrack } from '../../app/pendingPlay.tsx';
+import { usePendingPlay, placeholderTrack } from '../../app/player/pendingPlay.tsx';
 import { CatalogArtistPage } from './CatalogArtistPage.tsx';
-import { CuratorShelves } from '../../app/HomePage.tsx';
+import { CuratorShelves } from '../../app/library/HomePage.tsx';
 import discoverPlaceholder from '../../assets/attack-wave.png';
-import { ForYouShelf } from '../../app/ForYouShelf.tsx';
+import { ForYouShelf } from '../../app/library/ForYouShelf.tsx';
 import type { MusicImportJob } from '../importsBridge.ts';
 
 /** A curated playlist card, as an acquire target: a whole list, no single

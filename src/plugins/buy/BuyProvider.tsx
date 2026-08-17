@@ -2,7 +2,7 @@ import { createContext, useContext, useState, type ReactNode } from 'react';
 import { Modal } from '@glacier/react';
 import { ExternalLink } from '@glacier/icons';
 import type { AcquireTarget } from '../types.ts';
-import { openExternal } from '../../app/openExternal.ts';
+import { openExternal } from '../../app/core/openExternal.ts';
 
 /**
  * The Buy plugin's opener: the acquire handler calls `open` with a song or

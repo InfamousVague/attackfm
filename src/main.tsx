@@ -11,11 +11,11 @@ import '@glacier/tokens/css/tokens.css';
 import '@glacier/react/styles.css';
 import './app/app.css';
 import { App } from './app/App.tsx';
-import { runColdStartMaintenance } from './app/coldStart.ts';
-import { initDeepLinks } from './app/deepLink.ts';
-import { hydrateOffline } from './app/offline.ts';
+import { runColdStartMaintenance } from './app/core/coldStart.ts';
+import { initDeepLinks } from './app/servers/deepLink.ts';
+import { hydrateOffline } from './app/downloads/offline.ts';
 
-import { isAndroid, isIOS } from './app/platform.ts';
+import { isAndroid, isIOS } from './app/core/platform.ts';
 
 // Stamped once so CSS can ask which glass it is under: an iPhone's screen
 // corners curve (the nav chin sweeps to match); Android's are the webview's

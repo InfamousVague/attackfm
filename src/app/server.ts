@@ -18,7 +18,7 @@
  * token in a less careful place.
  */
 
-import type { Track } from './tauri.ts';
+import type { Track } from './core/tauri.ts';
 
 /** The `path` scheme that marks a track as living on a server. */
 export const REMOTE_SCHEME = 'afm://';

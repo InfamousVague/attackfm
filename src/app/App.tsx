@@ -10,15 +10,15 @@ import {
 } from '@glacier/react';
 import { ChartNoAxesColumn, ChevronLeft, ChevronRight, CircleUserRound, Compass, Disc3, Download, LibraryBig, Play, Search, Settings, Shuffle, X } from '@glacier/icons';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { AppearanceProvider } from './appearance.tsx';
-import { LibraryProvider, useLibrary } from './library.tsx';
-import { ServerSessionProvider, useServerSession } from './serverSession.tsx';
-import { RegistrySessionProvider } from './registrySession.tsx';
-import { EqualizerProvider } from './equalizer.tsx';
-import { PlaybackProvider } from './playback.tsx';
-import { PlaybackSyncProvider, useConnect } from './playbackSync.tsx';
-import { NowPlayingMotionProvider } from './nowPlayingMotion.tsx';
-import { NowPlayingBackdrop } from './NowPlayingBackdrop.tsx';
+import { AppearanceProvider } from './settings/appearance.tsx';
+import { LibraryProvider, useLibrary } from './library/library.tsx';
+import { ServerSessionProvider, useServerSession } from './servers/serverSession.tsx';
+import { RegistrySessionProvider } from './servers/registrySession.tsx';
+import { EqualizerProvider } from './player/equalizer.tsx';
+import { PlaybackProvider } from './player/playback.tsx';
+import { PlaybackSyncProvider, useConnect } from './player/playbackSync.tsx';
+import { NowPlayingMotionProvider } from './player/nowPlayingMotion.tsx';
+import { NowPlayingBackdrop } from './player/NowPlayingBackdrop.tsx';
 import {
   AcquireProvider,
   PluginHookScope,
@@ -29,49 +29,49 @@ import {
   useHasDownloadQueue,
   usePluginPages,
 } from '../plugins/runtime.tsx';
-import { isDesktopApp } from './platform.ts';
-import { onCarPlayPlay } from './carplay.ts';
+import { isDesktopApp } from './core/platform.ts';
+import { onCarPlayPlay } from './player/carplay.ts';
 import { remotePath, trackIdFromPath } from './server.ts';
-import type { Track } from './tauri.ts';
-import { AlbumPage } from './AlbumPage.tsx';
-import { Player } from './Player.tsx';
-import { QueueControlsBridge } from './queueControls.tsx';
-import { NetworkDot } from './NetworkDot.tsx';
-import { ArtistPage } from './ArtistPage.tsx';
-import { PlaylistPage } from './PlaylistPage.tsx';
-import { DownloadsPage } from './DownloadsPage.tsx';
-import { RadioProvider } from './radio.tsx';
-import { SettingsModal } from './SettingsModal.tsx';
-import { PlaylistsProvider } from './playlists.tsx';
-import { LibrarySyncProvider } from './librarySync.tsx';
-import { SearchPage } from './SearchPage.tsx';
-import { StatsPage } from './StatsPage.tsx';
-import { FriendsPage } from './FriendsPage.tsx';
-import { UpdateBanner } from './UpdateBanner.tsx';
-import { useHeaderActions, type HeaderActions } from './headerActions.ts';
-import { installShelfPan } from './shelfPan.ts';
-import { BoothPage } from './BoothPage.tsx';
-import { DjChatProvider } from './djChat.tsx';
-import { DatePage } from './DatePage.tsx';
-import { DjPage } from './DjPage.tsx';
-import { ListeningShareBridge } from './listeningShare.tsx';
-import { LibraryView } from './LibraryView.tsx';
-import { SongPage, type SongCollection } from './SongPage.tsx';
+import type { Track } from './core/tauri.ts';
+import { AlbumPage } from './albumArtist/AlbumPage.tsx';
+import { Player } from './player/Player.tsx';
+import { QueueControlsBridge } from './player/queueControls.tsx';
+import { NetworkDot } from './servers/NetworkDot.tsx';
+import { ArtistPage } from './albumArtist/ArtistPage.tsx';
+import { PlaylistPage } from './playlists/PlaylistPage.tsx';
+import { DownloadsPage } from './downloads/DownloadsPage.tsx';
+import { RadioProvider } from './player/radio.tsx';
+import { SettingsModal } from './settings/SettingsModal.tsx';
+import { PlaylistsProvider } from './playlists/playlists.tsx';
+import { LibrarySyncProvider } from './library/librarySync.tsx';
+import { SearchPage } from './search/SearchPage.tsx';
+import { StatsPage } from './profile/StatsPage.tsx';
+import { FriendsPage } from './profile/FriendsPage.tsx';
+import { UpdateBanner } from './settings/UpdateBanner.tsx';
+import { useHeaderActions, type HeaderActions } from './nav/headerActions.ts';
+import { installShelfPan } from './ux/shelfPan.ts';
+import { BoothPage } from './booth/BoothPage.tsx';
+import { DjChatProvider } from './booth/djChat.tsx';
+import { DatePage } from './date/DatePage.tsx';
+import { DjPage } from './booth/DjPage.tsx';
+import { ListeningShareBridge } from './profile/listeningShare.tsx';
+import { LibraryView } from './library/LibraryView.tsx';
+import { SongPage, type SongCollection } from './library/SongPage.tsx';
 import {
   PendingPlayProvider,
   PendingPlayWatcher,
   isPendingPath,
-} from './pendingPlay.tsx';
-import { useSwipeBack } from './useSwipeBack.ts';
-import { onSystemBack, useSystemBack } from './systemBack.ts';
-import { hapticsImpl, installTapHaptics, useHapticsPref } from './haptics.ts';
-import { installOverlayGuard } from './overlayGuard.ts';
+} from './player/pendingPlay.tsx';
+import { useSwipeBack } from './nav/useSwipeBack.ts';
+import { onSystemBack, useSystemBack } from './nav/systemBack.ts';
+import { hapticsImpl, installTapHaptics, useHapticsPref } from './core/haptics.ts';
+import { installOverlayGuard } from './core/overlayGuard.ts';
 import { DiscoverPage } from '../plugins/discover/DiscoverPage.tsx';
-import { ProfilePage } from './ProfilePage.tsx';
-import { JamProvider } from './jam.tsx';
-import { MobileAuthGate } from './MobileAuthGate.tsx';
-import { DownloadsChip } from './DownloadsChip.tsx';
-import { NavMoreMenu } from './NavMoreMenu.tsx';
+import { ProfilePage } from './profile/ProfilePage.tsx';
+import { JamProvider } from './player/jam.tsx';
+import { MobileAuthGate } from './servers/MobileAuthGate.tsx';
+import { DownloadsChip } from './downloads/DownloadsChip.tsx';
+import { NavMoreMenu } from './nav/NavMoreMenu.tsx';
 import { useDownloadsOptional } from '../plugins/importsBridge.ts';
 import wordmark from '../assets/attack-white.png';
 

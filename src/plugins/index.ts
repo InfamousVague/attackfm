@@ -1,4 +1,4 @@
-import { canRunSubprocesses } from '../app/platform.ts';
+import { canRunSubprocesses } from '../app/core/platform.ts';
 import type { Plugin } from './types.ts';
 import { buy } from './buy/index.tsx';
 
