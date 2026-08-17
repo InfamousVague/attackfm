@@ -164,11 +164,14 @@
 
 :root[data-np-dragging] .npScreen__behind {
   display: block;
-  /* 22px at the first millimetre, gone by the time the drag has committed.
-     `max()` keeps it from going negative once the damped offset runs past
-     the threshold. */
-  -webkit-backdrop-filter: blur(max(0px, 22px - var(--np-drag, 0px) * 0.22));
-  backdrop-filter: blur(max(0px, 22px - var(--np-drag, 0px) * 0.22));
+  /* 22px at the first millimetre, about half left at the commit threshold
+     (110px of offset), fully resolved around 220px - which, with the damping
+     past the threshold, is a third of the screen of real finger travel. The
+     first slope cleared at 100px, so the page snapped sharp barely past the
+     decision point and the whole tail of the gesture played over an already
+     finished reveal. `max()` keeps it from going negative on a long pull. */
+  -webkit-backdrop-filter: blur(max(0px, 22px - var(--np-drag, 0px) * 0.1));
+  backdrop-filter: blur(max(0px, 22px - var(--np-drag, 0px) * 0.1));
 }
 
 .npScreen[data-dragging] {
