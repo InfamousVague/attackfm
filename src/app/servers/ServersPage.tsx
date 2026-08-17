@@ -14,6 +14,8 @@ import {
   type ServerSession,
   type ServerStats,
 } from '../server.ts';
+import { formatBytes } from '../ux/format.ts';
+import { latencyBand } from './serverFormat.ts';
 import {
   addMirror,
   healthOf,
@@ -43,22 +45,12 @@ import {
  * itself, not a copy of it. Everything below it is a delivery route.
  */
 
-function gb(bytes: number): string {
-  const g = bytes / 1024 ** 3;
-  if (g >= 10) return `${Math.round(g)} GB`;
-  if (g >= 0.1) return `${g.toFixed(1)} GB`;
-  return `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
-}
-
-/** Latency, said the way a person would judge it. */
+/** Latency, said the way a person would judge it - bands from serverFormat,
+ *  the same ones the header's dot reads. */
 function nearness(ms: number | null, ok: boolean): { value: string; label: string; tone: string } {
   if (!ok) return { value: 'offline', label: 'unreachable', tone: 'bad' };
   if (ms == null) return { value: '—', label: 'checking…', tone: 'idle' };
-  const value = `${Math.round(ms)} ms`;
-  if (ms < 40) return { value, label: 'same network', tone: 'best' };
-  if (ms < 150) return { value, label: 'close', tone: 'good' };
-  if (ms < 400) return { value, label: 'far', tone: 'ok' };
-  return { value, label: 'very far', tone: 'slow' };
+  return { value: `${Math.round(ms)} ms`, ...latencyBand(ms) };
 }
 
 interface Row {
@@ -325,10 +317,10 @@ function ServerCard({
         </div>
         <div className="serverMetric">
           <span className="serverMetric__value">
-            {row.stats ? gb(used) : <Skeleton variant="text" width="3rem" />}
+            {row.stats ? formatBytes(used) : <Skeleton variant="text" width="3rem" />}
           </span>
           <span className="serverMetric__label">
-            {ceiling > 0 ? `of ${gb(ceiling)} used` : 'stored'}
+            {ceiling > 0 ? `of ${formatBytes(ceiling)} used` : 'stored'}
           </span>
         </div>
       </div>
@@ -348,7 +340,7 @@ function ServerCard({
             />
           </div>
           <Text size="sm" tone="muted">
-            {gb(Math.max(0, ceiling - used))} free
+            {formatBytes(Math.max(0, ceiling - used))} free
           </Text>
         </div>
       )}

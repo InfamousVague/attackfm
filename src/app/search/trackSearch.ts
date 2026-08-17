@@ -1,5 +1,6 @@
 import type { Track } from '../core/tauri.ts';
 import { byRunningOrder } from '../albumArtist/albums.ts';
+import { fold } from '../core/fold.ts';
 
 /**
  * The app's own local-library search, shared by the page-level search bars
@@ -27,14 +28,7 @@ import { byRunningOrder } from '../albumArtist/albums.ts';
 // reaches for the option key mid-search, so "bjork" has to find Björk and "dont"
 // has to find "Don't". Both sides of every comparison come through here, so this
 // only ever makes a query match more - never less.
-export const flatten = (value: string): string =>
-  value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/gu, '')
-    .replace(/['\u2019\u02bc]/gu, '')
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim();
+export const flatten = fold;
 
 /** A track's searchable text, already folded. */
 interface Folded {

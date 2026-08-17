@@ -192,13 +192,6 @@
   }
 }
 
-/* The add-to-playlist panel. Worn as a popover off a control, or as a dialog
-   when the caller has nothing to anchor to - the body is the same either way. */
-.addPlaylistPanel {
-  inline-size: 20rem;
-  max-inline-size: calc(100vw - 2rem);
-}
-
 .addPlaylist {
   display: flex;
   flex-direction: column;

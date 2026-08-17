@@ -7,7 +7,7 @@ import {
   useBeat,
   useLiveLevels,
 } from '@glacier/react';
-import type { PlayerRepeat } from '@glacier/react';
+import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
 import {
   AudioLines,
   ChevronLeft,
@@ -26,6 +26,8 @@ import { DeviceList, useDevicesAvailable } from './DevicePicker.tsx';
 import { LyricsPanel } from './LyricsPanel.tsx';
 import type { PauseStyle } from './playback.tsx';
 import {
+  FADE_DOWN_MS,
+  FADE_UP_MS,
   IDLE_TRACK,
   SPIN_DOWN_MS,
   SPIN_UP_MS,
@@ -60,8 +62,8 @@ export function PlayerStrip({
   audible,
   buffering,
   downloading,
-  beat,
-  levels,
+  meter,
+  progress,
   pauseStyle,
   onScrubDisp,
   onSeekEndDisp,
@@ -104,8 +106,11 @@ export function PlayerStrip({
   audible: boolean;
   buffering: boolean;
   downloading: boolean;
-  beat: ReturnType<typeof useBeat>;
-  levels: ReturnType<typeof useLiveLevels>;
+  /** The deck's loudness meter; the strip runs its own beat/levels off it so
+   *  the 60fps pulse re-renders this strip, never the whole Player. */
+  meter: LoudnessMeter | null;
+  /** Playhead as a 0-1 fraction, so ripples leave the playhead. */
+  progress: number;
   pauseStyle: PauseStyle;
   onScrubDisp: (to: number) => void;
   onSeekEndDisp: (seconds: number) => void;
@@ -129,6 +134,13 @@ export function PlayerStrip({
   setNpOpen: (open: boolean) => void;
   setFiling: (track: Track | null) => void;
 }) {
+  // The pulse and the waveform, subscribed HERE rather than handed down:
+  // useBeat sets fresh state every animation frame while music is audible,
+  // and whichever component calls it re-renders at that rate. This strip is
+  // the small surface that actually draws the beat; the Player it used to
+  // live in is 2,500 lines mounted app-wide.
+  const beat = useBeat({ meter, active: audible, at: progress });
+  const levels = useLiveLevels({ meter, progress, active: audible });
   // The overflow popover opens on a chooser - Equalizer, Lyrics, Volume -
   // and each pick swaps the panel in behind a back row. Controlled, so every
   // open starts back at the chooser rather than wherever the last visit left
@@ -165,14 +177,14 @@ export function PlayerStrip({
                 pauseStyle === 'turntable'
                   ? SPIN_UP_MS
                   : pauseStyle === 'fade'
-                    ? 250
+                    ? FADE_UP_MS
                     : 0
               }
               spinDownMs={
                 pauseStyle === 'turntable'
                   ? SPIN_DOWN_MS
                   : pauseStyle === 'fade'
-                    ? 200
+                    ? FADE_DOWN_MS
                     : 0
               }
             />

@@ -145,7 +145,10 @@ export function App() {
   // so the song changes on every device while control stays where it is.
   const connectRouteRef = useRef<((track: Track, context?: Track[]) => boolean) | null>(null);
 
-  const playFrom = (track: Track, context?: Track[]) => {
+  // Identity-stable (everything it touches is a ref or a setter): playFrom
+  // rides into memoized page props and the song table's column definitions,
+  // so a fresh closure per render re-rendered every row on each track change.
+  const playFrom = useCallback((track: Track, context?: Track[]) => {
     // Another device is the one playing: hand it the pick rather than seizing
     // playback here. The active device loads and plays it, then reports, and
     // this device (a remote) updates from that report like any other.
@@ -153,7 +156,7 @@ export function App() {
     setAutoplay(true);
     setCurrent((prev) => (prev === track ? { ...track } : track));
     setQueue(context ?? [track]);
-  };
+  }, []);
 
   // A song tapped in Discover/Search that this device does not own yet: show it
   // in Now Playing under a "Downloading" state - the placeholder carries its

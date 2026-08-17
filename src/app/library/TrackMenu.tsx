@@ -10,7 +10,7 @@ import {
   Sparkles,
   Trash2,
 } from '@glacier/icons';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AddToPlaylistDialog } from '../playlists/AddToPlaylist.tsx';
 import { WrongSongModal } from './WrongSongModal.tsx';
 import { useQueueControls } from '../player/queueControls.tsx';
@@ -57,6 +57,15 @@ export function TrackMenu({
   const [reporting, setReporting] = useState(false);
   const [exploring, setExploring] = useState(false);
   const [quickQueue, setQuickQueue] = useState(false);
+  // Which dialogs have ever been opened - the mount gate for the block at the
+  // bottom. A ref written during render, which is safe here: it only ever
+  // goes false→true, and the render that flips it is the one the matching
+  // state flag just re-triggered.
+  const everOpened = useRef({ filing: false, reporting: false, exploring: false, quickQueue: false });
+  if (filing) everOpened.current.filing = true;
+  if (reporting) everOpened.current.reporting = true;
+  if (exploring) everOpened.current.exploring = true;
+  if (quickQueue) everOpened.current.quickQueue = true;
   // Keeping a song is only offered where it means something: a phone or
   // desktop app (a browser tab has no disk of ours) holding a track that came
   // from a server (a local file is already on this machine).
@@ -160,18 +169,31 @@ export function TrackMenu({
       >
         {children}
       </ContextMenu>
-      <AddToPlaylistDialog
-        track={filing ? track : null}
-        open={filing}
-        onClose={() => setFiling(false)}
-      />
-      <WrongSongModal
-        track={reporting ? track : null}
-        open={reporting}
-        onClose={() => setReporting(false)}
-      />
-      <DjTraitSheet track={track} open={exploring} onClose={() => setExploring(false)} />
-      <DjTraitSheet track={track} open={quickQueue} quick onClose={() => setQuickQueue(false)} />
+      {/* Mounted on FIRST use, not always: this menu wraps every row of a
+          five-thousand-song table, and four dialog components' worth of hooks
+          and context subscriptions per row is most of what made that table
+          heavy. Once opened, a dialog stays mounted with open=false so its
+          exit animation still plays. */}
+      {(filing || everOpened.current.filing) && (
+        <AddToPlaylistDialog
+          track={filing ? track : null}
+          open={filing}
+          onClose={() => setFiling(false)}
+        />
+      )}
+      {(reporting || everOpened.current.reporting) && (
+        <WrongSongModal
+          track={reporting ? track : null}
+          open={reporting}
+          onClose={() => setReporting(false)}
+        />
+      )}
+      {(exploring || everOpened.current.exploring) && (
+        <DjTraitSheet track={track} open={exploring} onClose={() => setExploring(false)} />
+      )}
+      {(quickQueue || everOpened.current.quickQueue) && (
+        <DjTraitSheet track={track} open={quickQueue} quick onClose={() => setQuickQueue(false)} />
+      )}
     </>
   );
 }

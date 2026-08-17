@@ -13,7 +13,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { refresh as apiRefresh, type RegistryAccount, type RegistrySession } from './registry.ts';
 
-const KEY = 'attackfm-registry-session';
+/** Where the registry session lives. Exported because serverSync reads the
+ *  token straight from storage (it runs outside React) - a second literal of
+ *  this key was one rename away from a sync that silently stopped. */
+export const REGISTRY_SESSION_KEY = 'attackfm-registry-session';
+const KEY = REGISTRY_SESSION_KEY;
 
 interface RegistrySessionValue {
   /** The signed-in identity, or null before an account is created/restored. */

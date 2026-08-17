@@ -11,7 +11,7 @@ import {
 import { defaultMusicDir, listAudioFiles, parseTrackMeta } from '../core/tauri.ts';
 import { fetchMissingTracks, uploadFile, ServerError, type SyncCheckEntry } from '../server.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
-import { useLibrary } from './library.tsx';
+import { MUSIC_DIR_KEY, useLibrary } from './library.tsx';
 import { hasLocalLibrary } from '../core/platform.ts';
 
 /**
@@ -29,7 +29,6 @@ import { hasLocalLibrary } from '../core/platform.ts';
  */
 
 const KNOWN_KEY_PREFIX = 'attackfm-sync-known:';
-const MUSIC_DIR_KEY = 'attackfm-music-dir';
 const CHECK_BATCH = 500;
 
 export interface LibrarySyncStatus {

@@ -165,7 +165,13 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
     if (scale === 1) root.style.removeProperty('font-size');
     else root.style.setProperty('font-size', `${(scale * 100).toFixed(3)}%`);
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(appearance));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(appearance));
+    } catch {
+      // Storage refused (private mode, quota): the choice still applies for
+      // this run. This provider wraps the whole tree, so a throw here would
+      // blank the app over a preference that was already on screen.
+    }
   }, [appearance, systemDark]);
 
   const value = useMemo<AppearanceContextValue>(

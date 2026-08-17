@@ -83,7 +83,7 @@ export function HomePage({
   const { session } = useServerSession();
   // The entrance wave, when this page stands alone; embedded, the Library
   // page's own observer covers these shelves (first registration wins).
-  const rippleRoot = useRef<HTMLDivElement>(null);
+  const [rippleRoot, setRippleRoot] = useState<HTMLDivElement | null>(null);
   useRippleWave(rippleRoot);
 
   const {
@@ -121,7 +121,7 @@ export function HomePage({
   );
 
   return (
-    <div className={embedded ? 'homeMixes' : 'homePage'} ref={rippleRoot}>
+    <div className={embedded ? 'homeMixes' : 'homePage'} ref={setRippleRoot}>
       {!embedded && (
         <>
           <header className="homeGreeting">

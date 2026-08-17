@@ -19,9 +19,10 @@
 import { fetchMemberships, forgetMembership, recordMembership, type Membership } from './registry.ts';
 import { mirrorList, subscribeMirrors } from './mirrors.ts';
 import { knownServers, subscribeKnownServers } from './servers.ts';
+import { REGISTRY_SESSION_KEY } from './registrySession.tsx';
 import type { ServerSession } from '../server.ts';
 
-const REGISTRY_KEY = 'attackfm-registry-session';
+const REGISTRY_KEY = REGISTRY_SESSION_KEY;
 /** What this device last managed to push, so a removal can be noticed. */
 const PUSHED_KEY = 'attackfm-synced-servers';
 

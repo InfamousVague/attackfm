@@ -2,6 +2,7 @@ import { Text } from '@glacier/react';
 import { ChevronLeft, Check, Disc3, Music, Play, Plus, User, X } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRippleWave } from '../../app/ux/rippleWave.ts';
+import { formatClock } from '../../app/ux/format.ts';
 import { useServerSession } from '../../app/servers/serverSession.tsx';
 import {
   fetchCatalogArtist,
@@ -41,9 +42,10 @@ function fansLabel(n: number): string {
   return String(n);
 }
 
+// The house clock; the old local copy rounded WITHIN the seconds, so a
+// fractional catalogue duration could print "1:60".
 function trackTime(seconds: number | null): string {
-  if (seconds == null || !Number.isFinite(seconds)) return '';
-  return `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, '0')}`;
+  return formatClock(seconds, '');
 }
 
 /** A catalogue cover or portrait <img>, wearing the shared skeleton/pulse.
@@ -79,7 +81,7 @@ export function CatalogArtistPage({
   onOpenArtist: (id: string, name: string) => void;
 }) {
   // Releases and tracks ride the same wave as everywhere else.
-  const rippleRoot = useRef<HTMLDivElement>(null);
+  const [rippleRoot, setRippleRoot] = useState<HTMLDivElement | null>(null);
   useRippleWave(rippleRoot);
   const { session } = useServerSession();
   const downloads = useDownloadsOptional();
@@ -348,7 +350,7 @@ export function CatalogArtistPage({
   };
 
   return (
-    <div className="discoverPage catalogArtist" ref={rippleRoot}>
+    <div className="discoverPage catalogArtist" ref={setRippleRoot}>
       <button type="button" className="catalogArtist__back" onClick={onBack}>
         <ChevronLeft size={16} />
         {backLabel}

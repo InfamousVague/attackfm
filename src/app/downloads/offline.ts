@@ -12,7 +12,7 @@
 //! songs it does not.
 
 import { effectsOn } from '../player/effects.ts';
-import { isTauri, setOfflineAudioResolver, type Track } from '../core/tauri.ts';
+import { isTauri, setOfflineAudioResolver, tauriCall, type Track } from '../core/tauri.ts';
 
 /** Library path -> absolute file path on this device. */
 let held = new Map<string, string>();
@@ -35,23 +35,12 @@ export function onOfflineChange(fn: () => void): () => void {
   return () => listeners.delete(fn);
 }
 
-async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T | null> {
-  if (!isTauri()) return null;
-  try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    return (await invoke(cmd, args)) as T;
-  } catch {
-    // An older build without the commands, or a platform without a disk to
-    // write to: the app simply streams, exactly as it did before.
-    return null;
-  }
-}
 
 /** Read the folder once at boot; every later answer comes from the map. */
 export async function hydrateOffline(): Promise<void> {
   if (hydrated) return;
   hydrated = true;
-  const list = await call<OfflineEntry[]>('offline_list');
+  const list = await tauriCall<OfflineEntry[]>('offline_list');
   if (list) {
     held = new Map(list.map((e) => [e.key, e.path]));
     announce();
@@ -60,7 +49,7 @@ export async function hydrateOffline(): Promise<void> {
 
 /** Everything held, for the Settings pane. */
 export async function offlineEntries(): Promise<OfflineEntry[]> {
-  return (await call<OfflineEntry[]>('offline_list')) ?? [];
+  return (await tauriCall<OfflineEntry[]>('offline_list')) ?? [];
 }
 
 /** Whether this track plays without a network. */
@@ -79,7 +68,7 @@ export async function offlineSpace(): Promise<{
   freeBytes: number | null;
   heldBytes: number;
 } | null> {
-  return call<{ freeBytes: number | null; heldBytes: number }>('offline_space');
+  return tauriCall<{ freeBytes: number | null; heldBytes: number }>('offline_space');
 }
 
 /** The local file for a track, or null - the hook `loadAudioUrl` consults. */
@@ -117,7 +106,7 @@ setOfflineAudioResolver(offlineSource);
 export async function pinTrack(track: Track, url: string): Promise<boolean> {
   if (!isTauri() || held.has(track.path)) return held.has(track.path);
   const ext = (track.codec || '').replace(/[^a-z0-9]/gi, '') || 'audio';
-  // Deliberately NOT the swallowing call(): the Rust side names its failures
+  // Deliberately NOT the swallowing tauriCall(): the Rust side names its failures
   // ("server answered 401", "fetch failed: ...") and this is the one command
   // whose failure somebody is standing there trying to diagnose. Swallowing
   // here is why a wall of 147 red tiles once carried no reasons at all.
@@ -130,7 +119,7 @@ export async function pinTrack(track: Track, url: string): Promise<boolean> {
 }
 
 export async function unpinTrack(path: string): Promise<void> {
-  await call('offline_unpin', { key: path });
+  await tauriCall('offline_unpin', { key: path });
   held.delete(path);
   announce();
 }

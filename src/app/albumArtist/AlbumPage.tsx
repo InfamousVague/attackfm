@@ -15,6 +15,7 @@ import { albumCredit, byRunningOrder, fold, isBy } from './albums.ts';
 import { titleKey } from '../library/owned.ts';
 import type { Track } from '../core/tauri.ts';
 import { DjCollectionTraitSheet } from '../booth/DjTraitSheet.tsx';
+import { formatClock, formatTotal } from '../ux/format.ts';
 
 /**
  * One record, opened.
@@ -40,19 +41,6 @@ interface AlbumPageProps {
   onOpenArtist: (artist: string) => void;
   /** The album no longer exists in the library - every track of it removed. */
   onGone: () => void;
-}
-
-function formatDuration(seconds: number | null): string {
-  if (seconds == null || !Number.isFinite(seconds)) return '--:--';
-  const total = Math.round(seconds);
-  return `${Math.floor(total / 60)}:${(total % 60).toString().padStart(2, '0')}`;
-}
-
-function formatTotal(seconds: number): string {
-  const mins = Math.round(seconds / 60);
-  if (mins < 60) return `${mins} min`;
-  const hours = Math.floor(mins / 60);
-  return `${hours} hr ${mins % 60} min`;
 }
 
 /** The cover, with the skeleton-then-pop every other art on the page wears. */
@@ -92,20 +80,26 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
    * React treats as a broken component and tears the whole app down. This page
    * exists because that rule was broken once already on PlaylistPage.
    */
-  const pageRef = useRef<HTMLDivElement>(null);
+  // The page root is STATE, not a ref: this component's first renders return
+  // null while the tracks are still arriving (the bail below), so the elements
+  // do not exist when a mount-time effect would look for them - and neither
+  // `album` nor `artist` changes when they finally do. A state-carried node is
+  // what re-runs the observer effect the moment the page actually renders.
+  const [pageEl, setPageEl] = useState<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const [stuck, setStuck] = useState(false);
   useEffect(() => {
-    const root = pageRef.current;
+    // The sentinel mounts in the same commit as the root, so keying on the
+    // root alone is enough to see them both.
     const mark = sentinelRef.current;
-    if (!root || !mark) return;
+    if (!pageEl || !mark) return;
     const observer = new IntersectionObserver(([entry]) => setStuck(!entry?.isIntersecting), {
-      root,
+      root: pageEl,
       threshold: 0,
     });
     observer.observe(mark);
     return () => observer.disconnect();
-  }, [album, artist]);
+  }, [pageEl, album, artist]);
 
   /*
    * The rest of the record, from the catalogue.
@@ -262,7 +256,7 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
   handlers.current = { playAll, shuffleAll };
 
   return (
-    <div className="homePage libraryPage albumPage" ref={pageRef}>
+    <div className="homePage libraryPage albumPage" ref={setPageEl}>
       <header className="albumHead">
         <Cover art={cover} />
         <div className="albumHead__body">
@@ -377,7 +371,7 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
                           {/* Inside the button, not beside it: a duration is
                               the last thing in the row and a thumb that lands
                               on it meant the song. */}
-                          <span className="albumTrack__time">{formatDuration(track.duration)}</span>
+                          <span className="albumTrack__time">{formatClock(track.duration, '--:--')}</span>
                         </button>
                       </li>
                     </TrackMenu>

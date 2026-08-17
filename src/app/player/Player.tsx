@@ -1,8 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   createAnalyserMeter,
-  useBeat,
-  useLiveLevels,
   volumeAmplitude,
   useToast,
 } from '@glacier/react';
@@ -27,7 +25,10 @@ import { useSystemBack } from '../nav/systemBack.ts';
 import { usePlayerDismiss } from './playerDismiss.ts';
 import { initDockWave } from './dockWave.ts';
 import { useMediaQuery } from '../ux/useMediaQuery.ts';
+import { REDUCED_MOTION_QUERY } from '../ux/useReducedMotion.ts';
 import {
+  FADE_DOWN_MS,
+  FADE_UP_MS,
   ART_VIEW_KEY,
   CATCH_FLUSH_MS,
   IDLE_TRACK,
@@ -321,7 +322,7 @@ export function Player({
    *  rather than a class so re-triggering needs no bookkeeping; honours
    *  reduced motion by simply not moving. */
   const joltTransport = () => {
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    if (window.matchMedia?.(REDUCED_MOTION_QUERY).matches) return;
     for (const el of document.querySelectorAll('.npScreen__transport, .playerBarShell')) {
       (el as HTMLElement).animate(
         [
@@ -553,14 +554,19 @@ export function Player({
   // instrument that heard you. Cleared by the element's own seeked event.
   const seekMuted = useRef(false);
 
-  // `at` is where a hit lands on the bar, so ripples leave the playhead rather
-  // than a fixed point.
+  // `progress` is where a hit lands on the bar, so ripples leave the playhead
+  // rather than a fixed point.
   const progress = duration > 0 ? position / duration : 0;
   // The analyser now reads full-scale regardless of the fader, so the bar would
   // keep moving even while silenced; freeze it when muted or on the floor so
   // "nothing coming out" still reads as "nothing moving".
   const audible = playing && !muted && volume > 0;
-  const beat = useBeat({ meter, active: audible, at: progress });
+  // The beat and the live levels are NOT subscribed here. The kit's useBeat
+  // sets a fresh object every animation frame while music is audible, and
+  // this component - 2,500 lines, mounted app-wide - re-rendering at 60fps
+  // was the single largest drag on scrolling anything while playing. The
+  // strip and the sheet, the only surfaces that draw the pulse, each run the
+  // hooks themselves off the meter below.
 
 
   // The phone's own volume, polled while there is something to hear. The
@@ -739,11 +745,6 @@ export function Player({
       window.clearInterval(quick);
     };
   }, []);
-
-  // The waveform the bar fills in as the track plays, sampled from the same
-  // meter the beat reads. Without it the bar has a beat to pulse but no levels
-  // to animate to.
-  const levels = useLiveLevels({ meter, progress, active: audible });
 
   // The header moves to the same reading the bar does. Published rather than
   // lifted: the audio graph hangs off this component's element and should stay
@@ -1294,7 +1295,7 @@ export function Player({
         if (audio.paused) analyserRef.current?.resetSpeed(1);
         if (style === 'fade' && analyserRef.current) {
           analyserRef.current.setVolume(0);
-          analyserRef.current.rampVolume(currentAmplitude(), 0.25);
+          analyserRef.current.rampVolume(currentAmplitude(), FADE_UP_MS / 1000);
         } else {
           applyVolume();
         }
@@ -1369,11 +1370,11 @@ export function Player({
         const token = (rampToken.current += 1);
         if (analyserRef.current) {
           windingDown.current = true;
-          analyserRef.current.rampVolume(0, 0.2);
+          analyserRef.current.rampVolume(0, FADE_DOWN_MS / 1000);
           window.setTimeout(() => {
             if (token !== rampToken.current) return;
             park(audio);
-          }, 220);
+          }, FADE_DOWN_MS + 20);
         } else {
           audio.pause();
         }
@@ -2419,8 +2420,8 @@ export function Player({
         audible={audible}
         buffering={buffering}
         downloading={downloading}
-        beat={beat}
-        levels={levels}
+        meter={meter}
+        progress={progress}
         pauseStyle={playback.pauseStyle}
         onScrubDisp={onScrubDisp}
         onSeekEndDisp={onSeekEndDisp}
@@ -2472,8 +2473,8 @@ export function Player({
           audible={audible}
           buffering={buffering}
           downloading={downloading}
-          beat={beat}
-          levels={levels}
+          meter={meter}
+          progress={progress}
           pauseStyle={playback.pauseStyle}
           onScratchBegin={onScratchBegin}
           onScratch={onScratch}

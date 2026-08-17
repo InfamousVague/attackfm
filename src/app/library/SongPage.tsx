@@ -8,6 +8,8 @@ import { setHeaderActions } from '../nav/headerActions.ts';
 import { EmptyArt, HeroArt, type EmptyArtName } from '../ux/EmptyArt.tsx';
 import { fetchHome, trackIdFromPath } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
+import { formatTotal } from '../ux/format.ts';
+import { shuffled } from '../ux/shuffle.ts';
 import onRepeatChip from '../../assets/chip-on-repeat.png';
 import likedChip from '../../assets/chip-liked.png';
 
@@ -54,30 +56,6 @@ const META: Record<
       'Nothing on repeat yet. Play your library for a while and the songs you keep returning to gather here.',
   },
 };
-
-/** The running time of the whole set, in the units it deserves. */
-function formatTotal(seconds: number): string {
-  const mins = Math.round(seconds / 60);
-  if (mins < 60) return `${mins} min`;
-  const hours = Math.floor(mins / 60);
-  return `${hours} hr ${mins % 60} min`;
-}
-
-/** Fisher-Yates, so "shuffle" means a jumbled ORDER of these songs - not a flip
- *  of the player's own shuffle switch, which would outlive this page. */
-function shuffled(list: Track[]): Track[] {
-  const out = [...list];
-  for (let i = out.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const a = out[i];
-    const b = out[j];
-    if (a && b) {
-      out[i] = b;
-      out[j] = a;
-    }
-  }
-  return out;
-}
 
 export function SongPage({
   view,

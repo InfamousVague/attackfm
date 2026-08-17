@@ -113,6 +113,16 @@ export const RATE_FLOOR = 0.5;
 export const SPIN_UP_MS = 380;
 export const SPIN_DOWN_MS = 320;
 /**
+ * The FADE pause style's own pair, beside the turntable's above: the audio's
+ * ramp (Player) and the disc's brake (the strip, the sheet) share these the
+ * same way the turntable style shares SPIN_UP/DOWN - the platter and the
+ * sound share a motor, and five bare literals across three files was how
+ * they were going to drift apart. The park lands FADE_DOWN_MS + a breath
+ * after the fall, so a pause never clips the tail.
+ */
+export const FADE_UP_MS = 250;
+export const FADE_DOWN_MS = 200;
+/**
  * How fast the level comes back when the platter picks up. Short on purpose:
  * the music has to be simply there when the button is pressed, so that what is
  * heard afterwards is the pitch climbing rather than a fade-in. Matched to the
@@ -159,12 +169,6 @@ export function readArtView(): ArtView {
  */
 export const MOBILE_PLAYER_QUERY = '(pointer: coarse), (max-width: 540px)';
 
-/** mm:ss for the Now Playing clock. */
-export function formatClock(seconds: number): string {
-  // A deck reports Infinity (transcode stream) or NaN duration until metadata
-  // lands, and Math.max(0, ...) passes both through - show the zero clock
-  // instead of "Infinity:NaN".
-  if (!Number.isFinite(seconds)) return '0:00';
-  const t = Math.max(0, Math.floor(seconds));
-  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
-}
+/** mm:ss for the Now Playing clock - the shared house formatter, re-exported
+ *  from here so the player's own modules keep their one import site. */
+export { formatClock } from '../ux/format.ts';

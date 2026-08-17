@@ -2,6 +2,7 @@ import { ContextMenu, MenuItem } from '@glacier/react';
 import { ListEnd, ListStart, Play, Shuffle, User } from '@glacier/icons';
 import type { ReactNode } from 'react';
 import { useQueueControls } from '../player/queueControls.tsx';
+import { shuffled } from '../ux/shuffle.ts';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -38,12 +39,8 @@ export function AlbumMenu({
   if (!first) return <>{children}</>;
 
   const shuffle = () => {
-    const shuffled = [...tracks];
-    for (let i = shuffled.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!];
-    }
-    onPlay(shuffled[0]!, shuffled);
+    const order = shuffled(tracks);
+    onPlay(order[0]!, order);
   };
 
   return (

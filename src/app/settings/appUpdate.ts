@@ -10,7 +10,7 @@
 //! refuses bundles that need newer native code, and quarantines any version
 //! that fails to boot. This module only decides WHEN to ask.
 
-import { isTauri } from '../core/tauri.ts';
+import { isTauri, tauriCall } from '../core/tauri.ts';
 import { REGISTRY_URL } from '../servers/registry.ts';
 
 /** What the server publishes at `/api/app/bundle`. */
@@ -29,18 +29,6 @@ export interface BundleState {
   quarantined: string[];
   nativeGeneration: number;
   dir: string | null;
-}
-
-async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T | null> {
-  if (!isTauri()) return null;
-  try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    return (await invoke(cmd, args)) as T;
-  } catch {
-    // An older binary without these commands: the app simply never updates
-    // itself, which is exactly how it behaved before this existed.
-    return null;
-  }
 }
 
 // --- what changed ----------------------------------------------------------
@@ -219,7 +207,7 @@ export function applyStagedBundle(): void {
 }
 
 export function bundleState(): Promise<BundleState | null> {
-  return call<BundleState>('bundle_state');
+  return tauriCall<BundleState>('bundle_state');
 }
 
 /**
@@ -232,7 +220,7 @@ export function bundleState(): Promise<BundleState | null> {
  */
 export function reportBootOk(): void {
   if (!window.__afmBundleVersion) return;
-  void call('bundle_boot_ok');
+  void tauriCall('bundle_boot_ok');
 }
 
 /** The version baked into this build, injected by Vite. */
@@ -257,7 +245,7 @@ export function currentVersion(): string {
 }
 
 export async function revertToEmbedded(): Promise<BundleState | null> {
-  return call<BundleState>('bundle_revert');
+  return tauriCall<BundleState>('bundle_revert');
 }
 
 /** Dotted-numeric compare: is `a` strictly newer than `b`? */
@@ -365,7 +353,7 @@ export async function checkForUpdate(): Promise<UpdateCheckOutcome> {
     url: `${REGISTRY_URL}/v1/app/bundle/${encodeURIComponent(f.name)}`,
   }));
 
-  const next = await call<BundleState>('bundle_install', {
+  const next = await tauriCall<BundleState>('bundle_install', {
     version: manifest.version,
     native: manifest.native ?? 0,
     files,

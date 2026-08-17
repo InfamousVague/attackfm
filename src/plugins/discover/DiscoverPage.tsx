@@ -293,7 +293,10 @@ function SetMosaic({ covers, size }: { covers: string[]; size?: 'hero' }) {
 export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
   // The same entrance the Library wears: cards wave in as they meet the
   // view, each landing with a soft tick.
-  const rippleRoot = useRef<HTMLDivElement>(null);
+  // State-carried on purpose: this page swaps its whole content out for the
+  // catalogue artist and back (see the `artist` return below), so the wave's
+  // observers must follow the remounted root rather than the first one.
+  const [rippleRoot, setRippleRoot] = useState<HTMLDivElement | null>(null);
   useRippleWave(rippleRoot);
   const { session } = useServerSession();
   const downloads = useDownloadsOptional();
@@ -605,7 +608,7 @@ export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
   }
 
   return (
-    <div className="discoverPage" ref={rippleRoot}>
+    <div className="discoverPage" ref={setRippleRoot}>
       <header className="discoverHead">
         <span className="discoverHead__glyph" aria-hidden>
           <Compass size={22} />

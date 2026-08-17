@@ -160,13 +160,8 @@ export function RadioProvider({
 }
 
 /** The station, for the surfaces that steer it. Null outside the provider so
- *  a plugin page can ask without assuming the app's shape. */
+ *  a plugin page can ask without assuming the app's shape - the only door;
+ *  every caller handles the null, so the throwing variant died unused. */
 export function useRadioOptional(): RadioValue | null {
   return useContext(Ctx);
-}
-
-export function useRadio(): RadioValue {
-  const value = useContext(Ctx);
-  if (!value) throw new Error('useRadio outside RadioProvider');
-  return value;
 }
