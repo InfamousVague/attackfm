@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.115
+
+- Music Date recovers from a stuck song: ten silent seconds and the card re-finds its music from whichever of your servers is actually answering, instead of waiting on one that went dark mid-load
+
 ## 0.3.114
 
 - The DJ conversation keeps the app's own header instead of floating a second back button over it — one arrow, where it always is
@@ -22,10 +26,6 @@ they are read on a phone, in a strip, one thumb away from a song.
 - Unreachable now says why. The reachability check used to throw the reason away, so a grey dot was the whole story; it now names the address it tried and what came back
 - A server that answers with a sign-in page instead of your music — hotel Wi-Fi, captive portals — is caught and named instead of failing silently
 - Nothing leaves the device, and stream tokens are stripped out of the report before you can copy it
-
-## 0.3.112
-
-- Music Date recovers from a stuck song: ten silent seconds and the card re-finds its music from whichever of your servers is actually answering, instead of waiting on one that went dark mid-load
 
 ## 0.3.111
 
