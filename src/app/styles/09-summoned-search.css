@@ -248,6 +248,59 @@
   white-space: nowrap;
 }
 
+/*
+ * The page the pull is opening onto, clipped to what has been uncovered.
+ *
+ * Anchored under the bar and grown from there, so the deck's own layout is
+ * left exactly as it is - the bar stays centred in its gap, and this fills
+ * whatever is left below it. At rest and through the first stage there is
+ * nothing left below it, so nothing shows; keep pulling and the search page
+ * comes up out of the seam.
+ *
+ * `pointer-events: none` throughout: this is scenery until the pull is
+ * released and the real overlay takes over. A half-revealed row that could be
+ * tapped would be a target that moves under the finger holding it.
+ */
+.pullPreview {
+  position: fixed;
+  inset-inline: 0;
+  top: calc(var(--app-content-top, 0px) + var(--app-pull-stand, 3.4rem));
+  block-size: max(0px, calc(var(--app-pull, 0px) - var(--app-pull-stand, 3.4rem)));
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+  /* Rises with the reveal rather than being simply unveiled - the difference
+     between a page arriving and a mask lifting off one that was already
+     there. */
+  opacity: clamp(0, calc(var(--app-pull, 0px) / var(--app-pull-stand, 3.4rem) - 1), 1);
+}
+
+:root[data-pull-standing] .pullPreview {
+  top: calc(var(--app-content-top, 0px) + var(--app-pull-stand, 3.4rem) + var(--app-pull, 0px));
+}
+
+/*
+ * And the page being left behind, blurred while the pull is live.
+ *
+ * The mirror of the Now Playing sheet's: hardest at the first millimetre and
+ * resolving as the gesture commits. Here it runs the other way round, because
+ * the thing being uncovered is what you are going TO - so the page underneath
+ * softens as the search page arrives over it.
+ */
+.pullBehind {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+:root[data-pulling] .pullBehind {
+  display: block;
+  -webkit-backdrop-filter: blur(min(18px, var(--app-pull, 0px) * 0.16));
+  backdrop-filter: blur(min(18px, var(--app-pull, 0px) * 0.16));
+}
+
 /* The deck is a touch affordance. A pointer has the header and Cmd-K, and a
    desktop window has no rubber band to spend. */
 @media (pointer: fine) {

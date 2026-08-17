@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.135
+
+- Pulling the Now Playing screen down now reveals what is behind it gradually: heavily blurred at the first millimetre, resolving into the page as you commit
+- Pulling down for search opens onto the real search page, not a gap with a bar in it — the recents below the field are the actual ones, rising out of the seam while the page you were on softens behind them
+
 ## 0.3.134
 
 - The little server light in the header beats once a second now — a live pulse, not a minute-old reading

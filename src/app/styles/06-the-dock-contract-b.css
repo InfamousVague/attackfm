@@ -141,6 +141,36 @@
   transition: translate 0.24s var(--glacier-ease-out);
 }
 
+/*
+ * The page behind the sheet, while the sheet is being pushed off it.
+ *
+ * Blurred hard at the start and resolving as the drag goes on, so the thing
+ * you are pulling back to arrives gradually rather than being there all at
+ * once: at the top of the gesture you are looking at a suggestion of a page,
+ * and by the time you have committed to leaving it is the page.
+ *
+ * Inert and unpainted unless a drag is live. A full-screen backdrop-filter
+ * running under an opaque surface for the whole time a player is open would
+ * be pure cost with nothing to show for it.
+ */
+.npScreen__behind {
+  display: none;
+  position: fixed;
+  inset: 0;
+  /* Under the sheet (50), over everything the app draws. */
+  z-index: 49;
+  pointer-events: none;
+}
+
+:root[data-np-dragging] .npScreen__behind {
+  display: block;
+  /* 22px at the first millimetre, gone by the time the drag has committed.
+     `max()` keeps it from going negative once the damped offset runs past
+     the threshold. */
+  -webkit-backdrop-filter: blur(max(0px, 22px - var(--np-drag, 0px) * 0.22));
+  backdrop-filter: blur(max(0px, 22px - var(--np-drag, 0px) * 0.22));
+}
+
 .npScreen[data-dragging] {
   transition: none;
   /* Rounding the corners as it leaves says "this is a sheet being put back",

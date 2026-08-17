@@ -237,6 +237,10 @@ export function installSheetDismiss(
     ratchet.reset();
     delete sheet.dataset.dragging;
     sheet.style.removeProperty('--np-drag');
+    // The document's copy, which the layer BEHIND the sheet reads. It cannot
+    // read the sheet's own: it is the sheet's sibling, not its child.
+    document.documentElement.style.removeProperty('--np-drag');
+    document.documentElement.removeAttribute('data-np-dragging');
   };
 
   /** Whether this touch belongs to something else on the sheet. */
@@ -290,7 +294,10 @@ export function installSheetDismiss(
     // Damped past the mark: the sheet keeps answering the finger after the
     // decision is already made, without running off the bottom of the world.
     const shown = dy > SHEET_THRESHOLD ? SHEET_THRESHOLD + (dy - SHEET_THRESHOLD) * 0.5 : dy;
-    sheet.style.setProperty('--np-drag', `${Math.max(0, shown)}px`);
+    const offset = `${Math.max(0, shown)}px`;
+    sheet.style.setProperty('--np-drag', offset);
+    document.documentElement.style.setProperty('--np-drag', offset);
+    document.documentElement.setAttribute('data-np-dragging', '');
 
     const dt = event.timeStamp - lastAt;
     // Two milliseconds, not zero. A pair of moves delivered in the same
