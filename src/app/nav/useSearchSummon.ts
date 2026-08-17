@@ -70,6 +70,20 @@ const PAST_HOLD = 0.5;
 /** The crawl through the detent. Not zero - a page frozen under a moving
  *  finger reads as a hang, not as resistance. */
 const THROUGH_HOLD = 0.1;
+/**
+ * Where refreshing arms when the bar is ALREADY standing.
+ *
+ * Exactly what the run from the detent to refresh costs in one continuous
+ * pull, which is the point: the first pull bought the reveal and the detent,
+ * and a second one should not be charged for them again. Before this, a
+ * standing bar meant starting from zero - 156px of a pull where nothing moved
+ * at all, then another 112 - to reach a mark the finger had already been
+ * next to.
+ */
+const STANDING_REFRESH_AT = REFRESH_AT - HOLD_END;
+
+/** Where the refresh arms, given whether the bar is already out. */
+const refreshAt = (standing: boolean) => (standing ? STANDING_REFRESH_AT : REFRESH_AT);
 
 /*
  * The ratchet.
@@ -90,23 +104,24 @@ const TICK_FLOOR_MS = 28;
 /** Which answer the gesture is currently offering. */
 export type PullStage = 'idle' | 'search' | 'refresh';
 
-const stageFor = (travel: number): PullStage =>
-  travel >= REFRESH_AT ? 'refresh' : travel >= SEARCH_AT ? 'search' : 'idle';
+const stageFor = (travel: number, standing: boolean): PullStage =>
+  travel >= refreshAt(standing) ? 'refresh' : travel >= SEARCH_AT ? 'search' : 'idle';
 
 /**
  * Finger travel to the distance the page moves.
  *
  * `settled` is where the bar comes to rest (the measured gap), so the detent
  * is not an arbitrary plateau - it is the bar arriving at exactly the place it
- * will stay, and staying there while the finger decides. `already` is for a
- * pull that starts with the bar standing: there is nothing left to reveal, so
- * that pull only opens the gap the refresh mark needs.
+ * will stay, and staying there while the finger decides.
+ *
+ * `already` is a pull that starts with the bar standing. There is nothing left
+ * to reveal and no detent left to arrive at, so it opens the refresh gap
+ * straight away, at the same rate the far side of a continuous pull does - it
+ * IS the far side of that pull, resumed.
  */
 function distanceFor(travel: number, settled: number, already: boolean): number {
   if (travel <= SLOP) return 0;
-  if (already) {
-    return travel <= HOLD_END ? 0 : Math.min((travel - HOLD_END) * PAST_HOLD, CEILING_EXTRA);
-  }
+  if (already) return Math.min((travel - SLOP) * PAST_HOLD, CEILING_EXTRA);
   if (travel < REVEAL_END) return (settled * (travel - SLOP)) / (REVEAL_END - SLOP);
   if (travel < HOLD_END) return settled + (travel - REVEAL_END) * THROUGH_HOLD;
   const held = settled + (HOLD_END - REVEAL_END) * THROUGH_HOLD;
@@ -250,15 +265,13 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
        * stretch is the rest, not a journey.
        */
       const runUp = standing
-        ? travel >= HOLD_END
-          ? { from: HOLD_END, to: REFRESH_AT }
-          : null
+        ? { from: SLOP, to: STANDING_REFRESH_AT }
         : travel < REVEAL_END
           ? { from: SLOP, to: REVEAL_END }
           : travel >= HOLD_END && travel < REFRESH_AT
             ? { from: HOLD_END, to: REFRESH_AT }
             : null;
-      if (runUp && travel < REFRESH_AT) {
+      if (runUp && travel < refreshAt(standing)) {
         const p = Math.min(1, Math.max(0, (travel - runUp.from) / (runUp.to - runUp.from)));
         const spacing = NOTCH_FAR - (NOTCH_FAR - NOTCH_NEAR) * p;
         const now = performance.now();
@@ -278,7 +291,7 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
         lastTickAt = travel;
         fireNativeHaptic('medium');
       }
-      const next = stageFor(travel);
+      const next = stageFor(travel, standing);
       if (next !== lastStage) {
         if (next === 'refresh') {
           lastTickAt = travel;
@@ -296,7 +309,7 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
       travel = 0;
       paint(0, false);
       setStage('idle');
-      if (reached >= REFRESH_AT) {
+      if (reached >= refreshAt(standing)) {
         // Past the far mark: refresh, and hold the gap open while it runs so
         // the gesture visibly did something.
         setRefreshing(true);
