@@ -196,6 +196,39 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
   }, [host, paint]);
 
   /*
+   * Where the gap actually starts, measured off the content column.
+   *
+   * The deck used to compute its own top as `safe-area-inset-top +
+   * --app-header-height` - a second, parallel derivation of a position the
+   * layout had already worked out. The two agreed on a desktop, where the
+   * safe-area inset is 0, and disagreed on a phone, where it is a status bar:
+   * the deck sat lower than the gap the page had opened and the bar landed on
+   * the music. Reading the column's own top instead means there is only one
+   * answer to where the seam is, so there is nothing left to disagree with.
+   *
+   * Never read mid-drag: the rect includes the translate, which would feed
+   * the page's own movement back into the deck's anchor.
+   */
+  useEffect(() => {
+    if (!host) return;
+    const write = () => {
+      if (document.documentElement.hasAttribute('data-pull-moving')) return;
+      const { top } = host.getBoundingClientRect();
+      document.documentElement.style.setProperty('--app-content-top', `${top.toFixed(1)}px`);
+    };
+    write();
+    const ro = new ResizeObserver(write);
+    ro.observe(host);
+    window.addEventListener('resize', write);
+    window.addEventListener('orientationchange', write);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', write);
+      window.removeEventListener('orientationchange', write);
+    };
+  }, [host]);
+
+  /*
    * The settled gap: the bar's own height, held open by the page rather than
    * by a transform, so the page is SHORTER while the bar stands instead of
    * being pushed off the bottom of the screen. A translate here would put the
