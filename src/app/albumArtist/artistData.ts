@@ -116,39 +116,22 @@ export function useAlbumGaps(
 }
 
 // Embedded art is often a tiny thumbnail that blurs at this size, so resolve a
-// crisp cover per album from the iTunes Search API, cached in localStorage.
+// crisp cover per album from the iTunes Search API, via albumArt.ts's cache -
+// hits and misses both remembered, so an album only costs a lookup once a
+// month, not once per mount.
 export function useHiResCovers(artist: string, albums: AlbumGroup[]): Record<string, string> {
   const [hiRes, setHiRes] = useState<Record<string, string>>({});
   useEffect(() => {
     let alive = true;
     void (async () => {
+      // Serial on purpose: one polite request at a time against Apple's API.
+      // Cached albums resolve instantly, so a warm page still fills at once.
       for (const album of albums) {
         if (!album.name || album.name === 'Unknown album') continue;
-        const key = `attackfm-art:${artist}|${album.name}`;
-        // Guarded reads and writes: this cache grows a key per album with no
-        // ceiling, so it is exactly the writer a QuotaExceededError finds
-        // first - and an uncaught throw out of this async loop would kill
-        // the rest of the page's covers with it. Full means the page just
-        // re-fetches; it must never mean the page breaks.
-        let cached: string | null = null;
-        try {
-          cached = localStorage.getItem(key);
-        } catch {
-          // Storage refused: treat as a miss.
-        }
-        if (cached) {
-          setHiRes((prev) => (prev[album.name] ? prev : { ...prev, [album.name]: cached }));
-          continue;
-        }
-        const url = await fetchAlbumArt(artist, album.name);
+        const url = await resolveAlbumArt(artist, album.name);
         if (!alive) return;
         if (url) {
-          try {
-            localStorage.setItem(key, url);
-          } catch {
-            // Quota: the cover still shows this visit, just uncached.
-          }
-          setHiRes((prev) => ({ ...prev, [album.name]: url }));
+          setHiRes((prev) => (prev[album.name] === url ? prev : { ...prev, [album.name]: url }));
         }
       }
     })();
