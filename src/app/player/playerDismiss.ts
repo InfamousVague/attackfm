@@ -180,3 +180,132 @@ export function usePlayerDismiss(playing: boolean) {
 
   return { dismissed, shellRef, draggedRef };
 }
+
+/** How far the sheet must travel to be let go of. It is a whole screen, not a
+ *  plate across the bottom, so the mark is further down than the strip's. */
+const SHEET_THRESHOLD = 110;
+
+/**
+ * Pulling the Now Playing sheet back down.
+ *
+ * The sheet arrived by rising from the strip, and the way out was a chevron in
+ * its top-left corner - which is the one corner a thumb holding a phone cannot
+ * reach. Every full-screen player on the platform closes by being pushed back
+ * where it came from, so this one does too.
+ *
+ * The same body as the strip's swipe above, with the sheet's own exclusions:
+ * it is full of things that already own a downward drag.
+ *
+ * - The scrub disc IS a drag surface - a scratch that wanders down is a
+ *   scratch.
+ * - Sliders drag for a living; so does the volume fader.
+ * - The lyrics and the queue scroll. A drag inside one of those is a scroll
+ *   unless it is already at the top, which is the same rule pull-to-search
+ *   uses on a page and the same one the platform uses on a sheet.
+ */
+export function installSheetDismiss(
+  sheet: HTMLElement,
+  { onDismiss }: { onDismiss: () => void },
+): () => void {
+  let touchId: number | null = null;
+  let startX = 0;
+  let startY = 0;
+  let dy = 0;
+  let claimed = false;
+  let velocity = 0;
+  let lastY = 0;
+  let lastAt = 0;
+
+  const release = () => {
+    touchId = null;
+    claimed = false;
+    delete sheet.dataset.dragging;
+    sheet.style.removeProperty('--np-drag');
+  };
+
+  /** Whether this touch belongs to something else on the sheet. */
+  const spokenFor = (target: HTMLElement | null): boolean => {
+    if (!target) return false;
+    if (target.closest('[role="slider"], .spinningDisc, input, button')) return true;
+    // A scroller that is not at its top is scrolling, not dismissing.
+    for (let el: HTMLElement | null = target; el && el !== sheet; el = el.parentElement) {
+      if (el.scrollHeight > el.clientHeight + 1 && el.scrollTop > 0) return true;
+    }
+    return false;
+  };
+
+  const onStart = (event: TouchEvent) => {
+    if (event.touches.length !== 1) return;
+    const touch = event.touches[0]!;
+    if (spokenFor(touch.target as HTMLElement | null)) return;
+    touchId = touch.identifier;
+    startX = touch.clientX;
+    startY = touch.clientY;
+    dy = 0;
+    claimed = false;
+    velocity = 0;
+    lastY = touch.clientY;
+    lastAt = event.timeStamp;
+  };
+
+  const onMove = (event: TouchEvent) => {
+    if (touchId === null) return;
+    const touch = Array.from(event.touches).find((t) => t.identifier === touchId);
+    if (!touch) return;
+    dy = touch.clientY - startY;
+    const dx = touch.clientX - startX;
+
+    if (!claimed) {
+      if (Math.abs(dy) < SLOP && Math.abs(dx) < SLOP) return;
+      if (dy <= 0 || Math.abs(dy) <= Math.abs(dx)) {
+        touchId = null;
+        return;
+      }
+      claimed = true;
+      sheet.dataset.dragging = 'true';
+    }
+
+    if (event.cancelable) event.preventDefault();
+    // Damped past the mark: the sheet keeps answering the finger after the
+    // decision is already made, without running off the bottom of the world.
+    const shown = dy > SHEET_THRESHOLD ? SHEET_THRESHOLD + (dy - SHEET_THRESHOLD) * 0.5 : dy;
+    sheet.style.setProperty('--np-drag', `${Math.max(0, shown)}px`);
+
+    const dt = event.timeStamp - lastAt;
+    // Two milliseconds, not zero. A pair of moves delivered in the same
+    // millisecond - coalesced touches, a burst after a stall - divides real
+    // travel by almost nothing and reads as a flick nobody made, which
+    // dismisses on a drag that had not gone anywhere. No frame is ever this
+    // close together, so nothing real is lost by waiting for the next one.
+    if (dt > 2) {
+      velocity = 0.7 * ((touch.clientY - lastY) / dt) + 0.3 * velocity;
+      lastY = touch.clientY;
+      lastAt = event.timeStamp;
+    }
+  };
+
+  const onEnd = () => {
+    const decided = claimed && (dy > SHEET_THRESHOLD || velocity > FLICK);
+    if (decided) {
+      // Cleared here, unlike the strip's: this sheet unmounts on dismissal
+      // rather than animating out under a `dismissed` rule, so an offset left
+      // behind would be inherited by the next thing to open.
+      release();
+      onDismiss();
+      return;
+    }
+    release();
+  };
+
+  sheet.addEventListener('touchstart', onStart, { passive: true });
+  sheet.addEventListener('touchmove', onMove, { passive: false });
+  sheet.addEventListener('touchend', onEnd, { passive: true });
+  sheet.addEventListener('touchcancel', onEnd, { passive: true });
+  return () => {
+    sheet.removeEventListener('touchstart', onStart);
+    sheet.removeEventListener('touchmove', onMove);
+    sheet.removeEventListener('touchend', onEnd);
+    sheet.removeEventListener('touchcancel', onEnd);
+    release();
+  };
+}

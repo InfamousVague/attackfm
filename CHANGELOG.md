@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.128
+
+- Pull the Now Playing screen down to close it. It follows your thumb and springs back if you change your mind — the only way out used to be a chevron in the top-left corner, which is the one corner you cannot reach holding a phone
+- It knows what not to take: the scrub disc, the seek bar, the volume slider, and any list you have already scrolled all keep their own downward drag
+
 ## 0.3.127
 
 - With the search bar already open, pulling down again goes straight for the refresh. It picks up where the first pull stopped instead of making you travel the whole way again — and the page moves from the first millimetre rather than sitting still for the first half of it
