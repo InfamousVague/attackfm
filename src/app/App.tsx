@@ -6,7 +6,7 @@
 // (current/queue) and the queue verbs stay HERE - they close over live state
 // through refs and everything else threads off them.
 import { IconButton, TitleBar } from '@glacier/react';
-import { ChevronLeft, ChevronRight, Search, Settings, X } from '@glacier/icons';
+import { ChevronLeft, ChevronRight, RefreshCw, Search, Settings, X } from '@glacier/icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NowPlayingBackdrop } from './player/NowPlayingBackdrop.tsx';
 import { PluginHookScope } from '../plugins/runtime.tsx';
@@ -38,6 +38,7 @@ import { APP_NAME, HeaderActionButtons, HeaderIdent } from './nav/HeaderChrome.t
 import { AppMain } from './nav/AppMain.tsx';
 import { useNavStack } from './nav/useNavStack.ts';
 import { useSearchSummon } from './nav/useSearchSummon.ts';
+import { useLibrary } from './library/library.tsx';
 import { AppProviders } from './nav/AppProviders.tsx';
 import wordmark from '../assets/attack-white.png';
 
@@ -46,6 +47,24 @@ import wordmark from '../assets/attack-white.png';
 // traffic lights - so it gets the plain header below instead, as does the
 // browser.
 const DESKTOP = isDesktopApp;
+
+/**
+ * Lends App the library's rescan.
+ *
+ * A pull-to-refresh has to reach the thing that re-reads the library, and
+ * that lives under the provider App itself renders. Holding it in state would
+ * re-render the whole shell every time the library object changes; a ref
+ * costs nothing, and the gesture only reads it at the moment of release.
+ */
+function RefreshBridge({ into }: { into: React.MutableRefObject<() => Promise<void>> }) {
+  const { rescan } = useLibrary();
+  useEffect(() => {
+    into.current = async () => {
+      await rescan();
+    };
+  }, [rescan, into]);
+  return null;
+}
 
 /**
  * The app root: a small square window carrying the cross-cutting Glacier
@@ -86,9 +105,26 @@ export function App() {
   // only a state-carried node can tell them.
   const [swipeEl, setSwipeEl] = useState<HTMLElement | null>(null);
   const swipeRef = useCallback((node: HTMLElement | null) => setSwipeEl(node), []);
+  /*
+   * What a full pull refreshes. App renders the LibraryProvider, so it cannot
+   * call useLibrary itself; the bridge below fills this ref, and the gesture
+   * reads it. Inert until then, so a pull during boot does nothing rather
+   * than throwing.
+   */
+  const libraryRefresh = useRef<() => Promise<void>>(async () => {});
   // Search, summoned: pull down on any page (or ⌘K) - state, gesture and
   // chord live in useSearchSummon.
-  const { pullHint, summonHint, searchOpen, setSearchOpen } = useSearchSummon(swipeEl);
+  const {
+    pull,
+    searchAt,
+    refreshAt,
+    barOpen,
+    setBarOpen,
+    refreshing,
+    summonHint,
+    searchOpen,
+    setSearchOpen,
+  } = useSearchSummon(swipeEl, () => libraryRefresh.current());
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Which pane Settings should open ON, when a surface aims it - the network
   // dot's Manage lands on Servers; a plain open starts wherever it was.
@@ -568,9 +604,49 @@ export function App() {
                 results, recents, paste-a-link import - inside a plugin hook
                 scope because a pasted link is a plugin's action. Navigating
                 OUT of a result closes the overlay; playing keeps it up. */}
-            {pullHint && (
-              <div className="summonPull" aria-hidden="true">
-                <Search size={14} /> Release to search
+            {/*
+                The pull, drawn. One element per stage, both reading the same
+                live distance so what is on screen is where the finger is.
+
+                Stage one: the search bar rides down from behind the header,
+                and is left standing when the finger lifts - it is a door to
+                be tapped, not a flash. Stage two: the refresh mark fades in
+                over it, and takes the release.
+             */}
+            {!DESKTOP && (pull > 0 || barOpen || refreshing) && (
+              <div
+                className="pullDeck"
+                style={{ '--pull': `${Math.min(pull, refreshAt + 24)}px` } as React.CSSProperties}
+                data-armed={pull >= refreshAt || refreshing || undefined}
+                /* Standing while the refresh runs too, or the deck slides
+                   back behind the header and takes the spinner with it -
+                   a hard pull would read as "nothing happened". */
+                data-standing={barOpen || refreshing || undefined}
+              >
+                <button
+                  type="button"
+                  className="pullDeck__search"
+                  data-on={(barOpen || pull >= searchAt) && !refreshing || undefined}
+                  onClick={() => {
+                    setBarOpen(false);
+                    setSearchOpen(true);
+                  }}
+                >
+                  <Search size={15} aria-hidden="true" />
+                  <span>Search your library</span>
+                </button>
+                <span
+                  className="pullDeck__refresh"
+                  data-on={pull >= refreshAt || refreshing || undefined}
+                  data-spinning={refreshing || undefined}
+                  aria-hidden={!refreshing}
+                  role={refreshing ? 'status' : undefined}
+                >
+                  <RefreshCw size={16} />
+                  <span className="pullDeck__word">
+                    {refreshing ? 'Refreshing…' : 'Release to refresh'}
+                  </span>
+                </span>
               </div>
             )}
             {summonHint && !DESKTOP && !searchOpen && (tab === 'home' || tab === 'library') && (
@@ -579,7 +655,7 @@ export function App() {
                 className="summonHintChip"
                 onClick={() => setSearchOpen(true)}
               >
-                <Search size={13} /> Pull down anywhere to search
+                <Search size={13} /> Pull down for search · further to refresh
               </button>
             )}
             {searchOpen && (
