@@ -38,14 +38,34 @@ const IDB_STORE = 'remoteIndex';
 
 function openIndexDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
+    // A webview's IndexedDB can wedge at cold start - a stale backing-store
+    // lock, or the documented open-that-never-fires-any-event bug - and a
+    // promise that never settles here suspends the whole hydrate, which
+    // gates the whole library. Three seconds is generous for opening a
+    // one-store database; past it, this REJECTS and the caller's catch
+    // takes the slow path (a fresh full sync) instead of a frozen app.
+    const timer = window.setTimeout(
+      () => reject(new Error('indexedDB open timed out')),
+      3000,
+    );
     const req = indexedDB.open(IDB_NAME, 1);
     req.onupgradeneeded = () => {
       if (!req.result.objectStoreNames.contains(IDB_STORE)) {
         req.result.createObjectStore(IDB_STORE);
       }
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error ?? new Error('indexedDB open failed'));
+    req.onsuccess = () => {
+      window.clearTimeout(timer);
+      resolve(req.result);
+    };
+    req.onerror = () => {
+      window.clearTimeout(timer);
+      reject(req.error ?? new Error('indexedDB open failed'));
+    };
+    req.onblocked = () => {
+      window.clearTimeout(timer);
+      reject(new Error('indexedDB open blocked'));
+    };
   });
 }
 

@@ -347,8 +347,11 @@ export function startMirrorHeartbeat(session: ServerSession): () => void {
   const beat = async () => {
     if (stopped || document.hidden) return;
     const mirrors = read();
-    if (mirrors.length === 0) return;
+    // The session server is probed even with NO mirrors configured: the
+    // header's dot reads this heartbeat, and skipping the probe left the
+    // dot inventing a green it had never once verified.
     await probeAll([session.url, ...mirrors.map((m) => m.url)], control.signal);
+    if (mirrors.length === 0) return;
     if (stopped) return;
     if (Date.now() - lastHoldings > HOLDINGS_EVERY_MS) {
       lastHoldings = Date.now();

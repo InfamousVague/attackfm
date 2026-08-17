@@ -49,7 +49,27 @@ export async function request<T>(
   if (token) headers.set('authorization', `Bearer ${token}`);
   if (rest.body && !headers.has('content-type')) headers.set('content-type', 'application/json');
 
-  const response = await fetch(`${url}${path}`, { ...rest, headers });
+  // Every request gets a deadline. A phone hopping networks mid-flight can
+  // black-hole an established connection: the fetch never settles, and every
+  // await upstream of it becomes a zombie - the exact "app never loads while
+  // the dot is green" wedge. Thirty seconds is long enough for the largest
+  // first-sync payload on a slow link and short enough that the caller's
+  // error path (retry heartbeats, error strips) actually gets to run.
+  // Hand-rolled rather than AbortSignal.any/timeout, which older WebKit lacks.
+  const control = new AbortController();
+  const deadline = window.setTimeout(() => control.abort(new Error('request timed out')), 30_000);
+  if (rest.signal) {
+    const outer = rest.signal;
+    if (outer.aborted) control.abort(outer.reason);
+    else outer.addEventListener('abort', () => control.abort(outer.reason), { once: true });
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${url}${path}`, { ...rest, headers, signal: control.signal });
+  } finally {
+    window.clearTimeout(deadline);
+  }
   if (!response.ok) {
     // The server answers errors as plain text, which is what belongs in a
     // toast; a body that will not read is not worth failing twice over.
