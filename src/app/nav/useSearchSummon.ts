@@ -1,169 +1,58 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSystemBack } from './systemBack.ts';
-import { fireMicroTick, fireNativeHaptic } from '../core/haptics.ts';
+import { makeRatchet } from '../ux/ratchet.ts';
 
 /**
- * The pull from the top, in two stages - and it moves the PAGE.
+ * The pull from the top: one gesture, one answer.
  *
- * A downward drag at the top of a page means one of two things, and which one
- * depends on how far it goes. Every other app has taught the same lesson: a
- * SHORT pull reveals what is above the page - here, the search field - and a
- * LONG one refreshes.
+ * Pull down at the top of a page and the search page itself fades in over the
+ * blurring content - the real SearchPage, its field and its genre cards, not a
+ * bar standing in for it. Let go past the commit point and it opens; let go
+ * short of it and everything springs back to exactly where it was.
  *
- *   0 → SEARCH_AT     nothing yet; a scroll that changed its mind costs
- *                     nothing and shows nothing.
- *   SEARCH_AT →       the search bar is uncovered as the page slides down,
- *   REFRESH_AT        and is left standing when the finger lifts.
- *   REFRESH_AT →      the refresh mark takes over the gap. Let go here and
- *                     the library re-reads itself.
+ * This replaces a two-stage gesture (bar at one depth, refresh at another)
+ * whose stages kept fighting each other for the same finger. Refresh left the
+ * gesture entirely; the library still re-reads itself from Settings, and the
+ * pull now means one thing.
  *
- * The chrome does not float over the content: the page itself is pushed down
- * and the bar is what was underneath it all along. That is the whole reason
- * the distance lives in a CSS custom property (`--app-pull`) on the document
- * element rather than in React state - one number, written once per frame,
- * read by both the page's translate and the deck's height, so the two can
- * never disagree about where the seam is.
+ * The live drag publishes two numbers to the document element, because the
+ * layers that draw the reveal are spread across the tree and none of them is
+ * a child of the page being dragged:
  *
- * Writing it to the DOM is also the only way this is affordable. The page is
- * the whole app; re-rendering that tree sixty times a second to animate a
- * drag would cost far more than the drag is worth. React is told only when
- * the STAGE changes, which happens about twice per gesture.
+ *   --app-pull    the damped distance the page itself slides - feedback that
+ *                 the gesture has hold of something, capped low because the
+ *                 page is the thing being LEFT.
+ *   --app-travel  the raw finger travel - what the preview's fade and the
+ *                 backdrop blur are keyed to, so they spend themselves across
+ *                 the whole pull rather than the first damped inch.
+ *
+ * React is told only when the gesture starts and ends (the preview mounts per
+ * gesture, not per frame); everything per-frame goes straight to the DOM.
  *
  * `host` is the content host the gesture listens on (the same element the
  * edge-swipe drags) - the node itself, not a ref object, so the listeners
  * re-attach when it mounts after onboarding.
  */
 
-/*
- * The thresholds are in FINGER TRAVEL, not in the damped distance the page
- * moves. That distinction is the whole fix.
- *
- * They used to be read off the damped number, where `sqrt(dy) * 11` compresses
- * everything: search was offered after 10px of travel and refresh armed after
- * 111px. Ten pixels is the slop - the bar arrived the instant the gesture was
- * recognised - and 111 is an ordinary pull-to-refresh flick, the one every
- * other app has trained into the thumb. So the first stage existed for a
- * hundred pixels of a gesture nobody performs slowly, and people sailed
- * through it into a refresh they did not ask for.
- *
- * Now the hand has to make a decision it can feel:
- */
 /** Where the pull stops being a scroll. */
 const SLOP = 10;
-/** Where the bar is offered. Immediately after the gesture is recognised - it
- *  should be seen EARLY; being missed was never about arriving late. */
-const SEARCH_AT = 18;
-/** Where the bar has fully arrived, sitting exactly where it will settle. */
-const REVEAL_END = 64;
 /**
- * ...and where it stops sitting there. Between these two the page barely
- * moves: a detent, so a pull that would otherwise run straight through has
- * something to arrive at, and a thumb that keeps going has to mean it.
- *
- * Widened from 156. Ninety-two pixels of resistance was not enough of a stop
- * for a hand already in motion - the bar was still being carried past into a
- * refresh nobody asked for, which is the same complaint the detent was added
- * to answer, just quieter. The stop has to outlast the momentum of the
- * gesture, not merely interrupt it.
+ * Where letting go opens search. Far enough that an idle downward flick
+ * springs back and a meant pull commits - "takes longer" than the old bar
+ * did on purpose, because the reveal IS the animation now and it deserves
+ * the length of a real gesture.
  */
-const HOLD_END = 240;
-/**
- * Where refreshing arms. Past the detent and then some - so it is a deliberate
- * act rather than the natural end of any downward flick.
- *
- * Moved out with HOLD_END rather than independently: the run from the detent
- * to the refresh stays 112px, which is what a second pull costs on a standing
- * bar (STANDING_REFRESH_AT below is this gap). Widening the first stage should
- * not quietly make the shortcut longer too.
- */
-const REFRESH_AT = 352;
-/** How far past the detent the gap will open, however hard it is pulled. */
-const CEILING_EXTRA = 84;
-/** How much of the finger's travel the page still spends past the detent.
- *  Under half, so the gap keeps growing without chasing the hand. */
-const PAST_HOLD = 0.5;
-/** The crawl through the detent. Not zero - a page frozen under a moving
- *  finger reads as a hang, not as resistance. */
-const THROUGH_HOLD = 0.1;
-/**
- * Where refreshing arms when the bar is ALREADY standing.
- *
- * Exactly what the run from the detent to refresh costs in one continuous
- * pull, which is the point: the first pull bought the reveal and the detent,
- * and a second one should not be charged for them again. Before this, a
- * standing bar meant starting from zero - 156px of a pull where nothing moved
- * at all, then another 112 - to reach a mark the finger had already been
- * next to.
- */
-const STANDING_REFRESH_AT = REFRESH_AT - HOLD_END;
+const OPEN_AT = 180;
+/** How far the page itself will slide, however hard it is pulled. */
+const PAGE_SLIDE_CAP = 84;
 
-/** Where the refresh arms, given whether the bar is already out. */
-const refreshAt = (standing: boolean) => (standing ? STANDING_REFRESH_AT : REFRESH_AT);
-
-/*
- * The ratchet.
- *
- * A single tick at each detent is a fact, not a feeling: it tells you where
- * the line was AFTER you crossed it. The hand wants to know it is coming, the
- * way a dial's notches tighten as it nears a stop - so the run-up to each
- * detent is ticked, softly and far apart at first, closer and firmer as it
- * arrives, and the detent itself is the one you can properly feel.
- */
-/** Notch spacing at the start of a run-up, and at the end of it. */
-const NOTCH_FAR = 24;
-const NOTCH_NEAR = 9;
-/** No two ticks closer together than this, however fast the finger moves.
- *  The Taptic Engine will happily queue a flood and play it as mush. */
-const TICK_FLOOR_MS = 28;
-
-/** Which answer the gesture is currently offering. */
-export type PullStage = 'idle' | 'search' | 'refresh';
-
-const stageFor = (travel: number, standing: boolean): PullStage =>
-  travel >= refreshAt(standing) ? 'refresh' : travel >= SEARCH_AT ? 'search' : 'idle';
-
-/**
- * Finger travel to the distance the page moves.
- *
- * `settled` is where the bar comes to rest (the measured gap), so the detent
- * is not an arbitrary plateau - it is the bar arriving at exactly the place it
- * will stay, and staying there while the finger decides.
- *
- * `already` is a pull that starts with the bar standing. There is nothing left
- * to reveal and no detent left to arrive at, so it opens the refresh gap
- * straight away, at the same rate the far side of a continuous pull does - it
- * IS the far side of that pull, resumed.
- */
-function distanceFor(travel: number, settled: number, already: boolean): number {
-  if (travel <= SLOP) return 0;
-  if (already) return Math.min((travel - SLOP) * PAST_HOLD, CEILING_EXTRA);
-  if (travel < REVEAL_END) return (settled * (travel - SLOP)) / (REVEAL_END - SLOP);
-  if (travel < HOLD_END) return settled + (travel - REVEAL_END) * THROUGH_HOLD;
-  const held = settled + (HOLD_END - REVEAL_END) * THROUGH_HOLD;
-  return held + Math.min((travel - HOLD_END) * PAST_HOLD, CEILING_EXTRA);
-}
-
-export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Promise<void> | void) {
+export function useSearchSummon(host: HTMLElement | null) {
   const [searchOpen, setSearchOpen] = useState(false);
   useSystemBack(searchOpen, () => setSearchOpen(false));
 
-  /** The bar, left standing after a stage-one pull, until it is used or
-   *  dismissed. This is the part a small pull is FOR. */
-  const [barOpen, setBarOpen] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [stage, setStage] = useState<PullStage>('idle');
-  const barOpenRef = useRef(barOpen);
-  barOpenRef.current = barOpen;
-  const refreshRef = useRef(onRefresh);
-  refreshRef.current = onRefresh;
+  /** A gesture is live: the preview and the blur layer mount off this. */
+  const [pulling, setPulling] = useState(false);
 
-  /*
-   * The seam, straight onto the document element.
-   *
-   * `data-pulling` rides along because a transition that is right for the
-   * settle back is wrong under a finger: mid-drag the page must be exactly
-   * where the hand is, and any easing at all reads as the app lagging.
-   */
   const settleTimer = useRef<number | undefined>(undefined);
   const paint = useCallback((distance: number, live: boolean) => {
     const root = document.documentElement;
@@ -174,17 +63,13 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
       root.setAttribute('data-pull-moving', '');
     } else {
       root.removeAttribute('data-pulling');
+      root.style.removeProperty('--app-travel');
       /*
        * The page keeps its translate for exactly as long as the settle back
-       * takes, and then gives it up entirely.
-       *
-       * This is not tidiness. A `translate` of any value - `0px` included -
-       * makes an element the containing block for every `position: fixed`
-       * descendant it has, so leaving one on the content column permanently
-       * would silently re-anchor any fixed thing a page ever puts inside
-       * itself. There are none today; there is no reason to leave a trap for
-       * the one that shows up next month. Off between gestures, it cannot
-       * happen.
+       * takes, and then gives it up entirely. A `translate` of any value -
+       * `0px` included - makes the content column the containing block for
+       * every `position: fixed` descendant, so it must not persist between
+       * gestures.
        */
       settleTimer.current = window.setTimeout(
         () => document.documentElement.removeAttribute('data-pull-moving'),
@@ -198,24 +83,13 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
     let startY = 0;
     let startX = 0;
     let armed = false;
-    let pulling = false;
-    let distance = 0;
+    let isPulling = false;
     let travel = 0;
-    let settled = 62;
-    let standing = false;
-    let lastStage: PullStage = 'idle';
-    let landed = false;
-    let lastTickAt = 0;
-    let lastTickMs = 0;
+    const ratchet = makeRatchet();
     /*
-     * The page a touch landed in.
-     *
-     * `Element`, not `HTMLElement`: half this app's tappable surfaces have an
-     * icon in them, and a touch that lands on an <svg> or one of its <path>s
-     * has an SVGElement as its target - which is not an HTMLElement, so the
-     * old test returned null and the pull silently refused to arm. Starting
-     * the drag on artwork or an icon is not an edge case, it is where thumbs
-     * land.
+     * The page a touch landed in. `Element`, not `HTMLElement`: a touch that
+     * lands on an <svg> or one of its <path>s has an SVGElement target, and
+     * on a screen made of album art and icons that is most of the screen.
      */
     const pageOf = (target: EventTarget | null): Element | null => {
       let el = target instanceof Element ? target : null;
@@ -229,21 +103,9 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
       // Armed only at the very top of the page's own scroller, so ordinary
       // scrolling never fights this.
       armed = !!page && page.scrollTop <= 0;
-      pulling = false;
-      distance = 0;
+      isPulling = false;
       travel = 0;
-      lastStage = 'idle';
-      landed = false;
-      lastTickAt = 0;
-      lastTickMs = 0;
-      // Read once per gesture rather than per frame: the detent should land
-      // the bar exactly where it will come to rest, and that height is
-      // measured from the bar itself.
-      standing = barOpenRef.current;
-      settled =
-        parseFloat(
-          getComputedStyle(document.documentElement).getPropertyValue('--app-pull-stand'),
-        ) || 62;
+      ratchet.reset();
       startY = t.clientY;
       startX = t.clientX;
     };
@@ -253,111 +115,31 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
       if (!t) return;
       const dy = t.clientY - startY;
       const dx = Math.abs(t.clientX - startX);
-      if (!pulling) {
-        /*
-         * The way back. A standing bar is dismissed by pushing it up again -
-         * the same gesture that revealed it, run backwards - so it never
-         * becomes a thing you have to go and find the way out of.
-         */
-        if (barOpenRef.current && dy < -SLOP && Math.abs(dy) > dx * 1.5) {
-          fireNativeHaptic('selection');
-          setBarOpen(false);
-          armed = false;
-          return;
-        }
-        if (dy > SLOP && dy > dx * 1.5) pulling = true;
-        else return;
+      if (!isPulling) {
+        if (dy > SLOP && dy > dx * 1.5) {
+          isPulling = true;
+          setPulling(true);
+        } else return;
       }
-      travel = dy;
-      distance = distanceFor(dy, settled, standing);
+      travel = Math.max(0, dy);
+      // The page's own slide: damped hard, because it is what you are leaving.
+      const distance = Math.min(Math.sqrt(travel) * 7, PAGE_SLIDE_CAP);
+      document.documentElement.style.setProperty('--app-travel', `${travel.toFixed(1)}px`);
       paint(distance, true);
-      /*
-       * The run-up. Whichever detent is next, the travel toward it is ticked:
-       * `p` is how far into that approach the finger is, and it both tightens
-       * the notches and picks up the weight - soft texture at the start, a
-       * selection tick in the middle, a light impact just before arrival.
-       * Silent across the detent itself (REVEAL_END..HOLD_END), because that
-       * stretch is the rest, not a journey.
-       */
-      const runUp = standing
-        ? { from: SLOP, to: STANDING_REFRESH_AT }
-        : travel < REVEAL_END
-          ? { from: SLOP, to: REVEAL_END }
-          : travel >= HOLD_END && travel < REFRESH_AT
-            ? { from: HOLD_END, to: REFRESH_AT }
-            : null;
-      if (runUp && travel < refreshAt(standing)) {
-        const p = Math.min(1, Math.max(0, (travel - runUp.from) / (runUp.to - runUp.from)));
-        const spacing = NOTCH_FAR - (NOTCH_FAR - NOTCH_NEAR) * p;
-        const now = performance.now();
-        if (travel - lastTickAt >= spacing && now - lastTickMs >= TICK_FLOOR_MS) {
-          lastTickAt = travel;
-          lastTickMs = now;
-          if (p < 0.45) fireMicroTick();
-          else if (p < 0.8) fireNativeHaptic('selection');
-          else fireNativeHaptic('light');
-        }
-      }
-      // The detents themselves: the bar coming to rest, and the refresh
-      // arming. These are the two the ramp has been leading up to, so they are
-      // the two that land properly.
-      if (!landed && !standing && travel >= REVEAL_END) {
-        landed = true;
-        lastTickAt = travel;
-        fireNativeHaptic('medium');
-      }
-      const next = stageFor(travel, standing);
-      if (next !== lastStage) {
-        if (next === 'refresh') {
-          lastTickAt = travel;
-          fireNativeHaptic('heavy');
-        }
-        lastStage = next;
-        setStage(next);
-      }
+      // Felt as it builds: soft ticks tightening toward the commit point,
+      // and the point itself landing properly.
+      ratchet.feel(travel, SLOP, OPEN_AT, e.timeStamp);
+      if (travel >= OPEN_AT) ratchet.arrive('medium');
     };
     const onEnd = () => {
-      const reached = travel;
+      const open = isPulling && travel >= OPEN_AT;
       armed = false;
-      pulling = false;
-      distance = 0;
+      isPulling = false;
       travel = 0;
       paint(0, false);
-      setStage('idle');
-      if (reached >= refreshAt(standing)) {
-        // Past the far mark: refresh, and hold the gap open while it runs so
-        // the gesture visibly did something.
-        setRefreshing(true);
-        void (async () => {
-          try {
-            await refreshRef.current?.();
-            // The library is back. `success` is the one notification kind that
-            // means "the thing you asked for happened", which is all this is.
-            fireNativeHaptic('success');
-          } catch {
-            fireNativeHaptic('error');
-          } finally {
-            setRefreshing(false);
-          }
-        })();
-      } else if (reached >= SEARCH_AT) {
-        // Stage one: leave the bar standing. It is a door, not a flash - the
-        // whole point is that it is there to be tapped after the finger lifts.
-        setBarOpen(true);
-      }
+      setPulling(false);
+      if (open) setSearchOpen(true);
     };
-    /*
-     * And scrolling closes it. The bar sits above the page; the moment the
-     * page moves out from under it the bar describes somewhere you no longer
-     * are. Capture, because scroll does not bubble - the scrollers are the
-     * pages inside, not the host.
-     */
-    const onScroll = (e: Event) => {
-      if (!barOpenRef.current) return;
-      const t = e.target;
-      if (t instanceof Element && t.scrollTop > 2) setBarOpen(false);
-    };
-    host.addEventListener('scroll', onScroll, { capture: true, passive: true });
     host.addEventListener('touchstart', onStart, { passive: true });
     host.addEventListener('touchmove', onMove, { passive: true });
     host.addEventListener('touchend', onEnd, { passive: true });
@@ -367,60 +149,13 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
       host.removeEventListener('touchmove', onMove);
       host.removeEventListener('touchend', onEnd);
       host.removeEventListener('touchcancel', onEnd);
-      host.removeEventListener('scroll', onScroll, { capture: true });
       window.clearTimeout(settleTimer.current);
       document.documentElement.removeAttribute('data-pulling');
       document.documentElement.removeAttribute('data-pull-moving');
       document.documentElement.style.removeProperty('--app-pull');
+      document.documentElement.style.removeProperty('--app-travel');
     };
   }, [host, paint]);
-
-  /*
-   * Where the gap actually starts, measured off the content column.
-   *
-   * The deck used to compute its own top as `safe-area-inset-top +
-   * --app-header-height` - a second, parallel derivation of a position the
-   * layout had already worked out. The two agreed on a desktop, where the
-   * safe-area inset is 0, and disagreed on a phone, where it is a status bar:
-   * the deck sat lower than the gap the page had opened and the bar landed on
-   * the music. Reading the column's own top instead means there is only one
-   * answer to where the seam is, so there is nothing left to disagree with.
-   *
-   * Never read mid-drag: the rect includes the translate, which would feed
-   * the page's own movement back into the deck's anchor.
-   */
-  useEffect(() => {
-    if (!host) return;
-    const write = () => {
-      if (document.documentElement.hasAttribute('data-pull-moving')) return;
-      const { top } = host.getBoundingClientRect();
-      document.documentElement.style.setProperty('--app-content-top', `${top.toFixed(1)}px`);
-    };
-    write();
-    const ro = new ResizeObserver(write);
-    ro.observe(host);
-    window.addEventListener('resize', write);
-    window.addEventListener('orientationchange', write);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener('resize', write);
-      window.removeEventListener('orientationchange', write);
-    };
-  }, [host]);
-
-  /*
-   * The settled gap: the bar's own height, held open by the page rather than
-   * by a transform, so the page is SHORTER while the bar stands instead of
-   * being pushed off the bottom of the screen. A translate here would put the
-   * last few rows of a scrolled page out of reach - the exact complaint the
-   * nav bar's chin was built to answer.
-   */
-  useEffect(() => {
-    const root = document.documentElement;
-    if (barOpen || refreshing) root.setAttribute('data-pull-standing', '');
-    else root.removeAttribute('data-pull-standing');
-    return () => root.removeAttribute('data-pull-standing');
-  }, [barOpen, refreshing]);
 
   // Until the pull has been used once, a small chip under the header says it
   // exists - the one cost of retiring the Search tab.
@@ -458,15 +193,5 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  return {
-    /** Which answer the live gesture is offering; 'idle' between gestures. */
-    stage,
-    /** The revealed search bar, standing after a stage-one pull. */
-    barOpen,
-    setBarOpen,
-    refreshing,
-    summonHint,
-    searchOpen,
-    setSearchOpen,
-  };
+  return { pulling, summonHint, searchOpen, setSearchOpen };
 }
