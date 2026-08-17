@@ -220,6 +220,33 @@
     inset-inline: var(--glacier-space-6);
   }
 
+  /*
+   * On the sheet the words fill the square, they do not run down its edge.
+   *
+   * `.npStack` is right-aligned because that is the artist page's hero, where
+   * the words are a column beside a portrait and the right edge is the design.
+   * The sheet is not that: the art is a disc in the middle of the screen, and
+   * a column jammed against the right rail read as an overflow rather than a
+   * layout - long words ran off the edge and were cut by the band's own
+   * `overflow: hidden`, so lines arrived as SPEEDIN and GHT.
+   *
+   * Centred, the column occupies the same square the disc does, which is the
+   * open middle of the sheet and the only part of it not already spoken for.
+   */
+  .npScreen .npStack {
+    align-items: center;
+    text-align: center;
+    /* Never wider than the band is tall. On a phone the band is taller than
+       it is wide, so this is the full width and changes nothing; on anything
+       landscape it stops the column spanning rail to rail and keeps it to the
+       disc's own measure. The HEIGHT is left alone deliberately - the word
+       sizes are computed against the band, so shrinking the box they sit in
+       without shrinking them would push the first and last words out of it. */
+    inline-size: min(100cqw, 100cqh);
+    inset-inline: 50%;
+    translate: -50% 0;
+  }
+
   /* The compact pack hugs its rows - fine at desktop control sizes, airless
      once everything grows. The kit also pins the strip's height for the pack,
      which quietly eats any padding given to it - so the height is handed back
