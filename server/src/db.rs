@@ -1311,6 +1311,21 @@ impl Db {
         })
     }
 
+    /// Replaces a user's password hash and signs every device out.
+    ///
+    /// The epoch bump is not optional politeness: a password is reset because
+    /// the old one is not trusted, and stream tokens minted under it keep
+    /// working until their epoch is stale. Changing the secret without it
+    /// would leave whoever prompted the reset still streaming.
+    pub fn set_password_hash(&self, username: &str, hash: &str) -> rusqlite::Result<bool> {
+        let changed = self.lock().execute(
+            "UPDATE users SET pass_hash = ?2, stream_epoch = stream_epoch + 1
+              WHERE username = ?1 COLLATE NOCASE",
+            rusqlite::params![username, hash],
+        )?;
+        Ok(changed > 0)
+    }
+
     pub fn user_by_name(&self, username: &str) -> Option<User> {
         self.lock()
             .query_row(

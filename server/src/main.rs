@@ -160,8 +160,74 @@ fn env_or(key: &str, fallback: &str) -> String {
 /// a package manager asking "is this thing runnable?" must not get a music
 /// server bound to a port for its trouble. (Which is exactly what the installer
 /// got before this existed: its sanity check hung forever.)
+/// `attackfm-server --set-password <username>` - set a password from the box
+/// the library lives on.
+///
+/// It exists because there is no other way back in: the app can only change a
+/// password you can already sign in with, and the hash is Argon2, so no amount
+/// of sqlite by hand can write one. This reuses `auth::hash_password`, the
+/// exact function the login path verifies against, which is the point of
+/// putting it in this binary rather than in a script beside it.
+///
+/// The new password is generated HERE and printed once, on the machine of the
+/// person running it. Nine characters from an alphabet with no look-alikes, so
+/// it survives being read off a screen and typed into a phone.
+fn set_password_cli(username: Option<&str>) -> ! {
+    let Some(username) = username.filter(|u| !u.trim().is_empty()) else {
+        eprintln!("usage: attackfm-server --set-password <username>");
+        eprintln!("       AFM_DATA_DIR must point at the server's data directory.");
+        std::process::exit(2);
+    };
+    let data_dir = std::path::PathBuf::from(env_or("AFM_DATA_DIR", "./data"));
+    let db = match db::Db::open(&data_dir.join("attackfm.db")) {
+        Ok(db) => db,
+        Err(e) => {
+            eprintln!("cannot open the database under {}: {e}", data_dir.display());
+            eprintln!("set AFM_DATA_DIR to the directory the server runs with.");
+            std::process::exit(1);
+        }
+    };
+    // No look-alikes: 0/O and 1/l/I are the characters a password read aloud
+    // or off a screen gets wrong, and this one is meant to be typed by hand.
+    const ALPHABET: &[u8] = b"abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    let password: String = (0..9)
+        .map(|_| ALPHABET[rng.gen_range(0..ALPHABET.len())] as char)
+        .collect();
+    let hash = match auth::hash_password(&password) {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("could not hash the password: {e}");
+            std::process::exit(1);
+        }
+    };
+    match db.set_password_hash(username, &hash) {
+        Ok(true) => {
+            println!();
+            println!("  {username}'s new password:  {password}");
+            println!();
+            println!("  Every device is signed out; sign in again with this.");
+            println!("  It is printed once and stored only as a hash - write it down now.");
+            std::process::exit(0);
+        }
+        Ok(false) => {
+            eprintln!("no user named '{username}' on this server.");
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("could not write the new password: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
 fn handle_cli_flags() {
-    for arg in std::env::args().skip(1) {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("--set-password") {
+        set_password_cli(args.get(1).map(String::as_str));
+    }
+    for arg in args {
         match arg.as_str() {
             "-V" | "--version" => {
                 println!("attackfm-server {}", env!("CARGO_PKG_VERSION"));
@@ -173,6 +239,9 @@ fn handle_cli_flags() {
                      \n\
                      A personal music library, streamed losslessly.\n\
                      Configured entirely by environment variables:\n\
+                     \n\
+                     Recovery:\n\
+                       --set-password <user>   set a new password, printed once\n\
                      \n\
                        AFM_BIND           interface to bind      (default 127.0.0.1)\n\
                        AFM_PORT           port                   (default 8788)\n\
@@ -667,4 +736,33 @@ async fn shutdown_signal() {
         let _ = tokio::signal::ctrl_c().await;
     }
     println!("[attackfm] shutting down");
+}
+
+#[cfg(test)]
+mod set_password_tests {
+    /// The reset must produce a hash the LOGIN path accepts, and must not
+    /// leave the old one working - the two halves of "reset".
+    #[test]
+    fn a_reset_password_verifies_and_the_old_one_stops() {
+        let dir = std::env::temp_dir().join(format!("afm-pw-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = crate::db::Db::open(&dir.join("t.db")).unwrap();
+        let first = crate::auth::hash_password("original-secret").unwrap();
+        db.create_user("tester", &first, true).unwrap();
+        let before = db.user_by_name("tester").unwrap();
+        assert!(crate::auth::verify_password("original-secret", &before.pass_hash));
+
+        let fresh = crate::auth::hash_password("Kq7mRt2vX").unwrap();
+        assert!(db.set_password_hash("tester", &fresh).unwrap());
+
+        let after = db.user_by_name("tester").unwrap();
+        assert!(crate::auth::verify_password("Kq7mRt2vX", &after.pass_hash), "new password must work");
+        assert!(!crate::auth::verify_password("original-secret", &after.pass_hash), "old must not");
+        // Sign-out-everywhere: tokens minted under the old epoch are stale.
+        assert!(after.stream_epoch > before.stream_epoch, "stream epoch must bump");
+        // Case-insensitive, matching the users table's own COLLATE NOCASE.
+        assert!(db.set_password_hash("TESTER", &fresh).unwrap());
+        assert!(!db.set_password_hash("nobody-here", &fresh).unwrap());
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
