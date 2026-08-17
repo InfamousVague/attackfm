@@ -78,11 +78,6 @@ export class ServerError extends Error {
   }
 }
 
-/** True when the failure was "your credentials are no longer good". */
-export function isAuthError(error: unknown): boolean {
-  return error instanceof ServerError && (error.status === 401 || error.status === 403);
-}
-
 async function request<T>(
   url: string,
   path: string,
@@ -649,16 +644,6 @@ export function saveCachedIndex(url: string, index: CachedIndex): void {
   void idbWrite(url, index).catch(() => {
     // Persistence failing still leaves the memory copy carrying this run.
   });
-}
-
-export function clearCachedIndex(url: string): void {
-  memIndex.delete(url);
-  void idbWrite(url, null).catch(() => {});
-  try {
-    localStorage.removeItem(cacheKey(url));
-  } catch {
-    // Nothing to do - a cache that will not clear is re-validated by rev anyway.
-  }
 }
 
 /**
@@ -1433,14 +1418,6 @@ export async function dateDone(
     body: JSON.stringify({ kept, passed }),
   });
   return { seeded: out.seeded ?? 0 };
-}
-
-/** Not for me. Forgotten rather than hidden, so the harvest can replace it. */
-export async function dismissDiscovery(session: ServerSession, id: string): Promise<void> {
-  await request(session.url, `/api/discoveries/dismiss?id=${encodeURIComponent(id)}`, {
-    method: 'POST',
-    token: session.token,
-  });
 }
 
 /** One playlist the curator built from this listener's own history. */

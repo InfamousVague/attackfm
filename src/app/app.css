@@ -1417,13 +1417,6 @@ img {
   gap: var(--glacier-space-1);
 }
 
-/* The importer's trigger is an IconButton, not a NavBarItem, so it centres
-   itself in the 3rem cell the rail gives every button. */
-.appNavRail__downloads {
-  display: flex;
-  justify-content: center;
-}
-
 /* The progressive blur behind the nav. A stack of blur layers, each masked to
    a different reach up the screen: the whole band is lightly frosted, and the
    frost deepens toward the very bottom, so content does not cut off at a hard
@@ -1679,11 +1672,6 @@ body:has(.npScreen[data-docked]) .appNavScrim {
    trigger wears .appNavBarTab, so it sits and lights like any core tab; the
    menu floats above (the bar's overflow is visible), a glass card matching the
    bar's own, its rows rising in a quick stagger. */
-.appNavBarPlugins {
-  position: relative;
-  display: flex;
-}
-
 /* The ⋮ menu. Our own markup and our own box - NOT the kit's Popover.
    That popover was fought four times over this exact bug: its panel carries a
    min-width of 12rem and a max-width of min(24rem, 100vw - 2rem), which on a
@@ -1865,14 +1853,6 @@ body:has(.npScreen[data-docked]) .summonHintChip {
 .appNavBarPlugins__itemLabel {
   font-size: var(--glacier-font-md, 1rem);
   font-weight: 550;
-}
-
-.appNavBarPlugins__empty {
-  display: block;
-  max-inline-size: 14rem;
-  padding: var(--glacier-space-2) var(--glacier-space-3);
-  font-size: var(--glacier-font-sm, 0.875rem);
-  color: var(--glacier-text-subtle, var(--glacier-text-muted));
 }
 
 /* The raised centre: the app icon itself, lifted so it overhangs the island's
@@ -2729,12 +2709,6 @@ html[data-platform='android'] .appWindow {
   background: color-mix(in oklab, var(--glacier-accent-solid) 14%, transparent);
 }
 
-.queueRow__grip {
-  flex: none;
-  color: var(--glacier-text-muted);
-  opacity: 0.7;
-}
-
 .queueRow__play {
   display: flex;
   align-items: center;
@@ -2805,18 +2779,6 @@ html[data-platform='android'] .appWindow {
 
 .npScreen__play:active {
   transform: scale(0.94);
-}
-
-.npScreen__volume {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-3);
-  flex: none;
-  color: var(--glacier-text-muted);
-}
-
-.npScreen__volume :last-child {
-  flex: 1;
 }
 
 /* ── Mobile settings ────────────────────────────────────────────────────────
@@ -3894,20 +3856,6 @@ html[data-platform='android'] .appWindow {
    The Library tab reuses the Home page's scroll/padding (it wears both classes)
    and its shelf/card look; these are its own header and the browse panel at the
    foot. */
-.libraryHead {
-  display: flex;
-  flex-direction: column;
-  gap: var(--glacier-space-3);
-  min-width: 0;
-}
-
-.libraryHead__title {
-  margin: 0;
-  font-size: 1.6rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-
 /* The full song table sits at the bottom as a self-contained scrollable panel -
    a bounded height so the shelves above stay reachable by the page's own
    scroll, rather than the grid swallowing the whole viewport. */
@@ -4976,13 +4924,6 @@ img.artPop:not([data-loading]) {
   inline-size: 100%;
 }
 
-.mixCardBadge {
-  position: absolute;
-  inset-block-start: var(--glacier-space-2);
-  inset-inline-end: var(--glacier-space-2);
-  box-shadow: 0 1px 6px rgb(0 0 0 / 0.35);
-}
-
 .mixCardBlurb {
   font-size: 0.75rem;
   color: var(--glacier-text-muted);
@@ -4990,15 +4931,6 @@ img.artPop:not([data-loading]) {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-}
-
-/* The playlist strip sits above the library table, sized to its tiles; the
-   table takes the rest and scrolls within its own region. Only the inline inset
-   lives here - the block padding sits on the row inside the scroll viewport, so
-   the hover scale has room instead of being clipped at the viewport edge. */
-.showcaseScroll {
-  flex: none;
-  padding-inline: var(--glacier-space-2);
 }
 
 .libraryBody {
@@ -5022,16 +4954,6 @@ img.artPop:not([data-loading]) {
      past the window's right edge. Auto lets the flex column stretch it to the
      body's width MINUS the margins. */
   inline-size: auto;
-}
-
-/* A row of squircle tiles that scrolls sideways when it outgrows the window.
-   The padding insets the tiles from the scroll viewport's clip edges so a
-   hovered squircle can grow without being cropped. */
-.showcaseRow {
-  display: flex;
-  gap: var(--glacier-space-4);
-  align-items: flex-start;
-  padding: var(--glacier-space-2);
 }
 
 /* A tile is a bare button: the squircle does the talking, the caption is a
@@ -5128,10 +5050,6 @@ img.artPop:not([data-loading]) {
   outline-offset: 2px;
 }
 
-.tileLiked {
-  background: linear-gradient(135deg, var(--glacier-accent-solid) 0%, var(--glacier-accent-soft) 100%);
-}
-
 /* The 2x2 mosaic of favourite covers, seamless. */
 .tileLikedGrid {
   grid-template-columns: 1fr 1fr;
@@ -5148,27 +5066,6 @@ img.artPop:not([data-loading]) {
 .tileRecent {
   background: linear-gradient(135deg, var(--glacier-surface-raised) 0%, var(--glacier-surface-sunken) 100%);
   color: var(--glacier-text);
-}
-
-/* A HERO tile: the library's own big views (Liked, All) wear their painted art
-   filling the whole squircle, so they read apart from the playlist covers in
-   the same grid rather than as one more square. The ground shows in the art's
-   own dark margins and while it loads; the art (HeroArt) sits absolute over it. */
-.tileHero {
-  position: relative;
-}
-.tileHero--liked {
-  /* A crimson-into-black wash so the neon heart lands on colour, and a faint
-     accent ring so the tile is clearly the odd one out in the row. */
-  background: radial-gradient(
-    circle at 50% 42%,
-    color-mix(in srgb, var(--glacier-accent-solid) 34%, #05040a) 0%,
-    #05040a 72%
-  );
-  border-color: color-mix(in srgb, var(--glacier-accent-solid) 40%, var(--glacier-border-subtle));
-}
-.tileHero--all {
-  background: linear-gradient(140deg, var(--glacier-surface-raised) 0%, var(--glacier-surface-sunken) 100%);
 }
 
 /* The kit's Popover panel caps at 24rem, too narrow for eight EQ bands; widen it
@@ -5383,17 +5280,6 @@ body [class*='_panel_']:has(> .dlPanel) {
 .moreBack:focus-visible {
   background: var(--glacier-surface-sunken);
   color: var(--glacier-text);
-}
-
-/* Why there are no sliders on the phone, in a breath. */
-.moreEqNote {
-  max-inline-size: 16rem;
-  margin: 0;
-  padding-inline: var(--glacier-space-2);
-  padding-block-end: var(--glacier-space-2);
-  color: var(--glacier-text-muted);
-  font-size: var(--glacier-font-size-sm);
-  line-height: 1.5;
 }
 
 /* The lying-down fader: mute, rail, reading in one row. The rail takes what
@@ -5839,47 +5725,6 @@ body [class*='_panel_']:has(> .dlPanel) {
 .songArtistLink:hover {
   color: var(--glacier-text);
   text-decoration: underline;
-}
-
-/* Shared section strip: a title and stats line above a horizontal row of items,
-   used by both the homepage playlists and an artist's albums so the two pages
-   stand the same height and read the same way. */
-.stripHeader {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  gap: var(--glacier-space-2);
-  padding-block-start: var(--glacier-space-2);
-  border-block-end: var(--glacier-hairline, 1px) solid var(--glacier-border);
-}
-
-.stripHeading {
-  display: flex;
-  flex-direction: column;
-  gap: var(--glacier-space-1);
-  min-width: 0;
-  padding-inline: var(--glacier-space-4);
-}
-
-.stripTitle {
-  color: var(--glacier-text);
-  font-size: var(--glacier-font-size-lg);
-  font-weight: var(--glacier-font-weight-semibold);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Takes the full width under the heading so the covers scroll within it. */
-.artistAlbums {
-  min-width: 0;
-  padding-inline: var(--glacier-space-2);
-}
-
-.artistAlbumsRow {
-  display: flex;
-  gap: var(--glacier-space-3);
-  padding: var(--glacier-space-2);
 }
 
 /* The discography grid. This was a sideways shelf of what you own; it is now
@@ -6509,13 +6354,6 @@ body [class*='_panel_']:has(> .dlPanel) {
     --app-player-height: 9rem;
   }
 
-  /* The download queue lives in the header's action cluster on the phone now,
-     global to every page - so the per-page copy each page still renders (for
-     the desktop title-bar-less case) is a duplicate here and stands down. */
-  .pageActions {
-    display: none;
-  }
-
   /* On the phone the lyric words fill the WHOLE height of the background - a
      full-height wash of lyrics behind the page (Home) and behind the sheet
      (Now Playing) - rather than the old band in the header seam. */
@@ -7085,32 +6923,6 @@ body [class*='_panel_']:has(> .dlPanel) {
    the counts as tiles, then the queue split into what is coming down, what
    waits, and what is finished. */
 
-/* The rail's download door: a nav item wearing a live count, so a queue
-   running in the background is visible from every page without opening it. */
-.appNavRail__dlIcon {
-  position: relative;
-  display: flex;
-}
-
-.appNavRail__dlBadge {
-  position: absolute;
-  inset-block-start: -5px;
-  inset-inline-end: -8px;
-  min-inline-size: 15px;
-  block-size: 15px;
-  padding-inline: 3px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--glacier-radius-full);
-  background: var(--glacier-accent-solid);
-  color: var(--glacier-on-accent, #fff);
-  font-size: 0.6rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
-
 .dlHead {
   display: flex;
   align-items: center;
@@ -7229,11 +7041,6 @@ body [class*='_panel_']:has(> .dlPanel) {
   text-transform: capitalize;
 }
 
-.dlChip--src {
-  text-transform: capitalize;
-  letter-spacing: 0.01em;
-}
-
 /* Who is pulling this. It leads the meta row and wears the accent, because
    with several queues on one page the owner is the first thing that tells two
    otherwise identical cards apart - and it is absent entirely when there is
@@ -7241,16 +7048,6 @@ body [class*='_panel_']:has(> .dlPanel) {
 .dlChip--source {
   color: var(--glacier-accent-text);
   border-color: color-mix(in srgb, var(--glacier-accent-solid) 40%, transparent);
-}
-
-.dlChip--spotify {
-  color: #1db954;
-  border-color: color-mix(in srgb, #1db954 45%, transparent);
-}
-
-.dlChip--deezer {
-  color: #a238ff;
-  border-color: color-mix(in srgb, #a238ff 45%, transparent);
 }
 
 .dlCard__progress {
@@ -7303,22 +7100,6 @@ body [class*='_panel_']:has(> .dlPanel) {
    long finished list without reading a word. */
 .dlCard[data-state='error'] {
   border-color: var(--glacier-danger-border, var(--glacier-border));
-}
-
-.downloadsHead {
-  display: flex;
-  align-items: center;
-  /* The page title moved into the app header, so the queue's controls are the
-     row's only content; they hold the right edge they always had. */
-  justify-content: flex-end;
-  gap: var(--glacier-space-3);
-  flex-wrap: wrap;
-}
-
-.downloadsHead__actions {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-2);
 }
 
 .downloadsEmpty {
@@ -8112,153 +7893,6 @@ body [class*='_panel_']:has(> .dlPanel) {
   to {
     transform: rotate(360deg);
   }
-}
-
-/* A page's own action cluster, held against its trailing edge. Whatever the
-   plugins contribute lands here - the importer's downloads button, today - so
-   an action sits with the page it acts on rather than among the tabs, which
-   are destinations and nothing else. Empty when no plugin contributes, and it
-   collapses to nothing rather than leaving a gap. */
-.pageActions {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-1);
-}
-
-.pageActions:empty {
-  display: none;
-}
-
-/* The library's cluster is a row of its own above the showcase, so it needs
-   the alignment and the breathing room the greeting's row gets for free. */
-.pageActions--library {
-  justify-content: flex-end;
-  padding-block-start: var(--glacier-space-2);
-  /* The same gutter the showcase's heading keeps, so the button lines up with
-     the page's edge rather than the screen's. */
-  padding-inline: var(--glacier-space-4);
-}
-
-/* ── Mobile full-screen search ───────────────────────────────────────────── */
-
-/* The phone's search is a full-screen sheet, not the desktop's centered
-   palette: a field under the status bar and a tappable results list filling the
-   rest. Sits above the floating player and the bottom nav (z 50), opaque so
-   nothing shows through. */
-.mobileSearch {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: flex;
-  flex-direction: column;
-  background: var(--glacier-bg);
-  padding-block-start: env(safe-area-inset-top, 0px);
-  overscroll-behavior: contain;
-}
-
-.mobileSearch__bar {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-2);
-  padding: var(--glacier-space-2) var(--glacier-space-3);
-  border-block-end: var(--glacier-hairline) solid var(--glacier-border-subtle);
-}
-
-.mobileSearch__field {
-  flex: 1;
-  min-width: 0;
-}
-
-.mobileSearch__results {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  padding-block-end: calc(env(safe-area-inset-bottom, 0px) + var(--glacier-space-4));
-}
-
-.mobileSearch__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-/* A generous thumb-sized row: cover (or a glyph for a command), then title over
-   a muted subtitle. */
-.mobileSearchRow {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-3);
-  inline-size: 100%;
-  padding: var(--glacier-space-2) var(--glacier-space-3);
-  border: none;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: start;
-  cursor: pointer;
-}
-
-.mobileSearchRow:active {
-  background: var(--glacier-surface-sunken);
-}
-
-.mobileSearchRow__art,
-.mobileSearchRow__glyph {
-  flex: none;
-  inline-size: 2.75rem;
-  block-size: 2.75rem;
-  border-radius: var(--glacier-radius-md);
-  object-fit: cover;
-  background: var(--glacier-surface-sunken);
-}
-
-.mobileSearchRow__glyph {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--glacier-accent-text);
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
-}
-
-.mobileSearchRow__body {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.mobileSearchRow__title {
-  font-size: 0.95rem;
-  font-weight: 550;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.mobileSearchRow__sub {
-  font-size: 0.8rem;
-  color: var(--glacier-text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.mobileSearch__note {
-  margin: var(--glacier-space-3);
-  color: var(--glacier-text-muted);
-  font-size: 0.85rem;
-  text-align: center;
-}
-
-.mobileSearch__hint {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--glacier-space-3);
-  padding: var(--glacier-space-6) var(--glacier-space-5);
-  color: var(--glacier-text-muted);
-  text-align: center;
 }
 
 /* ---- A catalogue artist's page (Discover) ------------------------------ */
@@ -10141,12 +9775,6 @@ body:has(.npScreen[data-docked]) .djToast {
   gap: var(--glacier-space-4);
 }
 
-.registryFriends__join {
-  display: flex;
-  flex-direction: column;
-  gap: var(--glacier-space-2);
-}
-
 .joinServer {
   display: flex;
   flex-direction: column;
@@ -10214,163 +9842,6 @@ body:has(.npScreen[data-docked]) .djToast {
   );
 }
 
-/* ---- The plugin fan ----------------------------------------------------- */
-
-/* The plugins' own door: a frosted button riding either screen edge,
-   draggable along it, fanning out one button per plugin page. Exists only
-   while some plugin contributes a page. */
-.pluginFan {
-  position: fixed;
-  z-index: 60;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--glacier-space-2);
-}
-
-.pluginFan[data-side='right'] {
-  inset-inline-end: 0.65rem;
-}
-
-.pluginFan[data-side='left'] {
-  inset-inline-start: 0.65rem;
-}
-
-.pluginFan[data-dragging] {
-  transition: none;
-}
-
-.pluginFan__fab {
-  inline-size: 2.9rem;
-  block-size: 2.9rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--glacier-radius-full);
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
-  background: var(--glacier-glass-regular, var(--glacier-surface));
-  color: var(--glacier-text);
-  cursor: grab;
-  backdrop-filter: blur(14px) saturate(1.1);
-  -webkit-backdrop-filter: blur(14px) saturate(1.1);
-  box-shadow: 0 6px 20px rgb(0 0 0 / 0.3);
-  /* The drag IS the pointer stream - never hand it to the scroller. */
-  touch-action: none;
-  padding: 0;
-  font: inherit;
-}
-
-.pluginFan[data-dragging] .pluginFan__fab {
-  cursor: grabbing;
-  transform: scale(1.06);
-}
-
-/* On a plugin page the button wears that page's icon in the accent - the
-   door doubles as "you are here". */
-.pluginFan__fab[data-active] {
-  color: var(--glacier-accent-text, var(--glacier-accent-solid));
-  border-color: var(--glacier-accent-border, var(--glacier-border-subtle));
-}
-
-/* The fan itself: one button per page, popping upward from the fab with a
-   small stagger, labels held toward the screen's centre. */
-.pluginFan__items {
-  position: absolute;
-  inset-block-end: calc(100% + var(--glacier-space-2));
-  display: flex;
-  flex-direction: column-reverse;
-  gap: var(--glacier-space-2);
-}
-
-.pluginFan[data-side='right'] .pluginFan__items {
-  inset-inline-end: 0;
-  align-items: flex-end;
-}
-
-.pluginFan[data-side='left'] .pluginFan__items {
-  inset-inline-start: 0;
-  align-items: flex-start;
-}
-
-.pluginFan__item {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-2);
-  border: none;
-  background: none;
-  padding: 0;
-  font: inherit;
-  color: var(--glacier-text);
-  cursor: pointer;
-  animation: pluginFanPop 0.22s var(--glacier-ease-out) backwards;
-  animation-delay: calc(var(--fan-i, 0) * 30ms);
-}
-
-.pluginFan[data-side='left'] .pluginFan__item {
-  flex-direction: row-reverse;
-}
-
-@keyframes pluginFanPop {
-  from {
-    opacity: 0;
-    transform: translateY(0.5rem) scale(0.85);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .pluginFan__item {
-    animation: none;
-  }
-}
-
-/* The label: a frosted pill beside the glyph, so the fan reads at a glance
-   without a hover. */
-.pluginFan__itemLabel {
-  padding: 0.2rem 0.6rem;
-  border-radius: var(--glacier-radius-full);
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
-  background: var(--glacier-glass-regular, var(--glacier-surface));
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  font-size: var(--glacier-font-size-xs);
-  font-weight: var(--glacier-font-weight-medium);
-  white-space: nowrap;
-}
-
-.pluginFan__itemIcon {
-  inline-size: 2.4rem;
-  block-size: 2.4rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--glacier-radius-full);
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
-  background: var(--glacier-glass-regular, var(--glacier-surface));
-  backdrop-filter: blur(14px) saturate(1.1);
-  -webkit-backdrop-filter: blur(14px) saturate(1.1);
-  box-shadow: 0 4px 14px rgb(0 0 0 / 0.25);
-}
-
-.pluginFan__item[data-active] .pluginFan__itemIcon {
-  color: var(--glacier-accent-text, var(--glacier-accent-solid));
-  border-color: var(--glacier-accent-border, var(--glacier-border-subtle));
-}
-
-.pluginFan__item:hover .pluginFan__itemIcon {
-  background: var(--glacier-hover, var(--glacier-surface));
-}
-
-/* Tap-away closes: an invisible sheet under the fan, above the page. */
-.pluginFanScrim {
-  position: fixed;
-  inset: 0;
-  z-index: 59;
-  border: none;
-  background: transparent;
-  padding: 0;
-  cursor: default;
-}
-
 /* ---- Plugins: updates, browse, sources --------------------------------- */
 
 /* The update notice sits above the tabs, tinted so it reads as news rather
@@ -10426,127 +9897,6 @@ body:has(.npScreen[data-docked]) .djToast {
   padding: 0 var(--glacier-space-4);
   color: var(--glacier-text-muted);
   font-size: var(--glacier-font-size-sm);
-}
-
-/* A find: music the curator turned up that is NOT in the library. Shaped like
-   a track card so the shelf reads as one family, but carrying an add badge and
-   the reason it is here - and a dismiss, because a suggestion you cannot refuse
-   is an advert. */
-.findCard {
-  position: relative;
-  flex: none;
-}
-
-.findCard__body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--glacier-space-1);
-  inline-size: 9rem;
-  padding: 0;
-  background: none;
-  border: none;
-  color: inherit;
-  font: inherit;
-  text-align: start;
-  cursor: pointer;
-}
-
-.findCard__body:disabled {
-  cursor: default;
-  opacity: 0.6;
-}
-
-.findCard__cover {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  inline-size: 9rem;
-  block-size: 9rem;
-  border-radius: var(--glacier-radius-md);
-  overflow: hidden;
-  background: var(--glacier-surface-raised, var(--glacier-hover));
-  color: var(--glacier-text-muted);
-}
-
-.findCard__cover img {
-  inline-size: 100%;
-  block-size: 100%;
-  object-fit: cover;
-}
-
-/* The add affordance rides the cover, so the whole card reads as "tap to get
-   this" without a second row of chrome. A card only ever shows the plus or its
-   spinner: once the song is in the library it leaves the shelf entirely. */
-.findCard__add {
-  position: absolute;
-  inset-block-end: var(--glacier-space-2);
-  inset-inline-end: var(--glacier-space-2);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  inline-size: 1.75rem;
-  block-size: 1.75rem;
-  border-radius: var(--glacier-radius-full);
-  background: var(--glacier-accent-solid);
-  color: var(--glacier-accent-on, #fff);
-  box-shadow: var(--glacier-shadow-2, 0 2px 6px rgba(0, 0, 0, 0.35));
-}
-
-/* While its download runs, the cover dims under a full circular-progress
-   overlay - the card wears its own status until the file lands and it drops off
-   the shelf. */
-.findCard__cover[data-downloading] img {
-  filter: brightness(0.4) saturate(0.85);
-}
-
-.findCard__progress {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.5);
-  color: #fff;
-}
-
-/* Why it is here, in the terms actually measured. */
-.findCard__why {
-  color: var(--glacier-text-subtle, var(--glacier-text-muted));
-  font-size: var(--glacier-font-size-xs);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.findCard__no {
-  position: absolute;
-  inset-block-start: var(--glacier-space-1);
-  inset-inline-end: var(--glacier-space-1);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  inline-size: 1.5rem;
-  block-size: 1.5rem;
-  border-radius: var(--glacier-radius-full);
-  border: none;
-  background: var(--glacier-glass-regular, rgba(0, 0, 0, 0.5));
-  color: var(--glacier-text);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
-}
-
-.findCard:hover .findCard__no,
-.findCard__no:focus-visible {
-  opacity: 1;
-}
-
-/* No hover on a touchscreen, so the dismiss is simply always there. */
-@media (pointer: coarse) {
-  .findCard__no {
-    opacity: 1;
-  }
 }
 
 /* "Suggested for this playlist": what else belongs, under the list itself -
@@ -10788,11 +10138,6 @@ body:has(.npScreen[data-docked]) .djToast {
   margin-block-start: var(--glacier-space-3);
 }
 
-.loginGate__foot {
-  text-align: center;
-  line-height: 1.5;
-}
-
 /* --- Sign-in wizard extras (back link) + code path ------------------------- */
 .loginGate__back {
   display: inline-flex;
@@ -11025,15 +10370,6 @@ body:has(.npScreen[data-docked]) .djToast {
   gap: var(--glacier-space-2);
 }
 
-/* The playlists row worn as a shelf: the shelf's gutters win over the old
-   strip padding, so the first tile lines up with every other shelf's first
-   card. */
-.homeShelfRow.showcaseRow {
-  padding: 0 var(--glacier-space-4) var(--glacier-space-1);
-  gap: var(--glacier-space-3);
-  align-items: flex-start;
-}
-
 /* The library in numbers: one card, an icon beside each figure. It wraps on a
    phone rather than shrinking - five stats forced into one 375px row would be
    confetti. */
@@ -11045,41 +10381,6 @@ body:has(.npScreen[data-docked]) .djToast {
   border: var(--glacier-hairline) solid var(--glacier-border);
   border-radius: var(--glacier-radius-lg);
   background: var(--glacier-surface);
-}
-
-.libStat {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-2);
-  min-inline-size: 0;
-}
-
-.libStat__icon {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  inline-size: 2rem;
-  block-size: 2rem;
-  border-radius: 34%;
-  background: var(--glacier-accent-soft);
-  color: var(--glacier-accent-text);
-}
-
-.libStat__body {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.2;
-}
-
-.libStat__value {
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-}
-
-.libStat__label {
-  font-size: var(--glacier-font-size-xs);
-  color: var(--glacier-text-muted);
 }
 
 /* --- Artist page ---------------------------------------------------------- */
@@ -11121,80 +10422,6 @@ body:has(.npScreen[data-docked]) .djToast {
   display: flex;
   gap: var(--glacier-space-2);
   inline-size: 100%;
-}
-
-/* Top songs: a compact ranked list, each row one tap-to-play button. */
-.artistTop {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.artistTopRow {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-3);
-  inline-size: 100%;
-  padding-block: var(--glacier-space-2);
-  padding-inline: var(--glacier-space-2);
-  background: none;
-  border: none;
-  border-radius: var(--glacier-radius-md);
-  color: inherit;
-  font: inherit;
-  text-align: start;
-  cursor: pointer;
-}
-
-.artistTopRow:hover,
-.artistTopRow:active {
-  background: var(--glacier-surface);
-}
-
-.artistTopRank {
-  inline-size: 1.25rem;
-  flex: none;
-  text-align: center;
-  color: var(--glacier-text-subtle);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--glacier-font-size-sm);
-}
-
-.artistTopArt {
-  inline-size: 2.75rem;
-  block-size: 2.75rem;
-  border-radius: var(--glacier-radius-sm);
-  object-fit: cover;
-  background: var(--glacier-surface-sunken);
-  flex: none;
-}
-
-.artistTopMeta {
-  flex: 1;
-  min-inline-size: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.artistTopTitle {
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.artistTopPlays {
-  color: var(--glacier-text-muted);
-  font-size: var(--glacier-font-size-xs);
-}
-
-.artistTopTime {
-  color: var(--glacier-text-muted);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--glacier-font-size-sm);
-  flex: none;
 }
 
 /* The albums shelf reuses .artistAlbum's layout; this only unstyles the fact
@@ -11333,184 +10560,6 @@ button.artistAlbum {
   color: var(--glacier-danger-text, var(--glacier-text-muted));
 }
 
-.friendsEmptyGlyph {
-  color: var(--glacier-text-subtle);
-}
-
-.friendList {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--glacier-space-1);
-}
-
-.friendRow {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-3);
-  padding: var(--glacier-space-2);
-  border-radius: var(--glacier-radius-md);
-}
-
-.friendRow:hover {
-  background: var(--glacier-surface);
-}
-
-/* An initial standing in for a face: this server holds no avatars, and a
-   letter in the brand's own wash reads as a person better than a glyph
-   repeated down the whole list. */
-.friendRow__avatar {
-  flex: none;
-  inline-size: 2.25rem;
-  block-size: 2.25rem;
-  border-radius: var(--glacier-radius-full);
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-  color: var(--glacier-accent-contrast, #fff);
-  background: linear-gradient(
-    140deg,
-    var(--glacier-accent-solid),
-    var(--glacier-accent-solid-hover)
-  );
-}
-
-.friendRow__name {
-  flex: 1;
-  min-inline-size: 0;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.friendRow__actions {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-2);
-  flex: none;
-}
-
-/* The jam strip on the Friends page: what room you are in, or the button to
-   open one. A live room wears a slow pulse so the page says "this is
-   happening now" without a spinner's urgency. */
-.jamStrip {
-  display: flex;
-}
-
-.jamCard {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-3);
-  inline-size: 100%;
-  padding: var(--glacier-space-3);
-  border-radius: var(--glacier-radius-lg);
-  background: color-mix(in oklch, var(--glacier-accent-solid) 12%, transparent);
-  border: var(--glacier-hairline) solid
-    color-mix(in oklch, var(--glacier-accent-solid) 34%, transparent);
-}
-
-.jamCard__pulse {
-  flex: none;
-  inline-size: 0.6rem;
-  block-size: 0.6rem;
-  border-radius: var(--glacier-radius-full);
-  background: var(--glacier-accent-solid);
-  animation: jamPulse 2s ease-in-out infinite;
-}
-
-@keyframes jamPulse {
-  0%,
-  100% {
-    opacity: 1;
-    box-shadow: 0 0 0 0 color-mix(in oklch, var(--glacier-accent-solid) 60%, transparent);
-  }
-  50% {
-    opacity: 0.55;
-    box-shadow: 0 0 0 0.35rem transparent;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .jamCard__pulse {
-    animation: none;
-  }
-}
-
-.jamCard__body {
-  flex: 1;
-  min-inline-size: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.jamCard__title {
-  font-weight: 600;
-}
-
-.jamCard__sub {
-  color: var(--glacier-text-muted);
-  font-size: var(--glacier-font-size-xs);
-}
-
-.jamRow__count {
-  color: var(--glacier-text-muted);
-  font-weight: 400;
-  font-size: var(--glacier-font-size-xs);
-}
-
-/* The friend QR: your own code to be scanned, or the camera pointed at
-   someone else's. */
-.friendsQrBar {
-  display: flex;
-  gap: var(--glacier-space-2);
-}
-
-.friendsQr {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--glacier-space-3);
-  padding: var(--glacier-space-4);
-  border-radius: var(--glacier-radius-lg);
-  background: var(--glacier-surface);
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
-  text-align: center;
-}
-
-/* Always on white, in both themes: a dark-on-dark QR is unreadable to a
-   camera, and the quiet zone is part of the code. */
-.friendsQr__img {
-  inline-size: min(60vw, 15rem);
-  block-size: auto;
-  aspect-ratio: 1;
-  border-radius: var(--glacier-radius-md);
-  background: #fff;
-  padding: 10px;
-}
-
-.friendsQr__img--waiting {
-  display: grid;
-  place-items: center;
-  background: var(--glacier-surface-sunken);
-}
-
-.friendsQr__cam {
-  inline-size: min(70vw, 18rem);
-  aspect-ratio: 1;
-  border-radius: var(--glacier-radius-lg);
-  overflow: hidden;
-  background: #000;
-}
-
-.friendsQr__cam video {
-  inline-size: 100%;
-  block-size: 100%;
-  object-fit: cover;
-}
-
 /* The delete-playlist confirmation's buttons: pushed to the end so the
    destructive one is not where a thumb rests by default. */
 .playlistDeleteActions {
@@ -11518,19 +10567,6 @@ button.artistAlbum {
   justify-content: flex-end;
   gap: var(--glacier-space-2);
   margin-block-start: var(--glacier-space-4);
-}
-
-/* The AI pick's rationale line - "Because you play X" - under the artist on a
-   Discover card. Quiet, and clamped to two lines so a long seed name can't
-   stretch the card. */
-.resultCard__reason {
-  font-size: 0.72rem;
-  line-height: 1.3;
-  color: color-mix(in srgb, var(--glacier-fg, #fff) 55%, transparent);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 /* The bottom-third blur behind the Now Playing controls. A canvas is moving
@@ -11612,47 +10648,6 @@ button.artistAlbum {
   inline-size: 3.5rem;
   block-size: 3.5rem;
   font-size: 1.4rem;
-}
-
-/* Who you are: the page opens on a person - your own mark, your handle - with
-   sign-out as a quiet icon rather than a labelled button competing with it. */
-/* Identity + every verb the page owns, in one row. Wraps rather than
-   crushes: on a narrow phone the actions drop under the handle. */
-.friendsHead {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--glacier-space-3);
-}
-
-.friendsHead__body {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  /* Enough claim that a narrow screen wraps the actions under the identity
-     instead of crushing the handle to "@…". */
-  min-inline-size: 9rem;
-  flex: 1;
-}
-
-.friendsHead__handle {
-  font-size: var(--glacier-font-size-lg);
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.friendsHead__caption {
-  color: var(--glacier-text-muted);
-  font-size: var(--glacier-font-size-sm);
-}
-
-.friendsHead__actions {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-2);
 }
 
 /* Modal bodies: one calm column, whatever the flow. */
@@ -11975,34 +10970,6 @@ button.artistAlbum {
 }
 
 
-/* ---- The offline vault -------------------------------------------------- */
-
-
-
-
-.offlineRow__text {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-inline-size: 0;
-  flex: 1;
-}
-
-.offlineRow__title {
-  font-size: var(--glacier-font-size-sm);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.offlineRow__sub {
-  color: var(--glacier-text-muted);
-  font-size: var(--glacier-font-size-xs);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* ---- The endless station ------------------------------------------------ */
 
 /* On-air, at the top of the queue: what it came from, the two dials, and the
@@ -12252,37 +11219,6 @@ button.artistAlbum {
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-3);
-}
-
-/* The effects rack: the multi-select and its one line of consequence. Divided
-   from the sliders above by the same rule the switches use, so the panel reads
-   as three groups - curve, effects, then the two graph switches. */
-.eqPanel__rack {
-  display: flex;
-  flex-direction: column;
-  gap: var(--glacier-space-2);
-  padding-block-start: var(--glacier-space-3);
-  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
-}
-
-/* Label left, Clear right - and Clear only exists when there is something to
-   clear, so the row is usually just the label. */
-.eqPanel__rackHead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--glacier-space-2);
-  min-block-size: 1.75rem;
-}
-
-/* The effects below the sliders, set off by a rule so they read as a separate
-   group rather than two more equalizer controls. */
-.eqPanel__fx {
-  display: flex;
-  flex-direction: column;
-  gap: var(--glacier-space-2);
-  padding-block-start: var(--glacier-space-3);
-  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
 }
 
 /* ---- Date mode -----------------------------------------------------------
@@ -13241,21 +12177,6 @@ button.artistAlbum {
 /* --- the device cache ---------------------------------------------------- */
 
 
-.cacheMeter__bar {
-  block-size: 6px;
-  inline-size: 100%;
-  border-radius: var(--glacier-radius-full);
-  background: var(--glacier-surface-sunken);
-  overflow: hidden;
-}
-
-.cacheMeter__fill {
-  display: block;
-  block-size: 100%;
-  background: var(--glacier-accent-solid);
-  border-radius: inherit;
-}
-
 .cacheActions {
   display: flex;
   gap: var(--glacier-space-2);
@@ -13957,21 +12878,6 @@ button.artistAlbum {
   background: var(--glacier-success-solid);
 }
 
-
-
-
-
-
-
-.storageBreak__name,
-
-
-
-
-
-
-
-
 /* A figure waiting on its data: the chrome is real, the data is absent. It
    dims rather than shimmers - six static rings turned into motion would be
    noise, and the point is "not yet", not "look here". */
@@ -14030,7 +12936,6 @@ button.artistAlbum {
  * stopped, and still moves when motion is welcome.
  */
 .statTile [class*='_skeleton_'],
-.aiStat [class*='_skeleton_'],
 .serverMetric [class*='_skeleton_'],
 .friendCard [class*='_skeleton_'],
 .radarKey [class*='_skeleton_'],
@@ -14215,51 +13120,6 @@ body:has(.npScreen[data-docked]) .appWindow {
   align-items: center;
   gap: var(--glacier-space-2);
   inline-size: 100%;
-}
-
-/* The post-restart variant is a report, not an offer - no accent border
-   shouting for an action that has already happened. */
-.updateBanner--done {
-  background: var(--glacier-surface-raised);
-  border-color: var(--glacier-border-subtle);
-}
-
-.updateBanner__more {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  border: 0;
-  background: none;
-  cursor: pointer;
-  color: var(--glacier-text-muted);
-  font-size: var(--glacier-font-size-xs);
-  font-weight: 650;
-  padding: var(--glacier-space-1);
-}
-
-.updateBanner__chev {
-  transition: transform var(--glacier-duration-fast) var(--glacier-ease-out);
-}
-
-.updateBanner__chev.is-open {
-  transform: rotate(180deg);
-}
-
-/* What changed, as the list it is. Not a paragraph: these are separate facts
-   and read faster stacked. */
-.updateNotes {
-  margin: 0;
-  padding-inline-start: var(--glacier-space-4);
-  display: flex;
-  flex-direction: column;
-  gap: var(--glacier-space-1);
-  font-size: var(--glacier-font-size-xs);
-  color: var(--glacier-text-muted);
-}
-
-.updateNotes li::marker {
-  color: var(--glacier-accent-text);
 }
 
 /* --- the update modal ----------------------------------------------------- */

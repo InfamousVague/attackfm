@@ -127,11 +127,6 @@ function writeLedger(ledger: Ledger): void {
   }
 }
 
-/** Whether this device holds the song because the sweep decided to. */
-export function isAutoCached(key: string): boolean {
-  return key in readLedger();
-}
-
 /** Every key this cache owns, for callers separating the automatic half from
  *  the hand-kept one without re-reading storage per row. */
 export function autoCachedKeys(): Set<string> {

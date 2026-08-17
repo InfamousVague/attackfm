@@ -176,14 +176,6 @@ export async function previewInvite(code: string): Promise<InvitePreview> {
   return call(`/v1/invites/${encodeURIComponent(code)}`);
 }
 
-/** Spend an invite: the signed-in account joins the server it names. */
-export async function redeemInvite(
-  token: string,
-  code: string,
-): Promise<{ serverUrl: string; serverName: string; role: string }> {
-  return call(`/v1/invites/${encodeURIComponent(code)}/redeem`, { method: 'POST', token });
-}
-
 /**
  * An invite link the app can share. The code alone is enough to redeem; the
  * link wraps it so it can be sent to somebody who has never seen the app.

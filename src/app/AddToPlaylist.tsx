@@ -1,6 +1,6 @@
-import { Button, Input, Modal, Popover, ScrollArea, Text } from '@glacier/react';
+import { Button, Input, Modal, ScrollArea, Text } from '@glacier/react';
 import { Check, ListMusic, Plus, Search } from '@glacier/icons';
-import { useMemo, useState, type ReactElement } from 'react';
+import { useMemo, useState } from 'react';
 import { useLibrary } from './library.tsx';
 import { usePlaylists } from './playlists.tsx';
 import type { Track } from './tauri.ts';
@@ -10,11 +10,9 @@ import type { Track } from './tauri.ts';
  * filters your lists, makes a new one, and toggles the song in and out of the
  * ones you have - each row saying plainly whether the song is already in it.
  *
- * The panel is the component; the shell around it is the caller's choice. A
- * control with a place on screen wears it as a popover
- * (AddToPlaylistButton); a context menu, which has no anchor to hang one
- * off, opens the dialog instead (AddToPlaylistDialog). Both render the same
- * body, so the interaction is one thing wherever it is reached from.
+ * The panel is the component; the shell around it is the caller's choice.
+ * Today that shell is a dialog (AddToPlaylistDialog), for callers with
+ * nothing to anchor a popover to - a context menu, a long-press.
  */
 
 function AddToPlaylistPanel({ track, onDone }: { track: Track; onDone: () => void }) {
@@ -141,23 +139,6 @@ function AddToPlaylistPanel({ track, onDone }: { track: Track; onDone: () => voi
         </div>
       </ScrollArea>
     </div>
-  );
-}
-
-/** The panel hung off a control of the caller's choosing. */
-export function AddToPlaylistButton({ track, trigger }: { track: Track; trigger: ReactElement }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <Popover
-      placement="top-end"
-      aria-label="Add to playlist"
-      className="addPlaylistPanel"
-      open={open}
-      onOpenChange={setOpen}
-      trigger={trigger}
-    >
-      <AddToPlaylistPanel track={track} onDone={() => setOpen(false)} />
-    </Popover>
   );
 }
 
