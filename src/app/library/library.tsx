@@ -351,7 +351,12 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
         // better company than an empty one, and the error says why it is stale.
         setError(err instanceof Error ? err.message : 'Could not reach the server');
       } finally {
-        if (alive() && !options.silent) setSyncing(false);
+        // NOT alive-gated: if this pass outlived a token bump (the 30s
+        // heartbeat overtaking a stalled first sync), the pass that SET
+        // syncing is still the only one that will ever clear it - gating on
+        // aliveness latched the strip (and the skeletons behind it) on
+        // permanently.
+        if (!options.silent) setSyncing(false);
       }
     },
     [session],
@@ -359,11 +364,20 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
 
   useEffect(() => {
     let live = true;
-    void hydrateCachedIndex(session.url).then((index) => {
-      if (!live) return;
-      if (index.tracks.length > 0) setRemote(index.tracks);
-      setHydrated(true);
-    });
+    void hydrateCachedIndex(session.url)
+      .then((index) => {
+        if (!live) return;
+        if (index.tracks.length > 0) setRemote(index.tracks);
+      })
+      .catch(() => {
+        // A cache that cannot be read is a slow start, never a stuck one.
+      })
+      .finally(() => {
+        // UNCONDITIONAL: hydrated gates the first sync and the heartbeat, so
+        // a hydrate that hangs or dies must still open the gate - the app
+        // wedged exactly here once, skeletons forever behind a green dot.
+        if (live) setHydrated(true);
+      });
     return () => {
       live = false;
     };

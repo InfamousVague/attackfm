@@ -43,7 +43,10 @@ export function NetworkDot({ onManage }: { onManage: () => void }) {
   if (!session) return null;
 
   const health = healthOf(session.url);
-  const ok = health?.ok ?? true;
+  // Unknown is unknown: before the first probe answers the dot sits
+  // neutral, because defaulting to "healthy" painted a green light over a
+  // library that could not load - the one state the dot exists to catch.
+  const ok = health?.ok ?? null;
   const latency = health?.latencyMs ?? null;
   const tone: 'success' | 'warning' | 'neutral' = !ok
     ? 'neutral'
@@ -59,16 +62,16 @@ export function NetworkDot({ onManage }: { onManage: () => void }) {
       aria-label="Network"
       className="netDotPanel"
       trigger={
-        <button type="button" className="netDot" aria-label={`Network: ${nearLabel(latency, ok)}`}>
-          <StatusDot tone={tone} pulse={ok} size="sm" />
+        <button type="button" className="netDot" aria-label={`Network: ${nearLabel(latency, ok === true)}`}>
+          <StatusDot tone={tone} pulse={ok === true} size="sm" />
         </button>
       }
     >
       <div className="netDot__panel">
         <div className="netDot__row">
           <span className="netDot__host">{hostOf(session.url)}</span>
-          <Text tone={ok ? 'muted' : 'danger'} size="xs">
-            {nearLabel(latency, ok)}
+          <Text tone={ok === false ? 'danger' : 'muted'} size="xs">
+            {ok === null ? 'Checking…' : nearLabel(latency, ok)}
           </Text>
         </div>
         {mirrorsActive() && mirrors.length > 0 && (
