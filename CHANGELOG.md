@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.127
+
+- With the search bar already open, pulling down again goes straight for the refresh. It picks up where the first pull stopped instead of making you travel the whole way again — and the page moves from the first millimetre rather than sitting still for the first half of it
+
 ## 0.3.126
 
 - No more flash before a Canvas appears. The clip stays hidden until it is actually showing frames, so the blurred cover holds that space instead of the app's own mark stretched across your screen
