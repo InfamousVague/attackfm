@@ -73,7 +73,8 @@ pub async fn canvas(
 
     let sp_dc = std::env::var("AFM_SPOTIFY_SP_DC").unwrap_or_default();
     if sp_dc.is_empty() || title.is_empty() {
-        return Ok(Json(json!({ "url": Value::Null })));
+        // No cookie, no Spotify - but no black wall either.
+        return Ok(Json(json!({ "url": stock_canvas(q.track_id, title, artist) })));
     }
 
     // The in-memory map still absorbs repeat asks for tracks that have NO clip
@@ -97,8 +98,38 @@ pub async fn canvas(
         }
     }
 
-    state.canvas.put(key, remote.clone());
-    Ok(Json(json!({ "url": remote })))
+    // Spotify answered "no such clip": the stock loop stands in, and the
+    // cache keeps that answer so a canvas-less song costs one lookup per
+    // boot exactly as before.
+    let answer = remote.or_else(|| Some(stock_canvas(q.track_id, title, artist)));
+    state.canvas.put(key, answer.clone());
+    Ok(Json(json!({ "url": answer })))
+}
+
+
+/// The stock loop for a song no Canvas exists for: one of the shipped clips
+/// under /api/assets/canvas, chosen by a stable hash so the same song wears
+/// the same loop every open, on every device. This is what an unconfigured
+/// server (no sp_dc - the App-Review box) shows instead of a black wall,
+/// and what every canvas-less track shows instead of nothing.
+fn stock_canvas(track_id: Option<i64>, title: &str, artist: &str) -> String {
+    const STOCK: [&str; 5] = [
+        "glass-heart",
+        "infinite-crate",
+        "metronome",
+        "ring-tunnel",
+        "turntable",
+    ];
+    let seed = match track_id {
+        Some(id) => id.to_string(),
+        None => format!("{}\u{{0}}{}", artist.to_lowercase(), title.to_lowercase()),
+    };
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in seed.bytes() {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("/api/assets/canvas/{}.mp4", STOCK[(h % STOCK.len() as u64) as usize])
 }
 
 /// Where a track's clip lives: beside the audio, same stem, `.canvas.mp4`.
