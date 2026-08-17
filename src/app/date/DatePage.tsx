@@ -318,6 +318,41 @@ export function DatePage() {
     if ((activeRef.current?.path ?? null) !== (current?.path ?? null)) speak(current);
   }, [current, speak]);
 
+  /*
+   * The stalled-introduction watchdog.
+   *
+   * A snippet's source can black-hole: the route it resolved to died
+   * mid-connect and the media stack sits on loadstart forever - and a slot
+   * never asks for directions twice. Ten seconds without metadata on the
+   * ACTIVE card re-resolves the URL; by then the health probes know which
+   * server is actually answering, so the second ask usually comes back
+   * routed somewhere alive (the mirror, typically). One retry per card: a
+   * second stall is the network's answer, and the skip is the listener's.
+   * The play() here comes from a timer, not a gesture, so a refusal simply
+   * raises the existing tap-to-play affordance instead of silence.
+   */
+  useEffect(() => {
+    const path = current?.path ?? null;
+    if (!path) return;
+    const timer = window.setTimeout(() => {
+      const slot = activeRef.current;
+      if (!slot || slot.path !== path) return;
+      if (slot.url && slot.el.readyState >= 1) return;
+      void loadAudioUrl(path).then((url) => {
+        const live = activeRef.current;
+        if (!url || !live || live.path !== path) return;
+        live.url = url;
+        live.el.src = url;
+        live.el.load();
+        void live.el.play().catch(() => {
+          if (activeRef.current === live) setNeedsTap(true);
+        });
+      });
+    }, 10_000);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the card alone
+  }, [current?.path]);
+
   // The active element's clock, wired by hand because the element is not in
   // the JSX. The snippet loops: an undecided listener hears it again rather
   // than silence pressing them to decide.
