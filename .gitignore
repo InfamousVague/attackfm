@@ -22,9 +22,32 @@ src-tauri/gen/apple/Externals
 src-tauri/gen/apple/app.xcodeproj
 src-tauri/gen/apple/Pods
 src-tauri/gen/apple/Podfile.lock
-# Android has no hand-set counterpart to iOS's project.yml, so the whole
-# generated project is ignored - `tauri android init` rebuilds it wholesale.
-src-tauri/gen/android/
+# The generated Android project is disposable - EXCEPT the hand-written
+# native layer, which `tauri android init` would replace with the stock
+# template and never recreate: the Android Auto media service, the JS
+# bridge (now-playing, artwork, transport), the manifest's intent filters
+# and Auto declarations, and the orientation locks. Those stay tracked;
+# everything generated around them stays ignored. (`dir/**` not `dir/`,
+# because git refuses to re-include below an excluded DIRECTORY - the
+# negation chain below only works when the exclusion is on contents.)
+src-tauri/gen/android/**
+!src-tauri/gen/android/app/
+!src-tauri/gen/android/app/src/
+!src-tauri/gen/android/app/src/main/
+!src-tauri/gen/android/app/src/main/AndroidManifest.xml
+!src-tauri/gen/android/app/src/main/java/
+!src-tauri/gen/android/app/src/main/java/com/
+!src-tauri/gen/android/app/src/main/java/com/mattssoftware/
+!src-tauri/gen/android/app/src/main/java/com/mattssoftware/attackfm/
+!src-tauri/gen/android/app/src/main/java/com/mattssoftware/attackfm/**
+src-tauri/gen/android/app/src/main/java/com/mattssoftware/attackfm/generated/
+!src-tauri/gen/android/app/src/main/res/
+!src-tauri/gen/android/app/src/main/res/values/
+!src-tauri/gen/android/app/src/main/res/values/bools.xml
+!src-tauri/gen/android/app/src/main/res/values-sw600dp/
+!src-tauri/gen/android/app/src/main/res/values-sw600dp/bools.xml
+!src-tauri/gen/android/app/src/main/res/xml/
+!src-tauri/gen/android/app/src/main/res/xml/automotive_app_desc.xml
 
 # Song data never belongs in this repo. The library lives in the OS music
 # folder or on the streaming server; the one time audio appeared here it was

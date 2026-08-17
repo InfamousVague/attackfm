@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Whether this screen is big enough to be worth turning.
+
+      False here, which is every phone: AttackFM is a one-hand app in portrait,
+      and its screens - the strip, the shelves, the full-screen player - are
+      built as tall columns. Turned sideways on a phone the player's artwork
+      squeezes to a stamp and the shelves become two rows of nothing, so the
+      rotation was never a view anyone wanted, only one they got by accident
+      with the phone on its side in bed.
+
+      The value is overridden in values-sw600dp, which is Android's own line
+      for "not a phone" - 600dp of smallest width, a 7" tablet and up. A TV
+      lands well past it and so keeps its landscape, which is the whole reason
+      this is a resource qualifier rather than a hardcoded lock.
+    -->
+    <bool name="afm_rotate">false</bool>
+</resources>
