@@ -35,7 +35,6 @@
     "@tauri-apps/plugin-opener": "^2",
     "jsqr": "^1.4.0",
     "lucide-react": "^1.23.0",
-    "motion": "^12.23.0",
     "music-metadata": "^11.14.0",
     "qrcode": "^1.5.4",
     "react": "^19.1.0",

@@ -59,9 +59,6 @@ export const EFFECTS: EffectDef[] = [
   { id: 'fast', label: 'Sped up', blurb: 'A little over tempo', group: 'speed' },
 ];
 
-/** Pairs that cannot both be true; picking one releases the other. */
-const EXCLUSIVE: string[][] = [['slow', 'fast'], ['room', 'hall']];
-
 const KEY = 'attackfm-effects';
 
 // The rack's UI is gone from the equalizer, and an effect with no visible
@@ -127,22 +124,6 @@ export function effectsOn(): boolean {
 /** The `fx` query value, or null when the rack is empty. */
 export function effectsParam(): string | null {
   return snapshot.length > 0 ? snapshot.join(',') : null;
-}
-
-export function toggleEffect(id: string, on: boolean): void {
-  if (!known(id)) return;
-  let next = active.filter((e) => e !== id);
-  if (on) {
-    for (const pair of EXCLUSIVE) {
-      if (pair.includes(id)) next = next.filter((e) => !pair.includes(e));
-    }
-    next.push(id);
-  }
-  commit(next);
-}
-
-export function clearEffects(): void {
-  if (active.length > 0) commit([]);
 }
 
 function subscribe(cb: () => void): () => void {

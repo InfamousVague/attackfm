@@ -15,7 +15,6 @@ import { startServerSync } from './serverSync.ts';
 import { startCacheSweeps } from './autoCache.ts';
 import { checkForBundle, reclaimEmbeddedIfNewer, reportBootOk, stagedBundle } from './appUpdate.ts';
 import {
-  artUrl,
   isRemotePath,
   login as serverLogin,
   logout as serverLogout,
@@ -377,9 +376,4 @@ export function useServerSession(): ServerSessionValue {
   const value = useContext(ServerSessionContext);
   if (!value) throw new Error('useServerSession must be used within a ServerSessionProvider');
   return value;
-}
-
-/** The cover-art URL for a server track, for surfaces building their own. */
-export function remoteArtUrl(session: ServerSession, artId: string): string {
-  return artUrl(session, artId);
 }

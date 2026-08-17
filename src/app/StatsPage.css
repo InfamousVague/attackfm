@@ -107,29 +107,6 @@
   min-inline-size: 0;
 }
 
-.statsTile__icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  inline-size: 1.75rem;
-  block-size: 1.75rem;
-  border-radius: 34%;
-  background: var(--glacier-accent-soft);
-  color: var(--glacier-accent-text);
-}
-
-.statsTile__value {
-  font-size: 1.25rem;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-  font-variant-numeric: tabular-nums;
-}
-
-.statsTile__label {
-  font-size: var(--glacier-font-size-xs);
-  color: var(--glacier-text-muted);
-}
-
 /* While the summary is in flight the tiles hold their seats and breathe -
    the same footprint, so the swap to numbers moves nothing. */
 @keyframes statsGhost {
@@ -218,48 +195,6 @@
   color: var(--glacier-text-muted);
   text-align: center;
   white-space: nowrap;
-}
-
-/* ── Day by day ────────────────────────────────────────────────────────────
-   The same bars, smaller and denser: a texture of the last month, not a
-   chart to read values off - the hover title carries the exact number. */
-.statsDays {
-  display: flex;
-  flex-direction: column;
-  gap: var(--glacier-space-1);
-}
-
-.statsDays__row {
-  display: flex;
-  gap: 2px;
-  align-items: flex-end;
-  block-size: 3rem;
-}
-
-.statsDays__col {
-  flex: 1;
-  display: flex;
-  align-items: flex-end;
-  block-size: 100%;
-  border-radius: var(--glacier-radius-sm);
-  background: var(--glacier-surface-sunken);
-  overflow: hidden;
-  min-inline-size: 0;
-}
-
-.statsDays__fill {
-  inline-size: 100%;
-  min-block-size: 2px;
-  background: var(--glacier-accent-solid);
-  border-start-start-radius: 0.25rem;
-  border-start-end-radius: 0.25rem;
-}
-
-.statsDays__edges {
-  display: flex;
-  justify-content: space-between;
-  font-size: var(--glacier-font-size-xs);
-  color: var(--glacier-text-muted);
 }
 
 /* ── Top lists ─────────────────────────────────────────────────────────────
@@ -358,22 +293,6 @@ button.statsRow__name:hover {
   color: var(--glacier-text-muted);
 }
 
-/* ── Albums and genres ─────────────────────────────────────────────────────
-   Two smaller columns side by side; on a phone they stack, at the same width
-   the rest of the app folds its pairs. */
-.statsSplit {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--glacier-space-6);
-  align-items: start;
-}
-
-@media (max-width: 52rem) {
-  .statsSplit {
-    grid-template-columns: 1fr;
-  }
-}
-
 .statsSmallRows {
   margin: 0;
   padding: 0;
@@ -405,37 +324,11 @@ button.statsRow__name:hover {
   white-space: nowrap;
 }
 
-.statsSmallRow__sub {
-  font-size: var(--glacier-font-size-xs);
-  color: var(--glacier-text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .statsSmallRow__meta {
   flex: none;
   font-size: var(--glacier-font-size-sm);
   font-variant-numeric: tabular-nums;
   color: var(--glacier-text-muted);
-}
-
-/* A genre's share of the top genre, as a hairline meter under its name -
-   a proportion at a glance without a number to read. */
-.statsGenreRail {
-  display: block;
-  block-size: 0.25rem;
-  border-radius: var(--glacier-radius-full);
-  background: var(--glacier-surface-sunken);
-  overflow: hidden;
-}
-
-.statsGenreFill {
-  display: block;
-  block-size: 100%;
-  min-inline-size: 2px;
-  background: var(--glacier-accent-solid);
-  border-radius: inherit;
 }
 
 /* ── Your sound ────────────────────────────────────────────────────────────

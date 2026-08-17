@@ -164,11 +164,6 @@ export function sampleWave(swell: number, samples = SAMPLES): Array<readonly [nu
   return points;
 }
 
-/** The swell the wave and its shadow stand at for a given beat energy. */
-export const waveSwell = (energy: number): number => 1 + clamp01(energy) * PULSE_DEPTH;
-export const shadowSwell = (energy: number): number =>
-  1 + clamp01(energy) * PULSE_DEPTH * TRACER_GAIN;
-
 /** Where the midline sits and how far the shadow hangs, in viewBox units. */
 export const WAVE_MID_Y = MID_Y;
 export const WAVE_SHADOW_DROP = SHADOW_DROP;

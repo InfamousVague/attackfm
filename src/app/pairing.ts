@@ -35,36 +35,3 @@ export function parsePairPayload(text: string): { url: string; code: string } | 
   return { url, code };
 }
 
-const FRIEND_SCHEME = 'attackfm://friend';
-
-/**
- * The other QR this app speaks: "this is me, add me".
- *
- * It carries a name and the server that name lives on - no secret and no
- * expiry, deliberately. A friend code is meant to sit on a screen or a sticker
- * and keep working, and it grants nothing on its own: scanning it only files a
- * request, which the person still has to accept. The server address rides
- * along so a scan taken to the wrong server fails with a sentence rather than
- * a mysterious "no account called that".
- */
-export function friendPayload(url: string, username: string): string {
-  return `${FRIEND_SCHEME}?u=${encodeURIComponent(url)}&n=${encodeURIComponent(username)}`;
-}
-
-export function parseFriendPayload(text: string): { url: string; username: string } | null {
-  const trimmed = text.trim();
-  if (!trimmed.toLowerCase().startsWith(FRIEND_SCHEME)) return null;
-  const q = trimmed.slice(trimmed.indexOf('?') + 1);
-  const params = new URLSearchParams(q);
-  const url = params.get('u');
-  const username = params.get('n');
-  if (!url || !username) return null;
-  return { url, username };
-}
-
-/** Two server addresses naming the same server: trailing slash and case in
- *  the host are not differences worth refusing a scan over. */
-export function sameServer(a: string, b: string): boolean {
-  const tidy = (s: string) => s.trim().replace(/\/+$/, '').toLowerCase();
-  return tidy(a) === tidy(b);
-}

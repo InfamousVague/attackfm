@@ -197,11 +197,6 @@ export function fmtMinutes(minutes: number): string {
   return `${shown.toLocaleString()} hr`;
 }
 
-/** A 0..1 rate as the percentage people actually say. */
-export function fmtPercent(rate: number): string {
-  return `${Math.round(clamp01(rate) * 100)}%`;
-}
-
 /* ------------------------------------------------------------------- fetch */
 
 /**

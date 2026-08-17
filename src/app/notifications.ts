@@ -1,5 +1,5 @@
 import { isTauri } from './tauri.ts';
-import { registerPushDevice, unregisterPushDevice, type ServerSession } from './server.ts';
+import { registerPushDevice, type ServerSession } from './server.ts';
 
 /**
  * The device's end of push: getting a token from the platform, and telling the
@@ -87,13 +87,3 @@ export async function syncPushRegistration(session: ServerSession | null): Promi
   }
 }
 
-/** Stop sending to this device, on request rather than on sign-out. */
-export async function dropPushRegistration(session: ServerSession): Promise<void> {
-  const token = await pushDeviceToken();
-  if (!token) return;
-  try {
-    await unregisterPushDevice(session, token);
-  } finally {
-    registered = null;
-  }
-}

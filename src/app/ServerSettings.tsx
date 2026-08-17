@@ -24,7 +24,6 @@ import {
   Cloud,
   Copy,
   Database,
-  FolderOpen,
   HardDrive,
   KeyRound,
   Music,
@@ -1227,9 +1226,6 @@ function FolderSyncRow() {
     </>
   );
 }
-
-/** The icon the settings rail shows for this pane. */
-export const serverSectionIcon = <FolderOpen size={16} />;
 
 /**
  * The household: the other accounts this device has been signed into, one tap

@@ -135,8 +135,3 @@ export async function unpinTrack(path: string): Promise<void> {
   announce();
 }
 
-export async function clearOffline(): Promise<void> {
-  await call('offline_clear');
-  held.clear();
-  announce();
-}
