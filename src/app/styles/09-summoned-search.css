@@ -74,32 +74,92 @@
 
 /* ── The pull, in two stages ────────────────────────────────────────────────
  *
- * A downward drag at the top of a page means one of two things depending on
- * how far it goes, and both are drawn here from the same live distance
- * (--pull, set per-frame while a finger is down) so what is on screen is
- * always exactly where the finger is.
+ * The page moves. A downward drag at the top slides the whole content column
+ * down and the deck is simply what was underneath it - not a panel floating
+ * over the content, which is the difference between "something was under
+ * there" and "something appeared on top".
  *
- * The deck hangs from the top and is pushed down by the pull, so the bar
- * appears to be dragged out from behind the header rather than fading in on
- * top of it - which is the whole difference between "something is under
- * there" and "something appeared".
+ * One number does it: --app-pull, written to the document element once per
+ * frame while a finger is down. The page reads it as a translate, the deck
+ * reads it as its own height, so the seam between them cannot drift.
+ */
+:root {
+  --app-pull: 0px;
+  /* The gap the bar settles into once the finger lifts: its own height. */
+  --app-pull-stand: 3.1rem;
+}
+
+/* The page, pushed down by exactly the gap. `translate` and not `transform`
+   deliberately - the edge-swipe back gesture owns `transform` on this same
+   element, and the two compose instead of clobbering each other.
+ *
+ * Only WHILE it is moving, though. Any translate at all - `0px` included -
+ * makes this the containing block for every `position: fixed` descendant a
+ * page might hold, so between gestures it goes back to `none` and the column
+ * is an ordinary box again. */
+.appContent {
+  transition: translate var(--glacier-duration-normal) var(--glacier-ease-out);
+}
+
+:root[data-pull-moving] .appContent {
+  translate: 0 var(--app-pull, 0px);
+}
+
+/* Under a finger there is no easing: the page is exactly where the hand is,
+   or the whole app reads as lagging. */
+:root[data-pulling] .appContent {
+  transition: none;
+}
+
+/*
+ * Standing, the gap is held by padding rather than by the translate.
+ *
+ * A translate would push the last rows of the page off the bottom of the
+ * screen for as long as the bar stood - unreachable content, which is the one
+ * bug this app keeps having to fix. Padding makes the page SHORTER instead,
+ * so its own scroller still reaches its own end.
+ */
+:root[data-pull-standing] .appContent {
+  padding-block-start: var(--app-pull-stand);
+  transition:
+    translate var(--glacier-duration-normal) var(--glacier-ease-out),
+    padding-block-start var(--glacier-duration-normal) var(--glacier-ease-out);
+}
+
+/*
+ * The deck IS the gap: it occupies exactly the space the page vacated, hangs
+ * from under the header, and clips whatever has not been uncovered yet. At
+ * rest it is zero-high and there is nothing to see.
  */
 .pullDeck {
   position: fixed;
   inset-inline: 0;
   top: calc(env(safe-area-inset-top, 0px) + var(--app-header-height, 3.25rem));
-  z-index: 59;
+  z-index: 2;
+  block-size: var(--app-pull, 0px);
+  overflow: hidden;
   display: grid;
   justify-items: center;
+  /* Bottom-aligned: the bar's lower edge tracks the page's top edge, so it
+     reads as having been dragged out from behind the header rather than
+     growing in place. Both properties are needed - `align-items` places the
+     bar inside its row, `align-content` places that row inside the gap, and
+     without the second the row sat at the top and the bar hung out of the
+     bottom of the clip, showing a 5px sliver of itself. */
+  align-items: end;
+  align-content: end;
   pointer-events: none;
-  translate: 0 calc(var(--pull, 0px) - 100%);
+  transition: block-size var(--glacier-duration-normal) var(--glacier-ease-out);
 }
 
-/* Standing after the finger lifts: it stops tracking and settles just below
-   the header, where it can be read and tapped. */
-.pullDeck[data-standing] {
-  translate: 0 0;
-  transition: translate var(--glacier-duration-normal) var(--glacier-ease-out);
+:root[data-pulling] .pullDeck {
+  transition: none;
+}
+
+/* Standing, and during a pull that starts from standing, the gap is the bar's
+   settled height plus whatever the finger adds. */
+:root[data-pull-standing] .pullDeck {
+  block-size: calc(var(--app-pull-stand) + var(--app-pull, 0px));
 }
 
 .pullDeck__search {
@@ -108,47 +168,40 @@
   align-items: center;
   gap: var(--glacier-space-2);
   inline-size: min(92vw, 34rem);
-  padding: var(--glacier-space-2) var(--glacier-space-4);
+  block-size: 2.5rem;
+  padding: 0 var(--glacier-space-4);
+  margin-block-end: 0.3rem;
   border: var(--glacier-hairline) solid var(--glacier-border-subtle);
   border-radius: var(--glacier-radius-full);
-  background: var(--glacier-glass-regular);
-  -webkit-backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
-  backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
-  box-shadow: var(--glacier-shadow-2);
+  background: var(--glacier-surface-raised);
+  box-shadow: var(--glacier-shadow-1);
   color: var(--glacier-text-muted);
   font: inherit;
   font-size: var(--glacier-font-size-sm);
   text-align: start;
   cursor: pointer;
-  opacity: 0;
   transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
 }
 
-.pullDeck__search[data-on] {
-  opacity: 1;
-}
-
-/* An invisible bar must not still be a target. While the refresh runs the bar
-   is faded out but sits under the mark at the same grid cell, so without this
-   a tap on the spinner opens search. */
-.pullDeck__search:not([data-on]) {
+/* Stage two takes the gap over: they are two answers to one gesture, and
+   showing both as equals would ask the finger to choose where it has already
+   committed. */
+.pullDeck[data-stage='refresh'] .pullDeck__search {
+  opacity: 0;
+  /* An invisible bar must not still be a target - it shares the gap with the
+     mark, so without this a tap on the spinner opens search. */
   pointer-events: none;
-}
-
-/* Stage two fades in OVER the bar rather than beside it: they are two answers
-   to one gesture, and showing both as equals would ask the finger to choose
-   where it has already committed. The bar dims as the mark arrives. */
-.pullDeck[data-armed] .pullDeck__search {
-  opacity: 0.25;
 }
 
 .pullDeck__refresh {
   grid-area: 1 / 1;
+  align-self: end;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: var(--glacier-space-2);
-  padding: var(--glacier-space-2) var(--glacier-space-4);
-  border-radius: var(--glacier-radius-full);
+  block-size: 2.5rem;
+  margin-block-end: 0.3rem;
   color: var(--glacier-accent-text);
   font-size: var(--glacier-font-size-sm);
   font-weight: 600;
@@ -156,11 +209,12 @@
   transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
 }
 
-.pullDeck__refresh[data-on] {
+.pullDeck[data-stage='refresh'] .pullDeck__refresh,
+.pullDeck[data-spinning] .pullDeck__refresh {
   opacity: 1;
 }
 
-.pullDeck__refresh[data-spinning] svg {
+.pullDeck[data-spinning] .pullDeck__refresh svg {
   animation: pullSpin 900ms linear infinite;
 }
 
@@ -170,26 +224,30 @@
   }
 }
 
-/* The mark's own word is for the moment of decision and the wait; at rest
-   there is nothing to say. */
+/* The mark's own word is for the moment of decision and the wait. */
 .pullDeck__word {
   white-space: nowrap;
 }
 
-/* The deck is a touch affordance. A pointer has ⌘K and the header, and a
+/* The deck is a touch affordance. A pointer has the header and Cmd-K, and a
    desktop window has no rubber band to spend. */
 @media (pointer: fine) {
   .pullDeck {
     display: none;
   }
+
+  .appContent {
+    translate: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pullDeck[data-standing] {
+  .appContent,
+  .pullDeck {
     transition: none;
   }
 
-  .pullDeck__refresh[data-spinning] svg {
+  .pullDeck[data-spinning] .pullDeck__refresh svg {
     animation: none;
   }
 }
