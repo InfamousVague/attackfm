@@ -670,8 +670,12 @@ export function App() {
                     }
                   }}
                 >
+                  {/* No size prop and the same class as the search page's
+                      own field: this is a preview of where the tap is going,
+                      so it should be the same object at the same size, not a
+                      larger cousin of it. */}
                   <SearchField
-                    size="lg"
+                    className="pageSearch"
                     placeholder="Search your library"
                     tabIndex={-1}
                     aria-hidden="true"
