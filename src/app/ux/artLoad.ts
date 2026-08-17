@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { artSized } from '../server.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { artFallbackUrl } from '../servers/mirrors.ts';
+import { cachedArt, rememberArt } from '../cache/artCache.ts';
 import placeholderArt from '../../assets/attack-wave.png';
 
 /**
@@ -50,7 +51,14 @@ export function useArtLoad(src: string | null | undefined, className: string): A
   return {
     className: `${className} artPop`,
     'data-loading': waiting || undefined,
-    onLoad: () => setLoaded(true),
+    // Every cover this hook draws is kept, which is most of them: thumbs,
+    // grid cells, hero images. This hook cannot SERVE the copy back - the
+    // caller owns the src and this only reports - but holding it is what
+    // lets the surfaces that do own their src (useCardArt) find one.
+    onLoad: () => {
+      setLoaded(true);
+      if (src) void rememberArt(src);
+    },
     // An error ends the skeleton too: whatever the img falls back to (its
     // alt, a glyph behind it) is the final answer, not a thing to shimmer at.
     onError: () => setLoaded(true),
@@ -87,19 +95,37 @@ export function useCardArt(artwork: string | null): {
   return {
     src,
     loaded,
-    onLoad: () => setLoaded(true),
-    // The error ladder, one rung per failure: the session server's URL, then
-    // the same cover from a mirror that holds the song (the secondary cache
-    // a dark home server leaves you leaning on), then the placeholder. A
-    // failing server URL also asks for one token renewal - latched to once a
-    // minute in the provider - since an aged stream token is the usual
-    // benign explanation.
+    onLoad: () => {
+      setLoaded(true);
+      // A cover that just drew is a cover worth keeping: the bytes are in the
+      // engine's own cache at this moment, so the copy costs no real fetch.
+      void rememberArt(src);
+    },
+    /*
+     * The error ladder, one rung per failure.
+     *
+     * The device's own copy goes FIRST among the fallbacks, ahead of the
+     * mirror it used to jump to: it needs no network at all, where a mirror
+     * is another server that may be just as unreachable - and most phones
+     * have no mirror configured, so that rung was usually a straight drop to
+     * the placeholder. Only when nothing is held do we ask a mirror, then
+     * give up to the placeholder.
+     *
+     * A failing server URL also asks for one token renewal - latched to once
+     * a minute in the provider - since an aged stream token is the usual
+     * benign explanation.
+     */
     onError: () => {
       if (src === placeholderArt) setLoaded(true);
       else if (src === wanted) {
         if (artwork && /[?&]t=/.test(artwork)) void renew().catch(() => {});
-        const mirror = session ? artFallbackUrl(session, wanted) : null;
-        setSrc(mirror ?? placeholderArt);
+        void cachedArt(wanted).then((held) => {
+          if (held) {
+            setSrc(held);
+            return;
+          }
+          setSrc((session ? artFallbackUrl(session, wanted) : null) ?? placeholderArt);
+        });
       } else {
         setSrc(placeholderArt);
       }

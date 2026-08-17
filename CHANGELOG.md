@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.113
+
+- Album art is kept on the phone now: when your server is unreachable, your covers are still there instead of grey squares
+- Covers ride along with the songs the app downloads, so anything on your device arrives with its artwork
+
 ## 0.3.112
 
 - Settings → Diagnostics: every failure this device has hit, with the reason it failed — and a Copy report button, so "it says unreachable" can become something you can paste to someone

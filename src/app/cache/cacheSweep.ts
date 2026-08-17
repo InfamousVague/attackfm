@@ -22,7 +22,8 @@
 //! and is reconciled against the folder on every sweep, so a restore, a wipe
 //! or an OS reclaim cannot leave it believing in files that are gone.
 
-import { artUrl, loadCachedIndex, remotePath, streamUrl, trackIdFromPath, type RemoteTrack, type ServerSession } from '../server.ts';
+import { rememberArt } from './artCache.ts';
+import { artSized, artUrl, loadCachedIndex, remotePath, streamUrl, trackIdFromPath, type RemoteTrack, type ServerSession } from '../server.ts';
 import { heldPath, offlineEntries, offlineSpace, pinTrack, unpinTrack } from '../downloads/offline.ts';
 import { pickSource } from '../servers/mirrors.ts';
 import { isTauri, type Track } from '../core/tauri.ts';
@@ -333,6 +334,16 @@ export async function sweepCache(
         downloaded += 1;
         ledger[key] = Date.now();
         writeLedger(ledger);
+        // The cover travels with the song. A pinned track whose art still
+        // lives on the server is only half held: it plays through a dark
+        // home server and draws as a grey square. Both sizes, because the
+        // shelves ask for 640 and the tables for 160, and a miss on either
+        // is the placeholder again. Never awaited - a cover that does not
+        // arrive must not fail, slow, or retry the download it rode in on.
+        for (const px of [160, 640] as const) {
+          const cover = artSized(artUrl(session, remote.artId ?? '', remote.id), px);
+          if (remote.artId && cover) void rememberArt(cover);
+        }
       } else {
         const reason = lastReason || `${host}: download did not finish`;
         failReasons.set(reason, (failReasons.get(reason) ?? 0) + 1);
