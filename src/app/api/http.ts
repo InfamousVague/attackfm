@@ -1,3 +1,5 @@
+import { describeFailure, recordDiag, redactUrl } from '../diag/diagLog.ts';
+
 /** A signed-in connection. Everything the app needs to talk to one server. */
 export interface ServerSession {
   /** Origin with no trailing slash, e.g. `https://music.example.com`. */
@@ -67,6 +69,12 @@ export async function request<T>(
   let response: Response;
   try {
     response = await fetch(`${url}${path}`, { ...rest, headers, signal: control.signal });
+  } catch (err) {
+    // The transport failed outright - no status, no body. Written down before
+    // it is rethrown, because the callers upstream turn this into a quiet
+    // "whatever is on screen stays" and the reason would otherwise be lost.
+    recordDiag('request', describeFailure(err, `${url}${path}`));
+    throw err;
   } finally {
     window.clearTimeout(deadline);
   }
@@ -74,7 +82,24 @@ export async function request<T>(
     // The server answers errors as plain text, which is what belongs in a
     // toast; a body that will not read is not worth failing twice over.
     const detail = await response.text().catch(() => '');
+    // 401 is ordinary (a token aged out and the app re-auths), so it is not
+    // worth a line; anything else is a fault someone may have to explain.
+    if (response.status !== 401) {
+      recordDiag(
+        'request',
+        `HTTP ${response.status} → ${redactUrl(`${url}${path}`)}${detail ? ` — ${detail.slice(0, 120)}` : ''}`,
+      );
+    }
     throw new ServerError(response.status, detail || `${response.status} ${response.statusText}`);
   }
-  return (await response.json()) as T;
+  try {
+    return (await response.json()) as T;
+  } catch (err) {
+    // A 200 whose body is not JSON. On a phone this is almost never a server
+    // bug - it is a captive portal or a proxy answering with its own HTML
+    // page - and it presents as an unexplained failure everywhere upstream,
+    // because the status said success.
+    recordDiag('request', `answered ${response.status} but the body was not JSON → ${redactUrl(`${url}${path}`)}`);
+    throw err;
+  }
 }
