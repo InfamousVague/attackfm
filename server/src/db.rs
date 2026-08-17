@@ -1534,6 +1534,15 @@ impl Db {
 
     /// Tombstones the paths that the walk no longer found, so clients learn
     /// about removals on their next delta.
+    /// How many tracks the library currently holds - live rows, not tombstones.
+    /// Used by the scan to tell "the folder is empty" from "the folder could
+    /// not be read", which look identical from the walk alone.
+    pub fn live_track_count(&self) -> i64 {
+        self.lock()
+            .query_row("SELECT COUNT(*) FROM tracks WHERE deleted = 0", [], |r| r.get(0))
+            .unwrap_or(0)
+    }
+
     pub fn tombstone_missing(&self, present: &std::collections::HashSet<String>, rev: i64) -> i64 {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare("SELECT rel_path FROM tracks WHERE deleted = 0") else {
