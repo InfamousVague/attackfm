@@ -7,6 +7,16 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.107
+
+- Settings grew a Handbook: how the app works and how to build plugins for it, 28 illustrated pages you can swipe, arrow, or jump through
+- Scrolling while music plays is smoother — the beat's sixty-a-second pulse now redraws just the player, not the whole app
+- A cold launch no longer resets your storage limit or resurrects songs you deleted by hand
+- Storage sizes agree with themselves everywhere — a full 15 GB cache no longer reads "16 GB of 15 GB"
+- An album opened before its songs arrived now picks up the header's Play and title when you scroll, instead of staying bare until a reopen
+- Discover's entrance ripple survives a trip into an artist's catalogue and back
+- "Check now" in Downloads & space says why a check failed instead of going quiet
+
 ## 0.3.106
 
 - The edge-swipe back and pull-to-search work on the very first run now — they used to play dead until the app was reopened once after onboarding

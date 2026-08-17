@@ -6,6 +6,7 @@ import { SearchField, TabbedModal } from '@glacier/react';
 import {
   Bell,
   Blocks,
+  BookOpen,
   HardDrive,
   Info,
   MonitorSpeaker,
@@ -24,6 +25,8 @@ import { useLibrary } from '../library/library.tsx';
 import { usePlayback } from '../player/playback.tsx';
 import { usePlugins, usePluginSettingsSections } from '../../plugins/runtime.tsx';
 import { AboutSettings } from './AboutSettings.tsx';
+import { HandbookPane } from './handbook/HandbookPane.tsx';
+import { HANDBOOK_PAGES } from './handbook/handbookPages.tsx';
 import { NotificationSettings } from './NotificationSettings.tsx';
 import { DevicesSettings } from './DevicesSettings.tsx';
 import { CuratorSettings } from './CuratorSettings.tsx';
@@ -34,6 +37,7 @@ import { ServersSettings } from '../servers/ServersSettings.tsx';
 import { knownServers } from '../servers/servers.ts';
 import { heldCount, offlineSpace, onOfflineChange } from '../downloads/offline.ts';
 import { useMediaQuery } from '../ux/useMediaQuery.ts';
+import { formatBytes } from '../ux/format.ts';
 import { Appearance } from './AppearancePane.tsx';
 import { General } from './GeneralPane.tsx';
 import { PlaybackSettings } from './PlaybackPane.tsx';
@@ -87,7 +91,15 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
   const [offlineHeld, setOfflineHeld] = useState(() => heldCount());
   const [heldBytes, setHeldBytes] = useState<number | null>(null);
   useEffect(() => {
-    const read = () => void offlineSpace().then((sp) => sp && setHeldBytes(sp.heldBytes)).catch(() => {});
+    // Stamped per read: two pins in quick succession can resolve out of
+    // order, and only the freshest answer may land.
+    let stamp = 0;
+    const read = () => {
+      const mine = ++stamp;
+      void offlineSpace()
+        .then((sp) => sp && mine === stamp && setHeldBytes(sp.heldBytes))
+        .catch(() => {});
+    };
     read();
     return onOfflineChange(read);
   }, []);
@@ -154,12 +166,7 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       // Both halves of the question in one line: how many songs are down here,
       // and what they cost. Either alone reads as half an answer.
       summary: (() => {
-        const room =
-          heldBytes != null && heldBytes > 0
-            ? heldBytes >= 1e9
-              ? `${(heldBytes / 1e9).toFixed(1)} GB`
-              : `${Math.max(1, Math.round(heldBytes / 1e6))} MB`
-            : null;
+        const room = heldBytes != null && heldBytes > 0 ? formatBytes(heldBytes) : null;
         if (offlineHeld > 0 && room) return `${offlineHeld} songs · ${room}`;
         if (room) return `${room} on this device`;
         return 'Nothing kept yet';
@@ -189,6 +196,17 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       summary: `${enabledPlugins} of ${allPlugins.length} enabled`,
       tint: 'orange',
       group: 2,
+    },
+    // The manual, one idea per page: the app the way a listener meets it,
+    // then the plugin contract the way a developer needs it.
+    {
+      id: 'handbook',
+      label: 'Handbook',
+      icon: <BookOpen size={16} />,
+      content: <HandbookPane />,
+      summary: `How it all works, in ${HANDBOOK_PAGES.length} pages`,
+      tint: 'blue',
+      group: 3,
     },
     {
       id: 'about',
