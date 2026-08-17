@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.119
+
+- The search bar sits centred in the space the pull opens, and no longer overlaps your music. It was landing a row too low and, on a phone specifically, was also measuring the top of the screen twice — so the status bar's height became overlap
+
 ## 0.3.118
 
 - The pulled-down search bar is the app's real search field now, the same control the search page wears — full height, proper border and focus ring, instead of the skinny pill that only looked like a field

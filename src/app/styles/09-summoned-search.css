@@ -137,20 +137,21 @@
 .pullDeck {
   position: fixed;
   inset-inline: 0;
-  top: calc(env(safe-area-inset-top, 0px) + var(--app-header-height, 3.25rem));
+  /* Measured from the content column itself (the hook writes it), so the deck
+     and the gap cannot disagree about where the page starts. The calc is only
+     the first-frame fallback, before anything has been measured. */
+  top: var(--app-content-top, calc(env(safe-area-inset-top, 0px) + var(--app-header-height, 3.25rem)));
   z-index: 2;
   block-size: var(--app-pull, 0px);
   overflow: hidden;
   display: grid;
   justify-items: center;
-  /* Bottom-aligned: the bar's lower edge tracks the page's top edge, so it
-     reads as having been dragged out from behind the header rather than
-     growing in place. Both properties are needed - `align-items` places the
-     bar inside its row, `align-content` places that row inside the gap, and
-     without the second the row sat at the top and the bar hung out of the
-     bottom of the clip, showing a 5px sliver of itself. */
-  align-items: end;
-  align-content: end;
+  /* Centred in whatever space the page has opened up. Both properties are
+     needed - `align-items` places the bar inside its row, `align-content`
+     places that row inside the gap - and missing the second is what once let
+     the row sit at the top with the bar hanging out of the clip. */
+  align-items: center;
+  align-content: center;
   pointer-events: none;
   transition: block-size var(--glacier-duration-normal) var(--glacier-ease-out);
 }
@@ -172,9 +173,20 @@
    sitting skinnier than every other field in the product. */
 .pullDeck__search {
   pointer-events: auto;
+  /*
+   * The SAME cell as the refresh mark, explicitly.
+   *
+   * The mark asks for `grid-area: 1 / 1`; auto-placement will not put another
+   * item in a cell that is already claimed, so the bar was being pushed into
+   * an implicit second ROW. Two rows of 40 and 52 centred in a 62px gap
+   * overflow it, and the bar came to rest 20px below where it belonged -
+   * on top of the music. `align-content: end` had hidden this for as long as
+   * the bar happened to be the last row, which is not a property worth
+   * relying on. They are two answers to one gesture; they belong in one cell.
+   */
+  grid-area: 1 / 1;
   display: block;
   inline-size: min(92vw, 34rem);
-  margin-block-end: 0.4rem;
   cursor: pointer;
   border-radius: var(--glacier-radius-full);
   transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
@@ -192,15 +204,23 @@
   cursor: pointer;
 }
 
+/* Stage two takes the gap over: they are two answers to one gesture, and
+   showing both as equals would ask the finger to choose where it has already
+   committed. */
+.pullDeck[data-stage='refresh'] .pullDeck__search {
+  opacity: 0;
+  /* An invisible bar must not still be a target - it shares the cell with the
+     mark, so without this a tap on the spinner opens search. */
+  pointer-events: none;
+}
+
 .pullDeck__refresh {
   grid-area: 1 / 1;
-  align-self: end;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--glacier-space-2);
   block-size: 2.5rem;
-  margin-block-end: 0.3rem;
   color: var(--glacier-accent-text);
   font-size: var(--glacier-font-size-sm);
   font-weight: 600;
