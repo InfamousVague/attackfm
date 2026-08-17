@@ -682,14 +682,15 @@ export function App() {
               >
                 <div className="searchSummon__bar">
                   <span className="searchSummon__grab" aria-hidden="true" />
+                  {/* Full-size ghost, same as the Now Playing sheet's own
+                      close - the sm variant sat undersized against the card. */}
                   <IconButton
                     variant="ghost"
-                    size="sm"
                     aria-label="Close search"
                     className="searchSummon__close"
                     onClick={() => setSearchOpen(false)}
                   >
-                    <X size={18} />
+                    <X size={20} />
                   </IconButton>
                 </div>
                 <PluginHookScope>

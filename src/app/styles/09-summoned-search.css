@@ -34,7 +34,13 @@
   align-items: center;
   justify-content: center;
   position: relative;
-  padding: var(--glacier-space-2) var(--glacier-space-3);
+  /* The Now Playing sheet's proportions, which this card mirrors: a header
+     row with real presence, not a strip the close button crowds. space-3
+     vertical gives the grab pill air; space-4 inline matches the kit's
+     sheet-edge inset. min-height keeps the row honest even though the pill
+     itself is 5px tall. */
+  padding: var(--glacier-space-3) var(--glacier-space-4);
+  min-block-size: 3rem;
 }
 
 .searchSummon__grab {
@@ -46,7 +52,9 @@
 
 .searchSummon__close {
   position: absolute;
-  inset-inline-end: var(--glacier-space-2);
+  /* space-3 off the edge, like every kit sheet control - space-2 read as
+     the button touching the corner. */
+  inset-inline-end: var(--glacier-space-3);
   inset-block-start: 50%;
   translate: 0 -50%;
 }
