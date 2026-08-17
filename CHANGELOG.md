@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.118
+
+- The pulled-down search bar is the app's real search field now, the same control the search page wears — full height, proper border and focus ring, instead of the skinny pill that only looked like a field
+- The space the page makes for it is measured from the bar itself, so it cannot sit on top of your music no matter how tall the field renders
+
 ## 0.3.117
 
 - The pull now moves the page. A drag from the top slides the whole page down and the search bar is uncovered underneath it, instead of a bar appearing on top of your music — pull further and the page keeps going to make room for refresh

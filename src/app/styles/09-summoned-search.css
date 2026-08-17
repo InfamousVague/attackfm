@@ -85,8 +85,11 @@
  */
 :root {
   --app-pull: 0px;
-  /* The gap the bar settles into once the finger lifts: its own height. */
-  --app-pull-stand: 3.1rem;
+  /* The gap the bar settles into once the finger lifts. Measured from the bar
+     itself at runtime (App writes it); this is only the first-frame fallback,
+     and is deliberately generous - too tall shows empty space for one frame,
+     too short puts the bar on top of the music. */
+  --app-pull-stand: 4rem;
 }
 
 /* The page, pushed down by exactly the gap. `translate` and not `transform`
@@ -162,35 +165,31 @@
   block-size: calc(var(--app-pull-stand) + var(--app-pull, 0px));
 }
 
+/* The wrapper is only a tap target and a width: everything you can see -
+   height, radius, border, fill, focus ring - is the kit's SearchField. The
+   old rule here hand-drew a pill at 2.5rem with its own border and glass,
+   which is how it ended up looking like a control this app invented and
+   sitting skinnier than every other field in the product. */
 .pullDeck__search {
   pointer-events: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--glacier-space-2);
+  display: block;
   inline-size: min(92vw, 34rem);
-  block-size: 2.5rem;
-  padding: 0 var(--glacier-space-4);
-  margin-block-end: 0.3rem;
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
-  border-radius: var(--glacier-radius-full);
-  background: var(--glacier-surface-raised);
-  box-shadow: var(--glacier-shadow-1);
-  color: var(--glacier-text-muted);
-  font: inherit;
-  font-size: var(--glacier-font-size-sm);
-  text-align: start;
+  margin-block-end: 0.4rem;
   cursor: pointer;
+  border-radius: var(--glacier-radius-full);
   transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
 }
 
-/* Stage two takes the gap over: they are two answers to one gesture, and
-   showing both as equals would ask the finger to choose where it has already
-   committed. */
-.pullDeck[data-stage='refresh'] .pullDeck__search {
-  opacity: 0;
-  /* An invisible bar must not still be a target - it shares the gap with the
-     mark, so without this a tap on the spinner opens search. */
+/* Inert: the field is a picture of a field. Taps belong to the wrapper, which
+   hands the whole thing to the search page and its real, focused input.
+   The child selector is deliberate - the kit ships CSS-module class names
+   (`_wrap_34d6c_1`), so there is no stable class here to name. */
+.pullDeck__search > * {
   pointer-events: none;
+}
+
+.pullDeck__search input {
+  cursor: pointer;
 }
 
 .pullDeck__refresh {
