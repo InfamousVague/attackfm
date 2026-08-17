@@ -22,9 +22,9 @@ src-tauri/gen/apple/Externals
 src-tauri/gen/apple/app.xcodeproj
 src-tauri/gen/apple/Pods
 src-tauri/gen/apple/Podfile.lock
-src-tauri/gen/android/app/build
-src-tauri/gen/android/build
-src-tauri/gen/android/.gradle
+# Android has no hand-set counterpart to iOS's project.yml, so the whole
+# generated project is ignored - `tauri android init` rebuilds it wholesale.
+src-tauri/gen/android/
 
 # Song data never belongs in this repo. The library lives in the OS music
 # folder or on the streaming server; the one time audio appeared here it was
