@@ -23,6 +23,10 @@ they are read on a phone, in a strip, one thumb away from a song.
 - A server that answers with a sign-in page instead of your music — hotel Wi-Fi, captive portals — is caught and named instead of failing silently
 - Nothing leaves the device, and stream tokens are stripped out of the report before you can copy it
 
+## 0.3.112
+
+- Music Date recovers from a stuck song: ten silent seconds and the card re-finds its music from whichever of your servers is actually answering, instead of waiting on one that went dark mid-load
+
 ## 0.3.111
 
 - When your home server is unreachable, covers now come from whichever of your servers holds the song — the hot mirror steps in the way it already does for playback
