@@ -1,0 +1,152 @@
+/* --- Artist page ---------------------------------------------------------- */
+
+.artistHero {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-4);
+  flex-wrap: wrap;
+}
+
+.artistHero__art {
+  inline-size: 5.5rem;
+  block-size: 5.5rem;
+  border-radius: var(--glacier-radius-full);
+  object-fit: cover;
+  background: var(--glacier-surface-sunken);
+  box-shadow: var(--glacier-shadow-2);
+  flex: none;
+}
+
+.artistHero__text {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.artistHero__name {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.artistHero__actions {
+  display: flex;
+  gap: var(--glacier-space-2);
+  inline-size: 100%;
+}
+
+/* The albums shelf reuses .artistAlbum's layout; this only unstyles the fact
+   that each tile is a button now (tap plays the album through). */
+button.artistAlbum {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* A playlist tile on the "In your playlists" shelf: a mosaic of the artist's
+   own covers inside that list, the list's name, and how much of it is theirs. */
+.artistPlaylist {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--glacier-space-1);
+  inline-size: 5.7rem;
+  flex: none;
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.artistPlaylistCover {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  inline-size: 5.7rem;
+  block-size: 5.7rem;
+  border-radius: var(--glacier-radius-lg);
+  overflow: hidden;
+  background: var(--glacier-surface-sunken);
+}
+
+.artistPlaylistCover img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+/* A single cover fills the whole tile rather than sitting in one quadrant. */
+.artistPlaylistCover img:only-child {
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+}
+
+.artistPlaylistName {
+  max-inline-size: 100%;
+  font-weight: 600;
+  font-size: var(--glacier-font-size-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.artistPlaylistCount {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+}
+
+/* An artist's name on a card, tappable into their page. A span wearing a
+   link's manners because the card around it is already a button - nested
+   buttons are invalid - and the tap must not also fire the card. */
+.cardArtistLink {
+  cursor: pointer;
+}
+
+.cardArtistLink:hover,
+.cardArtistLink:active {
+  color: var(--glacier-text);
+  text-decoration: underline;
+}
+
+/* --- Spotify Canvas: the looping clip behind the now-playing controls -------
+   Drawn after .npScreen__bg at the same negative layer, so it covers the
+   blurred cover but stays behind every control. Dimmed a touch so the white
+   title, times and transport read over a bright frame.
+
+   The wrapper is the artwork-style chooser's press target and carries the
+   layer geometry; being negative-z it still catches presses on the sheet's
+   open space, because everything drawn over it there (veil, backdrop words)
+   is pointer-events: none. */
+.npScreen__canvasWrap {
+  /* The kit's chooser target is display: contents until told otherwise -
+     without a real box here the video falls into the sheet's flex flow. */
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}
+.npScreen__canvas {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  background: #000;
+  filter: brightness(0.72) saturate(1.05);
+  animation: npCanvasIn 0.6s ease both;
+}
+@keyframes npCanvasIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .npScreen__canvas { animation: none; }
+}
+

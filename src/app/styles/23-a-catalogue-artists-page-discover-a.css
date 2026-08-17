@@ -1,0 +1,375 @@
+/* ---- A catalogue artist's page (Discover) ------------------------------ */
+
+.catalogArtist__back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  padding: var(--glacier-space-1) var(--glacier-space-2) var(--glacier-space-1)
+    var(--glacier-space-1);
+  background: none;
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  color: var(--glacier-text-muted);
+  font: inherit;
+  font-size: var(--glacier-font-size-sm);
+  cursor: pointer;
+}
+
+.catalogArtist__back:hover,
+.catalogArtist__back:focus-visible {
+  background: var(--glacier-hover);
+  color: var(--glacier-text);
+}
+
+/* The hero: a round portrait beside the name and the numbers. Round because
+   this is a person, not a record - the release cards below are the squares. */
+.catalogArtist__head {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-4);
+}
+
+.catalogArtist__portrait {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 7.5rem;
+  block-size: 7.5rem;
+  border-radius: var(--glacier-radius-full);
+  overflow: hidden;
+  background: var(--glacier-surface-raised, var(--glacier-hover));
+  color: var(--glacier-text-muted);
+}
+
+.catalogArtist__portrait img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.catalogArtist__meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  min-inline-size: 0;
+}
+
+.catalogArtist__kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.catalogArtist__name {
+  margin: 0;
+  font-size: clamp(1.5rem, 4.5vw, 2.25rem);
+  line-height: 1.1;
+}
+
+.catalogArtist__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-1) var(--glacier-space-3);
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-sm);
+}
+
+.catalogArtist__stats strong {
+  color: var(--glacier-text);
+  font-weight: var(--glacier-font-weight-medium);
+}
+
+/* The popular tracks: a numbered list, each row one tap from the import queue. */
+/*
+ * Records you own part of, and the songs that would finish them.
+ *
+ * These rows are ABSENCES, so they are dimmed - lighter than the songs you
+ * have, and they lift toward full on hover the way a thing you could get
+ * ought to. The plus is the only thing at full strength: it is the offer, and
+ * the offer should not be the faintest thing in the row.
+ */
+.albumGaps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+.albumGap {
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg);
+  overflow: hidden;
+  background: var(--glacier-surface-sunken, var(--glacier-surface));
+}
+
+.albumGap__head {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3);
+}
+
+.albumGap__art {
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  border-radius: var(--glacier-radius-sm);
+  object-fit: cover;
+  flex: none;
+}
+
+.albumGap__art--glyph {
+  display: grid;
+  place-items: center;
+  background: var(--glacier-hover);
+  color: var(--glacier-text-subtle);
+}
+
+.albumGap__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.albumGap__title {
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.albumGap__count {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.albumGap__all {
+  flex: none;
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  background: none;
+  color: var(--glacier-text);
+  font: inherit;
+  font-size: var(--glacier-font-size-xs);
+  font-weight: 650;
+  padding: 0.3rem var(--glacier-space-3);
+  border-radius: var(--glacier-radius-full);
+  cursor: pointer;
+}
+
+.albumGap__all:hover {
+  background: var(--glacier-hover);
+}
+
+.albumGap__list {
+  margin: 0;
+  padding: 0 var(--glacier-space-3) var(--glacier-space-2);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.albumGap__row {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding-block: var(--glacier-space-1);
+  /* The dimming that says "not here". */
+  opacity: 0.55;
+  transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.albumGap__row:hover,
+.albumGap__row[data-state] {
+  opacity: 1;
+}
+
+.albumGap__no {
+  inline-size: 1.25rem;
+  text-align: end;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-subtle);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+.albumGap__name {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The offer stays legible even while the row around it is dimmed. */
+.albumGap__row .catalogTrack__add {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .albumGap__row {
+    transition: none;
+  }
+}
+
+.catalogTracks {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.catalogTrack {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-1) var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+}
+
+.catalogTrack:hover {
+  background: var(--glacier-hover);
+}
+
+.catalogTrack__rank {
+  flex: none;
+  inline-size: 1.25rem;
+  text-align: end;
+  color: var(--glacier-text-subtle, var(--glacier-text-muted));
+  font-variant-numeric: tabular-nums;
+  font-size: var(--glacier-font-size-sm);
+}
+
+.catalogTrack__art {
+  flex: none;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  border-radius: var(--glacier-radius-sm);
+  object-fit: cover;
+}
+
+.catalogTrack__art--glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--glacier-surface-raised, var(--glacier-hover));
+  color: var(--glacier-text-muted);
+}
+
+.catalogTrack__title {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Your own play count, on a song you own, inside the catalogue's list. */
+.catalogTrack__plays {
+  flex: none;
+  color: var(--glacier-text-subtle);
+  font-size: var(--glacier-font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.catalogTrack__time {
+  flex: none;
+  color: var(--glacier-text-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--glacier-font-size-sm);
+}
+
+.catalogTrack__add {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border-radius: var(--glacier-radius-full);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  background: transparent;
+  color: var(--glacier-text);
+  cursor: pointer;
+}
+
+.catalogTrack__add:hover:not(:disabled) {
+  background: var(--glacier-hover);
+}
+
+.catalogTrack__add[data-state='added'] {
+  color: var(--glacier-accent-solid);
+  border-color: var(--glacier-accent-border);
+}
+
+/* The Spotify lookup came back empty. Distinct from disabled, which means
+   "nothing here can fetch this" rather than "this record is not there". */
+.catalogTrack__add[data-state='missing'] {
+  color: var(--glacier-danger-text, #e08a82);
+  border-color: var(--glacier-danger-border, #7a2f29);
+}
+
+/* A song you already own plays from its own row, so its title is a control
+   rather than a label. */
+.catalogTrack__title--play {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.catalogTrack__title--play:hover {
+  text-decoration: underline;
+}
+
+/* The owned badge: a check that says you have it, becoming a play on hover
+   or focus to say what the tap will do - the same swap the search page's
+   owned rows make. Both glyphs share one cell so the button never resizes. */
+.catalogTrack__add[data-state='owned'] {
+  display: grid;
+  color: var(--glacier-accent-solid);
+  border-color: var(--glacier-accent-border);
+}
+
+.catalogTrack__add[data-state='owned'] > * {
+  grid-area: 1 / 1;
+  transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.catalogTrack__add[data-state='owned'] .catalogTrack__go,
+.catalogTrack__add[data-state='owned']:hover .catalogTrack__have,
+.catalogTrack__add[data-state='owned']:focus-visible .catalogTrack__have,
+.catalogTrack:hover .catalogTrack__add[data-state='owned'] .catalogTrack__have {
+  opacity: 0;
+}
+
+.catalogTrack__add[data-state='owned']:hover .catalogTrack__go,
+.catalogTrack__add[data-state='owned']:focus-visible .catalogTrack__go,
+.catalogTrack:hover .catalogTrack__add[data-state='owned'] .catalogTrack__go {
+  opacity: 1;
+}
+
+.catalogTrack[data-playable]:hover .catalogTrack__add[data-state='owned'] {
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-on-accent, #fff);
+}
+
+.catalogTrack__add:disabled {
+  cursor: default;
+}
+
+@media (pointer: coarse), (max-width: 540px) {
+  .catalogArtist__head {
+    gap: var(--glacier-space-3);
+  }
+
+  .catalogArtist__portrait {
+    inline-size: 5rem;
+    block-size: 5rem;
+  }
+}
+

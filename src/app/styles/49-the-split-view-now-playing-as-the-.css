@@ -1,0 +1,70 @@
+/* --- the split view: Now Playing as the right half ------------------------ */
+
+/* One number both halves read: how much of the screen the docked sheet owns.
+   On :root because the sheet portals to the body while the app window shrinks
+   - two subtrees, one truth. 40% keeps the app clearly the wider half; the
+   32rem cap stops a desktop-sized webview from building a ballroom. */
+:root {
+  --np-dock-width: min(40vw, 32rem);
+  /* The island grew from 3.5rem so the lit tab's plate can be an actual
+     SQUARE around glyph + name - the third try at "not stretched" and the
+     one that holds, because at 3.5rem a square that fits a name cannot fit
+     the band. On :root, not .appWindow: the ⋮ menu is portalled to the body
+     and positions against this. Trimmed from 4.5rem once the square's inner
+     padding came down - the plate hugs its glyph and name now. */
+  --app-nav-island-height: 4rem;
+}
+
+/* Wide enough for two rooms, and this is mobile chrome (the nav bar is its
+   signature), and something is playing (the strip is mounted): the app takes
+   the left pane. Absolute children - the nav bar, the strip - position
+   against the shrunk box, so one rule moves the whole household. */
+@media (min-width: 700px) {
+  /* Keyed on the DOCK itself, not merely on a strip existing: while the strip
+     only mirrors a remote device the sheet stays unmounted, and the app must
+     keep the whole width rather than hold an empty right gutter open. */
+  body:has(.npScreen[data-docked]) .appWindow {
+    inline-size: calc(100% - var(--np-dock-width));
+  }
+}
+
+/* The sheet, docked: a floating card in the right column, not a second
+   screen. It hangs inside the reserved dock width with air on every side,
+   wearing the same card language as the nav bar - the big radius, the
+   hairline, a real shadow - so the app clearly stays one room with a player
+   standing in it. Everything inside lays out exactly as the full-screen
+   sheet does; overflow:hidden (from the base rule) is what lets the radius
+   clip the backdrop art. */
+.npScreen[data-docked] {
+  inset: max(var(--glacier-space-3), env(safe-area-inset-top, 0px)) var(--glacier-space-3)
+    var(--glacier-space-3) auto;
+  inline-size: calc(var(--np-dock-width) - var(--glacier-space-3) * 2);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-2xl, 1.75rem);
+  box-shadow: var(--glacier-shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.42));
+  /* Full-screen it pads for the home indicator; floating it carries its own
+     frame, so ordinary card padding is all it needs. */
+  padding-inline: var(--glacier-space-4);
+  padding-block: var(--glacier-space-4);
+}
+
+/* With the whole player standing in the right column, the mini strip is the
+   same transport twice. It hides - the Player component stays mounted (it
+   owns the audio and the docked sheet is its portal), only the plate goes -
+   and the clearance every page pads by follows it to zero, same discipline
+   as the no-strip rule up top: the reservation must not outlive the thing
+   it reserves for. */
+body:has(.npScreen[data-docked]) .appPlayer {
+  display: none;
+}
+
+body:has(.npScreen[data-docked]) .appWindow {
+  --app-player-height: 0rem;
+}
+
+/* No "close" where closing has no meaning: the chevron is the sheet's exit,
+   and a docked sheet has nowhere to go. */
+.npScreen[data-docked] .npScreen__head > button:first-child {
+  visibility: hidden;
+}
+

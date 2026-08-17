@@ -1,0 +1,192 @@
+/* ---- Jams: the live layer ------------------------------------------------ */
+
+/* The room you are in: cover art with a live pulse, who's inside, and the way
+   out. The one card on the page that is happening right now. */
+.jamLive {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-accent-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-glass-regular, var(--glacier-surface));
+}
+
+.jamLive__art {
+  position: relative;
+  flex: none;
+  inline-size: 3.5rem;
+  block-size: 3.5rem;
+  border-radius: var(--glacier-radius-md);
+  overflow: hidden;
+}
+
+.jamLive__art img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.jamLive__pulse {
+  position: absolute;
+  inset-block-end: 4px;
+  inset-inline-end: 4px;
+  inline-size: 10px;
+  block-size: 10px;
+  border-radius: 50%;
+  background: oklch(0.72 0.17 150);
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 0.4);
+  animation: jamPulse 2s ease-in-out infinite;
+}
+
+@keyframes jamPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.8); opacity: 0.6; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jamLive__pulse { animation: none; }
+}
+
+.jamLive__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.jamLive__title {
+  font-weight: 700;
+}
+
+.jamLive__song {
+  font-size: var(--glacier-font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jamLive__meta {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+}
+
+/* Friends' rooms: doors you can walk through, on one wrapping row. */
+.jamRooms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-3);
+}
+
+.jamRoom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-3);
+  inline-size: 10rem;
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+  text-align: center;
+}
+
+.jamRoom__art {
+  position: relative;
+  inline-size: 5rem;
+  block-size: 5rem;
+  border-radius: var(--glacier-radius-md);
+  overflow: visible;
+}
+
+.jamRoom__art img {
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+/* The host's mark rides the corner of what they're playing. */
+.jamRoom__host {
+  position: absolute;
+  inset-block-end: -0.4rem;
+  inset-inline-end: -0.4rem;
+  box-shadow: 0 0 0 2px var(--glacier-bg);
+}
+
+.jamRoom__name {
+  font-weight: 650;
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jamRoom__meta {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+/* ---- The endless station ------------------------------------------------ */
+
+/* On-air, at the top of the queue: what it came from, the two dials, and the
+   way out. Tinted so it reads as a live thing rather than another queue row. */
+.radioBar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-3);
+  margin-block-end: var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-accent-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-accent-soft);
+}
+
+.radioBar__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+}
+
+.radioBar__title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  font-weight: 650;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A dial reads as its two ends and the travel between them. */
+.radioBar__dial {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.radioBar__dial > :nth-child(2) {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+/* Two people, one station: the blend picker under the dials. */
+.radioBar__blend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+

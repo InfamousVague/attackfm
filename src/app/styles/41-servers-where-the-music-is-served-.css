@@ -1,0 +1,221 @@
+/* --- Servers: where the music is served from ----------------------------- */
+
+/*
+ * The servers panel, inside Settings.
+ *
+ * It used to be its own nav destination with this frame - and no overflow, so
+ * a list longer than the screen simply had no way down. Living in the settings
+ * pane fixes that by construction: that pane is already the scroller, already
+ * pads itself, and already clears the player. All this needs is its own
+ * rhythm between sections.
+ */
+/*
+ * The one servers pane, made of three parts that were three separate places.
+ *
+ * They keep their own internals; what this adds is the seam between them - a
+ * rule and a step of air, so a long pane reads as chapters rather than as one
+ * unbroken scroll of controls.
+ */
+.serversSettings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-4);
+}
+
+/* The chunk switcher sits above whichever chunk is showing, with a clear step
+   of air under it so it reads as a control over the page rather than the first
+   row of it. */
+.serversSettings > [role='radiogroup'],
+.serversSettings > [role='tablist'] {
+  margin-block-end: var(--glacier-space-2);
+}
+
+.serversSettings__part {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  padding-block-start: var(--glacier-space-4);
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.serversSettings__partHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+/* Each part brings its own body wrapper; inside the pane they must not pad
+   or scroll a second time. */
+.serversSettings .prefsBody {
+  padding: 0;
+  gap: var(--glacier-space-4);
+}
+
+.serversPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-4);
+}
+
+.serversPage__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+}
+
+.serversPage__routing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.serversPage__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+.serverCard {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-4);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+/* The box currently feeding the player wears the accent edge - the one piece
+   of state on this page that changes on its own. */
+.serverCard[data-serving] {
+  border-color: var(--glacier-accent-solid);
+}
+
+.serverCard__top {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+.serverCard__icon {
+  display: grid;
+  place-items: center;
+  inline-size: 2rem;
+  block-size: 2rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text-muted);
+  flex: none;
+}
+
+.serverCard__id {
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.serverCard__badge {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-accent-text);
+  white-space: nowrap;
+}
+
+.serverCard__forget,
+.storage__sort {
+  background: none;
+  border: 0;
+  color: var(--glacier-text-muted);
+  cursor: pointer;
+  padding: var(--glacier-space-1);
+  border-radius: var(--glacier-radius-sm);
+}
+
+.serverCard__forget:hover,
+.storage__sort:hover {
+  background: var(--glacier-hover);
+  color: var(--glacier-text);
+}
+
+.serverCard__metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
+  gap: var(--glacier-space-3);
+  inline-size: 100%;
+}
+
+.serverMetric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.serverMetric__value {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+/* Nearness reads as colour before it reads as a number. */
+.serverMetric__value[data-tone='best'] { color: var(--glacier-success-text, var(--glacier-accent-text)); }
+.serverMetric__value[data-tone='good'] { color: var(--glacier-accent-text); }
+.serverMetric__value[data-tone='ok'] { color: var(--glacier-text); }
+.serverMetric__value[data-tone='slow'] { color: var(--glacier-warning-text, var(--glacier-text-muted)); }
+.serverMetric__value[data-tone='bad'] { color: var(--glacier-danger-text, var(--glacier-text-muted)); }
+.serverMetric__value[data-tone='idle'] { color: var(--glacier-text-muted); }
+
+.serverMetric__label {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.serverCard__bar {
+  block-size: 6px;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface-sunken);
+  overflow: hidden;
+}
+
+.serverCard__barFill {
+  display: block;
+  block-size: 100%;
+  background: var(--glacier-accent-solid);
+  border-radius: inherit;
+}
+
+.serverCard__barFill[data-full] {
+  background: var(--glacier-danger-solid, var(--glacier-accent-solid));
+}
+
+.serverCard__disk {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.serverCard__manage {
+  align-self: flex-start;
+}
+
+.serversPage__add {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-4);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.serversPage__addActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--glacier-space-2);
+}
+

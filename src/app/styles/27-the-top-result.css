@@ -1,0 +1,107 @@
+/* ---- The Top result ----------------------------------------------------- */
+
+/* The page's most confident answer, beside the songs it beat. One row on a
+   wide window, stacked on a narrow one - the hero first either way, because it
+   is the thing most searches are actually for. */
+.searchTop {
+  display: grid;
+  grid-template-columns: minmax(15rem, 20rem) 1fr;
+  gap: var(--glacier-space-4);
+  align-items: start;
+}
+
+.searchTop__hero,
+.searchTop__songs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  min-inline-size: 0;
+}
+
+@media (max-width: 52rem) {
+  .searchTop {
+    grid-template-columns: 1fr;
+  }
+}
+
+.searchTopCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--glacier-space-1);
+  padding: var(--glacier-space-4);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-sunken);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: background var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.searchTopCard:hover,
+.searchTopCard:focus-visible,
+.searchTopCard[data-active] {
+  background: var(--glacier-surface-raised, var(--glacier-hover));
+}
+
+.searchTopCard[data-active] {
+  border-color: var(--glacier-accent-solid);
+}
+
+.searchTopCard__art {
+  inline-size: 6rem;
+  block-size: 6rem;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  margin-block-end: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface);
+  color: var(--glacier-text-subtle);
+  box-shadow: var(--glacier-shadow-md, 0 6px 20px rgb(0 0 0 / 0.18));
+}
+
+.searchTopCard__art[data-shape='circle'] {
+  border-radius: var(--glacier-radius-full);
+}
+
+.searchTopCard__art img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.searchTopCard__title {
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.searchTopCard__sub {
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+}
+
+.searchTopCard__verb {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-block-start: var(--glacier-space-2);
+  padding: 0.25rem var(--glacier-space-3);
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-accent-contrast, #fff);
+  font-size: 0.8125rem;
+  font-weight: 650;
+}
+

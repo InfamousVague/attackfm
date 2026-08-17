@@ -1,0 +1,361 @@
+/* --- the collector's audition shelf ------------------------------------- */
+
+.forYouGlyph {
+  margin-inline-end: var(--glacier-space-2);
+  color: var(--glacier-accent-text);
+}
+
+/* The one loud thing the collector ever says: its budget is full and it has
+   stopped. A message, not an alarm - nothing is broken or lost. */
+.forYouHalted {
+  margin: 0 0 var(--glacier-space-2);
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-accent-soft, var(--glacier-surface-sunken));
+  color: var(--glacier-accent-text);
+}
+
+/* One line under the discography, not a caption on every sleeping card. */
+.artistDiscNote {
+  margin: 0;
+  color: var(--glacier-text-subtle);
+}
+
+.artistAlbumSub {
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--glacier-text-subtle);
+  font-size: var(--glacier-font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.artistAlbumCover {
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: var(--glacier-radius-md);
+  object-fit: cover;
+  background: var(--glacier-surface-sunken);
+}
+
+.artistAlbumName {
+  max-inline-size: 100%;
+  margin-block-start: var(--glacier-space-1);
+  color: var(--glacier-text);
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Yours reads at full strength; the rest of the discography sits back a step so
+   the shelf you own is still findable inside the body of work. */
+.artistAlbum:not([data-have]) .artistAlbumName {
+  color: var(--glacier-text-muted);
+  font-weight: 500;
+}
+
+.songIndex {
+  color: var(--glacier-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The player floats over the list rather than taking a row of its own, so the
+   list reads as one surface running the full height of the window behind it. It
+   is inset from the window edges so it reads as a raised plate. */
+.appPlayer {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  z-index: 2;
+  flex: none;
+  padding: var(--glacier-space-2);
+  padding-block-start: 0;
+  /* The strip rises into place with the first song of the session rather than
+     appearing whole. It sits below the nav card (z 2 vs 4), so it climbs out
+     from behind it - and the frost behind it grows on the same clock, so the
+     two arrive together. Mount-only: `current` never returns to null once set,
+     so the node survives every track change after this and the animation does
+     not replay. No fill mode on purpose: the resting style already IS the
+     animation's last frame, so filling buys nothing - and a fill that held the
+     FIRST frame would strand the strip off the bottom of the screen on any
+     render where the animation never got to run. */
+  animation: playerRise var(--app-player-rise) var(--glacier-ease-out);
+  /* Lifts the plate clear of the home indicator, which otherwise sits over the
+     transport controls on a modern iPhone. */
+  padding-block-end: calc(var(--glacier-space-2) + var(--app-safe-bottom));
+  padding-inline-start: calc(var(--glacier-space-2) + var(--app-safe-left));
+  padding-inline-end: calc(var(--glacier-space-2) + var(--app-safe-right));
+}
+
+/* With a bottom tab bar in play, the player stands on it rather than the
+   window edge - and the bar owns the home indicator's inset, so the player
+   gives that padding up instead of double-counting it. The two read as two
+   distinct plates, so they want a real gap between them - but only a gap. What
+   used to sit here was a gap plus twenty stray pixels of over-reserved
+   overhang, which read as the player having drifted away from the nav. */
+.appWindow:has(.appNavBar) .appPlayer {
+  inset-block-end: calc(var(--app-nav-height) + var(--app-nav-gap));
+  padding-block-end: var(--glacier-space-2);
+}
+
+/* Far enough down to clear its own height AND the offset it rests at, so it
+   starts wholly off the bottom of the window whichever chrome is below it. */
+@keyframes playerRise {
+  from {
+    transform: translateY(calc(100% + var(--app-nav-height) + var(--app-nav-gap, 0px)));
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .appPlayer {
+    animation: none;
+  }
+  .appNavScrim {
+    transition: none;
+  }
+}
+
+/* Pull the strip's own inline padding in from the kit's default so the cover and
+   the output controls sit closer to the plate's edges. */
+.appPlayer [data-position] {
+  padding-inline: var(--glacier-space-2);
+}
+
+/*
+ * Touch sizing for the strip. Matches MOBILE_PLAYER_QUERY in Player.tsx - the
+ * same condition that folds the trailing rail behind the overflow button; the
+ * width that buys goes here, into transport buttons at thumb size and a seek
+ * bar with somewhere to land.
+ *
+ * The kit's class names are hashed per build but keep their local names, so
+ * the selectors match on the stable `_name_` stem rather than the full hash.
+ *
+ * The width arm stops at 540px - beneath the desktop window's 560 minimum -
+ * so only true touch devices and phone-shaped browsers ever match; a
+ * squarish desktop window keeps the desktop bar. Matches MOBILE_PLAYER_QUERY.
+ */
+@media (pointer: coarse), (max-width: 540px) {
+  .appWindow {
+    /* The grown strip stands taller; the list clears it by the same amount. */
+    --app-player-height: 9rem;
+  }
+
+  /* On the phone the lyric words fill the WHOLE height of the background - a
+     full-height wash of lyrics behind the page (Home) and behind the sheet
+     (Now Playing) - rather than the old band in the header seam. */
+  .nowPlayingBackdrop {
+    block-size: 100%;
+  }
+  /* The blurred art keeps to a top wash; only the words run the full height.
+     The mask has to fade over that full height now, or the lower reaches of
+     the words clip to nothing. (Words-only backdrops carry no art to cap.) */
+  .nowPlayingBackdrop:not([data-words-only]) .npDrift,
+  .nowPlayingBackdrop:not([data-words-only]) .npGlow {
+    block-size: 22rem;
+    inset-block-end: auto;
+  }
+  .nowPlayingBackdrop:not([data-words-only]) {
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.95),
+      rgba(0, 0, 0, 0.5) 30%,
+      rgba(0, 0, 0, 0.32)
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.95),
+      rgba(0, 0, 0, 0.5) 30%,
+      rgba(0, 0, 0, 0.32)
+    );
+  }
+  /* The words span the page: full width in from the gutter, and top to bottom
+     clear of the header above and the floating chrome below. That trailing
+     clearance is the player AND the nav - the same pair every page pads its
+     last row by - because the two stack down there and reserving only the
+     player left the words running behind the nav island. The nav's own height
+     carries the safe area, so it is not added again. */
+  .npWords {
+    inset-block: calc(env(safe-area-inset-top, 0px) + 3.5rem)
+      calc(var(--app-player-height, 9rem) + var(--app-nav-height, 0px));
+    inset-inline: var(--glacier-space-4);
+  }
+
+  /* The Now Playing sheet's own words layer: fill the sheet, ride ABOVE its
+     blurred cover (z -1, same layer but later in the DOM) and UNDER the
+     controls, and clear the transport row at the bottom. */
+  .npScreen .nowPlayingBackdrop {
+    position: absolute;
+    inset: 0;
+    block-size: 100%;
+    z-index: -1;
+    opacity: 0.5;
+  }
+  /* How much of the sheet's bottom belongs to the controls: the title row, the
+     scrubber, the transport and the actions, plus the gaps between them and
+     the sheet's own bottom padding. Measured off the live sheet - the title
+     row's top edge sits 304px above the sheet's bottom at a 16px root - and
+     written in rem so it grows with the interface-size setting exactly as the
+     controls it is clearing do. The safe area is added separately: that is
+     device geometry and does not scale with anything.
+
+     At 5rem the words ran a full 190px past the title row and down into the
+     transport, which is what "too low into the controls" was. */
+  .npScreen .npWords {
+    /* The band the words lay themselves out in, sized to the open square
+       between the header and the controls.
+
+       The 6rem is the only knob for where they SIT: raise it and the words
+       move down, lower it and they climb. The space comes off the TOP on
+       purpose - taking it off the bottom instead would walk them back into the
+       title row and the transport, which is the clearance the 19.5rem below
+       exists to hold (see the note there). */
+    inset-block: calc(env(safe-area-inset-top, 0px) + 8rem)
+      calc(env(safe-area-inset-bottom, 0px) + 19.5rem);
+    inset-inline: var(--glacier-space-6);
+  }
+
+  /* The compact pack hugs its rows - fine at desktop control sizes, airless
+     once everything grows. The kit also pins the strip's height for the pack,
+     which quietly eats any padding given to it - so the height is handed back
+     to the content first, then the block padding actually gets spent. Top
+     takes the larger share: the seek thumb and the clocks live up there and
+     read against the plate's edge first. */
+  /* The mini-strip: the disc on the left, run full-bleed from the card's top
+     to its bottom, and beside it a stacked column - the seek across the top,
+     the transport centred under it with the heart and the lyrics mic at either
+     end. The kit's own layout says exactly this (its control row is a
+     1fr-auto-1fr grid), so the strip mostly gets out of its way and only sets
+     the phone's sizes. */
+  .appPlayer [data-position] {
+    position: relative;
+    overflow: hidden;
+    block-size: auto;
+    flex-direction: row;
+    /* Stretch, so the artwork column can be as tall as the card itself. */
+    align-items: stretch;
+    gap: var(--glacier-space-3);
+    padding: var(--glacier-space-2) var(--glacier-space-3);
+    /* Two numbers set the strip's scale - the seek's band and the play button -
+       and everything else is derived from them: the kit's row height, the
+       disc's square, the card's own height. Nothing can drift out of step. */
+    --app-player-seek: 2.125rem;
+    --app-player-play: 2.5rem;
+    --bar-seek: var(--app-player-seek);
+    /* The disc is exactly as tall as the two rows beside it, which is the
+       card's content box: a square pinned to a definite size rather than one
+       stretched to the row. A stretched square cannot work here - flexbox
+       sizes the main axis before the cross axis, so an aspect-ratio width
+       measured off the row's height resolves to zero and the disc would
+       overlap the controls. */
+    --app-player-art: calc(
+      var(--app-player-seek) + var(--glacier-space-1) + var(--app-player-play)
+    );
+  }
+
+  /* The album cover, left-aligned: a fat, obvious tap target for lifting the
+     full-screen Now Playing (the whole strip opens it, but the cover reads as
+     the handle). The title lines fold away - the cover and the NP name it. */
+  .appPlayer [class*="_track_"] {
+    /* The kit hides the track under a 34rem container query; the strip is far
+       narrower than that, so re-show it - specificity wins over the kit rule. */
+    display: flex;
+    align-items: stretch;
+    flex: none;
+    min-inline-size: auto;
+    align-self: stretch;
+  }
+
+  /* The disc: a square the full height of the card's content box, rather than
+     the kit's thumbnail sized to the (hidden) title.
+     !important clears the more-specific kit rule for data-size=fill. */
+  .appPlayer [class*="_track_"] [class*="_artwork_"] {
+    inline-size: var(--app-player-art) !important;
+    block-size: var(--app-player-art) !important;
+    flex: none;
+  }
+
+  .appPlayer [class*="_track_"] [class*="_artwork_"] > * {
+    inline-size: 100%;
+    block-size: 100%;
+  }
+
+  .appPlayer [class*="_lines_"] {
+    display: none;
+  }
+
+  /* The column beside the disc: seek on top, control row under it. This is the
+     kit's own stacking - the strip only claims the leftover width and lets the
+     rows fill it. */
+  .appPlayer [class*="_center_"] {
+    flex: 1;
+    min-inline-size: 0;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: var(--glacier-space-1);
+  }
+
+  /* The seek sits in the flow across the top of the column, full width. */
+  .appPlayer [class*="_scrubber_"] {
+    position: static;
+    flex: none;
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+
+  /* The kit's 1fr-auto-1fr grid does the work: the transport sits in the
+     centre cell - optically centred under the seek whatever the rails hold -
+     with the heart's rail to its left and the lyrics mic's to its right. */
+  .appPlayer [class*="_controls_"] {
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+
+  /* Shuffle and repeat stay off the strip - they belong to the full-screen Now
+     Playing, where there is room for them. The heart keeps its seat in the
+     leading rail, opposite the lyrics mic. */
+  .appPlayer [aria-label="Shuffle"],
+  .appPlayer [aria-label^="Repeat"] {
+    display: none;
+  }
+
+  /* Smaller than the earlier grown set - a compact inline transport. */
+  .appPlayer [class*="_rail_"] button,
+  .appPlayer [class*="_transport_"] button {
+    inline-size: 2.25rem;
+    block-size: 2.25rem;
+  }
+
+  .appPlayer [class*="_transport_"] button svg {
+    inline-size: 1.1rem;
+    block-size: 1.1rem;
+  }
+
+  .appPlayer [class*="_transport_"] button[class*="_play_"] {
+    inline-size: var(--app-player-play);
+    block-size: var(--app-player-play);
+  }
+
+  .appPlayer [class*="_transport_"] button[class*="_play_"] svg {
+    inline-size: 1.2rem;
+    block-size: 1.2rem;
+  }
+
+  /* The seek bar: taller wave, bigger thumb, so a thumb can scrub without
+     covering what it is aiming at. */
+  .appPlayer [class*="_seek_"] {
+    block-size: var(--app-player-seek);
+    --slider-thumb: 1.125rem;
+  }
+
+  .appPlayer [class*="_seek_"] svg {
+    block-size: var(--app-player-seek);
+  }
+}
+

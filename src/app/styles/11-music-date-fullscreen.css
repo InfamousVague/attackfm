@@ -1,0 +1,439 @@
+/* --- Music Date, fullscreen ------------------------------------------------ */
+/* Over everything, chrome gone: App unmounts the nav bar and hides the player
+   while this is up, and the layer itself sits above the header. Just the
+   introductions, the notch kept clear, one floating way out. */
+.dateLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  background: var(--glacier-surface);
+  padding-block-start: env(safe-area-inset-top, 0px);
+  padding-block-end: env(safe-area-inset-bottom, 0px);
+}
+
+.dateLayer .datePage {
+  flex: 1;
+  min-block-size: 0;
+  /* The page's own tail padding ducks bars that are not here. */
+  padding-block-end: var(--glacier-space-4);
+}
+
+.dateLayer__close {
+  position: absolute;
+  inset-block-start: calc(env(safe-area-inset-top, 0px) + var(--glacier-space-3));
+  inset-inline-start: var(--glacier-space-3);
+  z-index: 2;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  display: grid;
+  place-items: center;
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--glacier-surface) 72%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: inherit;
+  cursor: pointer;
+}
+
+.profileRoomBar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-2) var(--glacier-space-4);
+}
+
+.profileRoomBar__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  border: none;
+  background: none;
+  padding: 0.25rem 0.4rem 0.25rem 0;
+  font: inherit;
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-accent-text);
+  cursor: pointer;
+}
+
+.profileRoomBar__label {
+  font-weight: 650;
+  font-size: var(--glacier-font-size-sm);
+}
+
+.profileRoomBar__spacer {
+  flex: 1;
+}
+
+/* Desktop: the search rides the TabbedModal's title row. */
+.settingsTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-4);
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.settingsTitleRow__search {
+  inline-size: min(16rem, 50%);
+}
+
+/* Nothing in the list may shrink to fit it.
+   A flex column that scrolls will still compress its items first - shrinking
+   is a flex item's default - so with more sections than fit, the groups gave
+   up their height instead of overflowing: every row squashed, the last ones
+   clipped by the group's own `overflow: hidden`, and no scrollbar, because
+   the content never actually exceeded the box. Holding the natural height is
+   what turns `overflow-y: auto` above from decoration into a scroll. */
+.settingsScreen__list > * {
+  flex: none;
+}
+
+.settingsScreen__row {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  inline-size: 100%;
+  padding: var(--glacier-space-3) var(--glacier-space-3);
+  border: none;
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+  color: var(--glacier-text);
+  font: inherit;
+  font-weight: 550;
+  text-align: start;
+  cursor: pointer;
+}
+
+.settingsScreen__row:active {
+  background: var(--glacier-surface-hover, rgba(128, 128, 128, 0.16));
+}
+
+.settingsScreen__rowIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: var(--glacier-text-muted);
+}
+
+.settingsScreen__rowLabel {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.settingsScreen__rowChevron {
+  flex: none;
+  color: var(--glacier-text-muted);
+}
+
+/* The drilled-in pane: the section's own controls, scrolling under the header. */
+.settingsScreen__pane {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-inline: var(--glacier-space-1);
+}
+
+/* ── Acquire chooser & Buy sheet ─────────────────────────────────────────────
+   The small dialog shown when more than one plugin can "get" a track, and the
+   Buy plugin's storefront list. Both are plain vertical stacks inside a kit
+   Modal. */
+.acquireChooser {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.acquireChooser__blurb {
+  margin: 0 0 var(--glacier-space-1);
+  color: var(--glacier-text-muted);
+}
+
+.acquireChooser__option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--glacier-space-2);
+  inline-size: 100%;
+}
+
+.buyModal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+.buyModal__blurb {
+  margin: 0;
+  color: var(--glacier-text-muted);
+}
+
+.buyModal__stores {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.buyStore {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  inline-size: 100%;
+  padding: var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+  color: var(--glacier-text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.buyStore:hover {
+  background: var(--glacier-surface-hover, rgba(128, 128, 128, 0.12));
+}
+
+.buyStore__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.buyStore__name {
+  font-weight: 600;
+}
+
+.buyStore__formats {
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+}
+
+.buyStore__go {
+  flex: none;
+  color: var(--glacier-text-muted);
+}
+
+/* ── Home ──────────────────────────────────────────────────────────────────
+   The front door: a greeting over horizontal shelves. The page scrolls as a
+   whole (each shelf scrolls sideways inside it), and the bottom padding keeps
+   the last shelf clear of the floating player and the tab bar. */
+.homePage {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--glacier-space-5) var(--glacier-space-4);
+  padding-block-end: calc(var(--app-player-height) + var(--app-nav-height, 0px));
+  display: flex;
+  flex-direction: column;
+  /* Between sections: a full step above the title-to-content gap (space-3),
+     so a shelf's heading clearly belongs to the cards BELOW it rather than
+     floating between two groups. */
+  gap: var(--glacier-space-8);
+}
+
+/* The home feed rendered inside another page (the Library wears it): the same
+   stack, the same rhythm, just without the page chrome - THIS wrapper is why
+   its shelves were colliding at zero gap, it had no layout of its own. */
+.homeMixes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-8);
+  min-width: 0;
+}
+
+/* The greeting and the page's actions share a row: the words take the width
+   they need, the actions sit against the trailing edge. Aligned to the top so
+   the button lines up with the greeting itself rather than floating against
+   the sentence beneath it. */
+.homeGreeting {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+}
+
+.homeGreeting__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  min-inline-size: 0;
+}
+
+.homeGreetingTitle {
+  margin: 0;
+  font-size: clamp(1.5rem, 4.5vw, 2rem);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+/* ── Library ─────────────────────────────────────────────────────────────────
+   The Library tab reuses the Home page's scroll/padding (it wears both classes)
+   and its shelf/card look; these are its own header and the browse panel at the
+   foot. */
+/* The full song table sits at the bottom as a self-contained scrollable panel -
+   a bounded height so the shelves above stay reachable by the page's own
+   scroll, rather than the grid swallowing the whole viewport. */
+.librarySongs .libraryBody {
+  flex: none;
+  block-size: min(70dvh, 44rem);
+}
+
+/* The table is the screen, so it bleeds through the page's side padding to the
+   window edges - rows end where the glass does, and only the cells' own
+   padding insets their content. */
+.librarySongs {
+  margin-inline: calc(-1 * var(--glacier-space-4));
+  /* Reaches back up over the page's own top padding, which the negative
+     sticky offset now parks it against. */
+  margin-block-start: calc(-1 * var(--glacier-space-5));
+  padding-block-start: var(--glacier-space-5);
+}
+
+/* Skeleton loading for shelf cards. A card whose artwork is still resolving
+   wears a sheen over its cover and its two text lines - the same elements, so
+   its height never changes - and reveals art + text together once the cover
+   arrives. Toggled by `data-loading` on each piece; the JS clears it on the
+   image's load. */
+@keyframes skelSheen {
+  0% {
+    background-position: -45vw 0;
+  }
+  100% {
+    background-position: 145vw 0;
+  }
+}
+
+/* What the kit shows when motion is unwelcome: the same surface, breathing,
+   with nothing travelling across it. Ours had no reduced-motion answer at all -
+   it kept sweeping. */
+@keyframes skelPulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Any cover image can wear the sheen now, not just the shelf cards - list
+   thumbs, mosaics, hero portraits. The wrapper form (`data-tile-loading`) is
+   for tiles drawn from SEVERAL covers, which skeleton and reveal as one. */
+img[data-loading],
+[data-tile-loading],
+.trackCardArt[data-loading],
+.artistCardArt[data-loading],
+.trackCardTitle[data-loading],
+.trackCardArtist[data-loading],
+.artistCardName[data-loading] {
+  color: transparent;
+  /* The kit's own skeleton recipe, to the value: same two tokens, the same
+     45vw sweep on a fixed attachment, the same 1.8s linear clock. This shimmer
+     cannot BE a <Skeleton> - it is worn by the real <img> and the real text so
+     the reveal costs no layout shift, where the component is a separate span
+     that would have to be swapped out. But it had drifted into its own look:
+     different colours, a 200% sweep, 1.25s ease-in-out. Both appear on one
+     screen (a shelf's placeholder cards above, half-loaded covers below) and
+     the mismatch is visible as two shimmers out of step. */
+  background-color: var(--glacier-hover);
+  background-image: linear-gradient(
+    100deg,
+    var(--glacier-hover) 0%,
+    var(--glacier-active) 50%,
+    var(--glacier-hover) 100%
+  );
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  background-size: 45vw 100%;
+  animation: skelSheen 1.8s linear infinite;
+}
+
+/* A loading tile hides its covers under the sheen; they all step out
+   together on the reveal. The sheen needs the tile's own background gone so
+   the gradient reads on the squircle itself. */
+[data-tile-loading] > img,
+[data-tile-loading] svg {
+  visibility: hidden;
+}
+
+/* The arrival: a small settle from just-below scale as the skeleton lifts.
+   Runs when the element STOPS matching [data-loading] (or the tile its
+   wrapper attribute) - which is exactly the moment the bytes landed. The
+   soft haptic tick that accompanies a burst of these is fired from
+   artLoad.ts, so what the eye sees pop the thumb feels patter. */
+/* The standalone `scale` property, NOT transform: several covers already
+   wear a transform (the search genre tiles sit at 22deg), and a keyframe
+   that wrote transform would strip it for the pop's duration and snap it
+   back. `scale` composes with any of them. */
+@keyframes artPop {
+  from {
+    scale: 0.94;
+    opacity: 0.25;
+  }
+  to {
+    scale: 1;
+    opacity: 1;
+  }
+}
+
+img.artPop:not([data-loading]) {
+  animation: artPop 0.34s var(--glacier-ease-out, ease-out);
+}
+
+[data-tile-pop]:not([data-tile-loading]) > img,
+[data-tile-pop]:not([data-tile-loading]) svg {
+  animation: artPop 0.34s var(--glacier-ease-out, ease-out);
+}
+
+/* The text sheens are short bars, not full-width - a skeleton, not a fill. */
+.trackCardTitle[data-loading] {
+  inline-size: 78%;
+  border-radius: 0.3rem;
+}
+
+.trackCardArtist[data-loading] {
+  inline-size: 52%;
+  border-radius: 0.3rem;
+}
+
+.artistCardName[data-loading] {
+  inline-size: 70%;
+  border-radius: 0.3rem;
+}
+
+/* Stillness asked for is stillness given: hold the sheen, drop the motion. */
+@media (prefers-reduced-motion: reduce) {
+  img[data-loading],
+  [data-tile-loading],
+  .trackCardArt[data-loading],
+  .artistCardArt[data-loading],
+  .trackCardTitle[data-loading],
+  .trackCardArtist[data-loading],
+  .artistCardName[data-loading] {
+    /* Not "stop" - "breathe". The kit swaps its travelling sheen for an
+       opacity pulse here rather than freezing, so a still-loading cover keeps
+       saying it is still loading. Killing the animation outright made these
+       read as blank boxes next to pulsing <Skeleton>s on the same screen. */
+    background-image: none;
+    animation: skelPulse 1.6s ease-in-out infinite;
+  }
+  img.artPop:not([data-loading]),
+  [data-tile-pop]:not([data-tile-loading]) > img,
+  [data-tile-pop]:not([data-tile-loading]) svg {
+    animation: none;
+  }
+  .npScreen__heart[aria-pressed='true'] svg,
+  .npScreen__heart[aria-pressed='true']::after,
+  .npScreen__coverTarget > * {
+    animation: none;
+  }
+}
+

@@ -1,0 +1,353 @@
+/*
+ * The thumbnail the page lends with its name.
+ *
+ * `flex: none` because a long artist name must eat its own words, not the
+ * picture beside them - the title truncates instead (see below).
+ */
+.mobileHeader__thumb {
+  flex: none;
+  /* 1.4rem with a hair of margin, not 1.6 with a full step: the row is packed
+     to the pixel (nav takes all 200 of the 200.4 it can), so every pixel this
+     gives back is one the name keeps before it ellipsises. */
+  inline-size: 1.4rem;
+  block-size: 1.4rem;
+  margin-inline-end: 0.28rem;
+  border-radius: var(--glacier-radius-sm);
+  object-fit: cover;
+  /* A cover that has not answered yet is a hole in the row; a faint plate
+     under it holds the geometry while it loads. */
+  background: var(--glacier-hover);
+}
+
+/*
+ * A lent name shares its row with a thumbnail and two controls, where a tab's
+ * own name has the row to itself. A hair smaller is what lets "Liked songs"
+ * read whole instead of ending in an ellipsis five pixels short.
+ */
+.mobileHeader__identLayer:has(.mobileHeader__thumb) .mobileHeader__title {
+  font-size: 1rem;
+}
+
+/* A person, not a record. */
+.mobileHeader__thumb[data-round] {
+  border-radius: 50%;
+}
+
+.mobileHeader__identLayer {
+  grid-area: 1 / 1;
+  display: flex;
+  align-items: center;
+  min-inline-size: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s var(--glacier-ease-out, ease);
+}
+
+.mobileHeader__identLayer[data-on] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobileHeader__identLayer {
+    transition: none;
+  }
+}
+
+/*
+ * The borrowed controls, arriving and leaving.
+ *
+ * Same clock and same easing as the name beside them (.mobileHeader__identLayer),
+ * because they are one gesture: the page hands the header its identity and its
+ * buttons together, and two different timings made that read as two events. A
+ * touch of travel with the fade - they come FROM somewhere - and none of it
+ * under prefers-reduced-motion.
+ */
+.mobileHeader__lent {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  opacity: 0;
+  transform: translateY(-0.35rem);
+  pointer-events: none;
+  transition:
+    opacity 0.22s var(--glacier-ease-out, ease),
+    transform 0.22s var(--glacier-ease-out, ease);
+}
+
+.mobileHeader__lent[data-on] {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobileHeader__lent {
+    transition: none;
+    transform: none;
+  }
+}
+
+.mobileHeader__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}
+
+/* No strip down there: nothing to clear. Every surface pads its bottom by
+   --app-player-height, so zeroing it here is the whole change - and it is
+   written as its own rule AFTER the mobile override below so it wins on a
+   phone too, where the strip is 9rem when it exists at all.
+   
+   The question is asked of the DOM (does a strip exist?) rather than of a
+   flag, because the two can disagree and did: the flag tracked THIS device's
+   deck, while the strip also mounts for a track playing on another device.
+   Listening on the phone therefore collapsed every bottom clearance in the
+   desktop window to zero while a 97px strip sat there - which is how the nav
+   rail came to run underneath it, and the last row of every list with it.
+   Keyed to the element itself, the reservation cannot drift from the thing it
+   reserves for. Same specificity as the attribute selector it replaces
+   (:has() and :not() take their argument's), so it still beats the mobile
+   override below. */
+.appWindow:not(:has(.appPlayer)) {
+  --app-player-height: 0rem;
+}
+
+/* The now-playing cover, blurred into a hero wash behind the top of the window.
+   It sits above the flat window background but below the content, and fades out
+   before the list so rows stay legible.
+
+   The box holds the fade and clips; everything that moves is the layer inside
+   it. `--np-pulse` is the live one - a 0..1 loudness reading the player writes
+   here on every frame, which both children below spend. It rests at 0, so a
+   paused, muted, or silent window is exactly the still wash it was before. */
+.nowPlayingBackdrop {
+  --np-pulse: 0;
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  block-size: 22rem;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  opacity: 0.4;
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), transparent);
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), transparent);
+}
+
+/* The slow travel, on a layer of its own. It has to be separate from the art
+   below it because both want `translate` and `rotate` - the drift over the
+   length of the track, the mood on every hit - and one element has only one of
+   each to give. Stacked, they compose. */
+.npDrift {
+  position: absolute;
+  inset: 0;
+  animation: npDrift var(--np-cycle, 24s) var(--glacier-ease-in-out) var(--np-delay, 0s) infinite
+    alternate;
+}
+
+/* The cover itself, and the layer every mood spends its reading on. Only
+   composited properties are touched per frame - scale, translate, rotate,
+   opacity - never the filter: the blur sits here, on the layer that moves, so
+   the filtered result is rasterized once and the movement is applied to that
+   rather than the blur being re-run down a subtree that changed. */
+.npArt {
+  position: absolute;
+  /* Bled past every edge so neither the drift nor a shove ever pulls the blur's
+     soft edge into view. */
+  inset: -8%;
+  background-size: cover;
+  background-position: center;
+  filter: blur(0.375rem) saturate(1.3);
+  scale: var(--np-zoom, 1.12);
+  will-change: transform, scale, opacity;
+}
+
+/* The track's own path through the box. Both ends are stated so the alternate
+   run travels across the middle rather than out and back from one corner. */
+
+/* The track's own path through the box. Both ends are stated so the alternate
+   run travels across the middle rather than out and back from one corner. */
+@keyframes npDrift {
+  from {
+    translate: calc(var(--np-drift-x, 0rem) * -1) calc(var(--np-drift-y, 0rem) * -1);
+    rotate: calc(var(--np-spin, 0deg) * -1);
+  }
+
+  to {
+    translate: var(--np-drift-x, 0rem) var(--np-drift-y, 0rem);
+    rotate: var(--np-spin, 0deg);
+  }
+}
+
+/*
+ * The moods. Each track draws one and keeps it, so a song moves the way it
+ * always moves - but the next song answers the music somewhere else entirely,
+ * which is the point: a single response, however well timed, is one effect.
+ * Every mood reads the same `--np-pulse`; they differ in what they spend it on.
+ */
+
+/* Swells toward you. The plainest of them, and the reason the others exist. */
+.nowPlayingBackdrop[data-mood='bloom'] .npArt {
+  scale: calc(var(--np-zoom, 1.12) + var(--np-pulse) * 0.03);
+}
+
+/* Shoved along an axis of its own, so the hit reads as a push rather than a
+   swell. The scale barely moves - just enough that the shove has somewhere to
+   come from. */
+.nowPlayingBackdrop[data-mood='sway'] .npArt {
+  translate: calc(var(--np-kick-x, 0rem) * var(--np-pulse))
+    calc(var(--np-kick-y, 0rem) * var(--np-pulse));
+  scale: calc(var(--np-zoom, 1.12) + var(--np-pulse) * 0.008);
+}
+
+/* Rocks about its centre. Small numbers: past a couple of degrees a blurred
+   cover stops reading as a photograph and starts reading as a spinning plate. */
+.nowPlayingBackdrop[data-mood='tilt'] .npArt {
+  rotate: calc(var(--np-kick-rot, 1deg) * var(--np-pulse));
+  scale: calc(var(--np-zoom, 1.12) + var(--np-pulse) * 0.01);
+}
+
+/* Pulls into focus. The soft copy sits over the sharp one and is dissolved by
+   the reading, so a hit resolves the art instead of moving it - the one mood
+   that changes what the cover looks like rather than where it is. Crossfaded
+   rather than animating the blur itself, which would re-filter every frame. */
+.nowPlayingBackdrop[data-mood='focus'] .npArt {
+  scale: calc(var(--np-zoom, 1.12) + var(--np-pulse) * 0.012);
+}
+
+.npArtSoft {
+  filter: blur(1.125rem) saturate(1.5);
+  opacity: calc(1 - var(--np-pulse) * 0.6);
+}
+
+/* Lights from the top. The art holds still and the accent does the work, which
+   suits a track whose cover is already busy. */
+.nowPlayingBackdrop[data-mood='flare'] .npArt {
+  scale: calc(var(--np-zoom, 1.12) + var(--np-pulse) * 0.012);
+}
+
+/* The accent, pooled where the art sits behind the title bar, brought up by the
+   same reading. Opacity only - a second blurred layer swelling in step with the
+   first would cost the frame twice and read as one thing anyway. Every mood
+   carries a little of it, so they stay a family; `flare` is mostly this. */
+.npGlow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    120% 80% at 50% 0%,
+    var(--glacier-accent-solid) 0%,
+    transparent 60%
+  );
+  opacity: calc(var(--np-pulse) * 0.16);
+  mix-blend-mode: screen;
+}
+
+.nowPlayingBackdrop[data-mood='flare'] .npGlow {
+  opacity: calc(var(--np-pulse) * 0.28);
+}
+
+/* The song's words, breathing through the wash. A layer over the glow and
+   under nothing - the whole backdrop already sits behind the content - that
+   simply steps aside (with a long fade) while nothing is audible, so a pause
+   lets the air clear rather than freezing words mid-thought. */
+/* The stage the ways lay out on, and the guarantee that they stay on it.
+   Deliberately NOT the whole backdrop: the hero is 22rem tall but its mask
+   fades to nothing well before the bottom, so type set in the lower third
+   was drawn into a band that cannot be seen. The stage is the part that
+   reads, held off the leading edge where the page title and playlist tiles
+   live.
+
+   Two things make the containment a guarantee rather than an intention:
+   `overflow: hidden`, so nothing a way lays out can ever paint past these
+   edges; and `container-type: size`, which lets every way size its type in
+   `cqh` - a share of the stage's own height - so the words scale WITH the
+   box instead of being fixed rems hoping to fit inside it. */
+.npWords {
+  position: absolute;
+  /* The band that actually reads: clear of the window's top edge, and well
+     above where the hero's mask has faded to nothing (which is also clear of
+     the song table's first row). Sitting a little lower than dead-centre of
+     that range, because the eye reads the hero's upper half as the title's.
+
+     The trailing inset is the stage's own padding, and it lives HERE rather
+     than as `padding` because every way positions absolutely - and an
+     absolutely positioned child lays out against the padding box, so padding
+     on this element would be padding the ways simply ignore. */
+  /* Nudged down: the band read high against the hero, because the type is
+     optically centred by its CAPS while the box is centred by its em - so a
+     column of uppercase sits above where the arithmetic says the middle is. */
+  inset-block: 18% 25%;
+  /* The trailing inset is the PAGE's gutter, not a number of its own: the
+     heading above and the song table below both hold `space-4` off the
+     window, so the words' right edge lands on the same line they do. */
+  inset-inline: 34% var(--glacier-space-4);
+  overflow: hidden;
+  container-type: size;
+  transition: opacity 1.4s var(--glacier-ease-out);
+}
+
+.npWords[data-quiet] {
+  opacity: 0;
+}
+
+/* One word: lowercase, letterspaced, faint, and blended into the art rather
+   than printed on it - overlay lets the cover's own light decide how much of
+   each word survives, which is what keeps it texture instead of caption. The
+   life is one animation per word: rise in, hold, breathe out; delay and
+   duration arrive inline, cut to the line's own length. */
+.npWord {
+  position: absolute;
+  white-space: nowrap;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  /* Tracking hangs 0.08em of empty advance PAST the last glyph, and the stage
+     clips overflow - so a right-aligned word lost the edge of its final letter.
+     The pad pulls the glyphs back inside the clip by exactly that overhang. */
+  padding-inline-end: 0.12em;
+  text-transform: lowercase;
+  color: #fff;
+  opacity: 0;
+  rotate: var(--hw-rot, 0deg);
+  /* Screen, not overlay: the wash is dark, and overlay keeps dark things
+     dark - the words were painted and invisible. Screen lets a faint white
+     breathe over the art like light through it. The container's own 0.4
+     opacity and its bottom mask then take their share, which is why the
+     peaks upstream look bold for something called subtle. */
+  mix-blend-mode: screen;
+  /* a breath out of focus, so a word reads as remembered rather than shown */
+  filter: blur(0.5px);
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+  will-change: opacity, translate, scale;
+  pointer-events: none;
+}
+
+/*
+ * The five ways (see WORD_WAYS in NowPlayingBackdrop) - compositions, not
+ * costumes: each lays the line out differently. What they share is the
+ * contract: everything a way draws is at opacity 0 by the line's own end
+ * (each scatter word by its own animation; every other way by its keyed
+ * container running npLineLife at the line's length), so a line change can
+ * simply swap children with nothing left mid-air.
+ */
+
+/* The shared container life: in fast, hold, gone by the line's end. */
+@keyframes npLineLife {
+  0% {
+    opacity: 0;
+  }
+
+  6% {
+    opacity: 1;
+  }
+
+  84% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+

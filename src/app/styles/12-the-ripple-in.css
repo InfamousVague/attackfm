@@ -1,0 +1,384 @@
+/* --- The ripple-in ----------------------------------------------------------
+   Scroll-driven: rippleWave.ts watches every card and reveals it the first
+   time it meets the view - at page open, scrolling down, or sliding a shelf
+   sideways - assigning each arriving batch staggered delays (the wave) and
+   ticking the Taptic Engine along the same stagger (the landings). Cards are
+   hidden from registration until their entrance; reduced motion never hides
+   and never moves, and the ticks still speak. */
+@keyframes rippleIn {
+  from {
+    opacity: 0;
+    translate: 0 12px;
+    scale: 0.97;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+    scale: 1;
+  }
+}
+
+[data-ripple-seen]:not([data-rippled]) {
+  opacity: 0;
+}
+
+[data-rippled] {
+  animation: rippleIn 0.43s var(--glacier-ease-out) backwards;
+  animation-delay: var(--ripple-d, 0ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-ripple-seen]:not([data-rippled]) {
+    opacity: 1;
+  }
+  [data-rippled] {
+    animation: none;
+  }
+}
+
+/* A shelf heading carrying an action on its right: title leads, the door
+   trails, baseline-aligned, the row keeping the title's usual margins. */
+.homeShelfHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+}
+
+.homeShelfHead .homeShelfTitle {
+  margin: 0;
+}
+
+.homeShelf {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  min-width: 0;
+}
+
+.homeShelfTitle {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.homeShelfScroll {
+  margin-inline: calc(-1 * var(--glacier-space-4));
+}
+
+/*
+ * A SEESAW, and this line is the side of it we have chosen. Read both halves
+ * before changing it, because it has now been flipped twice.
+ *
+ * `auto` (the original): the viewport is inside a vertically-scrolling page,
+ * so the engine hands almost every gesture to the page and the shelf barely
+ * moves. Sideways swiping is very hard.
+ *
+ * `pan-x pan-y` (Aug 14 - b82991e): names both axes and lets the engine lock
+ * to whichever way the finger went. Vertical drags starting on a shelf scroll
+ * the page again - but horizontal goes back to being the page's by default,
+ * which is the "hard to swipe sideways" problem all over again. Reported
+ * exactly that way.
+ *
+ * `pan-x`: horizontal is decisively the shelf's, but a vertical drag starting
+ * on a shelf is discarded - so a page of shelves is a page of dead zones.
+ *
+ * `pan-y` (here) IS NOT A THIRD SEAT ON THE SEESAW - it is getting off it, and
+ * it only reads correctly alongside shelfPan.ts. Vertical is the engine's, with
+ * its own momentum and overscroll chaining, because that is the app's primary
+ * gesture. Horizontal the engine now refuses entirely, and shelfPan drives
+ * scrollLeft from the touch events that reach it instead. Both axes work, from
+ * anywhere on a shelf.
+ *
+ * Do not "simplify" this back to pan-x or auto without deleting that module:
+ * on its own, this line means shelves do not scroll sideways at all.
+ *
+ * The overscroll pair is spelled out per-axis, and the block half is the line
+ * that actually made vertical work. The kit's ScrollArea used to seal BOTH
+ * axes with the `overscroll-behavior: contain` shorthand; a shelf has no
+ * vertical scroll of its own, so containing that axis did not keep anything
+ * inside the shelf, it stopped the drag reaching the page and the finger moved
+ * nothing at all. The kit is per-axis now, and this restates it so a future
+ * kit build cannot quietly take vertical away again.
+ */
+.homeShelfScroll [data-scrollbar-appearance] {
+  touch-action: pan-y;
+  /* sideways flings stay in the shelf */
+  overscroll-behavior-inline: contain;
+  /* downward drags belong to the page */
+  overscroll-behavior-block: auto;
+}
+
+.homeShelfRow {
+  display: flex;
+  gap: var(--glacier-space-3);
+  padding-inline: var(--glacier-space-4);
+  padding-block-end: var(--glacier-space-1);
+}
+
+/* One song on a shelf: art above two tight lines. The whole card is the
+   button; the hover lift is the same the playlist tiles wear. */
+.trackCard {
+  flex: none;
+  /* Two thirds of the old 9.5rem: more of the shelf visible at a glance,
+     which is what a shelf is for. Shared with the skeleton that holds its
+     seat, so the two cannot drift. */
+  inline-size: var(--card-track);
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.trackCardArt {
+  inline-size: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--glacier-radius-lg);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  transition: transform 0.18s var(--glacier-ease-out);
+}
+
+.trackCard:hover .trackCardArt,
+.trackCard:focus-visible .trackCardArt {
+  transform: translateY(-2px) scale(1.02);
+}
+
+.trackCardTitle {
+  font-size: 0.875rem;
+  font-weight: 550;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trackCardArtist {
+  font-size: 0.75rem;
+  color: var(--glacier-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A suggested playlist to add: a cover, its name and size, and an Add button
+   that fires the import. Wider than a track card so the button has room. */
+.suggestCard {
+  flex: none;
+  inline-size: 11rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.suggestCardCover {
+  position: relative;
+  inline-size: 100%;
+  aspect-ratio: 1;
+  border-radius: var(--glacier-radius-lg);
+  overflow: hidden;
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  background: var(--glacier-surface-sunken);
+}
+
+/* A small corner tag naming the source, so the page reads as many services at
+   a glance rather than one. Frosted so it sits on any cover art. */
+.suggestCardSource {
+  position: absolute;
+  inset-block-start: var(--glacier-space-1);
+  inset-inline-start: var(--glacier-space-1);
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--glacier-radius-sm);
+  font-size: var(--glacier-font-size-2xs, 0.65rem);
+  font-weight: var(--glacier-font-weight-semibold);
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: color-mix(in srgb, #000 55%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+
+.suggestCardSource--spotify {
+  background: color-mix(in srgb, #1db954 78%, transparent);
+}
+
+.suggestCardSource--deezer {
+  background: color-mix(in srgb, #a238ff 78%, transparent);
+}
+
+.suggestCardCover img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  /* Rounded in its own right, so the entrance wave's compositing cannot flash
+     square corners past the frame - see .searchGenre__objectArt. */
+  border-radius: inherit;
+}
+
+.suggestCardCover--glyph {
+  inline-size: 100%;
+  block-size: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--glacier-accent-text);
+}
+
+.suggestCardTitle {
+  margin-block-start: var(--glacier-space-1);
+  font-size: 0.875rem;
+  font-weight: 550;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.suggestCardBlurb {
+  font-size: 0.75rem;
+  color: var(--glacier-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The Add button: quiet accent by default, muted while adding, a settled
+   success once queued - the card's own confirmation the import is under way. */
+.suggestAddBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--glacier-space-1);
+  margin-block-start: var(--glacier-space-1);
+  padding: 0.4rem var(--glacier-space-2);
+  border-radius: var(--glacier-radius-full);
+  border: var(--glacier-hairline) solid var(--glacier-border-accent, var(--glacier-border));
+  background: var(--glacier-accent-soft, var(--glacier-surface-sunken));
+  color: var(--glacier-accent-text);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 550;
+  cursor: pointer;
+  transition: background 0.15s var(--glacier-ease-out);
+}
+
+.suggestAddBtn:hover:not(:disabled) {
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-on-accent, #fff);
+}
+
+.suggestAddBtn[data-state='adding'] {
+  color: var(--glacier-text-muted);
+  border-color: var(--glacier-border);
+  background: var(--glacier-surface-sunken);
+  cursor: default;
+}
+
+.suggestAddBtn[data-state='added'] {
+  color: var(--glacier-success-text);
+  border-color: var(--glacier-success-text);
+  background: transparent;
+  cursor: default;
+}
+
+/* The Discover page (the discover plugin's destination): the same scroll frame
+   as Home, a titled header, then a section per catalogue group laid out as a
+   browsable grid rather than a single scrolling rail - a place to go, not a
+   strip to glance past. It reuses the suggestCard the old home shelf wore. */
+.discoverPage {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--glacier-space-5) var(--glacier-space-4);
+  padding-block-end: calc(var(--app-player-height) + var(--app-nav-height, 0px));
+  display: flex;
+  flex-direction: column;
+  /* The same section rhythm the home and library pages keep. */
+  gap: var(--glacier-space-8);
+}
+
+.discoverHead {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+.discoverHead__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  flex: none;
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-accent-soft, var(--glacier-surface-sunken));
+  color: var(--glacier-accent-text);
+}
+
+.discoverHead__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  min-width: 0;
+}
+
+.discoverHead__title {
+  margin: 0;
+  font-size: clamp(1.5rem, 4.5vw, 2rem);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.discoverHead__blurb {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--glacier-text-muted);
+  max-inline-size: 46ch;
+}
+
+.discoverNote {
+  margin: 0;
+  color: var(--glacier-text-muted);
+  font-size: 0.9rem;
+}
+
+.discoverSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  min-width: 0;
+}
+
+.discoverSection__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.discoverGrid {
+  display: grid;
+  /* Covers ~33% smaller than the home shelves: a narrower column min packs more
+     per row, and the square cover fills the column, so it shrinks with it. */
+  grid-template-columns: repeat(auto-fill, minmax(6.375rem, 1fr));
+  gap: var(--glacier-space-4) var(--glacier-space-3);
+}
+
+/* In the page grid the cards fill the column instead of the shelf's fixed
+   width, so a whole section is visible at once rather than scrolling sideways. */
+.discoverGrid .suggestCard {
+  inline-size: auto;
+}
+
+/* Set cards get more room than chart tiles: a mosaic needs the width to read
+   as four covers, not four thumbnails. */
+.discoverGrid--sets {
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+}
+

@@ -1,0 +1,265 @@
+/* --- the storage breakdown ------------------------------------------------ */
+
+/*
+ * The sweep manifest: the last check's plan as a wall of small covers.
+ *
+ * State is carried on the ring, not inside the art - green settled, accent
+ * pulsing while the bytes move, red refused, dim grey waiting - so the wall
+ * reads at a glance and each tile's words live in its tooltip.
+ */
+.sweepGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(2rem, 1fr));
+  gap: var(--glacier-space-1);
+}
+
+.sweepGrid__tile {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: var(--glacier-radius-sm);
+  overflow: hidden;
+  background: var(--glacier-hover);
+  box-shadow: inset 0 0 0 2px transparent;
+}
+
+.sweepGrid__tile img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.sweepGrid__tile[data-state='done'] {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--glacier-success-solid) 65%, transparent);
+}
+
+.sweepGrid__tile[data-state='failed'] {
+  box-shadow: inset 0 0 0 2px var(--glacier-danger-solid);
+}
+
+.sweepGrid__tile[data-state='failed'] img {
+  opacity: 0.45;
+}
+
+.sweepGrid__tile[data-state='waiting'] {
+  opacity: 0.45;
+}
+
+.sweepGrid__tile[data-state='downloading'] {
+  box-shadow: inset 0 0 0 2px var(--glacier-accent-solid);
+  animation: sweepPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes sweepPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sweepGrid__tile[data-state='downloading'] {
+    animation: none;
+  }
+}
+
+/*
+ * The file browser in Downloads & space.
+ *
+ * The rows are the kit TreeView's own; these classes dress what the app puts
+ * in its slots - a two-line label (name over meta) and a cover thumb that is
+ * round for a person, square for a record. The name truncates; the sizes and
+ * the delete button never do.
+ */
+.deviceFiles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+.deviceFiles__label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-inline-size: 0;
+}
+
+.deviceFiles__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deviceFiles__meta {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  white-space: nowrap;
+}
+
+.deviceFiles__art {
+  display: grid;
+  place-items: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border-radius: var(--glacier-radius-sm);
+  overflow: hidden;
+  background: var(--glacier-hover);
+  color: var(--glacier-text-subtle);
+  flex: none;
+}
+
+.deviceFiles__art[data-circle] {
+  border-radius: 50%;
+}
+
+.deviceFiles__art img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+/* The tree's rows hold a taller label than the kit's default single line;
+   let them breathe rather than clipping the meta line. */
+.deviceFiles__tree [role='treeitem'] > span {
+  min-block-size: 2.4rem;
+}
+
+.storageBreak__totals {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.storageBreak__big {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.storageBreak__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-3);
+}
+
+.storageBreak__key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.storageBreak__key::before {
+  content: '';
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-border);
+}
+
+.storageBreak__key[data-tone='accent']::before {
+  background: var(--glacier-accent-solid);
+}
+
+.storageBreak__key[data-tone='success']::before {
+  background: var(--glacier-success-solid);
+}
+
+/* A figure waiting on its data: the chrome is real, the data is absent. It
+   dims rather than shimmers - six static rings turned into motion would be
+   noise, and the point is "not yet", not "look here". */
+.radar--pending .radar__ring,
+.radar--pending .radar__spoke {
+  opacity: 0.55;
+}
+
+.radar--pending .radar__label {
+  opacity: 0.5;
+}
+
+.dayStrip--pending .dayStrip__cell {
+  opacity: 0.1;
+  animation: dayStripPulse 1.6s ease-in-out infinite;
+}
+
+/* Starts and ends at the resting opacity, never at 0: a preview pane that
+   freezes animations must leave the strip visible, not blank. */
+@keyframes dayStripPulse {
+  0%, 100% { opacity: 0.1; }
+  50% { opacity: 0.22; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dayStrip--pending .dayStrip__cell {
+    animation: none;
+  }
+}
+
+/* A friend card holding a seat: the real card's box, without a face in it. */
+.friendCard--pending {
+  gap: var(--glacier-space-2);
+  min-block-size: 9.5rem;
+  justify-content: center;
+}
+
+/* --- skeletons on raised surfaces ---------------------------------------- */
+/*
+ * The kit's skeleton rests at `--glacier-hover` and shimmers to
+ * `--glacier-active`. In this theme `--glacier-hover` resolves to EXACTLY
+ * `--glacier-surface-raised` - oklch(0.21 0.0038 260), the same value, not
+ * merely a near one - which is the background of every card the app puts a
+ * skeleton inside. The placeholder is therefore invisible at rest and only
+ * appears for the moment the shimmer band sweeps over it: on a static
+ * screenshot four tiles out of six looked simply blank.
+ *
+ * That matters beyond a screenshot. Under `prefers-reduced-motion` the kit
+ * swaps the sweep for an opacity pulse of that same invisible colour, and a
+ * backgrounded or throttled page stops animating altogether - in each case the
+ * loading state silently becomes an empty one, which is the exact failure a
+ * skeleton exists to prevent.
+ *
+ * So on raised surfaces the placeholder drops to the sunken step and shimmers
+ * up to hover: it reads as a recess in the card, is legible with animation
+ * stopped, and still moves when motion is welcome.
+ */
+.statTile [class*='_skeleton_'],
+.serverMetric [class*='_skeleton_'],
+.friendCard [class*='_skeleton_'],
+.radarKey [class*='_skeleton_'],
+.genreBar [class*='_skeleton_'],
+.prefsSection [class*='_skeleton_'] {
+  background-color: var(--glacier-surface-sunken);
+  background-image: linear-gradient(
+    100deg,
+    var(--glacier-surface-sunken) 0%,
+    var(--glacier-hover) 50%,
+    var(--glacier-surface-sunken) 100%
+  );
+}
+
+/* The cache limit: a detented rail and the number it means. */
+.cacheLimit {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+.cacheLimit > :first-child {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.cacheLimit__value {
+  flex: none;
+  min-inline-size: 3.5rem;
+  text-align: end;
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+

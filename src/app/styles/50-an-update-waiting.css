@@ -1,0 +1,81 @@
+/* --- an update, waiting ---------------------------------------------------- */
+/*
+ * Deliberately a strip, not a dialog. By the time it appears the bundle is
+ * already downloaded and verified, so there is nothing to wait for and nothing
+ * that must be answered - the update runs at the next launch regardless. This
+ * is only the offer to have it now.
+ */
+.updateBanner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  margin: var(--glacier-space-2) var(--glacier-space-4) 0;
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg);
+  background: color-mix(in oklab, var(--glacier-accent-solid) 14%, var(--glacier-surface-raised));
+  border: var(--glacier-hairline) solid
+    color-mix(in oklab, var(--glacier-accent-solid) 40%, transparent);
+}
+
+.updateBanner__icon {
+  display: inline-flex;
+  color: var(--glacier-accent-text);
+  flex: none;
+}
+
+.updateBanner__text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.updateBanner__title {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 650;
+}
+
+.updateBanner__sub {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.updateBanner__apply {
+  flex: none;
+  border: 0;
+  cursor: pointer;
+  font-size: var(--glacier-font-size-xs);
+  font-weight: 650;
+  padding: 0.3rem var(--glacier-space-3);
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-accent-on-solid, #fff);
+}
+
+.updateBanner__close {
+  flex: none;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--glacier-text-muted);
+  padding: var(--glacier-space-1);
+  border-radius: var(--glacier-radius-sm);
+}
+
+.updateBanner__close:hover {
+  background: var(--glacier-hover);
+  color: var(--glacier-text);
+}
+
+/* The banner's first line: everything that was there before the notes were
+   added, now its own row inside the column. */
+.updateBanner__row {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  inline-size: 100%;
+}
+

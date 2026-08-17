@@ -1,0 +1,193 @@
+/* --- Desktop: Link a device ----------------------------------------------- */
+.linkDevice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--glacier-fg, #fff) 4%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--glacier-fg, #fff) 8%, transparent);
+}
+.linkDevice__qr {
+  inline-size: 220px;
+  max-inline-size: 60vw;
+  height: auto;
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px;
+  transition: opacity 0.2s ease;
+}
+.linkDevice__qr[data-expired] {
+  opacity: 0.28;
+  filter: grayscale(1);
+}
+.linkDevice__code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.5rem;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+}
+
+/* The empty-state block: spot art centred over its one line of guidance. */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-4);
+  text-align: center;
+  padding-block: var(--glacier-space-6);
+}
+.emptyState--tall {
+  padding-block: var(--glacier-space-10);
+}
+.emptyState__text {
+  color: var(--glacier-text-muted);
+  max-inline-size: 24rem;
+}
+
+/* Empty-state spot art. A light/dark pair per motif, each painted on the exact
+   page-background hex so it melts into the page. Which one shows is pure CSS,
+   mirroring appearance.tsx: system (no data-theme) follows prefers-color-scheme,
+   an explicit data-theme overrides it. */
+.emptyArt {
+  display: flex;
+  justify-content: center;
+  margin-inline: auto;
+  inline-size: min(60%, 15rem);
+  max-inline-size: 15rem;
+  pointer-events: none;
+  user-select: none;
+}
+.emptyArt__img {
+  display: none;
+  inline-size: 100%;
+  block-size: auto;
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  /* Every motif is centred well inside its square, so fading the outer ring to
+     transparent dissolves any residual box - a per-image background that isn't
+     a pixel-exact match for the page - into the real page colour underneath. */
+  -webkit-mask-image: radial-gradient(circle at center, #000 68%, transparent 100%);
+  mask-image: radial-gradient(circle at center, #000 68%, transparent 100%);
+}
+/* System preset: no data-theme attribute — follow the OS scheme. */
+:root:not([data-theme]) .emptyArt__img--light {
+  display: block;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .emptyArt__img--light {
+    display: none;
+  }
+  :root:not([data-theme]) .emptyArt__img--dark {
+    display: block;
+  }
+}
+/* Explicit choice wins over the OS scheme. */
+:root[data-theme='light'] .emptyArt__img--light {
+  display: block;
+}
+:root[data-theme='dark'] .emptyArt__img--dark {
+  display: block;
+}
+
+/* The served object, worn as a card on a bold ground: the shot's white
+   multiplies away into the gradient beneath, so an empty page opens on a
+   frosted object floating in colour rather than a white square. The wrapper
+   owns the gradient; the image only has to burn its ground off. */
+.emptyArt:has(.emptyArt__img--served) {
+  border-radius: var(--glacier-radius-xl, 1rem);
+  overflow: hidden;
+  background: linear-gradient(
+    140deg,
+    hsl(var(--emptyArtHue, 320) 62% 52%),
+    hsl(calc(var(--emptyArtHue, 320) + 55) 58% 34%)
+  );
+}
+
+.emptyArt__img--served {
+  display: block;
+  -webkit-mask-image: none;
+  mask-image: none;
+  object-fit: cover;
+  mix-blend-mode: multiply;
+  border-radius: inherit;
+}
+
+/* ---- Hero art -----------------------------------------------------------
+
+   The same painted light/dark pair EmptyArt draws, but worn as a HERO that
+   FILLS its box (a tile, a page cover) rather than a spot dissolved into the
+   page: no dissolve mask, no server swap, object-fit cover edge to edge. The
+   parent must be positioned and clip (e.g. .tileSquircle, .songPageHero). */
+.heroArt {
+  position: absolute;
+  inset: 0;
+}
+/* Larger and tilted: the page hero sits like an object dropped on its ground,
+   not a flat fill - scaled up past the frame (the rounded parent crops the
+   overflow) and turned a few degrees, Liked leaning one way and All the other.
+   The scale stays above cos+sin of the angle, so the turned square still covers
+   its box with no bare corner. (The home shelf uses chips now - see
+   .libChip__art for their tilt; this is the full-page hero.) */
+.songPage--liked .songPageHero .heroArt {
+  transform: scale(1.25) rotate(-8deg);
+}
+.songPage--all .songPageHero .heroArt {
+  transform: scale(1.25) rotate(8deg);
+}
+.heroArt__img {
+  display: none;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+/* Theme selection mirrors .emptyArt__img exactly: no data-theme follows the OS,
+   an explicit data-theme wins - so the picture never drifts from its surface. */
+:root:not([data-theme]) .heroArt__img--light {
+  display: block;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .heroArt__img--light {
+    display: none;
+  }
+  :root:not([data-theme]) .heroArt__img--dark {
+    display: block;
+  }
+}
+:root[data-theme='light'] .heroArt__img--light {
+  display: block;
+}
+:root[data-theme='dark'] .heroArt__img--dark {
+  display: block;
+}
+
+/* ---- Skeleton shelves and the library stats card ------------------------ */
+
+/* A skeleton card: the exact footprint of the card family it stands in for,
+   so the swap to content moves nothing. */
+.shelfGhost {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.shelfGhost[data-center] {
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+/* The library in numbers: one card, an icon beside each figure. It wraps on a
+   phone rather than shrinking - five stats forced into one 375px row would be
+   confetti. */
+.libStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2) var(--glacier-space-5);
+  padding: var(--glacier-space-3) var(--glacier-space-4);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+}
+

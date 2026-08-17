@@ -1,0 +1,92 @@
+/* --- summoned search ------------------------------------------------------- */
+/* The overlay a pull (or ⌘K) drops over the page: the whole SearchPage,
+   sliding down from the top, gone the same way. Above the nav and player -
+   a summons owns the screen while it is up. */
+.searchSummon {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: var(--glacier-surface);
+  animation: summonDrop 0.26s var(--glacier-ease-out);
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+@keyframes summonDrop {
+  from {
+    opacity: 0;
+    transform: translateY(-14px);
+  }
+}
+
+.searchSummon__bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+}
+
+.searchSummon__grab {
+  inline-size: 2.4rem;
+  block-size: 0.3rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--glacier-text) 18%, transparent);
+}
+
+.searchSummon__close {
+  position: absolute;
+  inset-inline-end: var(--glacier-space-2);
+  inset-block-start: 50%;
+  translate: 0 -50%;
+}
+
+.searchSummon .searchPage {
+  flex: 1;
+  min-block-size: 0;
+}
+
+/* The mid-pull pill: appears while the finger is past the threshold. */
+.summonPull {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
+  left: 50%;
+  translate: -50% 0;
+  z-index: 59;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  box-shadow: var(--glacier-shadow-3);
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+  animation: summonDrop 0.18s var(--glacier-ease-out);
+}
+
+/* The one-time teacher: a chip under the header until the pull is used once. */
+.summonHintChip {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 3.4rem);
+  left: 50%;
+  translate: -50% 0;
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--glacier-font-size-xs);
+  font-weight: 600;
+  color: var(--glacier-accent-text);
+  background: color-mix(in oklab, var(--glacier-accent-solid) 14%, var(--glacier-surface-raised));
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  box-shadow: var(--glacier-shadow-2);
+}
+

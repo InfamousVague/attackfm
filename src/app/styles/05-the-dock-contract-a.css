@@ -1,0 +1,359 @@
+/* --- The dock contract ------------------------------------------------------
+   On the unfolded split the app owns the left pane and the Now Playing card
+   the right - but everything portalled to the BODY still positions against
+   the whole viewport unless told otherwise, which is how toasts ended up
+   sliding behind the card mid-sentence and takeovers buried the player they
+   were about. Every body-level floater gets a docked rule here: centered
+   things re-center on the app pane; takeovers stop at the seam (the search,
+   the settings, the DJ conversation - the card stays beside them); Music
+   Date alone keeps the whole screen, because a date wants no chaperone. */
+
+/* Tap-anywhere dismiss must include taps on the card, or the ⋯ menu simply
+   refuses to close over a third of the screen. The scrim paints nothing, so
+   sitting above the dock costs one swallowed tap, not a covered player - and
+   the menu must climb with it, or it ends up under its own scrim. */
+body:has(.npScreen[data-docked]) .appNavMore__scrim {
+  z-index: 55;
+}
+
+body:has(.npScreen[data-docked]) .appNavMore__menu {
+  z-index: 56;
+}
+
+/* The kit's own body-mounted layers - dialogs, the trait-sheet drawer, alert
+   boxes, toasts - are fixed inset:0 against the viewport: a dialog dims the
+   card it has nothing to say about, and the bottom drawer rides up OVER it.
+   Shrinking the overlay re-scopes everything inside (panels size against the
+   overlay), so one inset moves the whole family into the app's pane.
+   The hashed selectors pin the current kit build; a rebuild that changes
+   them fails soft - overlays return to full-viewport, nothing breaks. */
+body:has(.npScreen[data-docked]) div[class*='_overlay_1r4l3_'],
+body:has(.npScreen[data-docked]) div[class*='_overlay_1mvue_'],
+body:has(.npScreen[data-docked]) div[class*='_overlay_10yq3_'],
+body:has(.npScreen[data-docked]) div[class*='_viewport_1nbns_'] {
+  inset-inline-end: var(--np-dock-width);
+}
+
+body:has(.npScreen[data-docked]) .settingsScreen,
+body:has(.npScreen[data-docked]) .searchSummon,
+body:has(.npScreen[data-docked]) .djLayer {
+  inset-inline-end: var(--np-dock-width);
+}
+
+body:has(.npScreen[data-docked]) .summonPull,
+body:has(.npScreen[data-docked]) .summonHintChip {
+  left: calc((100% - var(--np-dock-width)) / 2);
+}
+
+/* Transform only - never opacity. An animation that is frozen at its first
+   frame (a throttled or backgrounded webview does exactly this: the animation
+   reports "running" while its clock never advances) would leave an
+   opacity-animated menu permanently invisible. Frozen here, the worst case is
+   a menu sitting six pixels low, which nobody will notice and everybody can
+   still read. */
+@keyframes navMoreRise {
+  from {
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    transform: none;
+  }
+}
+
+.appNavBarPlugins__item {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3) var(--glacier-space-4);
+  border: none;
+  border-radius: var(--glacier-radius-lg, 0.9rem);
+  background: none;
+  cursor: pointer;
+  color: var(--glacier-text);
+  text-align: start;
+  white-space: nowrap;
+}
+
+.appNavBarPlugins__divider {
+  display: block;
+  block-size: var(--glacier-hairline, 1px);
+  margin: var(--glacier-space-1) var(--glacier-space-2);
+  background: var(--glacier-border-subtle);
+}
+
+.appNavBarPlugins__item:hover {
+  background: var(--glacier-surface-hover, rgba(127, 127, 127, 0.14));
+}
+
+.appNavBarPlugins__item[data-active] {
+  color: var(--glacier-accent-text);
+}
+
+.appNavBarPlugins__itemIcon {
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.appNavBarPlugins__itemLabel {
+  font-size: var(--glacier-font-md, 1rem);
+  font-weight: 550;
+}
+
+/* The raised centre: the app icon itself, lifted so it overhangs the island's
+   top edge, ringed in the page background to cut it cleanly from the card, and
+   haloed in the accent so it reads as the prominent home button. */
+/* The kit nests its items in an inner container sized to their content; make
+   it fill the bar so the tabs divide the full width between them. */
+.appNavBar [class*="_items_"] {
+  flex: 1;
+  inline-size: 100%;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+
+/* A tab: an equal share of the width, glyph over label. Overrides the kit's
+   labelled-item row (fixed height, side-by-side, inline padding), which is
+   sized for a desktop nav rather than a phone's bottom bar. */
+/* The old kit-NavBar bar rules (.appNavBar button/a sizing, the _items_/_label_/
+   _indicator_ hashed-class hooks) lived here. The phone bar is custom markup
+   now - a group each side of the raised centre - so those rules are gone; the
+   tab and centre styles above are the whole of it. */
+
+/* How far the bottom nav band pushes the player up. Zero where the band does
+   not exist (desktop); measured where it does. :has keys it on the nav's
+   actual presence, so no JS and no media query can drift from truth. */
+.appWindow {
+  --app-nav-height: 0px;
+  /* The island's own height lives on :root (with --np-dock-width), because
+     the body-portalled ⋮ menu positions against it and a var scoped here is
+     invisible out there. */
+  /* What the nav card holds back from the screen's edges - the same margin on
+     the sides and underneath, so the card sits in an even frame rather than
+     floating wide and welded low. Matched to the player plate's own inset (its
+     padding, over an inset-inline of 0), so the two plates line up down both
+     sides instead of stepping in and out. */
+  --app-nav-inset: var(--glacier-space-2);
+  /* Breathing room above the tab row. The tabs are centred in the island band,
+     which already leaves a few pixels over them - this is the REST of the way
+     to the same gap the card keeps at its sides, so the selected squircle sits
+     in an even frame instead of riding the top edge. Added to the card's height
+     as well as its padding, so the tabs keep their size rather than being
+     squeezed by it. */
+  --app-nav-pad-top: var(--glacier-space-1);
+  /* The chin: the band of card below the tabs that drapes over the home
+     indicator's strip, so that space carries the nav - contoured to the
+     screen's bottom by --app-nav-chin-radius - instead of nothing. */
+  /* A FRACTION of the safe area, not all of it. The full inset is the space
+     iOS reserves so nothing important lands under the home indicator, which is
+     more room than the card needs to sit behind it - drawn in full it made the
+     bar bottom-heavy. Three quarters still carries the card past the indicator
+     while giving that weight back. A multiplier rather than a subtraction so
+     it stays exactly 0 where there is no safe area at all (desktop, and any
+     phone without an indicator), instead of going negative. */
+  --app-nav-chin: calc(var(--app-safe-bottom) * 0.75);
+  /* The iPhone's own screen corner. In px, not rem: it is the physical curve of
+     the glass and does not move when the interface-size setting does. ~55pt is
+     the modern Pro; a few points either way is invisible behind a corner this
+     large. */
+  --app-screen-radius: 55px;
+  /* The chin's bottom corners. Not a taste value - two rounded rectangles stay
+     concentric when the inner one's radius is the outer's MINUS the gap between
+     them, so a card held --app-nav-inset off the screen wants exactly this to
+     run parallel to the glass instead of cutting across it. Flat 2.25rem read
+     too tight against the curve. */
+  --app-nav-chin-radius: calc(var(--app-screen-radius) - var(--app-nav-inset));
+  /* Nothing rises above the card any more - the raised centre button is gone -
+     so the band the player used to clear for it is zero. Kept as a name rather
+     than deleted because three formulas read it, and a nav that grows a
+     protruding element again wants exactly one place to say so. */
+  --app-nav-overhang: 0px;
+  /* What separates the player plate from the raised button above the nav. */
+  --app-nav-gap: var(--glacier-space-2);
+  /* One tab's height, named so the bar and the band it occupies cannot drift:
+     a glyph, a hairline gap and a small label, with room to tap. */
+  --app-nav-item-height: 2.5rem;
+  /* Tab names sit at the size a phone's own tab bar uses: small enough that
+     six of them fit across a narrow screen without a name being clipped. */
+  --app-nav-label-size: 0.5625rem;
+}
+
+/* Android's screen corners are not ours to contour to - the webview sits
+   inside the system's own insets, and the concentric sweep tuned to an
+   iPhone's glass reads as extra rounding. The chin keeps its height (the
+   gesture bar still wants covering); only the corners come back to the same
+   radius the card's top wears. */
+html[data-platform='android'] .appWindow {
+  --app-nav-chin-radius: var(--glacier-radius-2xl, 1.75rem);
+  /* And no safe-area chin at all: Android's webview already sits above the
+     system's gesture strip, so the drape an iPhone needs would just be dead
+     card. The bottom keeps exactly the top's breathing room instead - the
+     tab row floats centred in an even frame. */
+  --app-nav-chin: var(--app-nav-pad-top);
+}
+
+.appWindow:has(.appNavBar) {
+  /* The nav's footprint, measured from the very bottom: the brand button's
+     overhang above the card, the tab band, and the chin that carries the card
+     down to the screen's edge. The player and the blur scrim clear exactly
+     this, so nothing tucks under the card or the raised button. */
+  --app-nav-height: calc(
+    var(--app-nav-overhang) + var(--app-nav-island-height) + var(--app-nav-chin) +
+      var(--app-nav-inset) + var(--app-nav-pad-top)
+  );
+}
+
+.appContent {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* Above the backdrop; its own panels are transparent, so the blur shows
+     through behind the showcase while the table's surface hides it lower down. */
+  position: relative;
+  z-index: 1;
+}
+
+/* One notification kind: its switch, and the line saying when it fires. The
+   gap is tighter than the section's own so the hint reads as belonging to the
+   switch above it rather than as the next item down. */
+.notifyKind {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+/*
+ * The wrapper around the strip. It catches the bubbling tap that lifts the
+ * full-screen player, and it is the plate the dismiss swipe pushes.
+ *
+ * It was display:contents while listening was all it did - nothing can be
+ * moved out of a layout it was never in, and the swipe needs something to
+ * move. A plain block lands exactly where the strip already sat: .appPlayer
+ * is an absolutely positioned band with padding and no flow of its own, so
+ * the wrapper fills its content box and the strip fills the wrapper.
+ *
+ * No transform at rest, deliberately: a transformed element becomes the
+ * containing block for any fixed-position descendant, and the strip carries
+ * popovers and menus. Only the two moving states below declare one, and
+ * neither can be open while one of them holds.
+ */
+.playerBarShell {
+  transition:
+    transform var(--player-ease, var(--glacier-duration-normal)) var(--glacier-ease-out),
+    opacity var(--player-ease, var(--glacier-duration-normal)) var(--glacier-ease-out);
+}
+
+/* Under the finger the offset IS the finger, so there is nothing to ease
+   towards - a duration here would drag the plate a frame behind the hand. */
+.playerBarShell[data-dragging] {
+  --player-ease: 0s;
+  transform: translateY(var(--player-drag, 0px));
+}
+
+/*
+ * Pushed away: out the bottom by the same distance playerRise brings it in
+ * from, so it leaves the way it came - down and behind the nav rather than
+ * across it. Declared after the dragging rule and at equal specificity, so
+ * on the one frame where both hold (React commits the attribute after the
+ * touch ends) this is what wins, and the plate carries on from where the
+ * finger let go instead of snapping back first.
+ *
+ * pointer-events off because a plate below the screen is still a plate, and
+ * its buttons would go on taking presses aimed at the nav above them.
+ */
+.playerBarShell[data-dismissed] {
+  --player-ease: var(--glacier-duration-normal);
+  transform: translateY(calc(100% + var(--app-nav-height) + var(--app-nav-gap, 0px)));
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ...and the band it was holding goes back to the page, the same discipline
+   as the no-strip and Date-mode rules above: a reservation must not outlive
+   the thing it reserves for. */
+.appWindow:has(.playerBarShell[data-dismissed]) {
+  --app-player-height: 0rem;
+}
+
+/* ── Liked & All songs: the library's two whole-collection views ────────────
+   Built like the Browse tiles on the search page, because they answer the same
+   kind of question - here is a slice of the library, go and look at it - and
+   two surfaces answering the same question should not be two different shapes.
+   Same bold hue gradient, same object bled across the face, same name-over-count
+   at the foot. Half the row each, so the pair reads as a pair. */
+.libShelf {
+  margin-block-end: var(--glacier-space-4);
+}
+
+.libChips {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--glacier-space-2);
+}
+
+.libChip {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0.125rem;
+  min-block-size: 5rem;
+  padding: var(--glacier-space-3);
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  background: linear-gradient(
+    140deg,
+    hsl(var(--libChipHue, 280) 62% 48%),
+    hsl(calc(var(--libChipHue, 280) + 42) 56% 32%)
+  );
+  color: #fff;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: transform var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.libChip:active {
+  transform: scale(0.985);
+}
+
+/*
+ * The chips in light mode.
+ *
+ * Their gradient is fixed hsl() with no theme branch, and each face is a
+ * single dark-rendered PNG multiplied into it - so all three tiles came out
+ * byte-identical in both themes, which is the "dark-mode fills on a light
+ * page" of it. There is no light render of the heart, the scroll or the
+ * arrows to swap to (unlike src/assets/empty/, which ships pairs), so the
+ * tile moves instead of the object: a lighter, more saturated ground gives
+ * the dark face something to multiply DOWN into, and the object reads as an
+ * object rather than a smudge.
+ *
+ * Same three cases the wordmark handles (.mobileHeader__logo): the media
+ * query catches a system-following app on a light phone, the attribute rule
+ * catches a pinned light theme.
+ */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .libChip {
+    background: linear-gradient(
+      140deg,
+      hsl(var(--libChipHue, 280) 72% 62%),
+      hsl(calc(var(--libChipHue, 280) + 42) 64% 46%)
+    );
+  }
+}
+
+:root[data-theme='light'] .libChip {
+  background: linear-gradient(
+    140deg,
+    hsl(var(--libChipHue, 280) 72% 62%),
+    hsl(calc(var(--libChipHue, 280) + 42) 64% 46%)
+  );
+}
+

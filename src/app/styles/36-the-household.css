@@ -1,0 +1,99 @@
+/* ---- The household ------------------------------------------------------ */
+
+/* Accounts this device knows, as faces you can take. */
+.householdRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+}
+
+.householdCard {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-2);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+}
+
+.householdCard__name {
+  font-weight: 600;
+  max-inline-size: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The song menu is a wrapper, not a box: it must not become a layout element
+   between a list and its rows, or the row loses its grid/flex parent and the
+   sortable list loses its drag target. `contents` keeps the row exactly where
+   it was and only adds the long-press/right-click behaviour. */
+.playlistRowMenu,
+.queueRowMenu,
+.catalogTrackMenu {
+  display: contents;
+}
+
+/* Whose taste this is: a jam's queue is other people's songs arriving in
+   yours, and the row should say so without shouting. */
+.queueRow__credit {
+  margin-inline-start: var(--glacier-space-2);
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+  font-size: var(--glacier-font-size-2xs, 0.65rem);
+  font-weight: var(--glacier-font-weight-semibold);
+}
+
+/* The guest's read-only run: the room's list, in the room's order. */
+.queueRows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.queueRow[data-static] {
+  cursor: default;
+}
+
+/* ---- Joining a jam by code --------------------------------------------- */
+
+/* The code on the host's own card: a control, because its job is to be
+   copied, and monospaced because it is about to be read out loud. */
+.jamLive__code {
+  margin-inline-start: var(--glacier-space-2);
+  padding: 0.05rem 0.45rem;
+  border: var(--glacier-hairline) solid var(--glacier-accent-border);
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-text);
+  font-family: var(--glacier-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: var(--glacier-font-size-2xs, 0.65rem);
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+/* The other end of it: six characters and you are in the room. */
+.jamJoin {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  flex-wrap: wrap;
+}
+
+.jamJoin__field {
+  flex: 1;
+  min-inline-size: 0;
+  font-family: var(--glacier-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  letter-spacing: 0.1em;
+}
+
+/* More wrappers that must not become layout: see .playlistRowMenu. */
+.playlistModalMenu,
+.discoverSetRowMenu,
+.songTitleMenuTarget {
+  display: contents;
+}
+

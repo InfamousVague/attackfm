@@ -1,0 +1,462 @@
+/* ---- The Downloads page --------------------------------------------------
+   A queue is watched, not glanced at, so the page opens on a status strip:
+   the counts as tiles, then the queue split into what is coming down, what
+   waits, and what is finished. */
+
+.dlHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-3);
+}
+
+.dlStats {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  flex-wrap: wrap;
+}
+
+/* One count, worn as a tile: the glyph carries the meaning and the tone
+   carries the mood, so four of these read at a glance without a legend. */
+.dlStat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  background: var(--glacier-surface);
+}
+
+.dlStat__icon {
+  align-self: center;
+  display: flex;
+  color: var(--glacier-text-muted);
+}
+
+.dlStat__num {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.dlStat__label {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.dlStat[data-tone='active'] .dlStat__icon {
+  color: var(--glacier-accent-text);
+}
+
+.dlStat[data-tone='done'] .dlStat__icon {
+  color: var(--glacier-success-text, var(--glacier-text-muted));
+}
+
+.dlStat[data-tone='error'] {
+  border-color: var(--glacier-danger-border, var(--glacier-border));
+}
+
+.dlStat[data-tone='error'] .dlStat__icon,
+.dlStat[data-tone='error'] .dlStat__num {
+  color: var(--glacier-danger-text, var(--glacier-text));
+}
+
+.dlHead__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.dlHead__note {
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.dlPaused {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  margin: 0;
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-accent-soft);
+  border: var(--glacier-hairline) solid var(--glacier-accent-border);
+  color: var(--glacier-text);
+  font-size: var(--glacier-font-size-sm);
+}
+
+.dlSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+.dlSection__title {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+
+.dlSection__icon {
+  display: flex;
+  color: var(--glacier-text-muted);
+}
+
+.dlSection__count {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The kind and the source, worn as marks beside the counts. */
+.dlChip--kind {
+  text-transform: capitalize;
+}
+
+/* Who is pulling this. It leads the meta row and wears the accent, because
+   with several queues on one page the owner is the first thing that tells two
+   otherwise identical cards apart - and it is absent entirely when there is
+   only one queue to own anything. */
+.dlChip--source {
+  color: var(--glacier-accent-text);
+  border-color: color-mix(in srgb, var(--glacier-accent-solid) 40%, transparent);
+}
+
+.dlCard__progress {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.dlCard__progress .dlCard__bar {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.dlCard__pct {
+  flex: none;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The song list's door: quiet until asked, and it says how many are behind
+   it so the ask is informed. */
+.dlCard__toggle {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--glacier-text-muted);
+  font: inherit;
+  font-size: var(--glacier-font-size-xs);
+  cursor: pointer;
+}
+
+.dlCard__toggle:hover {
+  color: var(--glacier-text);
+}
+
+.dlCard__chev {
+  transition: transform var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.dlCard__chev[data-open] {
+  transform: rotate(180deg);
+}
+
+/* A failed card wears its trouble on its edge, so the eye finds it in a
+   long finished list without reading a word. */
+.dlCard[data-state='error'] {
+  border-color: var(--glacier-danger-border, var(--glacier-border));
+}
+
+.downloadsEmpty {
+  color: var(--glacier-text-muted);
+  padding: var(--glacier-space-6) var(--glacier-space-2);
+  text-align: center;
+}
+
+/* The full-page queue is NOT the popover: no inner clamp, no nested scroller.
+   The page itself scrolls (it is a .homePage), so the cards run under the
+   bottom nav and dissolve into its blur like every other page's content.
+   Doubled selector so this outweighs the popover's mobile 60vh clamp. */
+.dlList.downloadsList {
+  margin-block-start: var(--glacier-space-3);
+  max-block-size: none;
+  overflow-y: visible;
+}
+
+/* And the per-song lists inside the page's cards follow suit: fully expanded
+   at every width, no scroller-in-scroller. */
+.downloadsList .dlTracks {
+  max-block-size: none;
+  overflow-y: visible;
+}
+
+/* The Library's Summary / All-songs tab switch, under the header title. */
+/* The per-song sub-list under an album/playlist import. */
+.dlTracks {
+  margin: 0.35rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  max-block-size: 11rem;
+  overflow-y: auto;
+  border-inline-start: var(--glacier-hairline, 1px) solid var(--glacier-border);
+  padding-inline-start: var(--glacier-space-3);
+}
+
+.dlTrack {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  min-width: 0;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.dlTrack__icon {
+  flex: none;
+  inline-size: 0.9rem;
+  block-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--glacier-text-muted);
+}
+
+.dlTrack__dot {
+  inline-size: 0.3rem;
+  block-size: 0.3rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-border-strong, var(--glacier-border));
+}
+
+.dlTrack__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dlTrack--done {
+  color: var(--glacier-text);
+}
+
+.dlTrack--done .dlTrack__icon {
+  color: var(--glacier-success-text, var(--glacier-accent-solid));
+}
+
+.dlTrack--downloading {
+  color: var(--glacier-text);
+}
+
+.dlTrack--downloading .dlTrack__icon {
+  color: var(--glacier-accent-text, var(--glacier-accent-solid));
+}
+
+.dlTrack--error .dlTrack__icon {
+  color: var(--glacier-danger-text, var(--glacier-text-muted));
+}
+
+/* On a phone (or a window that narrow) the queue keeps its FULL track lists -
+   every song a playlist import is fetching, visible - but flattened into one
+   scroll: the per-playlist inner clamp is lifted so the outer list is the only
+   thing that scrolls. A nested scroller inside a scroller is unusable under a
+   thumb, and hiding the tracks outright (the previous answer here) read as the
+   queue losing songs. Cards stay compact, and the content fills the popover,
+   which the popover rule above has already stretched to the screen's width. */
+@media (pointer: coarse), (max-width: 540px) {
+  .dlPanel {
+    inline-size: 100%;
+  }
+
+  .dlTracks {
+    max-block-size: none;
+    overflow-y: visible;
+  }
+
+  .dlCard {
+    gap: var(--glacier-space-2);
+    padding: var(--glacier-space-1) var(--glacier-space-2);
+    align-items: center;
+  }
+
+  .dlCard__art {
+    inline-size: 2.5rem;
+    block-size: 2.5rem;
+  }
+
+  .dlList {
+    max-block-size: 60vh;
+  }
+}
+
+/* The Spotify tab's account and library rows: art, name over detail, and the
+   sync affordance at the end. The art square doubles as its own placeholder -
+   an empty span keeps the grid when a playlist carries no image. */
+.spotifyAccountRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+}
+
+.spotifyLists {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  max-block-size: 24rem;
+  overflow-y: auto;
+  padding-inline-end: var(--glacier-space-2);
+}
+
+.spotifyRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface-sunken);
+}
+
+.spotifyRowArt {
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  flex: none;
+  border-radius: var(--glacier-radius-sm);
+  object-fit: cover;
+  background: var(--glacier-surface);
+}
+
+.spotifyRowCopy {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.spotifyRowName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Back + wordmark as one leading cluster in the mobile header, mirroring how
+   the desktop title bar seats its nav beside the logo. */
+/* Takes the row's leftover width rather than leaving it in the gap: with a
+   thumbnail and a name in here, every spare pixel is one the name can use
+   before it starts truncating. */
+.mobileHeader__nav {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}
+
+/* ── Connect device picker ───────────────────────────────────────────────── */
+
+/* The trigger takes the brand colour whenever there is live playback: when
+   this device is the one playing, and equally when it is playing on another
+   device (the standard "it's playing over there" tell). Uses the solid accent,
+   not the near-white `--glacier-accent`, so it actually reads against the idle
+   white icon. */
+.deviceTrigger[data-connected],
+.deviceTrigger[data-active] {
+  color: var(--glacier-accent-solid);
+}
+
+.devicePanel {
+  min-inline-size: 15rem;
+  max-inline-size: min(20rem, calc(100vw - 2rem));
+  padding: var(--glacier-space-2);
+}
+
+.deviceList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.deviceList__head {
+  padding: var(--glacier-space-1) var(--glacier-space-2);
+}
+
+/* One device: kind glyph, name over state, a check when it is the one playing.
+   The whole row is the tap target that moves playback there. */
+.deviceRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2);
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  background: transparent;
+  color: var(--glacier-text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.deviceRow:hover:not(:disabled),
+.deviceRow:focus-visible {
+  background: var(--glacier-surface-sunken);
+}
+
+.deviceRow:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.deviceRow[data-active] {
+  color: var(--glacier-accent-text);
+}
+
+.deviceRow__icon {
+  flex: none;
+  display: flex;
+}
+
+.deviceRow__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.deviceRow__name {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 550;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.deviceRow__state {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.deviceRow[data-active] .deviceRow__state {
+  color: var(--glacier-accent-text);
+}
+
+.deviceRow__check {
+  flex: none;
+  display: flex;
+  color: var(--glacier-accent-text);
+}
+

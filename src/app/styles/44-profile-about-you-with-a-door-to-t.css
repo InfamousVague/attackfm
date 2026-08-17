@@ -1,0 +1,100 @@
+/* --- Profile: about you, with a door to the people ----------------------- */
+
+
+
+/* The row that says "there is something through here". */
+.profileDoor {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  inline-size: 100%;
+  padding: var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+  margin-block-end: var(--glacier-space-4);
+}
+
+.profileDoor:hover {
+  background: var(--glacier-hover);
+}
+
+/* Overlapped faces: a crowd at a glance, in the width of two. */
+.profileDoor__faces {
+  display: flex;
+  align-items: center;
+  flex: none;
+  color: var(--glacier-text-muted);
+}
+
+.profileDoor__face:not(:first-child) {
+  margin-inline-start: -0.6rem;
+}
+
+.profileDoor__face {
+  box-shadow: 0 0 0 2px var(--glacier-surface-raised);
+  border-radius: var(--glacier-radius-full);
+}
+
+.profileDoor__text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.profileDoor__title {
+  font-weight: 650;
+}
+
+.profileDoor__sub {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profileDoor__chevron {
+  flex: none;
+  color: var(--glacier-text-muted);
+}
+
+/* --- the Friends page ---------------------------------------------------- */
+
+.friendsPage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  padding-block-end: calc(var(--app-player-height) + var(--app-nav-height, 0px));
+}
+
+.friendsPage__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.friendsPage__foot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--glacier-space-1);
+  margin-block-start: var(--glacier-space-4);
+  padding-block-start: var(--glacier-space-3);
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.friendsPage__shareToggle {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-accent-text);
+  cursor: pointer;
+  text-decoration: underline;
+}
+

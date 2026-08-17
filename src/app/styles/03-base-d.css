@@ -1,0 +1,352 @@
+/* The diffraction: the full spectrum run three times around the rim, the way
+   a disc's data grooves split the light, with a thinner echo just outside the
+   hub. One conic gradient, carved into the two rings by a radial mask, and
+   screened over the print so it reads as light on the surface rather than
+   paint. It sits outside the turning face and holds still: it is a light
+   effect, and the light does not spin with the disc. */
+.spinningDisc__sheen {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  /* Low-chroma pastels rather than the full rainbow: a disc edge catches
+     light as a silvery shimmer with a hint of spectrum, not a colour wheel. */
+  background: repeating-conic-gradient(
+    from 15deg,
+    oklch(0.86 0.05 25) 0deg,
+    oklch(0.89 0.04 95) 20deg,
+    oklch(0.89 0.05 155) 40deg,
+    oklch(0.87 0.04 215) 60deg,
+    oklch(0.84 0.05 285) 85deg,
+    oklch(0.85 0.05 345) 105deg,
+    oklch(0.86 0.05 385) 120deg
+  );
+  /* One hairline at the rim, stated in pixels against the disc's true edge
+     (closest-side puts 100% exactly there), so the hologram stays a fine
+     line whatever size the strip hands the disc. The hub keeps its own 1px
+     border; a spectral echo on top of it read as one thick outline. */
+  -webkit-mask-image: radial-gradient(
+    circle closest-side at 50%,
+    transparent 0 calc(100% - max(5.5%, 4px)),
+    rgb(0 0 0 / 0.35) calc(100% - max(4.5%, 3px)) calc(100% - 2.5px),
+    black calc(100% - 1.5px) 100%
+  );
+  mask-image: radial-gradient(
+    circle closest-side at 50%,
+    transparent 0 calc(100% - max(5.5%, 4px)),
+    rgb(0 0 0 / 0.35) calc(100% - max(4.5%, 3px)) calc(100% - 2.5px),
+    black calc(100% - 1.5px) 100%
+  );
+  mix-blend-mode: screen;
+  opacity: 0.5;
+}
+
+/* The frosted hub: the same material as the rim's frost - the two ends of
+   the disc wear one plastic - with the clamping ring a real disc carries
+   moulded in as a few concentric ridges. Each ridge is a highlight ring over
+   a shadow ring, which is how a raised circle reads under one light. The
+   spindle hole itself stays CLEAR: the frost starts outside it, so the
+   strip's glass still shows through the middle. Like the rim, all of it
+   holds still while the print turns underneath - it is material, not label. */
+.spinningDisc__hub {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 34%;
+  height: 34%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  /* The frost is REAL now: the hub blurs the print behind it the way ground
+     plastic actually does, and the painted whites ride on top as body. The
+     mask keeps the spindle hole optically clear - masking the element masks
+     its backdrop effect too, so the hole stays a hole, not fogged glass. */
+  -webkit-backdrop-filter: blur(6px) saturate(1.05);
+  backdrop-filter: blur(6px) saturate(1.05);
+  -webkit-mask-image: radial-gradient(
+    circle closest-side at 50%,
+    transparent 0 29%,
+    black 33% 100%
+  );
+  mask-image: radial-gradient(
+    circle closest-side at 50%,
+    transparent 0 29%,
+    black 33% 100%
+  );
+  background:
+    /* The still, off-centre glint plastic always carries. */
+    radial-gradient(
+      circle at 32% 28%,
+      rgb(255 255 255 / 0.12),
+      rgb(255 255 255 / 0.03) 55%,
+      transparent 70%
+    ),
+    /* The body of the frost, and the ridges barely standing out of it: the
+       blur above does the frosting, so the paint's job is body and the
+       clamping rings are a whisper - two thin LIGHT rings rising out of an
+       even wash, never a dark line. Shadow rings read as grooves cut into
+       the plastic, and a hub this size can't afford grooves. */
+    radial-gradient(
+      circle closest-side at 50%,
+      transparent 0 30%,
+      rgb(255 255 255 / 0.05) 33% 48%,
+      rgb(255 255 255 / 0.1) 50% 52%,
+      rgb(255 255 255 / 0.05) 54% 70%,
+      rgb(255 255 255 / 0.1) 72% 74%,
+      rgb(255 255 255 / 0.05) 76% 100%
+    );
+}
+
+/* The border, done cleverly rather than drawn: a whisper of the same
+   spectrum the rim's sheen splits, carved to a hairline at the hub's edge -
+   so the hub's boundary CATCHES light the way the disc's outer edge does
+   instead of being outlined. The screen blend composites within the hub's
+   own stacking context (its transform isolates it), which is exactly the
+   surface wanted: the spectrum lightens the frost it sits on, and never
+   fights whatever print or clip is behind the disc. */
+.spinningDisc__hub::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: repeating-conic-gradient(
+    from 15deg,
+    oklch(0.86 0.05 25) 0deg,
+    oklch(0.89 0.04 95) 20deg,
+    oklch(0.89 0.05 155) 40deg,
+    oklch(0.87 0.04 215) 60deg,
+    oklch(0.84 0.05 285) 85deg,
+    oklch(0.85 0.05 345) 105deg,
+    oklch(0.86 0.05 385) 120deg
+  );
+  -webkit-mask-image: radial-gradient(
+    circle closest-side at 50%,
+    transparent 0 calc(100% - 2.5px),
+    black calc(100% - 1.5px) 100%
+  );
+  mask-image: radial-gradient(
+    circle closest-side at 50%,
+    transparent 0 calc(100% - 2.5px),
+    black calc(100% - 1.5px) 100%
+  );
+  mix-blend-mode: screen;
+  opacity: 0.6;
+}
+
+/* The spindle hole, suggested rather than punched: the frost above already
+   leaves the middle clear, so one faint ring marks where the plastic ends
+   and the hole begins. */
+.spinningDisc__hub::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 28%;
+  height: 28%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1px solid rgb(255 255 255 / 0.13);
+}
+
+/* Reduced motion is honoured in SpinningDisc itself - the component never
+   starts its frame loop - since the turn is an inline transform now, not an
+   animation a stylesheet could switch off. */
+
+/* The kit's most solid glass rather than its thin default, so the bar reads as
+   dark smoked gray over the album art. Keeps the backdrop blur from data-surface. */
+.appTitleBar[data-surface] {
+  background: var(--glacier-glass-thick);
+}/* Reserved slot left of the wordmark for the back/forward controls. It keeps its
+   width whether the buttons are enabled or not, so the top bar's layout - and
+   the logo's position - is identical on every page. */
+.titleBarNav {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}
+
+/* The wordmark sits in the title bar's start slot, just past the traffic-light
+   gutter. Sized by height so the 5.5:1 artwork keeps its ratio. */
+.titleBarLogo {
+  display: block;
+  block-size: 1.25rem;
+  inline-size: auto;
+  /* Dragging the window must win over the browser's native image drag. */
+  -webkit-user-drag: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Settings sections: a column of labelled controls, straight from the GlacierUI
+   docs' own preferences layout. */
+.prefsBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-6);
+}
+
+.prefsSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+/* The "I don't have a server yet" panel: a short explainer and the one command
+   that stands one up. */
+.serverSetup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-4);
+  border: 1px solid var(--glacier-border);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface);
+}
+
+/* The install command and its copy button. The command wraps rather than
+   scrolling sideways - it is meant to be read and, on a phone, copied, and a
+   line that runs off the edge is neither. */
+.serverSetupCommand {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  flex-wrap: wrap;
+}
+
+.serverSetupCommand code {
+  flex: 1 1 16rem;
+  min-inline-size: 0;
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border-radius: var(--glacier-radius-sm);
+  background: var(--glacier-bg);
+  border: 1px solid var(--glacier-border);
+  font-family: var(--glacier-font-mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--glacier-text);
+  /* A shell command has no spaces to break at in the useful places, so it is
+     allowed to break anywhere rather than forcing the panel wider than the
+     settings modal. */
+  overflow-wrap: anywhere;
+  /* The one string in the app that exists to be copied, so it opts back out of
+     the app-wide no-selection rule - prefixed too, since that is the property
+     WebKit actually reads on a phone. */
+  user-select: all;
+  -webkit-user-select: all;
+  -webkit-touch-callout: default;
+}
+
+/* A slider and its reading on one line: the slider takes the room, the value
+   holds a fixed box so "Off" becoming "12s" never nudges the thumb. */
+.prefsSliderRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+.prefsSliderRow > :first-child {
+  flex: 1;
+}
+
+.prefsSliderValue {
+  min-inline-size: 3ch;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The buttons under a settings control, laid out in a row. */
+.prefsActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+}
+
+.accentSwatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-3);
+}
+
+.accentSwatch {
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--glacier-radius-full);
+  cursor: pointer;
+  box-shadow: inset 0 var(--glacier-hairline) 0 var(--glacier-glass-highlight);
+  transition: transform var(--glacier-duration-fast) var(--glacier-ease-spring);
+}
+
+.accentSwatch:hover {
+  transform: scale(1.1);
+}
+
+.accentSwatch[data-selected] {
+  box-shadow:
+    0 0 0 2px var(--glacier-surface),
+    0 0 0 4px var(--glacier-focus-ring);
+}
+
+.accentSwatch:focus-visible {
+  outline: 2px solid var(--glacier-focus-ring);
+  outline-offset: 2px;
+}
+
+/* The band between the chrome and the player: the desktop's nav rail beside
+   the content, or just the content where the phone's tab bar lives at the
+   bottom instead. */
+.appBody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  position: relative;
+  z-index: 1;
+}
+
+/* Desktop primary navigation: a slim icon-only rail, the same floating pill
+   as the phone's turned on its side - a lifted, rounded, frosted plate riding
+   the leading edge. */
+.appNavRail {
+  flex: none;
+  align-self: flex-start;
+  margin: var(--glacier-space-3) 0 0 var(--glacier-space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  padding: var(--glacier-space-1);
+  /* A rounded rectangle, not a capsule and not a squircle - a plate with a
+     modest corner. The items keep the kit's own radius, which the sliding
+     active fill reads too (--glacier-navbar-item-radius), so tap target and
+     active plate share one shape instead of the circle-vs-box mismatch the
+     old radius-full button override caused. */
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-glass-thin);
+  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  box-shadow: var(--glacier-shadow-md), inset 0 var(--glacier-hairline) 0 var(--glacier-glass-highlight);
+  /* The rail may never run under the floating player: it stops short of the
+     player's band and scrolls its own items when the window is that small, so
+     the bottom icons stay reachable instead of losing their clicks to the
+     plate above them. */
+  max-block-size: calc(100% - var(--app-player-height) - 2 * var(--glacier-space-3));
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.appNavRail button,
+.appNavRail a {
+  flex: none;
+  inline-size: 3rem;
+  block-size: 3rem;
+}
+
+/* The rail's foot: the download queue button stacked above Settings, both
+   pinned to the bottom by the kit's own `end` region. A column so the two sit
+   one over the other, centred to the rail's icon width. */
+.appNavRail__foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}
+
