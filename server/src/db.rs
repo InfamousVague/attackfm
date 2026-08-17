@@ -1861,6 +1861,113 @@ impl Db {
             .unwrap_or_default()
     }
 
+    /// Moves hearts off tombstoned rows onto the live song they name.
+    ///
+    /// A like is stored as a track id, and a track id does not survive a file
+    /// MOVING. `upsert_track` keys on rel_path, so a renamed or re-filed file
+    /// lands as a new row with a new id while the old row is tombstoned - and
+    /// `favorites` above joins on `t.deleted = 0`, so the heart silently stops
+    /// being returned. Nothing was deleted (there is no DELETE on tracks
+    /// anywhere, so the ON DELETE CASCADE never fires); the row is still
+    /// sitting there pointing at a headstone.
+    ///
+    /// So: for every heart on a dead row, look for a LIVE row naming the same
+    /// recording - the same folded artist and title key the importer and the
+    /// mirror already use to decide two files are the same song - and move the
+    /// heart there, keeping the date it was given.
+    ///
+    /// Run after a scan, because a scan is precisely when the live twin
+    /// appears. Cheap when there is nothing to do: one indexed query that
+    /// returns no rows, and it stops.
+    pub fn rebind_orphaned_favorites(&self) -> usize {
+        let conn = self.lock();
+        // (user, dead track, artist, title, when it was hearted)
+        let orphans: Vec<(i64, i64, String, String, i64)> = {
+            let Ok(mut stmt) = conn.prepare(
+                "SELECT f.user_id, f.track_id, t.artist, t.title, f.added_at
+                   FROM favorites f JOIN tracks t ON t.id = f.track_id
+                  WHERE t.deleted = 1",
+            ) else {
+                return 0;
+            };
+            stmt.query_map([], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            })
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+        };
+        if orphans.is_empty() {
+            return 0;
+        }
+
+        // The live library, by identity. Built once for the whole batch: a
+        // per-heart lookup would be a table scan each, and this only runs when
+        // there is something to repair.
+        let live: std::collections::HashMap<(String, String), i64> = {
+            let Ok(mut stmt) =
+                conn.prepare("SELECT id, artist, title FROM tracks WHERE deleted = 0")
+            else {
+                return 0;
+            };
+            stmt.query_map([], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            })
+            .map(|rows| {
+                rows.filter_map(Result::ok)
+                    .map(|(id, artist, title)| {
+                        (
+                            (
+                                crate::discovery::fold(&artist),
+                                crate::discovery::title_key_public(&title),
+                            ),
+                            id,
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+        };
+
+        let mut moved = 0usize;
+        for (user_id, dead_id, artist, title, added_at) in orphans {
+            let key = (
+                crate::discovery::fold(&artist),
+                crate::discovery::title_key_public(&title),
+            );
+            let Some(&live_id) = live.get(&key) else {
+                // No twin in the library: the song really is gone, and the
+                // heart stays where it is. It costs nothing, it is invisible
+                // either way, and it comes back the day the file does.
+                continue;
+            };
+            if live_id == dead_id {
+                continue;
+            }
+            // The date it was hearted travels with it - Liked is ordered by
+            // that, and a repair must not shuffle the list to the top.
+            if conn
+                .execute(
+                    "INSERT OR IGNORE INTO favorites (user_id, track_id, added_at)
+                     VALUES (?1, ?2, ?3)",
+                    rusqlite::params![user_id, live_id, added_at],
+                )
+                .is_err()
+            {
+                continue;
+            }
+            let _ = conn.execute(
+                "DELETE FROM favorites WHERE user_id = ?1 AND track_id = ?2",
+                rusqlite::params![user_id, dead_id],
+            );
+            moved += 1;
+        }
+        moved
+    }
+
     pub fn set_favorite(&self, user_id: i64, track_id: i64, on: bool) -> rusqlite::Result<()> {
         let conn = self.lock();
         if on {

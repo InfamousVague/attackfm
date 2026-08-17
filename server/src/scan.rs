@@ -353,6 +353,12 @@ pub fn run_scan(db: &Db, music_root: &Path, art_dir: &Path, progress: &ScanProgr
     }
 
     let removed = db.tombstone_missing(&present, rev);
+    // A scan is when a moved file reappears under its new path, so it is also
+    // when a heart stranded on the old row can find its way home.
+    let rebound = db.rebind_orphaned_favorites();
+    if rebound > 0 {
+        println!("[attackfm] moved {rebound} liked songs onto their re-filed copies");
+    }
     progress.added.store(added, Ordering::Relaxed);
     progress.removed.store(removed, Ordering::Relaxed);
     progress.last_finished.store(

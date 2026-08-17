@@ -766,3 +766,65 @@ mod set_password_tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 }
+
+#[cfg(test)]
+mod favorite_rebind_tests {
+    use crate::db::{Db, ScannedTrack};
+    use std::collections::HashSet;
+
+    fn song(rel_path: &str, artist: &str, title: &str) -> ScannedTrack {
+        ScannedTrack {
+            rel_path: rel_path.into(),
+            title: title.into(),
+            artist: artist.into(),
+            album_artist: artist.into(),
+            album: "An Album".into(),
+            track_no: Some(1), disc_no: Some(1), year: Some(2020),
+            genre: String::new(), lyrics: String::new(), duration_ms: Some(180_000),
+            codec: "flac".into(), lossless: true, sample_rate: Some(44_100),
+            bit_depth: Some(16), channels: Some(2), bitrate: Some(900),
+            size_bytes: 1, mtime: 1, art_id: None, chapters: String::new(),
+        }
+    }
+
+    /// The reported bug, end to end: a liked song's FILE MOVES, so the row is
+    /// tombstoned and a new one takes its place - and the heart, which points
+    /// at the old id, silently stops being returned.
+    #[test]
+    fn a_heart_follows_its_song_to_a_new_path() {
+        let dir = std::env::temp_dir().join(format!("afm-fav-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = Db::open(&dir.join("t.db")).unwrap();
+        let user = db.create_user("listener", "x", true).unwrap();
+
+        db.upsert_track(&song("old/place.flac", "Ratking", "Canal"), 1).unwrap();
+        let old_id = db.track_id_by_path("old/place.flac").expect("indexed");
+        db.set_favorite(user, old_id, true).unwrap();
+        assert_eq!(db.favorites(user), vec![old_id], "hearted");
+
+        // The file is re-filed: new row, and the old one tombstoned.
+        db.upsert_track(&song("Ratking/An Album/01 Canal.flac", "Ratking", "Canal"), 2).unwrap();
+        let mut present = HashSet::new();
+        present.insert("Ratking/An Album/01 Canal.flac".to_string());
+        db.tombstone_missing(&present, 2);
+
+        // This is the bug: the heart is gone from the list.
+        assert!(db.favorites(user).is_empty(), "the reported symptom");
+
+        // And this is the cure.
+        assert_eq!(db.rebind_orphaned_favorites(), 1, "one heart moved");
+        let new_id = db.track_id_by_path("Ratking/An Album/01 Canal.flac").unwrap();
+        assert_eq!(db.favorites(user), vec![new_id], "hearted again, on the live row");
+
+        // Idempotent: running it again finds nothing left to do.
+        assert_eq!(db.rebind_orphaned_favorites(), 0, "nothing to repeat");
+
+        // A heart whose song is really gone is left alone, not thrown away.
+        db.upsert_track(&song("gone/forever.flac", "Someone", "Vanished"), 3).unwrap();
+        let gone_id = db.track_id_by_path("gone/forever.flac").unwrap();
+        db.set_favorite(user, gone_id, true).unwrap();
+        db.tombstone_missing(&present, 4);
+        assert_eq!(db.rebind_orphaned_favorites(), 0, "no twin, no move");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}
