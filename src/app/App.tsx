@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { NowPlayingBackdrop } from './player/NowPlayingBackdrop.tsx';
 import { PluginHookScope } from '../plugins/runtime.tsx';
 import { isDesktopApp } from './core/platform.ts';
+import { useDesktopLayout } from './ux/useDesktopLayout.ts';
 import type { Track } from './core/tauri.ts';
 import { NetworkDot } from './servers/NetworkDot.tsx';
 import { SettingsModal } from './settings/SettingsModal.tsx';
@@ -51,7 +52,17 @@ import wordmark from '../assets/attack-white.png';
 // Tauri build. A phone build is inside Tauri too, but has no frame and no
 // traffic lights - so it gets the plain header below instead, as does the
 // browser.
-const DESKTOP = isDesktopApp;
+/*
+ * Two different questions, and conflating them is what kept the web build
+ * phone-shaped on a 27-inch monitor:
+ *
+ *   isDesktopApp    - is this a Tauri window? (a frame, a drag region, a
+ *                     traffic-light gutter, a local folder). Fixed at load.
+ *   useDesktopLayout - is there room and a cursor? Changes as a browser
+ *                     window is resized, so it is a hook, not a constant.
+ *
+ * Window chrome keys on the first; shape keys on the second.
+ */
 
 /**
  * Lends App the library's rescan.
@@ -110,6 +121,7 @@ export function App() {
   // of AppMain, so the host does not exist when this component's effects first
   // run - the gesture hooks have to re-attach when it finally mounts, which
   // only a state-carried node can tell them.
+  const DESKTOP = useDesktopLayout();
   const [swipeEl, setSwipeEl] = useState<HTMLElement | null>(null);
 
   const swipeRef = useCallback((node: HTMLElement | null) => setSwipeEl(node), []);
@@ -440,7 +452,17 @@ export function App() {
                 data-tauri-drag-region
                 surface
                 border
-                trafficLightInset
+                // The one part of this bar that is about a WINDOW rather than
+                // a layout: the gutter reserving room for the macOS traffic
+                // lights. In a browser nobody paints those, so the inset is
+                // just ~70px of dead space before the wordmark - measured, the
+                // logo sat at x=104 with it on. The drag-region attribute
+                // beside it needs no such guard: the kit writes it on the bar
+                // regardless, and without Tauri's runtime to read it, it is an
+                // inert data attribute. Everything else here - wordmark,
+                // history, network light, settings - is just the top bar, and
+                // the web wants all of it.
+                trafficLightInset={isDesktopApp}
                 start={
                   // Back and forward live left of the wordmark in a reserved
                   // slot that is always present, so the top bar's layout - and
