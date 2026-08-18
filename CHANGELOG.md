@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.167
+
+- All songs has a filter bar: narrow four thousand rows to the ones you meant, without leaving the page. Play and Shuffle take what you filtered to, and the count says "7 songs of 4016"
+
 ## 0.3.166
 
 - Tapping the search bar puts the cursor in it — no second tap before you can type

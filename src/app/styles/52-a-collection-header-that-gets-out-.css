@@ -139,3 +139,27 @@
   color: var(--glacier-danger-solid);
   border-color: var(--glacier-danger-border);
 }
+
+/* ── Filtering the table, not searching the library ─────────────────────────
+   Sits between the hero and the rows it narrows. Aligned to the table's own
+   inline edge rather than the page's, so it reads as belonging to the list
+   underneath it - a control ON the table, not another bar on the page. */
+.songFilter {
+  /* No inline padding: .songPage already carries the page gutter, and adding
+     another here put the field at twice the inset of every other bar in the
+     app (35.6px against 17.8px on a 375 viewport). Same double-gutter trap the
+     Library search bar hit - the parent's padding is the page rhythm, and a
+     child that re-states it is always wrong by exactly one gutter. */
+  padding-block: var(--glacier-space-3) var(--glacier-space-2);
+}
+
+.songFilter .pageSearch {
+  inline-size: 100%;
+  max-inline-size: 34rem;
+}
+
+/* A filter that matches nothing says so where the rows would have been. */
+.songFilter__none {
+  display: block;
+  padding-block: var(--glacier-space-6);
+}

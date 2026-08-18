@@ -1,4 +1,4 @@
-import { Button, Text } from '@glacier/react';
+import { Button, SearchField, Text } from '@glacier/react';
 import { Play, Shuffle } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
@@ -107,7 +107,33 @@ export function SongPage({
   }, [heavyIds, tracks]);
   const listTracks = view === 'liked' ? favoriteTracks : view === 'onrepeat' ? onRepeat : allNewest;
 
-  const totalSeconds = listTracks.reduce((sum, t) => sum + (t.duration ?? 0), 0);
+  /*
+   * Filtering the table, as opposed to searching the library.
+   *
+   * These are different jobs and deserve different tools. Search is a place
+   * you go to find a song among everything there is; this narrows the rows in
+   * front of you and never leaves the page - the table equivalent of squinting
+   * at a list you are already looking at. So it is a plain substring match
+   * over title, artist and album: predictable beats clever when the answer is
+   * meant to be visibly a subset of what was already on screen. No operators,
+   * no typo rescue, no network.
+   */
+  const [filter, setFilter] = useState('');
+  const filtering = filter.trim().length > 0;
+  const shown = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return listTracks;
+    // Every word has to land somewhere, so "fike babydoll" finds the song
+    // without the words having to be typed in the order the tags happen to
+    // hold them.
+    const words = q.split(/\s+/);
+    return listTracks.filter((t) => {
+      const hay = `${t.title} ${t.artist} ${t.album ?? ''}`.toLowerCase();
+      return words.every((w) => hay.includes(w));
+    });
+  }, [filter, listTracks]);
+
+  const totalSeconds = shown.reduce((sum, t) => sum + (t.duration ?? 0), 0);
   const loading = view === 'onrepeat' && session !== null && heavyIds === null;
   const empty = listTracks.length === 0 && !loading;
 
@@ -137,14 +163,17 @@ export function SongPage({
     // sentinel sits under.
   }, [view]);
 
+  // Play and Shuffle take the rows on screen: with a filter typed, "play this"
+  // can only sensibly mean the list you filtered to, not the four thousand
+  // songs behind it.
   const playAll = () => {
-    const first = listTracks[0];
-    if (first) onPlay(first, listTracks);
+    const first = shown[0];
+    if (first) onPlay(first, shown);
   };
 
   const shuffleAll = () => {
-    if (empty) return;
-    const order = shuffled(listTracks);
+    if (shown.length === 0) return;
+    const order = shuffled(shown);
     const first = order[0];
     if (first) onPlay(first, order);
   };
@@ -207,7 +236,8 @@ export function SongPage({
           </Text>
           <h2 className="playlistHead__name">{meta.title}</h2>
           <Text tone="muted" size="sm">
-            {listTracks.length} {listTracks.length === 1 ? 'song' : 'songs'}
+            {shown.length} {shown.length === 1 ? 'song' : 'songs'}
+            {filtering ? ` of ${listTracks.length}` : ''}
             {totalSeconds > 0 ? ` · ${formatTotal(totalSeconds)}` : ''}
           </Text>
 
@@ -227,6 +257,23 @@ export function SongPage({
           hero has gone with it. */}
       <div ref={sentinelRef} className="songPageHead__sentinel" aria-hidden />
 
+      {/* The filter sits between the hero and the table it narrows, which is
+          the only place it can sit and still read as belonging to the rows
+          rather than to the page. Only on All songs: it is the list long
+          enough to need one. */}
+      {view === 'all' && !empty && (
+        <div className="songFilter">
+          <SearchField
+            className="pageSearch"
+            value={filter}
+            onValueChange={setFilter}
+            placeholder="Filter these songs"
+            aria-label="Filter these songs"
+            autoComplete="off"
+          />
+        </div>
+      )}
+
       {empty && !loading ? (
         <div className="playlistEmpty emptyState emptyState--tall">
           <EmptyArt name={meta.art} />
@@ -238,14 +285,20 @@ export function SongPage({
         // and scroll; the header sits above it.
         <section className="homeShelf librarySongs">
           <div className="libraryBody">
+            {filtering && shown.length === 0 ? (
+              <Text tone="muted" className="songFilter__none">
+                No song here matches “{filter.trim()}”.
+              </Text>
+            ) : (
             <SongTable
               flow
               loading={loading}
-              tracks={listTracks}
+              tracks={shown}
               onPlay={onPlay}
               onOpenArtist={onOpenArtist}
               plays={view === 'onrepeat' && playsById.size > 0 ? playsById : undefined}
             />
+            )}
           </div>
         </section>
       )}
