@@ -307,9 +307,41 @@ pub async fn station(
         .collect();
     state.db.record_dj_impressions(caller.id, &offered);
 
+    /*
+     * The dossiers: what the patter is ALLOWED to say about each pick.
+     *
+     * For exactly the small artists the exploration slots promote, the
+     * model's world knowledge is empty or fabricated - so every fact the
+     * patter may use is computed here, deterministically, from things the
+     * retrieval layer knows to be true. The model's job is to phrase them,
+     * never to add to them: grounded dossiers are the difference between a
+     * sommelier and a confident liar.
+     */
+    let hearted = state.db.hearted_artist_keys(caller.id);
+    let dossiers: HashMap<i64, String> = picks
+        .iter()
+        .map(|id| {
+            let mut facts: Vec<String> = Vec::new();
+            if explore_set.contains(id) {
+                facts.push("their first time in one of these sets".into());
+            }
+            if let Some(a) = artist_of.get(id) {
+                if hearted.contains(a) {
+                    facts.push("an artist this listener has hearted before".into());
+                }
+            }
+            if let Some(f) = by_id.get(id) {
+                if !f.genre.trim().is_empty() {
+                    facts.push(format!("filed under {}", f.genre.trim()));
+                }
+            }
+            (*id, facts.join("; "))
+        })
+        .collect();
+
     // The model writes the patter over the already-chosen ids; a failure just
     // means a set with no words, never a set with no music.
-    let blocks = patter(&state, &picks, &seed)
+    let blocks = patter(&state, &picks, &seed, &dossiers)
         .await
         .unwrap_or_else(|| vec![json!({ "say": "", "trackIds": picks.clone() })]);
     Ok(Json(
@@ -320,12 +352,21 @@ pub async fn station(
 /// Ask the DJ model to break the chosen set into a few runs and open each with a
 /// short spoken line. Words only - every id is validated back against `picks`,
 /// and any the model drops are appended so the set stays whole.
-async fn patter(state: &Arc<AppState>, picks: &[i64], seed: &str) -> Option<Vec<Value>> {
+async fn patter(
+    state: &Arc<AppState>,
+    picks: &[i64],
+    seed: &str,
+    dossiers: &HashMap<i64, String>,
+) -> Option<Vec<Value>> {
     let url = ai_url()?;
     let mut lines = Vec::new();
     for id in picks {
         if let Some(t) = state.db.track(*id) {
-            lines.push(format!("{}|{} — {}", id, t.artist, t.title));
+            let facts = dossiers.get(id).filter(|f| !f.is_empty());
+            match facts {
+                Some(f) => lines.push(format!("{}|{} — {}|{}", id, t.artist, t.title, f)),
+                None => lines.push(format!("{}|{} — {}", id, t.artist, t.title)),
+            }
         }
     }
     if lines.is_empty() {
@@ -338,8 +379,9 @@ async fn patter(state: &Arc<AppState>, picks: &[i64], seed: &str) -> Option<Vec<
     };
     let prompt = format!(
         "You are a warm late-night radio DJ introducing a continuous set pulled from ONE listener's OWN library, steered toward {vibe}.\n\
-         The set, in play order, one per line as id|artist — title:\n{}\n\n\
+         The set, in play order, one per line as id|artist — title, some lines carrying known facts after a further |:\n{}\n\n\
          Split the set into 3-4 consecutive runs. For each run write ONE short spoken DJ line to open it: first person, natural, 1-2 sentences, no exclamation marks, no emojis, name at most one artist. Cover every track, in order, across the runs.\n\
+         When you say anything ABOUT a song or artist, use only that line's listed facts or its artist and title text. Lines without facts are introduced by name and feel alone. Never invent history, biography, genres or claims of any kind.\n\
          Answer with STRICT JSON and nothing else: [{{\"say\":\"...\",\"ids\":[1,2,3]}}] using ONLY the ids above, keeping their order.",
         lines.join("\n"),
     );

@@ -196,3 +196,14 @@
     transition: none;
   }
 }
+
+/* The DJ's one-line reason under a queued row - quiet, muted, truncated. It
+   is a whisper about the pick, not a second title. */
+.queueRow__why {
+  display: block;
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

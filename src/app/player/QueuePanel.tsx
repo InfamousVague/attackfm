@@ -7,6 +7,8 @@
 //! anything already played has left the line. Reordering resolves through the
 //! kit's SortableList, which carries both drag and full keyboard reordering.
 
+import { djReason } from '../booth/djReasons.ts';
+import { trackIdFromPath } from '../server.ts';
 import { useMemo } from 'react';
 import { Button, IconButton, Slider, SortableList, Text, useToast } from '@glacier/react';
 import { ChevronDown, Music, Radio, X } from '@glacier/icons';
@@ -311,6 +313,14 @@ export function QueuePanel({
                           ) : null;
                         })()}
                       </span>
+                      {(() => {
+                        // The DJ's own reason for this pick, when this queue
+                        // came from the DJ. Computed server-side either way;
+                        // showing it is what makes a ranking change audible
+                        // AND visible.
+                        const why = djReason(trackIdFromPath(r.track.path));
+                        return why ? <span className="queueRow__why">{why}</span> : null;
+                      })()}
                     </div>
                   </button>
                   <IconButton
