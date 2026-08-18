@@ -115,7 +115,9 @@ export function PlayerStrip({
   pauseStyle: PauseStyle;
   onScrubDisp: (to: number) => void;
   onSeekEndDisp: (seconds: number) => void;
-  onPlayingChangeDisp: (playing: boolean) => void;
+  /** Absent when the control cannot act - a remote whose socket is down. The
+   *  kit disables the button, the same way it does for the skips. */
+  onPlayingChangeDisp?: (playing: boolean) => void;
   onSkipBackDisp: (() => void) | undefined;
   onSkipForwardDisp: (() => void) | undefined;
   shuffle: boolean;
