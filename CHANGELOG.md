@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.169
+
+- Equalizer presets stop distorting. Boosting bass or treble was pushing the signal past digital full scale and clipping it — badly, on every preset with any boost. The EQ now pays for its boosts with automatic headroom, computed from the real combined curve, so presets change the shape of the sound instead of crushing it. Flat stays untouched
+- Switching presets no longer clicks — every EQ move glides
+
 ## 0.3.168
 
 - Pull to refresh now re-fetches the page you are on, not just the library: this week's stats, a playlist, On repeat, the Booth's set and your For You shelf all re-read from the server

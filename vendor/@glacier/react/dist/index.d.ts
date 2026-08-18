@@ -1598,8 +1598,15 @@ interface AnalyserMeter {
     /** The centre frequency (Hz) of each EQ band, low to high, index-aligned with
      * `setEqGains`. */
     eqFrequencies: readonly number[];
-    /** Sets each EQ band's gain in dB, index-aligned with `eqFrequencies`. Missing
-     * or extra entries are ignored; a flat (all-zero) set is transparent. */
+    /**
+     * Sets the eight band gains, in dB, in `eqFrequencies` order.
+     *
+     * Boosts are paid for automatically: a broadband headroom stage after the
+     * cascade attenuates by the curve's true combined maximum, so a +8dB preset
+     * changes the shape of the sound without driving a 0dBFS master past the
+     * DAC and into clipping. Flat costs nothing - the stage sits at unity.
+     * All moves glide (~150ms); switching presets never clicks.
+     */
     setEqGains(gains: readonly number[]): void;
     /**
      * Resumes the underlying AudioContext. A context built outside a user gesture
