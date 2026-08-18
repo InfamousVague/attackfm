@@ -167,6 +167,14 @@
 
 .searchSummon[data-dragging] {
   transition: none;
+  /* The blur comes OFF for the drag.
+     Static, a backdrop-filter over a full-viewport element is cheap; moving,
+     it is re-sampled and re-blurred every frame, and this sheet translates
+     with the thumb. Nothing is lost visually: the behind-layer under it is
+     already blurring the same pixels for the whole drag, so the composite
+     reads the same while one of the two passes stops happening. */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border-radius: var(--glacier-radius-xl, 1.25rem);
   overflow: hidden;
   /* Lifted off the page, so the card reads as a card against the blur. */
