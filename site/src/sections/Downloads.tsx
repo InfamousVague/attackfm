@@ -146,6 +146,20 @@ export function Downloads() {
           })}
         </div>
 
+        {/* Nothing to install, so it does not belong in the grid of installers
+            above - but it is the fastest way to try the thing this whole page
+            is about, and burying it under the fold would be a strange choice. */}
+        <Reveal delay={100} className="center">
+          <p className="body downloads__note">
+            Or don’t install anything:{' '}
+            <a className="downloads__link" href="/listen/">
+              open AttackFM in your browser
+            </a>
+            . Same app, same server, nothing to download — you’ll want a desktop-sized
+            window, and offline downloads stay with the installed builds.
+          </p>
+        </Reveal>
+
         <Reveal delay={120} className="center">
           <p className="body downloads__note">
             Linux also ships a <code>.deb</code> and an <code>.rpm</code>, and Windows an{' '}

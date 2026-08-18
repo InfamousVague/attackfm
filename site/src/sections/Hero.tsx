@@ -1,4 +1,4 @@
-import { Apple, ArrowRight, Download, ServerCog } from '@glacier/icons';
+import { Apple, Download, Play, ServerCog } from '@glacier/icons';
 import wordmark from '../../../src/assets/attack-white.png';
 import cover1 from '../../../src/assets/wall/cover-01.jpg';
 import cover2 from '../../../src/assets/wall/cover-02.jpg';
@@ -87,9 +87,13 @@ export function Hero() {
                 <Download size={18} />
                 Download
               </a>
-              <a className="btn btn--ghost" href="#library">
-                See the screens
-                <ArrowRight size={17} />
+              {/* The lowest-friction way in: no install, no store, no
+                  waiting - the same app, running in the tab they are already
+                  reading this in. It sits beside Download rather than under
+                  it because for a first look it is the better offer. */}
+              <a className="btn btn--ghost" href="/listen/">
+                <Play size={17} />
+                Open in your browser
               </a>
             </div>
           </Reveal>
