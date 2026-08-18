@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.170
+
+- Dragging one EQ slider on a phone no longer secretly moves bands you can't see. The five-slider view used to snap to a whole different preset when your hand happened to land on its shape; now a drag edits exactly what it touched
+- The equalizer refuses malformed settings from plugins: short or junk band lists read as flat instead of leaving old gains stuck on the hidden bands
+
 ## 0.3.169
 
 - Equalizer presets stop distorting. Boosting bass or treble was pushing the signal past digital full scale and clipping it — badly, on every preset with any boost. The EQ now pays for its boosts with automatic headroom, computed from the real combined curve, so presets change the shape of the sound instead of crushing it. Flat stays untouched
