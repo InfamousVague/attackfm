@@ -3,31 +3,28 @@ import { useSystemBack } from './systemBack.ts';
 import { makeRatchet } from '../ux/ratchet.ts';
 
 /**
- * The pull from the top: one gesture, one answer.
+ * The pull from the top: a refresh, felt on the way down.
  *
- * Pull down at the top of a page and the search page itself fades in over the
- * blurring content - the real SearchPage, its field and its genre cards, not a
- * bar standing in for it. Let go past the commit point and it opens; let go
- * short of it and everything springs back to exactly where it was.
+ * Search went back to being a station - an icon in the nav bar that opens the
+ * full-screen page - so the gesture is free to mean the one thing a pull from
+ * the top of a list has always meant. Pull, feel the detents tighten, let go
+ * past the mark and the library re-reads itself.
  *
- * This replaces a two-stage gesture (bar at one depth, refresh at another)
- * whose stages kept fighting each other for the same finger. Refresh left the
- * gesture entirely; the library still re-reads itself from Settings, and the
- * pull now means one thing.
+ * This is the shape the app had before search borrowed the gesture, restored
+ * deliberately: a pull that opened search was a surprise, and a search you had
+ * to know a gesture to reach was hidden. One affordance each.
  *
  * The live drag publishes two numbers to the document element, because the
- * layers that draw the reveal are spread across the tree and none of them is
- * a child of the page being dragged:
+ * layers that draw the mark are spread across the tree and none of them is a
+ * child of the page being dragged:
  *
  *   --app-pull    the damped distance the page itself slides - feedback that
- *                 the gesture has hold of something, capped low because the
- *                 page is the thing being LEFT.
- *   --app-travel  the raw finger travel - what the preview's fade and the
- *                 backdrop blur are keyed to, so they spend themselves across
- *                 the whole pull rather than the first damped inch.
+ *                 the gesture has hold of something, capped low.
+ *   --app-travel  the raw finger travel - what the mark's fade and turn are
+ *                 keyed to, so they spend themselves across the whole pull.
  *
- * React is told only when the gesture starts and ends (the preview mounts per
- * gesture, not per frame); everything per-frame goes straight to the DOM.
+ * React is told only when the gesture starts, arms and ends; everything
+ * per-frame goes straight to the DOM.
  *
  * `host` is the content host the gesture listens on (the same element the
  * edge-swipe drags) - the node itself, not a ref object, so the listeners
@@ -37,21 +34,29 @@ import { makeRatchet } from '../ux/ratchet.ts';
 /** Where the pull stops being a scroll. */
 const SLOP = 10;
 /**
- * Where letting go opens search. Far enough that an idle downward flick
- * springs back and a meant pull commits - "takes longer" than the old bar
- * did on purpose, because the reveal IS the animation now and it deserves
- * the length of a real gesture.
+ * Where letting go refreshes.
+ *
+ * An ordinary pull-to-refresh flick measures a bit over a hundred pixels, so
+ * this sits just past one: far enough that a lazy overscroll springs back,
+ * close enough that a deliberate pull does not feel like a haul. The old
+ * two-stage gesture needed 352px because refresh was the SECOND stop behind a
+ * search bar; with the stage gone, that distance is just work.
  */
-const OPEN_AT = 180;
+const REFRESH_AT = 150;
 /** How far the page itself will slide, however hard it is pulled. */
 const PAGE_SLIDE_CAP = 84;
 
-export function useSearchSummon(host: HTMLElement | null) {
+export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Promise<void> | void) {
   const [searchOpen, setSearchOpen] = useState(false);
   useSystemBack(searchOpen, () => setSearchOpen(false));
 
-  /** A gesture is live: the preview and the blur layer mount off this. */
+  /** A gesture is live: the mark mounts off this. */
   const [pulling, setPulling] = useState(false);
+  /** The refresh is running: the mark spins and the gap stays open. */
+  const [refreshing, setRefreshing] = useState(false);
+  /** Read through a ref so a changing callback never re-binds the listeners. */
+  const refreshRef = useRef(onRefresh);
+  refreshRef.current = onRefresh;
 
   const settleTimer = useRef<number | undefined>(undefined);
   const paint = useCallback((distance: number, live: boolean) => {
@@ -153,17 +158,31 @@ export function useSearchSummon(host: HTMLElement | null) {
       paint(distance, true);
       // Felt as it builds: soft ticks tightening toward the commit point,
       // and the point itself landing properly.
-      ratchet.feel(travel, SLOP, OPEN_AT, e.timeStamp);
-      if (travel >= OPEN_AT) ratchet.arrive('medium');
+      ratchet.feel(travel, SLOP, REFRESH_AT, e.timeStamp);
+      if (travel >= REFRESH_AT) ratchet.arrive('medium');
     };
     const onEnd = () => {
-      const open = isPulling && travel >= OPEN_AT;
+      const commit = isPulling && travel >= REFRESH_AT;
       armed = false;
       isPulling = false;
       travel = 0;
       paint(0, false);
       setPulling(false);
-      if (open) setSearchOpen(true);
+      if (!commit) return;
+      // The mark keeps turning until the rescan actually answers - a spinner
+      // on a fixed timer lies about whichever of the two is slower, and this
+      // one can be either.
+      setRefreshing(true);
+      void (async () => {
+        try {
+          await refreshRef.current?.();
+        } catch {
+          // A refresh that fails is not worth an interruption: the library
+          // that is already on screen stays, and the next pull tries again.
+        } finally {
+          setRefreshing(false);
+        }
+      })();
     };
     host.addEventListener('touchstart', onStart, { passive: true });
     host.addEventListener('touchmove', onMove, { passive: true });
@@ -212,25 +231,12 @@ export function useSearchSummon(host: HTMLElement | null) {
     };
   }, [host]);
 
-  // Until the pull has been used once, a small chip under the header says it
-  // exists - the one cost of retiring the Search tab.
-  const [summonHint, setSummonHint] = useState(() => {
-    try {
-      return localStorage.getItem('attackfm-summon-known') !== '1';
-    } catch {
-      return false;
-    }
-  });
-  useEffect(() => {
-    if (searchOpen && summonHint) {
-      setSummonHint(false);
-      try {
-        localStorage.setItem('attackfm-summon-known', '1');
-      } catch {
-        // Fine; it dismisses for this launch regardless.
-      }
-    }
-  }, [searchOpen, summonHint]);
+  /*
+   * The teaching chip is gone with the gesture it taught. Search is an icon in
+   * the nav bar again, which needs no chip, and a pull that refreshes is the
+   * convention every list app already taught. The stored flag is left alone -
+   * harmless, and it costs a write to clear.
+   */
 
   // The chord the field advertises: Cmd/Ctrl+K summons search from anywhere,
   // and Escape sends it home (the overlay is not a kit Modal, so it minds its
@@ -248,5 +254,5 @@ export function useSearchSummon(host: HTMLElement | null) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  return { pulling, summonHint, searchOpen, setSearchOpen };
+  return { pulling, refreshing, searchOpen, setSearchOpen };
 }

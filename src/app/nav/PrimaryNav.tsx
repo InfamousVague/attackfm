@@ -1,5 +1,5 @@
 import { NavBar, NavBarItem } from '@glacier/react';
-import { CircleUserRound, Compass, Disc3, LibraryBig, Settings } from '@glacier/icons';
+import { CircleUserRound, Compass, Disc3, LibraryBig, Search, Settings } from '@glacier/icons';
 import type { ReactNode } from 'react';
 import { useAcquire, usePluginPages } from '../../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
@@ -23,12 +23,16 @@ export function PrimaryNav({
   tab,
   onTab,
   onSettings,
+  onSearch,
 }: {
   variant: 'rail' | 'bar';
   /** The active tab: 'home', 'library', or a plugin page's `${id}:${page}` key. */
   tab: string;
   onTab: (tab: string) => void;
   onSettings: () => void;
+  /** Opens the full-screen search. Never a tab - it is an overlay over
+   *  whatever you were doing, and it gives that page back when it closes. */
+  onSearch: () => void;
 }) {
   const pages = usePluginPages();
   // Downloads is a plugin surface, not a core one: the tab appears only while an
@@ -87,9 +91,12 @@ export function PrimaryNav({
           the rail anchors the queue button to its foot, by Settings - see the
           `end` slot below. A queue you visit occasionally does not deserve a
           permanent seat in a bar of four. */}
-      {/* Search stopped being a station: it is a summons now - pull down on
-          any page, or ⌘K - so its old seat belongs to the Booth, the taste
-          engine's one room. */}
+      {/* Search is a station again. It was briefly a pull-down summons, which
+          asked people to discover a gesture before they could look anything
+          up; an icon costs one slot and hides nothing. It opens the full
+          screen rather than switching tab, so it never becomes the active
+          destination and the page underneath is still there afterwards. */}
+      <NavBarItem icon={<Search size={18} />} label="Search" onClick={onSearch} />
       <NavBarItem
         icon={<Disc3 size={18} />}
         label="Booth"
@@ -148,8 +155,12 @@ export function PrimaryNav({
   // up out of the bar - so the core tabs stay put however many plugins are on.
   return (
     <nav className="appNavBar" aria-label="Primary">
-      {/* Search is a summons now (pull down anywhere); its old seat holds the
-          Booth - a real place, the taste engine's room. */}
+      {/* Search leads the bar again. It held this seat before the pull-down
+          summons took over, and the summons is gone: a gesture you have to be
+          told about is not a way to offer the one thing people look for by
+          name. It opens the full screen over whatever you are on, so it never
+          lights as the active tab. */}
+      <BarTab icon={<Search size={22} />} label="Search" onClick={onSearch} />
       <BarTab
         icon={<Disc3 size={22} />}
         label="Booth"

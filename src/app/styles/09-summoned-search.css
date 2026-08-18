@@ -48,29 +48,6 @@
 }
 
 
-/* The one-time teacher: a chip under the header until the pull is used once. */
-.summonHintChip {
-  position: fixed;
-  top: calc(env(safe-area-inset-top, 0px) + 3.4rem);
-  left: 50%;
-  translate: -50% 0;
-  z-index: 30;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  border: none;
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--glacier-font-size-xs);
-  font-weight: 600;
-  color: var(--glacier-accent-text);
-  background: color-mix(in oklab, var(--glacier-accent-solid) 14%, var(--glacier-surface-raised));
-  padding: 0.35rem 0.85rem;
-  border-radius: 999px;
-  box-shadow: var(--glacier-shadow-2);
-}
-
-
 /* ── The pull, one stage ───────────────────────────────────────────────────
  *
  * Pull down at the top of a page and the search page fades in over the
@@ -99,79 +76,11 @@
   transition: none;
 }
 
-/* The search page arriving: the real SearchPage, full-bleed under the header,
-   fading in with finger travel. Inert until the release actually opens it -
-   a half-revealed row that could be tapped is a target moving under the
-   finger holding it. */
-.pullPreview {
-  position: fixed;
-  inset-inline: 0;
-  top: var(--app-content-top, 0px);
-  bottom: 0;
-  z-index: 2;
-  overflow: hidden;
-  pointer-events: none;
-  /* Late and steep rather than early and even: for the first 70px of travel
-     the main screen still owns the view, then the search page comes through.
-     A fade that started immediately read as the page already being there. */
-  opacity: clamp(0, calc((var(--app-travel, 0px) - 70px) / 150px), 1);
-  /* And it arrives out of frost: the incoming content is blurred hardest
-     when it is faintest, resolving to sharp as the fade completes - the
-     same move the page behind makes, run in the opposite direction. */
-  filter: blur(max(0px, 12px - var(--app-travel, 0px) * 0.055));
-}
-
-/*
- * The wave-in stands down inside the preview.
- *
- * Cards normally ripple in on their own clock as they meet the view. Under a
- * pull that clock is wrong twice over: items would animate from transparent
- * while the LAYER is also fading in (two fades multiply into "fully
- * transparent when they animate in"), and a time-based entrance ignores the
- * finger, which is the only clock this surface has. Inside the preview every
- * item stands already-landed and the pull drives the one fade there is.
- */
-.pullPreview [data-ripple-seen]:not([data-rippled]) {
-  opacity: 1;
-}
-
-.pullPreview [data-rippled] {
-  animation: none;
-}
 
 /* The page being left, softening as the search page arrives over it. Keyed to
    travel, not the damped slide, so the blur builds across the whole gesture:
    nothing at rest, full depth around the commit point. */
-:root[data-pulling] /* The glass of the card being pulled into view.
-   Fades a touch EARLIER than the content above it (40px against 70px), so the
-   ground is there to receive the page rather than both arriving at once.
-
-   The blur RADIUS is fixed and the opacity does all the moving, which is the
-   whole performance story of this layer. A radius keyed to --app-travel is
-   rewritten on every touchmove, and a backdrop blur whose kernel changes
-   cannot reuse the last frame's work - it is a fresh full-viewport blur per
-   frame, on the one gesture that most needs sixty of them a second. Opacity
-   is compositor-only and free, and a cross-fade from clear page to settled
-   glass reads the same as a ramping blur: the eye reads "the glass arrived"
-   either way. This layer also OWNS the pull's frost outright - the separate
-   behind-blur it replaced had the same changing-radius shape. */
-.pullGlass {
-  position: fixed;
-  inset-inline: 0;
-  top: var(--app-content-top, 0px);
-  bottom: 0;
-  z-index: 1;
-  pointer-events: none;
-  border-start-start-radius: var(--glacier-radius-xl, 1.25rem);
-  border-start-end-radius: var(--glacier-radius-xl, 1.25rem);
-  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
-  background: var(--glacier-glass-thick);
-  -webkit-backdrop-filter: blur(32px) saturate(var(--glacier-glass-saturate));
-  backdrop-filter: blur(32px) saturate(var(--glacier-glass-saturate));
-  opacity: clamp(0, calc((var(--app-travel, 0px) - 40px) / 140px), 1);
-}
-
-/* The open search page leaves the way the Now Playing sheet does: dragged
+:root[data-pulling] /* The open search page leaves the way the Now Playing sheet does: dragged
    down as a card. The gesture module writes --np-drag on the element and
    data-dragging while a finger is down; short of the mark the transition
    springs it home. */
@@ -212,4 +121,55 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The pull's one piece of chrome: a mark in the gap the page opens above
+   itself, keyed to the same travel the page slides on. It fades and turns in
+   with the pull so the gesture reads as building toward something, then spins
+   on its own clock once the refresh is actually running - the turn under the
+   thumb is position, the spin after release is time, and they are different
+   things on purpose. */
+.pullMark {
+  position: fixed;
+  inset-inline: 0;
+  top: var(--app-content-top, 0px);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  block-size: var(--app-pull, 0px);
+  pointer-events: none;
+  color: var(--glacier-text-muted);
+  opacity: clamp(0, calc(var(--app-travel, 0px) / 90px), 1);
+}
+
+/* Under the thumb: the glyph turns with travel, a full half-turn by the
+   commit point, so the detent you feel has something to look at. */
+.pullMark svg {
+  rotate: calc(var(--app-travel, 0px) * 1.2deg);
+}
+
+/* Released and running: the gap is held open by the mark's own height and the
+   glyph turns on a clock instead of a finger. */
+.pullMark[data-spinning] {
+  block-size: 3.25rem;
+  opacity: 1;
+  color: var(--glacier-accent-text);
+}
+
+.pullMark[data-spinning] svg {
+  rotate: none;
+  animation: pullSpin 0.9s linear infinite;
+}
+
+@keyframes pullSpin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pullMark[data-spinning] svg {
+    animation-duration: 2.4s;
+  }
 }

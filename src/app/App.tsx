@@ -6,7 +6,7 @@
 // (current/queue) and the queue verbs stay HERE - they close over live state
 // through refs and everything else threads off them.
 import { IconButton, TitleBar } from '@glacier/react';
-import { ChevronLeft, ChevronRight, Search, Settings } from '@glacier/icons';
+import { ChevronLeft, ChevronRight, RefreshCw, Search, Settings } from '@glacier/icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NowPlayingBackdrop } from './player/NowPlayingBackdrop.tsx';
 import { PluginHookScope } from '../plugins/runtime.tsx';
@@ -120,10 +120,10 @@ export function App() {
   // chord live in useSearchSummon.
   const {
     pulling,
-    summonHint,
+    refreshing,
     searchOpen,
     setSearchOpen,
-  } = useSearchSummon(swipeEl);
+  } = useSearchSummon(swipeEl, () => libraryRefresh.current());
   /*
    * A Spotify link opens the search overlay, where the field claims it.
    *
@@ -534,6 +534,7 @@ export function App() {
                   tab={tab}
                   onTab={goTab}
                   onSettings={() => setSettingsOpen(true)}
+                  onSearch={() => setSearchOpen(true)}
                 />
               )}
               {/* Provides the arm-and-play verb to Discover/Search so a tapped,
@@ -591,6 +592,7 @@ export function App() {
                 tab={tab}
                 onTab={goTab}
                 onSettings={() => setSettingsOpen(true)}
+                onSearch={() => setSearchOpen(true)}
               />
             )}
             {/* The plugins' door now lives ON the nav: a rail item per page on
@@ -667,34 +669,17 @@ export function App() {
                 is the mount, and paying it on every frame of a drag would cost
                 the drag. `!searchOpen` keeps it exclusive with the overlay, so
                 there is only ever one SearchPage alive. */}
-            {/* The card's glass, arriving with the thumb: a layer of its own
-                rather than a background on the preview, because the preview
-                carries its own blur filter and a child would be blurred
-                twice over. Sits between the behind-blur and the incoming
-                content, so the search page lands ON the glass. */}
-            {!DESKTOP && pulling && !searchOpen && (
-              <div className="pullGlass" aria-hidden="true" />
-            )}
-            {!DESKTOP && pulling && !searchOpen && (
-              <div className="pullPreview" aria-hidden="true">
-                <PluginHookScope>
-                  <SearchPage
-                    onPlay={playFrom}
-                    onOpenArtist={go}
-                    onOpenAlbum={goAlbum}
-                    onOpenPlaylist={goPlaylist}
-                  />
-                </PluginHookScope>
+            {/* What the pull reveals now: a turning mark in the gap the page
+                opens above itself. The whole SearchPage used to be rendered
+                here as a live preview, which was a second copy of the heaviest
+                screen in the app mounted on a gesture; a mark is the honest
+                weight for "the library is re-reading itself". Kept mounted
+                while the refresh runs, so the gap does not snap shut under a
+                spinner that is still spinning. */}
+            {!DESKTOP && (pulling || refreshing) && !searchOpen && (
+              <div className="pullMark" data-spinning={refreshing || undefined} aria-hidden="true">
+                <RefreshCw size={18} />
               </div>
-            )}
-            {summonHint && !DESKTOP && !searchOpen && (tab === 'home' || tab === 'library') && (
-              <button
-                type="button"
-                className="summonHintChip"
-                onClick={() => setSearchOpen(true)}
-              >
-                <Search size={13} /> Pull down for search
-              </button>
             )}
             {searchOpen && (
               <>

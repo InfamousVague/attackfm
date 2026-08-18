@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.155
+
+- Search is a button again — it's back in the nav bar, and opens the full search screen over whatever you're on
+- Pulling down from the top refreshes your library again, with the detents you can feel building as you pull
+
 ## 0.3.154
 
 - The pull-down for search got cheaper to draw: one frosted layer instead of two, and the frost no longer re-computes itself on every frame of the gesture — the same look, far less work for the phone
