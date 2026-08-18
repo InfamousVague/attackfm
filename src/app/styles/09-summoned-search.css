@@ -156,6 +156,26 @@
   backdrop-filter: blur(min(16px, var(--app-travel, 0px) * 0.08));
 }
 
+/* The glass of the card being pulled into view.
+   Fades a touch EARLIER than the content above it (40px against 70px), so the
+   ground is there to receive the page rather than both arriving at once - and
+   its blur grows with the travel, matching the sheet's own once it commits. */
+.pullGlass {
+  position: fixed;
+  inset-inline: 0;
+  top: var(--app-content-top, 0px);
+  bottom: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-start-start-radius: var(--glacier-radius-xl, 1.25rem);
+  border-start-end-radius: var(--glacier-radius-xl, 1.25rem);
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  background: var(--glacier-glass-thick);
+  -webkit-backdrop-filter: blur(min(32px, var(--app-travel, 0px) * 0.16)) saturate(var(--glacier-glass-saturate));
+  backdrop-filter: blur(min(32px, var(--app-travel, 0px) * 0.16)) saturate(var(--glacier-glass-saturate));
+  opacity: clamp(0, calc((var(--app-travel, 0px) - 40px) / 140px), 1);
+}
+
 /* The open search page leaves the way the Now Playing sheet does: dragged
    down as a card. The gesture module writes --np-drag on the element and
    data-dragging while a finger is down; short of the mark the transition
