@@ -7,6 +7,13 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.165
+
+- Search from the Library now answers from the music you already have — no "add this" results for a song sitting in your library. The bar on Discover still searches everything there is to add
+- Songs on this device play when you tap them, in Settings → Storage
+- A download row offers Play whenever the song is already in your library — including a row that failed, where the song turned out to be there all along
+- Recently played songs without cover art no longer vanish from Recent
+
 ## 0.3.164
 
 - When playback stops instead of moving to the next song, Settings → Diagnostics now says why — whether it reached the end of the list, or lost the list it was playing
