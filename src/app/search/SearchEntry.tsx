@@ -35,35 +35,45 @@ const OPEN_EVENT = 'afm-open-search';
  * searching their own shelves and a person shopping are not doing the same
  * thing and should not have to filter their way out of the wrong one.
  */
-export function openSearchPage(scope?: Filter): void {
-  window.dispatchEvent(new CustomEvent<Filter | undefined>(OPEN_EVENT, { detail: scope }));
+export function openSearchPage(open: OpenSearch = {}): void {
+  window.dispatchEvent(new CustomEvent<OpenSearch>(OPEN_EVENT, { detail: open }));
+}
+
+/** What the bar hands the page: its scope, and its own words. The placeholder
+ *  travels because the bar you tapped and the bar you land on are meant to
+ *  read as the same bar - swapping the text mid-open is the tell that they
+ *  are two components. */
+export interface OpenSearch {
+  scope?: Filter;
+  placeholder?: string;
 }
 
 /** App listens once and owns the overlay, as it always has. */
-export function onOpenSearchPage(handler: (scope?: Filter) => void): () => void {
-  const fire = (e: Event) => handler((e as CustomEvent<Filter | undefined>).detail);
+export function onOpenSearchPage(handler: (open: OpenSearch) => void): () => void {
+  const fire = (e: Event) => handler((e as CustomEvent<OpenSearch>).detail ?? {});
   window.addEventListener(OPEN_EVENT, fire);
   return () => window.removeEventListener(OPEN_EVENT, fire);
 }
 
 export function SearchEntry({ placeholder, scope }: { placeholder?: string; scope?: Filter }) {
+  const text = placeholder ?? 'Search your library';
   return (
     <div
       className="searchEntry"
       role="button"
       tabIndex={0}
-      aria-label={placeholder ?? 'Search your library'}
-      onClick={() => openSearchPage(scope)}
+      aria-label={text}
+      onClick={() => openSearchPage({ scope, placeholder: text })}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
-          openSearchPage(scope);
+          openSearchPage({ scope, placeholder: text });
         }
       }}
     >
       <SearchField
         className="pageSearch"
-        placeholder={placeholder ?? 'Search your library'}
+        placeholder={text}
         tabIndex={-1}
         aria-hidden="true"
         readOnly
