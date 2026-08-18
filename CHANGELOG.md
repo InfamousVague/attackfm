@@ -7,6 +7,13 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.174
+
+- Forty more pedals, taking the board from fifteen to fifty-five: distortion, tape saturation, tube warmth, octave fuzz, cocked wah, telephone, AM radio, megaphone, vinyl, cassette, notch and band filters, tilt, presence, air, mud cut, ring modulator, auto-pan, chop, slapback, ping-pong, plate, hall, room, gated reverb, tape delay, widen, mono, headphones, virtual bass, noise gate, de-esser, punch, glue and more
+- The shelf is sorted into drawers now: Drive, Lo-fi, Filter, Modulation, Time, Space and Dynamics, with an All if you would rather scroll the lot. Every pedal carries its own icon
+- The pedals have their own button on Now Playing, next to the equaliser: every pedal on your board with its switch and its main knob, for the change you want to make in the middle of a song. Building the board stays on the Pedals page
+- Two pedals could stop the music instead of colouring it. Echo at its lowest feedback, and Phaser with its rate past halfway, each sent your server a setting it refuses, and playback stopped rather than sounding wrong. Both are fixed, and Phaser's dial no longer offers the part of its range that never worked
+
 ## 0.3.173
 
 - A song title too long for the Now Playing screen now reads itself out and back instead of stopping at an ellipsis. It travels to the end, rests a moment so you can read it, returns to the beginning, and rests there too, so the title is always readable in full and always settles where it starts
