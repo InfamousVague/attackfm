@@ -1,4 +1,5 @@
 import { Button, SearchField, Text } from '@glacier/react';
+import { useRefreshNonce } from '../nav/pageRefresh.tsx';
 import { Play, Shuffle } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
@@ -68,6 +69,8 @@ export function SongPage({
 }) {
   const { tracks, favoriteTracks } = useLibrary();
   const { session } = useServerSession();
+  // Pull-to-refresh re-runs the fetch below - see nav/pageRefresh.tsx.
+  const refreshNonce = useRefreshNonce();
   const meta = META[view];
 
   // All computed unconditionally (hooks must be), one chosen after. All songs
@@ -95,7 +98,7 @@ export function SongPage({
     return () => {
       live = false;
     };
-  }, [view, session]);
+  }, [view, session, refreshNonce]);
   const onRepeat = useMemo(() => {
     if (!heavyIds) return [];
     const byId = new Map<number, Track>();

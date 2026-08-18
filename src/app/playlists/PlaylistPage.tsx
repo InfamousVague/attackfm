@@ -20,6 +20,7 @@ import {
   X,
 } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useRefreshNonce } from '../nav/pageRefresh.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { mosaicArts, useArtLoad, useTileArt } from '../ux/artLoad.ts';
@@ -58,6 +59,8 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
   const { playlists, rename, remove, removeTrack, reorder, addTrack } = usePlaylists();
   const { toast } = useToast();
   const { session } = useServerSession();
+  // Pull-to-refresh re-runs the fetch below - see nav/pageRefresh.tsx.
+  const refreshNonce = useRefreshNonce();
   // What else belongs here, from the server's own scoring of this list. Null
   // until asked; `ai` false means no model is reading lyrics, and the section
   // stays hidden rather than offer a weaker promise than its heading makes.
@@ -92,7 +95,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
         // An older server, one still reading the library, or a cancelled ask.
       });
     return () => ctrl.abort();
-  }, [session, playlistId, memberKey]);
+  }, [session, playlistId, memberKey, refreshNonce]);
 
   // Paths resolve against the live library, favourites-style: a row whose file
   // is gone simply does not render, and returns if the file does. The id is the

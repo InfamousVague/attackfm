@@ -42,6 +42,7 @@ import { APP_NAME, HeaderActionButtons, HeaderIdent } from './nav/HeaderChrome.t
 import { AppMain } from './nav/AppMain.tsx';
 import { useNavStack } from './nav/useNavStack.ts';
 import { useSearchSummon } from './nav/useSearchSummon.ts';
+import { PageRefreshProvider } from './nav/pageRefresh.tsx';
 import { useLibrary } from './library/library.tsx';
 import { AppProviders } from './nav/AppProviders.tsx';
 import wordmark from '../assets/attack-white.png';
@@ -83,6 +84,8 @@ export function App() {
   // toggle, so the value stays 'summary'. Kept as state so AppMain's prop and
   // its type need no change if the flip returns elsewhere later.
   const [libraryView] = useState<'summary' | 'all'>('summary');
+  /** Bumped by the pull gesture; pages hang their own fetches off it. */
+  const [refreshNonce, setRefreshNonce] = useState(0);
   // Which of Profile's rooms is open - This week (stats). Lives here rather
   // than in ProfilePage because the old 'stats' TAB redirects into the room
   // so every stored link keeps working.
@@ -124,7 +127,13 @@ export function App() {
     refreshing,
     searchOpen,
     setSearchOpen,
-  } = useSearchSummon(swipeEl, () => libraryRefresh.current());
+  } = useSearchSummon(swipeEl, async () => {
+    // A pull means "re-read what I am looking at". That is the library (the
+    // box re-walks its folder and we pull the delta) AND the page's own
+    // fetches, which hang off this counter - see nav/pageRefresh.tsx.
+    setRefreshNonce((n) => n + 1);
+    await libraryRefresh.current();
+  });
   /*
    * A Spotify link opens the search overlay, where the field claims it.
    *
@@ -393,6 +402,7 @@ export function App() {
       addToQueue={addToQueue}
       playNow={playFrom}
     >
+      <PageRefreshProvider nonce={refreshNonce}>
       {/* Fills libraryRefresh with the real rescan. Without it mounted the
           ref keeps its inert initial value, and a pull-to-refresh awaits a
           function that does nothing - which is exactly what it was doing. */}
@@ -740,6 +750,7 @@ export function App() {
               pane={settingsPane}
             />
             </div>
+      </PageRefreshProvider>
     </AppProviders>
   );
 }
