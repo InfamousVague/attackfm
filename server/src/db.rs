@@ -885,6 +885,21 @@ CREATE TABLE IF NOT EXISTS listen_events (
   skipped     INTEGER NOT NULL,
   context     TEXT NOT NULL DEFAULT ''
 );
+
+-- What the DJ actually offered, so adoption can be judged per impression
+-- rather than per catalog: a track queued five times and never finished is a
+-- signal, and without this table it is indistinguishable from a track never
+-- offered at all. slot names the mechanism ('rank' = scored pick,
+-- 'explore' = an exploration slot's gamble).
+CREATE TABLE IF NOT EXISTS dj_impressions (
+  id         INTEGER PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  track_id   INTEGER NOT NULL,
+  slot       TEXT NOT NULL DEFAULT 'rank',
+  position   INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS dj_impressions_user ON dj_impressions(user_id, track_id);
 CREATE INDEX IF NOT EXISTS listen_events_user_time ON listen_events(user_id, started_at DESC);
 -- Probed by the "new to you" count's NOT EXISTS, which asks "had this user
 -- ever played THIS track" - the same lookup shape plays_user_track serves.
@@ -2129,6 +2144,77 @@ impl Db {
     }
 
     /// Distinct recently played live tracks, newest first.
+    /// One row per DJ set: what was offered, in what slot, at what position.
+    pub fn record_dj_impressions(&self, user_id: i64, items: &[(i64, &str, i64)]) {
+        let conn = self.lock();
+        let now = now_ms();
+        for (track_id, slot, position) in items {
+            let _ = conn.execute(
+                "INSERT INTO dj_impressions (user_id, track_id, slot, position, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![user_id, track_id, slot, position, now],
+            );
+        }
+    }
+
+    /// Per-artist exploration ledger: how often the DJ has offered this
+    /// artist, and how often an offer was adopted - a completed listen or a
+    /// heart AFTER the impression. The Thompson sampler's two counters.
+    pub fn explore_artist_stats(&self, user_id: i64) -> Vec<(String, i64, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT LOWER(t.artist), COUNT(*),
+                    SUM(CASE WHEN EXISTS(
+                          SELECT 1 FROM listen_events le
+                          WHERE le.user_id = i.user_id AND le.track_id = i.track_id
+                            AND le.completed = 1 AND le.started_at >= i.created_at)
+                        OR EXISTS(
+                          SELECT 1 FROM favorites f
+                          WHERE f.user_id = i.user_id AND f.track_id = i.track_id
+                            AND f.added_at >= i.created_at)
+                        THEN 1 ELSE 0 END)
+             FROM dj_impressions i JOIN tracks t ON t.id = i.track_id
+             WHERE i.user_id = ?1
+             GROUP BY LOWER(t.artist)",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Recent listening as VERDICTS, not starts: each track weighted by what
+    /// actually happened to it. A completion counts whole, an abandoned sit
+    /// counts a sliver, a heart adds on top - so a song someone bails out of
+    /// ten times finally stops shaping their taste like a loved one. Weights
+    /// per track cap at 3.0: taste is breadth, not one song on repeat.
+    pub fn weighted_recent_listens(&self, user_id: i64, limit: i64) -> Vec<(i64, f32)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT le.track_id,
+                    MIN(3.0, SUM(CASE WHEN le.completed = 1 THEN 1.0
+                                      WHEN le.skipped = 1 THEN 0.15
+                                      ELSE 0.5 END)
+                             + CASE WHEN EXISTS(SELECT 1 FROM favorites f
+                                                WHERE f.user_id = le.user_id
+                                                  AND f.track_id = le.track_id)
+                                    THEN 0.5 ELSE 0.0 END)
+             FROM listen_events le
+             JOIN tracks t ON t.id = le.track_id AND t.deleted = 0
+                          AND COALESCE(t.kind, 'music') <> 'book'
+             WHERE le.user_id = ?1
+             GROUP BY le.track_id
+             ORDER BY MAX(le.started_at) DESC
+             LIMIT ?2",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, limit], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)? as f32)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
     pub fn recent_plays(&self, user_id: i64, limit: i64) -> Vec<i64> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
@@ -5211,6 +5297,7 @@ pub struct CurationTrack {
 }
 
 /// What is known about one track's sound and words.
+#[derive(Default)]
 pub struct TrackFeatures {
     pub track_id: i64,
     pub bpm: Option<f64>,

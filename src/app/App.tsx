@@ -16,6 +16,7 @@ import { NetworkDot } from './servers/NetworkDot.tsx';
 import { SettingsModal } from './settings/SettingsModal.tsx';
 import { SearchPage } from './search/SearchPage.tsx';
 import { onSpotifyLink } from './servers/deepLink.ts';
+import { markPlaySurface } from './player/listens.ts';
 import { installShelfPan } from './ux/shelfPan.ts';
 import { DjChatProvider } from './booth/djChat.tsx';
 import { DatePage } from './date/DatePage.tsx';
@@ -206,6 +207,15 @@ export function App() {
   // so the song changes on every device while control stays where it is.
   const connectRouteRef = useRef<((track: Track, context?: Track[]) => boolean) | null>(null);
 
+  // What playFrom needs to NAME the surface without joining its dependency
+  // list: tab and detail are declared below (nav stack), so they travel by a
+  // ref refreshed each render - playFrom stays identity-stable.
+  const stateRef = useRef<{ searchOpen: boolean; detail: { kind?: string } | null; tab: string }>({
+    searchOpen: false,
+    detail: null,
+    tab: '',
+  });
+
   // Identity-stable (everything it touches is a ref or a setter): playFrom
   // rides into memoized page props and the song table's column definitions,
   // so a fresh closure per render re-rendered every row on each track change.
@@ -214,6 +224,16 @@ export function App() {
     // playback here. The active device loads and plays it, then reports, and
     // this device (a remote) updates from that report like any other.
     if (connectRouteRef.current?.(track, context)) return;
+    // Name the surface this sitting started from, for the listen ledger:
+    // the search overlay outranks the page (it floats over any of them), a
+    // detail page outranks its tab. Every listen until the next queue start
+    // carries this - which is how the DJ finally learns whether its own
+    // picks get finished or skipped.
+    markPlaySurface(
+      stateRef.current.searchOpen
+        ? 'search'
+        : (stateRef.current.detail?.kind ?? stateRef.current.tab),
+    );
     setAutoplay(true);
     setCurrent((prev) => (prev === track ? { ...track } : track));
     setQueue(context ?? [track]);
@@ -299,6 +319,7 @@ export function App() {
     openSearch: () => setSearchOpen(true),
     closeProfileRoom: () => setProfileRoom(null),
   });
+  stateRef.current = { searchOpen, detail: detail as { kind?: string } | null, tab };
   // The phone's edge-swipe back: a drag in from the left walks the same stack
   // the header arrows do, with the page following the thumb. Touch-only and
   // edge-only (the hook guards both), and enabled only when there is anywhere
