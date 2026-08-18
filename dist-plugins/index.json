@@ -38,17 +38,34 @@
     {
       "id": "hifi-lab",
       "name": "HiFi Lab",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "description": "Chain EQs, filters and dynamics into a signal path of your own — reorder the boxes, save the racks you build.",
       "author": "AttackFM",
       "tags": [
         "Sound",
         "HiFi"
       ],
-      "entry": "hifi-lab-0.1.1.js",
+      "entry": "hifi-lab-0.1.2.js",
       "api": 1,
-      "bytes": 10993,
-      "sha256": "ed42bf10d9a631f0a655fae2492e088accf8e0f1f4383b46337b2633c0424e2f",
+      "bytes": 11023,
+      "sha256": "2fad388895f467c6f5c1ca2ae2e91d2b3a28be30a29dcf7bcabf3356fac5e824",
+      "requiresServer": true,
+      "public": true
+    },
+    {
+      "id": "pedals",
+      "name": "Pedals",
+      "version": "0.1.0",
+      "description": "A pedalboard for your music — overdrive, fuzz, chorus, echo, spring and ten more stompboxes, wired in the order you stack them.",
+      "author": "AttackFM",
+      "tags": [
+        "Sound",
+        "Pedals"
+      ],
+      "entry": "pedals-0.1.0.js",
+      "api": 1,
+      "bytes": 6953,
+      "sha256": "ac118bb972e5156fbc596b608064aaa374c2c135459d252681daaf80444b0016",
       "requiresServer": true,
       "public": true
     },

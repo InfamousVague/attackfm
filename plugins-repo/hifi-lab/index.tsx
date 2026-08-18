@@ -21,7 +21,7 @@ export const hifiLab: Plugin = {
     'Chain EQs, filters and dynamics into a signal path of your own — reorder the boxes, save the racks you build.',
   icon: <AudioLines size={22} />,
   author: 'AttackFM',
-  version: '0.1.1',
+  version: '0.1.2',
   tags: ['Sound', 'HiFi'],
   details:
     'Adds a HiFi Lab page where the signal path is a chain of boxes: ' +
