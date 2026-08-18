@@ -7,6 +7,13 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.162
+
+- New official plugin: HiFi Lab. Chain EQ bands, shelves, filters, a compressor, stereo width, headphone crossfeed and a leveler — in the order you wire them, every knob yours. Your server renders the sound; a limiter always guards the output
+- Racks save under a name and follow your account; A/B two chains against each other
+- The equalizer panel shows a HiFi chain switch whenever a chain is live, so the sound always has a visible off — even if the plugin is removed
+- Install it from Settings → Plugins → Browse
+
 ## 0.3.161
 
 - Song titles get room again on an unfolded screen: with Now Playing docked beside the library, the album and date columns step aside instead of squeezing titles down to a letter
