@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.152
+
+- Pulling down no longer opens search from the middle of a page. Scroll down and flick back and it stays a scroll; search still comes down when you pull from the very top, as it should
+
 ## 0.3.151
 
 - Dragging the search card away stays smooth on a phone: it stops re-blurring the whole screen every frame mid-drag, which nothing could see it doing anyway
