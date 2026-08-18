@@ -1183,7 +1183,16 @@ export function Player({
     // Mirroring another device: show its song, fetch nothing. The strip exists
     // here to display progress and send commands, and buffering a file this
     // device will not play is pure cost.
-    if (remoteOnlyRef.current) return;
+    //
+    // EXCEPT when a resume is pending for THIS track: that means this device is
+    // taking playback OVER - a Connect hand-off (becomeActive) or a jam follow -
+    // so it will play the file. `remoteOnly` is derived from the hub's
+    // activeDeviceId, and the becomeActive frame can beat the state update that
+    // flips it false; bailing here on that stale flag is exactly why a
+    // handed-to device would show the song but sit silent (it loads nothing, and
+    // the [track]-keyed effect never re-runs once the flag clears). Loading is
+    // right - the resume effect seeks and plays the moment it lands.
+    if (remoteOnlyRef.current && resumeRef.current?.trackId !== trackIdFromPath(track.path)) return;
     // A track a crossfade already carried onto the other deck arrives here
     // pre-played: the handover flipped the decks and handed the track up, so
     // there is nothing to load - loading would start it over from the top.
