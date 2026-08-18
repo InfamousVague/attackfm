@@ -395,7 +395,6 @@
   display: block;
   inline-size: 100%;
   max-inline-size: 34rem;
-  margin-block-end: var(--glacier-space-4);
   cursor: pointer;
 }
 
@@ -409,12 +408,28 @@
   cursor: pointer;
 }
 
-/* Discover lays its own body out with page padding; the library page's first
-   child needs the same gutter its shelves get. */
+/*
+ * The bar keeps the search page's measure, not the page's section rhythm.
+ *
+ * No inline margin: both pages already pad themselves by space-4, and adding
+ * a margin on top of that indented the bar to twice the gutter of everything
+ * below it - the bar sat at 36px while the shelves started at 18.
+ *
+ * The negative block margin is the deliberate half. These pages put a wide
+ * rhythm between their sections (measured: 36px) while the search page sets
+ * space-4 under its field (18px). A search bar is a control belonging to the
+ * top of the page, not a section peer, so it takes the tighter measure - and
+ * matching the two is what stops the layout jumping when the tap swaps one
+ * field for the other.
+ *
+ * Pulling back by exactly space-4 lands it there, because the page rhythm is
+ * two of them. Written as the negative of the token rather than a literal so
+ * it tracks the scale; if the page rhythm itself is ever retuned this needs
+ * re-measuring, which is why the number it targets is written down: 18px.
+ */
 .libraryPage > .searchEntry,
 .discoverPage > .searchEntry {
-  margin-inline: var(--glacier-space-4);
-  inline-size: auto;
+  margin-block-end: calc(-1 * var(--glacier-space-4));
 }
 
 /* Home's local-search results: the same square cards the shelves use, laid out
