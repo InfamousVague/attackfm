@@ -15,6 +15,7 @@ import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { VOLUME_UNITY } from './VolumeControl.tsx';
 import { useEffects } from './effects.ts';
 import { useFxChain } from './fxChain.ts';
+import { recordDiag } from '../diag/diagLog.ts';
 import { loadAudioUrl, reactivateAudioSession, systemOutputVolume, type Track } from '../core/tauri.ts';
 import { isPendingPath } from './pendingPlay.tsx';
 import { isRemotePath } from '../server.ts';
@@ -1596,6 +1597,29 @@ export function Player({
   const advance = (dir: 1 | -1, wrap: boolean) => {
     const next = pickNext(dir, wrap);
     if (next === null) {
+      /*
+       * Stopping is sometimes right (the end of a list nobody asked to loop)
+       * and sometimes the bug reported as "it plays one song and pauses" -
+       * and from the outside those look identical. So the stop says which it
+       * was, in the log the listener can hand over.
+       *
+       * Written here rather than in pickNext because this is the branch that
+       * actually stops the music: a null that the DJ or a rewind absorbed is
+       * not a stop and is not worth a line. Cheap and rare by construction -
+       * once per stop, not once per track.
+       */
+      if (dir === 1) {
+        const inQueue = track ? queue.findIndex((t) => t.path === track.path) : -1;
+        recordDiag(
+          'queue',
+          queue.length === 0
+            ? 'stopped: the queue was empty (the surface that started this play passed no list)'
+            : inQueue === -1
+              ? `stopped: the playing track is not in its own queue of ${queue.length} ` +
+                '(paths disagree - the list and the pick came from different sources)'
+              : `stopped: reached the end of a ${queue.length}-track queue at position ${inQueue + 1}`,
+        );
+      }
       // The element too, not just the bar: reached from a skip as well as
       // from a natural end, and a skip's deck is still mid-song. Intent drops
       // first: the pause event this fires must read as ours, not the system's.
