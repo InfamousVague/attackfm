@@ -159,3 +159,29 @@
     animation-duration: 2.4s;
   }
 }
+
+/* Smart shuffle's badge: the sparkle rides the shuffle glyph's top-right
+   corner rather than sitting beside it, so the control keeps one silhouette
+   and one tap target at every state. It appears only in the third state -
+   a badge that lit for ordinary shuffle would promise a feature that state
+   does not have. */
+.shuffleGlyph {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shuffleGlyph__spark {
+  position: absolute;
+  inset-block-start: -3px;
+  inset-inline-end: -5px;
+  color: var(--glacier-accent-text);
+}
+
+/* The lit state a mode this quiet still needs: shuffle's own `data-on` tint
+   plus the accent, so smart reads as further along the same control rather
+   than as a different button. */
+[data-smart] .shuffleGlyph {
+  color: var(--glacier-accent-text);
+}

@@ -1438,6 +1438,63 @@ pub async fn playlist_suggestions(
     })))
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnhanceBody {
+    /// The queue as it stands - whatever is playing, saved list or not.
+    pub track_ids: Vec<i64>,
+    /// How many to hand back. Clamped; a handful is the point.
+    #[serde(default)]
+    pub count: Option<usize>,
+}
+
+/// `POST /api/queue/enhance` - songs that belong in THIS queue but are not in
+/// it yet.
+///
+/// The playlist suggester above answers the same question for a saved
+/// playlist, by its id. Smart shuffle needs it for whatever happens to be
+/// playing - an album, a Liked list, a DJ set, a hand-built queue that was
+/// never saved anywhere - so this takes the ids directly. Same shape of
+/// answer, same taste model, same spread across artists.
+///
+/// Quarantined auditions are excluded, the way every other list-building path
+/// learned to (an audition is a judgement not yet made), and every returned
+/// track is logged as a DJ impression so a mixed-in song that gets finished
+/// or hearted teaches the same ledger the exploration slots read.
+pub async fn enhance_queue(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<EnhanceBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let caller =
+        auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+
+    // Under three songs a queue has no character to match, and suggestions
+    // would be noise wearing a confident label - the same floor the playlist
+    // suggester uses.
+    if body.track_ids.len() < 3 {
+        return Ok(Json(json!({ "trackIds": [], "ai": ai_url().is_some() })));
+    }
+    let want = body.count.unwrap_or(6).clamp(1, 12);
+    let all = state.db.all_features();
+    let by_id: HashMap<i64, &TrackFeatures> = all.iter().map(|f| (f.track_id, f)).collect();
+    let taste = taste_from(&body.track_ids, &by_id);
+    let on_queue: HashSet<i64> = body.track_ids.iter().copied().collect();
+
+    let ranked: Vec<(f32, &TrackFeatures)> = all
+        .iter()
+        .filter(|f| !on_queue.contains(&f.track_id) && !f.quarantined)
+        .map(|f| (score(f, &taste), f))
+        .collect();
+    let ids = take_spread(ranked, want);
+
+    let offered: Vec<(i64, &str, i64)> =
+        ids.iter().enumerate().map(|(i, id)| (*id, "enhance", i as i64)).collect();
+    state.db.record_dj_impressions(caller.id, &offered);
+
+    Ok(Json(json!({ "trackIds": ids, "ai": ai_url().is_some() })))
+}
+
 #[cfg(test)]
 mod verdict_taste {
     use super::*;

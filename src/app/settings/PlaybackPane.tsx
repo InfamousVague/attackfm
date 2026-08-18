@@ -117,14 +117,19 @@ export function PlaybackSettings() {
       </div>
       <div className="prefsSection">
         <Label>Queue</Label>
+        {/* Renamed, not re-scoped: this has always been about shuffle's
+            MANNERS, and "Smart shuffle" now names the third state of the
+            shuffle button itself - two different things could not keep one
+            label. */}
         <Switch
-          label="Smart shuffle"
+          label="Shuffle manners"
           checked={pb.smartShuffle}
           onCheckedChange={(on) => pb.update({ smartShuffle: on })}
         />
         <Text tone="muted" size="sm">
           Shuffle avoids playing the same artist twice in a row, and steers around songs it just
-          played.
+          played. Smart shuffle — the sparkled shuffle button — also mixes in songs the DJ thinks
+          belong in what you are playing.
         </Text>
         <Switch
           label="Auto DJ"

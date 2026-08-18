@@ -29,6 +29,7 @@ import {
   Repeat,
   Repeat1,
   Shuffle,
+  Sparkles,
   SkipBack,
   SkipForward,
   Volume2,
@@ -137,7 +138,8 @@ export function NowPlayingSheet({
   onScrub,
   commitSeek,
   shuffle,
-  setShuffle,
+  smart,
+  cycleShuffle,
   canSkip,
   skipBack,
   skipForward,
@@ -195,7 +197,10 @@ export function NowPlayingSheet({
   onScrub: (to: number) => void;
   commitSeek: (to: number) => void;
   shuffle: boolean;
-  setShuffle: Dispatch<SetStateAction<boolean>>;
+  /** Smart shuffle: enhancers mixed in. Only meaningful while shuffle is on. */
+  smart: boolean;
+  /** off -> shuffle -> smart shuffle -> off. */
+  cycleShuffle: () => void;
   canSkip: boolean;
   skipBack: () => void;
   skipForward: () => void;
@@ -495,14 +500,22 @@ export function NowPlayingSheet({
       )}
 
       <div className="npScreen__transport">
+        {/* Three states in one control: off, shuffle, smart shuffle. The
+            sparkle only appears on the third, because it is the only one that
+            adds anything to the queue - a badge that lit for ordinary shuffle
+            would be decoration promising a feature. */}
         <IconButton
           variant="ghost"
-          aria-label="Shuffle"
+          aria-label={smart ? 'Smart shuffle' : 'Shuffle'}
           aria-pressed={shuffle}
           data-on={shuffle || undefined}
-          onClick={() => setShuffle((s) => !s)}
+          data-smart={(shuffle && smart) || undefined}
+          onClick={cycleShuffle}
         >
-          <Shuffle size={20} />
+          <span className="shuffleGlyph">
+            <Shuffle size={20} />
+            {shuffle && smart && <Sparkles className="shuffleGlyph__spark" size={11} />}
+          </span>
         </IconButton>
         <IconButton variant="ghost" aria-label="Previous" disabled={!canSkip} onClick={skipBack}>
           <SkipBack size={26} fill="currentColor" />
