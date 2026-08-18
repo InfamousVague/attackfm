@@ -3,6 +3,8 @@
  * Publish the marketing site to attack.fm.
  *
  * Caddy serves the bare domain straight off /opt/attackfm-site with file_server
+ * (the web app shares that root at /listen - see deploy-listen.mjs, and the
+ * --exclude below that keeps this publish from deleting it)
  * (see /etc/caddy/Caddyfile), so publishing is: build, back up what is there,
  * rsync the new tree over it.
  *
@@ -130,7 +132,11 @@ ssh(
   env,
   `set -e
    sudo mkdir -p ${REMOTE}
-   sudo rsync -a --delete ${STAGE}/ ${REMOTE}/
+   # --exclude listen: the web app (deploy-listen.mjs) lives in a subdirectory
+   # of this same tree, and --delete would take it with every site publish -
+   # attack.fm/listen would 404 until someone noticed and republished it. The
+   # two trees share a document root but not a release clock.
+   sudo rsync -a --delete --exclude 'listen' --exclude 'listen/**' ${STAGE}/ ${REMOTE}/
    sudo chown -R root:root ${REMOTE}
    # Caddy runs as its own user and only needs to read.
    sudo find ${REMOTE} -type d -exec chmod 755 {} +
