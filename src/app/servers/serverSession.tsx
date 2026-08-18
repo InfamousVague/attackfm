@@ -27,6 +27,7 @@ import {
   type ServerSession,
 } from '../server.ts';
 import { effectsParam } from '../player/effects.ts';
+import { fxChainParam } from '../player/fxChain.ts';
 import { setRemoteAudioResolver } from '../core/tauri.ts';
 import { syncPushRegistration } from '../core/notifications.ts';
 
@@ -148,6 +149,9 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
       // filter to live. The bitrate stays whatever was chosen, so asking for
       // lofi does not quietly also cost quality.
       const fx = effectsParam();
+      // The chain forces the encoder for the same reason an effect does: the
+      // untouched file has nowhere for a filter to live.
+      const fx2 = fxChainParam();
       // Which BOX serves the bytes is a separate question from which library
       // this is. A mirror that holds the same song and answers faster from
       // wherever the phone woke up takes the fetch; everything else about the
@@ -160,8 +164,8 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
         ? { ...live, url: via.url, streamToken: via.streamToken }
         : live;
       const rowId = via ? via.trackId : id;
-      return quality === 'transcode' || fx
-        ? transcodeUrl(from, rowId, bitrate, 0, fx)
+      return quality === 'transcode' || fx || fx2
+        ? transcodeUrl(from, rowId, bitrate, 0, fx, fx2)
         : streamUrl(from, rowId);
     });
     return () => setRemoteAudioResolver(null);

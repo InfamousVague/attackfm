@@ -14,6 +14,7 @@ import { usePlayback } from './playback.tsx';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { VOLUME_UNITY } from './VolumeControl.tsx';
 import { useEffects } from './effects.ts';
+import { useFxChain } from './fxChain.ts';
 import { loadAudioUrl, reactivateAudioSession, systemOutputVolume, type Track } from '../core/tauri.ts';
 import { isPendingPath } from './pendingPlay.tsx';
 import { isRemotePath } from '../server.ts';
@@ -455,16 +456,22 @@ export function Player({
    * applies effects), so reloading would restart the song to no purpose.
    */
   const rack = useEffects();
+  // The hi-fi chain re-colours in place by the same mechanism. Object identity
+  // is the change signal, same as the rack's array identity.
+  const chain = useFxChain();
   const rackWas = useRef(rack);
+  const chainWas = useRef(chain);
   useEffect(() => {
-    const before = rackWas.current;
+    const beforeRack = rackWas.current;
+    const beforeChain = chainWas.current;
     rackWas.current = rack;
-    if (before === rack) return;
+    chainWas.current = chain;
+    if (beforeRack === rack && beforeChain === chain) return;
     if (!liveRef.current.track || !isRemotePath(liveRef.current.track.path)) return;
     resumeCount.current = 0;
     void resumeInPlace();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the rack is the trigger; resumeInPlace is redefined every render
-  }, [rack]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the rack and chain are the triggers; resumeInPlace is redefined every render
+  }, [rack, chain]);
 
   /** Arm the ladder. Idempotent: an episode already running keeps its timer. */
   const noteStall = () => {
