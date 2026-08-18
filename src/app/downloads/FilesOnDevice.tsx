@@ -7,7 +7,7 @@ import {
   type TreeItem,
 } from '@glacier/react';
 import { Disc3, Music, Trash2, User } from '@glacier/icons';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLibrary } from '../library/library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { offlineEntries, onOfflineChange, unpinTrack, type OfflineEntry } from './offline.ts';
@@ -15,6 +15,7 @@ import { autoCachedKeys, denyKey, onCacheChange } from './autoCache.ts';
 import { artSized, loadCachedIndex, remotePath, toTrack } from '../server.ts';
 import { isTauri, type Track } from '../core/tauri.ts';
 import { formatBytes } from '../ux/format.ts';
+import { usePlayNowOptional } from '../player/playNow.tsx';
 
 /**
  * The Files chunk: everything held on the device, as a browser.
@@ -271,6 +272,26 @@ export function FilesOnDevice() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows]);
 
+  /*
+   * Every row here is, by definition, a file sitting on this device - so a tap
+   * plays it. The delete button rides in `trailing`, which TreeView isolates
+   * from row activation, so the destructive verb cannot be hit by the gesture
+   * that starts a song.
+   *
+   * A row whose `track` is null ("No longer in the library") stays inert: the
+   * bytes are still on disk but nothing knows what they are, and a click that
+   * did nothing would read as a bug rather than as an answer.
+   */
+  const playNow = usePlayNowOptional();
+  const playRow = useCallback(
+    (id: string) => {
+      const key = id.startsWith('big:') ? id.slice(4) : id;
+      const row = rows.find((r) => r.key === key);
+      if (row?.track && playNow) playNow(row.track);
+    },
+    [rows, playNow],
+  );
+
   const biggest: TreeItem[] = useMemo(() => {
     return [...rows]
       .sort((a, b) => b.bytes - a.bytes)
@@ -339,6 +360,7 @@ export function FilesOnDevice() {
         aria-label={view === 'tree' ? 'Songs on this device, by artist' : 'Largest files on this device'}
         items={view === 'tree' ? tree : biggest}
         className="deviceFiles__tree"
+        onSelect={playRow}
       />
 
       <Text size="xs" tone="subtle">
