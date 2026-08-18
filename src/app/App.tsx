@@ -17,6 +17,7 @@ import { SettingsModal } from './settings/SettingsModal.tsx';
 import { SearchPage } from './search/SearchPage.tsx';
 import { onSpotifyLink } from './servers/deepLink.ts';
 import { markPlaySurface } from './player/listens.ts';
+import { onOpenSearchPage } from './search/SearchEntry.tsx';
 import { installShelfPan } from './ux/shelfPan.ts';
 import { DjChatProvider } from './booth/djChat.tsx';
 import { DatePage } from './date/DatePage.tsx';
@@ -132,6 +133,10 @@ export function App() {
    * field that knows what it is.
    */
   useEffect(() => onSpotifyLink(() => setSearchOpen(true)), [setSearchOpen]);
+
+  // The search bars on Library and Discover. An event rather than a prop
+  // because Discover is a plugin page - see SearchEntry.tsx.
+  useEffect(() => onOpenSearchPage(() => setSearchOpen(true)), [setSearchOpen]);
 
   /*
    * The open search page leaves the way the Now Playing sheet does: pulled
@@ -534,7 +539,6 @@ export function App() {
                   tab={tab}
                   onTab={goTab}
                   onSettings={() => setSettingsOpen(true)}
-                  onSearch={() => setSearchOpen(true)}
                 />
               )}
               {/* Provides the arm-and-play verb to Discover/Search so a tapped,
@@ -592,7 +596,6 @@ export function App() {
                 tab={tab}
                 onTab={goTab}
                 onSettings={() => setSettingsOpen(true)}
-                onSearch={() => setSearchOpen(true)}
               />
             )}
             {/* The plugins' door now lives ON the nav: a rail item per page on
