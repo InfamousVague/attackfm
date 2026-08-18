@@ -2,20 +2,55 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Button, SegmentedControl, Slider, Switch, Text } from '@glacier/react';
 import {
   Activity,
+  AlignJustify,
   ArrowDown,
+  ArrowDownFromLine,
   ArrowDownToLine,
+  ArrowLeftRight,
   ArrowUp,
   AudioWaveform,
   Binary,
+  Building2,
+  ChevronsUp,
+  Circle,
+  CircleDot,
   Copy,
+  CornerDownRight,
+  Disc2,
+  DoorClosed,
+  DoorOpen,
+  Droplets,
+  Eraser,
+  Expand,
   Fan,
+  Filter,
   Flame,
+  Focus,
+  Hammer,
+  Headphones,
   Layers,
+  Lightbulb,
+  Link2,
+  Maximize2,
+  Megaphone,
+  MinusCircle,
+  MoveHorizontal,
+  Phone,
   Plus,
   Radio,
+  RadioTower,
   Repeat,
+  Rewind,
+  RotateCw,
+  Scissors,
+  Shuffle,
+  SlidersHorizontal,
+  Sparkle,
   Sparkles,
+  Speaker,
+  SquareDashedBottom,
   Star,
+  TrendingUp,
   Waves,
   Wind,
   X,
@@ -105,6 +140,21 @@ const ICONS: Record<string, LucideIcon> = {
   sub: ArrowDownToLine,
   sparkle: Star,
   doubler: Copy,
+  // The second shelf, in the same family order the segmented control uses.
+  // Drive
+  dist: Flame, sat: Waves, tube: Lightbulb, clip: Scissors, octafuzz: ChevronsUp, sizzle: Sparkle,
+  // Lo-fi
+  wah: Filter, telephone: Phone, radio: RadioTower, megaphone: Megaphone, vinyl: Disc2, cassette: Rewind,
+  // Filter
+  notch: MinusCircle, bandfilter: SlidersHorizontal, tilt: TrendingUp, subcut: ArrowDownFromLine, presence: Focus, air: Wind, mudcut: Droplets,
+  // Modulation
+  ring: CircleDot, autopan: MoveHorizontal, chop: AlignJustify, phasespin: RotateCw,
+  // Time
+  slap: CornerDownRight, pingpong: ArrowLeftRight, plate: Layers, hall: Building2, room: DoorClosed, gatedverb: SquareDashedBottom, tapedelay: Repeat,
+  // Space
+  widen: Maximize2, extra: Expand, mono: Circle, earwax: Headphones, vbass: Speaker, decorr: Shuffle,
+  // Dynamics
+  gate: DoorOpen, deess: Eraser, punch: Hammer, glue: Link2,
 };
 
 /**
@@ -151,6 +201,16 @@ const pedalCard = (hue: number, on: boolean): CSSProperties => ({
 const cardHead: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10 };
 const knobRow: CSSProperties = { display: 'grid', gridTemplateColumns: '1fr', gap: 6 };
 const knobLine: CSSProperties = { display: 'grid', gridTemplateColumns: '84px 1fr 56px', gap: 10, alignItems: 'center' };
+/* The family picker's rail. `min-width: max-content` on the child is what
+   stops the control from being squeezed back to the container's width. */
+const familyScroller: CSSProperties = {
+  overflowX: 'auto',
+  overflowY: 'hidden',
+  paddingBottom: 2,
+  scrollbarWidth: 'none',
+  WebkitOverflowScrolling: 'touch',
+};
+
 const shelfGrid: CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
@@ -378,8 +438,23 @@ export function PedalsPage() {
             <Text tone="muted" size="xs">{shelfOpen ? 'hide' : `${specs.length} pedals`}</Text>
           </button>
           {shelfOpen && (
+            /* Eight segments do not fit a phone: fullWidth divides the width
+               evenly and the labels run into each other ("FilterModulationTime").
+               Natural widths in a scroller keeps every label readable, and the
+               overflow is horizontal so the page itself never slides. */
+            <div style={familyScroller}>
+              <SegmentedControl
+                aria-label="Pedal family"
+                options={familyOptions}
+                value={family}
+                onValueChange={setFamily}
+                size="sm"
+              />
+            </div>
+          )}
+          {shelfOpen && (
             <div style={shelfGrid}>
-              {specs.map((spec) => {
+              {shelf.map((spec) => {
                 const hue = HUES[spec.t] ?? 0;
                 const Icon = ICONS[spec.t] ?? Zap;
                 return (
