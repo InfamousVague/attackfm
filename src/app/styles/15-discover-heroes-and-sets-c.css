@@ -450,3 +450,13 @@ body [class*='_panel_']:has(> .dlPanel) {
 .pedalsPanel__noKnob {
   display: block;
 }
+
+/* A pedal the connected server cannot compile: it sits in the chain and is
+   dropped from the audio, which without a marker looks exactly like a pedal
+   that works but sounds weak. Struck through rather than hidden - the pedal is
+   real, and the server it needs may be one update away. */
+.pedalsPanel__name[data-unsupported='true'] {
+  color: var(--glacier-text-muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}

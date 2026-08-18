@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 
 /**
  * The hi-fi chain: ordered, parameterized nodes, compiled on the SERVER.
@@ -677,4 +677,68 @@ function subscribe(cb: () => void): () => void {
 /** The chain, live everywhere it is shown. */
 export function useFxChain(): FxChainState {
   return useSyncExternalStore(subscribe, fxChain, () => state);
+}
+
+// --- what the connected server actually implements -------------------------
+
+/**
+ * The node tags a given server compiles, from `GET /api/fx/nodes`.
+ *
+ * This exists because of a failure mode nastier than a crash: a node the
+ * encoder does not know is DROPPED silently (chain_from_wire skips unknown
+ * tags rather than failing the chain), so the pedal applies cleanly, changes
+ * nothing, and reads as a weak effect rather than a broken one. The vocabulary
+ * lives in the server binary, so a hub that has not been updated offers exactly
+ * that experience for every pedal newer than it.
+ *
+ * "In the chain" and "in the audio" are therefore different claims, and this is
+ * what lets the interface tell them apart. Unauthenticated on purpose - the
+ * endpoint is public, and a listener who is signed out still deserves an honest
+ * shelf.
+ *
+ * Null means "not known yet" (still loading, or the server could not be
+ * reached) and MUST be read as "assume supported": greying out the whole shelf
+ * because a fetch failed would be a worse lie than the one this prevents.
+ */
+const supportCache = new Map<string, Set<string>>();
+
+export function serverFxNodes(url: string): Set<string> | null {
+  return supportCache.get(url) ?? null;
+}
+
+export function useServerFxNodes(url: string | null | undefined): Set<string> | null {
+  const [tags, setTags] = useState<Set<string> | null>(() =>
+    url ? (supportCache.get(url) ?? null) : null,
+  );
+
+  useEffect(() => {
+    if (!url) {
+      setTags(null);
+      return;
+    }
+    const cached = supportCache.get(url);
+    if (cached) {
+      setTags(cached);
+      return;
+    }
+    const controller = new AbortController();
+    fetch(`${url}/api/fx/nodes`, { signal: controller.signal })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((body: { nodes?: { t?: string }[] }) => {
+        const set = new Set(
+          (body.nodes ?? []).map((n) => n.t).filter((t): t is string => typeof t === 'string'),
+        );
+        // An empty answer is not evidence of an empty vocabulary; treat it as
+        // unknown rather than marking every pedal dead.
+        if (set.size === 0) return;
+        supportCache.set(url, set);
+        setTags(set);
+      })
+      .catch(() => {
+        /* Unknown stays unknown, which reads as supported. */
+      });
+    return () => controller.abort();
+  }, [url]);
+
+  return tags;
 }

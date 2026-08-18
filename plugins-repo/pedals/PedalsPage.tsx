@@ -63,6 +63,7 @@ import {
   setFxChain,
   setFxChainOn,
   useFxChain,
+  useServerFxNodes,
   type FxNode,
   type FxNodeSpec,
 } from '@attackfm/app/fxChain';
@@ -216,7 +217,8 @@ const shelfGrid: CSSProperties = {
   gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
   gap: 8,
 };
-const shelfBtn = (hue: number): CSSProperties => ({
+const shelfBtn = (hue: number, dim = false): CSSProperties => ({
+  opacity: dim ? 0.55 : 1,
   borderRadius: 12,
   border: '1px solid var(--glacier-border)',
   background: `linear-gradient(135deg, hsl(${hue} 40% 24% / 0.4), var(--glacier-bg-surface))`,
@@ -260,6 +262,15 @@ export function PedalsPage() {
   }, [freshKey]);
 
   const specs = useMemo(() => FX_NODES.filter((s) => s.group === 'pedal'), []);
+
+  /**
+   * What this server actually compiles. A pedal it has never heard of is
+   * dropped silently rather than refused, so without this the shelf offers
+   * boxes that go in, look identical, and do nothing. Null means unknown,
+   * which is read as supported - see useServerFxNodes.
+   */
+  const known = useServerFxNodes(session?.url);
+  const unsupported = (t: string) => known !== null && !known.has(t);
 
   /**
    * Which drawer of the shelf is open. Fifty-five pedals in one grid is a wall,
@@ -391,7 +402,11 @@ export function PedalsPage() {
                   />
                   <div style={{ flex: 1 }}>
                     <Text weight="bold">{spec.label}</Text>
-                    <Text tone="muted" size="xs">{spec.blurb}</Text>
+                    <Text tone="muted" size="xs">
+                      {unsupported(node.t)
+                        ? 'Your server does not have this pedal, so it is passing through silently'
+                        : spec.blurb}
+                    </Text>
                   </div>
                   <Button variant="ghost" size="sm" aria-label="Earlier in the chain" disabled={i === 0} onClick={() => move(index, -1)}>
                     <ArrowUp size={15} />
@@ -458,13 +473,23 @@ export function PedalsPage() {
                 const hue = HUES[spec.t] ?? 0;
                 const Icon = ICONS[spec.t] ?? Zap;
                 return (
-                  <button key={spec.t} type="button" style={shelfBtn(hue)} onClick={() => add(spec)}>
+                  <button
+                    key={spec.t}
+                    type="button"
+                    style={shelfBtn(hue, unsupported(spec.t))}
+                    onClick={() => add(spec)}
+                    // Still addable: the box is real, and the server it needs
+                    // may be one update away. The label carries the caveat.
+                    title={unsupported(spec.t) ? 'Your server is too old for this pedal' : undefined}
+                  >
                     <span style={shelfIcon(hue)} aria-hidden>
                       <Icon size={16} />
                     </span>
                     <span style={{ minWidth: 0 }}>
                       <Text weight="bold" size="sm">{spec.label}</Text>
-                      <Text tone="muted" size="xs">{spec.blurb}</Text>
+                      <Text tone="muted" size="xs">
+                        {unsupported(spec.t) ? 'Needs a newer server' : spec.blurb}
+                      </Text>
                     </span>
                   </button>
                 );
