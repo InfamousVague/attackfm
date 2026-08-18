@@ -54,6 +54,8 @@ const PLATFORMS: Platform[] = [
 interface Resolved {
   url: string;
   size: string;
+  /** Extension of the asset actually linked, so the label cannot contradict it. */
+  kind: string;
 }
 
 const megabytes = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`;
@@ -84,7 +86,17 @@ function useReleaseAssets(): { assets: Record<string, Resolved>; version: string
         const found: Record<string, Resolved> = {};
         for (const platform of PLATFORMS) {
           const asset = release.assets?.find((a) => platform.match(a.name));
-          if (asset) found[platform.key] = { url: asset.browser_download_url, size: megabytes(asset.size) };
+          if (asset) {
+            found[platform.key] = {
+              url: asset.browser_download_url,
+              size: megabytes(asset.size),
+              // Read the extension off the file being linked. Windows publishes
+              // both an .msi and an NSIS -setup.exe, and whichever the API lists
+              // first is the one linked; a hard-coded label said ".msi" while
+              // pointing at the .exe.
+              kind: `.${asset.name.split('.').pop() ?? ''}`,
+            };
+          }
         }
         setAssets(found);
         setVersion(release.tag_name ?? null);
@@ -126,7 +138,7 @@ export function Downloads() {
                   <p className="body download__detail">{platform.detail}</p>
                   <span className="download__cta">
                     <Download size={16} />
-                    {resolved ? `${platform.kind} · ${resolved.size}` : platform.kind}
+                    {resolved ? `${resolved.kind} · ${resolved.size}` : platform.kind}
                   </span>
                 </a>
               </Reveal>
