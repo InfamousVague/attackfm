@@ -18,6 +18,7 @@ import { SearchPage } from './search/SearchPage.tsx';
 import { onSpotifyLink } from './servers/deepLink.ts';
 import { markPlaySurface } from './player/listens.ts';
 import { onOpenSearchPage } from './search/SearchEntry.tsx';
+import type { Filter } from './search/searchModel.tsx';
 import { installShelfPan } from './ux/shelfPan.ts';
 import { DjChatProvider } from './booth/djChat.tsx';
 import { DatePage } from './date/DatePage.tsx';
@@ -136,7 +137,15 @@ export function App() {
 
   // The search bars on Library and Discover. An event rather than a prop
   // because Discover is a plugin page - see SearchEntry.tsx.
-  useEffect(() => onOpenSearchPage(() => setSearchOpen(true)), [setSearchOpen]);
+  const [searchScope, setSearchScope] = useState<Filter | undefined>(undefined);
+  useEffect(
+    () =>
+      onOpenSearchPage((scope) => {
+        setSearchScope(scope);
+        setSearchOpen(true);
+      }),
+    [setSearchOpen],
+  );
 
   /*
    * The open search page leaves the way the Now Playing sheet does: pulled
@@ -702,6 +711,7 @@ export function App() {
                     the system back, and Escape) is the whole way out. */}
                 <PluginHookScope>
                   <SearchPage
+                    initialFilter={searchScope}
                     onPlay={playFrom}
                     onOpenArtist={(artist) => {
                       setSearchOpen(false);

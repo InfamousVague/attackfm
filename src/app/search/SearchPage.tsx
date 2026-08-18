@@ -103,6 +103,7 @@ export function SearchPage({
   onOpenArtist,
   onOpenAlbum,
   onOpenPlaylist,
+  initialFilter,
 }: {
   onPlay: (track: Track, queue: Track[]) => void;
   onOpenArtist: (artist: string) => void;
@@ -110,6 +111,9 @@ export function SearchPage({
    *  something to look at first. */
   onOpenAlbum?: (album: string, albumArtist: string) => void;
   onOpenPlaylist: (id: string) => void;
+  /** Which scope the page opens on. Library's bar sends 'mine' so its search
+   *  answers only from what is already downloaded; unset means 'all'. */
+  initialFilter?: Filter;
 }) {
   const { tracks } = useLibrary();
   const { playlists } = usePlaylists();
@@ -150,7 +154,7 @@ export function SearchPage({
       }),
     [],
   );
-  const [filter, setFilter] = useState<Filter>('all');
+  const [filter, setFilter] = useState<Filter>(initialFilter ?? 'all');
   const [friends, setFriends] = useState<RegistryFriend[]>([]);
   // Which row the keyboard is on, as an index into the flat item list; -1 is
   // "none". The field keeps DOM focus throughout, so typing never stops.
@@ -208,8 +212,14 @@ export function SearchPage({
 
   // The remote half: the debounced catalogue fetch, the dedupe against the
   // songs already shown, and the Add verb - see useCatalogSearch.ts.
+  //
+  // Scoped to 'mine' it is not merely hidden, it is never asked: the hook
+  // treats an empty query as "nothing to fetch" and clears itself, so the
+  // Library's bar makes no network call per keystroke. That matters on a hub
+  // reached over the tailnet, where the catalogue fetch is the slowest thing
+  // on the page and the one most likely to time out.
   const { catalog, outside, adding, acquireResult } = useCatalogSearch({
-    query,
+    query: filter === 'mine' ? '' : query,
     parsedPhrase: parsed.phrase,
     shownPaths: shown,
     owned,
@@ -372,8 +382,13 @@ export function SearchPage({
     if (song) return { t: 'song', id: `song:${song.track.path}`, track: song.track, why: song.why };
     // Nothing of theirs is owned, but the catalogue knows who they are: the
     // artist you typed is still the answer, so their page leads the page
-    // rather than three of their songs with Add buttons.
-    const catalogArtist = outside.find((r) => r.kind === 'artist' && isAbout(r.title, phrase));
+    // rather than three of their songs with Add buttons. Not in 'mine',
+    // though - a scope that promises only what you have must not lead with
+    // something you do not.
+    const catalogArtist =
+      filter === 'mine'
+        ? undefined
+        : outside.find((r) => r.kind === 'artist' && isAbout(r.title, phrase));
     if (catalogArtist) {
       return { t: 'catalog', id: `catalog:${catalogArtist.id}`, result: catalogArtist, mine: null };
     }
@@ -382,7 +397,7 @@ export function SearchPage({
     const anyAlbum = lib.albums[0];
     if (anyAlbum) return { t: 'album', id: `album:${albumKey(anyAlbum)}`, album: anyAlbum };
     return null;
-  }, [lib.albums, lib.artists, lib.songs, outside, parsed]);
+  }, [filter, lib.albums, lib.artists, lib.songs, outside, parsed]);
 
   // Whether the page is wearing its hero. A query of nothing but operators
   // (`genre:"shoegaze"`) has no free text to be most-likely-about, so there is
