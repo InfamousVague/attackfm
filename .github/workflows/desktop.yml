@@ -1,0 +1,98 @@
+name: Desktop builds
+
+# Windows and Linux desktop bundles. Neither can be produced on a Mac: Tauri
+# builds against the host's native webview, so a Windows bundle needs WebView2
+# on Windows and a Linux bundle needs webkit2gtk on Linux. macOS bundles are
+# built locally on Matt's machine, which is why macOS is absent here.
+#
+# Run it by hand from the Actions tab, or push a v* tag and the artifacts are
+# attached to that release.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+# The workflow only ever reads the repo and writes releases.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      # One platform failing should not throw away the other's artifacts.
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            name: linux
+          - os: windows-latest
+            name: windows
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Tauri v2's Linux dependencies. webkit2gtk-4.1 is the v2 one; 4.0 is for
+      # Tauri v1 and will not satisfy the build.
+      - name: Linux build dependencies
+        if: matrix.name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            build-essential \
+            patchelf \
+            file wget
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Keyed on the lockfile so a dependency change invalidates it, and scoped
+      # per-OS because the artefacts are not portable between them.
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.name }}
+
+      # `npm ci` rather than install: the lockfile is committed and the vendored
+      # @glacier packages are file: dependencies inside the repo.
+      - run: npm ci
+
+      # beforeBuildCommand in tauri.conf.json runs `npm run build`, so the
+      # frontend is built as part of this step.
+      - name: Build the desktop app
+        run: npx tauri build
+
+      - name: Collect the bundles
+        shell: bash
+        run: |
+          mkdir -p out
+          # Copy only the installables; the raw binary and the unpacked app
+          # directory are build intermediates, not downloads.
+          find src-tauri/target/release/bundle -type f \
+            \( -name '*.deb' -o -name '*.AppImage' -o -name '*.rpm' \
+               -o -name '*.msi' -o -name '*-setup.exe' \) \
+            -exec cp {} out/ \;
+          ls -lh out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: attackfm-${{ matrix.name }}
+          path: out/*
+          if-no-files-found: error
+
+      # Only when a tag triggered the run.
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
