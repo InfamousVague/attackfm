@@ -29,6 +29,8 @@ jobs:
             name: windows
 
     runs-on: ${{ matrix.os }}
+    # A stuck apt or a stuck cargo should fail, not idle for the 6h default.
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
@@ -37,11 +39,18 @@ jobs:
       # Tauri v1 and will not satisfy the build.
       - name: Linux build dependencies
         if: matrix.name == 'linux'
+        # DEBIAN_FRONTEND is not optional here: without it a maintainer script
+        # can open a debconf prompt on a runner with no tty, and the step hangs
+        # rather than failing. A first attempt sat on this step for 34 minutes.
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          # libayatana-appindicator3-dev is the name on 22.04; the older
+          # libappindicator3-dev is a transitional package.
+          sudo apt-get install -y --no-install-recommends \
             libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
+            libayatana-appindicator3-dev \
             librsvg2-dev \
             libxdo-dev \
             libssl-dev \
