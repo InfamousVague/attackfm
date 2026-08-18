@@ -199,8 +199,8 @@ export function AboutSettings() {
       <WhatsNew />
 
       <Text tone="subtle" size="xs">
-        Lyrics from LRCLIB · album art lookups via the iTunes Search API · downloads
-        by SpotiFLAC. All of it optional, all of it switchable in these settings.
+        Lyrics from LRCLIB · album art lookups via the iTunes Search API. All of it
+        optional, all of it switchable in these settings.
       </Text>
     </div>
   );
