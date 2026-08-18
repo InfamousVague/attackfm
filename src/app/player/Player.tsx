@@ -192,10 +192,32 @@ export function Player({
   // here because the audio loader below has to consult it - a remote must
   // never fetch the file it is not playing, which on a phone would be a whole
   // track pulled over the network for nothing.
+  /*
+   * NOT gated on `connect.connected`, and that is the whole point.
+   *
+   * "My socket is down" and "nobody else is playing" are different facts, and
+   * conflating them cost a listener their music. A phone that has been asleep
+   * wakes with a dead socket: connected goes false while activeDeviceId still
+   * correctly names the desktop. Under the old test the phone then believed it
+   * was an ordinary local player, and every symptom followed from that one
+   * belief - it showed its own idle state (paused, though the desktop was
+   * playing), its transport drove local audio so the skip buttons fell back to
+   * `canSkip ? skip : undefined` and went dead against an empty local queue,
+   * and pressing play started a local play. Then the socket reconnected, the
+   * report effect saw `playing` true with another device holding the seat, and
+   * did the one thing it is built to do: transferred the seat here, releasing
+   * the desktop. Nothing was playing on the phone either, so the music simply
+   * stopped - and the desktop, now a remote, rendered the hub's optimistic
+   * `playing: true` while silent.
+   *
+   * The seat is the last thing we were told, and it stays true until we are
+   * told otherwise. It is React state tied to the session, so a fresh launch
+   * starts null (local, correct) and a reconnect replaces it with the truth.
+   */
   const remoteOnly =
-    connect.connected &&
-    connect.session?.activeDeviceId != null &&
-    connect.session.activeDeviceId !== connect.thisDeviceId;
+    connect.activeDeviceId != null && connect.activeDeviceId !== connect.thisDeviceId;
+  /** A remote whose socket is down cannot command anything - see the transport. */
+  const remoteAdrift = remoteOnly && !connect.connected;
   const remoteOnlyRef = useRef(remoteOnly);
   remoteOnlyRef.current = remoteOnly;
   const listLoading = libraryLoading || scanning;
@@ -2505,21 +2527,36 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   // local deck so a remote's playback holds the bar here too.
   const { dismissed, shellRef, draggedRef } = usePlayerDismiss(dispPlaying);
 
+  /*
+   * A remote with no socket can send nothing. Handing it live-looking controls
+   * would make every press a silent no-op, so they are withheld (undefined =
+   * disabled) until the connection is back. Disabled-and-honest beats
+   * enabled-and-inert; the alternative that caused this bug was worse than
+   * both, because it made the controls drive local audio instead.
+   */
   const onPlayingChangeDisp = activeElsewhere
-    ? (p: boolean) => connect.sendCommand({ action: p ? 'play' : 'pause' })
+    ? remoteAdrift
+      ? undefined
+      : (p: boolean) => connect.sendCommand({ action: p ? 'play' : 'pause' })
     : setPlayingState;
   const onSkipBackDisp = activeElsewhere
-    ? () => connect.sendCommand({ action: 'prev' })
+    ? remoteAdrift
+      ? undefined
+      : () => connect.sendCommand({ action: 'prev' })
     : canSkip
       ? skipBack
       : undefined;
   const onSkipForwardDisp = activeElsewhere
-    ? () => connect.sendCommand({ action: 'next' })
+    ? remoteAdrift
+      ? undefined
+      : () => connect.sendCommand({ action: 'next' })
     : canSkip
       ? skipForward
       : undefined;
   const onSeekEndDisp = activeElsewhere
-    ? (s: number) => connect.sendCommand({ action: 'seek', positionMs: Math.round(s * 1000) })
+    ? remoteAdrift
+      ? () => {}
+      : (s: number) => connect.sendCommand({ action: 'seek', positionMs: Math.round(s * 1000) })
     : commitSeek;
   const onScrubDisp = activeElsewhere ? () => {} : onScrub;
 
