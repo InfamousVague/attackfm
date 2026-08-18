@@ -75,20 +75,20 @@ export function Hero() {
 
           <Reveal delay={160}>
             <p className="lead hero__lead">
-              A player and a server that you own, end to end. Your files stay on your hardware and
-              stream to every device you have — with a DJ that listens to the music itself, not just
-              the tags around it.
+              A player and a server you run yourself. The files stay on your hardware, and every
+              device you own plays from it. The DJ picks by how a record actually sounds, working
+              from a fingerprint it measured off the audio.
             </p>
           </Reveal>
 
           <Reveal delay={240}>
             <div className="cluster hero__cta">
-              <a className="btn btn--primary" href="#get">
+              <a className="btn btn--primary" href="#download">
                 <Download size={18} />
-                Download for Android
+                Download
               </a>
               <a className="btn btn--ghost" href="#library">
-                See it in motion
+                See the screens
                 <ArrowRight size={17} />
               </a>
             </div>
@@ -100,7 +100,7 @@ export function Hero() {
                 <Apple size={15} /> iOS &amp; iPadOS
               </li>
               <li>
-                <ServerCog size={15} /> Runs on your own box
+                <ServerCog size={15} /> Runs on hardware you own
               </li>
             </ul>
           </Reveal>
