@@ -15,11 +15,23 @@
   z-index: 60;
   display: flex;
   flex-direction: column;
-  /* The page's own ground, not the raised-surface grey: this IS the page
-     while it is up, and a page is black like every other page. */
-  background: var(--glacier-bg);
-  /* Square shoulders: rounded top corners read as a sheet visiting the
-     page; this IS the page while it is up, edge to edge under the header. */
+  /* Glass, the same material the nav bar and the player card wear: the page
+     you left stays faintly present through it rather than being replaced by
+     a slab. Thick, so the field and the rows keep their contrast - a search
+     you cannot read is not a search - and rounded at the shoulders, because
+     what shows through the sides is what makes it read as a card of glass
+     rather than a tinted screen.
+
+     Two backdrop-filters cannot nest: the behind-layer already blurs the
+     page for the drag, so this one takes its own blur and the two compose
+     as one depth rather than fighting. */
+  background: var(--glacier-glass-thick);
+  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  border-start-start-radius: var(--glacier-radius-xl, 1.25rem);
+  border-start-end-radius: var(--glacier-radius-xl, 1.25rem);
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  box-shadow: 0 -10px 44px rgb(0 0 0 / 0.45);
   animation: summonDrop 0.26s var(--glacier-ease-out);
 }
 
