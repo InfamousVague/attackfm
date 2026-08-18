@@ -25,3 +25,33 @@ export function useNarrowViewport(): boolean {
   }, []);
   return narrow;
 }
+
+/**
+ * Whether the Now Playing sheet is docked beside the app.
+ *
+ * Docked, the app keeps about half an unfolded screen - a column narrower
+ * than a phone in portrait while the WINDOW is still wide - so every surface
+ * that sheds detail for a narrow viewport has to shed it here too.
+ *
+ * Watched with a MutationObserver rather than measured with a ResizeObserver,
+ * deliberately. The dock's arrival is a DOM fact (an element gains
+ * data-docked), and DOM facts can be observed anywhere; widths cannot - the
+ * browser surface these changes are verified on never fires a resize
+ * observation at all, so a measurement-based version would be code nobody
+ * could prove worked. This asks the same question the stylesheet asks in
+ * `body:has(.npScreen[data-docked])`.
+ */
+export function useDockedSheet(): boolean {
+  const [docked, setDocked] = useState(
+    () => typeof document !== 'undefined' && !!document.querySelector('.npScreen[data-docked]'),
+  );
+  useEffect(() => {
+    const read = () => setDocked(!!document.querySelector('.npScreen[data-docked]'));
+    read();
+    if (typeof MutationObserver === 'undefined') return;
+    const mo = new MutationObserver(read);
+    mo.observe(document.body, { childList: true, subtree: true, attributeFilter: ['data-docked'] });
+    return () => mo.disconnect();
+  }, []);
+  return docked;
+}
