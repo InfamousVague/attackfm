@@ -88,11 +88,11 @@ export function Yours() {
         <Reveal className="stack center sectionHead">
           <p className="eyebrow">Self-hosted</p>
           <h2 className="h2">
-            No subscription. No catalogue that can be <span className="accent">taken back</span>.
+            You run the server. You keep the <span className="accent">files</span>.
           </h2>
           <p className="lead">
-            AttackFM is a server you run and an app that talks to it. The music is your files on your
-            disk — nothing here rents you access to a library somebody else controls.
+            AttackFM is a server you run and an app that connects to it. The music is the files
+            already sitting on your disk, played back from where they are.
           </p>
         </Reveal>
 
@@ -110,7 +110,7 @@ export function Yours() {
             {
               icon: FolderTree,
               title: 'Your folder structure',
-              body: 'It reads what you already have. No re-organising your disk to suit a database.',
+              body: 'It reads the folders you already keep. Nothing has to be rearranged to suit a database.',
             },
             {
               icon: HardDrive,
@@ -124,7 +124,7 @@ export function Yours() {
             },
             {
               icon: Users,
-              title: 'Friends, not followers',
+              title: 'Friends',
               body: 'Invite people to your server. Share a queue and listen together, in time.',
             },
             {
@@ -164,7 +164,7 @@ export function Yours() {
         <Reveal delay={140} className="center">
           <p className="pill" style={{ marginTop: '1.5rem' }}>
             <BadgeCheck size={15} />
-            Bring your own music
+            Runs on hardware you already have
             <Share2 size={15} />
           </p>
         </Reveal>

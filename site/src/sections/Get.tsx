@@ -1,9 +1,8 @@
 import { useCallback, useState } from 'react';
-import { Apple, Check, Copy, GitBranch, Smartphone, Terminal } from '@glacier/icons';
+import { Check, Copy, GitBranch, Smartphone, Terminal } from '@glacier/icons';
 import { Reveal } from '../components/Reveal.tsx';
 
 const REPO = 'https://github.com/InfamousVague/attackfm';
-const RELEASES = `${REPO}/releases/latest`;
 const INSTALL = 'curl -fsSL https://raw.githubusercontent.com/InfamousVague/attackfm/main/server/install.sh | sudo sh';
 
 /** The server one-liner, with a copy button that reports what it did. */
@@ -45,7 +44,7 @@ export function Get() {
       <div className="wrap">
         <Reveal className="stack center">
           <p className="eyebrow">Get started</p>
-          <h2 className="h2">Two steps: run the server, open the app.</h2>
+          <h2 className="h2">Run the server, then open the app.</h2>
           <p className="lead">
             The installer sets up the service and, if you point a domain at the box, HTTPS with it.
             Then sign in from any device and your library is there.
@@ -58,21 +57,15 @@ export function Get() {
 
         <Reveal delay={180}>
           <div className="cluster center get__buttons">
-            <a className="btn btn--primary" href={RELEASES}>
+            <a className="btn btn--primary" href="#download">
               <Smartphone size={18} />
-              Download for Android
+              Get the app
             </a>
             <a className="btn btn--ghost" href={REPO}>
               <GitBranch size={17} />
               Source on GitHub
             </a>
           </div>
-        </Reveal>
-
-        <Reveal delay={240} className="center">
-          <p className="body get__note">
-            <Apple size={14} /> iOS, iPadOS, macOS, Windows and Linux build from the same source.
-          </p>
         </Reveal>
       </div>
     </section>

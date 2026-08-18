@@ -1,5 +1,5 @@
 /* =============================================================================
-   attack.fm — the marketing surface.
+   attack.fm, the marketing surface.
 
    Everything here is expressed through @glacier tokens rather than literals, so
    the page inherits the product's palette, type ramp and radii. The few local
@@ -1364,4 +1364,64 @@ a {
   max-width: none;
   object-fit: contain;
   background: var(--site-ground-2);
+}
+
+/* --- downloads ---------------------------------------------------------------- */
+
+.downloads__grid {
+  margin-bottom: 1.5rem;
+}
+
+/* The whole card is the link, so the hit area matches what it looks like. */
+.download {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-decoration: none;
+}
+
+.download__detail {
+  flex: 1 1 auto;
+  font-size: 0.95rem;
+  margin-bottom: 1rem;
+}
+
+.download__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--glacier-font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--glacier-accent-11);
+}
+
+.downloads__note {
+  margin-inline: auto;
+  font-size: 0.92rem;
+  text-align: center;
+}
+
+.downloads__note code {
+  font-family: var(--glacier-font-mono);
+  font-size: 0.88em;
+  padding: 0.1em 0.35em;
+  border-radius: 0.3rem;
+  background: color-mix(in oklch, var(--glacier-text) 8%, transparent);
+}
+
+.downloads__link {
+  color: var(--glacier-accent-11);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* The recorded Now Playing clip fills its phone frame exactly like a still. */
+.phone__video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+  display: block;
 }

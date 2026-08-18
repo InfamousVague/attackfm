@@ -16,6 +16,7 @@ import {
   Waves,
 } from '@glacier/icons';
 import { LaptopShot, PhoneShot } from '../components/Device.tsx';
+import { PhoneVideo } from '../components/PhoneVideo.tsx';
 import { Reveal } from '../components/Reveal.tsx';
 import { SHOTS } from '../shots.ts';
 
@@ -56,16 +57,17 @@ export function Library() {
             Every record you own, <span className="accent">whole</span>.
           </h2>
           <p className="body">
-            Point it at your music folder and it reads the lot — FLAC, ALAC, MP3, AAC, OGG, Opus,
-            AIFF and WAV — then builds the artists, albums and artwork around them. Multi-disc
-            releases stay multi-disc. Track numbers come from the sleeve, not the filename.
+            Point it at your music folder and it reads everything there: FLAC, ALAC, MP3, AAC,
+            OGG, Opus, AIFF and WAV. Artists, albums and artwork come out of the tags. Multi-disc
+            releases keep their discs, and the tracks are numbered the way the sleeve numbers them.
           </p>
           <ul className="points">
-            <Point icon={LibraryBig}>Albums, artists and playlists, kept in step automatically</Point>
+            <Point icon={LibraryBig}>Albums, artists and playlists stay in step as the files change</Point>
             <Point icon={ScanSearch}>
-              Search that survives a typo and understands <code>artist:</code> and <code>year:</code>
+              Search forgives a typo and takes operators like <code>artist:</code> and{' '}
+              <code>year:</code>
             </Point>
-            <Point icon={Disc3}>Artwork pulled to every size the interface needs</Point>
+            <Point icon={Disc3}>Cover art is cached at the sizes each screen asks for</Point>
           </ul>
         </Reveal>
 
@@ -98,18 +100,18 @@ export function Booth() {
             A DJ that <span className="accent">listens</span> to the music.
           </h2>
           <p className="body">
-            Most shuffles read tags. This one reads the audio: a measured fingerprint of each
-            recording — its texture, its energy, how it actually sounds — alongside the words and
-            what you have played before. Sets are built from that, and every pick shows the reason it
-            was chosen right under the artist.
+            Most shuffles read tags. This one reads the audio. It measures a fingerprint off every
+            recording, its texture and its energy and how it sits in a room, then weighs that against
+            the words and against what you have played before. Every pick carries the reason it was
+            chosen, printed under the artist.
           </p>
           <ul className="points">
-            <Point icon={Ear}>Ranked on sonic character, not genre strings</Point>
+            <Point icon={Ear}>Sets are ordered by how the recordings sound</Point>
             <Point icon={Sparkles}>
-              Two slots a set are a considered gamble — finish one and it comes back, skip it and it
+              Two slots in every set are a gamble. Finish one and it comes back; skip it and it
               fades
             </Point>
-            <Point icon={Radio}>Smart shuffle works in songs that belong in your queue but aren’t</Point>
+            <Point icon={Radio}>Smart shuffle slips in songs the server thinks belong in your queue</Point>
           </ul>
         </Reveal>
 
@@ -129,23 +131,22 @@ export function Playing() {
         <Reveal variant="left" className="stack">
           <p className="eyebrow">Now playing</p>
           <h2 className="h2">
-            Built for the <span className="accent">song</span>, not the sidebar.
+            The whole screen goes to the <span className="accent">song</span>.
           </h2>
           <p className="body">
-            Full-bleed artwork, lyrics that follow the line being sung, and a looping visual for the
-            track when there is one. Hold the waveform and it scrubs like tape. The queue is right
-            there, and it drags into any order you like.
+            Artwork fills the screen. Lyrics scroll to the line being sung, and a track with a
+            looping visual plays it behind the controls. Hold the waveform and it scrubs like tape.
           </p>
           <ul className="points">
-            <Point icon={AudioLines}>Scrub by hand — a real tape-style hold and drag</Point>
-            <Point icon={Gauge}>A ten-band equaliser and an effects rack</Point>
+            <Point icon={AudioLines}>Hold the waveform and drag to scrub by hand</Point>
+            <Point icon={Gauge}>A graphic equaliser and a rack of effects</Point>
             <Point icon={ListMusic}>Up Next: queue a song from anywhere, then drag it into order</Point>
           </ul>
         </Reveal>
 
         <Reveal variant="right" className="row__media">
           <div className="pairShots">
-            <PhoneShot shot={SHOTS.nowPlaying} />
+            <PhoneVideo />
             <PhoneShot shot={SHOTS.stats} className="pairShots__offset" />
           </div>
           <div className="deviceGlow" />
@@ -163,8 +164,8 @@ export function Everywhere() {
           <p className="eyebrow">Everywhere</p>
           <h2 className="h2">One library. Every screen you own.</h2>
           <p className="lead">
-            The same server behind your phone, your desktop and your dashboard — and a device cache
-            that keeps playing when the network doesn’t.
+            One server behind your phone, your desktop and your dashboard. The cache on each device
+            keeps the music going when the network drops.
           </p>
         </Reveal>
 
@@ -178,7 +179,7 @@ export function Everywhere() {
             {
               icon: Monitor,
               title: 'Desktop',
-              body: 'A native window on macOS, Windows and Linux — the same interface, given room to breathe.',
+              body: 'A native window on macOS, Windows and Linux, with the library laid out across the width.',
             },
             {
               icon: Car,
@@ -188,12 +189,12 @@ export function Everywhere() {
             {
               icon: CloudOff,
               title: 'Offline',
-              body: 'A self-rotating on-device cache, plus pins for the records that should never be evicted.',
+              body: 'Each device keeps a rolling 15 GB cache. Pin a record and it is never evicted.',
             },
             {
               icon: Waves,
               title: 'Handoff',
-              body: 'Start on one device and pick it up on another — the queue follows you across the house.',
+              body: 'Start on one device and pick it up on another. The queue follows you across the house.',
             },
             {
               icon: QrCode,

@@ -8,6 +8,7 @@ const LINKS = [
   { href: '#booth', label: 'The Booth' },
   { href: '#everywhere', label: 'Everywhere' },
   { href: '#yours', label: 'Self-hosted' },
+  { href: '#download', label: 'Download' },
 ];
 
 export function Nav() {
@@ -48,7 +49,7 @@ export function Nav() {
           >
             {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
           </button>
-          <a className="btn btn--primary" href="#get" style={{ padding: '0.6rem 1.15rem', fontSize: '0.92rem' }}>
+          <a className="btn btn--primary" href="#download" style={{ padding: '0.6rem 1.15rem', fontSize: '0.92rem' }}>
             <Download size={16} />
             Get the app
           </a>

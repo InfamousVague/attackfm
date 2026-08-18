@@ -111,7 +111,12 @@ const evaluate = async (cdp, session, expression) => {
     { expression, awaitPromise: true, returnByValue: true },
     session,
   );
-  if (exceptionDetails) throw new Error(exceptionDetails.text);
+  if (exceptionDetails) {
+    // exceptionDetails.text is just 'Uncaught'; the useful message is on
+    // the exception object itself.
+    const detail = exceptionDetails.exception?.description || exceptionDetails.text;
+    throw new Error(detail);
+  }
   return result.value;
 };
 
@@ -177,20 +182,48 @@ const main = async () => {
     );
     await sleep(2500);
 
-    const track = await evaluate(
-      cdp,
-      session,
-      `(() => {
-        const np = document.querySelector('.npScreen');
-        if (!np) return null;
-        const audio = [...document.querySelectorAll('audio')].find(a => a.src && !a.paused);
-        return { title: (np.innerText || '').split('\\n').filter(Boolean)[0] || '', duration: audio ? audio.duration : 0 };
-      })()`,
-    );
+    // How long the song is.
+    //
+    // NOT from the audio element: the server streams without a Content-Length
+    // the media element can use, so `duration` comes back Infinity or NaN and an
+    // earlier version of this silently recorded a 30-second stub. The app prints
+    // an elapsed and a remaining clock, and it gets those from the track
+    // metadata, so their sum is the real length.
+    let track = null;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      track = await evaluate(
+        cdp,
+        session,
+        `(() => {
+          const np = document.querySelector('.npScreen');
+          if (!np) return null;
+          const clocks = (np.innerText || '').match(/-?\\d+:\\d\\d/g) || [];
+          const secs = (t) => {
+            const [m, s] = t.replace('-', '').split(':').map(Number);
+            return m * 60 + s;
+          };
+          const elapsed = clocks.find((c) => !c.startsWith('-'));
+          const remaining = clocks.find((c) => c.startsWith('-'));
+          const audio = [...document.querySelectorAll('audio')].find((a) => a.src);
+          return {
+            title: (np.innerText || '').split('\\n').filter(Boolean)[0] || '',
+            elapsed: elapsed ? secs(elapsed) : 0,
+            remaining: remaining ? secs(remaining) : 0,
+            playing: audio ? !audio.paused : false,
+          };
+        })()`,
+      );
+      // Wait for the clock to actually be running, not just present at 0:00.
+      if (track && track.remaining > 0 && track.playing) break;
+      await sleep(1000);
+    }
     if (!track) throw new Error('Now Playing never opened');
-    // Trust the media element's own duration; the on-screen clock is formatted.
-    const seconds = Math.min(Math.max(Math.round(track.duration || 0), 30), 420);
-    console.log(`recording "${track.title}" for ${seconds}s at ${FPS}fps`);
+    if (!track.remaining) throw new Error('the Now Playing clock never showed a remaining time');
+
+    // A couple of seconds past the end, so the bar is seen filling completely.
+    const seconds = Math.min(track.remaining + 3, 420);
+    const total = track.elapsed + track.remaining;
+    console.log(`recording "${track.title}" (${total}s track) for ${seconds}s at ${FPS}fps`);
 
     let saved = 0;
     let lastKept = 0;
@@ -226,7 +259,7 @@ const main = async () => {
     enc([...common, '-vf', 'scale=560:-2', '-c:v', 'libvpx-vp9', '-crf', '40', '-b:v', '0',
          '-row-mt', '1', resolve(OUT, 'now-playing.webm')]);
     // A poster so the frame is never empty before the video decodes.
-    enc(['-y', '-i', `${FRAMES}/f00000.jpg`, '-vf', 'scale=560:-2', resolve(OUT, 'now-playing-poster.jpg')]);
+    enc(['-y', '-i', `${FRAMES}/f00000.jpg`, '-frames:v', '1', '-update', '1', '-vf', 'scale=560:-2', resolve(OUT, 'now-playing-poster.jpg')]);
 
     console.log('\nwrote', OUT);
   } finally {

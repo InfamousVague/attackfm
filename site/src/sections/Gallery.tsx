@@ -25,11 +25,10 @@ export function Gallery() {
         <Reveal className="stack center sectionHead">
           <p className="eyebrow">The app itself</p>
           <h2 className="h2" id="gallery-title">
-            Real screens, real library.
+            Screens from a working library.
           </h2>
           <p className="lead">
-            Every screenshot on this page is the app running against a four-thousand-song library —
-            no mockups, no placeholder artwork.
+            Every screenshot on this page is the app running against a library of 4,003 songs.
           </p>
         </Reveal>
       </div>

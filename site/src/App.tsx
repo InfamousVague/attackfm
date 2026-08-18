@@ -1,5 +1,6 @@
 import { Footer } from './components/Footer.tsx';
 import { Nav } from './components/Nav.tsx';
+import { Downloads } from './sections/Downloads.tsx';
 import { Gallery } from './sections/Gallery.tsx';
 import { Get } from './sections/Get.tsx';
 import { Hero } from './sections/Hero.tsx';
@@ -18,6 +19,7 @@ export function App() {
         <Everywhere />
         <Gallery />
         <Yours />
+        <Downloads />
         <Get />
       </main>
       <Footer />
