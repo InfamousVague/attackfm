@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.168
+
+- Pull to refresh now re-fetches the page you are on, not just the library: this week's stats, a playlist, On repeat, the Booth's set and your For You shelf all re-read from the server
+
 ## 0.3.167
 
 - All songs has a filter bar: narrow four thousand rows to the ones you meant, without leaving the page. Play and Shuffle take what you filtered to, and the count says "7 songs of 4016"
