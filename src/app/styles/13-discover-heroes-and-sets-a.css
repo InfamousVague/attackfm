@@ -374,3 +374,102 @@
   font-variant-numeric: tabular-nums;
 }
 
+
+/* --- find a playlist ------------------------------------------------------ */
+/* The lookup box and its rows. Rows rather than cards: a playlist is chosen by
+   its name and its size, and a grid of covers would spend the width on art
+   while hiding the two facts that decide it. */
+.discoverPl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+.discoverPl__head {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.discoverPl__glyph {
+  inline-size: 1.6rem;
+  block-size: 1.6rem;
+  border-radius: var(--glacier-radius-sm, 0.4rem);
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--glacier-accent-solid) 14%, transparent);
+  color: var(--glacier-accent-text);
+}
+
+.discoverPl__title {
+  margin: 0;
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 650;
+}
+
+.discoverPl__rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.discoverPlRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-1) 0;
+}
+
+.discoverPlRow__art {
+  flex: none;
+  inline-size: 2.6rem;
+  block-size: 2.6rem;
+  border-radius: var(--glacier-radius-md, 0.6rem);
+  object-fit: cover;
+}
+
+.discoverPlRow__art--blank {
+  display: grid;
+  place-items: center;
+  background: var(--glacier-surface-raised);
+  color: var(--glacier-text-muted);
+}
+
+.discoverPlRow__text {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.discoverPlRow__name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.discoverPlRow__sub {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.discoverPlRow__add {
+  flex: none;
+  inline-size: 2rem;
+  block-size: 2rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.discoverPlRow__add:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

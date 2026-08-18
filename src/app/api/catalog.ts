@@ -20,6 +20,32 @@ export interface SearchResult {
   importable: boolean;
 }
 
+/**
+ * Playlists to pull whole, by name - or what is popular right now when the
+ * box is empty.
+ *
+ * A `kind` of its own because a playlist is not a search result you play: it
+ * is a thousand songs the importer takes as one job, which is why it lives
+ * behind its own endpoint and its own surface rather than mixing into the
+ * catalogue rows above.
+ */
+export interface PlaylistResult extends Omit<SearchResult, 'kind'> {
+  kind: 'playlist';
+}
+
+export async function searchPlaylists(
+  session: ServerSession,
+  query: string,
+  signal?: AbortSignal,
+): Promise<PlaylistResult[]> {
+  const reply = await request<{ results: PlaylistResult[] }>(
+    session.url,
+    `/api/search/playlists?q=${encodeURIComponent(query)}`,
+    { token: session.token, signal },
+  );
+  return reply.results ?? [];
+}
+
 /** Search Spotify and other public sources for new artists and songs. */
 export async function searchCatalog(
   session: ServerSession,

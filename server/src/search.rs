@@ -119,6 +119,82 @@ async fn spotify_token() -> Option<String> {
 
 // --- Sources -----------------------------------------------------------------
 
+/// Spotify's playlists, by name - kept, but no longer the road.
+///
+/// Measured 2026-08-17 against live Spotify with this hub's own client
+/// credentials: `type=playlist` answers 200 with an EMPTY items array at
+/// limit=50, and mostly literal nulls at limit=3. Spotify pulled playlist
+/// objects out of reach of third-party app tokens; the endpoint still exists
+/// and still says 200, which is the trap. So this runs, and whatever it
+/// yields is appended after the source that actually returns rows.
+///
+/// Left in rather than deleted because it costs one request on a search that
+/// is already round-tripping, and the day Spotify re-opens playlists the
+/// feature gets better without anyone noticing.
+pub(crate) async fn spotify_playlist_search(q: &str) -> Vec<SearchResult> {
+    let Some(token) = spotify_token().await else {
+        return Vec::new();
+    };
+    let resp = client()
+        .get("https://api.spotify.com/v1/search")
+        .bearer_auth(&token)
+        .query(&[("type", "playlist"), ("limit", "24"), ("q", q)])
+        .send()
+        .await;
+    let Ok(resp) = resp else { return Vec::new() };
+    if !resp.status().is_success() {
+        return Vec::new();
+    }
+    let Ok(v) = resp.json::<Value>().await else {
+        return Vec::new();
+    };
+
+    let mut out = Vec::new();
+    let Some(items) = v.pointer("/playlists/items").and_then(|x| x.as_array()) else {
+        return out;
+    };
+    for it in items {
+        if it.is_null() {
+            continue;
+        }
+        let title = it.get("name").and_then(|x| x.as_str()).unwrap_or_default().to_string();
+        let url = it
+            .pointer("/external_urls/spotify")
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string();
+        if title.is_empty() || url.is_empty() {
+            continue;
+        }
+        let id = it.get("id").and_then(|x| x.as_str()).unwrap_or_default();
+        let owner = it
+            .pointer("/owner/display_name")
+            .and_then(|x| x.as_str())
+            .unwrap_or_default();
+        let total = it.pointer("/tracks/total").and_then(|x| x.as_u64()).unwrap_or(0);
+        // Owner and length together, because a playlist's name alone rarely
+        // says whether it is the one you meant.
+        let subtitle = match (owner.is_empty(), total) {
+            (true, 0) => "Playlist".to_string(),
+            (true, n) => format!("{n} songs"),
+            (false, 0) => owner.to_string(),
+            (false, n) => format!("{owner} · {n} songs"),
+        };
+        out.push(SearchResult {
+            id: format!("spotify:playlist:{id}"),
+            kind: "playlist".into(),
+            title,
+            subtitle,
+            cover: it.pointer("/images/0/url").and_then(|x| x.as_str()).map(String::from),
+            importable: importable(&url),
+            url,
+            source: "spotify".into(),
+        });
+    }
+    out
+}
+
+
 #[allow(dead_code)]
 pub(crate) async fn spotify_search(q: &str) -> Vec<SearchResult> {
     let Some(token) = spotify_token().await else {
@@ -858,4 +934,117 @@ pub async fn artist(
     };
 
     Ok(Json(json!({ "artist": detail })))
+}
+
+/// One Deezer playlist row, from either the search or the chart.
+fn deezer_playlist_row(p: &Value) -> Option<SearchResult> {
+    let title = p.get("title").and_then(|x| x.as_str())?.to_string();
+    let url = p.get("link").and_then(|x| x.as_str())?.to_string();
+    if title.is_empty() || url.is_empty() {
+        return None;
+    }
+    let id = p.get("id").and_then(|x| x.as_u64()).unwrap_or(0);
+    let owner = p.pointer("/user/name").and_then(|x| x.as_str()).unwrap_or_default();
+    let total = p.get("nb_tracks").and_then(|x| x.as_u64()).unwrap_or(0);
+    // Owner and length together: a playlist's name alone rarely says whether
+    // it is the one you meant.
+    let subtitle = match (owner.is_empty(), total) {
+        (true, 0) => "Playlist".to_string(),
+        (true, n) => format!("{n} songs"),
+        (false, 0) => owner.to_string(),
+        (false, n) => format!("{owner} · {n} songs"),
+    };
+    Some(SearchResult {
+        id: format!("deezer:playlist:{id}"),
+        kind: "playlist".into(),
+        title,
+        subtitle,
+        cover: p
+            .get("picture_medium")
+            .or_else(|| p.get("picture"))
+            .and_then(|x| x.as_str())
+            .map(String::from),
+        importable: true,
+        url,
+        source: "deezer".into(),
+    })
+}
+
+/// Playlists by name, from Deezer.
+///
+/// Keyless, and - unlike Spotify's - it answers. The links it hands back are
+/// deezer.com playlist URLs, which is precisely what the importer already
+/// takes (its own description lists Deezer among the services it downloads),
+/// so a row found here is a row that can actually be pulled.
+async fn deezer_playlist_search(q: &str) -> Vec<SearchResult> {
+    let Ok(resp) = client()
+        .get("https://api.deezer.com/search/playlist")
+        .query(&[("q", q), ("limit", "24")])
+        .send()
+        .await
+    else {
+        return Vec::new();
+    };
+    let Ok(v) = resp.json::<Value>().await else {
+        return Vec::new();
+    };
+    v.get("data")
+        .and_then(|x| x.as_array())
+        .map(|items| items.iter().filter_map(deezer_playlist_row).collect())
+        .unwrap_or_default()
+}
+
+/// What is popular right now, for an empty box.
+///
+/// A search field with nothing in it is a dead end; this is what stands there
+/// instead - Deezer's own playlist chart, the same shape a query returns, so
+/// the surface renders one list either way.
+async fn deezer_popular_playlists() -> Vec<SearchResult> {
+    let Ok(resp) = client()
+        .get("https://api.deezer.com/chart/0/playlists")
+        .query(&[("limit", "24")])
+        .send()
+        .await
+    else {
+        return Vec::new();
+    };
+    let Ok(v) = resp.json::<Value>().await else {
+        return Vec::new();
+    };
+    v.get("data")
+        .and_then(|x| x.as_array())
+        .map(|items| items.iter().filter_map(deezer_playlist_row).collect())
+        .unwrap_or_default()
+}
+
+/// `GET /api/search/playlists?q=` - Spotify playlists by name.
+///
+/// Separate from `/api/search` on purpose: that endpoint answers what a
+/// listener can PLAY or import as songs, and mixing whole playlists into it
+/// would put a thousand-song object beside a single track with the same Add
+/// button. This one is asked for deliberately, by the surface that knows what
+/// to do with a playlist.
+///
+/// An empty `q` is not an error: it answers with what is popular right now,
+/// so the surface has something to show before anyone types.
+pub async fn playlist_search(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(params): Query<SearchQuery>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let q = params.q.trim();
+    if q.is_empty() {
+        return Ok(Json(json!({ "results": deezer_popular_playlists().await })));
+    }
+    // Deezer first because it answers; Spotify's rows ride along behind it on
+    // the day they come back. Dedupe on title, so the same playlist mirrored
+    // on both services does not show up twice.
+    let mut out = deezer_playlist_search(q).await;
+    for row in spotify_playlist_search(q).await {
+        if !out.iter().any(|r| r.title.eq_ignore_ascii_case(&row.title)) {
+            out.push(row);
+        }
+    }
+    Ok(Json(json!({ "results": out })))
 }

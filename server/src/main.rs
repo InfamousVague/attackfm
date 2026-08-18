@@ -574,6 +574,7 @@ async fn main() {
         .route("/api/push/unregister", post(push::unregister))
         .route("/api/push/prefs", get(push::prefs).post(push::set_pref))
         .route("/api/search", get(search::search))
+        .route("/api/search/playlists", get(search::playlist_search))
         .route("/api/recents", get(recents::list).post(recents::add))
         .route("/api/recents/remove", post(recents::remove))
         .route("/api/recents/clear", post(recents::clear))
