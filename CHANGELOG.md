@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.151
+
+- Dragging the search card away stays smooth on a phone: it stops re-blurring the whole screen every frame mid-drag, which nothing could see it doing anyway
+
 ## 0.3.150
 
 - Search arrives as a card of glass: the page you left stays faintly there behind it, blurred, instead of a flat black slab dropping over everything
