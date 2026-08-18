@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.153
+
+- The glass arrives with your thumb: pulling down for search now fades the card's frosted ground in as you travel, so the page settles onto glass instead of the glass appearing all at once at the end
+
 ## 0.3.152
 
 - Pulling down no longer opens search from the middle of a page. Scroll down and flick back and it stays a scroll; search still comes down when you pull from the very top, as it should
