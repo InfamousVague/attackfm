@@ -31,9 +31,9 @@ const stack = (gap: number): CSSProperties => ({ display: 'flex', flexDirection:
 const row = (gap: number): CSSProperties => ({ display: 'flex', alignItems: 'center', gap });
 const card: CSSProperties = {
   background: 'var(--glacier-surface)',
-  border: '1px solid var(--glacier-border-subtle)',
+  border: 'var(--glacier-hairline) solid var(--glacier-border-subtle)',
   borderRadius: 'var(--glacier-radius-lg)',
-  padding: '10px 12px',
+  padding: 'var(--glacier-space-3) var(--glacier-space-4)',
 };
 /** The wire between boxes: a short vertical stroke, the chain made visible. */
 const wire: CSSProperties = {
@@ -45,7 +45,7 @@ const wire: CSSProperties = {
 };
 const endcap: CSSProperties = {
   ...card,
-  padding: '6px 12px',
+  padding: 'var(--glacier-space-2) var(--glacier-space-4)',
   color: 'var(--glacier-text-subtle)',
   fontSize: 'var(--glacier-font-size-xs)',
   display: 'flex',
@@ -243,10 +243,22 @@ export function HiFiLabPage() {
   }, []);
 
   return (
-    <div style={{ ...stack(14), padding: 16, maxInlineSize: 560, marginInline: 'auto' }}>
+    /*
+     * `.homePage` is the app's page shell, and a plugin page needs it for the
+     * same two reasons every core page does: it owns the scroll (flex:1,
+     * min-height:0, overflow-y:auto) and it reserves the bottom for the player
+     * strip and the nav bar. Without it this page could not scroll at all once
+     * a few boxes were added, and its last box sat under the transport.
+     *
+     * The inner column exists because .homePage puts space-8 between its
+     * CHILDREN - the rhythm between shelves, far too airy between a masthead
+     * and a signal path. One child, own spacing inside.
+     */
+    <div className="homePage">
+      <div style={{ ...stack(16), maxInlineSize: 560, inlineSize: '100%', marginInline: 'auto' }}>
       {/* The masthead: what this is, and the one switch that rules it. */}
       <div style={row(10)}>
-        <AudioLines size={20} />
+        <AudioLines size={22} />
         <div style={{ flex: 1, minInlineSize: 0 }}>
           <Text weight="semibold">HiFi Lab</Text>
           <Text tone="muted" size="xs">
@@ -256,7 +268,6 @@ export function HiFiLabPage() {
           </Text>
         </div>
         <SegmentedControl
-          size="sm"
           aria-label="A/B"
           value={slot}
           onValueChange={(v: string) => flipSlot(v === 'B' ? 'B' : 'A')}
@@ -360,29 +371,26 @@ export function HiFiLabPage() {
                     <div style={{ ...row(6), justifyContent: 'flex-end' }}>
                       <IconButton
                         variant="ghost"
-                        size="sm"
                         aria-label="Move up"
                         disabled={index === 0}
                         onClick={() => move(index, -1)}
                       >
-                        <ChevronUp size={15} />
+                        <ChevronUp size={16} />
                       </IconButton>
                       <IconButton
                         variant="ghost"
-                        size="sm"
                         aria-label="Move down"
                         disabled={index === chain.nodes.length - 1}
                         onClick={() => move(index, 1)}
                       >
-                        <ChevronDown size={15} />
+                        <ChevronDown size={16} />
                       </IconButton>
                       <IconButton
                         variant="ghost"
-                        size="sm"
                         aria-label="Remove"
                         onClick={() => edit(chain.nodes.filter((n) => n.key !== node.key))}
                       >
-                        <Trash2 size={15} />
+                        <Trash2 size={16} />
                       </IconButton>
                     </div>
                   </div>
@@ -404,8 +412,8 @@ export function HiFiLabPage() {
         <div style={{ ...card, ...stack(10) }}>
           <div style={{ ...row(8), justifyContent: 'space-between' }}>
             <Text weight="medium">Add a box</Text>
-            <IconButton variant="ghost" size="sm" aria-label="Close" onClick={() => setAdding(false)}>
-              <X size={15} />
+            <IconButton variant="ghost" aria-label="Close" onClick={() => setAdding(false)}>
+              <X size={16} />
             </IconButton>
           </div>
           {catalogue.map((group) =>
@@ -428,8 +436,9 @@ export function HiFiLabPage() {
                       }}
                       style={{
                         ...row(10),
-                        padding: '8px 10px',
+                        padding: 'var(--glacier-space-3)',
                         borderRadius: 'var(--glacier-radius-md)',
+                        minBlockSize: 'var(--glacier-control-height-md)',
                         border: '1px solid var(--glacier-border-subtle)',
                         background: 'var(--glacier-glass-thin)',
                         color: 'inherit',
@@ -439,14 +448,14 @@ export function HiFiLabPage() {
                       }}
                     >
                       <div style={{ flex: 1, minInlineSize: 0 }}>
-                        <Text size="sm" weight="medium">
+                        <Text weight="medium">
                           {spec.label}
                         </Text>
                         <Text tone="muted" size="xs">
                           {taken ? 'Already in the path' : spec.blurb}
                         </Text>
                       </div>
-                      <Plus size={15} />
+                      <Plus size={16} />
                     </button>
                   );
                 })}
@@ -455,8 +464,8 @@ export function HiFiLabPage() {
           )}
         </div>
       ) : (
-        <Button variant="soft" size="sm" onClick={() => setAdding(true)}>
-          <Plus size={15} />
+        <Button variant="soft" onClick={() => setAdding(true)}>
+          <Plus size={16} />
           <span>Add a box</span>
         </Button>
       )}
@@ -473,11 +482,10 @@ export function HiFiLabPage() {
             />
             <Button
               variant="soft"
-              size="sm"
               disabled={!presetName.trim() || live === 0}
               onClick={savePreset}
             >
-              <Save size={15} />
+              <Save size={16} />
               <span>Save</span>
             </Button>
           </div>
@@ -506,14 +514,13 @@ export function HiFiLabPage() {
                     minInlineSize: 0,
                   }}
                 >
-                  <Text size="sm">{p.name}</Text>
+                  <Text>{p.name}</Text>
                   <Text tone="muted" size="xs">
                     {p.chain.length} box{p.chain.length === 1 ? '' : 'es'}
                   </Text>
                 </button>
                 <IconButton
                   variant="ghost"
-                  size="sm"
                   aria-label={`Delete ${p.name}`}
                   onClick={() =>
                     void api(session, `/api/fx/presets/${p.id}`, { method: 'DELETE' })
@@ -521,13 +528,14 @@ export function HiFiLabPage() {
                       .catch(() => say('Could not delete it just now.'))
                   }
                 >
-                  <Trash2 size={15} />
+                  <Trash2 size={16} />
                 </IconButton>
               </div>
             ))
           )}
         </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
