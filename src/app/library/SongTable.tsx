@@ -193,7 +193,23 @@ export function SongTable({
   const columns = useMemo<DataGridColumn[]>(
     () =>
       COLUMNS.filter((col) => !narrow || !NARROW_HIDDEN.has(col.key)).map((col) =>
-        col.key === 'index' && plays
+        // Narrow, the title gives its 50% back and takes what is left instead.
+        //
+        // That 50% exists to stop a wide table's title being starved by a
+        // 10rem date and a 5rem clock. Shed those two and it turns from a
+        // floor into a ceiling: with EVERY remaining column carrying a
+        // declared width, nothing absorbs the slack, and a percentage
+        // resolved against the table's own width settles at
+        // fixed / 0.5 - measured, 158px of #-and-clock became a 316px table
+        // inside a 375px column, and the missing 59px read as dead space down
+        // the right of every row. Album used to be the flexible column that
+        // soaked that up; dropping it removed the only one there was.
+        //
+        // Auto here is not a fallback, it is the correct answer: with the two
+        // wide columns gone there is nothing left to starve the title.
+        col.key === 'title' && narrow
+          ? { ...col, width: undefined }
+          : col.key === 'index' && plays
           ? {
               ...col,
               header: 'Plays',
