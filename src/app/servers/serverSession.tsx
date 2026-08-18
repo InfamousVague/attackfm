@@ -183,18 +183,18 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
   // not a sign-out: the box may simply be unreachable from wherever the phone
   // woke up, and the cached library is still worth showing.
   useEffect(() => {
-    const stored = readSession();
-    if (!stored) {
-      setRestoring(false);
-      return;
-    }
-    const remaining = streamTokenExpiresAt(stored.streamToken) - Date.now();
-    if (remaining > 48 * 60 * 60 * 1000) {
-      setRestoring(false);
-      return;
-    }
     let live = true;
-    void (async () => {
+    const renewIfNeeded = async (first: boolean) => {
+      const stored = readSession();
+      if (!stored) {
+        if (first) setRestoring(false);
+        return;
+      }
+      const remaining = streamTokenExpiresAt(stored.streamToken) - Date.now();
+      if (remaining > 48 * 60 * 60 * 1000) {
+        if (first) setRestoring(false);
+        return;
+      }
       try {
         const streamToken = await refreshStreamToken(stored);
         if (!live) return;
@@ -205,11 +205,23 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
         // Offline, or the session is genuinely dead. Either way the stored
         // credentials stay put; the next deliberate action will find out which.
       } finally {
-        if (live) setRestoring(false);
+        if (live && first) setRestoring(false);
       }
-    })();
+    };
+    void renewIfNeeded(true);
+    /*
+     * At launch AND on the hour, because launch-only renewal assumes the app
+     * relaunches. A desktop that stays open outlives its own seven-day stream
+     * token: streams keep working only until the token in the session object
+     * lapses, and the Connect socket - which authenticates with this exact
+     * token on every reconnect - dies quietly behind its retry backoff. The
+     * hourly check costs a subtraction; renewing costs one request every five
+     * days.
+     */
+    const timer = window.setInterval(() => void renewIfNeeded(false), 60 * 60 * 1000);
     return () => {
       live = false;
+      window.clearInterval(timer);
     };
   }, []);
 

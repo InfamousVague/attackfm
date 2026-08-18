@@ -176,6 +176,7 @@ export class ConnectSocket {
   private closed = false;
   private backoff = 1000;
   private reconnectTimer: number | null = null;
+  private heartbeatTimer: number | null = null;
 
   constructor(
     private readonly session: ServerSession,
@@ -199,6 +200,17 @@ export class ConnectSocket {
       this.backoff = 1000;
       this.onOpenChange?.(true);
       this.hello();
+      /*
+       * A quiet Connect socket is an idle TCP stream through two reverse
+       * proxies and however many NATs the phone is behind, and idle streams
+       * get reaped. Every reap looked identical to the phone leaving: the
+       * hub unseated it, a remote's pick landed on an empty seat, and sync
+       * "randomly" stopped working. A small ping keeps the stream visibly
+       * alive end to end; the server answers with a pong it already had.
+       */
+      this.heartbeatTimer = window.setInterval(() => {
+        this.raw({ type: 'ping' });
+      }, 25_000);
     };
     ws.onmessage = (event) => {
       try {
@@ -208,6 +220,10 @@ export class ConnectSocket {
       }
     };
     ws.onclose = () => {
+      if (this.heartbeatTimer !== null) {
+        window.clearInterval(this.heartbeatTimer);
+        this.heartbeatTimer = null;
+      }
       this.onOpenChange?.(false);
       this.ws = null;
       this.scheduleReconnect();
@@ -259,6 +275,10 @@ export class ConnectSocket {
     if (this.reconnectTimer !== null) {
       window.clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+    if (this.heartbeatTimer !== null) {
+      window.clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
     }
     const ws = this.ws;
     this.ws = null;
