@@ -32,6 +32,7 @@ mod canvas;
 mod collector;
 mod connect;
 mod curator;
+mod fx;
 mod db;
 mod discover;
 mod discovery;
@@ -624,6 +625,9 @@ async fn main() {
         .route("/api/art/{id}", get(stream::art))
         .route("/api/art/track/{id}", get(stream::art_by_track))
         .route("/api/transcode/{id}", get(stream::transcode))
+        .route("/api/fx/nodes", get(fx::nodes))
+        .route("/api/fx/presets", get(fx::presets).post(fx::save_preset))
+        .route("/api/fx/presets/{id}", axum::routing::delete(fx::delete_preset))
         .route("/api/spotify/status", get(spotify::status))
         .route("/api/spotify/connect", post(spotify::connect))
         .route("/api/spotify/callback", get(spotify::callback))

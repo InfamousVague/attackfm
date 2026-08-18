@@ -496,8 +496,20 @@ pub async fn transcode(
         command.arg("-ss").arg(format!("{seek:.3}"));
     }
     command.arg("-i").arg(&path).args(["-map", "0:a:0"]);
-    // The effects, when any were asked for and recognised.
-    if let Some(chain) = effect_chain(params.get("fx")) {
+    // The effects, when any were asked for and recognised. Two vocabularies
+    // feed one -af flag: the fixed rack (fx, names looked up above) and the
+    // hi-fi chain (fx2, typed nodes compiled in fx.rs). When both arrive the
+    // chain runs first - corrective EQ belongs before colour - and the rack's
+    // own limiter stays the last thing before the encoder.
+    let rack = effect_chain(params.get("fx"));
+    let hifi = crate::fx::chain_from_wire(params.get("fx2"));
+    let af = match (hifi, rack) {
+        (Some(h), Some(r)) => Some(format!("{h},{r}")),
+        (Some(h), None) => Some(h),
+        (None, Some(r)) => Some(r),
+        (None, None) => None,
+    };
+    if let Some(chain) = af {
         command.args(["-af", &chain]);
     }
     command

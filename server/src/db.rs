@@ -355,6 +355,15 @@ CREATE TABLE IF NOT EXISTS playlists (
 );
 CREATE INDEX IF NOT EXISTS playlists_user ON playlists(user_id);
 
+CREATE TABLE IF NOT EXISTS fx_presets (
+  id         INTEGER PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  chain      TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE(user_id, name)
+);
+
 CREATE TABLE IF NOT EXISTS playlist_tracks (
   playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
   track_id    INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
@@ -2027,6 +2036,52 @@ impl Db {
     }
 
     // --- playlists --------------------------------------------------------
+
+    // --- the hi-fi chain's presets ---------------------------------------
+
+    /// Saved chains, newest-touched first - the order a picker wants.
+    pub fn fx_presets(&self, user_id: i64) -> Vec<(i64, String, String, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT id, name, chain, updated_at FROM fx_presets
+              WHERE user_id = ?1 ORDER BY updated_at DESC",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    /// Save-or-replace by (user, name): re-saving "Warm Nights" updates it.
+    pub fn fx_preset_save(&self, user_id: i64, name: &str, chain: &str) -> rusqlite::Result<i64> {
+        let conn = self.lock();
+        conn.execute(
+            "INSERT INTO fx_presets (user_id, name, chain, updated_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(user_id, name)
+             DO UPDATE SET chain = excluded.chain, updated_at = excluded.updated_at",
+            params![user_id, name, chain, now_ms()],
+        )?;
+        let id = conn.query_row(
+            "SELECT id FROM fx_presets WHERE user_id = ?1 AND name = ?2",
+            params![user_id, name],
+            |r| r.get(0),
+        )?;
+        Ok(id)
+    }
+
+    /// True when a row actually went - the handler turns false into 404.
+    pub fn fx_preset_delete(&self, user_id: i64, id: i64) -> rusqlite::Result<bool> {
+        let conn = self.lock();
+        let n = conn.execute(
+            "DELETE FROM fx_presets WHERE user_id = ?1 AND id = ?2",
+            params![user_id, id],
+        )?;
+        Ok(n > 0)
+    }
 
     pub fn create_playlist(&self, user_id: i64, name: &str) -> rusqlite::Result<i64> {
         let conn = self.lock();
