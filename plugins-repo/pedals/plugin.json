@@ -1,8 +1,8 @@
 {
   "id": "pedals",
   "name": "Pedals",
-  "version": "0.1.0",
-  "description": "A pedalboard for your music — overdrive, fuzz, chorus, echo, spring and ten more stompboxes, wired in the order you stack them.",
+  "version": "0.2.0",
+  "description": "A pedalboard for your music \u2014 overdrive, fuzz, chorus, echo, spring and ten more stompboxes, wired in the order you stack them.",
   "author": "AttackFM",
   "tags": [
     "Sound",

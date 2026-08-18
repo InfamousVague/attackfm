@@ -40,7 +40,6 @@ import { EqPanel } from './EqPanel.tsx';
 import { setFxChainOn, useFxChain } from './fxChain.ts';
 import { MarqueeText } from './MarqueeText.tsx';
 import { SpinningDisc } from './SpinningDisc.tsx';
-import { NowPlayingBackdrop } from './NowPlayingBackdrop.tsx';
 import { QueuePanel } from './QueuePanel.tsx';
 import { DevicePicker } from './DevicePicker.tsx';
 import { VolumeRow } from './VolumeControl.tsx';
@@ -344,10 +343,12 @@ export function NowPlayingSheet({
           content={npArtMenu}
         />
       ) : null}
-      {/* The lyric words run the full height of the sheet, behind the
-          controls. Drawn AFTER the clip on purpose: a canvas is a backdrop,
-          not a cover, and the words are the thing worth reading over it. */}
-      <NowPlayingBackdrop wordsOnly artwork={artwork ?? npPlaceholderArt} seed={track?.path ?? 'np'} />
+      {/* The lyric words that used to run the full height of the sheet are
+          gone. They sat over the artwork and the disc, and on a screen whose
+          whole job is the record in front of you they were reading material
+          competing with the thing being played. The Lyrics panel is still
+          here, one tap away, where lyrics are what you actually came for.
+          The backdrop itself still draws behind the app (see App.tsx). */}
       {/* A blur that rises through the bottom third, so the transport, the
           times and the title read against something settled instead of
           against whatever frame the clip happens to be on. Sits over the

@@ -351,7 +351,17 @@ export function Player({
   /** How long a frozen clock is tolerated before reaching for the source. */
   const STALL_GRACE_MS = 1600;
   /** Waits between reloads, then giving up honestly. */
-  const RETRY_BACKOFF_MS = [400, 1500, 4000];
+  /**
+ * How long the rack waits for the tapping to stop before re-colouring.
+ *
+ * The effects are applied by ffmpeg ON THE SERVER, so a change can never be
+ * heard without fetching the stream again - there is no client-side DSP to
+ * turn a knob on. This does not make that fetch faster; it makes sure a run of
+ * changes only pays for it once.
+ */
+const RECOLOUR_COALESCE_MS = 320;
+
+const RETRY_BACKOFF_MS = [400, 1500, 4000];
   const MAX_RELOADS_PER_TRACK = 3;
 
   /** The warning buzz's visible half: whichever transport is on screen - the
@@ -462,6 +472,7 @@ export function Player({
   const chain = useFxChain();
   const rackWas = useRef(rack);
   const chainWas = useRef(chain);
+  const recolourTimer = useRef<number | undefined>(undefined);
   useEffect(() => {
     const beforeRack = rackWas.current;
     const beforeChain = chainWas.current;
@@ -469,8 +480,26 @@ export function Player({
     chainWas.current = chain;
     if (beforeRack === rack && beforeChain === chain) return;
     if (!liveRef.current.track || !isRemotePath(liveRef.current.track.path)) return;
-    resumeCount.current = 0;
-    void resumeInPlace();
+
+    // Coalesce a burst of changes into ONE reload.
+    //
+    // Building a sound means stacking several pedals in a row, and every toggle
+    // used to throw the open connection away and make the server start
+    // transcoding again from the current position. Three quick taps cost three
+    // reloads, each one interrupting the last before it had finished buffering,
+    // so the rack felt slowest exactly when it was being used hardest. Waiting
+    // for the tapping to stop turns that into a single reload.
+    //
+    // Short enough that a single deliberate toggle still feels immediate.
+    window.clearTimeout(recolourTimer.current);
+    recolourTimer.current = window.setTimeout(() => {
+      recolourTimer.current = undefined;
+      if (!liveRef.current.track || !isRemotePath(liveRef.current.track.path)) return;
+      resumeCount.current = 0;
+      void resumeInPlace();
+    }, RECOLOUR_COALESCE_MS);
+
+    return () => window.clearTimeout(recolourTimer.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the rack and chain are the triggers; resumeInPlace is redefined every render
   }, [rack, chain]);
 
