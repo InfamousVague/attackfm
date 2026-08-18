@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.157
+
+- Search is a bar on Library and Discover now, not an icon in the bar at the bottom. Tap it and it opens the full search page — the field lands where the bar was, so it reads as the bar opening rather than a new screen arriving
+- The search page is plain and solid: no frosted glass, no rounded card shoulders, no drop shadow. Just the page, on the same black everything else sits on
+
 ## 0.3.156
 
 - Dragging the search page away no longer turns it see-through halfway down — the card stays a card until it's gone

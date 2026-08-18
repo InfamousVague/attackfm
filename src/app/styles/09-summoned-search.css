@@ -5,35 +5,24 @@
 .searchSummon {
   position: fixed;
   /* A sheet under the header, not a screen over it: it begins exactly where
-     the page content does - the measured line the pull preview also uses - so
-     the ATTACK mark stays visible above it and the field lands where the
-     preview showed it. The fallback is the header's own arithmetic, for the
-     first frame before anything has been measured. */
+     the page content does - the measured line pull-to-refresh's mark also
+     uses - so the ATTACK mark stays visible above it. The fallback is the
+     header's own arithmetic, for the first frame before anything has been
+     measured; --app-content-top itself is written by useSearchSummon, and
+     without it this climbs over the header (fixed once already in 0.3.140). */
   inset-inline: 0;
   bottom: 0;
   top: var(--app-content-top, calc(env(safe-area-inset-top, 0px) + var(--app-header-height, 3.25rem)));
   z-index: 60;
   display: flex;
   flex-direction: column;
-  /* Glass, the same material the nav bar and the player card wear: the page
-     you left stays faintly present through it rather than being replaced by
-     a slab. Thick, so the field and the rows keep their contrast - a search
-     you cannot read is not a search - and rounded at the shoulders, because
-     what shows through the sides is what makes it read as a card of glass
-     rather than a tinted screen.
-
-     This layer owns the frost outright now. It used to share the job with a
-     behind-blur that the pull put up, and the comment here explained how the
-     two composed; that layer went when the pull stopped summoning search, so
-     there is one backdrop-filter on this surface and no composition to
-     reason about. */
-  background: var(--glacier-glass-thick);
-  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
-  border-start-start-radius: var(--glacier-radius-xl, 1.25rem);
-  border-start-end-radius: var(--glacier-radius-xl, 1.25rem);
-  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
-  box-shadow: 0 -10px 44px rgb(0 0 0 / 0.45);
+  /* Solid, square, flat. Search opens from a bar ON the page now, so it is
+     the page's own destination rather than a pane floating over it - and a
+     surface you type into wants the same ground everything else reads on,
+     not a translucent one competing with whatever is behind it.
+     Deliberately no backdrop-filter, no shoulders, no hairline, no shadow:
+     every one of those said "card", and this is not a card. */
+  background: var(--glacier-bg);
   animation: summonDrop 0.26s var(--glacier-ease-out);
 }
 
@@ -92,27 +81,14 @@
 }
 
 .searchSummon[data-dragging] {
+  /* The only line of this block that was ever about the DRAG: without it the
+     translate eases and the sheet lags the thumb.
+     Everything else here existed to compensate for glass - killing the
+     backdrop-filter for per-frame cost, and forcing an opaque ground so the
+     85%-translucent surface did not go see-through mid-drag. The sheet is
+     solid and square at rest now, so both are moot, and the radius/shadow
+     that came with them were the card look this surface no longer wears. */
   transition: none;
-  /* The blur comes OFF for the drag, and the ground goes OPAQUE to cover for
-     it.
-     The blur has to go: static, a backdrop-filter over a full-viewport
-     element is cheap, but moving it is re-sampled and re-blurred every frame,
-     and this sheet translates with the thumb.
-     The opacity is the half that used to be free. A behind-layer was frosting
-     the same pixels for the whole drag, so dropping this blur changed
-     nothing; that layer is gone, and without it the 85%-translucent ground
-     let the page read straight through - mid-drag the list behind became
-     legible and the genre cards went muddy, which looked like the card
-     turning to glass exactly when it should read as a solid thing sliding
-     away. An opaque surface costs nothing per frame and is the better look
-     besides. */
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  background: var(--glacier-surface);
-  border-radius: var(--glacier-radius-xl, 1.25rem);
-  overflow: hidden;
-  /* Lifted off the page, so the card reads as a card against the blur. */
-  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.45);
 }
 
 @media (prefers-reduced-motion: reduce) {

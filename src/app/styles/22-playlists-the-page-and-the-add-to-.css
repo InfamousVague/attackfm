@@ -383,6 +383,40 @@
   max-inline-size: 34rem;
 }
 
+/*
+ * The search bar that lives ON Library and Discover.
+ *
+ * A wrapper rather than a bare field because the field is inert - it is a
+ * picture of the search page's own field, and the wrapper takes the tap (see
+ * SearchEntry.tsx). The kit's field supplies every visual; this only places
+ * it and keeps the same readable measure the pages give their own search.
+ */
+.searchEntry {
+  display: block;
+  inline-size: 100%;
+  max-inline-size: 34rem;
+  margin-block-end: var(--glacier-space-4);
+  cursor: pointer;
+}
+
+/* Inert: taps belong to the wrapper, so the field cannot take focus and raise
+   a keyboard over a page that is about to be replaced. */
+.searchEntry > * {
+  pointer-events: none;
+}
+
+.searchEntry input {
+  cursor: pointer;
+}
+
+/* Discover lays its own body out with page padding; the library page's first
+   child needs the same gutter its shelves get. */
+.libraryPage > .searchEntry,
+.discoverPage > .searchEntry {
+  margin-inline: var(--glacier-space-4);
+  inline-size: auto;
+}
+
 /* Home's local-search results: the same square cards the shelves use, laid out
    as a wrapping grid rather than a single scrolling rail. */
 .homeResults .homeResultsGrid {
