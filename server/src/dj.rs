@@ -36,6 +36,19 @@ const TRAIT_CACHE_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 /// leapfrog a clearly better one.
 const QUEUE_SCORE_JITTER: f32 = 0.02;
 
+/// The station's blend, mirroring the trait queue's shape: semantic families
+/// carry the set, personal signals season it. The two invariants the unit
+/// test pins: each family group sums to 1, and the semantic share outweighs
+/// the personal share - a station should sound like a TASTE, not a history.
+const STATION_SEM_SONIC: f32 = 0.45;
+const STATION_SEM_AUDIO: f32 = 0.20;
+const STATION_SEM_LYRIC: f32 = 0.20;
+const STATION_SEM_COMMUNITY: f32 = 0.15;
+const STATION_W_SEM: f32 = 0.72;
+const STATION_W_HISTORY: f32 = 0.14;
+const STATION_W_LIKE: f32 = 0.09;
+const STATION_W_COLLAB: f32 = 0.05;
+
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DjTrait {
@@ -170,40 +183,104 @@ pub async fn station(
     let by_id: HashMap<i64, &TrackFeatures> = feats.iter().map(|f| (f.track_id, f)).collect();
     // Verdicts when the ledger has them, play starts when it does not.
     let weighted = state.db.weighted_recent_listens(caller.id, RECENT_WINDOW);
-    let mut taste = if weighted.len() >= 8 {
+    let taste = if weighted.len() >= 8 {
         crate::curator::taste_from_weighted(&weighted, &by_id)
     } else {
         let recent = state.db.recent_plays(caller.id, RECENT_WINDOW);
         taste_from(&recent, &by_id)
     };
 
-    // A seed steers the set: embed it and let it stand in for the centroid, so
-    // "something mellow" pulls mellow even out of a loud week.
+    // A seed steers the set. It used to stand in for the LYRIC centroid -
+    // "something mellow" compared against what songs say rather than how they
+    // sound. The sonic vectors live in the same text-embedding space as the
+    // seed, so the seed now steers the sonic term, which is what a vibe is.
+    let mut seed_vec: Option<Vec<f32>> = None;
     if !seed.is_empty() {
-        if let Some(v) = embed(&seed).await {
-            taste.centroid = Some(v);
-        }
+        seed_vec = embed(&seed).await;
     }
 
     // Score the whole library, hold back the very-recently-played so the DJ does
     // not replay the last hour, and cap per artist.
     let held: HashSet<i64> = taste.heard.clone();
-    // Same jitter the trait queue gets: without it the station is fully
-    // deterministic - same taste, same set, every single time. The rng lives
-    // in its own block because station awaits the patter model later and
-    // ThreadRng must not be held across an await.
+
+    /*
+     * The taste profile, in every vector the library actually has.
+     *
+     * The station used to rank on the thinnest signals in the module - lyric
+     * embedding, median BPM, genre tag - while the sonic vectors, the 48-dim
+     * audio fingerprint, the community vectors, the hearts and the
+     * ListenBrainz edges sat computed and unread twenty lines from here, in
+     * the trait queue's blend. This is that blend, aimed at a taste profile
+     * instead of a trait sheet: weighted centroids of what the listener
+     * verifiably kept listening to.
+     */
+    let listened: Vec<(i64, f32)> = if weighted.len() >= 8 {
+        weighted.clone()
+    } else {
+        state.db.recent_plays(caller.id, RECENT_WINDOW).into_iter().map(|id| (id, 1.0)).collect()
+    };
+    let listened_feats: Vec<&TrackFeatures> = listened
+        .iter()
+        .filter_map(|(id, _)| by_id.get(id).copied())
+        .collect();
+    let taste_sonic = average_vectors(listened_feats.iter().filter_map(|f| f.sonic_vec.as_deref()));
+    let taste_community =
+        average_vectors(listened_feats.iter().filter_map(|f| f.community_vec.as_deref()));
+    let taste_audio =
+        average_owned_vectors(listened_feats.iter().filter_map(|f| audio_vector(f)));
+    let collaborative_edges: HashSet<&str> = listened_feats
+        .iter()
+        .flat_map(|f| f.listenbrainz_similar.iter().map(String::as_str))
+        .collect();
+    let liked: HashSet<i64> = state.db.favorites(caller.id).into_iter().collect();
+    let sonic_target: Option<&[f32]> = seed_vec.as_deref().or(taste_sonic.as_deref());
+
+    let half = |c: f32| (c + 1.0) / 2.0;
     let mut ranked: Vec<(f32, i64)> = {
         let mut rng = rand::thread_rng();
         feats
             .iter()
             // `!quarantined` is the same clause the trait queue applies: an
             // audition under quarantine is a judgement not yet made, and the
-            // DB's own invariant says it must never seed a mix. Station
-            // forgot it.
+            // DB's own invariant says it must never seed a mix.
             .filter(|f| !held.contains(&f.track_id) && !f.quarantined)
             .map(|f| {
+                let sonic = match (sonic_target, &f.sonic_vec) {
+                    (Some(q), Some(v)) => half(cosine(q, v)),
+                    _ => 0.5,
+                };
+                let audio = match (&taste_audio, audio_vector(f)) {
+                    (Some(q), Some(v)) => half(cosine(q, &v)),
+                    _ => 0.5,
+                };
+                let lyric = match (&taste.centroid, &f.lyric_vec) {
+                    (Some(q), Some(v)) => half(cosine(q, v)),
+                    _ => 0.5,
+                };
+                let community = match (&taste_community, &f.community_vec) {
+                    (Some(q), Some(v)) => half(cosine(q, v)),
+                    _ => 0.5,
+                };
+                let sem = STATION_SEM_SONIC * sonic
+                    + STATION_SEM_AUDIO * audio
+                    + STATION_SEM_LYRIC * lyric
+                    + STATION_SEM_COMMUNITY * community;
+                // The old score lives on as the history term: tempo and genre
+                // closeness against the same taste, so a library with no
+                // vectors at all still ranks the way it always did.
+                let history = score(f, &taste);
+                let like = if liked.contains(&f.track_id) { 1.0 } else { 0.0 };
+                let collab = if collaborative_edges.contains(f.musicbrainz_id.as_str()) {
+                    1.0
+                } else {
+                    0.0
+                };
+                let relevance = STATION_W_SEM * sem
+                    + STATION_W_HISTORY * history
+                    + STATION_W_LIKE * like
+                    + STATION_W_COLLAB * collab;
                 let jitter = rng.gen_range(-QUEUE_SCORE_JITTER..=QUEUE_SCORE_JITTER);
-                (score(f, &taste) + jitter, f.track_id)
+                (relevance + jitter, f.track_id)
             })
             .collect()
     };
@@ -1296,6 +1373,23 @@ mod ranking_tests {
         assert!(relevance_families > personal_tie_breakers + collaborative);
         assert!(
             (relevance_families + personal_tie_breakers + collaborative - 1.0_f32).abs() < 0.001
+        );
+    }
+}
+
+#[cfg(test)]
+mod station_weights {
+    use super::*;
+
+    #[test]
+    fn the_budget_holds() {
+        let sem = STATION_SEM_SONIC + STATION_SEM_AUDIO + STATION_SEM_LYRIC + STATION_SEM_COMMUNITY;
+        assert!((sem - 1.0).abs() < 1e-6, "semantic family must sum to 1");
+        let outer = STATION_W_SEM + STATION_W_HISTORY + STATION_W_LIKE + STATION_W_COLLAB;
+        assert!((outer - 1.0).abs() < 1e-6, "outer blend must sum to 1");
+        assert!(
+            STATION_W_SEM > STATION_W_HISTORY + STATION_W_LIKE + STATION_W_COLLAB,
+            "a station sounds like a taste, not a history",
         );
     }
 }
