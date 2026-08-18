@@ -413,7 +413,18 @@ export function searchLibrary(tracks: readonly Track[], query: string): LibraryH
   // Only free text can be mistyped into nothing; a field operator that matched
   // nothing means the library does not hold it, which the rescue cannot fix.
   const pass = empty && q.words.length > 0 ? collect(tracks, q, true) : exact;
-  return { ...rank(pass, q), approximate: pass !== exact };
+  const hits = rank(pass, q);
+  // Approximate means "we found something, but not what you typed". It used to
+  // mean "the rescue pass ran", which is not the same thing: when the rescue
+  // also found nothing, the page still announced 'this is the closest your
+  // library has' above an empty space, telling somebody their library holds a
+  // near-miss it does not hold. Claim it only when there is something to show.
+  const found =
+    hits.songs.length > 0 ||
+    hits.artists.length > 0 ||
+    hits.albums.length > 0 ||
+    hits.genres.length > 0;
+  return { ...hits, approximate: pass !== exact && found };
 }
 
 /** One walk of the library, keeping whatever answered. */

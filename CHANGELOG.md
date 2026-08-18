@@ -11,6 +11,9 @@ they are read on a phone, in a strip, one thumb away from a song.
 
 - Tapping the search bar puts the cursor in it — no second tap before you can type
 - The bar keeps its own words as the search page opens, instead of swapping to different text on the way
+- One search again, wherever you open it: it answers from your library, with a Your library / Discover toggle when you want the rest of the world folded in
+- Narrowing to Songs or Albums no longer quietly turns Discover back off
+- Search no longer says "this is the closest your library has" over an empty page when it found nothing at all
 
 ## 0.3.165
 
