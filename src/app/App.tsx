@@ -392,6 +392,7 @@ export function App() {
       extendQueue={extendQueue}
       playNext={playNext}
       addToQueue={addToQueue}
+      playNow={playFrom}
     >
       {/* Fills libraryRefresh with the real rescan. Without it mounted the
           ref keeps its inert initial value, and a pull-to-refresh awaits a
