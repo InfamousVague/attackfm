@@ -1,0 +1,14 @@
+{
+  "id": "pedals",
+  "name": "Pedals",
+  "version": "0.1.0",
+  "description": "A pedalboard for your music — overdrive, fuzz, chorus, echo, spring and ten more stompboxes, wired in the order you stack them.",
+  "author": "AttackFM",
+  "tags": [
+    "Sound",
+    "Pedals"
+  ],
+  "entry": "plugin.ts",
+  "public": true,
+  "requiresServer": true
+}

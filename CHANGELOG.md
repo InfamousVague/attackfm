@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.171
+
+- New official plugin: Pedals. A pedalboard for your music — Overdrive, Fuzz, Bitcrusher, Chorus, Flanger, Phaser, Tremolo, Vibrato, Rotary, Echo, Spring, Exciter, Sub, Sparkle and Doubler, each with the few knobs that matter and a footswitch. Stack them in any order; your server renders the sound and a limiter always guards the output
+- Pedals and HiFi Lab share one signal path, so a pedal in front of your rack is a choice, not a conflict. Install from Settings → Plugins → Browse
+
 ## 0.3.170
 
 - Dragging one EQ slider on a phone no longer secretly moves bands you can't see. The five-slider view used to snap to a whole different preset when your hand happened to land on its shape; now a drag edits exactly what it touched

@@ -72,6 +72,66 @@ enum Node {
     /// the one thing anybody means by "even it out" is the default.
     #[serde(rename = "level")]
     Level {},
+
+    // ── The pedalboard. Same instrument, scrappier voices. ──────────────
+    //
+    // Every pedal below is still just numbers into clamps into one format
+    // string; the vocabulary got louder, the attack surface did not.
+    /// Overdrive: push the signal into a tanh curve and it sings instead of
+    /// snapping. Drive is how hard, tone rolls the fizz off the top, lvl
+    /// brings the result back down to sit with the mix.
+    #[serde(rename = "od")]
+    Od { drive: f64, tone: Option<f64>, lvl: Option<f64> },
+    /// Fuzz: the same push into a hard ceiling set low - square-ish, splatty,
+    /// everything overdrive is too polite for.
+    #[serde(rename = "fuzz")]
+    Fuzz { drive: f64, tone: Option<f64>, lvl: Option<f64> },
+    /// Bitcrusher: fewer bits, more grit. Mix keeps some of the clean signal
+    /// underneath so it reads as texture rather than damage.
+    #[serde(rename = "crush")]
+    Crush { bits: f64, mix: Option<f64> },
+    /// Chorus: two detuned copies shimmering against the dry signal. Rate in
+    /// Hz, depth in ms; the second voice rides slightly off the first so the
+    /// shimmer never locks into a cycle.
+    #[serde(rename = "chorus")]
+    ChorusFx { rate: f64, depth: Option<f64> },
+    /// Flanger: the jet plane. Regen feeds the sweep back into itself.
+    #[serde(rename = "flanger")]
+    FlangerFx { rate: f64, depth: Option<f64>, regen: Option<f64> },
+    /// Phaser: notches sweeping the spectrum, softer than a flanger.
+    #[serde(rename = "phaser")]
+    Phaser { rate: f64, depth: Option<f64> },
+    /// Tremolo: loudness wobble.
+    #[serde(rename = "trem")]
+    Trem { rate: f64, depth: Option<f64> },
+    /// Vibrato: pitch wobble.
+    #[serde(rename = "vib")]
+    Vib { rate: f64, depth: Option<f64> },
+    /// Rotary: opposite loudness wobble per channel - the poor honest cousin
+    /// of a Leslie cabinet.
+    #[serde(rename = "rotary")]
+    Rotary { rate: f64, width: Option<f64> },
+    /// Echo: three taps with geometric decay standing in for feedback, which
+    /// is how a tape delay actually behaves by tap three anyway.
+    #[serde(rename = "echo")]
+    Echo { time: f64, fb: Option<f64>, mix: Option<f64> },
+    /// Spring: six close prime-spaced taps smeared into a small room. Size
+    /// stretches the room, mix is how far into it you stand.
+    #[serde(rename = "spring")]
+    Spring { size: Option<f64>, mix: Option<f64> },
+    /// Exciter: synthesized upper harmonics - presence you can't EQ in
+    /// because it was never in the recording.
+    #[serde(rename = "exciter")]
+    Exciter { amt: f64, freq: Option<f64> },
+    /// Sub: an octave of synthesized weight under the lows.
+    #[serde(rename = "sub")]
+    Sub { wet: f64, cutoff: Option<f64> },
+    /// Sparkle: transient expansion - detail forward, haze back.
+    #[serde(rename = "sparkle")]
+    Sparkle { amt: f64 },
+    /// Doubler: a few milliseconds of one-sided delay, heard as two takes.
+    #[serde(rename = "doubler")]
+    Doubler { amt: Option<f64> },
 }
 
 fn clamp(v: f64, lo: f64, hi: f64) -> f64 {
@@ -126,6 +186,110 @@ impl Node {
                 format!("crossfeed=strength={:.2}", clamp(amt.unwrap_or(0.5), 0.0, 1.0))
             }
             Node::Level {} => "dynaudnorm=p=0.95:m=10".to_string(),
+            Node::Od { drive, tone, lvl } => format!(
+                "volume={:.2}dB,asoftclip=type=tanh:threshold=0.6,lowpass=f={:.1},volume={:.2}dB",
+                clamp(*drive, 0.0, 24.0),
+                clamp(tone.unwrap_or(6000.0), 1000.0, 12000.0),
+                clamp(lvl.unwrap_or(-3.0), -18.0, 6.0),
+            ),
+            Node::Fuzz { drive, tone, lvl } => format!(
+                "volume={:.2}dB,asoftclip=type=hard:threshold=0.35,lowpass=f={:.1},volume={:.2}dB",
+                clamp(*drive, 6.0, 30.0),
+                clamp(tone.unwrap_or(4500.0), 1000.0, 10000.0),
+                clamp(lvl.unwrap_or(-6.0), -18.0, 6.0),
+            ),
+            Node::Crush { bits, mix } => format!(
+                "acrusher=bits={:.1}:mode=log:aa=1:mix={:.2}",
+                clamp(*bits, 2.0, 16.0),
+                clamp(mix.unwrap_or(0.7), 0.0, 1.0),
+            ),
+            Node::ChorusFx { rate, depth } => {
+                let r = clamp(*rate, 0.1, 4.0);
+                let d = clamp(depth.unwrap_or(4.0), 1.0, 8.0);
+                format!(
+                    "chorus=0.6:0.9:50|62:0.35|0.28:{:.2}|{:.2}:{:.2}|{:.2}",
+                    r,
+                    r * 1.15,
+                    d,
+                    d * 0.8,
+                )
+            }
+            Node::FlangerFx { rate, depth, regen } => format!(
+                "flanger=speed={:.2}:depth={:.2}:regen={:.1}",
+                clamp(*rate, 0.1, 5.0),
+                clamp(depth.unwrap_or(4.0), 0.5, 10.0),
+                clamp(regen.unwrap_or(20.0), -90.0, 90.0),
+            ),
+            Node::Phaser { rate, depth } => format!(
+                "aphaser=type=t:speed={:.2}:decay={:.2}",
+                clamp(*rate, 0.1, 4.0),
+                clamp(depth.unwrap_or(0.5), 0.1, 0.9),
+            ),
+            Node::Trem { rate, depth } => format!(
+                "tremolo=f={:.2}:d={:.2}",
+                clamp(*rate, 0.3, 15.0),
+                clamp(depth.unwrap_or(0.6), 0.05, 1.0),
+            ),
+            Node::Vib { rate, depth } => format!(
+                "vibrato=f={:.2}:d={:.2}",
+                clamp(*rate, 0.3, 12.0),
+                clamp(depth.unwrap_or(0.4), 0.05, 1.0),
+            ),
+            Node::Rotary { rate, width } => format!(
+                "apulsator=mode=sine:hz={:.2}:width={:.2}",
+                clamp(*rate, 0.05, 8.0),
+                clamp(width.unwrap_or(1.0), 0.0, 2.0),
+            ),
+            Node::Echo { time, fb, mix } => {
+                let t = clamp(*time, 60.0, 1500.0);
+                let f = clamp(fb.unwrap_or(0.35), 0.05, 0.8);
+                let m = clamp(mix.unwrap_or(0.7), 0.05, 1.0);
+                // Three taps, geometrically quieter: what feedback sounds
+                // like without ever wiring an actual loop into the encoder.
+                format!(
+                    "aecho=1.0:{:.2}:{:.0}|{:.0}|{:.0}:{:.2}|{:.2}|{:.2}",
+                    m,
+                    t,
+                    (t * 2.0).min(90000.0),
+                    (t * 3.0).min(90000.0),
+                    f,
+                    f * f,
+                    f * f * f,
+                )
+            }
+            Node::Spring { size, mix } => {
+                let sz = clamp(size.unwrap_or(0.5), 0.0, 1.0);
+                let m = clamp(mix.unwrap_or(0.4), 0.05, 1.0);
+                let stretch = 0.6 + sz * 1.4;
+                let taps: [f64; 6] = [23.0, 37.0, 53.0, 79.0, 113.0, 167.0];
+                let delays = taps
+                    .iter()
+                    .map(|t| format!("{:.0}", t * stretch))
+                    .collect::<Vec<_>>()
+                    .join("|");
+                let decays = (0..6)
+                    .map(|i| format!("{:.2}", (m * 0.8_f64.powi(i)).max(0.01)))
+                    .collect::<Vec<_>>()
+                    .join("|");
+                format!("aecho=1.0:{:.2}:{}:{}", (0.5 + m * 0.4).min(0.9), delays, decays)
+            }
+            Node::Exciter { amt, freq } => format!(
+                "aexciter=amount={:.2}:freq={:.1}",
+                clamp(*amt, 0.5, 10.0),
+                clamp(freq.unwrap_or(7500.0), 2000.0, 12000.0),
+            ),
+            Node::Sub { wet, cutoff } => format!(
+                "asubboost=dry=1.0:wet={:.2}:cutoff={:.1}",
+                clamp(*wet, 0.1, 1.0),
+                clamp(cutoff.unwrap_or(100.0), 50.0, 200.0),
+            ),
+            Node::Sparkle { amt } => {
+                format!("crystalizer=i={:.2}", clamp(*amt, 0.5, 8.0))
+            }
+            Node::Doubler { amt } => format!(
+                "haas=side_gain={:.2}",
+                clamp(amt.unwrap_or(1.0), 0.1, 2.0),
+            ),
         }
     }
 }
@@ -188,7 +352,39 @@ pub async fn nodes() -> Json<Value> {
                                           "mk": { "min": 0, "max": 24, "default": 0 } } },
             { "t": "width",  "params": { "amt": { "min": 0.05, "max": 2.5, "default": 1.0 } } },
             { "t": "xfeed",  "params": { "amt": { "min": 0, "max": 1, "default": 0.5 } } },
-            { "t": "level",  "params": {} }
+            { "t": "level",  "params": {} },
+            { "t": "od",      "params": { "drive": { "min": 0, "max": 24, "default": 10 },
+                                           "tone": { "min": 1000, "max": 12000, "default": 6000 },
+                                           "lvl": { "min": -18, "max": 6, "default": -3 } } },
+            { "t": "fuzz",    "params": { "drive": { "min": 6, "max": 30, "default": 16 },
+                                           "tone": { "min": 1000, "max": 10000, "default": 4500 },
+                                           "lvl": { "min": -18, "max": 6, "default": -6 } } },
+            { "t": "crush",   "params": { "bits": { "min": 2, "max": 16, "default": 8 },
+                                           "mix": { "min": 0, "max": 1, "default": 0.7 } } },
+            { "t": "chorus",  "params": { "rate": { "min": 0.1, "max": 4, "default": 0.9 },
+                                           "depth": { "min": 1, "max": 8, "default": 4 } } },
+            { "t": "flanger", "params": { "rate": { "min": 0.1, "max": 5, "default": 0.5 },
+                                           "depth": { "min": 0.5, "max": 10, "default": 4 },
+                                           "regen": { "min": -90, "max": 90, "default": 20 } } },
+            { "t": "phaser",  "params": { "rate": { "min": 0.1, "max": 4, "default": 0.6 },
+                                           "depth": { "min": 0.1, "max": 0.9, "default": 0.5 } } },
+            { "t": "trem",    "params": { "rate": { "min": 0.3, "max": 15, "default": 5 },
+                                           "depth": { "min": 0.05, "max": 1, "default": 0.6 } } },
+            { "t": "vib",     "params": { "rate": { "min": 0.3, "max": 12, "default": 4 },
+                                           "depth": { "min": 0.05, "max": 1, "default": 0.4 } } },
+            { "t": "rotary",  "params": { "rate": { "min": 0.05, "max": 8, "default": 1.2 },
+                                           "width": { "min": 0, "max": 2, "default": 1 } } },
+            { "t": "echo",    "params": { "time": { "min": 60, "max": 1500, "default": 350 },
+                                           "fb": { "min": 0.05, "max": 0.8, "default": 0.35 },
+                                           "mix": { "min": 0.05, "max": 1, "default": 0.7 } } },
+            { "t": "spring",  "params": { "size": { "min": 0, "max": 1, "default": 0.5 },
+                                           "mix": { "min": 0.05, "max": 1, "default": 0.4 } } },
+            { "t": "exciter", "params": { "amt": { "min": 0.5, "max": 10, "default": 2.5 },
+                                           "freq": { "min": 2000, "max": 12000, "default": 7500 } } },
+            { "t": "sub",     "params": { "wet": { "min": 0.1, "max": 1, "default": 0.6 },
+                                           "cutoff": { "min": 50, "max": 200, "default": 100 } } },
+            { "t": "sparkle", "params": { "amt": { "min": 0.5, "max": 8, "default": 2 } } },
+            { "t": "doubler", "params": { "amt": { "min": 0.1, "max": 2, "default": 1 } } }
         ]
     }))
 }
@@ -308,6 +504,22 @@ mod tests {
         // in the registry kills its node. Nothing else is ever interpolated.
         assert!(wire(r#"[{"t":"pre,volume=0:x","g":0}]"#).is_none());
         assert!(wire(r#"[{"t":"lavfi"}]"#).is_none());
+    }
+
+    #[test]
+    fn pedals_compile_with_clamps() {
+        // A pedal is several filters in one node: the drive sandwich.
+        let chain = wire(r#"[{"t":"od","drive":10}]"#).unwrap();
+        assert!(chain.starts_with("volume=10.00dB,asoftclip=type=tanh"));
+        assert!(chain.contains("lowpass=f=6000.0"));
+        assert!(chain.ends_with("alimiter=limit=0.95"));
+        // Echo's fake feedback decays geometrically across its three taps.
+        let echo = wire(r#"[{"t":"echo","time":400,"fb":0.5,"mix":0.8}]"#).unwrap();
+        assert!(echo.contains("400|800|1200"));
+        assert!(echo.contains("0.50|0.25|0.12"));
+        // Hostile drive pins to the ceiling instead of leaving the range.
+        let hot = wire(r#"[{"t":"fuzz","drive":9000}]"#).unwrap();
+        assert!(hot.contains("volume=30.00dB"));
     }
 
     #[test]

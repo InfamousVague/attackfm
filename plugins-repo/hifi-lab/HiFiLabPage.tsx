@@ -235,6 +235,9 @@ export function HiFiLabPage() {
       { label: 'Utility', items: [] },
     ];
     for (const spec of FX_NODES) {
+      // The pedalboard's vocabulary lives in the same registry but belongs
+      // to the Pedals plugin's shelf, not this rack.
+      if (spec.group === 'pedal') continue;
       const bucket =
         spec.group === 'tone' ? 0 : spec.group === 'dynamics' ? 1 : spec.group === 'space' ? 2 : 3;
       groups[bucket]!.items.push(spec);
