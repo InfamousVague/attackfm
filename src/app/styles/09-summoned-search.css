@@ -15,7 +15,9 @@
   z-index: 60;
   display: flex;
   flex-direction: column;
-  background: var(--glacier-surface);
+  /* The page's own ground, not the raised-surface grey: this IS the page
+     while it is up, and a page is black like every other page. */
+  background: var(--glacier-bg);
   /* Square shoulders: rounded top corners read as a sheet visiting the
      page; this IS the page while it is up, edge to edge under the header. */
   animation: summonDrop 0.26s var(--glacier-ease-out);

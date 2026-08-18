@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.147
+
+- The fullscreen search sits on the same black as every page, not a grey card ground
+
 ## 0.3.146
 
 - Search is the whole screen now: pull down and the page itself takes over under the ATTACK mark — no card bar, no X, no rounded shoulders. Drag it down (or back, or Escape) to leave, same as ever
