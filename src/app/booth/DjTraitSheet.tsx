@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from '../library/library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useDjPlay } from './djChat.tsx';
+import { rememberDjReasons } from './djReasons.ts';
 import {
   analyzeDjTrack,
   analyzeDjCollection,
@@ -234,6 +235,7 @@ export function DjCollectionTraitSheet({ source, name, seedTracks, open, onClose
       const first = queue[0];
       if (!first) throw new Error('The DJ found no playable matches in this library.');
       play(first, queue);
+      rememberDjReasons(result.explanations);
       const reason = result.explanations.find((item) => item.trackId === trackIdFromPath(first.path));
       if (reason) toast({ message: `Why this mix started here · ${reason.reason}` });
       onClose();

@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.144
+
+- The DJ explains itself. Every song in a DJ-built queue now shows the reason it was picked, right under the artist — the server always knew, and the app finally says
+- The DJ's spoken lines are grounded: it may only mention facts the app actually knows — a first appearance, an artist you've hearted, the genre on file — and never invents biography. Matters most for the small artists it now finds, where a model left to its own devices simply makes things up
+
 ## 0.3.143
 
 - The DJ starts finding genuinely small artists: new music is now sourced from ListenBrainz's similarity graph with a hard ceiling on worldwide listeners, and from the bandmates, side projects and collaborators of obscure artists you've hearted — scenes, not charts

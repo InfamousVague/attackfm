@@ -2242,6 +2242,20 @@ impl Db {
             .unwrap_or_default()
     }
 
+    /// Artists this listener has hearted at least one song by.
+    pub fn hearted_artist_keys(&self, user_id: i64) -> std::collections::HashSet<String> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT DISTINCT LOWER(t.artist) FROM favorites f
+             JOIN tracks t ON t.id = f.track_id WHERE f.user_id = ?1",
+        ) else {
+            return Default::default();
+        };
+        stmt.query_map(params![user_id], |r| r.get::<_, String>(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
     /// Artists this listener has actually MET - any listen event at all. The
     /// complement is the exploration pool.
     pub fn played_artist_keys(&self, user_id: i64) -> std::collections::HashSet<String> {
