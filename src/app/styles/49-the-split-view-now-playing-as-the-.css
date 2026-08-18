@@ -2,10 +2,13 @@
 
 /* One number both halves read: how much of the screen the docked sheet owns.
    On :root because the sheet portals to the body while the app window shrinks
-   - two subtrees, one truth. 40% keeps the app clearly the wider half; the
-   32rem cap stops a desktop-sized webview from building a ballroom. */
+   - two subtrees, one truth. 48%: the app keeps the wider half by a nose,
+   and the player gets room for its art to read as art. The cap scales with
+   the share (it was 32rem at 40%) so a desktop-sized webview still cannot
+   build a ballroom - and so the percentage, not the cap, is what decides on
+   a phone or a fold. */
 :root {
-  --np-dock-width: min(40vw, 32rem);
+  --np-dock-width: min(48vw, 38rem);
   /* The island grew from 3.5rem so the lit tab's plate can be an actual
      SQUARE around glyph + name - the third try at "not stretched" and the
      one that holds, because at 3.5rem a square that fits a name cannot fit
