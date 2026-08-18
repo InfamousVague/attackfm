@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.172
+
+- Picking a song on one device reliably changes what's playing on the active one. A phone whose connection blipped — a backgrounded app, a doorway, an idle proxy — used to lose its seat instantly, so picks from other devices fell into the gap and played locally instead; now the seat holds through a 30-second grace, the pick waits for the phone to come back, and the connection is kept alive so it blips far less in the first place
+- Long-running desktops renew their stream credentials on the hour instead of only at launch, so Connect and streaming survive an app left open past a week
+
 ## 0.3.171
 
 - New official plugin: Pedals. A pedalboard for your music — Overdrive, Fuzz, Bitcrusher, Chorus, Flanger, Phaser, Tremolo, Vibrato, Rotary, Echo, Spring, Exciter, Sub, Sparkle and Doubler, each with the few knobs that matter and a footswitch. Stack them in any order; your server renders the sound and a limiter always guards the output
