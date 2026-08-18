@@ -55,17 +55,17 @@
     {
       "id": "pedals",
       "name": "Pedals",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "description": "A pedalboard for your music — overdrive, fuzz, chorus, echo, spring and ten more stompboxes, wired in the order you stack them.",
       "author": "AttackFM",
       "tags": [
         "Sound",
         "Pedals"
       ],
-      "entry": "pedals-0.1.0.js",
+      "entry": "pedals-0.2.0.js",
       "api": 1,
-      "bytes": 6953,
-      "sha256": "ac118bb972e5156fbc596b608064aaa374c2c135459d252681daaf80444b0016",
+      "bytes": 8320,
+      "sha256": "18834f449054a5225dc329197555b433f51c04b92ab57683b9fc6a3ba73f4813",
       "requiresServer": true,
       "public": true
     },
