@@ -168,8 +168,14 @@ pub async fn station(
     // Taste: the same profile the curator scores against, from recent plays.
     let feats = state.db.all_features();
     let by_id: HashMap<i64, &TrackFeatures> = feats.iter().map(|f| (f.track_id, f)).collect();
-    let recent = state.db.recent_plays(caller.id, RECENT_WINDOW);
-    let mut taste = taste_from(&recent, &by_id);
+    // Verdicts when the ledger has them, play starts when it does not.
+    let weighted = state.db.weighted_recent_listens(caller.id, RECENT_WINDOW);
+    let mut taste = if weighted.len() >= 8 {
+        crate::curator::taste_from_weighted(&weighted, &by_id)
+    } else {
+        let recent = state.db.recent_plays(caller.id, RECENT_WINDOW);
+        taste_from(&recent, &by_id)
+    };
 
     // A seed steers the set: embed it and let it stand in for the centroid, so
     // "something mellow" pulls mellow even out of a loud week.
@@ -224,6 +230,11 @@ pub async fn station(
     if picks.is_empty() {
         return Ok(Json(json!({ "ai": false, "vibe": seed, "blocks": [] })));
     }
+    // The offer ledger: what this set put in front of the listener. Adoption
+    // is judged against these rows, per impression, not per catalog.
+    let offered: Vec<(i64, &str, i64)> =
+        picks.iter().enumerate().map(|(i, id)| (*id, "rank", i as i64)).collect();
+    state.db.record_dj_impressions(caller.id, &offered);
 
     // The model writes the patter over the already-chosen ids; a failure just
     // means a set with no words, never a set with no music.
@@ -713,6 +724,10 @@ pub async fn trait_queue(
             break;
         }
     }
+    // Same offer ledger the station writes: adoption is judged per impression.
+    let offered: Vec<(i64, &str, i64)> =
+        ids.iter().enumerate().map(|(i, id)| (*id, "rank", i as i64)).collect();
+    state.db.record_dj_impressions(user, &offered);
     Ok(Json(
         json!({ "trackIds": ids, "semantic": semantic.is_some(), "explanations": explanations,
         "intent": { "kind": "traits", "seedTrackIds": seed_ids,

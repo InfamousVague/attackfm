@@ -35,6 +35,21 @@ export interface ListenEvent {
   context: string;
 }
 
+/*
+ * Which surface started the current queue.
+ *
+ * The schema has carried a context column end-to-end since the ledger was
+ * built, and this file hardcoded '' into it - so no surface could ever learn
+ * whether its own picks were finished or skipped, which is the prerequisite
+ * for every feedback loop the DJ wants. Set at queue start (playFrom knows
+ * who called it) and it rides every listen of that sitting until the next
+ * queue replaces it.
+ */
+let playSurface = '';
+export function markPlaySurface(name: string): void {
+  playSurface = name;
+}
+
 const OUTBOX_KEY = 'attackfm-listen-outbox';
 const FLUSH_MS = 20_000;
 /** Under this, the sitting was a blip, not a listen. */
@@ -136,7 +151,7 @@ export function createListenReporter(read: () => ListenSnapshot): { dispose: () 
       durationMs: s.durationMs,
       completed: done,
       skipped: !done && s.ms < SKIP_MS,
-      context: '',
+      context: playSurface,
     });
   };
 

@@ -761,12 +761,29 @@ pub(crate) struct Taste {
 }
 
 pub(crate) fn taste_from(plays: &[i64], feats: &HashMap<i64, &TrackFeatures>) -> Taste {
+    let weighted: Vec<(i64, f32)> = plays.iter().map(|id| (*id, 1.0)).collect();
+    taste_from_weighted(&weighted, feats)
+}
+
+/// Taste built from VERDICTS: every contribution scaled by what actually
+/// happened to the track. Weight 1.0 is the old behaviour (a play is a play);
+/// a skip's 0.15 means ten abandonments finally stop outvoting one completion.
+/// `heard` keeps every id regardless of weight - a skipped song is still a
+/// song the listener met, and a discover list must not offer it straight back.
+pub(crate) fn taste_from_weighted(
+    plays: &[(i64, f32)],
+    feats: &HashMap<i64, &TrackFeatures>,
+) -> Taste {
     let mut sum: Vec<f32> = Vec::new();
-    let mut n = 0usize;
-    let mut tempos: Vec<f64> = Vec::new();
+    let mut wsum = 0.0f32;
+    let mut tempos: Vec<(f64, f32)> = Vec::new();
     let mut genres: HashMap<String, f32> = HashMap::new();
 
-    for id in plays {
+    for (id, w) in plays {
+        let w = w.max(0.0);
+        if w <= 0.0 {
+            continue;
+        }
         let Some(f) = feats.get(id) else { continue };
         if let Some(v) = &f.lyric_vec {
             if sum.is_empty() {
@@ -774,22 +791,33 @@ pub(crate) fn taste_from(plays: &[i64], feats: &HashMap<i64, &TrackFeatures>) ->
             }
             if sum.len() == v.len() {
                 for (s, x) in sum.iter_mut().zip(v) {
-                    *s += *x;
+                    *s += *x * w;
                 }
-                n += 1;
+                wsum += w;
             }
         }
         if let Some(b) = f.bpm {
-            tempos.push(b);
+            tempos.push((b, w));
         }
         if !f.genre.trim().is_empty() {
-            *genres.entry(f.genre.to_lowercase()).or_insert(0.0) += 1.0;
+            *genres.entry(f.genre.to_lowercase()).or_insert(0.0) += w;
         }
     }
 
-    let centroid = (n > 0).then(|| sum.iter().map(|x| x / n as f32).collect::<Vec<f32>>());
-    tempos.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let tempo = (!tempos.is_empty()).then(|| tempos[tempos.len() / 2]);
+    let centroid = (wsum > 0.0).then(|| sum.iter().map(|x| x / wsum).collect::<Vec<f32>>());
+    // Weighted median: the bpm where half the listened WEIGHT sits below.
+    tempos.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let half: f32 = tempos.iter().map(|(_, w)| w).sum::<f32>() / 2.0;
+    let tempo = (!tempos.is_empty()).then(|| {
+        let mut acc = 0.0f32;
+        for (b, w) in &tempos {
+            acc += w;
+            if acc >= half {
+                return *b;
+            }
+        }
+        tempos[tempos.len() - 1].0
+    });
     let total: f32 = genres.values().sum();
     if total > 0.0 {
         for v in genres.values_mut() {
@@ -801,7 +829,7 @@ pub(crate) fn taste_from(plays: &[i64], feats: &HashMap<i64, &TrackFeatures>) ->
         centroid,
         tempo,
         genres,
-        heard: plays.iter().copied().collect(),
+        heard: plays.iter().map(|(id, _)| *id).collect(),
     }
 }
 
@@ -868,6 +896,15 @@ pub(crate) fn taste_heard(state: &Arc<AppState>, user: i64) -> usize {
 /// This listener's taste, built from their heavy rotation. None until they
 /// have played enough for the question to have an answer.
 pub(crate) fn taste_for(state: &Arc<AppState>, user: i64) -> Option<Taste> {
+    // Verdicts first: the listen ledger knows what was finished, abandoned
+    // and hearted. Play starts are the fallback for a listener whose ledger
+    // is still shallow - old behaviour, not a new failure mode.
+    let weighted = state.db.weighted_recent_listens(user, 60);
+    if weighted.len() >= TASTE_MIN_TRACKS {
+        let all = state.db.all_features();
+        let by_id: HashMap<i64, &TrackFeatures> = all.iter().map(|f| (f.track_id, f)).collect();
+        return Some(taste_from_weighted(&weighted, &by_id));
+    }
     let since = now_ms() - WINDOW_30D_MS;
     let top: Vec<i64> = state
         .db
@@ -1399,4 +1436,28 @@ pub async fn playlist_suggestions(
         // than "songs that belong here".
         "ai": ai_url().is_some(),
     })))
+}
+
+#[cfg(test)]
+mod verdict_taste {
+    use super::*;
+
+    fn feat(id: i64, bpm: f64) -> TrackFeatures {
+        TrackFeatures { track_id: id, bpm: Some(bpm), ..Default::default() }
+    }
+
+    #[test]
+    fn skips_stop_outvoting_completions() {
+        // One loved slow song (weight 1.0) against one abandoned fast song
+        // played "more" (weight 0.15): the weighted tempo median must sit on
+        // the loved one, where the unweighted median of starts sat on neither.
+        let a = feat(1, 80.0);
+        let b = feat(2, 170.0);
+        let feats: std::collections::HashMap<i64, &TrackFeatures> =
+            [(1, &a), (2, &b)].into_iter().collect();
+        let taste = taste_from_weighted(&[(1, 1.0), (2, 0.15)], &feats);
+        assert_eq!(taste.tempo, Some(80.0), "weight decides the median, not row count");
+        // Both ids stay heard - a skipped song is still one the listener met.
+        assert!(taste.heard.contains(&1) && taste.heard.contains(&2));
+    }
 }
