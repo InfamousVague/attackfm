@@ -230,10 +230,81 @@ pub async fn station(
     if picks.is_empty() {
         return Ok(Json(json!({ "ai": false, "vibe": seed, "blocks": [] })));
     }
+
+    /*
+     * The exploration slots: two of the set are a considered gamble.
+     *
+     * A recommender with one listener collapses onto what it already plays -
+     * nothing new is ever offered, so nothing new is ever adopted, so nothing
+     * new is ever scored. These slots are the structural fix: a couple of
+     * positions go to artists the listener has never met (quarantined
+     * auditions included - this is the deliberate door into sets that
+     * replaces the accident Phase 0 closed), chosen by Thompson sampling over
+     * per-artist adoption. An artist whose offers keep getting finished or
+     * hearted wins slots more often; one that keeps getting skipped fades
+     * without ever being banned; one never offered at all carries the uniform
+     * prior and its full share of hope.
+     *
+     * Artist-level arms, never track-level: at one household's data size,
+     * track arms would never converge on anything.
+     */
+    let explore_n: usize = if want >= 12 { 2 } else { 1 };
+    let explore_picks: Vec<i64> = {
+        use rand_distr::Distribution;
+        let played = state.db.played_artist_keys(caller.id);
+        let taken: HashSet<String> =
+            picks.iter().filter_map(|id| artist_of.get(id).cloned()).collect();
+        let stats: HashMap<String, (i64, i64)> = state
+            .db
+            .explore_artist_stats(caller.id)
+            .into_iter()
+            .map(|(a, offers, adopted)| (a, (offers, adopted)))
+            .collect();
+        // Candidates: best track per unmet artist, judged by the same taste.
+        let mut best: HashMap<String, (f32, i64)> = HashMap::new();
+        for f in feats.iter() {
+            let key = f.artist.to_lowercase();
+            if key.is_empty() || played.contains(&key) || taken.contains(&key) {
+                continue;
+            }
+            let sc = score(f, &taste);
+            let e = best.entry(key).or_insert((sc, f.track_id));
+            if sc > e.0 {
+                *e = (sc, f.track_id);
+            }
+        }
+        let mut rng = rand::thread_rng();
+        let mut sampled: Vec<(f64, i64)> = best
+            .into_iter()
+            .map(|(key, (_sc, id))| {
+                let (offers, adopted) = stats.get(&key).copied().unwrap_or((0, 0));
+                let a = 1.0 + adopted as f64;
+                let b = 1.0 + (offers - adopted).max(0) as f64;
+                let p = rand_distr::Beta::new(a, b)
+                    .map(|d| d.sample(&mut rng))
+                    .unwrap_or(0.5);
+                (p, id)
+            })
+            .collect();
+        sampled.sort_by(|x, y| y.0.partial_cmp(&x.0).unwrap_or(std::cmp::Ordering::Equal));
+        sampled.into_iter().take(explore_n).map(|(_, id)| id).collect()
+    };
+    // Seated mid-set, not opening it: position 3 and position 10 - deep
+    // enough that the set has established itself, early enough to be heard.
+    let explore_set: HashSet<i64> = explore_picks.iter().copied().collect();
+    for (n, id) in explore_picks.into_iter().enumerate() {
+        let at = (3 + n * 7).min(picks.len());
+        picks.insert(at, id);
+    }
+    picks.truncate(want);
+
     // The offer ledger: what this set put in front of the listener. Adoption
     // is judged against these rows, per impression, not per catalog.
-    let offered: Vec<(i64, &str, i64)> =
-        picks.iter().enumerate().map(|(i, id)| (*id, "rank", i as i64)).collect();
+    let offered: Vec<(i64, &str, i64)> = picks
+        .iter()
+        .enumerate()
+        .map(|(i, id)| (*id, if explore_set.contains(id) { "explore" } else { "rank" }, i as i64))
+        .collect();
     state.db.record_dj_impressions(caller.id, &offered);
 
     // The model writes the patter over the already-chosen ids; a failure just
