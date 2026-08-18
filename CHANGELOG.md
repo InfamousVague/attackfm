@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.145
+
+- The DJ's main station hears with everything it has: sets are now ranked on how songs actually sound — sonic character, the measured audio fingerprint, lyrics and community signals together — instead of words-and-tempo alone, and asking for "something mellow" now steers by sound rather than by what the lyrics say
+
 ## 0.3.144
 
 - The DJ explains itself. Every song in a DJ-built queue now shows the reason it was picked, right under the artist — the server always knew, and the app finally says
