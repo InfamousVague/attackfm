@@ -853,12 +853,29 @@ async fn run_job(
         .map_err(|e| format!("SpotiFLAC would not start: {e}"))?;
 
     let stderr_tail = Arc::new(tokio::sync::Mutex::new(Vec::<String>::new()));
+    // Lines that say WHY, kept apart from the rolling tail. SpotiFLAC ends every
+    // run with a box-drawn SESSION SUMMARY, so on an album the tail is all box by
+    // the time the run ends and the per-track reasons have scrolled out of it.
+    let stderr_diag = Arc::new(tokio::sync::Mutex::new(Vec::<String>::new()));
     if let Some(err) = child.stderr.take() {
         let tail = Arc::clone(&stderr_tail);
+        let diag = Arc::clone(&stderr_diag);
         tokio::spawn(async move {
             use tokio::io::AsyncBufReadExt;
             let mut lines = tokio::io::BufReader::new(err).lines();
             while let Ok(Some(line)) = lines.next_line().await {
+                let line = strip_progress(&line);
+                if line.is_empty() {
+                    continue;
+                }
+                if is_diagnostic(&line) {
+                    let mut diag = diag.lock().await;
+                    diag.push(line.clone());
+                    let excess = diag.len().saturating_sub(8);
+                    if excess > 0 {
+                        diag.drain(..excess);
+                    }
+                }
                 let mut tail = tail.lock().await;
                 tail.push(line);
                 let excess = tail.len().saturating_sub(40);
@@ -1079,22 +1096,135 @@ async fn run_job(
         return Ok((0, Vec::new(), Vec::new(), skipped, owned));
     }
 
-    let stderr = tail_join(&*stderr_tail.lock().await);
+    let reason = failure_reason(&*stderr_diag.lock().await, &*stderr_tail.lock().await);
+    // Keep the reason on its own line: it is usually several provider errors, and
+    // running it onto the end of a sentence is what made these unreadable.
+    let detail = if reason.is_empty() {
+        String::new()
+    } else {
+        format!("\n{reason}")
+    };
     if last_progress.elapsed() >= Duration::from_secs(STALL_SECS) {
         return Err(format!(
-            "Download stalled — no progress for {STALL_SECS}s. Retry to resume. {stderr}"
+            "Download stalled — no progress for {STALL_SECS}s. Retry to resume.{detail}"
         ));
     }
     match status {
-        Ok(s) if s.success() => Err(format!("SpotiFLAC finished but saved no playable files. {stderr}")),
-        Ok(s) => Err(format!("SpotiFLAC failed (status {:?}). {stderr}", s.code())),
+        Ok(s) if s.success() => Err(format!(
+            "SpotiFLAC finished but saved no playable files.{detail}"
+        )),
+        Ok(s) => Err(format!("SpotiFLAC failed (status {:?}).{detail}", s.code())),
         Err(e) => Err(format!("SpotiFLAC failed: {e}")),
     }
 }
 
-fn tail_join(lines: &[String]) -> String {
-    let start = lines.len().saturating_sub(12);
-    lines[start..].join("\n").trim().to_string()
+/// Strip tqdm's progress bar off a stderr line.
+///
+/// tqdm draws to stderr, so every message SpotiFLAC logs arrives with one or
+/// more `Progress:  50%|xxxx| 1/2 [00:03<00:00, ?it/s]` bars glued to the front
+/// of it. The bar's bracket never nests, so it always ends at the first `]`.
+fn strip_progress(line: &str) -> String {
+    let mut s = line.trim_start();
+    while let Some(rest) = s.strip_prefix("Progress:") {
+        match rest.find(']') {
+            Some(i) => s = rest[i + 1..].trim_start(),
+            // A bar still being drawn, with no message behind it yet.
+            None => return String::new(),
+        }
+    }
+    s.trim().to_string()
+}
+
+/// The box-drawn SESSION SUMMARY frame - decoration, never a reason.
+fn is_box_art(line: &str) -> bool {
+    line.starts_with('\u{2554}')
+        || line.starts_with('\u{2560}')
+        || line.starts_with('\u{255a}')
+        || line.starts_with('\u{2551}')
+}
+
+/// A line that states why something failed, as opposed to progress or framing.
+fn is_diagnostic(line: &str) -> bool {
+    if is_box_art(line) {
+        return false;
+    }
+    let lower = line.to_ascii_lowercase();
+    line.starts_with('\u{2717}')
+        || lower.contains("all providers failed")
+        || lower.contains("has been retired")
+        || lower.contains("v1_retired")
+        || lower.contains("update spotiflac")
+}
+
+/// SpotiFLAC is a separate program on its own release cadence, and its download
+/// backends are retired out from under whatever version a box happens to have.
+/// When the failure carries that signal, say so in words an operator can act on
+/// instead of leaving a wall of provider errors to be decoded.
+fn out_of_date_hint(text: &str) -> Option<&'static str> {
+    let lower = text.to_ascii_lowercase();
+    (lower.contains("has been retired") || lower.contains("v1_retired") || lower.contains("update spotiflac"))
+        .then_some(
+            "SpotiFLAC on this server is too old: the download API its version calls has been \
+             retired, so every provider fails no matter the song. Update it on the box \
+             (`pipx upgrade SpotiFLAC`) and retry.",
+        )
+}
+
+/// What to show a listener when an import fails.
+///
+/// Prefers the lines that name a cause; falls back to the tail only when none
+/// were seen. Taking the last N lines wholesale - what this used to do - showed
+/// the SESSION SUMMARY box and dropped the reasons printed just above it.
+fn failure_reason(diag: &[String], tail: &[String]) -> String {
+    // Every retry reprints the same per-provider errors, and the summary line
+    // already carries all of them. Lead with the summary and drop repeats, so a
+    // wall of duplicates can never push the one useful line past the cap.
+    let (mut summary, mut detail): (Vec<&str>, Vec<&str>) = (Vec::new(), Vec::new());
+    for line in diag {
+        let line = line.as_str();
+        let lower = line.to_ascii_lowercase();
+        let bucket = if lower.contains("all providers failed")
+            || lower.contains("has been retired")
+            || lower.contains("update spotiflac")
+        {
+            &mut summary
+        } else {
+            &mut detail
+        };
+        if !bucket.contains(&line) {
+            bucket.push(line);
+        }
+    }
+    // The summary spells out every provider's error, so the per-provider lines
+    // below it are the same text twice. Keep them only when no summary printed.
+    let mut picked: Vec<&str> = if summary.is_empty() { detail } else { summary };
+    if picked.is_empty() {
+        let usable: Vec<&str> = tail
+            .iter()
+            .map(String::as_str)
+            .filter(|l| !l.is_empty() && !is_box_art(l))
+            .collect();
+        let start = usable.len().saturating_sub(6);
+        picked = usable[start..].to_vec();
+    }
+    picked.truncate(6);
+    let mut text = picked.join("\n");
+    // Long enough for the per-provider summary, short enough to read on a phone.
+    const CAP: usize = 600;
+    if text.chars().count() > CAP {
+        let cut = text
+            .char_indices()
+            .nth(CAP)
+            .map(|(i, _)| i)
+            .unwrap_or(text.len());
+        text.truncate(cut);
+        text.push_str("\u{2026}");
+    }
+    match out_of_date_hint(&text) {
+        Some(hint) if text.is_empty() => hint.to_string(),
+        Some(hint) => format!("{hint}\n\n{text}"),
+        None => text,
+    }
 }
 
 // --- API ---------------------------------------------------------------------
@@ -1342,4 +1472,94 @@ pub async fn clear(
     }
     state.imports.flush().await;
     Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+#[cfg(test)]
+mod failure_text_tests {
+    use super::*;
+
+    /// Verbatim stderr from a real failed run (SpotiFLAC 1.1.2, 2026-08-18),
+    /// including the tqdm bars glued to every line and the trailing box.
+    const REAL_STDERR: &str = concat!(
+        "Progress:   0%|          | 0/1 [00:42<?, ?it/s]   [WARNING] SpotiFLAC.providers.deezer: [deezer] HTTP 429 Rate Limit on https://api.zarz.moe/v1/dl/dzr. Retrying in 2.0s...\n",
+        "Progress:   0%|          | 0/1 [00:49<?, ?it/s]     \u{2717}  deezer  \u{b7}  No file downloaded\n",
+        "Progress:   0%|          | 0/1 [01:00<?, ?it/s]     \u{2717}  qobuz  \u{b7}  [qobuz] TRACK_NOT_FOUND: Track not found\n",
+        "Progress:   0%|          | 0/1 [01:03<?, ?it/s]     \u{2717}  youtube  \u{b7}  All YouTube download sources failed (Direct, Cobalt, YT1D)\n",
+        "Progress:   0%|          | 0/1 [01:03<?, ?it/s]     \u{2717}  Failed: Babydoll \u{2014} Dominic Fike: All providers failed after 3 attempt(s) \u{2014} deezer: No file downloaded; youtube: All YouTube download sources failed\n",
+        "Progress: 100%|\u{2588}\u{2588}| 1/1 [01:03<00:00, 63.92s/it]   \u{2554}\u{2550}\u{2550}\u{2550}\u{2550}\u{2557}\n",
+        "Progress: 100%|\u{2588}\u{2588}| 1/1 [01:03<00:00, 63.92s/it]   \u{2551}  SESSION SUMMARY   \u{2551}\n",
+        "Progress: 100%|\u{2588}\u{2588}| 1/1 [01:03<00:00, 63.92s/it]   \u{2551}  Total Tracks  : 1 \u{2551}\n",
+        "Progress: 100%|\u{2588}\u{2588}| 1/1 [01:03<00:00, 63.92s/it]   \u{2551}  Successful    : 0 \u{2551}\n",
+        "Progress: 100%|\u{2588}\u{2588}| 1/1 [01:03<00:00, 63.92s/it]   \u{255a}\u{2550}\u{2550}\u{2550}\u{2550}\u{255d}\n",
+    );
+
+    /// Reproduces the reader loop so the test exercises the real split.
+    fn split(raw: &str) -> (Vec<String>, Vec<String>) {
+        let (mut diag, mut tail) = (Vec::new(), Vec::new());
+        for line in raw.lines() {
+            let line = strip_progress(line);
+            if line.is_empty() {
+                continue;
+            }
+            if is_diagnostic(&line) {
+                diag.push(line.clone());
+            }
+            tail.push(line);
+        }
+        (diag, tail)
+    }
+
+    #[test]
+    fn strips_every_tqdm_bar_including_repeats() {
+        assert_eq!(
+            strip_progress("Progress:  50%|xx| 1/2 [00:03<00:00, ?it/s]Progress: 100%|xx| 2/2 [00:04<00:00, ?it/s]  done"),
+            "done"
+        );
+        // A bar with no message behind it yet carries no information.
+        assert_eq!(strip_progress("Progress:  50%|xx| 1/2 [00:03<00:00, ?it/s]"), "");
+        // A message with its own brackets survives intact.
+        assert_eq!(
+            strip_progress("Progress:   0%| | 0/1 [00:01<?, ?it/s]   [ERROR] [tidal] TRACK_NOT_FOUND"),
+            "[ERROR] [tidal] TRACK_NOT_FOUND"
+        );
+    }
+
+    #[test]
+    fn keeps_the_reason_and_drops_the_box() {
+        let (diag, tail) = split(REAL_STDERR);
+        let out = failure_reason(&diag, &tail);
+        // The one line that names every provider's failure.
+        assert!(out.contains("All providers failed"), "missing summary: {out}");
+        assert!(out.contains("youtube"), "missing per-provider detail: {out}");
+        // The summary names every provider, so it must survive the length cap.
+        assert!(
+            out.lines().next().unwrap_or_default().contains("All providers failed"),
+            "summary was not first: {out}"
+        );
+        // Retries reprint the same lines; a repeat must not eat a slot.
+        assert_eq!(out.lines().count(), 1, "summary should stand alone: {out}");
+        // ...and it must not be cut off, since it is the whole explanation.
+        assert!(out.ends_with("All YouTube download sources failed"), "summary truncated: {out}");
+        // The box art that used to be ALL the listener saw.
+        assert!(!out.contains("SESSION SUMMARY"), "kept box art: {out}");
+        assert!(!out.contains('\u{2551}'), "kept box border: {out}");
+        assert!(!out.contains("Progress:"), "kept tqdm bar: {out}");
+    }
+
+    #[test]
+    fn names_an_out_of_date_downloader() {
+        let raw = "Progress:   0%| | 0/1 [00:01<?, ?it/s]   [deezer] The v1 download API has been retired. Please update SpotiFLAC to the latest version to continue.";
+        let (diag, tail) = split(raw);
+        let out = failure_reason(&diag, &tail);
+        assert!(out.contains("too old"), "no operator hint: {out}");
+        assert!(out.contains("pipx upgrade"), "no remedy: {out}");
+    }
+
+    #[test]
+    fn falls_back_to_the_tail_when_nothing_matched() {
+        let raw = "Progress:   0%| | 0/1 [00:01<?, ?it/s]   something unexpected happened";
+        let (diag, tail) = split(raw);
+        assert!(diag.is_empty());
+        assert_eq!(failure_reason(&diag, &tail), "something unexpected happened");
+    }
 }
