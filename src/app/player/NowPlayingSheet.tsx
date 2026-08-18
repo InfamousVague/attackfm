@@ -38,6 +38,7 @@ import {
 import { isMobile } from '../core/platform.ts';
 import { EqPanel } from './EqPanel.tsx';
 import { setFxChainOn, useFxChain } from './fxChain.ts';
+import { MarqueeText } from './MarqueeText.tsx';
 import { SpinningDisc } from './SpinningDisc.tsx';
 import { NowPlayingBackdrop } from './NowPlayingBackdrop.tsx';
 import { QueuePanel } from './QueuePanel.tsx';
@@ -433,7 +434,7 @@ export function NowPlayingSheet({
 
       <div className="npScreen__meta">
         <div className="npScreen__lines">
-          <span className="npScreen__title">{track?.title ?? ''}</span>
+          <MarqueeText className="npScreen__title" text={track?.title ?? ''} />
           {onOpenArtist && track ? (
             <button
               type="button"
