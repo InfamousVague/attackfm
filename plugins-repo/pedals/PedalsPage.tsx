@@ -1,6 +1,27 @@
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Button, Slider, Switch, Text } from '@glacier/react';
-import { ArrowDown, ArrowUp, Plus, X, Zap } from '@glacier/icons';
+import {
+  Activity,
+  ArrowDown,
+  ArrowDownToLine,
+  ArrowUp,
+  AudioWaveform,
+  Binary,
+  Copy,
+  Fan,
+  Flame,
+  Layers,
+  Plus,
+  Radio,
+  Repeat,
+  Sparkles,
+  Star,
+  Waves,
+  Wind,
+  X,
+  Zap,
+  type LucideIcon,
+} from '@glacier/icons';
 import {
   FX_NODES,
   setFxChain,
@@ -50,6 +71,62 @@ const HUES: Record<string, number> = {
   exciter: 300, sub: 265, sparkle: 320, doubler: 95,
 };
 
+/**
+ * A face per pedal, so the shelf can be read at a glance.
+ *
+ * Paired with HUES above: colour alone is a poor label - it says "these two are
+ * related" but never which is which - and fifteen boxes of text is a menu, not
+ * a shelf. The glyphs are chosen for what the pedal DOES to the sound rather
+ * than for what the effect is called.
+ */
+const ICONS: Record<string, LucideIcon> = {
+  od: Flame,          // drive, pushed hot
+  fuzz: Zap,          // harder, spikier drive
+  crush: Binary,      // bit crusher: the sound made of steps
+  chorus: Layers,     // copies stacked slightly apart
+  flanger: Wind,      // a sweep moving through it
+  phaser: AudioWaveform,
+  trem: Activity,     // amplitude going up and down
+  vib: Waves,         // pitch doing the same
+  rotary: Fan,        // a speaker that literally spins
+  echo: Repeat,
+  spring: Radio,      // the tank in an old amp
+  exciter: Sparkles,
+  sub: ArrowDownToLine,
+  sparkle: Star,
+  doubler: Copy,
+};
+
+/**
+ * How long the new pedal keeps blinking after it lands.
+ *
+ * Long enough to find it after the page has scrolled, short enough that it
+ * stops being a thing flashing at you while you set the knobs. Read "for a
+ * minute" as the figure of speech; if a literal minute is wanted, this is the
+ * one number to change.
+ */
+const FRESH_MS = 6000;
+
+/**
+ * The blink.
+ *
+ * Inline styles cannot express keyframes and this plugin ships no stylesheet,
+ * so the rule travels with the component. It animates only the ring, drawn with
+ * box-shadow rather than border, so nothing reflows while it pulses and the
+ * card does not jump the layout each cycle.
+ */
+const BLINK_CSS = `
+@keyframes afmPedalLanded {
+  0%, 100% { box-shadow: 0 0 0 0 hsl(0 0% 100% / 0); }
+  50%      { box-shadow: 0 0 0 3px var(--glacier-accent-9), 0 0 18px -2px var(--glacier-accent-9); }
+}
+[data-fresh] { animation: afmPedalLanded 900ms ease-in-out 6; }
+@media (prefers-reduced-motion: reduce) {
+  /* Still say which one is new, just without the flashing. */
+  [data-fresh] { animation: none; box-shadow: 0 0 0 2px var(--glacier-accent-9); }
+}
+`;
+
 const board: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 12 };
 const pedalCard = (hue: number, on: boolean): CSSProperties => ({
   borderRadius: 14,
@@ -74,18 +151,43 @@ const shelfBtn = (hue: number): CSSProperties => ({
   border: '1px solid var(--glacier-border)',
   background: `linear-gradient(135deg, hsl(${hue} 40% 24% / 0.4), var(--glacier-bg-surface))`,
   padding: '10px 12px',
+  // Row, not column: the icon holds the left edge and the words sit beside it,
+  // so a column of shelf buttons scans down a single line of glyphs.
   display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'flex-start',
-  gap: 2,
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 10,
   cursor: 'pointer',
   textAlign: 'left',
+});
+
+/** The icon's own tile, tinted with the pedal's hue. */
+const shelfIcon = (hue: number): CSSProperties => ({
+  flex: 'none',
+  display: 'grid',
+  placeItems: 'center',
+  width: 30,
+  height: 30,
+  borderRadius: 9,
+  background: `hsl(${hue} 45% 45% / 0.22)`,
+  color: `hsl(${hue} 70% 72%)`,
 });
 
 export function PedalsPage() {
   const chain = useFxChain();
   const { session } = useServerSession();
   const [shelfOpen, setShelfOpen] = useState(true);
+  /** The pedal added most recently, while it is still blinking. */
+  const [freshKey, setFreshKey] = useState<string | null>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
+
+  // One timer, restarted by each add, so adding a second pedal moves the blink
+  // rather than leaving two of them going at once.
+  useEffect(() => {
+    if (!freshKey) return;
+    const timer = window.setTimeout(() => setFreshKey(null), FRESH_MS);
+    return () => window.clearTimeout(timer);
+  }, [freshKey]);
 
   const specs = useMemo(() => FX_NODES.filter((s) => s.group === 'pedal'), []);
   const specOf = (t: string) => specs.find((s) => s.t === t);
@@ -100,8 +202,26 @@ export function PedalsPage() {
     setFxChain(nodes, on);
   };
 
+  /**
+   * Take a pedal off the shelf.
+   *
+   * The shelf sits below the board, so by the time you click one the board is
+   * usually off the top of the screen and the only feedback was a number
+   * quietly changing somewhere you were not looking. So: scroll back up to the
+   * board, and blink the pedal that just landed so it is obvious which of them
+   * is new. It goes on the END of the chain (a pedal after the rack's EQ is a
+   * real choice), which is why it has to announce itself rather than rely on
+   * being where you are looking.
+   */
   const add = (spec: FxNodeSpec) => {
-    edit([...chain.nodes, newNode(spec)], true);
+    const node = newNode(spec);
+    edit([...chain.nodes, node], true);
+    setFreshKey(node.key);
+
+    // The page scrolls inside .homePage, not the window, so ask the board's own
+    // scroll container. scrollIntoView on the header would fight a sticky nav.
+    const scroller = pageRef.current?.closest('.homePage') ?? pageRef.current;
+    scroller?.scrollTo?.({ top: 0, behavior: 'smooth' });
   };
 
   const remove = (key: string) => edit(chain.nodes.filter((n) => n.key !== key));
@@ -125,7 +245,11 @@ export function PedalsPage() {
 
   return (
     <div className="homePage">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: 'var(--glacier-space-4)', maxWidth: 720 }}>
+      <style>{BLINK_CSS}</style>
+      <div
+        ref={pageRef}
+        style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: 'var(--glacier-space-4)', maxWidth: 720 }}
+      >
         <header style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <Zap size={22} aria-hidden />
           <div style={{ flex: 1 }}>
@@ -158,7 +282,11 @@ export function PedalsPage() {
             const spec = specOf(node.t)!;
             const hue = HUES[node.t] ?? 0;
             return (
-              <article key={node.key} style={pedalCard(hue, node.on && chain.on)}>
+              <article
+                key={node.key}
+                style={pedalCard(hue, node.on && chain.on)}
+                data-fresh={node.key === freshKey || undefined}
+              >
                 <div style={cardHead}>
                   <Switch
                     aria-label={`${spec.label} on`}
@@ -215,12 +343,21 @@ export function PedalsPage() {
           </button>
           {shelfOpen && (
             <div style={shelfGrid}>
-              {specs.map((spec) => (
-                <button key={spec.t} type="button" style={shelfBtn(HUES[spec.t] ?? 0)} onClick={() => add(spec)}>
-                  <Text weight="bold" size="sm">{spec.label}</Text>
-                  <Text tone="muted" size="xs">{spec.blurb}</Text>
-                </button>
-              ))}
+              {specs.map((spec) => {
+                const hue = HUES[spec.t] ?? 0;
+                const Icon = ICONS[spec.t] ?? Zap;
+                return (
+                  <button key={spec.t} type="button" style={shelfBtn(hue)} onClick={() => add(spec)}>
+                    <span style={shelfIcon(hue)} aria-hidden>
+                      <Icon size={16} />
+                    </span>
+                    <span style={{ minWidth: 0 }}>
+                      <Text weight="bold" size="sm">{spec.label}</Text>
+                      <Text tone="muted" size="xs">{spec.blurb}</Text>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </section>
