@@ -14,7 +14,7 @@ import { login as registryLogin, signup as registrySignup } from './registry.ts'
 import { JoinServer } from './JoinServer.tsx';
 import { parsePairPayload } from './pairing.ts';
 import { QrScanner } from './QrScanner.tsx';
-import { isMobile } from '../core/platform.ts';
+import { hasLocalLibrary, isMobile } from '../core/platform.ts';
 import wordmark from '../../assets/attack-white.png';
 import { ArtWall } from './ArtWall.tsx';
 
@@ -51,7 +51,25 @@ export function MobileAuthGate({ children }: { children: ReactNode }) {
   // the path an existing local account still uses.
   const [connecting, setConnecting] = useState(false);
 
-  if (!isMobile) return <>{children}</>;
+  /*
+   * Who needs the front door: anyone with no other way to have music.
+   *
+   * This asked `!isMobile` while the only two builds were a phone and a
+   * desktop app, and for those two that was the right answer by accident -
+   * the desktop app can be pointed at a local folder, so an empty library is
+   * a state with a way out of it, and the phone cannot, so it needs a server
+   * before it is anything at all.
+   *
+   * attack.fm/listen broke the coincidence: a browser is not mobile, and also
+   * cannot walk a music folder. Under the old test a first-time visitor
+   * landed in a fully-chromed app with an empty library, no session, and no
+   * prompt - the only way forward being to guess at the settings gear.
+   *
+   * So the question is asked directly. `hasLocalLibrary` is exactly "is there
+   * music here without a server": true for the desktop app, false for the
+   * phone and false for the web.
+   */
+  if (hasLocalLibrary) return <>{children}</>;
   // A stored server session is read synchronously, so a returning listener is
   // in at once, no splash and no onboarding.
   if (server) return <>{children}</>;
