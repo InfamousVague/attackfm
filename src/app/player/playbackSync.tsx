@@ -101,7 +101,15 @@ export function PlaybackSyncProvider({ children }: { children: ReactNode }) {
         setActiveDeviceId(msg.activeDeviceId);
         break;
       case 'state':
-        setShared(msg.state);
+        // The skew stamp: this device's clock minus the hub's, measured on
+        // arrival. Remotes extrapolate the position from updatedAt, which is
+        // hub-clock - subtracting a phone clock from it made the position
+        // drift by the skew, or freeze when the clamp caught a negative.
+        setShared(
+          typeof msg.now === 'number'
+            ? { ...msg.state, clockSkewMs: Date.now() - msg.now }
+            : msg.state,
+        );
         setActiveDeviceId(msg.state.activeDeviceId);
         break;
       case 'command': {

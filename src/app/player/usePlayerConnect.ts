@@ -300,7 +300,11 @@ export function usePlayerConnect({
     const s = connect.session;
     if (!s) return 0;
     const base = s.positionMs / 1000;
-    return s.playing ? base + Math.max(0, (Date.now() - s.updatedAt) / 1000) : base;
+    // updatedAt is hub-clock; Date.now() is this device's. The skew stamp
+    // (measured when the frame arrived) converts ours to theirs, so the
+    // elapsed term no longer inherits whatever this phone's clock believes.
+    const serverNow = Date.now() - (s.clockSkewMs ?? 0);
+    return s.playing ? base + Math.max(0, (serverNow - s.updatedAt) / 1000) : base;
   })();
 
   return { remoteTrack, activeDeviceName, remotePosition };

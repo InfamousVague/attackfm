@@ -333,7 +333,13 @@ fn devices_message(hub: &UserHub) -> String {
 }
 
 fn state_message(hub: &UserHub) -> String {
-    json!({ "type": "state", "state": hub.session }).to_string()
+    // `now` is the hub's clock at send time. Remotes extrapolate the position
+    // as base + (now - updatedAt), and both of those stamps must come from
+    // the SAME clock: a phone whose clock ran behind the server's computed a
+    // negative elapsed, clamped it to zero, and showed a position frozen at
+    // the last report. With the server's now on the wire, the client measures
+    // its own skew and the phone's clock stops being part of the answer.
+    json!({ "type": "state", "state": hub.session, "now": now_ms() }).to_string()
 }
 
 async fn on_hello(
