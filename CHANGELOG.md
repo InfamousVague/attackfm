@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.160
+
+- The mini player now shows when smart shuffle is on, instead of only the full Now Playing screen — so an unfamiliar song turning up always has something on screen explaining itself
+
 ## 0.3.159
 
 - Smart shuffle. Tap the shuffle button twice and it picks up a sparkle: from then on the shuffle keeps mixing in songs the DJ thinks belong in what you're playing, about one in every four. A list you've heard through stops being a list you've heard through

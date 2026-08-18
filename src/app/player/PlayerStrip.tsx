@@ -71,6 +71,7 @@ export function PlayerStrip({
   onSkipBackDisp,
   onSkipForwardDisp,
   shuffle,
+  smart,
   setShuffle,
   repeat,
   setRepeat,
@@ -118,6 +119,13 @@ export function PlayerStrip({
   onSkipBackDisp: (() => void) | undefined;
   onSkipForwardDisp: (() => void) | undefined;
   shuffle: boolean;
+  /** Smart shuffle is on. The strip does not CYCLE the mode - its row of small
+   *  targets is the wrong place for a three-state control, and one tap should
+   *  still mean off - but it has to SHOW it: smart is the mode that changes
+   *  what you hear, and the strip is the surface people actually look at. A
+   *  sparkle here with no explanation is better than an unfamiliar song with
+   *  no explanation. */
+  smart: boolean;
   setShuffle: Dispatch<SetStateAction<boolean>>;
   repeat: PlayerRepeat;
   setRepeat: Dispatch<SetStateAction<PlayerRepeat>>;
@@ -242,6 +250,10 @@ export function PlayerStrip({
         onSkipForward={onSkipForwardDisp}
         shuffle={shuffle}
         onShuffleChange={setShuffle}
+        // Renaming the control is the honest way to badge it: a screen reader
+        // announces the mode, and the CSS sparkle hangs off the same name
+        // rather than off a hashed kit class that could change under us.
+        labels={shuffle && smart ? { shuffle: 'Smart shuffle' } : undefined}
         repeat={repeat}
         onRepeatChange={setRepeat}
         favorite={favorite}
