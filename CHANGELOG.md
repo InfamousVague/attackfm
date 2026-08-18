@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.148
+
+- Unfolded, Now Playing takes nearly half the screen instead of a third — room for the art to actually be art, with the app still the wider half
+
 ## 0.3.147
 
 - The fullscreen search sits on the same black as every page, not a grey card ground
