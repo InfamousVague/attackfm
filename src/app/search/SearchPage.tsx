@@ -104,6 +104,7 @@ export function SearchPage({
   onOpenAlbum,
   onOpenPlaylist,
   initialFilter,
+  placeholder,
 }: {
   onPlay: (track: Track, queue: Track[]) => void;
   onOpenArtist: (artist: string) => void;
@@ -114,6 +115,9 @@ export function SearchPage({
   /** Which scope the page opens on. Library's bar sends 'mine' so its search
    *  answers only from what is already downloaded; unset means 'all'. */
   initialFilter?: Filter;
+  /** The words the bar that opened this was wearing, so the two read as one
+   *  bar rather than swapping text as the page arrives. */
+  placeholder?: string;
 }) {
   const { tracks } = useLibrary();
   const { playlists } = usePlaylists();
@@ -753,20 +757,20 @@ export function SearchPage({
         value={query}
         onValueChange={setQuery}
         onKeyDown={onFieldKey}
-        placeholder="Songs, artists, albums, lyrics — or artist: album: genre:"
+        placeholder={placeholder ?? 'Songs, artists, albums, lyrics — or artist: album: genre:'}
         aria-label="Search"
         role="combobox"
         aria-expanded={walk.length > 0}
         aria-controls="searchResults"
         aria-activedescendant={cursor >= 0 ? `searchHit-${cursor}` : undefined}
         autoComplete="off"
-        /* Only where a keyboard is already on the desk. On a phone, focusing
-           the field on open throws the software keyboard over half the page
-           you just revealed - the genre cards, the recents - before you have
-           said you want to type. The field is one tap away when you do. */
-        autoFocus={
-          typeof matchMedia !== 'undefined' && matchMedia('(pointer: fine)').matches
-        }
+        /* Focused on open, phone included. This used to be desk-only: search
+           arrived by a PULL from the top, which is a gesture you can make by
+           accident, so throwing the keyboard over the page you just revealed
+           was the wrong answer. Search now arrives by tapping a search bar -
+           an act with exactly one meaning - and landing on a page whose field
+           is not ready costs a second tap for no reason. */
+        autoFocus
       />
 
       {searching && !claimed && available.some((f) => f.group === 'kind') && (

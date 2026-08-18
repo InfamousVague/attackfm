@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.166
+
+- Tapping the search bar puts the cursor in it — no second tap before you can type
+- The bar keeps its own words as the search page opens, instead of swapping to different text on the way
+
 ## 0.3.165
 
 - Search from the Library now answers from the music you already have — no "add this" results for a song sitting in your library. The bar on Discover still searches everything there is to add
