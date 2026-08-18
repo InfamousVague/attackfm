@@ -7,6 +7,11 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.143
+
+- The DJ starts finding genuinely small artists: new music is now sourced from ListenBrainz's similarity graph with a hard ceiling on worldwide listeners, and from the bandmates, side projects and collaborators of obscure artists you've hearted — scenes, not charts
+- Every DJ set now spends two slots on a considered gamble: an artist you've never met, chosen by how your past gambles went, seated mid-set. Ones you finish or heart return more often; ones you skip fade out on their own
+
 ## 0.3.142
 
 - The DJ starts learning from what you actually do: every listen now records which part of the app started it, the DJ keeps a ledger of what it offered you, and your taste profile is built from verdicts — a song you finish counts whole, a song you keep bailing on barely counts at all, a heart counts extra

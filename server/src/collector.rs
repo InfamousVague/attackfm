@@ -94,6 +94,9 @@ pub fn spawn(state: Arc<AppState>) {
             settle_pulls(&state).await;
             pull_cycle(&state).await;
             tune_cycle(&state);
+            // The small-artist sources fill the same pool the Deezer harvest
+            // does; their own clocks make this a no-op most cycles.
+            crate::listenbrainz::cycle(&state).await;
             tokio::time::sleep(CYCLE).await;
         }
     });

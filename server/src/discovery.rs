@@ -73,6 +73,10 @@ fn client(secs: u64) -> reqwest::Client {
 /// fold(), then with the joiner words dropped: "&", "+" and "and" all read as
 /// nothing, so "Florence + The Machine" and "Florence and the Machine" carry
 /// the same key. Only for ARTIST identity matching - titles keep full fold().
+pub fn artist_key_public(value: &str) -> String {
+    artist_key(value)
+}
+
 fn artist_key(value: &str) -> String {
     fold(value)
         .split_whitespace()
@@ -386,6 +390,42 @@ async fn harvest_from(state: &Arc<AppState>, user: i64, seeds: Vec<(String, i64)
             let _ = artist_name;
         }
     }
+}
+
+/// Resolve one artist by NAME (strictly - a wrong match ingests a stranger's
+/// catalog) and add a few of their tracks to the pool. The door the
+/// ListenBrainz harvest and the scene walk share with nobody else: candidates
+/// from any source ride the same insertion, dedupe and scoring as Deezer's.
+pub async fn ingest_artist_by_name(
+    state: &Arc<AppState>,
+    user: i64,
+    c: &reqwest::Client,
+    artist: &str,
+    seed_name: &str,
+    take: usize,
+) -> usize {
+    let Some(id) = deezer_artist_id(c, artist, true).await else { return 0 };
+    tokio::time::sleep(GAP).await;
+    let Some(tracks) = deezer_top(c, id).await else { return 0 };
+    tokio::time::sleep(GAP).await;
+    let owned = owned_keys(state);
+    let mut added = 0usize;
+    for t in tracks.into_iter().take(take) {
+        if owned.contains(&key_of(&t.artist, &t.title)) {
+            continue;
+        }
+        if state
+            .db
+            .add_discovery(
+                user, &t.ext_id, &t.title, &t.artist, &t.cover, &t.url, &t.preview, seed_name,
+                t.popularity,
+            )
+            .is_ok()
+        {
+            added += 1;
+        }
+    }
+    added
 }
 
 struct CandidateTrack {

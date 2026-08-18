@@ -42,6 +42,7 @@ mod friends;
 mod home;
 mod hot;
 mod imports;
+mod listenbrainz;
 mod jams;
 mod library_search;
 mod listens;

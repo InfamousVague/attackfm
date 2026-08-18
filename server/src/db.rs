@@ -900,6 +900,24 @@ CREATE TABLE IF NOT EXISTS dj_impressions (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS dj_impressions_user ON dj_impressions(user_id, track_id);
+
+-- MusicBrainz artist ids by folded name, cached forever including misses:
+-- MB politely asks not to be asked twice, and a name that is not there today
+-- will not be there tomorrow under the same spelling.
+CREATE TABLE IF NOT EXISTS mb_artists (
+  name_key   TEXT PRIMARY KEY,
+  mbid       TEXT NOT NULL DEFAULT '',
+  checked_at INTEGER NOT NULL
+);
+
+-- Which hearted artists the scene walk has already dug around, so the walk
+-- rotates instead of circling one favourite.
+CREATE TABLE IF NOT EXISTS scene_walks (
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  artist_key TEXT NOT NULL,
+  walked_at  INTEGER NOT NULL,
+  PRIMARY KEY (user_id, artist_key)
+);
 CREATE INDEX IF NOT EXISTS listen_events_user_time ON listen_events(user_id, started_at DESC);
 -- Probed by the "new to you" count's NOT EXISTS, which asks "had this user
 -- ever played THIS track" - the same lookup shape plays_user_track serves.
@@ -2144,6 +2162,102 @@ impl Db {
     }
 
     /// Distinct recently played live tracks, newest first.
+    pub fn mb_artist_cached(&self, name_key: &str) -> Option<String> {
+        self.lock()
+            .query_row(
+                "SELECT mbid FROM mb_artists WHERE name_key = ?1",
+                params![name_key],
+                |r| r.get(0),
+            )
+            .optional()
+            .ok()
+            .flatten()
+    }
+
+    pub fn mb_artist_store(&self, name_key: &str, mbid: &str) {
+        let _ = self.lock().execute(
+            "INSERT INTO mb_artists (name_key, mbid, checked_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(name_key) DO UPDATE SET mbid = excluded.mbid, checked_at = excluded.checked_at",
+            params![name_key, mbid, now_ms()],
+        );
+    }
+
+    pub fn scene_walk_due(&self, user_id: i64, artist_key: &str, every_ms: i64) -> bool {
+        let last: Option<i64> = self
+            .lock()
+            .query_row(
+                "SELECT walked_at FROM scene_walks WHERE user_id = ?1 AND artist_key = ?2",
+                params![user_id, artist_key],
+                |r| r.get(0),
+            )
+            .optional()
+            .ok()
+            .flatten();
+        last.map(|t| now_ms() - t >= every_ms).unwrap_or(true)
+    }
+
+    pub fn scene_walk_record(&self, user_id: i64, artist_key: &str) {
+        let _ = self.lock().execute(
+            "INSERT INTO scene_walks (user_id, artist_key, walked_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(user_id, artist_key) DO UPDATE SET walked_at = excluded.walked_at",
+            params![user_id, artist_key, now_ms()],
+        );
+    }
+
+    /// Every artist name in the live library - the "do we already own them"
+    /// side of the small-artist gates.
+    pub fn owned_artist_names(&self) -> Vec<String> {
+        let conn = self.lock();
+        let Ok(mut stmt) =
+            conn.prepare("SELECT DISTINCT artist FROM tracks WHERE deleted = 0 AND artist != ''")
+        else {
+            return Vec::new();
+        };
+        stmt.query_map([], |r| r.get(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Hearted artists whose most-listened track sits under the worldwide
+    /// listener ceiling - the obscure favourites the scene walk digs around.
+    /// Freshest hearts first, so a new obsession gets walked before an old one
+    /// gets re-walked.
+    pub fn hearted_obscure_artists(&self, user_id: i64, max_listeners: i64) -> Vec<String> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT t.artist
+             FROM favorites f
+             JOIN tracks t ON t.id = f.track_id AND t.deleted = 0 AND t.artist != ''
+             LEFT JOIN track_features tf ON tf.track_id = t.id
+             WHERE f.user_id = ?1
+             GROUP BY LOWER(t.artist)
+             HAVING MAX(COALESCE(tf.listenbrainz_listeners, 0)) <= ?2
+             ORDER BY MAX(f.added_at) DESC
+             LIMIT 12",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, max_listeners], |r| r.get(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Artists this listener has actually MET - any listen event at all. The
+    /// complement is the exploration pool.
+    pub fn played_artist_keys(&self, user_id: i64) -> std::collections::HashSet<String> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT DISTINCT LOWER(artist) FROM listen_events WHERE user_id = ?1
+             UNION SELECT DISTINCT LOWER(t.artist) FROM plays p JOIN tracks t ON t.id = p.track_id
+             WHERE p.user_id = ?1",
+        ) else {
+            return Default::default();
+        };
+        stmt.query_map(params![user_id], |r| r.get::<_, String>(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
     /// One row per DJ set: what was offered, in what slot, at what position.
     pub fn record_dj_impressions(&self, user_id: i64, items: &[(i64, &str, i64)]) {
         let conn = self.lock();
