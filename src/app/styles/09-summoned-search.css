@@ -185,3 +185,27 @@
 [data-smart] .shuffleGlyph {
   color: var(--glacier-accent-text);
 }
+
+/* The same sparkle on the mini strip, drawn rather than composed: the strip's
+   transport is the kit's own, so there is no element of ours to put an icon
+   inside. It hangs off the control's accessible NAME, which PlayerStrip
+   rewrites to "Smart shuffle" in that mode - a contract the kit exposes on
+   purpose, unlike its hashed class names. If the kit ever renames the
+   control the sparkle quietly stops appearing, which is the right way for a
+   badge to fail. */
+.appPlayer [aria-label='Smart shuffle'] {
+  position: relative;
+  color: var(--glacier-accent-text);
+}
+
+.appPlayer [aria-label='Smart shuffle']::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 4px;
+  inline-size: 5px;
+  block-size: 5px;
+  border-radius: 50%;
+  background: var(--glacier-accent-solid);
+  box-shadow: 0 0 6px var(--glacier-accent-solid);
+}

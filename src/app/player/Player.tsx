@@ -2498,6 +2498,7 @@ export function Player({
         onSkipBackDisp={onSkipBackDisp}
         onSkipForwardDisp={onSkipForwardDisp}
         shuffle={shuffle}
+        smart={smart}
         setShuffle={setShuffle}
         repeat={repeat}
         setRepeat={setRepeat}
