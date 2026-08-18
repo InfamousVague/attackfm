@@ -129,10 +129,17 @@ export function BoothPage({
       return;
     }
     const ctrl = new AbortController();
-    void fetchCurator(session, ctrl.signal).then(setFeed).catch(() => {});
-    void fetchFeaturesStatus(session, ctrl.signal).then(setFeats).catch(() => {});
-    void fetchCollectorStatus(session, ctrl.signal).then(setPulls).catch(() => {});
-    return () => ctrl.abort();
+    const refresh = () => {
+      void fetchCurator(session, ctrl.signal).then(setFeed).catch(() => {});
+      void fetchFeaturesStatus(session, ctrl.signal).then(setFeats).catch(() => {});
+      void fetchCollectorStatus(session, ctrl.signal).then(setPulls).catch(() => {});
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 15_000);
+    return () => {
+      window.clearInterval(timer);
+      ctrl.abort();
+    };
   }, [session]);
 
   // On the platter: the song playing right now, as the DJ hears it. The
@@ -340,6 +347,54 @@ export function BoothPage({
             </span>
           )}
         </button>
+      )}
+
+      {session && feed?.enrichment && (
+        <section className="boothEnrichment" aria-labelledby="booth-enrichment-title">
+          <span className="boothEnrichment__head">
+            <span className="boothBrain__glyph" aria-hidden="true">
+              <Sparkles size={15} />
+            </span>
+            <span>
+              <span id="booth-enrichment-title" className="boothBrain__title">
+                Library enrichment
+              </span>
+              <span className="boothEnrichment__status" role="status" aria-live="polite">
+                {feed.enrichment.stage === 'first'
+                  ? 'Building and normalizing the first layer'
+                  : feed.enrichment.stage === 'second'
+                    ? 'Refining and normalizing the second layer'
+                    : 'Both layers are up to date'}
+              </span>
+            </span>
+          </span>
+          {([
+            ['First layer', feed.enrichment.firstLayer],
+            ['Second layer', feed.enrichment.secondLayer],
+          ] as const).map(([label, progress]) => {
+            const percent = progress.total > 0
+              ? Math.min(100, Math.round((progress.complete / progress.total) * 100))
+              : 0;
+            return (
+              <span className="boothEnrichment__layer" key={label}>
+                <span className="boothEnrichment__label">
+                  <span>{label}</span>
+                  <span>{progress.complete.toLocaleString()} of {progress.total.toLocaleString()}</span>
+                </span>
+                <span
+                  className="boothEnrichment__track"
+                  role="progressbar"
+                  aria-label={`${label} enrichment`}
+                  aria-valuemin={0}
+                  aria-valuemax={progress.total}
+                  aria-valuenow={progress.complete}
+                >
+                  <span className="boothEnrichment__fill" style={{ inlineSize: `${percent}%` }} />
+                </span>
+              </span>
+            );
+          })}
+        </section>
       )}
 
       {/* The crates: every mix the pipeline produced, as a grid - and every
