@@ -7,6 +7,13 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.173
+
+- A song title too long for the Now Playing screen now reads itself out and back instead of stopping at an ellipsis. It travels to the end, rests a moment so you can read it, returns to the beginning, and rests there too, so the title is always readable in full and always settles where it starts
+- The lyric words that drifted across the artwork on Now Playing are gone. They sat over the record you were looking at and competed with it; the Lyrics panel is unchanged and still a tap away when the words are what you came for
+- Stacking several pedals no longer restarts the stream once per pedal. Your server renders the effects, so a change always needs the audio fetched again, but a run of changes now waits for you to stop and costs a single reload rather than one for every switch you touched
+- The pedal shelf has a face for each pedal, drawn for what it does to the sound, and taking one down scrolls back up to the board and blinks the pedal that landed, so you can see which of them is new
+
 ## 0.3.172
 
 - Picking a song on one device reliably changes what's playing on the active one. A phone whose connection blipped — a backgrounded app, a doorway, an idle proxy — used to lose its seat instantly, so picks from other devices fell into the gap and played locally instead; now the seat holds through a 30-second grace, the pick waits for the phone to come back, and the connection is kept alive so it blips far less in the first place
