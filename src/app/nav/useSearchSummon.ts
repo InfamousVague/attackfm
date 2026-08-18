@@ -83,6 +83,8 @@ export function useSearchSummon(host: HTMLElement | null) {
     let startY = 0;
     let startX = 0;
     let armed = false;
+    /** The scroller this gesture is judged against, resolved on touchdown. */
+    let page: Element | null = null;
     let isPulling = false;
     let travel = 0;
     const ratchet = makeRatchet();
@@ -91,17 +93,27 @@ export function useSearchSummon(host: HTMLElement | null) {
      * lands on an <svg> or one of its <path>s has an SVGElement target, and
      * on a screen made of album art and icons that is most of the screen.
      */
+    const scrolls = (el: Element) => el.scrollHeight > el.clientHeight + 1;
     const pageOf = (target: EventTarget | null): Element | null => {
       let el = target instanceof Element ? target : null;
       while (el && el.parentElement !== host) el = el.parentElement;
+      // A direct child that does not scroll - the top scrim, any decorative
+      // layer - reports scrollTop 0 forever, which would arm the pull from
+      // anywhere on a page that IS scrolled down. Fall back to the child that
+      // actually scrolls.
+      if (el && !scrolls(el)) {
+        const real = Array.from(host.children).find(scrolls);
+        if (real) return real;
+      }
       return el;
     };
     const onStart = (e: TouchEvent) => {
       const t = e.touches[0];
       if (!t) return;
-      const page = pageOf(e.target);
+      page = pageOf(e.target);
       // Armed only at the very top of the page's own scroller, so ordinary
-      // scrolling never fights this.
+      // scrolling never fights this. Re-checked on every move below: this
+      // reading is only true for the instant the finger lands.
       armed = !!page && page.scrollTop <= 0;
       isPulling = false;
       travel = 0;
@@ -116,6 +128,19 @@ export function useSearchSummon(host: HTMLElement | null) {
       const dy = t.clientY - startY;
       const dx = Math.abs(t.clientX - startX);
       if (!isPulling) {
+        // The page can scroll out from under a finger that landed at the top.
+        // One touch that scrolls DOWN and then reverses used to arrive back
+        // with a large positive dy - measured from a start point the page had
+        // long since left - and open search from the middle of the list. What
+        // matters is where the scroller is NOW, not where it was on touchdown.
+        if (page && page.scrollTop > 0) {
+          // Re-baseline while it is scrolled, so returning to the top starts
+          // the pull from zero rather than arriving with a stale distance
+          // already banked.
+          startY = t.clientY;
+          startX = t.clientX;
+          return;
+        }
         if (dy > SLOP && dy > dx * 1.5) {
           isPulling = true;
           setPulling(true);
