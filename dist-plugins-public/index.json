@@ -38,17 +38,17 @@
     {
       "id": "hifi-lab",
       "name": "HiFi Lab",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Chain EQs, filters and dynamics into a signal path of your own — reorder the boxes, save the racks you build.",
       "author": "AttackFM",
       "tags": [
         "Sound",
         "HiFi"
       ],
-      "entry": "hifi-lab-0.1.0.js",
+      "entry": "hifi-lab-0.1.1.js",
       "api": 1,
-      "bytes": 10890,
-      "sha256": "d7789301891cf388832000efc4d81244d9d66f8dab502b69d8d038514145dae9",
+      "bytes": 10993,
+      "sha256": "ed42bf10d9a631f0a655fae2492e088accf8e0f1f4383b46337b2633c0424e2f",
       "requiresServer": true,
       "public": true
     }

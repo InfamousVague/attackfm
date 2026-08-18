@@ -1,8 +1,8 @@
 {
   "id": "hifi-lab",
   "name": "HiFi Lab",
-  "version": "0.1.0",
-  "description": "Chain EQs, filters and dynamics into a signal path of your own — reorder the boxes, save the racks you build.",
+  "version": "0.1.1",
+  "description": "Chain EQs, filters and dynamics into a signal path of your own \u2014 reorder the boxes, save the racks you build.",
   "author": "AttackFM",
   "tags": [
     "Sound",
