@@ -1,0 +1,14 @@
+{
+  "id": "filters",
+  "name": "Filters",
+  "version": "0.1.0",
+  "description": "A shelf of finished sounds: lofi, vinyl, cassette, telephone, cathedral, night drive and two dozen more, each one tap away.",
+  "author": "AttackFM",
+  "tags": [
+    "Sound",
+    "Filters"
+  ],
+  "entry": "plugin.ts",
+  "public": true,
+  "requiresServer": true
+}

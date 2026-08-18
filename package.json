@@ -1,7 +1,7 @@
 {
   "name": "attackfm",
   "private": true,
-  "version": "0.3.171",
+  "version": "0.3.173",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -28,7 +28,8 @@
     "site:preview": "vite preview --config vite.site.config.ts",
     "site:deploy": "node scripts/deploy-site.mjs",
     "listen:deploy": "node scripts/deploy-listen.mjs",
-    "listen:build": "AFM_WEB=1 vite build"
+    "listen:build": "AFM_WEB=1 vite build",
+    "filters:check": "node scripts/check-filters.mjs"
   },
   "dependencies": {
     "@glacier/icons": "file:./vendor/@glacier/icons",
