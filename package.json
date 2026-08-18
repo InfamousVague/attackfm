@@ -21,7 +21,11 @@
     "redeploy:setup": "node scripts/redeploy.mjs setup",
     "bundle:home": "node scripts/home-bundle.mjs",
     "android:emulator": "\"$HOME/Library/Android/sdk/emulator/emulator\" -avd attackfm -netdelay none -netspeed full",
-    "ship": "node scripts/ship-update.mjs"
+    "ship": "node scripts/ship-update.mjs",
+    "site:dev": "vite --config vite.site.config.ts",
+    "site:build": "vite build --config vite.site.config.ts",
+    "site:preview": "vite preview --config vite.site.config.ts",
+    "site:deploy": "node scripts/deploy-site.mjs"
   },
   "dependencies": {
     "@glacier/icons": "file:./vendor/@glacier/icons",

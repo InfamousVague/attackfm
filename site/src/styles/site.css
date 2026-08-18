@@ -1,0 +1,1367 @@
+/* =============================================================================
+   attack.fm — the marketing surface.
+
+   Everything here is expressed through @glacier tokens rather than literals, so
+   the page inherits the product's palette, type ramp and radii. The few local
+   tokens below are compositions (glows, grounds, rails) that only the marketing
+   page needs; each is defined for BOTH schemes.
+
+   The document always carries data-theme (index.html stamps 'dark' and the
+   pre-paint script may swap it to 'light'), so [data-theme='light'] overrides
+   are safe here in a way they would not be on a page that can render unstamped.
+   ========================================================================== */
+
+/* --- tokens ---------------------------------------------------------------- */
+
+:root {
+  /* The page ground. Deliberately a touch deeper than the app's own surface:
+     a landing page is looked AT, and album art needs a darker wall to glow off
+     than an interface the reader is working inside. */
+  --site-ground: oklch(0.145 0.008 285);
+  --site-ground-2: oklch(0.178 0.009 285);
+  --site-rail: color-mix(in oklch, var(--glacier-text) 9%, transparent);
+  --site-rail-strong: color-mix(in oklch, var(--glacier-text) 18%, transparent);
+
+  /* Glass panels sit over artwork, so they carry their own ground rather than
+     relying on a backdrop-filter: a large moving backdrop is the single most
+     expensive thing this page could do, and it buys nothing over a tint. */
+  --site-glass: color-mix(in oklch, var(--site-ground-2) 82%, transparent);
+  --site-glass-line: color-mix(in oklch, var(--glacier-text) 12%, transparent);
+
+  --site-glow: color-mix(in oklch, var(--glacier-accent-9) 55%, transparent);
+  --site-glow-soft: color-mix(in oklch, var(--glacier-accent-9) 22%, transparent);
+
+  /* How dark the artwork wall is pushed so text stays legible on top of it. */
+  --site-wall-dim: 0.34;
+  --site-wall-veil: oklch(0.145 0.008 285);
+
+  --site-max: 74rem;
+  --site-gutter: clamp(1.25rem, 4vw, 2.5rem);
+
+  /* One shared easing so unrelated animations still feel like one system. */
+  --site-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --site-ease-in: cubic-bezier(0.55, 0, 0.35, 1);
+}
+
+[data-theme='light'] {
+  --site-ground: oklch(0.985 0.002 285);
+  --site-ground-2: oklch(0.955 0.004 285);
+  --site-rail: color-mix(in oklch, var(--glacier-text) 12%, transparent);
+  --site-rail-strong: color-mix(in oklch, var(--glacier-text) 22%, transparent);
+
+  --site-glass: color-mix(in oklch, oklch(1 0 0) 78%, transparent);
+  --site-glass-line: color-mix(in oklch, var(--glacier-text) 10%, transparent);
+
+  --site-glow: color-mix(in oklch, var(--glacier-accent-9) 38%, transparent);
+  --site-glow-soft: color-mix(in oklch, var(--glacier-accent-9) 14%, transparent);
+
+  /* Light mode is a LIGHT page, not a dimmed dark one: the artwork wall is
+     lifted and veiled in white so covers read as a soft texture rather than a
+     dark slab sitting in the middle of a bright document. */
+  --site-wall-dim: 0.18;
+  --site-wall-veil: oklch(0.985 0.002 285);
+}
+
+/* --- base ------------------------------------------------------------------ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  /* The nav is fixed; anchored sections must not land underneath it. */
+  scroll-padding-top: 5.5rem;
+}
+
+body {
+  margin: 0;
+  background: var(--site-ground);
+  color: var(--glacier-text);
+  font-family: var(--glacier-font-sans);
+  font-size: var(--glacier-font-size-md);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  /* Decorative layers bleed past the viewport; the page must never slide. */
+  overflow-x: clip;
+}
+
+img,
+video,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+:where(a, button, [tabindex]):focus-visible {
+  outline: 2px solid var(--glacier-accent-9);
+  outline-offset: 3px;
+  border-radius: var(--glacier-radius-sm, 6px);
+}
+
+::selection {
+  background: var(--glacier-accent-9);
+  color: var(--glacier-accent-contrast);
+}
+
+/* --- layout ---------------------------------------------------------------- */
+
+.wrap {
+  width: 100%;
+  max-width: var(--site-max);
+  margin-inline: auto;
+  padding-inline: var(--site-gutter);
+}
+
+.wrap--wide {
+  max-width: 88rem;
+}
+
+.section {
+  position: relative;
+  padding-block: clamp(5rem, 12vh, 9rem);
+}
+
+.section--tight {
+  padding-block: clamp(3rem, 7vh, 5rem);
+}
+
+/* A hairline that fades out at both ends - a full-width rule reads as a table
+   border, which is not what a section break is. */
+.section--ruled::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--site-rail) 18%, var(--site-rail) 82%, transparent);
+}
+
+/* --- type ------------------------------------------------------------------ */
+
+.display {
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 0.98;
+  font-size: clamp(2.6rem, 7.2vw, 5.4rem);
+  text-wrap: balance;
+  margin: 0;
+}
+
+.h2 {
+  font-weight: 780;
+  letter-spacing: -0.028em;
+  line-height: 1.05;
+  font-size: clamp(2rem, 4.4vw, 3.2rem);
+  text-wrap: balance;
+  margin: 0;
+}
+
+.h3 {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  font-size: clamp(1.25rem, 2.2vw, 1.6rem);
+  margin: 0;
+}
+
+.lead {
+  color: var(--glacier-text-muted);
+  font-size: clamp(1.02rem, 1.5vw, 1.2rem);
+  line-height: 1.6;
+  max-width: 44ch;
+  margin: 0;
+  text-wrap: pretty;
+}
+
+.body {
+  color: var(--glacier-text-muted);
+  margin: 0;
+  max-width: 58ch;
+  text-wrap: pretty;
+}
+
+/* The mono eyebrow. This is a product for people who run their own server, and
+   a machine-voiced label says that faster than a sentence does. */
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-family: var(--glacier-font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--glacier-accent-11);
+  margin: 0 0 1rem;
+}
+
+.eyebrow::before {
+  content: '';
+  width: 1.6rem;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.55;
+}
+
+.accent {
+  color: var(--glacier-accent-11);
+}
+
+/* --- motion primitives ------------------------------------------------------ */
+
+/* Scroll reveal. Transform and opacity only - both composited, so a page with
+   dozens of these still scrolls at frame rate. */
+.reveal {
+  opacity: 0;
+  transform: translate3d(0, 18px, 0);
+  transition:
+    opacity 0.75s var(--site-ease),
+    transform 0.75s var(--site-ease);
+  transition-delay: var(--reveal-delay, 0ms);
+  will-change: opacity, transform;
+}
+
+.reveal[data-shown='true'] {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+/* Once revealed, drop the compositor hint: a permanently promoted layer costs
+   memory for an animation that will never run again. */
+.reveal[data-settled='true'] {
+  will-change: auto;
+}
+
+.reveal--left {
+  transform: translate3d(-24px, 0, 0);
+}
+
+.reveal--right {
+  transform: translate3d(24px, 0, 0);
+}
+
+.reveal--scale {
+  transform: translate3d(0, 24px, 0) scale(0.975);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  /* Ambient loops are decoration; a reader who asked for stillness gets it. */
+  .wall__col,
+  .marquee__track,
+  .eq__bar,
+  .pulse,
+  .aurora__blob {
+    animation: none !important;
+  }
+}
+
+/* --- buttons ---------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 0.9rem 1.5rem;
+  border-radius: 999px;
+  font-weight: 650;
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    transform 0.22s var(--site-ease),
+    box-shadow 0.22s var(--site-ease),
+    background-color 0.22s var(--site-ease),
+    border-color 0.22s var(--site-ease);
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.btn--primary {
+  background: var(--glacier-accent-9);
+  color: var(--glacier-accent-contrast);
+  box-shadow: 0 10px 30px -12px var(--site-glow);
+}
+
+.btn--primary:hover {
+  background: var(--glacier-accent-10);
+  box-shadow: 0 18px 40px -14px var(--site-glow);
+}
+
+.btn--ghost {
+  background: transparent;
+  color: var(--glacier-text);
+  border-color: var(--site-rail-strong);
+}
+
+.btn--ghost:hover {
+  border-color: var(--glacier-accent-9);
+  background: color-mix(in oklch, var(--glacier-accent-9) 8%, transparent);
+}
+
+/* --- nav -------------------------------------------------------------------- */
+
+.nav {
+  position: fixed;
+  inset-inline: 0;
+  top: 0;
+  z-index: 50;
+  transition: background-color 0.3s var(--site-ease), border-color 0.3s var(--site-ease);
+  border-bottom: 1px solid transparent;
+}
+
+/* Opaque only once the page has moved: over the hero the bar should be invisible
+   so the artwork runs to the top edge. */
+.nav[data-stuck='true'] {
+  background: color-mix(in oklch, var(--site-ground) 88%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom-color: var(--site-rail);
+}
+
+.nav__inner {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  height: 4.25rem;
+}
+
+.nav__mark {
+  height: 1.05rem;
+  width: auto;
+  /* The wordmark ships white; in light mode it must become ink. */
+  filter: var(--site-mark-filter, none);
+}
+
+[data-theme='light'] {
+  --site-mark-filter: invert(1);
+}
+
+.nav__links {
+  display: none;
+  gap: 1.6rem;
+  margin-inline-start: auto;
+}
+
+.nav__link {
+  color: var(--glacier-text-muted);
+  font-size: 0.95rem;
+  font-weight: 550;
+  position: relative;
+  transition: color 0.2s var(--site-ease);
+}
+
+.nav__link::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -6px;
+  width: 100%;
+  height: 2px;
+  background: var(--glacier-accent-9);
+  border-radius: 2px;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.28s var(--site-ease);
+}
+
+.nav__link:hover {
+  color: var(--glacier-text);
+}
+
+.nav__link:hover::after {
+  transform: scaleX(1);
+}
+
+.nav__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-inline-start: auto;
+}
+
+.nav__links + .nav__actions {
+  margin-inline-start: 0;
+}
+
+@media (min-width: 60rem) {
+  .nav__links {
+    display: flex;
+  }
+}
+
+.iconBtn {
+  display: inline-grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--site-rail);
+  background: transparent;
+  color: var(--glacier-text);
+  cursor: pointer;
+  transition:
+    border-color 0.2s var(--site-ease),
+    background-color 0.2s var(--site-ease),
+    transform 0.2s var(--site-ease);
+}
+
+.iconBtn:hover {
+  border-color: var(--glacier-accent-9);
+  background: color-mix(in oklch, var(--glacier-accent-9) 10%, transparent);
+  transform: translateY(-1px);
+}
+
+/* --- the artwork wall ------------------------------------------------------- */
+
+/* Real covers from a real library, drifting behind the hero. The columns move
+   at a CONSTANT blur and constant speed: only `transform` changes per frame,
+   which the compositor handles without repainting the images. */
+.wall {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: 0;
+  opacity: var(--site-wall-dim);
+  /* Fixed radius. A radius that changed with scroll would re-blur every frame. */
+  filter: blur(3px) saturate(0.92);
+  pointer-events: none;
+}
+
+.wall__grid {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-12deg);
+  width: 150vw;
+  height: 190vh;
+  display: flex;
+  gap: 1rem;
+}
+
+.wall__col {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  flex: 1 1 0;
+  animation: wall-up var(--wall-dur, 90s) linear infinite;
+}
+
+.wall__col--down {
+  animation-name: wall-down;
+}
+
+.wall__col img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 0.75rem;
+}
+
+@keyframes wall-up {
+  to {
+    transform: translate3d(0, -50%, 0);
+  }
+}
+
+@keyframes wall-down {
+  from {
+    transform: translate3d(0, -50%, 0);
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/* The veil that makes type legible over the wall. Two stops so the centre stays
+   readable while the edges fall away into the page ground. */
+.wall__veil {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 90% at 50% 30%, transparent, var(--site-wall-veil) 72%),
+    linear-gradient(to bottom, transparent 55%, var(--site-ground) 96%);
+}
+
+/* --- aurora ----------------------------------------------------------------- */
+
+/* Slow brand-coloured light behind key sections. Blurred once at a fixed radius
+   and then only translated - the cheap half of the effect, all of the payoff. */
+.aurora {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.aurora__blob {
+  position: absolute;
+  width: 42rem;
+  height: 42rem;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.5;
+  background: radial-gradient(circle, var(--site-glow) 0%, transparent 68%);
+  animation: drift 26s var(--site-ease) infinite alternate;
+}
+
+.aurora__blob--a {
+  top: -14rem;
+  left: -10rem;
+}
+
+.aurora__blob--b {
+  bottom: -18rem;
+  right: -12rem;
+  animation-delay: -13s;
+  background: radial-gradient(circle, var(--site-glow-soft) 0%, transparent 68%);
+}
+
+@keyframes drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(4rem, 3rem, 0) scale(1.12);
+  }
+}
+
+/* --- cards ------------------------------------------------------------------ */
+
+.card {
+  position: relative;
+  border: 1px solid var(--site-glass-line);
+  border-radius: 1.15rem;
+  background: var(--site-glass);
+  padding: 1.6rem;
+  overflow: hidden;
+  transition:
+    transform 0.3s var(--site-ease),
+    border-color 0.3s var(--site-ease);
+}
+
+.card:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in oklch, var(--glacier-accent-9) 40%, var(--site-glass-line));
+}
+
+/* A pointer-following sheen. The position comes from two custom properties the
+   card writes on pointermove, so the effect costs one composited gradient
+   rather than a layout pass. */
+.card--lit::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.35s var(--site-ease);
+  background: radial-gradient(
+    22rem circle at var(--mx, 50%) var(--my, 0%),
+    color-mix(in oklch, var(--glacier-accent-9) 14%, transparent),
+    transparent 60%
+  );
+  pointer-events: none;
+}
+
+.card--lit:hover::before {
+  opacity: 1;
+}
+
+.card__icon {
+  display: inline-grid;
+  place-items: center;
+  width: 2.9rem;
+  height: 2.9rem;
+  border-radius: 0.85rem;
+  margin-bottom: 1.1rem;
+  color: var(--glacier-accent-11);
+  background: color-mix(in oklch, var(--glacier-accent-9) 14%, transparent);
+  border: 1px solid color-mix(in oklch, var(--glacier-accent-9) 26%, transparent);
+}
+
+.grid {
+  display: grid;
+  gap: 1.1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+}
+
+/* --- device frames ---------------------------------------------------------- */
+
+/* Screenshots are the product. The frames stay quiet so the pixels inside them
+   are what the eye lands on. */
+.phone {
+  position: relative;
+  border-radius: 2.4rem;
+  padding: 0.55rem;
+  background: linear-gradient(160deg, var(--site-rail-strong), var(--site-rail));
+  box-shadow:
+    0 40px 80px -40px rgb(0 0 0 / 0.75),
+    0 0 0 1px var(--site-glass-line);
+}
+
+.phone__screen {
+  position: relative;
+  border-radius: 2rem;
+  overflow: hidden;
+  background: var(--site-ground-2);
+  aspect-ratio: 9 / 19.5;
+}
+
+.phone__screen img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+}
+
+.laptop {
+  position: relative;
+  border-radius: 0.9rem;
+  padding: 0.5rem;
+  background: linear-gradient(160deg, var(--site-rail-strong), var(--site-rail));
+  box-shadow:
+    0 40px 90px -45px rgb(0 0 0 / 0.8),
+    0 0 0 1px var(--site-glass-line);
+}
+
+.laptop__screen {
+  border-radius: 0.55rem;
+  overflow: hidden;
+  background: var(--site-ground-2);
+  aspect-ratio: 16 / 10;
+}
+
+.laptop__screen img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+}
+
+/* A soft brand glow pooled under a device, so it sits on the page rather than
+   floating on it. */
+.deviceGlow {
+  position: absolute;
+  inset: auto 8% -8%;
+  height: 6rem;
+  border-radius: 50%;
+  background: var(--site-glow-soft);
+  filter: blur(48px);
+  z-index: -1;
+}
+
+/* --- feature rows ----------------------------------------------------------- */
+
+.row {
+  display: grid;
+  gap: clamp(2rem, 5vw, 4rem);
+  align-items: center;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 62rem) {
+  .row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .row--flip .row__media {
+    order: -1;
+  }
+}
+
+.row__media {
+  position: relative;
+}
+
+/* --- marquee ---------------------------------------------------------------- */
+
+.marquee {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+
+.marquee__track {
+  display: flex;
+  gap: 1rem;
+  width: max-content;
+  animation: marquee var(--marquee-dur, 46s) linear infinite;
+}
+
+.marquee:hover .marquee__track {
+  animation-play-state: paused;
+}
+
+@keyframes marquee {
+  to {
+    /* The track holds the same content twice; -50% is one full copy. */
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+.shot {
+  border-radius: 1rem;
+  overflow: hidden;
+  border: 1px solid var(--site-glass-line);
+  background: var(--site-ground-2);
+  box-shadow: 0 24px 50px -30px rgb(0 0 0 / 0.7);
+  flex: none;
+}
+
+.shot img {
+  display: block;
+  height: 100%;
+  width: auto;
+}
+
+/* --- equaliser -------------------------------------------------------------- */
+
+/* Pure CSS. It is ornament, so it must not cost a timer or a paint. */
+.eq {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 1.1rem;
+}
+
+.eq__bar {
+  width: 3px;
+  border-radius: 2px;
+  background: var(--glacier-accent-9);
+  animation: eq 1.1s var(--site-ease-in) infinite alternate;
+  transform-origin: bottom;
+}
+
+@keyframes eq {
+  from {
+    height: 22%;
+    opacity: 0.55;
+  }
+  to {
+    height: 100%;
+    opacity: 1;
+  }
+}
+
+/* --- stats ------------------------------------------------------------------ */
+
+.stats {
+  display: grid;
+  gap: 1px;
+  background: var(--site-rail);
+  border: 1px solid var(--site-rail);
+  border-radius: 1.15rem;
+  overflow: hidden;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+}
+
+.stat {
+  background: var(--site-ground);
+  padding: 1.6rem 1.4rem;
+  text-align: center;
+}
+
+.stat__value {
+  font-size: clamp(1.9rem, 3.4vw, 2.6rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat__label {
+  margin-top: 0.5rem;
+  font-family: var(--glacier-font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--glacier-text-muted);
+}
+
+/* --- footer ----------------------------------------------------------------- */
+
+.footer {
+  border-top: 1px solid var(--site-rail);
+  padding-block: 3rem 2.5rem;
+  color: var(--glacier-text-muted);
+}
+
+.footer__grid {
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+}
+
+.footer__title {
+  font-family: var(--glacier-font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--glacier-text);
+  margin: 0 0 0.9rem;
+}
+
+.footer__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;
+  font-size: 0.95rem;
+}
+
+.footer__list a:hover {
+  color: var(--glacier-accent-11);
+}
+
+/* --- misc ------------------------------------------------------------------- */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--site-rail-strong);
+  background: var(--site-glass);
+  font-size: 0.82rem;
+  font-weight: 550;
+  color: var(--glacier-text-muted);
+}
+
+.pulse {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--glacier-accent-9);
+  box-shadow: 0 0 0 0 var(--site-glow);
+  animation: pulse 2.4s var(--site-ease) infinite;
+}
+
+@keyframes pulse {
+  70% {
+    box-shadow: 0 0 0 0.6rem transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.stack {
+  display: grid;
+  gap: 1.1rem;
+  justify-items: start;
+}
+
+.cluster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.center {
+  text-align: center;
+  justify-items: center;
+}
+
+.center .lead,
+.center .body {
+  margin-inline: auto;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* =============================================================================
+   Sections
+   ========================================================================== */
+
+/* --- hero ------------------------------------------------------------------- */
+
+.hero {
+  position: relative;
+  min-height: 100svh;
+  display: flex;
+  align-items: center;
+  padding-block: 8rem 5rem;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.hero__inner {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  gap: clamp(2.5rem, 6vw, 5rem);
+  align-items: center;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 64rem) {
+  .hero__inner {
+    grid-template-columns: 1.15fr 0.85fr;
+  }
+}
+
+.hero__copy {
+  display: grid;
+  gap: 1.35rem;
+  justify-items: start;
+}
+
+.hero__title {
+  display: grid;
+  gap: 0.65rem;
+  justify-items: start;
+}
+
+/* The wordmark IS the first line of the headline, so it is sized in em to track
+   the display ramp rather than being pinned to a pixel height. */
+.hero__mark {
+  height: clamp(2.2rem, 6.4vw, 4.6rem);
+  width: auto;
+  filter: var(--site-mark-filter, none);
+}
+
+.hero__line {
+  font-size: clamp(1.6rem, 3.9vw, 2.9rem);
+  font-weight: 760;
+  letter-spacing: -0.03em;
+  line-height: 1.06;
+  color: var(--glacier-text);
+}
+
+.hero__lead {
+  max-width: 40ch;
+}
+
+.hero__cta {
+  margin-top: 0.35rem;
+}
+
+.hero__facts {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  color: var(--glacier-text-muted);
+  font-size: 0.9rem;
+}
+
+.hero__facts li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.hero__device {
+  position: relative;
+  max-width: 20rem;
+  margin-inline: auto;
+  width: 100%;
+}
+
+/* A slow float, so the device is not a static cut-out pasted on the page. */
+@media (prefers-reduced-motion: no-preference) {
+  .hero__device[data-shown='true'] .phone {
+    animation: float 9s ease-in-out infinite;
+  }
+}
+
+@keyframes float {
+  50% {
+    transform: translateY(-14px);
+  }
+}
+
+.hero__scroll {
+  position: absolute;
+  bottom: 1.6rem;
+  left: 50%;
+  translate: -50% 0;
+  width: 1.45rem;
+  height: 2.35rem;
+  border: 1px solid var(--site-rail-strong);
+  border-radius: 999px;
+  z-index: 2;
+  display: grid;
+  place-items: start center;
+  padding-top: 0.4rem;
+}
+
+.hero__scroll span {
+  width: 3px;
+  height: 0.45rem;
+  border-radius: 2px;
+  background: var(--glacier-accent-9);
+  animation: scrollHint 1.9s var(--site-ease) infinite;
+}
+
+@keyframes scrollHint {
+  50% {
+    transform: translateY(0.72rem);
+    opacity: 0.25;
+  }
+}
+
+/* --- shared section bits ---------------------------------------------------- */
+
+.sectionHead {
+  margin-bottom: clamp(2.5rem, 5vw, 3.75rem);
+  max-width: 46rem;
+  margin-inline: auto;
+}
+
+.points {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.point {
+  display: flex;
+  gap: 0.8rem;
+  align-items: flex-start;
+  color: var(--glacier-text-muted);
+  line-height: 1.5;
+}
+
+.point__icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  margin-top: 0.1rem;
+  border-radius: 0.55rem;
+  color: var(--glacier-accent-11);
+  background: color-mix(in oklch, var(--glacier-accent-9) 13%, transparent);
+}
+
+.point code {
+  font-family: var(--glacier-font-mono);
+  font-size: 0.85em;
+  padding: 0.1em 0.35em;
+  border-radius: 0.3rem;
+  background: color-mix(in oklch, var(--glacier-text) 8%, transparent);
+}
+
+/* --- screenshot placeholder -------------------------------------------------- */
+
+/* Deliberate, legible, and obviously not a bug - see components/Device.tsx. */
+.shotPending {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.6rem;
+  color: var(--glacier-text-subtle);
+  background:
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 9px,
+      color-mix(in oklch, var(--glacier-text) 4%, transparent) 9px,
+      color-mix(in oklch, var(--glacier-text) 4%, transparent) 18px
+    ),
+    var(--site-ground-2);
+  font-family: var(--glacier-font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: center;
+  padding: 1rem;
+}
+
+/* --- composed device groups --------------------------------------------------- */
+
+.stackShots {
+  position: relative;
+  padding-bottom: 2rem;
+}
+
+.stackShots__back {
+  width: 100%;
+}
+
+/* The phone overlaps the laptop's lower-left corner, so the two read as one
+   product rather than two unrelated pictures. */
+.stackShots__front {
+  position: absolute;
+  left: 4%;
+  bottom: -1rem;
+  width: 32%;
+  max-width: 11rem;
+}
+
+@media (max-width: 40rem) {
+  .stackShots__front {
+    position: static;
+    width: 58%;
+    margin: -2rem auto 0;
+  }
+}
+
+.pairShots {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.pairShots .phone {
+  flex: 1 1 0;
+  max-width: 15rem;
+}
+
+.pairShots__offset {
+  margin-top: 2.5rem;
+}
+
+@media (max-width: 34rem) {
+  .pairShots__offset {
+    display: none;
+  }
+}
+
+.tilt {
+  max-width: 19rem;
+  margin-inline: auto;
+  transition: transform 0.6s var(--site-ease);
+}
+
+@media (min-width: 62rem) and (prefers-reduced-motion: no-preference) {
+  .tilt {
+    transform: perspective(1400px) rotateY(-11deg) rotateX(3deg);
+  }
+
+  .tilt:hover {
+    transform: perspective(1400px) rotateY(0deg) rotateX(0deg);
+  }
+}
+
+.everywhere__grid {
+  margin-bottom: clamp(2.5rem, 6vw, 4rem);
+}
+
+.everywhere__stage {
+  position: relative;
+  max-width: 58rem;
+  margin-inline: auto;
+}
+
+.everywhere__phone {
+  position: absolute;
+  right: -1rem;
+  bottom: -2.5rem;
+  width: 22%;
+  max-width: 9.5rem;
+}
+
+@media (max-width: 46rem) {
+  .everywhere__phone {
+    display: none;
+  }
+}
+
+/* --- topology ---------------------------------------------------------------- */
+
+.topoWrap {
+  max-width: 42rem;
+  margin: 0 auto clamp(2.5rem, 6vw, 3.75rem);
+}
+
+.topo {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.topo__link {
+  stroke-dasharray: 5 7;
+  animation: flow 2.4s linear infinite;
+}
+
+@keyframes flow {
+  to {
+    /* One dash period, so the loop is seamless. */
+    stroke-dashoffset: -12;
+  }
+}
+
+.topo__hubRing {
+  fill: none;
+  stroke: var(--glacier-accent-9);
+  stroke-width: 1;
+  opacity: 0.45;
+}
+
+.topo__hubCore {
+  fill: color-mix(in oklch, var(--glacier-accent-9) 22%, transparent);
+  stroke: var(--glacier-accent-9);
+  stroke-width: 1.5;
+}
+
+.topo__node {
+  fill: var(--site-ground);
+  stroke: var(--glacier-accent-9);
+  stroke-width: 1.5;
+}
+
+.topo__label {
+  fill: var(--glacier-text-muted);
+  font-family: var(--glacier-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.yours__grid {
+  margin-bottom: clamp(2rem, 5vw, 3rem);
+}
+
+/* --- get ---------------------------------------------------------------------- */
+
+.get {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.install {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: 46rem;
+  margin: 2rem auto 0;
+  padding: 0.75rem 0.75rem 0.75rem 1rem;
+  border: 1px solid var(--site-rail-strong);
+  border-radius: 0.9rem;
+  background: var(--site-ground-2);
+  /* The command is long; on a narrow screen it scrolls inside the box rather
+     than widening the page. */
+  overflow: hidden;
+}
+
+.install__prompt {
+  color: var(--glacier-accent-11);
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+
+.install__code {
+  font-family: var(--glacier-font-mono);
+  font-size: 0.82rem;
+  white-space: nowrap;
+  overflow-x: auto;
+  flex: 1 1 auto;
+  color: var(--glacier-text);
+  scrollbar-width: none;
+}
+
+.install__code::-webkit-scrollbar {
+  display: none;
+}
+
+.install__copy {
+  flex: none;
+}
+
+.get__buttons {
+  justify-content: center;
+  margin-top: 1.75rem;
+}
+
+.get__note {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 1.25rem;
+  font-size: 0.9rem;
+}
+
+/* --- footer ------------------------------------------------------------------- */
+
+.footer__mark {
+  height: 1rem;
+  margin-bottom: 0.9rem;
+}
+
+.footer__blurb {
+  margin-bottom: 1rem;
+  font-size: 0.95rem;
+}
+
+.footer__fine {
+  margin: 2.5rem 0 0;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--site-rail);
+  font-size: 0.85rem;
+  color: var(--glacier-text-subtle);
+  max-width: 46rem;
+}
+
+/* --- gallery ------------------------------------------------------------------ */
+
+.gallery {
+  overflow: hidden;
+}
+
+/* The band is sized by HEIGHT and lets each shot keep its own aspect ratio, so
+   phone and desktop captures can sit in one row without being distorted. */
+.gallery__item {
+  margin: 0;
+  height: clamp(18rem, 40vh, 27rem);
+}
+
+.gallery__item img {
+  height: 100%;
+  width: auto;
+  max-width: none;
+  object-fit: contain;
+  background: var(--site-ground-2);
+}

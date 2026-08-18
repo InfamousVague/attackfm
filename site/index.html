@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+
+    <title>AttackFM — your music, on your machines</title>
+    <meta
+      name="description"
+      content="A music player and server you actually own. Your files, your hardware, streamed to every device you have — with a DJ that listens to the music itself."
+    />
+
+    <!-- Dark is the design, but the page is honest about supporting both so the
+         browser paints the right ground before the first frame. -->
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0b0b0d" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+
+    <link rel="icon" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="AttackFM" />
+    <meta property="og:title" content="AttackFM — your music, on your machines" />
+    <meta
+      property="og:description"
+      content="A music player and server you actually own. Your files, your hardware, every device."
+    />
+    <meta property="og:image" content="/og.png" />
+    <meta property="og:url" content="https://attack.fm" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <script>
+      // Resolve the theme BEFORE first paint. Doing this in React would let the
+      // document flash the default dark ground at a reader who chose light.
+      (function () {
+        try {
+          var saved = localStorage.getItem('attackfm-site-theme');
+          if (saved === 'light' || saved === 'dark') {
+            document.documentElement.setAttribute('data-theme', saved);
+          } else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
+            // No stored choice: follow the system, dark being the fallback.
+            document.documentElement.setAttribute('data-theme', 'light');
+          }
+        } catch (e) {
+          /* private mode: keep the dark default */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
