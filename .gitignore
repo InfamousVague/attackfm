@@ -81,3 +81,8 @@ __pycache__/
 # listener's data, never the repo's.
 data/
 dist-site/
+
+# Screenshot-capture seed: holds a live session + stream token, must stay
+# untracked AND ignored - it once sat untracked-but-not-ignored in this shared
+# tree, one `git add -A` away from a public repo.
+public/__seed.json
