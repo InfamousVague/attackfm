@@ -385,3 +385,68 @@ body [class*='_panel_']:has(> .dlPanel) {
   font-size: var(--glacier-font-size-sm);
   color: var(--glacier-text-muted);
 }
+
+/* The board, simplified, in its own popover beside the equaliser's.
+   A playing surface: a switch and one knob per pedal, and nothing that
+   rearranges the chain - that lives on the Pedals page. */
+.pedalsPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  min-width: 15rem;
+}
+
+.pedalsPanel__head {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding-block-end: var(--glacier-space-2);
+  border-block-end: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+/* The count sits between the title and the master switch, and gives up the
+   space first when a long pedal name pushes the row. */
+.pedalsPanel__head > :nth-child(2) {
+  margin-inline-start: auto;
+}
+
+.pedalsPanel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  /* A long board scrolls inside the popover rather than growing it past the
+     artwork it is floating over. */
+  max-height: 15rem;
+  overflow-y: auto;
+}
+
+/* Fixed columns so every row's switch, slider and readout line up, whatever
+   the pedal is called. The name column is the one that yields. */
+.pedalsPanel__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 5.5rem 3rem;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.pedalsPanel__name {
+  font-size: var(--glacier-font-size-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pedalsPanel__value {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Keeps the grid's third column occupied for a pedal that has no knob. */
+.pedalsPanel__noKnob {
+  display: block;
+}

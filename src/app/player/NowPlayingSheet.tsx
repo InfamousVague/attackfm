@@ -14,29 +14,10 @@ import {
   useLiveLevels,
 } from '@glacier/react';
 import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
-import {
-  AudioLines,
-  Check,
-  ChevronDown,
-  Disc3,
-  EyeOff,
-  Heart,
-  Image as ImageIcon,
-  ListMusic,
-  ListPlus,
-  Mic,
-  Pause,
-  Play,
-  Repeat,
-  Repeat1,
-  Shuffle,
-  Sparkles,
-  SkipBack,
-  SkipForward,
-  Volume2,
-} from '@glacier/icons';
+import { AudioLines, Check, ChevronDown, Disc3, EyeOff, Heart, Image as ImageIcon, ListMusic, ListPlus, Mic, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Sparkles, Volume2, Zap } from '@glacier/icons';
 import { isMobile } from '../core/platform.ts';
 import { EqPanel } from './EqPanel.tsx';
+import { PedalsPanel } from './PedalsPanel.tsx';
 import { setFxChainOn, useFxChain } from './fxChain.ts';
 import { MarqueeText } from './MarqueeText.tsx';
 import { SpinningDisc } from './SpinningDisc.tsx';
@@ -572,6 +553,23 @@ export function NowPlayingSheet({
           <div className="eqPopover">
             <EqPanel narrow={narrowEq} />
             <FxChainRow />
+          </div>
+        </Popover>
+        {/* The board gets its own door rather than another row inside the
+            equaliser's: they are different instruments, and burying a stomp
+            switch under the EQ is how you fail to find it mid-song. */}
+        <Popover
+          placement="top"
+          aria-label="Pedals"
+          className="eqPopoverPanel"
+          trigger={
+            <IconButton variant="ghost" aria-label="Pedals">
+              <Zap size={20} />
+            </IconButton>
+          }
+        >
+          <div className="eqPopover">
+            <PedalsPanel />
           </div>
         </Popover>
         {/* No fader on a phone: volume is pinned at unity there and the

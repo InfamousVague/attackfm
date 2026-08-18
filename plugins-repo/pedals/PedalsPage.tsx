@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Button, Slider, Switch, Text } from '@glacier/react';
+import { Button, SegmentedControl, Slider, Switch, Text } from '@glacier/react';
 import {
   Activity,
   ArrowDown,
@@ -24,6 +24,7 @@ import {
 } from '@glacier/icons';
 import {
   FX_NODES,
+  PEDAL_FAMILIES,
   setFxChain,
   setFxChainOn,
   useFxChain,
@@ -69,6 +70,15 @@ const HUES: Record<string, number> = {
   chorus: 200, flanger: 220, phaser: 250, trem: 180, vib: 165, rotary: 140,
   echo: 46, spring: 70,
   exciter: 300, sub: 265, sparkle: 320, doubler: 95,
+  // The second shelf, kept inside each family's range so a drawer reads as
+  // one colour family rather than a bag of unrelated hues.
+  dist: 18, sat: 36, tube: 42, clip: 4, octafuzz: 12, sizzle: 50,
+  wah: 330, telephone: 338, radio: 344, megaphone: 352, vinyl: 358, cassette: 24,
+  notch: 190, bandfilter: 196, tilt: 206, subcut: 212, presence: 226, air: 232, mudcut: 242,
+  ring: 256, autopan: 262, chop: 270, phasespin: 276,
+  slap: 56, pingpong: 62, plate: 76, hall: 84, room: 90, gatedverb: 100, tapedelay: 66,
+  widen: 108, extra: 116, mono: 122, earwax: 130, vbass: 148, decorr: 156,
+  gate: 286, deess: 294, punch: 308, glue: 314,
 };
 
 /**
@@ -190,6 +200,32 @@ export function PedalsPage() {
   }, [freshKey]);
 
   const specs = useMemo(() => FX_NODES.filter((s) => s.group === 'pedal'), []);
+
+  /**
+   * Which drawer of the shelf is open. Fifty-five pedals in one grid is a wall,
+   * not a shelf: 'All' is still there for anyone who would rather scroll, but
+   * it is not the default, because the default should be a list you can read.
+   */
+  const [family, setFamily] = useState<string>(PEDAL_FAMILIES[0]);
+  const shelf = useMemo(
+    () => (family === 'All' ? specs : specs.filter((s) => s.family === family)),
+    [specs, family],
+  );
+
+  /** Only offer a drawer that has something in it. */
+  const familyOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const spec of specs) {
+      if (spec.family) counts.set(spec.family, (counts.get(spec.family) ?? 0) + 1);
+    }
+    return [
+      ...PEDAL_FAMILIES.filter((f) => counts.has(f)).map((f) => ({
+        value: f,
+        label: f,
+      })),
+      { value: 'All', label: `All ${specs.length}` },
+    ];
+  }, [specs]);
   const specOf = (t: string) => specs.find((s) => s.t === t);
 
   /** The chain's pedals, with their positions in the FULL chain remembered,
