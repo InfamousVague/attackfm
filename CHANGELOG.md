@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.164
+
+- When playback stops instead of moving to the next song, Settings → Diagnostics now says why — whether it reached the end of the list, or lost the list it was playing
+
 ## 0.3.163
 
 - Song lists fill the screen again on a phone — the empty strip down the right of Liked songs and All songs is gone, and titles get that room back
