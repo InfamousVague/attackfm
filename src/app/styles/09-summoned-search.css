@@ -142,24 +142,19 @@
 /* The page being left, softening as the search page arrives over it. Keyed to
    travel, not the damped slide, so the blur builds across the whole gesture:
    nothing at rest, full depth around the commit point. */
-.pullBehind {
-  display: none;
-  position: fixed;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-}
-
-:root[data-pulling] .pullBehind {
-  display: block;
-  -webkit-backdrop-filter: blur(min(16px, var(--app-travel, 0px) * 0.08));
-  backdrop-filter: blur(min(16px, var(--app-travel, 0px) * 0.08));
-}
-
-/* The glass of the card being pulled into view.
+:root[data-pulling] /* The glass of the card being pulled into view.
    Fades a touch EARLIER than the content above it (40px against 70px), so the
-   ground is there to receive the page rather than both arriving at once - and
-   its blur grows with the travel, matching the sheet's own once it commits. */
+   ground is there to receive the page rather than both arriving at once.
+
+   The blur RADIUS is fixed and the opacity does all the moving, which is the
+   whole performance story of this layer. A radius keyed to --app-travel is
+   rewritten on every touchmove, and a backdrop blur whose kernel changes
+   cannot reuse the last frame's work - it is a fresh full-viewport blur per
+   frame, on the one gesture that most needs sixty of them a second. Opacity
+   is compositor-only and free, and a cross-fade from clear page to settled
+   glass reads the same as a ramping blur: the eye reads "the glass arrived"
+   either way. This layer also OWNS the pull's frost outright - the separate
+   behind-blur it replaced had the same changing-radius shape. */
 .pullGlass {
   position: fixed;
   inset-inline: 0;
@@ -171,8 +166,8 @@
   border-start-end-radius: var(--glacier-radius-xl, 1.25rem);
   border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
   background: var(--glacier-glass-thick);
-  -webkit-backdrop-filter: blur(min(32px, var(--app-travel, 0px) * 0.16)) saturate(var(--glacier-glass-saturate));
-  backdrop-filter: blur(min(32px, var(--app-travel, 0px) * 0.16)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(32px) saturate(var(--glacier-glass-saturate));
+  backdrop-filter: blur(32px) saturate(var(--glacier-glass-saturate));
   opacity: clamp(0, calc((var(--app-travel, 0px) - 40px) / 140px), 1);
 }
 

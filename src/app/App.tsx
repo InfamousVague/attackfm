@@ -667,7 +667,6 @@ export function App() {
                 is the mount, and paying it on every frame of a drag would cost
                 the drag. `!searchOpen` keeps it exclusive with the overlay, so
                 there is only ever one SearchPage alive. */}
-            {!DESKTOP && pulling && <div className="pullBehind" aria-hidden="true" />}
             {/* The card's glass, arriving with the thumb: a layer of its own
                 rather than a background on the preview, because the preview
                 carries its own blur filter and a child would be blurred
