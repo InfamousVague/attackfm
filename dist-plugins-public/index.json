@@ -72,17 +72,17 @@
     {
       "id": "pedals",
       "name": "Pedals",
-      "version": "0.3.2",
+      "version": "0.3.3",
       "description": "A pedalboard for your music: fifty-five stompboxes across drive, lo-fi, filter, modulation, time, space and dynamics, wired in the order you stack them.",
       "author": "AttackFM",
       "tags": [
         "Sound",
         "Pedals"
       ],
-      "entry": "pedals-0.3.2.js",
+      "entry": "pedals-0.3.3.js",
       "api": 1,
-      "bytes": 10104,
-      "sha256": "b0d0c577aa226d61c5e6d97c180a2637a6cb0d9441b4a970bb8d7ec921039237",
+      "bytes": 10367,
+      "sha256": "3a446103667589eb4640163e7a864d449fb7f5a1b27cbeae0fe3971e0ebe7730",
       "requiresServer": true,
       "public": true
     }

@@ -4,8 +4,10 @@ import {
   setFxChain,
   setFxChainOn,
   useFxChain,
+  useServerFxNodes,
   type FxNode,
 } from './fxChain.ts';
+import { useServerSession } from '../servers/serverSession.tsx';
 
 /**
  * The pedalboard, simplified, for the Now Playing screen.
@@ -34,6 +36,10 @@ function label(t: string): string {
 
 export function PedalsPanel() {
   const chain = useFxChain();
+  const { session } = useServerSession();
+  // A pedal this server cannot compile is dropped from the chain silently, so
+  // the row says so rather than looking identical to one that works.
+  const known = useServerFxNodes(session?.url);
 
   // Only pedals: a rack EQ band has no business on this panel, and the HiFi
   // chain row beside it already speaks for the rack.
@@ -91,7 +97,17 @@ export function PedalsPanel() {
                   checked={node.on}
                   onCheckedChange={(v: boolean) => toggle(node.key, v)}
                 />
-                <span className="pedalsPanel__name">{label(node.t)}</span>
+                <span
+                  className="pedalsPanel__name"
+                  data-unsupported={known !== null && !known.has(node.t) ? 'true' : undefined}
+                  title={
+                    known !== null && !known.has(node.t)
+                      ? 'Your server does not have this pedal, so it is passing through silently'
+                      : undefined
+                  }
+                >
+                  {label(node.t)}
+                </span>
                 {knob ? (
                   <>
                     <Slider
