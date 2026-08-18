@@ -8,7 +8,7 @@ import { Clock } from '@glacier/icons';
 import { useMemo, useState, type ReactNode } from 'react';
 import { useLibrary } from './library.tsx';
 import { hasLocalLibrary } from '../core/platform.ts';
-import { useNarrowViewport } from '../ux/useNarrowViewport.ts';
+import { useDockedSheet, useNarrowViewport } from '../ux/useNarrowViewport.ts';
 import { TrackMenu } from './TrackMenu.tsx';
 import type { Track } from '../core/tauri.ts';
 import { artSized, trackIdFromPath } from '../server.ts';
@@ -68,6 +68,11 @@ const COLUMNS: DataGridColumn[] = [
   {
     key: 'title',
     header: 'Title',
+    // Half the table, explicitly. Under table-layout:fixed the columns that
+    // declare a width take it first and the rest divide what is left, so a
+    // title with no width of its own loses to a 10rem date and a 5rem clock
+    // the moment the pane narrows - which is how it ended up one letter wide.
+    width: '50%',
     sortable: true,
     sortValue: (row) => String(row.title).toLowerCase(),
     render: (row) => (
@@ -156,12 +161,30 @@ export function SongTable({
   // index resolves the one back to the other.
   const byPath = useMemo(() => new Map(tracks.map((t) => [t.path, t] as const)), [tracks]);
 
-  // A phone has room for the song and its length, and nothing else. Album and
-  // the date added are dropped rather than squeezed - the title cell already
-  // carries the artist, and five columns at 390px overlap their own headers
-  // instead of narrowing. The sort they provided stays reachable: the table
-  // still opens newest-first, and search covers finding an album by name.
-  const narrow = useNarrowViewport();
+  // A narrow COLUMN has room for the song and its length, and nothing else.
+  // Album and the date added are dropped rather than squeezed - the title cell
+  // already carries the artist, and five columns in a phone's width overlap
+  // their own headers instead of narrowing. The sort they provided stays
+  // reachable: the table still opens newest-first, and search covers finding
+  // an album by name.
+  //
+  // Two ways to be narrow, and both shed the same two columns. The window
+  // being small is the phone. The other is the Now Playing sheet docking
+  // beside the app on an unfolded screen: the window stays wide while this
+  // table gets less room than a phone in portrait, which is how the title
+  // came to be one letter wide with Album and Date added at full width.
+  //
+  // Shedding is done HERE rather than in CSS because a table with
+  // `table-layout: fixed` re-derives its columns from the cells that remain -
+  // hiding two with `display: none` leaves the survivors sharing the widths
+  // of the departed and squeezes the title further, which is measurably worse
+  // than doing nothing.
+  // Both hooks called unconditionally, THEN combined: `a() || b()` would
+  // short-circuit past the second one whenever the first is true, which is a
+  // conditional hook call and breaks the order React counts on.
+  const narrowWindow = useNarrowViewport();
+  const docked = useDockedSheet();
+  const narrow = narrowWindow || docked;
 
   // The artist is a link into its own page; its click must not also open the
   // row. The title cell also carries the row's context menu - right-click (or

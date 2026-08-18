@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.161
+
+- Song titles get room again on an unfolded screen: with Now Playing docked beside the library, the album and date columns step aside instead of squeezing titles down to a letter
+
 ## 0.3.160
 
 - The mini player now shows when smart shuffle is on, instead of only the full Now Playing screen — so an unfamiliar song turning up always has something on screen explaining itself
