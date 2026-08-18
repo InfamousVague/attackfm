@@ -369,3 +369,19 @@ body [class*='_panel_']:has(> .dlPanel) {
   padding-block-end: calc(var(--app-player-height) + var(--app-nav-height, 0px));
 }
 
+
+/* The hi-fi chain's one line of core chrome, under the EQ it feeds into.
+   Present only while a chain exists; the row IS the guarantee that a
+   persistent server-side process always has a visible switch, even with the
+   plugin that edits it removed. */
+.eqFxChainRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+  margin-block-start: var(--glacier-space-2);
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+}

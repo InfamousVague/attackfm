@@ -9,6 +9,7 @@ import {
   MenuItem,
   Popover,
   SeekBar,
+  Switch,
   useBeat,
   useLiveLevels,
 } from '@glacier/react';
@@ -36,6 +37,7 @@ import {
 } from '@glacier/icons';
 import { isMobile } from '../core/platform.ts';
 import { EqPanel } from './EqPanel.tsx';
+import { setFxChainOn, useFxChain } from './fxChain.ts';
 import { SpinningDisc } from './SpinningDisc.tsx';
 import { NowPlayingBackdrop } from './NowPlayingBackdrop.tsx';
 import { QueuePanel } from './QueuePanel.tsx';
@@ -567,6 +569,7 @@ export function NowPlayingSheet({
         >
           <div className="eqPopover">
             <EqPanel narrow={narrowEq} />
+            <FxChainRow />
           </div>
         </Popover>
         {/* No fader on a phone: volume is pinned at unity there and the
@@ -656,5 +659,32 @@ export function NowPlayingSheet({
       </div>
     </>,
     document.body,
+  );
+}
+
+/**
+ * The hi-fi chain's presence in CORE chrome, beside the EQ it composes with.
+ *
+ * The chain is edited in the HiFi Lab plugin, but its state persists and
+ * plugins can be removed - and a persistent audio process with no visible
+ * switch is the exact trap the old effects rack solved by purging itself.
+ * This row is the other solution: as long as a chain is coloring playback,
+ * the player itself says so and can turn it off, plugin or no plugin.
+ */
+function FxChainRow() {
+  const chain = useFxChain();
+  if (chain.nodes.length === 0) return null;
+  const live = chain.nodes.filter((n) => n.on).length;
+  return (
+    <div className="eqFxChainRow">
+      <span className="eqFxChainRow__label">
+        HiFi chain · {chain.on && live > 0 ? `${live} node${live === 1 ? '' : 's'}` : 'off'}
+      </span>
+      <Switch
+        checked={chain.on && live > 0}
+        onCheckedChange={(v: boolean) => setFxChainOn(v)}
+        aria-label="HiFi chain"
+      />
+    </div>
   );
 }

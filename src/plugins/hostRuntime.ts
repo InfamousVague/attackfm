@@ -29,6 +29,7 @@ import { useLibrarySync } from '../app/library/librarySync.tsx';
 import { useServerSession } from '../app/servers/serverSession.tsx';
 import { usePlaylists } from '../app/playlists/playlists.tsx';
 import { EQ_BANDS, EQ_PRESETS, useEqualizer } from '../app/player/equalizer.tsx';
+import * as fxChain from '../app/player/fxChain.ts';
 
 export const HOST_API_VERSION = 1;
 
@@ -58,6 +59,8 @@ export function installHostRuntime(): PluginHost {
       '@attackfm/app/importsBridge': importsBridge,
       '@attackfm/app/openExternal': { openExternal },
       '@attackfm/app/library': { useLibrary },
+      // The hi-fi chain: read, edit, toggle - the HiFi Lab plugin's seam.
+      '@attackfm/app/fxChain': fxChain,
       '@attackfm/app/librarySync': { useLibrarySync },
       '@attackfm/app/serverSession': { useServerSession },
       // Added for the 2026-08 plugin batch (additive - the table only grows).
