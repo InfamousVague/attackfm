@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.146
+
+- Search is the whole screen now: pull down and the page itself takes over under the ATTACK mark — no card bar, no X, no rounded shoulders. Drag it down (or back, or Escape) to leave, same as ever
+
 ## 0.3.145
 
 - The DJ's main station hears with everything it has: sets are now ranked on how songs actually sound — sonic character, the measured audio fingerprint, lyrics and community signals together — instead of words-and-tempo alone, and asking for "something mellow" now steers by sound rather than by what the lyrics say

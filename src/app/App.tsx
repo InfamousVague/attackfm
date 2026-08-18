@@ -6,7 +6,7 @@
 // (current/queue) and the queue verbs stay HERE - they close over live state
 // through refs and everything else threads off them.
 import { IconButton, TitleBar } from '@glacier/react';
-import { ChevronLeft, ChevronRight, Search, Settings, X } from '@glacier/icons';
+import { ChevronLeft, ChevronRight, Search, Settings } from '@glacier/icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NowPlayingBackdrop } from './player/NowPlayingBackdrop.tsx';
 import { PluginHookScope } from '../plugins/runtime.tsx';
@@ -701,19 +701,10 @@ export function App() {
                 role="dialog"
                 aria-label="Search"
               >
-                <div className="searchSummon__bar">
-                  <span className="searchSummon__grab" aria-hidden="true" />
-                  {/* Full-size ghost, same as the Now Playing sheet's own
-                      close - the sm variant sat undersized against the card. */}
-                  <IconButton
-                    variant="ghost"
-                    aria-label="Close search"
-                    className="searchSummon__close"
-                    onClick={() => setSearchOpen(false)}
-                  >
-                    <X size={20} />
-                  </IconButton>
-                </div>
+                {/* No bar, no X: this is the search PAGE wearing the screen,
+                    not a card visiting it - only the ATTACK header stays
+                    above. The drag-down that works from anywhere on it (and
+                    the system back, and Escape) is the whole way out. */}
                 <PluginHookScope>
                   <SearchPage
                     onPlay={playFrom}
