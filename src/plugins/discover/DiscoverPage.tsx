@@ -1,5 +1,6 @@
-import { Button, Modal, ScrollArea, Text } from '@glacier/react';
+import { Button, Modal, ScrollArea, SearchField, Spinner, Text } from '@glacier/react';
 import { Check, Compass, ListMusic, Music, Play, Plus, Sparkles } from '@glacier/icons';
+import { searchPlaylists, type PlaylistResult } from '../../app/server.ts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRippleWave } from '../../app/ux/rippleWave.ts';
 import { useServerSession } from '../../app/servers/serverSession.tsx';
@@ -328,6 +329,18 @@ export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
   // closed lid below everything personal - present for an empty library, out
   // of the way for a full one.
   const [chartsOpen, setChartsOpen] = useState(false);
+  /*
+   * Playlist lookup: a box for finding whole playlists to pull.
+   *
+   * Only mounted when the importer is actually available - the rows are
+   * nothing but Add buttons, so a surface that cannot download is a surface
+   * that lies. An empty query is not idle: the server answers it with what is
+   * popular right now, so the section has something to show before anyone
+   * types.
+   */
+  const [plQuery, setPlQuery] = useState('');
+  const [plResults, setPlResults] = useState<PlaylistResult[] | null>(null);
+  const [plBusy, setPlBusy] = useState(false);
   // The set whose track list is open - the page's own playlists read in full.
   const [openSet, setOpenSet] = useState<SongSet | null>(null);
   // The import job whose arrival should start playback: tapping a song is
@@ -481,6 +494,59 @@ export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
         setTapped((prev) => {
           const next = { ...prev };
           delete next[item.id];
+          return next;
+        });
+      });
+  };
+
+  /*
+   * The importer, present and running - not merely installed. `handlersFor`
+   * asks the live handler set, so a plugin the listener switched off, or one
+   * that crashed, or a session with no server, all read the same: no lookup
+   * section rather than a section whose Add does nothing.
+   */
+  const canPullPlaylists =
+    !!downloads &&
+    acquire
+      .handlersFor({ kind: 'playlist', title: '', url: 'https://open.spotify.com/playlist/x' })
+      .some((h) => h.pluginId === IMPORTER_PLUGIN_ID);
+
+  useEffect(() => {
+    if (!session || !canPullPlaylists) return;
+    const ctrl = new AbortController();
+    // A beat of quiet before asking, so typing a name is one request and not
+    // one per letter. The empty query rides the same path: it is the "what is
+    // popular" ask, and it only fires once because the query does not change.
+    const t = window.setTimeout(() => {
+      setPlBusy(true);
+      void searchPlaylists(session, plQuery, ctrl.signal)
+        .then((rows) => setPlResults(rows))
+        .catch(() => {
+          // An older server has no such route, and a search that cannot be
+          // made is an empty list rather than a broken page.
+          if (!ctrl.signal.aborted) setPlResults([]);
+        })
+        .finally(() => {
+          if (!ctrl.signal.aborted) setPlBusy(false);
+        });
+    }, plQuery ? 350 : 0);
+    return () => {
+      window.clearTimeout(t);
+      ctrl.abort();
+    };
+  }, [session, plQuery, canPullPlaylists]);
+
+  /** Pull a whole playlist: the same enqueue every other Add on this page
+   *  uses, so it lands in the one downloads queue with its own progress. */
+  const addPlaylist = (row: PlaylistResult) => {
+    if (!downloads) return;
+    setTapped((prev) => ({ ...prev, [row.id]: 'adding' }));
+    void Promise.resolve(downloads.enqueue(row.url))
+      .then(() => setTapped((prev) => ({ ...prev, [row.id]: 'added' })))
+      .catch(() => {
+        setTapped((prev) => {
+          const next = { ...prev };
+          delete next[row.id];
           return next;
         });
       });
@@ -701,6 +767,67 @@ export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
                 <span className="suggestCardBlurb">{set.blurb}</span>
               </button>
             ))}
+          </div>
+        </section>
+      )}
+
+      {/* Find a playlist and pull it whole. Above the charts lid because it
+          is a verb rather than a browse, and gated on the importer actually
+          running - see canPullPlaylists. */}
+      {canPullPlaylists && (
+        <section className="discoverPl">
+          <div className="discoverPl__head">
+            <span className="discoverPl__glyph" aria-hidden="true">
+              <ListMusic size={15} />
+            </span>
+            <h2 className="discoverPl__title">Find a playlist</h2>
+            {plBusy && <Spinner size="sm" aria-label="Searching" />}
+          </div>
+          <SearchField
+            value={plQuery}
+            onValueChange={setPlQuery}
+            placeholder="Playlists by name — or leave empty for what's popular"
+            aria-label="Search playlists"
+          />
+          {plResults && plResults.length === 0 && plQuery.trim() !== '' && !plBusy && (
+            <Text tone="muted" size="sm">
+              Nothing by that name.
+            </Text>
+          )}
+          <div className="discoverPl__rows">
+            {(plResults ?? []).map((row) => {
+              const state = tapped[row.id];
+              return (
+                <div key={row.id} className="discoverPlRow">
+                  {row.cover ? (
+                    <img className="discoverPlRow__art" src={row.cover} alt="" loading="lazy" />
+                  ) : (
+                    <span className="discoverPlRow__art discoverPlRow__art--blank" aria-hidden="true">
+                      <ListMusic size={16} />
+                    </span>
+                  )}
+                  <span className="discoverPlRow__text">
+                    <span className="discoverPlRow__name">{row.title}</span>
+                    <span className="discoverPlRow__sub">{row.subtitle}</span>
+                  </span>
+                  <button
+                    type="button"
+                    className="discoverPlRow__add"
+                    disabled={state === 'adding' || state === 'added'}
+                    aria-label={`Download ${row.title}`}
+                    onClick={() => addPlaylist(row)}
+                  >
+                    {state === 'added' ? (
+                      <Check size={15} />
+                    ) : state === 'adding' ? (
+                      <Spinner size="sm" aria-label="Starting" />
+                    ) : (
+                      <Plus size={15} />
+                    )}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </section>
       )}
