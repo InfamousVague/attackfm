@@ -601,6 +601,7 @@ async fn main() {
             "/api/debug/song-profiles/{id}",
             get(enrichment::debug_profile),
         )
+        .route("/api/queue/enhance", post(curator::enhance_queue))
         .route(
             "/api/playlists/{id}/suggestions",
             get(curator::playlist_suggestions),

@@ -1,4 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { clearEnhancers, nextEnhancer, primeEnhancers } from './smartShuffle.ts';
+import { trackIdFromPath } from '../server.ts';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   createAnalyserMeter,
   volumeAmplitude,
@@ -110,7 +112,19 @@ export function Player({
   // Shuffle, repeat, and the fader survive a relaunch the way every other
   // playback preference does - a player that forgets its own dials every
   // morning reads as broken, not fresh.
-  const [shuffle, setShuffle] = useState(() => readDeckPref('shuffle') === 'on');
+  /*
+   * Shuffle has three states now, not two: off, on, and smart.
+   *
+   * `shuffle` stays a boolean so every consumer of it - pickNext, the strip,
+   * the sheet, Connect - keeps working untouched; `smart` rides alongside and
+   * only means anything while shuffle is on. Stored as one pref so an old
+   * build reading 'on' still finds shuffle on.
+   */
+  const [shuffle, setShuffle] = useState(() => {
+    const stored = readDeckPref('shuffle');
+    return stored === 'on' || stored === 'smart';
+  });
+  const [smart, setSmart] = useState(() => readDeckPref('shuffle') === 'smart');
   const [repeat, setRepeat] = useState<PlayerRepeat>(() => {
     const saved = readDeckPref('repeat');
     return saved === 'all' || saved === 'one' ? saved : 'off';
@@ -135,7 +149,29 @@ export function Player({
   const [muted, setMuted] = useState(false);
 
   // Written on change rather than on quit - there is no reliable "on quit".
-  useEffect(() => writeDeckPref('shuffle', shuffle ? 'on' : 'off'), [shuffle]);
+  useEffect(
+    () => writeDeckPref('shuffle', shuffle ? (smart ? 'smart' : 'on') : 'off'),
+    [shuffle, smart],
+  );
+
+  // Read by pickNext, which must not re-create itself when the mode flips.
+  const enhanceStep = useRef(0);
+  const smartRef = useRef(smart);
+  smartRef.current = smart;
+
+  /** off -> shuffle -> smart shuffle -> off. One control, three answers. */
+  const cycleShuffle = useCallback(() => {
+    if (!shuffle) {
+      setShuffle(true);
+      setSmart(false);
+    } else if (!smart) {
+      setSmart(true);
+    } else {
+      setShuffle(false);
+      setSmart(false);
+    }
+    enhanceStep.current = 0;
+  }, [shuffle, smart]);
   useEffect(() => writeDeckPref('repeat', repeat), [repeat]);
   useEffect(() => {
     if (!isMobile) writeDeckPref('volume', String(Math.round(volume)));
@@ -766,6 +802,26 @@ export function Player({
   // repeat-one restarts it, so every spin is logged. Server only - local
   // listening has no account to write history against.
   const { session: playSession, renew: renewSession } = useServerSession();
+
+  /*
+   * The enhancer pool follows the queue. Primed on a queue change rather than
+   * at pick time because a track change is the worst possible moment to wait
+   * on a network round trip; by the time shuffle reaches for one it is already
+   * in hand. Cleared whenever the mode is off, so nothing stale survives a
+   * toggle.
+   */
+  useEffect(() => {
+    if (!shuffle || !smart) {
+      clearEnhancers();
+      return;
+    }
+    void primeEnhancers(
+      playSession,
+      queue,
+      (id) => libraryTracks.find((t) => trackIdFromPath(t.path) === id),
+      (path) => trackIdFromPath(path),
+    );
+  }, [shuffle, smart, queue, playSession, libraryTracks]);
   const playSessionRef = useRef(playSession);
   playSessionRef.current = playSession;
   const renewSessionRef = useRef(renewSession);
@@ -1500,6 +1556,19 @@ export function Player({
         const recent = new Set(recentRef.current.slice(-8));
         const fresh = pool.filter((i) => !recent.has(queue[i]!.path));
         if (fresh.length > 0) pool = fresh;
+      }
+      /*
+       * Smart shuffle spends an enhancer on every fourth step: a song the
+       * server says belongs in this queue but is not in it. Counted, not
+       * rolled - a coin flip clusters, and two enhancers back to back would
+       * read as the app taking the queue over rather than adding to it.
+       */
+      if (playbackRef.current.smartShuffle && smartRef.current) {
+        const extra = nextEnhancer(enhanceStep.current, new Set(recentRef.current));
+        enhanceStep.current += 1;
+        if (extra) return extra;
+      } else {
+        enhanceStep.current = 0;
       }
       nextIndex = pool[Math.floor(Math.random() * pool.length)]!;
     } else {
@@ -2491,7 +2560,8 @@ export function Player({
           onScrub={onScrub}
           commitSeek={commitSeek}
           shuffle={shuffle}
-          setShuffle={setShuffle}
+          smart={smart}
+          cycleShuffle={cycleShuffle}
           canSkip={canSkip}
           skipBack={skipBack}
           skipForward={skipForward}
