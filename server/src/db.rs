@@ -3951,6 +3951,38 @@ impl Db {
         )
     }
 
+    /// Current semantic-enrichment pass: normalized fast profiles completed,
+    /// normalized refinements completed, tracks eligible for refinement, and
+    /// total live tracks. Rejected fast profiles count as processed for this
+    /// pass, but not as refinement targets.
+    pub fn layered_enrichment_counts(&self, stale_before: i64) -> (i64, i64, i64, i64) {
+        let conn = self.lock();
+        let one = |sql: &str| -> i64 {
+            conn.query_row(sql, params![stale_before], |r| r.get(0))
+                .unwrap_or(0)
+        };
+        (
+            one(
+                "SELECT COUNT(*) FROM tracks t
+                 LEFT JOIN song_profile_layers p ON p.track_id=t.id
+                 LEFT JOIN track_features f ON f.track_id=t.id
+                 WHERE t.deleted=0 AND (
+                   COALESCE(p.fast_created_at,0) >= ?1 OR
+                   (COALESCE(f.ai_sources,'')='rejected_v3' AND COALESCE(f.ai_enriched_at,0) >= ?1)
+                 )",
+            ),
+            one(
+                "SELECT COUNT(*) FROM tracks t JOIN song_profile_layers p ON p.track_id=t.id
+                 WHERE t.deleted=0 AND p.refined_at >= ?1 AND p.refinement_patch<>''",
+            ),
+            one(
+                "SELECT COUNT(*) FROM tracks t JOIN song_profile_layers p ON p.track_id=t.id
+                 WHERE t.deleted=0 AND p.fast_created_at >= ?1 AND p.fast_profile<>''",
+            ),
+            one("SELECT COUNT(*) FROM tracks WHERE deleted=0"),
+        )
+    }
+
     // --- the curator's playlists ---------------------------------------------
 
     /// Everyone who has listened since `since_ms` - who the curator builds for.

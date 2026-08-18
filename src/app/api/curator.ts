@@ -143,6 +143,12 @@ export interface CuratorFeed {
     tempoMedian?: number | null;
     tempoMax?: number | null;
   };
+  /** Staged semantic enrichment. Optional for compatibility with older boxes. */
+  enrichment?: {
+    stage: 'first' | 'second' | 'complete';
+    firstLayer: { complete: number; total: number };
+    secondLayer: { complete: number; total: number };
+  };
 }
 
 /**

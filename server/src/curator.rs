@@ -1390,6 +1390,20 @@ pub async fn feed(
         })
         .collect();
     let (checked, with_bpm, with_vec, total) = state.db.feature_counts();
+    let stale_before = now_ms() - AI_ENRICH_TTL_MS;
+    let (first_done, second_done, second_total, enrichment_total) =
+        state.db.layered_enrichment_counts(stale_before);
+    let enrichment_stage = if fast_profiles_pending(&state) {
+        "first"
+    } else if !state
+        .db
+        .tracks_needing_refinement(1, stale_before)
+        .is_empty()
+    {
+        "second"
+    } else {
+        "complete"
+    };
     let spread = state.db.tempo_spread();
     let status = state.curator.status.lock().await.clone();
     Ok(Json(json!({
@@ -1403,6 +1417,11 @@ pub async fn feed(
             "tempoMin": spread.map(|s| s.0),
             "tempoMedian": spread.map(|s| s.1),
             "tempoMax": spread.map(|s| s.2),
+        },
+        "enrichment": {
+            "stage": enrichment_stage,
+            "firstLayer": { "complete": first_done, "total": enrichment_total },
+            "secondLayer": { "complete": second_done, "total": second_total },
         },
     })))
 }

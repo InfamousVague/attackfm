@@ -7,6 +7,10 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
+## 0.3.150
+
+- The DJ now completes and normalizes the first enrichment layer across the library before beginning the second, and the Booth shows live progress for both passes
+
 ## 0.3.149
 
 - Find a playlist and pull the whole thing: Discover has a lookup box now — leave it empty for what's popular, or type a name — and each result downloads in one tap through your importer
