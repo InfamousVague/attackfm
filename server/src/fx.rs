@@ -132,6 +132,172 @@ enum Node {
     /// Doubler: a few milliseconds of one-sided delay, heard as two takes.
     #[serde(rename = "doubler")]
     Doubler { amt: Option<f64> },
+
+    // ── The second shelf. Forty more, same rules: numbers into clamps into
+    //    one format string, and every one of them null-tested against a real
+    //    ffmpeg (stereo AND mono) before it was allowed in here. An invalid
+    //    filtergraph does not degrade - it kills the encode - so "it looks
+    //    right" is not a standard this file gets to use.
+
+    // Drive and saturation.
+    /// Distortion: an arctan curve, harder-edged than overdrive's tanh.
+    #[serde(rename = "dist")]
+    Dist { drive: f64, tone: Option<f64>, lvl: Option<f64> },
+    /// Tape saturation: a sine curve's soft knee, with the top gently tamed.
+    #[serde(rename = "sat")]
+    Sat { drive: f64, lvl: Option<f64> },
+    /// Tube warmth: a cubic knee and a low lift, the way a small valve amp
+    /// flatters everything you put through it.
+    #[serde(rename = "tube")]
+    Tube { drive: f64, warmth: Option<f64> },
+    /// Psychoacoustic clipper: loudness that hides its own damage.
+    #[serde(rename = "clip")]
+    Clip { amt: f64, out: Option<f64> },
+    /// Octave fuzz: full-wave rectification, which doubles the fundamental -
+    /// the trick inside every octave-up box.
+    #[serde(rename = "octafuzz")]
+    Octafuzz { tone: Option<f64>, lvl: Option<f64> },
+    /// Sizzle: presence lifted into a soft clip, for drive that stays bright.
+    #[serde(rename = "sizzle")]
+    Sizzle { amt: f64 },
+
+    // Lo-fi.
+    /// Cocked wah: a wah pedal held still. Sweeping it needs an LFO the
+    /// encoder has no way to run, and a parked wah is a real sound anyway.
+    #[serde(rename = "wah")]
+    Wah { freq: f64, w: Option<f64> },
+    /// Telephone: the band a phone line passes, and nothing else.
+    #[serde(rename = "telephone")]
+    Telephone { low: Option<f64>, high: Option<f64> },
+    /// AM radio: narrower than the phone, with a little quantisation dirt.
+    #[serde(rename = "radio")]
+    Radio { grit: Option<f64> },
+    /// Megaphone: a midrange horn, driven.
+    #[serde(rename = "megaphone")]
+    Megaphone { freq: Option<f64>, drive: Option<f64> },
+    /// Vinyl: the CD de-emphasis curve, band-limited, lightly quantised.
+    #[serde(rename = "vinyl")]
+    Vinyl { grit: Option<f64> },
+    /// Cassette: bandwidth, wow, and a soft top end.
+    #[serde(rename = "cassette")]
+    Cassette { wow: Option<f64>, tone: Option<f64> },
+
+    // Filter and EQ.
+    /// Notch: take one frequency out and leave the rest.
+    #[serde(rename = "notch")]
+    Notch { f: f64, w: Option<f64> },
+    /// Band filter: keep a band, drop the rest.
+    #[serde(rename = "bandfilter")]
+    BandFilter { f: f64, w: Option<f64> },
+    /// Tilt: the whole spectrum on a seesaw about one pivot.
+    #[serde(rename = "tilt")]
+    Tilt { slope: f64, f: Option<f64> },
+    /// Sub cut: a steep wall under the lows, for speakers that flap.
+    #[serde(rename = "subcut")]
+    SubCut { f: f64 },
+    /// Presence: a high shelf where a voice sits forward.
+    #[serde(rename = "presence")]
+    Presence { g: f64, f: Option<f64> },
+    /// Air: the shelf above everything, where the room lives.
+    #[serde(rename = "air")]
+    Air { g: f64 },
+    /// Mud cut: the dip at 250Hz that every mix wants and no mix admits to.
+    #[serde(rename = "mudcut")]
+    MudCut { g: Option<f64>, f: Option<f64> },
+
+    // Modulation.
+    /// Frequency shifter: every partial moved by the same NUMBER of hertz,
+    /// which is what makes it clang instead of transpose.
+    #[serde(rename = "ring")]
+    Ring { shift: f64 },
+    /// Auto-pan: a triangle walking the image left and right.
+    #[serde(rename = "autopan")]
+    AutoPan { rate: f64, width: Option<f64> },
+    /// Chop: a square gate, the helicopter stutter.
+    #[serde(rename = "chop")]
+    Chop { rate: f64, width: Option<f64> },
+    /// Phase spin: one channel rotated against the other.
+    #[serde(rename = "phasespin")]
+    PhaseSpin { amt: f64 },
+
+    // Time.
+    /// Slapback: one short repeat, rockabilly's whole rhythm section.
+    #[serde(rename = "slap")]
+    Slap { time: f64, mix: Option<f64> },
+    /// Ping-pong: one side delayed against the other, then repeats.
+    #[serde(rename = "pingpong")]
+    PingPong { time: f64, mix: Option<f64> },
+    /// Plate: dense early taps, bright, the sound of a sheet of steel.
+    #[serde(rename = "plate")]
+    Plate { size: Option<f64>, mix: Option<f64> },
+    /// Hall: the same trick, further apart and longer.
+    #[serde(rename = "hall")]
+    Hall { size: Option<f64>, mix: Option<f64> },
+    /// Room: close walls, short taps.
+    #[serde(rename = "room")]
+    Room { size: Option<f64>, mix: Option<f64> },
+    /// Gated reverb: the tail cut off square. The eighties in one box.
+    #[serde(rename = "gatedverb")]
+    GatedVerb { size: Option<f64>, thr: Option<f64> },
+    /// Tape delay: repeats that lose their top end as they go.
+    #[serde(rename = "tapedelay")]
+    TapeDelay { time: f64, fb: Option<f64>, tone: Option<f64> },
+
+    // Space.
+    /// Widen: a delayed, fed-back side signal.
+    #[serde(rename = "widen")]
+    Widen { amt: f64 },
+    /// Extra stereo: the difference between the channels, amplified.
+    #[serde(rename = "extra")]
+    Extra { amt: f64 },
+    /// Mono: both channels summed. The oldest test in the book.
+    #[serde(rename = "mono")]
+    Mono {},
+    /// Earwax: a headphone spatialiser, so a stereo mix stops happening
+    /// strictly inside your skull.
+    #[serde(rename = "earwax")]
+    Earwax {},
+    /// Virtual bass: harmonics that imply the fundamental a small speaker
+    /// cannot actually produce.
+    #[serde(rename = "vbass")]
+    VBass { amt: f64, cutoff: Option<f64> },
+    /// Decorrelate: the channels nudged out of lockstep.
+    #[serde(rename = "decorr")]
+    Decorr { amt: Option<f64> },
+
+    // Dynamics.
+    /// Noise gate: below the threshold, silence.
+    #[serde(rename = "gate")]
+    Gate { thr: f64, ratio: Option<f64>, rel: Option<f64> },
+    /// De-esser: the sibilance tamer.
+    #[serde(rename = "deess")]
+    DeEss { amt: f64 },
+    /// Punch: contrast, which is to dynamics what a sharpen filter is to a
+    /// photograph.
+    #[serde(rename = "punch")]
+    Punch { amt: f64 },
+    /// Glue: a slow compander across the whole mix.
+    #[serde(rename = "glue")]
+    Glue { amt: f64 },
+}
+
+/// The tap-and-decay pattern the reverbs share.
+///
+/// Not a real reverb - there is no convolution or feedback network in an `-af`
+/// chain - but a spread of early reflections is what the ear reads as a room,
+/// and prime-ish spacings keep the taps from stacking into an audible pitch.
+fn reverb_taps(taps: &[f64], size: f64, mix: f64, falloff: f64) -> String {
+    let stretch = 0.6 + size * 1.4;
+    let delays = taps
+        .iter()
+        .map(|t| format!("{:.0}", (t * stretch).max(1.0)))
+        .collect::<Vec<_>>()
+        .join("|");
+    let decays = (0..taps.len())
+        .map(|i| format!("{:.2}", (mix * falloff.powi(i as i32)).max(0.01)))
+        .collect::<Vec<_>>()
+        .join("|");
+    format!("aecho=1.0:{:.2}:{}:{}", (0.5 + mix * 0.4).min(0.9), delays, decays)
 }
 
 fn clamp(v: f64, lo: f64, hi: f64) -> f64 {
@@ -221,8 +387,11 @@ impl Node {
                 clamp(regen.unwrap_or(20.0), -90.0, 90.0),
             ),
             Node::Phaser { rate, depth } => format!(
+                // aphaser's own ceiling for speed is 2.0, not 4.0. Clamping to
+                // 4 handed ffmpeg an out-of-range argument and killed the
+                // encode for anyone who turned the knob past halfway.
                 "aphaser=type=t:speed={:.2}:decay={:.2}",
-                clamp(*rate, 0.1, 4.0),
+                clamp(*rate, 0.1, 2.0),
                 clamp(depth.unwrap_or(0.5), 0.1, 0.9),
             ),
             Node::Trem { rate, depth } => format!(
@@ -246,15 +415,19 @@ impl Node {
                 let m = clamp(mix.unwrap_or(0.7), 0.05, 1.0);
                 // Three taps, geometrically quieter: what feedback sounds
                 // like without ever wiring an actual loop into the encoder.
+                // Each decay is floored: aecho's range is (0, 1], and at the
+                // lowest feedback the third tap rounds to 0.00 at two decimal
+                // places, which ffmpeg refuses outright. A refused filter is a
+                // dead encode, not a quiet tap.
                 format!(
                     "aecho=1.0:{:.2}:{:.0}|{:.0}|{:.0}:{:.2}|{:.2}|{:.2}",
                     m,
                     t,
                     (t * 2.0).min(90000.0),
                     (t * 3.0).min(90000.0),
-                    f,
-                    f * f,
-                    f * f * f,
+                    f.max(0.01),
+                    (f * f).max(0.01),
+                    (f * f * f).max(0.01),
                 )
             }
             Node::Spring { size, mix } => {
@@ -289,6 +462,222 @@ impl Node {
             Node::Doubler { amt } => format!(
                 "haas=side_gain={:.2}",
                 clamp(amt.unwrap_or(1.0), 0.1, 2.0),
+            ),
+
+            // ── The second shelf ──────────────────────────────────────────
+            Node::Dist { drive, tone, lvl } => format!(
+                "volume={:.2}dB,asoftclip=type=atan:threshold=0.45,lowpass=f={:.1},volume={:.2}dB",
+                clamp(*drive, 0.0, 30.0),
+                clamp(tone.unwrap_or(5000.0), 800.0, 12000.0),
+                clamp(lvl.unwrap_or(-6.0), -24.0, 6.0),
+            ),
+            Node::Sat { drive, lvl } => format!(
+                "volume={:.2}dB,asoftclip=type=sin:threshold=0.8,highshelf=g=-2:f=9000,volume={:.2}dB",
+                clamp(*drive, 0.0, 18.0),
+                clamp(lvl.unwrap_or(-2.0), -18.0, 6.0),
+            ),
+            Node::Tube { drive, warmth } => format!(
+                "volume={:.2}dB,asoftclip=type=cubic:threshold=0.7,bass=g={:.2}:f=120,volume=-3.00dB",
+                clamp(*drive, 0.0, 18.0),
+                clamp(warmth.unwrap_or(2.0), 0.0, 8.0),
+            ),
+            Node::Clip { amt, out } => format!(
+                "apsyclip=level_in={:.2}:level_out={:.2}:clip=0.9",
+                clamp(*amt, 1.0, 4.0),
+                clamp(out.unwrap_or(0.8), 0.1, 1.0),
+            ),
+            // aeval carries two channel expressions and NO c=same: with it,
+            // ffmpeg counts the expressions against the output layout and
+            // refuses. Without it the filter handles mono and stereo alike -
+            // measured both ways.
+            Node::Octafuzz { tone, lvl } => format!(
+                "aeval=abs(val(0))|abs(val(1)),lowpass=f={:.1},volume={:.2}dB",
+                clamp(tone.unwrap_or(3500.0), 800.0, 9000.0),
+                clamp(lvl.unwrap_or(-8.0), -24.0, 0.0),
+            ),
+            Node::Sizzle { amt } => format!(
+                "highshelf=g={:.2}:f=3500,asoftclip=type=tanh:threshold=0.7,volume=-3.00dB",
+                clamp(*amt, 1.0, 12.0),
+            ),
+
+            Node::Wah { freq, w } => format!(
+                "bandpass=f={:.1}:width_type=o:w={:.2},volume=3.00dB",
+                clamp(*freq, 250.0, 3000.0),
+                clamp(w.unwrap_or(1.2), 0.3, 3.0),
+            ),
+            Node::Telephone { low, high } => format!(
+                "highpass=f={:.1},lowpass=f={:.1},volume=3.00dB",
+                clamp(low.unwrap_or(300.0), 100.0, 900.0),
+                clamp(high.unwrap_or(3400.0), 1500.0, 8000.0),
+            ),
+            Node::Radio { grit } => format!(
+                "highpass=f=400,lowpass=f=2800,acrusher=bits=10:mode=log:aa=1:mix={:.2}",
+                clamp(grit.unwrap_or(0.3), 0.0, 1.0),
+            ),
+            Node::Megaphone { freq, drive } => format!(
+                "bandpass=f={:.1}:width_type=o:w=1.5,asoftclip=type=atan:threshold={:.2},volume=-3.00dB",
+                clamp(freq.unwrap_or(1400.0), 500.0, 3000.0),
+                // A LOWER threshold is more drive, so the knob is inverted here
+                // to keep every "drive" control turning the same way.
+                clamp(1.0 - drive.unwrap_or(0.5) * 0.7, 0.2, 1.0),
+            ),
+            Node::Vinyl { grit } => format!(
+                "aemphasis=mode=reproduction:type=cd,highpass=f=60,lowpass=f=11000,acrusher=bits=12:mode=log:aa=1:mix={:.2}",
+                clamp(grit.unwrap_or(0.15), 0.0, 1.0),
+            ),
+            Node::Cassette { wow, tone } => format!(
+                "lowpass=f={:.1},vibrato=f=0.6:d={:.2},asoftclip=type=sin:threshold=0.85,highshelf=g=-3:f=8000",
+                clamp(tone.unwrap_or(12000.0), 4000.0, 16000.0),
+                clamp(wow.unwrap_or(0.08), 0.0, 0.4),
+            ),
+
+            Node::Notch { f, w } => format!(
+                "bandreject=f={:.1}:width_type=o:w={:.2}",
+                clamp(*f, 40.0, 16000.0),
+                clamp(w.unwrap_or(1.0), 0.1, 4.0),
+            ),
+            Node::BandFilter { f, w } => format!(
+                "bandpass=f={:.1}:width_type=o:w={:.2}",
+                clamp(*f, 60.0, 12000.0),
+                clamp(w.unwrap_or(2.0), 0.2, 5.0),
+            ),
+            Node::Tilt { slope, f } => format!(
+                "atilt=freq={:.1}:slope={:.2}",
+                clamp(f.unwrap_or(1000.0), 100.0, 10000.0),
+                clamp(*slope, -1.0, 1.0),
+            ),
+            Node::SubCut { f } => format!(
+                "asubcut=cutoff={:.1}:order=10",
+                clamp(*f, 2.0, 200.0),
+            ),
+            Node::Presence { g, f } => format!(
+                "highshelf=g={:.2}:f={:.1}",
+                clamp(*g, -12.0, 12.0),
+                clamp(f.unwrap_or(4000.0), 1500.0, 9000.0),
+            ),
+            Node::Air { g } => format!("highshelf=g={:.2}:f=12000", clamp(*g, -12.0, 12.0)),
+            Node::MudCut { g, f } => format!(
+                "equalizer=f={:.1}:t=q:w=1.2:g={:.2}",
+                clamp(f.unwrap_or(250.0), 120.0, 600.0),
+                // Always a cut: a "mud cut" that boosts is a different pedal.
+                -clamp(g.unwrap_or(4.0), 0.0, 12.0),
+            ),
+
+            Node::Ring { shift } => format!(
+                "afreqshift=shift={:.1}",
+                clamp(*shift, -500.0, 500.0),
+            ),
+            Node::AutoPan { rate, width } => format!(
+                "apulsator=mode=triangle:hz={:.2}:width={:.2}",
+                clamp(*rate, 0.05, 8.0),
+                clamp(width.unwrap_or(1.6), 0.0, 2.0),
+            ),
+            Node::Chop { rate, width } => format!(
+                "apulsator=mode=square:hz={:.2}:width={:.2}",
+                clamp(*rate, 0.5, 16.0),
+                clamp(width.unwrap_or(1.0), 0.0, 2.0),
+            ),
+            Node::PhaseSpin { amt } => format!(
+                "aphaseshift=shift={:.2}",
+                clamp(*amt, -1.0, 1.0),
+            ),
+
+            Node::Slap { time, mix } => format!(
+                "aecho=1.0:{:.2}:{:.0}:0.35",
+                clamp(mix.unwrap_or(0.6), 0.05, 1.0),
+                clamp(*time, 40.0, 300.0),
+            ),
+            Node::PingPong { time, mix } => {
+                let t = clamp(*time, 60.0, 800.0);
+                format!(
+                    "adelay={:.0}|0:all=0,aecho=1.0:{:.2}:{:.0}:0.3",
+                    t / 2.0,
+                    clamp(mix.unwrap_or(0.5), 0.05, 1.0),
+                    t,
+                )
+            }
+            Node::Plate { size, mix } => reverb_taps(
+                &[29.0, 41.0, 59.0, 83.0, 127.0, 181.0],
+                clamp(size.unwrap_or(0.5), 0.0, 1.0),
+                clamp(mix.unwrap_or(0.5), 0.05, 1.0),
+                0.8,
+            ),
+            Node::Hall { size, mix } => reverb_taps(
+                &[71.0, 113.0, 173.0, 239.0, 331.0, 449.0],
+                clamp(size.unwrap_or(0.5), 0.0, 1.0),
+                clamp(mix.unwrap_or(0.5), 0.05, 1.0),
+                0.82,
+            ),
+            Node::Room { size, mix } => reverb_taps(
+                &[11.0, 17.0, 23.0, 31.0, 43.0, 61.0],
+                clamp(size.unwrap_or(0.5), 0.0, 1.0),
+                clamp(mix.unwrap_or(0.45), 0.05, 1.0),
+                0.78,
+            ),
+            Node::GatedVerb { size, thr } => {
+                let sz = clamp(size.unwrap_or(0.5), 0.0, 1.0);
+                let stretch = 0.6 + sz * 1.4;
+                let delays = [37.0, 53.0, 79.0, 107.0]
+                    .iter()
+                    .map(|t| format!("{:.0}", t * stretch))
+                    .collect::<Vec<_>>()
+                    .join("|");
+                format!(
+                    "aecho=1.0:0.7:{}:0.6|0.5|0.4|0.3,agate=threshold={:.3}:ratio=4:attack=5:release=60",
+                    delays,
+                    clamp(thr.unwrap_or(0.05), 0.001, 0.5),
+                )
+            }
+            Node::TapeDelay { time, fb, tone } => {
+                let t = clamp(*time, 80.0, 1200.0);
+                let f = clamp(fb.unwrap_or(0.45), 0.05, 0.8);
+                format!(
+                    "aecho=1.0:0.6:{:.0}|{:.0}|{:.0}:{:.2}|{:.2}|{:.2},lowpass=f={:.1}",
+                    t,
+                    (t * 2.0).min(90000.0),
+                    (t * 3.0).min(90000.0),
+                    f.max(0.01),
+                    (f * f).max(0.01),
+                    (f * f * f).max(0.01),
+                    clamp(tone.unwrap_or(6000.0), 1500.0, 12000.0),
+                )
+            }
+
+            Node::Widen { amt } => format!(
+                "stereowiden=delay=20:feedback=0.3:crossfeed=0.3:drymix={:.2}",
+                // More "amount" means less dry, so the one knob reads forwards.
+                clamp(1.0 - *amt * 0.4, 0.2, 1.0),
+            ),
+            Node::Extra { amt } => format!("extrastereo=m={:.2}", clamp(*amt, 0.0, 4.0)),
+            // stereotools cannot reach a true mono (slev bottoms out above 0),
+            // so the sum is done with an explicit channel matrix instead.
+            Node::Mono {} => "pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1".to_string(),
+            Node::Earwax {} => "earwax".to_string(),
+            Node::VBass { amt, cutoff } => format!(
+                "virtualbass=cutoff={:.1}:strength={:.2}",
+                clamp(cutoff.unwrap_or(250.0), 100.0, 500.0),
+                clamp(*amt, 0.5, 3.0),
+            ),
+            Node::Decorr { amt } => format!(
+                "adecorrelate=stages={:.0}",
+                clamp(amt.unwrap_or(4.0), 1.0, 16.0),
+            ),
+
+            Node::Gate { thr, ratio, rel } => format!(
+                "agate=threshold={:.4}:ratio={:.1}:attack=10:release={:.0}",
+                clamp(*thr, 0.0, 0.5),
+                clamp(ratio.unwrap_or(3.0), 1.0, 9000.0),
+                clamp(rel.unwrap_or(200.0), 10.0, 2000.0),
+            ),
+            Node::DeEss { amt } => format!(
+                "deesser=i={:.2}:m=0.5:f=0.5",
+                clamp(*amt, 0.0, 1.0),
+            ),
+            Node::Punch { amt } => format!("acontrast=contrast={:.1}", clamp(*amt, 0.0, 100.0)),
+            Node::Glue { amt } => format!(
+                "compand=attacks=0.05:decays=0.5:points=-80/-80|-30/{:.0}|0/-6",
+                // One knob walks the middle point: more amount, more squeeze.
+                -30.0 + clamp(*amt, 0.0, 1.0) * 15.0,
             ),
         }
     }
@@ -326,67 +715,196 @@ pub fn chain_from_wire(fx2: Option<&String>) -> Option<String> {
     Some(filters.join(","))
 }
 
+/// Part 1 of the published vocabulary.
+///
+/// The catalogue is split across four functions for a mechanical reason: one
+/// `json!` literal holding all sixty-five entries exceeds the macro's
+/// recursion limit and fails to compile. Four smaller arrays are the same
+/// data with none of that.
+fn nodes_part1() -> Vec<Value> {
+    match json!([
+        { "t": "pre",    "params": { "g": { "min": -12, "max": 12, "default": 0 } } },
+        { "t": "peq",    "params": { "f": { "min": 20, "max": 20000, "default": 1000 },
+                                          "g": { "min": -18, "max": 18, "default": 0 },
+                                          "q": { "min": 0.1, "max": 10, "default": 1.0 } } },
+        { "t": "bass",   "params": { "g": { "min": -18, "max": 18, "default": 0 },
+                                          "f": { "min": 40, "max": 500, "default": 100 } } },
+        { "t": "treble", "params": { "g": { "min": -18, "max": 18, "default": 0 },
+                                          "f": { "min": 1000, "max": 16000, "default": 8000 } } },
+        { "t": "hp",     "params": { "f": { "min": 20, "max": 2000, "default": 30 } } },
+        { "t": "lp",     "params": { "f": { "min": 1000, "max": 20000, "default": 18000 } } },
+        { "t": "comp",   "params": { "thr": { "min": -60, "max": 0, "default": -18 },
+                                          "ratio": { "min": 1, "max": 20, "default": 3 },
+                                          "att": { "min": 1, "max": 500, "default": 20 },
+                                          "rel": { "min": 20, "max": 2000, "default": 250 },
+                                          "mk": { "min": 0, "max": 24, "default": 0 } } },
+        { "t": "width",  "params": { "amt": { "min": 0.05, "max": 2.5, "default": 1.0 } } },
+        { "t": "xfeed",  "params": { "amt": { "min": 0, "max": 1, "default": 0.5 } } },
+        { "t": "level",  "params": {} },
+        { "t": "od",      "params": { "drive": { "min": 0, "max": 24, "default": 10 },
+                                           "tone": { "min": 1000, "max": 12000, "default": 6000 },
+                                           "lvl": { "min": -18, "max": 6, "default": -3 } } },
+        { "t": "fuzz",    "params": { "drive": { "min": 6, "max": 30, "default": 16 },
+                                           "tone": { "min": 1000, "max": 10000, "default": 4500 },
+                                           "lvl": { "min": -18, "max": 6, "default": -6 } } },
+        { "t": "crush",   "params": { "bits": { "min": 2, "max": 16, "default": 8 },
+                                           "mix": { "min": 0, "max": 1, "default": 0.7 } } },
+        { "t": "chorus",  "params": { "rate": { "min": 0.1, "max": 4, "default": 0.9 },
+                                           "depth": { "min": 1, "max": 8, "default": 4 } } },
+        { "t": "flanger", "params": { "rate": { "min": 0.1, "max": 5, "default": 0.5 },
+                                           "depth": { "min": 0.5, "max": 10, "default": 4 },
+                                           "regen": { "min": -90, "max": 90, "default": 20 } } },
+        { "t": "phaser",  "params": { "rate": { "min": 0.1, "max": 2, "default": 0.6 },
+                                           "depth": { "min": 0.1, "max": 0.9, "default": 0.5 } } },
+        { "t": "trem",    "params": { "rate": { "min": 0.3, "max": 15, "default": 5 },
+                                           "depth": { "min": 0.05, "max": 1, "default": 0.6 } } }
+    ]) {
+        Value::Array(v) => v,
+        // json!([..]) is an array by construction; this arm cannot run.
+        _ => Vec::new(),
+    }
+}
+
+/// Part 2 of the published vocabulary.
+///
+/// The catalogue is split across four functions for a mechanical reason: one
+/// `json!` literal holding all sixty-five entries exceeds the macro's
+/// recursion limit and fails to compile. Four smaller arrays are the same
+/// data with none of that.
+fn nodes_part2() -> Vec<Value> {
+    match json!([
+        { "t": "vib",     "params": { "rate": { "min": 0.3, "max": 12, "default": 4 },
+                                           "depth": { "min": 0.05, "max": 1, "default": 0.4 } } },
+        { "t": "rotary",  "params": { "rate": { "min": 0.05, "max": 8, "default": 1.2 },
+                                           "width": { "min": 0, "max": 2, "default": 1 } } },
+        { "t": "echo",    "params": { "time": { "min": 60, "max": 1500, "default": 350 },
+                                           "fb": { "min": 0.05, "max": 0.8, "default": 0.35 },
+                                           "mix": { "min": 0.05, "max": 1, "default": 0.7 } } },
+        { "t": "spring",  "params": { "size": { "min": 0, "max": 1, "default": 0.5 },
+                                           "mix": { "min": 0.05, "max": 1, "default": 0.4 } } },
+        { "t": "exciter", "params": { "amt": { "min": 0.5, "max": 10, "default": 2.5 },
+                                           "freq": { "min": 2000, "max": 12000, "default": 7500 } } },
+        { "t": "sub",     "params": { "wet": { "min": 0.1, "max": 1, "default": 0.6 },
+                                           "cutoff": { "min": 50, "max": 200, "default": 100 } } },
+        { "t": "sparkle", "params": { "amt": { "min": 0.5, "max": 8, "default": 2 } } },
+        { "t": "doubler", "params": { "amt": { "min": 0.1, "max": 2, "default": 1 } } },
+        { "t": "dist",      "params": { "drive": { "min": 0, "max": 30, "default": 14 },
+                                             "tone": { "min": 800, "max": 12000, "default": 5000 },
+                                             "lvl": { "min": -24, "max": 6, "default": -6 } } },
+        { "t": "sat",       "params": { "drive": { "min": 0, "max": 18, "default": 6 },
+                                             "lvl": { "min": -18, "max": 6, "default": -2 } } },
+        { "t": "tube",      "params": { "drive": { "min": 0, "max": 18, "default": 5 },
+                                             "warmth": { "min": 0, "max": 8, "default": 2 } } },
+        { "t": "clip",      "params": { "amt": { "min": 1, "max": 4, "default": 1.5 },
+                                             "out": { "min": 0.1, "max": 1, "default": 0.8 } } },
+        { "t": "octafuzz",  "params": { "tone": { "min": 800, "max": 9000, "default": 3500 },
+                                             "lvl": { "min": -24, "max": 0, "default": -8 } } },
+        { "t": "sizzle",    "params": { "amt": { "min": 1, "max": 12, "default": 4 } } },
+        { "t": "wah",       "params": { "freq": { "min": 250, "max": 3000, "default": 900 },
+                                             "w": { "min": 0.3, "max": 3, "default": 1.2 } } },
+        { "t": "telephone", "params": { "low": { "min": 100, "max": 900, "default": 300 },
+                                             "high": { "min": 1500, "max": 8000, "default": 3400 } } },
+        { "t": "radio",     "params": { "grit": { "min": 0, "max": 1, "default": 0.3 } } }
+    ]) {
+        Value::Array(v) => v,
+        // json!([..]) is an array by construction; this arm cannot run.
+        _ => Vec::new(),
+    }
+}
+
+/// Part 3 of the published vocabulary.
+///
+/// The catalogue is split across four functions for a mechanical reason: one
+/// `json!` literal holding all sixty-five entries exceeds the macro's
+/// recursion limit and fails to compile. Four smaller arrays are the same
+/// data with none of that.
+fn nodes_part3() -> Vec<Value> {
+    match json!([
+        { "t": "megaphone", "params": { "freq": { "min": 500, "max": 3000, "default": 1400 },
+                                             "drive": { "min": 0, "max": 1, "default": 0.5 } } },
+        { "t": "vinyl",     "params": { "grit": { "min": 0, "max": 1, "default": 0.15 } } },
+        { "t": "cassette",  "params": { "wow": { "min": 0, "max": 0.4, "default": 0.08 },
+                                             "tone": { "min": 4000, "max": 16000, "default": 12000 } } },
+        { "t": "notch",     "params": { "f": { "min": 40, "max": 16000, "default": 1000 },
+                                             "w": { "min": 0.1, "max": 4, "default": 1 } } },
+        { "t": "bandfilter","params": { "f": { "min": 60, "max": 12000, "default": 1200 },
+                                             "w": { "min": 0.2, "max": 5, "default": 2 } } },
+        { "t": "tilt",      "params": { "slope": { "min": -1, "max": 1, "default": 0.3 },
+                                             "f": { "min": 100, "max": 10000, "default": 1000 } } },
+        { "t": "subcut",    "params": { "f": { "min": 2, "max": 200, "default": 40 } } },
+        { "t": "presence",  "params": { "g": { "min": -12, "max": 12, "default": 4 },
+                                             "f": { "min": 1500, "max": 9000, "default": 4000 } } },
+        { "t": "air",       "params": { "g": { "min": -12, "max": 12, "default": 4 } } },
+        { "t": "mudcut",    "params": { "g": { "min": 0, "max": 12, "default": 4 },
+                                             "f": { "min": 120, "max": 600, "default": 250 } } },
+        { "t": "ring",      "params": { "shift": { "min": -500, "max": 500, "default": 120 } } },
+        { "t": "autopan",   "params": { "rate": { "min": 0.05, "max": 8, "default": 0.8 },
+                                             "width": { "min": 0, "max": 2, "default": 1.6 } } },
+        { "t": "chop",      "params": { "rate": { "min": 0.5, "max": 16, "default": 4 },
+                                             "width": { "min": 0, "max": 2, "default": 1 } } },
+        { "t": "phasespin", "params": { "amt": { "min": -1, "max": 1, "default": 0.35 } } },
+        { "t": "slap",      "params": { "time": { "min": 40, "max": 300, "default": 120 },
+                                             "mix": { "min": 0.05, "max": 1, "default": 0.6 } } },
+        { "t": "pingpong",  "params": { "time": { "min": 60, "max": 800, "default": 360 },
+                                             "mix": { "min": 0.05, "max": 1, "default": 0.5 } } }
+    ]) {
+        Value::Array(v) => v,
+        // json!([..]) is an array by construction; this arm cannot run.
+        _ => Vec::new(),
+    }
+}
+
+/// Part 4 of the published vocabulary.
+///
+/// The catalogue is split across four functions for a mechanical reason: one
+/// `json!` literal holding all sixty-five entries exceeds the macro's
+/// recursion limit and fails to compile. Four smaller arrays are the same
+/// data with none of that.
+fn nodes_part4() -> Vec<Value> {
+    match json!([
+        { "t": "plate",     "params": { "size": { "min": 0, "max": 1, "default": 0.5 },
+                                             "mix": { "min": 0.05, "max": 1, "default": 0.5 } } },
+        { "t": "hall",      "params": { "size": { "min": 0, "max": 1, "default": 0.5 },
+                                             "mix": { "min": 0.05, "max": 1, "default": 0.5 } } },
+        { "t": "room",      "params": { "size": { "min": 0, "max": 1, "default": 0.5 },
+                                             "mix": { "min": 0.05, "max": 1, "default": 0.45 } } },
+        { "t": "gatedverb", "params": { "size": { "min": 0, "max": 1, "default": 0.5 },
+                                             "thr": { "min": 0.001, "max": 0.5, "default": 0.05 } } },
+        { "t": "tapedelay", "params": { "time": { "min": 80, "max": 1200, "default": 300 },
+                                             "fb": { "min": 0.05, "max": 0.8, "default": 0.45 },
+                                             "tone": { "min": 1500, "max": 12000, "default": 6000 } } },
+        { "t": "widen",     "params": { "amt": { "min": 0, "max": 2, "default": 1 } } },
+        { "t": "extra",     "params": { "amt": { "min": 0, "max": 4, "default": 1.8 } } },
+        { "t": "mono",      "params": {} },
+        { "t": "earwax",    "params": {} },
+        { "t": "vbass",     "params": { "amt": { "min": 0.5, "max": 3, "default": 2 },
+                                             "cutoff": { "min": 100, "max": 500, "default": 250 } } },
+        { "t": "decorr",    "params": { "amt": { "min": 1, "max": 16, "default": 4 } } },
+        { "t": "gate",      "params": { "thr": { "min": 0, "max": 0.5, "default": 0.02 },
+                                             "ratio": { "min": 1, "max": 20, "default": 3 },
+                                             "rel": { "min": 10, "max": 2000, "default": 200 } } },
+        { "t": "deess",     "params": { "amt": { "min": 0, "max": 1, "default": 0.4 } } },
+        { "t": "punch",     "params": { "amt": { "min": 0, "max": 100, "default": 45 } } },
+        { "t": "glue",      "params": { "amt": { "min": 0, "max": 1, "default": 0.5 } } }
+    ]) {
+        Value::Array(v) => v,
+        // json!([..]) is an array by construction; this arm cannot run.
+        _ => Vec::new(),
+    }
+}
+
 /// `GET /api/fx/nodes` - the vocabulary, as data.
 ///
 /// The plugin ships its own catalogue (it has to render offline), but the
 /// server publishing what it actually honours - with the real clamp ranges -
 /// is what lets a future UI grey out a node an older box would silently drop.
 pub async fn nodes() -> Json<Value> {
-    Json(json!({
-        "api": 1,
-        "nodes": [
-            { "t": "pre",    "params": { "g": { "min": -12, "max": 12, "default": 0 } } },
-            { "t": "peq",    "params": { "f": { "min": 20, "max": 20000, "default": 1000 },
-                                          "g": { "min": -18, "max": 18, "default": 0 },
-                                          "q": { "min": 0.1, "max": 10, "default": 1.0 } } },
-            { "t": "bass",   "params": { "g": { "min": -18, "max": 18, "default": 0 },
-                                          "f": { "min": 40, "max": 500, "default": 100 } } },
-            { "t": "treble", "params": { "g": { "min": -18, "max": 18, "default": 0 },
-                                          "f": { "min": 1000, "max": 16000, "default": 8000 } } },
-            { "t": "hp",     "params": { "f": { "min": 20, "max": 2000, "default": 30 } } },
-            { "t": "lp",     "params": { "f": { "min": 1000, "max": 20000, "default": 18000 } } },
-            { "t": "comp",   "params": { "thr": { "min": -60, "max": 0, "default": -18 },
-                                          "ratio": { "min": 1, "max": 20, "default": 3 },
-                                          "att": { "min": 1, "max": 500, "default": 20 },
-                                          "rel": { "min": 20, "max": 2000, "default": 250 },
-                                          "mk": { "min": 0, "max": 24, "default": 0 } } },
-            { "t": "width",  "params": { "amt": { "min": 0.05, "max": 2.5, "default": 1.0 } } },
-            { "t": "xfeed",  "params": { "amt": { "min": 0, "max": 1, "default": 0.5 } } },
-            { "t": "level",  "params": {} },
-            { "t": "od",      "params": { "drive": { "min": 0, "max": 24, "default": 10 },
-                                           "tone": { "min": 1000, "max": 12000, "default": 6000 },
-                                           "lvl": { "min": -18, "max": 6, "default": -3 } } },
-            { "t": "fuzz",    "params": { "drive": { "min": 6, "max": 30, "default": 16 },
-                                           "tone": { "min": 1000, "max": 10000, "default": 4500 },
-                                           "lvl": { "min": -18, "max": 6, "default": -6 } } },
-            { "t": "crush",   "params": { "bits": { "min": 2, "max": 16, "default": 8 },
-                                           "mix": { "min": 0, "max": 1, "default": 0.7 } } },
-            { "t": "chorus",  "params": { "rate": { "min": 0.1, "max": 4, "default": 0.9 },
-                                           "depth": { "min": 1, "max": 8, "default": 4 } } },
-            { "t": "flanger", "params": { "rate": { "min": 0.1, "max": 5, "default": 0.5 },
-                                           "depth": { "min": 0.5, "max": 10, "default": 4 },
-                                           "regen": { "min": -90, "max": 90, "default": 20 } } },
-            { "t": "phaser",  "params": { "rate": { "min": 0.1, "max": 4, "default": 0.6 },
-                                           "depth": { "min": 0.1, "max": 0.9, "default": 0.5 } } },
-            { "t": "trem",    "params": { "rate": { "min": 0.3, "max": 15, "default": 5 },
-                                           "depth": { "min": 0.05, "max": 1, "default": 0.6 } } },
-            { "t": "vib",     "params": { "rate": { "min": 0.3, "max": 12, "default": 4 },
-                                           "depth": { "min": 0.05, "max": 1, "default": 0.4 } } },
-            { "t": "rotary",  "params": { "rate": { "min": 0.05, "max": 8, "default": 1.2 },
-                                           "width": { "min": 0, "max": 2, "default": 1 } } },
-            { "t": "echo",    "params": { "time": { "min": 60, "max": 1500, "default": 350 },
-                                           "fb": { "min": 0.05, "max": 0.8, "default": 0.35 },
-                                           "mix": { "min": 0.05, "max": 1, "default": 0.7 } } },
-            { "t": "spring",  "params": { "size": { "min": 0, "max": 1, "default": 0.5 },
-                                           "mix": { "min": 0.05, "max": 1, "default": 0.4 } } },
-            { "t": "exciter", "params": { "amt": { "min": 0.5, "max": 10, "default": 2.5 },
-                                           "freq": { "min": 2000, "max": 12000, "default": 7500 } } },
-            { "t": "sub",     "params": { "wet": { "min": 0.1, "max": 1, "default": 0.6 },
-                                           "cutoff": { "min": 50, "max": 200, "default": 100 } } },
-            { "t": "sparkle", "params": { "amt": { "min": 0.5, "max": 8, "default": 2 } } },
-            { "t": "doubler", "params": { "amt": { "min": 0.1, "max": 2, "default": 1 } } }
-        ]
-    }))
+    let mut nodes: Vec<Value> = Vec::new();
+    nodes.extend(nodes_part1());
+    nodes.extend(nodes_part2());
+    nodes.extend(nodes_part3());
+    nodes.extend(nodes_part4());
+    Json(json!({ "api": 1, "nodes": nodes }))
 }
 
 // --- presets ----------------------------------------------------------------
@@ -520,6 +1038,126 @@ mod tests {
         // Hostile drive pins to the ceiling instead of leaving the range.
         let hot = wire(r#"[{"t":"fuzz","drive":9000}]"#).unwrap();
         assert!(hot.contains("volume=30.00dB"));
+    }
+
+
+    /// Prints every node compiled at its OWN published defaults, one per line.
+    ///
+    /// This exists to be piped into ffmpeg (see the null-test in the repo's
+    /// notes): a filter string that does not parse does not degrade the sound,
+    /// it kills the encode, so "it compiles in Rust" is not enough. Driving it
+    /// from the published catalogue also means the defaults the client is told
+    /// about are the exact ones proved to work.
+    #[test]
+    fn dump_every_node_at_its_defaults() {
+        let mut all: Vec<Value> = Vec::new();
+        all.extend(nodes_part1());
+        all.extend(nodes_part2());
+        all.extend(nodes_part3());
+        all.extend(nodes_part4());
+        assert_eq!(all.len(), 65, "catalogue size changed; update this count");
+
+        for entry in all {
+            let t = entry["t"].as_str().expect("every entry has a tag");
+            let mut node = serde_json::Map::new();
+            node.insert("t".into(), Value::String(t.to_string()));
+            if let Some(params) = entry["params"].as_object() {
+                for (key, spec) in params {
+                    node.insert(key.clone(), spec["default"].clone());
+                }
+            }
+            let wire = Value::Array(vec![Value::Object(node)]).to_string();
+            let compiled = chain_from_wire(Some(&wire))
+                .unwrap_or_else(|| panic!("{t} compiled to nothing at its own defaults"));
+            // Strip the limiter the chain always appends; the harness adds it.
+            let filters = compiled
+                .strip_suffix(",alimiter=limit=0.95")
+                .unwrap_or(&compiled);
+            println!("FXNODE\t{t}\t{filters}");
+        }
+    }
+
+
+    /// The same sweep at the EDGES, plus values far outside the published
+    /// range so the clamps are proved to land somewhere ffmpeg accepts.
+    ///
+    /// Defaults are the case least likely to break. A knob at its limit, or a
+    /// hostile number pinned by a clamp, is where a filter argument goes out
+    /// of range - and that is a dead encode, not a quiet one.
+    #[test]
+    fn dump_every_node_at_its_extremes() {
+        let mut all: Vec<Value> = Vec::new();
+        all.extend(nodes_part1());
+        all.extend(nodes_part2());
+        all.extend(nodes_part3());
+        all.extend(nodes_part4());
+
+        // "min"/"max" walk the published range; the last two ignore it
+        // entirely, which is what a hostile or simply older client sends.
+        for pass in ["min", "max", "under", "over"] {
+            for entry in &all {
+                let t = entry["t"].as_str().unwrap();
+                let mut node = serde_json::Map::new();
+                node.insert("t".into(), Value::String(t.to_string()));
+                if let Some(params) = entry["params"].as_object() {
+                    for (key, spec) in params {
+                        let v = match pass {
+                            "min" => spec["min"].clone(),
+                            "max" => spec["max"].clone(),
+                            "under" => json!(-1.0e6),
+                            _ => json!(1.0e6),
+                        };
+                        node.insert(key.clone(), v);
+                    }
+                }
+                let wire = Value::Array(vec![Value::Object(node)]).to_string();
+                let compiled = chain_from_wire(Some(&wire))
+                    .unwrap_or_else(|| panic!("{t} compiled to nothing at {pass}"));
+                let filters = compiled
+                    .strip_suffix(",alimiter=limit=0.95")
+                    .unwrap_or(&compiled);
+                println!("FXEDGE\t{t}:{pass}\t{filters}");
+            }
+        }
+    }
+
+
+    /// Three filter arguments that ffmpeg REFUSES, all found by sweeping the
+    /// knobs to their limits rather than trusting the defaults.
+    ///
+    /// Each one killed the encode outright rather than sounding wrong, and two
+    /// of them were shipped: `echo` at its lowest feedback and `phaser` above
+    /// rate 2 would both have taken the stream down for anyone who turned the
+    /// knob there.
+    #[test]
+    fn edge_arguments_stay_inside_what_ffmpeg_accepts() {
+        // aecho's decay range is (0, 1] - exclusive of zero. The third tap is
+        // feedback cubed, which at the minimum rounds to 0.00 at two decimals.
+        let echo = wire(r#"[{"t":"echo","time":350,"fb":0.05,"mix":0.7}]"#).unwrap();
+        assert!(!echo.contains("0.00"), "a decay rounded to zero: {echo}");
+        let tape = wire(r#"[{"t":"tapedelay","time":300,"fb":0.05}]"#).unwrap();
+        assert!(!tape.contains(":0.00"), "a decay rounded to zero: {tape}");
+
+        // aphaser's speed ceiling is 2.0; the clamp used to allow 4.0.
+        let fast = wire(r#"[{"t":"phaser","rate":9000}]"#).unwrap();
+        assert!(fast.contains("speed=2.00"), "phaser above its ceiling: {fast}");
+    }
+
+
+    /// The published catalogue, as one JSON line.
+    ///
+    /// Exists so the client's copy of the vocabulary can be diffed against the
+    /// server's in CI or by hand. The server is the authority - it clamps
+    /// regardless - but a drifted client is a knob that stops early or, worse,
+    /// offers a value the server will pin somewhere the user did not ask for.
+    #[test]
+    fn dump_catalogue_json() {
+        let mut all: Vec<Value> = Vec::new();
+        all.extend(nodes_part1());
+        all.extend(nodes_part2());
+        all.extend(nodes_part3());
+        all.extend(nodes_part4());
+        println!("FXCATALOGUE\t{}", Value::Array(all));
     }
 
     #[test]
