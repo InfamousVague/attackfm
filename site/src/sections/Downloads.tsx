@@ -148,7 +148,8 @@ export function Downloads() {
 
         <Reveal delay={120} className="center">
           <p className="body downloads__note">
-            Linux also ships a <code>.deb</code>, and Windows an NSIS installer, both on the{' '}
+            Linux also ships a <code>.deb</code> and an <code>.rpm</code>, and Windows an{' '}
+            <code>.msi</code>, all on the{' '}
             <a className="downloads__link" href={RELEASES}>
               releases page
             </a>
