@@ -40,17 +40,35 @@ const grid: CSSProperties = {
   gap: 8,
 };
 
-/** What is happening, in the fewest words that are still true. */
+/** mm:ss, so a long wait reads as a duration rather than a big number. */
+function elapsed(s: number): string {
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
+}
+
+/**
+ * What is happening, in the fewest words that are still true.
+ *
+ * Every phase that can last carries the elapsed time, because a percentage is
+ * not always available - an older server sends none at all - and a screen with
+ * nothing moving on it is how a separation that is working came to look like
+ * one that had died.
+ */
 function words(p: Preparing): string {
   switch (p.phase) {
     case 'asking':
       return 'Asking your server';
     case 'queued':
-      return 'Waiting for the separator';
+      // One worker, one song at a time - so the honest answer to "why is
+      // nothing happening" is usually "because something else is".
+      if (p.ahead && p.ahead > 0) {
+        return `${p.ahead} song${p.ahead === 1 ? '' : 's'} ahead of this one · ${elapsed(p.seconds)}`;
+      }
+      return `Waiting for the separator · ${elapsed(p.seconds)}`;
     case 'separating':
       return p.fraction === null
-        ? 'Taking the song apart'
-        : `Taking the song apart · ${Math.round(p.fraction * 100)}%`;
+        ? `Taking the song apart · ${elapsed(p.seconds)}`
+        : `Taking the song apart · ${Math.round(p.fraction * 100)}% · ${elapsed(p.seconds)}`;
     case 'packing':
       return `Writing the parts · ${p.filed} of ${p.parts}`;
     case 'loading':
@@ -72,6 +90,8 @@ export function PreparingView({ progress, compact = false }: { progress: Prepari
             position: 'absolute',
             inset: '0 auto 0 0',
             width: known ? `${pct}%` : '35%',
+            // Only meaningful while the sweep runs; a determinate bar has no
+            // business being nudged around by an animation.
             background: 'var(--glacier-accent-solid)',
             borderRadius: 3,
             transition: known ? 'width 400ms linear' : 'none',

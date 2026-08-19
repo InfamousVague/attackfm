@@ -5017,6 +5017,25 @@ impl Db {
         .ok()
     }
 
+    /// How many separations are ahead of this one in the queue.
+    ///
+    /// One worker takes one job at a time, so a song asked for while another is
+    /// being separated simply waits - and until this existed there was no way to
+    /// say so. A client could only report "waiting", which for a queue of three
+    /// behind a job that takes minutes reads exactly like a server doing nothing
+    /// at all. Counts by request order, which is the order the worker takes them.
+    pub fn stems_queued_ahead(&self, track_id: i64) -> i64 {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT COUNT(*) FROM stem_jobs
+              WHERE state IN ('queued','running')
+                AND requested_at < (SELECT requested_at FROM stem_jobs WHERE track_id = ?1)",
+            params![track_id],
+            |r| r.get(0),
+        )
+        .unwrap_or(0)
+    }
+
     pub fn mark_stem_job(&self, track_id: i64, state: &str, error: &str) -> rusqlite::Result<()> {
         let now = now_ms();
         self.lock().execute(
