@@ -18,6 +18,14 @@
  */
 
 export const PAD_COUNT = 16;
+/** The grid is four wide, and that geometry carries meaning rather than just
+ *  fitting a phone: a COLUMN is a lane that loops on its own, and the four
+ *  pads down it are variations of that lane - a verse and a chorus of the
+ *  same part. Only one variation per lane sounds at a time, so the grid holds
+ *  four simultaneous loops and sixteen things to put in them. Four is also
+ *  about as many loops as stay music rather than mud. */
+export const LANES = 4;
+export const laneOf = (pad: number): number => pad % LANES;
 
 export interface LoopPad {
   /** What is on it. Empty means nothing loaded. */
@@ -184,9 +192,12 @@ export class LoopEngine {
   }
 
   /**
-   * Asks for a pad. It joins on the next bar line, or immediately when the
-   * transport is not running (then it behaves like a plain sampler, which is
-   * what somebody auditioning a slice wants).
+   * Asks for a pad.
+   *
+   * The FIRST pad of a session defines where bar one is - there is nothing to
+   * be in time with yet, so waiting for a grid that does not exist would just
+   * be a delay. Every pad after that joins on the next bar line, which is the
+   * whole feel of the instrument: press it whenever, it arrives in time.
    */
   async launch(pad: number, pads: LoopPad[]): Promise<void> {
     await this.unlock();
@@ -195,14 +206,19 @@ export class LoopEngine {
     const buffer = this.buffers.get(pad);
     if (!conf || !buffer) return;
 
-    if (!this.running) {
-      this.fire(pad, pads, this.ctx.currentTime + 0.01, false);
-      return;
-    }
     // Toggle: a lit pad pressed again stops at the bar line rather than
     // stacking a second copy of itself.
     if (this.playing.has(pad) || this.pending.has(pad)) {
       this.stop(pad, false);
+      return;
+    }
+
+    if (!this.running) {
+      // This press IS the downbeat.
+      this.startedAt = this.ctx.currentTime + 0.03;
+      this.running = true;
+      if (this.timer === null) this.timer = window.setInterval(() => this.tick(), TICK_MS);
+      this.fire(pad, pads, this.startedAt, false);
       return;
     }
     this.pending.set(pad, true);
@@ -215,6 +231,10 @@ export class LoopEngine {
     const buffer = this.buffers.get(pad);
     if (!this.ctx || !this.master || !conf || !buffer) return;
 
+    // A lane holds one variation: starting this one retires whatever else in
+    // its column was sounding, exactly at the same instant so the swap is a
+    // change rather than an overlap.
+    this.swapLane(pad, at);
     this.chokeFor(pad, pads, at);
 
     const node = this.ctx.createBufferSource();
@@ -270,6 +290,27 @@ export class LoopEngine {
       }
     }
     this.announce();
+  }
+
+  /** Retires the other pads in this pad's lane, at `at`. */
+  private swapLane(pad: number, at: number): void {
+    const lane = laneOf(pad);
+    for (const v of this.voices) {
+      if (v.pad === pad || laneOf(v.pad) !== lane || v.stopping) continue;
+      v.stopping = true;
+      v.gain.gain.cancelScheduledValues(at);
+      v.gain.gain.setValueAtTime(v.gain.gain.value, at);
+      v.gain.gain.linearRampToValueAtTime(0, at + EDGE_FADE);
+      try {
+        v.node.stop(at + EDGE_FADE + 0.005);
+      } catch {
+        // Already stopped.
+      }
+    }
+    // A pending pad in the same lane is superseded rather than queued behind.
+    for (const other of [...this.pending.keys()]) {
+      if (other !== pad && laneOf(other) === lane) this.pending.delete(other);
+    }
   }
 
   private chokeFor(pad: number, pads: LoopPad[], at: number): void {

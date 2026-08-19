@@ -81,8 +81,8 @@
       ],
       "entry": "looper-0.1.0.js",
       "api": 1,
-      "bytes": 19985,
-      "sha256": "95bdd0dff46a6a1e28b6403dbaa352c9fb3ac06c51e1964773b18cc81315fe06",
+      "bytes": 20955,
+      "sha256": "b62c84f3fb31749b246942498e8fa611edf8a590ca717c26ef20a5003703f334",
       "requiresServer": true,
       "public": true
     },
