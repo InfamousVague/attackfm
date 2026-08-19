@@ -999,6 +999,33 @@ CREATE TABLE IF NOT EXISTS stem_jobs (
 );
 CREATE INDEX IF NOT EXISTS stem_jobs_state ON stem_jobs(state, requested_at);
 
+-- Songs separated before anyone asks - and, more importantly, the memory of the
+-- ones the cache has since thrown away.
+--
+-- A separate TABLE, for two reasons. A new table lands on a deployed database
+-- through execute_batch(SCHEMA); a new column silently does not. And
+-- forget_stems() deletes the track_stems AND stem_jobs rows on eviction, which
+-- leaves an evicted song indistinguishable from one never separated - so the
+-- prefetcher would queue it again, and again, at ~24s of GPU a lap, forever.
+-- This is the one table eviction does not touch.
+CREATE TABLE IF NOT EXISTS stem_prefetch (
+  track_id       INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+  state          TEXT NOT NULL,             -- wanted | running | done | failed | evicted
+  reason         TEXT NOT NULL DEFAULT '',  -- liked | playlist
+  queued_at      INTEGER NOT NULL,
+  finished_at    INTEGER NOT NULL DEFAULT 0,
+  attempts       INTEGER NOT NULL DEFAULT 0,
+  cooldown_until INTEGER NOT NULL DEFAULT 0,
+  error          TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS stem_prefetch_state ON stem_prefetch(state, queued_at);
+
+-- The enumeration probes both by track_id, which neither primary key serves:
+-- favorites is keyed (user_id, track_id) and playlist_tracks (playlist_id,
+-- position). Without these it full-scans both on every pass.
+CREATE INDEX IF NOT EXISTS favorites_track ON favorites(track_id);
+CREATE INDEX IF NOT EXISTS playlist_tracks_track ON playlist_tracks(track_id);
+
 CREATE TABLE IF NOT EXISTS track_loudness (
   track_id    INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
   lufs        REAL NOT NULL,
@@ -1025,7 +1052,7 @@ CREATE TABLE IF NOT EXISTS collector_state (
 );
 "#;
 
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
@@ -5048,6 +5075,35 @@ impl Db {
         Ok(())
     }
 
+    /// Records a stem, choosing how warm it counts as.
+    ///
+    /// Eviction takes the track with the smallest MAX(used_at), and save_stem
+    /// stamps used_at = now - so a night of prefetching would make guesses the
+    /// hottest rows in the cache and evict the song somebody separated by hand
+    /// yesterday. A prefetch is written far in the past instead: below every
+    /// genuine use forever, still ordered among other guesses by age. The
+    /// promotion already exists - stem_path() stamps used_at on every read, so
+    /// the first real play of a prefetched song joins the warm set.
+    pub fn save_stem_at(
+        &self,
+        track_id: i64,
+        stem: &str,
+        model: &str,
+        rel_path: &str,
+        bytes: i64,
+        used_at: i64,
+    ) -> rusqlite::Result<()> {
+        let now = now_ms();
+        self.lock().execute(
+            "INSERT INTO track_stems (track_id, stem, model, rel_path, bytes, made_at, used_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(track_id, stem, model) DO UPDATE SET
+               rel_path = excluded.rel_path, bytes = excluded.bytes, made_at = excluded.made_at",
+            params![track_id, stem, model, rel_path, bytes, now, used_at],
+        )?;
+        Ok(())
+    }
+
     pub fn save_stem(
         &self,
         track_id: i64,
@@ -5150,6 +5206,142 @@ impl Db {
             }
         }
         Some((track_id, paths))
+    }
+
+    // --- separating ahead of being asked -------------------------------------
+
+    /// Songs worth separating before anyone opens them, best first.
+    ///
+    /// Liked before playlisted, then most recently added. The order is what
+    /// makes an over-budget library behave: enqueueing stops part-way down, so
+    /// what fits is what somebody is most likely to open rather than whatever
+    /// happened to sort first.
+    ///
+    /// Excluded: already separated, already queued by a person, and - the brake
+    /// that matters - anything evicted inside its cooldown.
+    pub fn prefetch_candidates(
+        &self,
+        model: &str,
+        now: i64,
+        limit: i64,
+    ) -> Vec<(i64, String)> {
+        let conn = self.lock();
+        let Ok(mut q) = conn.prepare(
+            "SELECT t.id,
+                    CASE WHEN EXISTS (SELECT 1 FROM favorites f WHERE f.track_id = t.id)
+                         THEN 'liked' ELSE 'playlist' END AS reason
+               FROM tracks t
+              WHERE t.deleted = 0
+                AND (EXISTS (SELECT 1 FROM favorites f WHERE f.track_id = t.id)
+                  OR EXISTS (SELECT 1 FROM playlist_tracks pt WHERE pt.track_id = t.id))
+                AND NOT EXISTS (SELECT 1 FROM track_stems s
+                                 WHERE s.track_id = t.id AND s.model = ?1)
+                AND NOT EXISTS (SELECT 1 FROM stem_jobs j
+                                 WHERE j.track_id = t.id AND j.state IN ('queued','running'))
+                AND NOT EXISTS (SELECT 1 FROM stem_prefetch p
+                                 WHERE p.track_id = t.id
+                                   AND (p.state IN ('failed','running','done')
+                                        OR p.cooldown_until > ?2))
+              ORDER BY reason = 'liked' DESC, t.added_at DESC
+              LIMIT ?3",
+        ) else {
+            return Vec::new();
+        };
+        let Ok(rows) = q.query_map(params![model, now, limit], |r| Ok((r.get(0)?, r.get(1)?)))
+        else {
+            return Vec::new();
+        };
+        rows.filter_map(|r| r.ok()).collect()
+    }
+
+    /// Marks a song as wanted, without disturbing one that already finished.
+    pub fn want_prefetch(&self, track_id: i64, reason: &str) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO stem_prefetch (track_id, state, reason, queued_at)
+             VALUES (?1, 'wanted', ?2, ?3)
+             ON CONFLICT(track_id) DO UPDATE SET
+               state = 'wanted', reason = excluded.reason, queued_at = excluded.queued_at",
+            params![track_id, reason, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// The oldest song wanted but not yet started.
+    pub fn next_prefetch_job(&self) -> Option<(i64, String)> {
+        self.lock()
+            .query_row(
+                "SELECT p.track_id, t.rel_path FROM stem_prefetch p
+                   JOIN tracks t ON t.id = p.track_id
+                  WHERE p.state = 'wanted' AND t.deleted = 0
+                  ORDER BY p.queued_at ASC LIMIT 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .ok()
+    }
+
+    /// Moves a prefetch on. Three failures and it is left alone for good: a file
+    /// demucs cannot read will not become readable by being retried nightly.
+    pub fn mark_prefetch(&self, track_id: i64, state: &str, error: &str) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "UPDATE stem_prefetch
+                SET state = ?2, error = ?3, finished_at = ?4,
+                    attempts = attempts + CASE WHEN ?2 = 'running' THEN 1 ELSE 0 END
+              WHERE track_id = ?1",
+            params![track_id, state, error, now_ms()],
+        )?;
+        conn.execute(
+            "UPDATE stem_prefetch SET state = 'failed'
+              WHERE track_id = ?1 AND attempts >= 3 AND state != 'done'",
+            params![track_id],
+        )?;
+        Ok(())
+    }
+
+    /// Remembers that the cache threw a song's stems away.
+    ///
+    /// forget_stems() erases every other trace, so without this the next pass
+    /// cannot tell an evicted song from a new one and re-queues it at once -
+    /// which on a library bigger than the cache never ends.
+    pub fn note_stem_eviction(&self, track_id: i64, cooldown_ms: i64) -> rusqlite::Result<()> {
+        let now = now_ms();
+        self.lock().execute(
+            "INSERT INTO stem_prefetch (track_id, state, reason, queued_at, finished_at, cooldown_until)
+             VALUES (?1, 'evicted', 'evicted', ?2, ?2, ?3)
+             ON CONFLICT(track_id) DO UPDATE SET
+               state = 'evicted', finished_at = ?2, cooldown_until = ?3",
+            params![track_id, now, now + cooldown_ms],
+        )?;
+        Ok(())
+    }
+
+    /// Bytes held by stems this prefetcher made, so it can stop at its own
+    /// ceiling rather than at the cache's.
+    pub fn prefetch_bytes(&self, model: &str) -> i64 {
+        self.lock()
+            .query_row(
+                "SELECT COALESCE(SUM(s.bytes), 0) FROM track_stems s
+                   JOIN stem_prefetch p ON p.track_id = s.track_id
+                  WHERE s.model = ?1 AND p.state = 'done'",
+                params![model],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
+    }
+
+    /// (wanted, done, failed, evicted), for the readout.
+    pub fn prefetch_summary(&self) -> (i64, i64, i64, i64) {
+        let conn = self.lock();
+        let n = |state: &str| -> i64 {
+            conn.query_row(
+                "SELECT COUNT(*) FROM stem_prefetch WHERE state = ?1",
+                params![state],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
+        };
+        (n("wanted"), n("done"), n("failed"), n("evicted"))
     }
 
     pub fn forget_stems(&self, track_id: i64) -> rusqlite::Result<()> {
@@ -6067,4 +6259,104 @@ mod stem_model_isolation {
         assert!(db.stem_path(1, "vocals", "htdemucs_6s").unwrap().ends_with(".flac"));
         assert!(db.stem_path(1, "guitar", "htdemucs").is_none(), "the old model had no guitar");
     }
+}
+
+#[cfg(test)]
+mod stem_prefetch_brakes {
+    //! The two things that stop separating-ahead becoming a treadmill.
+    //!
+    //! Both of these have been silently lost once already: the eviction note
+    //! went missing from a build that compiled clean, and only a dead-constant
+    //! warning gave it away. They are cheap to assert and expensive to lose.
+
+    fn db(name: &str) -> super::Db {
+        let dir = std::env::temp_dir().join(format!("afm-prefetch-{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        super::Db::open(&dir.join("t.sqlite")).unwrap()
+    }
+
+    /// Puts a track in the library and likes it, so it is a prefetch candidate.
+    fn liked_track(db: &super::Db, rel: &str) -> i64 {
+        let user = db.create_user(&format!("u{rel}"), "x", false).unwrap();
+        db.lock()
+            .execute(
+                "INSERT INTO tracks (rel_path, title, artist, album_artist, album, deleted, added_at, rev)
+                 VALUES (?1, 't', 'a', 'a', 'al', 0, 1, 1)",
+                super::params![rel],
+            )
+            .unwrap();
+        let id: i64 = db
+            .lock()
+            .query_row("SELECT id FROM tracks WHERE rel_path = ?1", super::params![rel], |r| r.get(0))
+            .unwrap();
+        db.lock()
+            .execute(
+                "INSERT INTO favorites (user_id, track_id, added_at) VALUES (?1, ?2, 1)",
+                super::params![user, id],
+            )
+            .unwrap();
+        id
+    }
+
+    #[test]
+    fn an_evicted_song_is_not_queued_again() {
+        let db = db("evict");
+        let id = liked_track(&db, "a.flac");
+        let now = super::now_ms();
+
+        // Liked and unseparated: it is a candidate.
+        let first = db.prefetch_candidates("m", now, 10);
+        assert!(first.iter().any(|(t, _)| *t == id), "a liked song should be wanted");
+
+        // Separated, then evicted - which is forget_stems plus the note. This is
+        // the exact sequence evict_if_needed runs.
+        db.save_stem_at(id, "vocals", "m", "a/vocals.flac", 10, now).unwrap();
+        db.forget_stems(id).unwrap();
+        db.note_stem_eviction(id, 30 * 24 * 60 * 60 * 1000).unwrap();
+
+        // forget_stems left no trace in track_stems or stem_jobs, so WITHOUT the
+        // note this song is indistinguishable from a new one and comes straight
+        // back - which is the treadmill.
+        let again = db.prefetch_candidates("m", now, 10);
+        assert!(
+            !again.iter().any(|(t, _)| *t == id),
+            "an evicted song must not be re-queued while it is cooling down",
+        );
+
+        // And it becomes eligible again once the cooldown has passed, rather
+        // than being excluded for good.
+        let later = db.prefetch_candidates("m", now + 31 * 24 * 60 * 60 * 1000, 10);
+        assert!(
+            later.iter().any(|(t, _)| *t == id),
+            "after the cooldown it may be considered again",
+        );
+    }
+
+    #[test]
+    fn a_guess_is_evicted_before_real_work() {
+        let db = db("cold");
+        let guessed = liked_track(&db, "guess.flac");
+        let asked_for = liked_track(&db, "asked.flac");
+        let now = super::now_ms();
+
+        // The asked-for song was separated an hour ago; the guess is made NOW.
+        // By wall clock the guess is therefore the newest row, and would be the
+        // LAST thing evicted - which is the bug. The cold offset is the only
+        // thing that can reverse that, so this ordering is what gives the test
+        // its teeth: write the guess warm and the assertion below flips.
+        db.save_stem_at(asked_for, "vocals", "m", "a/vocals.flac", 10, now - 3_600_000)
+            .unwrap();
+        db.save_stem_at(guessed, "vocals", "m", "g/vocals.flac", 10, now - COLD)
+            .unwrap();
+
+        let (coldest, _) = db.coldest_stem_track().expect("something must be evictable");
+        assert_eq!(
+            coldest, guessed,
+            "the cache must sacrifice the guess, not the song somebody separated by hand",
+        );
+    }
+
+    /// Mirrors stems.rs COLD_OFFSET_MS.
+    const COLD: i64 = 10 * 365 * 24 * 60 * 60 * 1000;
 }

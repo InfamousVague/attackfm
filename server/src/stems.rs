@@ -167,6 +167,25 @@ const TIMEOUT: Duration = Duration::from_secs(2700);
 const PACK_TIMEOUT: Duration = Duration::from_secs(300);
 /// How often the worker looks for something to do when idle.
 const IDLE: Duration = Duration::from_secs(20);
+
+/// How far in the past a prefetched stem's `used_at` is written: ten years, so
+/// a guess sorts below every genuine use forever while guesses still order
+/// among themselves by age.
+const COLD_OFFSET_MS: i64 = 10 * 365 * 24 * 60 * 60 * 1000;
+
+/// The prefetcher's own ceiling - half the cache. It must never be the thing
+/// that triggers the eviction sweep, or it evicts its own work and remakes it.
+const PREFETCH_BUDGET_BYTES: i64 = BUDGET_BYTES / 2;
+
+/// How long an evicted song is left alone. The cache decided it was not worth
+/// the room; asking again tomorrow is how a treadmill starts.
+const PREFETCH_COOLDOWN_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+
+/// Between enumeration passes.
+const PREFETCH_SWEEP: Duration = Duration::from_secs(900);
+
+/// Claimed per pass, so one pass cannot queue a whole library.
+const PREFETCH_BATCH: i64 = 16;
 /// Stems are stored LOSSLESS.
 ///
 /// They were Opus at 128k, on the reasoning that a stem is simpler spectral
@@ -203,28 +222,107 @@ pub fn spawn(state: Arc<AppState>) {
             }
         };
         loop {
-            let Some((track_id, rel)) = state.db.next_stem_job() else {
-                tokio::time::sleep(IDLE).await;
-                continue;
+            // A person's request always wins. A prefetch starts only when the
+            // queue is empty, and is never interrupted once running: killing a
+            // demucs pass 20 seconds in throws that GPU away, and the person
+            // waits at most one job, which queuedAhead already reports.
+            let (track_id, rel, cold) = match state.db.next_stem_job() {
+                Some((id, rel)) => (id, rel, false),
+                None => match state.db.next_prefetch_job() {
+                    Some((id, rel)) => (id, rel, true),
+                    None => {
+                        tokio::time::sleep(IDLE).await;
+                        continue;
+                    }
+                },
             };
-            let _ = state.db.mark_stem_job(track_id, "running", "");
+            if cold {
+                let _ = state.db.mark_prefetch(track_id, "running", "");
+            } else {
+                let _ = state.db.mark_stem_job(track_id, "running", "");
+            }
             // Claimed before the work starts, so a poll landing in the first
             // seconds says "separating, 0%" rather than "queued" - which reads
             // as nobody having picked it up.
             state.separating.set(track_id, 0.0, "separating", 0);
-            match separate(&state, &python, track_id, &rel).await {
+            match separate(&state, &python, cold, track_id, &rel).await {
                 Ok(()) => {
-                    let _ = state.db.mark_stem_job(track_id, "done", "");
+                    if cold {
+                        let _ = state.db.mark_prefetch(track_id, "done", "");
+                    } else {
+                        let _ = state.db.mark_stem_job(track_id, "done", "");
+                    }
                     evict_if_needed(&state).await;
                 }
                 Err(why) => {
                     eprintln!("[stems] track {track_id}: {why}");
-                    let _ = state.db.mark_stem_job(track_id, "failed", &why);
+                    if cold {
+                        let _ = state.db.mark_prefetch(track_id, "failed", &why);
+                    } else {
+                        let _ = state.db.mark_stem_job(track_id, "failed", &why);
+                    }
                 }
             }
             // Whichever way it ended, nothing is running now - and a stale
             // percentage would have the next poller watching a finished job.
             state.separating.clear();
+        }
+    });
+}
+
+/// Keeps liked songs and playlist tracks separated before anyone opens them.
+///
+/// This only ever QUEUES. The single worker above drains `stem_jobs` first and
+/// reaches `stem_prefetch` only when nobody is waiting, so a person asking for a
+/// song can never end up behind a guess.
+///
+/// Three independent brakes stop this becoming a treadmill, any one of which
+/// would do on its own:
+///   - it stops at half the cache budget, so it cannot trigger the eviction
+///     sweep by itself;
+///   - its output is written cold, so when the sweep does run it takes the
+///     guesses before it takes anybody's real work;
+///   - an evicted song is remembered in `stem_prefetch` - the one table
+///     forget_stems does not touch - and left alone for a month.
+///
+/// AFM_STEM_PREFETCH=off turns it off entirely.
+pub fn spawn_prefetch(state: Arc<AppState>) {
+    tokio::spawn(async move {
+        if std::env::var("AFM_STEM_PREFETCH").map(|v| v == "off").unwrap_or(false) {
+            eprintln!("[stems] separating ahead is off (AFM_STEM_PREFETCH=off)");
+            return;
+        }
+        if separator_bin().is_none() {
+            // Nothing written, so installing demucs later starts clean.
+            eprintln!("[stems] no demucs found - separating ahead is off");
+            return;
+        }
+        // Boot belongs to the scanner and the other indexers; this is the least
+        // urgent thing the box does.
+        tokio::time::sleep(Duration::from_secs(300)).await;
+
+        loop {
+            if state.db.prefetch_bytes(MODEL) >= PREFETCH_BUDGET_BYTES {
+                tokio::time::sleep(PREFETCH_SWEEP).await;
+                continue;
+            }
+            // Never be the reason the volume drops into the reserve: a full disk
+            // makes every real separation end in an eviction sweep.
+            if free_bytes(&stem_root(&state)).unwrap_or(i64::MAX) < KEEP_FREE_BYTES * 2 {
+                tokio::time::sleep(PREFETCH_SWEEP).await;
+                continue;
+            }
+            let wanted =
+                state
+                    .db
+                    .prefetch_candidates(MODEL, crate::db::now_ms(), PREFETCH_BATCH);
+            for (track_id, reason) in &wanted {
+                let _ = state.db.want_prefetch(*track_id, reason);
+            }
+            if !wanted.is_empty() {
+                eprintln!("[stems] {} song(s) queued to separate ahead", wanted.len());
+            }
+            tokio::time::sleep(PREFETCH_SWEEP).await;
         }
     });
 }
@@ -258,6 +356,9 @@ fn separator_bin() -> Option<PathBuf> {
 async fn separate(
     state: &Arc<AppState>,
     python: &Path,
+    // True when nobody asked: the stems are written cold, so the cache
+    // sacrifices guesses before work somebody actually did.
+    cold: bool,
     track_id: i64,
     rel: &str,
 ) -> Result<(), String> {
@@ -393,7 +494,14 @@ async fn separate(
             // because the row would claim a stem the pads cannot play.
             Ok(out) if out.status.success() && bytes > 0 => {
                 let rel_path = format!("{track_id}/{stem}.{STEM_CODEC}");
-                let _ = state.db.save_stem(track_id, stem, MODEL, &rel_path, bytes);
+                let used_at = if cold {
+                        crate::db::now_ms() - COLD_OFFSET_MS
+                    } else {
+                        crate::db::now_ms()
+                    };
+                    let _ = state
+                        .db
+                        .save_stem_at(track_id, stem, MODEL, &rel_path, bytes, used_at);
                 filed += 1;
                 // Packing is a real, countable phase - six lossless encodes of a
                 // whole song each - so it gets its own progress rather than
@@ -475,6 +583,10 @@ async fn evict_if_needed(state: &Arc<AppState>) {
         }
         let _ = tokio::fs::remove_dir_all(stem_root(state).join(track_id.to_string())).await;
         let _ = state.db.forget_stems(track_id);
+        // forget_stems erases track_stems AND stem_jobs, so this is the only
+        // surviving record that the song was ever separated - and the only
+        // thing stopping the prefetcher queueing it again on its next pass.
+        let _ = state.db.note_stem_eviction(track_id, PREFETCH_COOLDOWN_MS);
     }
 }
 
@@ -498,6 +610,29 @@ fn free_bytes(path: &Path) -> Option<i64> {
 type ApiResult = Result<Json<Value>, (StatusCode, String)>;
 
 /// `POST /api/stems/{track}` - ask for a track to be pulled apart.
+/// `GET /api/stems/prefetch` - how far ahead the separator has got.
+///
+/// Registered BEFORE `/api/stems/{track}` in main.rs, or axum reads "prefetch"
+/// as a track id and the i64 extractor rejects it.
+pub async fn prefetch_status(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> ApiResult {
+    auth::require_caller(&state.db, &headers)
+        .map_err(|s| (s, "sign in first".to_string()))?;
+    let (wanted, done, failed, evicted) = state.db.prefetch_summary();
+    Ok(Json(json!({
+        "enabled": separator_bin().is_some()
+            && !std::env::var("AFM_STEM_PREFETCH").map(|v| v == "off").unwrap_or(false),
+        "wanted": wanted,
+        "done": done,
+        "failed": failed,
+        "evicted": evicted,
+        "bytes": state.db.prefetch_bytes(MODEL),
+        "budgetBytes": PREFETCH_BUDGET_BYTES,
+    })))
+}
+
 pub async fn request(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
