@@ -81,6 +81,10 @@ const padFace = (hue: number | null, lit: boolean, selected: boolean): CSSProper
   userSelect: 'none',
   WebkitUserSelect: 'none',
   WebkitTapHighlightColor: 'transparent',
+  // `none`, not `manipulation`: manipulation still lets the browser own pan
+  // and pinch, and on a grid of sixteen small targets that is exactly how a
+  // second finger gets swallowed by a scroll gesture instead of playing.
+  touchAction: 'none',
   transform: lit ? 'scale(0.97)' : 'none',
   transition: lit ? 'none' : 'transform 120ms ease, background 160ms ease',
   overflow: 'hidden',
@@ -111,7 +115,11 @@ export function PadsPage() {
     return Array.from({ length: PAD_COUNT }, emptyPad);
   });
   const [selected, setSelected] = useState(0);
-  const [lit, setLit] = useState<number | null>(null);
+  /* Multitouch is the default assumption, not a special case: a Set of lit
+   * pads and a voice per POINTER. The first cut kept one `lit` number and one
+   * release function, which meant a second finger stole the first one's
+   * release - so lifting either finger stopped the wrong sound, or none. */
+  const [lit, setLit] = useState<Set<number>>(new Set());
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   /** Which track the stem picker is looking at. */
@@ -142,23 +150,39 @@ export function PadsPage() {
 
   /* ── playing ─────────────────────────────────────────────────────────── */
 
-  const releaseRef = useRef<(() => void) | null>(null);
+  /** One entry per live pointer (or key), so fingers cannot take each other's
+   *  sound away. */
+  const heldRef = useRef(new Map<number, { pad: number; release: (() => void) | null }>());
 
   const strike = useCallback(
-    (index: number, velocity: number) => {
-      void engine.unlock().then(() => {
-        const release = engine.hit(index, pads, velocity);
-        releaseRef.current = pads[index]?.gate ? release : null;
+    (index: number, velocity: number, pointer: number) => {
+      // Synchronous. The whole reason this is not awaited is that a promise
+      // costs a microtask at best, and an instrument that answers a microtask
+      // late is an instrument that feels broken.
+      const release = engine.hit(index, pads, velocity);
+      heldRef.current.set(pointer, { pad: index, release: pads[index]?.gate ? release : null });
+      setLit((prev) => {
+        const next = new Set(prev);
+        next.add(index);
+        return next;
       });
-      setLit(index);
-      window.setTimeout(() => setLit((l) => (l === index ? null : l)), 110);
     },
     [engine, pads],
   );
 
-  const letGo = useCallback(() => {
-    releaseRef.current?.();
-    releaseRef.current = null;
+  /** Lifts one pointer, releasing only the sound that pointer started. */
+  const letGo = useCallback((pointer: number) => {
+    const held = heldRef.current.get(pointer);
+    if (!held) return;
+    heldRef.current.delete(pointer);
+    held.release?.();
+    setLit((prev) => {
+      // Only unlight if no OTHER pointer is still holding this pad.
+      for (const other of heldRef.current.values()) if (other.pad === held.pad) return prev;
+      const next = new Set(prev);
+      next.delete(held.pad);
+      return next;
+    });
   }, []);
 
   // The desktop keyboard, laid out like the grid it plays: 1234 / qwer /
@@ -172,9 +196,13 @@ export function PadsPage() {
       const index = keys.indexOf(e.key.toLowerCase());
       if (index === -1) return;
       e.preventDefault();
-      strike(index, 1);
+      // Negative ids so a key and a finger can never collide.
+      strike(index, 1, -1 - index);
     };
-    const up = () => letGo();
+    const up = (e: KeyboardEvent) => {
+      const index = keys.indexOf(e.key.toLowerCase());
+      if (index !== -1) letGo(-1 - index);
+    };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
     return () => {
@@ -245,6 +273,12 @@ export function PadsPage() {
         source: { trackId, stem },
         start: 0,
         end: 1,
+        // Hold, not one-shot. A stem is a WHOLE track - three minutes of
+        // vocal - and a one-shot pad plays it to the end no matter when the
+        // thumb lifts, which reads as "letting go does nothing". Hold is what
+        // anyone expects from a pad carrying something this long; trim it
+        // down to a stab and turn hold off if you want it to fire and forget.
+        gate: true,
       });
       setLoaded((prev) => new Set(prev).add(index));
       say('On the pad. Hit it.');
@@ -318,20 +352,29 @@ export function PadsPage() {
                 key={i}
                 type="button"
                 aria-label={p.name || `Pad ${i + 1}`}
-                style={padFace(hue, lit === i, selected === i)}
+                style={padFace(hue, lit.has(i), selected === i)}
                 onPointerDown={(e) => {
                   e.preventDefault();
                   setSelected(i);
                   if (!live) return;
+                  // Capture, so this pad keeps the pointer even if the finger
+                  // slides off it. Without this a drum roll across the grid
+                  // loses every pad the finger leaves, and pointerup lands on
+                  // whatever element happens to be under the lift.
+                  try {
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  } catch {
+                    // Some engines refuse capture for a pointer already gone.
+                  }
                   // Velocity from where the pad was struck: the lower the
                   // thumb lands, the harder it reads - the same convention
                   // hardware pads use for their own strike zones.
                   const box = e.currentTarget.getBoundingClientRect();
                   const y = (e.clientY - box.top) / Math.max(1, box.height);
-                  strike(i, 0.55 + Math.max(0, Math.min(1, y)) * 0.45);
+                  strike(i, 0.55 + Math.max(0, Math.min(1, y)) * 0.45, e.pointerId);
                 }}
-                onPointerUp={letGo}
-                onPointerLeave={letGo}
+                onPointerUp={(e) => letGo(e.pointerId)}
+                onPointerCancel={(e) => letGo(e.pointerId)}
               >
                 <Text size="xs" tone="muted" style={{ opacity: 0.75 }}>{i + 1}</Text>
                 <Text size="xs" style={{ lineHeight: 1.15, opacity: live ? 1 : 0.5 }}>
@@ -402,7 +445,7 @@ export function PadsPage() {
                 <Text size="xs" style={{ textAlign: 'right' }}>{Math.round(conf.end * 100)}%</Text>
               </label>
               <div style={{ ...row, flexWrap: 'wrap', gap: 16 }}>
-                <label style={row}>
+                <label style={row} title="On: the pad sounds while you hold it. Off: one hit plays the whole slice.">
                   <Switch aria-label="Hold" checked={conf.gate}
                     onCheckedChange={(v: boolean) => patch(selected, { gate: v })} />
                   <Text size="xs" tone="muted">Hold</Text>

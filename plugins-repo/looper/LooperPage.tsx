@@ -374,7 +374,9 @@ export function LooperPage() {
         setEditing(index);
         return;
       }
-      void engine.launch(index, pads);
+      // Synchronous: engine.launch builds the graph itself rather than
+      // awaiting an unlock, so a press reaches the audio thread immediately.
+      engine.launchNow(index, pads);
     },
     [engine, mode, pads],
   );

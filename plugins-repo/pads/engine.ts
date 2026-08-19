@@ -73,14 +73,22 @@ export class PadEngine {
   private reversed = new Map<number, AudioBuffer>();
 
   /**
-   * Wakes the audio context.
+   * Builds the graph, synchronously, and asks for a resume in the background.
    *
-   * Must be called from inside a real user gesture: every mobile browser
-   * starts a context suspended, and iOS additionally parks a long-idle one in
-   * its own 'interrupted' state, which is why this checks for anything that is
-   * not 'running' rather than only for 'suspended'.
+   * Synchronous is the whole point. Constructing an AudioContext inside a real
+   * user gesture is what makes it start running, and a hit that waits on a
+   * PROMISE before touching the graph has already lost the argument: the
+   * earliest a `.then()` can run is the next microtask, and on a busy page
+   * that is milliseconds an instrument does not have. So this returns
+   * immediately and `hit` can be called straight from a pointer handler.
+   *
+   * `resume()` is still fired for the case that matters - iOS parks a
+   * long-idle context in its own 'interrupted' state, which is why the check
+   * is "anything but running" rather than "suspended" - but nothing waits for
+   * it. A node started against a suspended context simply sounds when the
+   * context comes back, which is the right behaviour anyway.
    */
-  async unlock(): Promise<void> {
+  ensure(): void {
     if (!this.ctx) {
       const Ctor: typeof AudioContext =
         window.AudioContext ??
@@ -90,7 +98,13 @@ export class PadEngine {
       this.out.gain.value = 1;
       this.out.connect(this.ctx.destination);
     }
-    if (this.ctx.state !== 'running') {
+    if (this.ctx.state !== 'running') void this.ctx.resume().catch(() => {});
+  }
+
+  /** Kept for the loading path, which genuinely is async. */
+  async unlock(): Promise<void> {
+    this.ensure();
+    if (this.ctx && this.ctx.state !== 'running') {
       await this.ctx.resume().catch(() => {});
     }
   }
@@ -182,6 +196,8 @@ export class PadEngine {
    * `velocity` scales the level: 0..1, from how hard or where the pad was hit.
    */
   hit(pad: number, settings: PadSettings[], velocity = 1): (() => void) | null {
+    // Never awaits: see ensure(). Called straight from the pointer handler.
+    this.ensure();
     const conf = settings[pad];
     if (!this.ctx || !this.out || !conf) return null;
     const buffer = conf.reverse ? this.reversedBuffer(pad) : this.buffers.get(pad);

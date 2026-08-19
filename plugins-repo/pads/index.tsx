@@ -22,7 +22,7 @@ export const pads: Plugin = {
     'A sampler you play with your thumbs — pull any song into vocals, drums, bass and everything else, chop them, and hit them.',
   icon: <Grid2x2 size={22} />,
   author: 'AttackFM',
-  version: '0.1.0',
+  version: '0.1.1',
   tags: ['Sound', 'Instrument'],
   details:
     'Adds a Pads page: a 4x4 sampler fed by your own library. Ask the server ' +
