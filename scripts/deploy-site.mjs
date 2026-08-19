@@ -136,7 +136,7 @@ ssh(
    # of this same tree, and --delete would take it with every site publish -
    # attack.fm/listen would 404 until someone noticed and republished it. The
    # two trees share a document root but not a release clock.
-   sudo rsync -a --delete --exclude 'listen' --exclude 'listen/**' --exclude 'assets' --exclude 'assets/**' ${STAGE}/ ${REMOTE}/
+   sudo rsync -a --delete --exclude 'listen' --exclude 'listen/**' --exclude 'art' --exclude 'art/**' ${STAGE}/ ${REMOTE}/
    sudo chown -R root:root ${REMOTE}
    # Caddy runs as its own user and only needs to read.
    sudo find ${REMOTE} -type d -exec chmod 755 {} +
@@ -151,6 +151,11 @@ step('Publishing the shared artwork');
 // never received them, so every one of them 404ed for everybody. Serving them
 // off the static site fixes that AND removes the last reason for a listener on
 // someone else's server to touch Matt's house at all.
+//
+// /art, NOT /assets. Vite emits the site's own hashed bundle into assets/, so
+// the first version of this excluded that directory from the publish and then
+// rsynced artwork over it with --delete - which deleted index-*.js and
+// index-*.css and served a blank page. The two trees get their own names.
 const ART = resolve(root, 'server/assets/artwork');
 if (existsSync(ART)) {
   const artStage = `/home/${env.AFM_DEPLOY_USER}/.attackfm-art-stage`;
@@ -164,14 +169,14 @@ if (existsSync(ART)) {
   ssh(
     env,
     `set -e
-     sudo mkdir -p ${REMOTE}/assets
-     sudo rsync -a --delete ${artStage}/ ${REMOTE}/assets/
-     sudo chown -R root:root ${REMOTE}/assets
-     sudo find ${REMOTE}/assets -type d -exec chmod 755 {} +
-     sudo find ${REMOTE}/assets -type f -exec chmod 644 {} +
+     sudo mkdir -p ${REMOTE}/art
+     sudo rsync -a --delete ${artStage}/ ${REMOTE}/art/
+     sudo chown -R root:root ${REMOTE}/art
+     sudo find ${REMOTE}/art -type d -exec chmod 755 {} +
+     sudo find ${REMOTE}/art -type f -exec chmod 644 {} +
      rm -rf ${artStage}`,
   );
-  ok('artwork published to /assets');
+  ok('artwork published to /art');
 }
 
 step('Checking it came back');
@@ -189,6 +194,21 @@ const body = String(served.stdout ?? '');
 const built = /src="([^"]*index-[^"]*\.js)"/.exec(html)?.[1];
 if (built && !body.includes(built)) {
   fail(`attack.fm is serving a different bundle than was just built (expected ${built}).`);
+}
+
+// The page having a 200 is not the same as the page WORKING: it references a
+// hashed bundle by name, and a publish that drops it serves a blank screen with
+// a perfectly good status code. Ask for the bundle itself.
+if (built) {
+  const asset = spawnSync(
+    'curl',
+    ['-s', '-o', '/dev/null', '-w', '%{http_code}', '-m', '25', `https://attack.fm${built.replace(/^\.?/, '')}`],
+    { encoding: 'utf8' },
+  );
+  const assetCode = String(asset.stdout ?? '').trim();
+  if (assetCode !== '200') {
+    fail(`the page loads but its bundle ${built} answers ${assetCode} - the site would render blank.`);
+  }
 }
 
 ok(`Deployed. ${dim(built ? `serving ${built}` : '')}`);

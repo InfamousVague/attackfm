@@ -19,7 +19,7 @@ const ASSETS_URL =
   // Mac: the publish step writes to the VPS, so every one of these 404ed. It
   // also meant a listener on somebody else's server fetched art through Matt's
   // house for no reason. Plain files on the marketing domain are neither.
-  'https://attack.fm/assets';
+  'https://attack.fm/art';
 
 /** A served asset's URL. Unauthenticated, cacheable, plain JPEG. */
 export function artworkUrl(slug: string): string {

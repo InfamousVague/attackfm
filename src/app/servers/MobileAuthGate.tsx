@@ -8,6 +8,7 @@ import {
   register,
   type ServerInfo,
 } from '../server.ts';
+import { DEFAULT_SERVER } from './defaultServer.ts';
 import { useServerSession } from './serverSession.tsx';
 import { useRegistry } from './registrySession.tsx';
 import { login as registryLogin, signup as registrySignup } from './registry.ts';
@@ -248,7 +249,11 @@ function ConnectScreen({ onBack }: { onBack?: () => void }) {
   const [step, setStep] = useState<Step>('server');
   const { connect, applySession } = useServerSession();
 
-  const [url, setUrl] = useState('');
+  // Pre-filled on the hosted player, empty in the installed apps. See
+  // defaultServer.ts: arriving at attack.fm/listen and being asked for an
+  // address with no hint of the one you just came from is a dead end for
+  // anyone who does not already run a server.
+  const [url, setUrl] = useState(DEFAULT_SERVER);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [info, setInfo] = useState<ServerInfo | null>(null);
