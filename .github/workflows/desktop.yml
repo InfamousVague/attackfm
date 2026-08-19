@@ -78,10 +78,8 @@ jobs:
       # beforeBuildCommand in tauri.conf.json runs `npm run build`, so the
       # frontend is built as part of this step.
       - name: Build the desktop app
-        env:
-          AFM_PINNED: '1'
-        run: npx tauri build --features pinned-build
-
+        run: npx tauri build
+        
       - name: Collect the bundles
         shell: bash
         run: |
