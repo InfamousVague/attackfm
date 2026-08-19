@@ -957,6 +957,26 @@ CREATE TABLE IF NOT EXISTS curator_pulls (
 );
 CREATE INDEX IF NOT EXISTS curator_pulls_user_time ON curator_pulls(user_id, created_at DESC);
 
+-- Real loudness, as opposed to track_features.loudness - which is a rough 0-1
+-- impression taken from ninety seconds of the middle of a file and is right
+-- for mood playlists and wrong for gain. These are the ITU/EBU numbers,
+-- measured across the WHOLE track, and they are what playback normalisation
+-- rides on:
+--   lufs    integrated loudness in LUFS, negative, quiet is more negative
+--   peak_db true peak in dBTP - the reason a boost can be refused, since
+--           lifting a track that already touches 0 dBFS is just clipping
+--   lra     loudness range in LU, the honest "how dynamic is this master"
+-- Its own table on purpose: Db::open only ever runs CREATE TABLE IF NOT
+-- EXISTS, so a new TABLE lands on the deployed database and a new COLUMN
+-- silently never would.
+CREATE TABLE IF NOT EXISTS track_loudness (
+  track_id    INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+  lufs        REAL NOT NULL,
+  peak_db     REAL NOT NULL,
+  lra         REAL NOT NULL,
+  measured_at INTEGER NOT NULL
+);
+
 -- Which library rows a landed pull became - what lets an adoption find its
 -- pull, and a pull report its real size.
 CREATE TABLE IF NOT EXISTS curator_pull_tracks (
@@ -4875,6 +4895,62 @@ impl Db {
     /// half of the row: an existing tempo always wins over the analyser's
     /// (and keeps its bpm_source), a vector is never touched, and a fresh row
     /// leaves checked_at at 0 so the enricher still gets its turn.
+    /// One track's measured loudness. Replaces any earlier reading: a
+    /// re-measure happens because the file changed, and the new number is the
+    /// true one.
+    pub fn save_loudness(
+        &self,
+        track_id: i64,
+        lufs: f64,
+        peak_db: f64,
+        lra: f64,
+    ) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO track_loudness (track_id, lufs, peak_db, lra, measured_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(track_id) DO UPDATE SET
+               lufs = excluded.lufs, peak_db = excluded.peak_db,
+               lra = excluded.lra, measured_at = excluded.measured_at",
+            params![track_id, lufs, peak_db, lra, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// Live tracks with no loudness reading yet, oldest-added first so a
+    /// library that has been sitting there gets measured before today's
+    /// imports. Books are skipped: nobody normalises a chapter against a song.
+    pub fn tracks_needing_loudness(&self, limit: i64) -> Vec<(i64, String)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT t.id, t.rel_path FROM tracks t
+              LEFT JOIN track_loudness l ON l.track_id = t.id
+              WHERE t.deleted = 0 AND t.kind = 'music' AND l.track_id IS NULL
+              ORDER BY t.added_at ASC LIMIT ?1",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![limit], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Every measurement, for the client's normalisation table. Compact by
+    /// design - one row per track, four numbers - because the client holds the
+    /// whole thing in memory and consults it on every track change.
+    pub fn all_loudness(&self) -> Vec<(i64, f64, f64, f64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT l.track_id, l.lufs, l.peak_db, l.lra FROM track_loudness l
+               JOIN tracks t ON t.id = l.track_id
+              WHERE t.deleted = 0",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
     pub fn save_audio_features(
         &self,
         track_id: i64,

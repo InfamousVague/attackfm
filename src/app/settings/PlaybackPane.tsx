@@ -2,6 +2,12 @@ import { Field, Label, SegmentedControl, Select, Slider, Switch, Text } from '@g
 import { useEffect, useState } from 'react';
 import { fireNativeHaptic, setHapticsPref, useHapticsPref } from '../core/haptics.ts';
 import { usePlayback, type SleepTimer } from '../player/playback.tsx';
+import {
+  loudnessCoverage,
+  setLoudnessMode,
+  useLoudnessMode,
+  type LoudnessMode,
+} from '../player/loudness.ts';
 
 /** The sleep timer's countdown, ticking once a second while one is armed. */
 function SleepCountdown({ sleep }: { sleep: SleepTimer }) {
@@ -55,8 +61,42 @@ export function PlaybackSettings() {
     }
   };
 
+  const levelling = useLoudnessMode();
+  const measured = loudnessCoverage();
+
   return (
     <div className="prefsBody">
+      <div className="prefsSection">
+        <Field
+          label="Volume levelling"
+          hint={
+            levelling === 'off'
+              ? 'Songs play at whatever level they were mastered at.'
+              : levelling === 'album'
+                ? 'Records play at a steady level, and the quiet track on an album stays quiet.'
+                : 'Every song plays at the same level — best for shuffling.'
+          }
+        >
+          <SegmentedControl
+            aria-label="Volume levelling"
+            fullWidth
+            value={levelling}
+            options={[
+              { value: 'off', label: 'Off' },
+              { value: 'track', label: 'Per song' },
+              { value: 'album', label: 'Per album' },
+            ]}
+            onValueChange={(v) => setLoudnessMode(v as LoudnessMode)}
+          />
+          {levelling !== 'off' && (
+            <Text tone="muted" size="sm">
+              {measured === 0
+                ? 'Your server is still measuring. Songs it has not reached yet play unlevelled.'
+                : `${measured.toLocaleString()} songs measured. A song is never boosted past the point where it would distort.`}
+            </Text>
+          )}
+        </Field>
+      </div>
       <div className="prefsSection">
         <Field
           label="Crossfade"
