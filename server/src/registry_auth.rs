@@ -204,9 +204,28 @@ pub async fn enter(State(state): State<Arc<AppState>>, Json(body): Json<EnterBod
         .await
         .map_err(|_| (StatusCode::BAD_REQUEST, "That invite could not be read.".into()))?;
 
+    // A server that does not know its own address cannot judge this, and must
+    // not pretend it can. same_server() is false for an empty public_url, so
+    // without this every invite ever minted is rejected as "for a different
+    // server" - which sends the person joining to check their invite, and the
+    // operator to look at the registry, when the fault is one unset variable
+    // here. Behind a reverse proxy this is easy to miss: the box answers on
+    // localhost and never sees the name the world uses for it.
+    if state.public_url.trim().is_empty() {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "This server does not know its own public address, so it cannot check invites. \
+             Set AFM_PUBLIC_URL to the address people reach it on and restart it."
+                .into(),
+        ));
+    }
+
     let inv_server = preview.get("serverUrl").and_then(|v| v.as_str()).unwrap_or("");
     if !same_server(inv_server, &state.public_url) {
-        return Err((StatusCode::BAD_REQUEST, "That invite is for a different server.".into()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("That invite is for {inv_server}, and this is {}.", state.public_url),
+        ));
     }
     if preview.get("spent").and_then(|v| v.as_bool()).unwrap_or(false) {
         return Err((StatusCode::GONE, "That invite has already been used.".into()));
@@ -227,4 +246,34 @@ pub async fn enter(State(state): State<Arc<AppState>>, Json(body): Json<EnterBod
         .await;
 
     Ok(Json(session_json(&state, &user)?))
+}
+
+#[cfg(test)]
+mod invite_target_tests {
+    use super::same_server;
+
+    /// The trailing slash and the case are the two ways the same address gets
+    /// typed differently, and both used to reject a perfectly good invite.
+    #[test]
+    fn the_same_address_matches_however_it_is_written() {
+        assert!(same_server("https://matt.attack.fm", "https://matt.attack.fm/"));
+        assert!(same_server("https://MATT.attack.fm/", "https://matt.attack.fm"));
+    }
+
+    /// An unset AFM_PUBLIC_URL is why "that invite is for a different server"
+    /// could be the answer to every invite ever minted: the comparison is
+    /// against an empty string, which matches nothing. The caller checks for
+    /// this before comparing and says so; this pins the behaviour it relies on.
+    #[test]
+    fn an_unconfigured_server_matches_nothing() {
+        assert!(!same_server("https://matt.attack.fm", ""));
+        assert!(!same_server("", "https://matt.attack.fm"));
+    }
+
+    #[test]
+    fn a_different_host_is_a_different_server() {
+        assert!(!same_server("https://matt.attack.fm", "https://someone.attack.fm"));
+        // Scheme and port are part of the address, not decoration.
+        assert!(!same_server("http://matt.attack.fm", "https://matt.attack.fm"));
+    }
 }
