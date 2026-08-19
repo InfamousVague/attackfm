@@ -484,7 +484,8 @@ export async function loadAudioSource(
   from = 0,
 ): Promise<AudioSource | null> {
   const url = await loadLocalAudioUrl(path);
-  if (url) return { url, offset: 0 };
+  // A file on this device is an ordinary seekable source, whatever was asked.
+  if (url) return { url, offset: 0, seekable: true };
   const remote = resolveRemoteAudioSource(path, from);
   if (remote) return remote;
   return null;
@@ -591,6 +592,16 @@ type RemoteResolver = (path: string) => string | null;
 export interface AudioSource {
   url: string;
   offset: number;
+  /**
+   * Whether the element can seek this source by itself.
+   *
+   * False for a live encode: the body is chunked, has no length and no byte
+   * ranges, so `currentTime` can only reach what is already buffered and
+   * silently clamps to the window otherwise. Those sources are seeked by
+   * ASKING THE SERVER AGAIN from the new position, which is the whole reason
+   * `/api/transcode` takes a `seek`.
+   */
+  seekable: boolean;
 }
 
 type SeekingResolver = (path: string, seek: number) => AudioSource | null;
