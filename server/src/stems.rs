@@ -53,7 +53,7 @@ const TIMEOUT: Duration = Duration::from_secs(900);
 const IDLE: Duration = Duration::from_secs(20);
 /// Opus bitrate per stem. A stem is simpler spectral content than a full mix,
 /// so this is past transparent for chopping and looping.
-const OPUS_KBPS: &str = "128";
+const OPUS_BITRATE: &str = "128k";
 
 /// Where stems live: `<data>/stems/<trackId>/<stem>.opus`.
 fn stem_root(state: &AppState) -> PathBuf {
@@ -209,35 +209,62 @@ async fn separate(
             continue;
         };
         let opus = dest_dir.join(format!("{stem}.opus"));
+        // `-b:a` takes a rate, and a bare number means BITS per second: the
+        // first cut of this passed "128" and produced four perfectly valid,
+        // perfectly empty files. The k is load-bearing.
         let packed = tokio::process::Command::new("ffmpeg")
             .args(["-nostdin", "-v", "error", "-y", "-i"])
             .arg(&wav)
-            .args(["-c:a", "libopus", "-b:a", OPUS_KBPS.to_string().as_str(), "-vbr", "on"])
+            .args(["-c:a", "libopus", "-b:a", OPUS_BITRATE, "-vbr", "on"])
             .arg(&opus)
             .stdin(Stdio::null())
-            .status()
+            .output()
             .await;
+        let bytes = tokio::fs::metadata(&opus)
+            .await
+            .map(|m| m.len() as i64)
+            .unwrap_or(0);
         match packed {
-            Ok(s) if s.success() => {
-                let bytes = tokio::fs::metadata(&opus)
-                    .await
-                    .map(|m| m.len() as i64)
-                    .unwrap_or(0);
+            // A zero-length output counts as a failure however ffmpeg exited:
+            // a file that exists and holds nothing is worse than no file,
+            // because the row would claim a stem the pads cannot play.
+            Ok(out) if out.status.success() && bytes > 0 => {
                 let rel_path = format!("{track_id}/{stem}.opus");
                 let _ = state.db.save_stem(track_id, stem, MODEL, &rel_path, bytes);
                 filed += 1;
             }
-            _ => {
+            other => {
                 // One stem failing to pack is not worth losing the other
                 // three over; the client shows what exists.
-                eprintln!("[stems] track {track_id}: could not pack {stem}");
+                let why = match other {
+                    Ok(out) => {
+                        let err = String::from_utf8_lossy(&out.stderr);
+                        let tail = err.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("");
+                        if bytes == 0 && out.status.success() {
+                            format!("produced an empty file ({tail})")
+                        } else {
+                            format!("ffmpeg failed ({tail})")
+                        }
+                    }
+                    Err(e) => format!("could not start ffmpeg: {e}"),
+                };
+                eprintln!("[stems] track {track_id} {stem}: {why}");
+                let _ = tokio::fs::remove_file(&opus).await;
             }
         }
     }
 
     let _ = tokio::fs::remove_dir_all(&scratch).await;
     if filed == 0 {
-        return Err("demucs produced nothing this could read".to_string());
+        // Distinguish the two failures that look alike from outside: the
+        // model produced nothing, or it produced stems that would not pack.
+        let separated = STEMS.iter().filter(|s| find_wav(&scratch, s).is_some()).count();
+        let _ = tokio::fs::remove_dir_all(&dest_dir).await;
+        return Err(if separated == 0 {
+            "demucs produced no stems".to_string()
+        } else {
+            format!("separated {separated} stems but none of them would pack")
+        });
     }
     Ok(())
 }
