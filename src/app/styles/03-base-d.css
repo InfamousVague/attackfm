@@ -302,13 +302,31 @@
   z-index: 1;
 }
 
+/* Room for the floating rail. Only where the rail exists: the phone's bar
+   sits at the bottom and must not indent anything. */
+.appBody:has(> .appNavRail) {
+  padding-inline-start: var(--app-nav-rail-gutter);
+}
+
 /* Desktop primary navigation: a slim icon-only rail, the same floating pill
    as the phone's turned on its side - a lifted, rounded, frosted plate riding
    the leading edge. */
 .appNavRail {
+  /* FLOATING, not a column. In flow it reserved a full-height gutter the
+     content could never use, and the plate stretched to fill it - a tall slab
+     of frost with its icons huddled at the top. Out of flow it is what it
+     looks like: a small island against the leading edge, vertically centred,
+     with the page running full width behind it. `.appBody` pads by
+     --app-nav-rail-gutter so nothing ever sits underneath it. */
+  position: absolute;
+  inset-inline-start: var(--glacier-space-3);
+  inset-block-start: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  /* Hug the items. The kit's vertical NavBar stretches to its container by
+     default, which is what made the plate run the height of the window. */
+  block-size: fit-content;
   flex: none;
-  align-self: flex-start;
-  margin: var(--glacier-space-3) 0 0 var(--glacier-space-3);
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-1);
@@ -333,10 +351,21 @@
   scrollbar-width: none;
 }
 
+/* One number the rail and the body both read, so the island's footprint and
+   the content's inset can never drift apart. */
+:root {
+  --app-nav-rail-item: 2.375rem;
+  /* item + the plate's own padding on both sides + the margin it floats by,
+     plus the same margin again as breathing room before the content starts. */
+  --app-nav-rail-gutter: calc(var(--app-nav-rail-item) + var(--glacier-space-1) * 2 + var(--glacier-space-3) * 2);
+}
+
 .appNavRail button,
 .appNavRail a {
   flex: none;
-  inline-size: 3rem;
-  block-size: 3rem;
+  /* Smaller than the old 3rem: a cursor does not need a thumb's target, and
+     the island reads as a tool rather than a wall at this size. */
+  inline-size: var(--app-nav-rail-item, 2.375rem);
+  block-size: var(--app-nav-rail-item, 2.375rem);
 }
 
