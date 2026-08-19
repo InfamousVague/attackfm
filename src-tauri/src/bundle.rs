@@ -140,6 +140,17 @@ fn safe_name(name: &str) -> Result<String, String> {
 pub async fn bundle_state(app: tauri::AppHandle) -> Result<BundleState, String> {
     let mut stored = read_stored(&app);
 
+    // A pinned diagnostic build must not be shadowed by an OTA bundle left by
+    // an ordinary installation using the same app-data directory. Clearing
+    // the pointers here makes the boot loader choose the embedded frontend on
+    // this launch and every launch after it.
+    #[cfg(feature = "pinned-build")]
+    if stored.active.is_some() || stored.pending.is_some() {
+        stored.active = None;
+        stored.pending = None;
+        write_stored(&app, &stored)?;
+    }
+
     if let Some(failed) = stored.pending.take() {
         // It was written before the boot and never cleared: the bundle did not
         // come up. Refuse it for good and fall back.
@@ -206,81 +217,87 @@ pub async fn bundle_install(
     native: u32,
     files: Vec<BundleFile>,
 ) -> Result<BundleState, String> {
-    let version = safe_version(&version)?;
-    if native > NATIVE_GENERATION {
-        return Err(format!(
-            "that bundle needs native generation {native}; this build is {NATIVE_GENERATION}"
-        ));
-    }
-    let stored = read_stored(&app);
-    if stored.quarantined.contains(&version) {
-        return Err("that version already failed to boot here".into());
-    }
-    if files.is_empty() {
-        return Err("a bundle with no files is not a bundle".into());
-    }
-    // The loader looks for exactly these two entries. Both are required, and
-    // the stylesheet is not the lenient half: a bundle that arrives with only
-    // app.js installs cleanly, boots, and reports its wager as won - while the
-    // loader quietly falls back to the stylesheet baked into the native app.
-    // The result is this build's markup drawn against a much older build's CSS,
-    // which reads as the newest parts of the app losing their styling
-    // altogether. Refusing the download is how that becomes a failed update
-    // anybody can see rather than a silent half-update nobody can explain.
-    for required in ["app.js", "app.css"] {
-        if !files.iter().any(|f| f.name == required) {
-            return Err(format!("a bundle must contain {required}"));
+    #[cfg(feature = "pinned-build")]
+    return Err("this build is pinned and does not accept frontend updates".into());
+
+    #[cfg(not(feature = "pinned-build"))]
+    {
+        let version = safe_version(&version)?;
+        if native > NATIVE_GENERATION {
+            return Err(format!(
+                "that bundle needs native generation {native}; this build is {NATIVE_GENERATION}"
+            ));
         }
-    }
-
-    let base = root(&app)?;
-    let staging = base.join(format!(".staging-{version}"));
-    let _ = std::fs::remove_dir_all(&staging);
-    std::fs::create_dir_all(&staging).map_err(|e| format!("cannot stage: {e}"))?;
-
-    for file in &files {
-        let name = safe_name(&file.name)?;
-        let response = reqwest::get(&file.url)
-            .await
-            .map_err(|e| format!("{name}: fetch failed: {e}"))?;
-        if !response.status().is_success() {
-            return Err(format!("{name}: server answered {}", response.status()));
+        let stored = read_stored(&app);
+        if stored.quarantined.contains(&version) {
+            return Err("that version already failed to boot here".into());
         }
-        let body = response
-            .bytes()
-            .await
-            .map_err(|e| format!("{name}: read failed: {e}"))?;
-
-        let mut hasher = Sha256::new();
-        hasher.update(&body);
-        let got = hex(&hasher.finalize());
-        if !got.eq_ignore_ascii_case(file.sha256.trim()) {
-            let _ = std::fs::remove_dir_all(&staging);
-            return Err(format!("{name}: checksum did not match"));
+        if files.is_empty() {
+            return Err("a bundle with no files is not a bundle".into());
         }
-        std::fs::write(staging.join(&name), &body)
-            .map_err(|e| format!("{name}: write failed: {e}"))?;
+        // The loader looks for exactly these two entries. Both are required, and
+        // the stylesheet is not the lenient half: a bundle that arrives with only
+        // app.js installs cleanly, boots, and reports its wager as won - while the
+        // loader quietly falls back to the stylesheet baked into the native app.
+        // The result is this build's markup drawn against a much older build's CSS,
+        // which reads as the newest parts of the app losing their styling
+        // altogether. Refusing the download is how that becomes a failed update
+        // anybody can see rather than a silent half-update nobody can explain.
+        for required in ["app.js", "app.css"] {
+            if !files.iter().any(|f| f.name == required) {
+                return Err(format!("a bundle must contain {required}"));
+            }
+        }
+
+        let base = root(&app)?;
+        let staging = base.join(format!(".staging-{version}"));
+        let _ = std::fs::remove_dir_all(&staging);
+        std::fs::create_dir_all(&staging).map_err(|e| format!("cannot stage: {e}"))?;
+
+        for file in &files {
+            let name = safe_name(&file.name)?;
+            let response = reqwest::get(&file.url)
+                .await
+                .map_err(|e| format!("{name}: fetch failed: {e}"))?;
+            if !response.status().is_success() {
+                return Err(format!("{name}: server answered {}", response.status()));
+            }
+            let body = response
+                .bytes()
+                .await
+                .map_err(|e| format!("{name}: read failed: {e}"))?;
+
+            let mut hasher = Sha256::new();
+            hasher.update(&body);
+            let got = hex(&hasher.finalize());
+            if !got.eq_ignore_ascii_case(file.sha256.trim()) {
+                let _ = std::fs::remove_dir_all(&staging);
+                return Err(format!("{name}: checksum did not match"));
+            }
+            std::fs::write(staging.join(&name), &body)
+                .map_err(|e| format!("{name}: write failed: {e}"))?;
+        }
+
+        // Swap in whole. Until this rename, nothing points at the new files.
+        let target = base.join(&version);
+        let _ = std::fs::remove_dir_all(&target);
+        std::fs::rename(&staging, &target).map_err(|e| format!("could not place bundle: {e}"))?;
+
+        let mut stored = read_stored(&app);
+        let previous = stored.active.clone();
+        stored.active = Some(version.clone());
+        write_stored(&app, &stored)?;
+
+        // One generation back is kept: it is what a rollback returns to without a
+        // download. Anything older is just disk.
+        if let Some(old) = previous.filter(|p| p != &version) {
+            prune_except(&base, &[version.as_str(), old.as_str()]);
+        } else {
+            prune_except(&base, &[version.as_str()]);
+        }
+
+        bundle_state(app).await
     }
-
-    // Swap in whole. Until this rename, nothing points at the new files.
-    let target = base.join(&version);
-    let _ = std::fs::remove_dir_all(&target);
-    std::fs::rename(&staging, &target).map_err(|e| format!("could not place bundle: {e}"))?;
-
-    let mut stored = read_stored(&app);
-    let previous = stored.active.clone();
-    stored.active = Some(version.clone());
-    write_stored(&app, &stored)?;
-
-    // One generation back is kept: it is what a rollback returns to without a
-    // download. Anything older is just disk.
-    if let Some(old) = previous.filter(|p| p != &version) {
-        prune_except(&base, &[version.as_str(), old.as_str()]);
-    } else {
-        prune_except(&base, &[version.as_str()]);
-    }
-
-    bundle_state(app).await
 }
 
 /// `bundle_revert` - go back to the embedded bundle deliberately.
@@ -294,13 +311,17 @@ pub async fn bundle_revert(app: tauri::AppHandle) -> Result<BundleState, String>
 }
 
 fn prune_except(base: &Path, keep: &[&str]) {
-    let Ok(entries) = std::fs::read_dir(base) else { return };
+    let Ok(entries) = std::fs::read_dir(base) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if !path.is_dir() {
             continue;
         }
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
         if !keep.contains(&name) {
             let _ = std::fs::remove_dir_all(&path);
         }

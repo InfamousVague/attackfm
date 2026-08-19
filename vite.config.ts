@@ -24,13 +24,17 @@ const ota = process.env.AFM_OTA === '1';
 // filenames below are a liability rather than a feature - see the comment on
 // entryFileNames.
 const web = process.env.AFM_WEB === '1';
+const updatesEnabled = process.env.AFM_PINNED !== '1';
 
 // A relative base so the built app works when Tauri serves it from a custom
 // protocol rather than the server root. @glacier/react resolves from the
 // vendored copy in node_modules (installed via the file: dependency).
 export default defineConfig({
   base: './',
-  define: { __AFM_VERSION__: JSON.stringify(pkgVersion) },
+  define: {
+    __AFM_VERSION__: JSON.stringify(pkgVersion),
+    __AFM_UPDATES_ENABLED__: JSON.stringify(updatesEnabled),
+  },
   plugins: [react()],
   build: {
     ...(ota ? { assetsInlineLimit: 1 << 30, cssCodeSplit: false } : {}),

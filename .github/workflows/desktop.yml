@@ -11,6 +11,7 @@ on:
   workflow_dispatch:
   push:
     tags: ['v*']
+    branches: ['feat/gemma-ai-dj']
 
 # The workflow only ever reads the repo and writes releases.
 permissions:
@@ -23,8 +24,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-22.04
-            name: linux
           - os: windows-latest
             name: windows
 
@@ -79,7 +78,9 @@ jobs:
       # beforeBuildCommand in tauri.conf.json runs `npm run build`, so the
       # frontend is built as part of this step.
       - name: Build the desktop app
-        run: npx tauri build
+        env:
+          AFM_PINNED: '1'
+        run: npx tauri build --features pinned-build
 
       - name: Collect the bundles
         shell: bash

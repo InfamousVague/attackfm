@@ -93,7 +93,7 @@ export async function analyzeDjCollection(
   trackIds: number[], signal?: AbortSignal,
 ): Promise<DjTraitAnalysis> {
   return request<DjTraitAnalysis>(session.url, '/api/dj/analyze', {
-    method: 'POST', token: session.token, signal,
+    method: 'POST', token: session.token, signal, timeoutMs: 90_000,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ source, name, trackIds }),
   });
@@ -105,7 +105,7 @@ export async function analyzeDjTrack(
   signal?: AbortSignal,
 ): Promise<DjTraitAnalysis> {
   return request<DjTraitAnalysis>(session.url, '/api/dj/analyze', {
-    method: 'POST', token: session.token, signal,
+    method: 'POST', token: session.token, signal, timeoutMs: 90_000,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ trackId }),
   });
