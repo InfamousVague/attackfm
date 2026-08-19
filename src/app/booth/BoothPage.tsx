@@ -13,7 +13,7 @@
 //! Everything degrades: an older server that 404s /api/features/status or
 //! /api/curator/pulls simply loses that line, never the page.
 
-import { Modal, Spinner, Text } from '@glacier/react';
+import { Button, Modal, ProgressBar, Spinner, Text } from '@glacier/react';
 import { useRefreshNonce } from '../nav/pageRefresh.tsx';
 import {
   AudioLines,
@@ -205,20 +205,22 @@ export function BoothPage({
         {/* The pill is the loop's real phase; tapping it opens the brain's
             preferences. Model health lives in the brain card below, where it
             gets words - two bare dots up here read as stray punctuation. */}
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
           className="boothPulse"
           onClick={() => setPrefsOpen(true)}
           aria-label="Curator status and preferences"
         >
           <pulse.Icon size={13} aria-hidden="true" />
           <span className="boothPulse__text">{pulse.text}</span>
-        </button>
+        </Button>
       </header>
 
       {/* Music Date: the invitation stays on top, by request. */}
       {session && (
-        <button type="button" className="boothDate" onClick={onOpenDate}>
+        <Button type="button" variant="glass" fullWidth className="boothDate" onClick={onOpenDate}>
           <span className="boothDate__mark" aria-hidden="true">
             <CalendarHeart size={18} />
           </span>
@@ -231,7 +233,7 @@ export function BoothPage({
             </span>
           </span>
           <ChevronRight size={18} className="boothDate__chevron" aria-hidden="true" />
-        </button>
+        </Button>
       )}
 
       {/* Drop the needle: the page's one hero, and the moods that steer it. */}
@@ -242,8 +244,10 @@ export function BoothPage({
           endpoint's ai flag is the only one in the stack that proves a model
           actually answered, so "heard by the model" is never a guess. */}
       {session && playing && (analysis || platterBusy) && (
-        <button
+        <Button
           type="button"
+          variant="glass"
+          fullWidth
           className="boothPlatter"
           onClick={() => setSheetTrack(playing)}
           aria-label={`How the DJ hears ${playing.title}`}
@@ -289,12 +293,12 @@ export function BoothPage({
               <Spinner size="sm" aria-label="" /> The DJ is listening…
             </span>
           )}
-        </button>
+        </Button>
       )}
 
       {/* The DJ's door: his last line as the caption, the whole conversation
           behind it - fullscreen, since a composer deserves a viewport. */}
-      <button type="button" className="boothDate boothDoor--dj" onClick={onOpenDj}>
+      <Button type="button" variant="glass" fullWidth className="boothDate boothDoor--dj" onClick={onOpenDj}>
         <span className="boothDate__mark boothDoor__face" aria-hidden="true">
           <img src={djMascot} alt="" />
         </span>
@@ -309,12 +313,12 @@ export function BoothPage({
         ) : (
           <ChevronRight size={18} className="boothDate__chevron" aria-hidden="true" />
         )}
-      </button>
+      </Button>
 
       {/* The brain: three counters the stack already keeps, and the door to
           its preferences. Each line exists only if its endpoint answered. */}
       {session && (feed || feats || pulls) && (
-        <button type="button" className="boothBrain" onClick={() => setPrefsOpen(true)}>
+        <Button type="button" variant="glass" fullWidth className="boothBrain" onClick={() => setPrefsOpen(true)}>
           <span className="boothBrain__head">
             <span className="boothBrain__glyph" aria-hidden="true">
               <BrainCircuit size={15} />
@@ -349,7 +353,7 @@ export function BoothPage({
               {pulls.halted === 'cap' && <span className="boothBrain__tag">paused — budget spent</span>}
             </span>
           )}
-        </button>
+        </Button>
       )}
 
       {session && feed?.enrichment && (
@@ -375,25 +379,19 @@ export function BoothPage({
             ['First layer', feed.enrichment.firstLayer],
             ['Second layer', feed.enrichment.secondLayer],
           ] as const).map(([label, progress]) => {
-            const percent = progress.total > 0
-              ? Math.min(100, Math.round((progress.complete / progress.total) * 100))
-              : 0;
             return (
               <span className="boothEnrichment__layer" key={label}>
                 <span className="boothEnrichment__label">
                   <span>{label}</span>
                   <span>{progress.complete.toLocaleString()} of {progress.total.toLocaleString()}</span>
                 </span>
-                <span
+                <ProgressBar
                   className="boothEnrichment__track"
-                  role="progressbar"
+                  size="sm"
+                  value={progress.complete}
+                  max={progress.total || 1}
                   aria-label={`${label} enrichment`}
-                  aria-valuemin={0}
-                  aria-valuemax={progress.total}
-                  aria-valuenow={progress.complete}
-                >
-                  <span className="boothEnrichment__fill" style={{ inlineSize: `${percent}%` }} />
-                </span>
+                />
               </span>
             );
           })}

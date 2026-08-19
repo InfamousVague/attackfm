@@ -1,4 +1,4 @@
-import { Button, ConversationView, Input, MessageBar, Text, TypingIndicator } from '@glacier/react';
+import { Button, ConversationView, IconButton, Input, MessageBar, Text, TypingIndicator } from '@glacier/react';
 import { ListPlus, ListMusic, Play, Plus, X } from '@glacier/icons';
 import { useState, useEffect } from 'react';
 import { useServerSession } from '../servers/serverSession.tsx';
@@ -39,7 +39,7 @@ function EmbedRow({
   return (
     <TrackMenu track={track} className="djRowMenu">
       <div className="djRow">
-        <button type="button" className="djRow__main" onClick={onPlay}>
+        <Button type="button" variant="ghost" className="djRow__main" onClick={onPlay}>
           {src ? (
             <img className="djRow__art" src={src} alt="" loading="lazy" />
           ) : (
@@ -49,7 +49,7 @@ function EmbedRow({
             <span className="djRow__title">{track.title}</span>
             <span className="djRow__artist">{track.artist}</span>
           </span>
-        </button>
+        </Button>
         {trailing}
       </div>
     </TrackMenu>
@@ -79,14 +79,16 @@ function EmbedCard({ embed }: { embed: DjEmbed }) {
     return (
       <div className="djChips">
         {embed.options.map((o) => (
-          <button
+          <Button
             key={o.label}
             type="button"
+            variant="outline"
+            size="sm"
             className="djChip"
             onClick={() => chat.send(o.send)}
           >
             {o.label}
-          </button>
+          </Button>
         ))}
       </div>
     );
@@ -136,14 +138,16 @@ function EmbedCard({ embed }: { embed: DjEmbed }) {
               track={t}
               onPlay={() => play?.(t, found)}
               trailing={
-                <button
+                <IconButton
                   type="button"
+                  variant="ghost"
+                  size="sm"
                   className="djRow__add"
                   aria-label={`Queue ${t.title}`}
                   onClick={() => queue.addToQueue(t)}
                 >
                   <Plus size={15} />
-                </button>
+                </IconButton>
               }
             />
           ))}
@@ -202,8 +206,10 @@ function EmbedCard({ embed }: { embed: DjEmbed }) {
             onPlay={() => play?.(t, found)}
             trailing={
               saved ? undefined : (
-                <button
+                <IconButton
                   type="button"
+                  variant="ghost"
+                  size="sm"
                   className="djRow__add"
                   aria-label={`Remove ${t.title}`}
                   onClick={() => {
@@ -212,7 +218,7 @@ function EmbedCard({ embed }: { embed: DjEmbed }) {
                   }}
                 >
                   <X size={15} />
-                </button>
+                </IconButton>
               )
             }
           />
@@ -276,15 +282,16 @@ function DjStations({ onPick }: { onPick: (text: string) => void }) {
       <p className="djStations__title">Stations for you</p>
       <div className="djStations__row">
         {stations.map((st) => (
-          <button
+          <Button
             key={st.id}
             type="button"
+            variant="glass"
             className="djStation"
             onClick={() => onPick(`Put on ${st.name} — ${st.seed}`)}
           >
             <span className="djStation__name">{st.name}</span>
             {st.blurb && <span className="djStation__blurb">{st.blurb}</span>}
-          </button>
+          </Button>
         ))}
       </div>
     </div>
@@ -316,14 +323,16 @@ export function DjPage() {
           <DjStations onPick={(text) => chat.send(text)} />
           <div className="djChips djFresh__chips">
             {chips.map((o) => (
-              <button
+              <Button
                 key={o.label}
                 type="button"
+                variant="outline"
+                size="sm"
                 className="djChip"
                 onClick={() => chat.send(o.send)}
               >
                 {o.label}
-              </button>
+              </Button>
             ))}
           </div>
         </div>
