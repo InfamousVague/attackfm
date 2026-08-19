@@ -1,7 +1,7 @@
 {
   "id": "looper",
   "name": "Looper",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Sample any song into sixteen coloured pads, cut on its own beat, and play the pieces in time with each other.",
   "author": "AttackFM",
   "tags": [

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Button, SegmentedControl, Slider, Switch, Text } from '@glacier/react';
-import { Disc3, Pencil, Play, Scissors, Square, Trash2, Wand2 } from '@glacier/icons';
+import { Disc3, Grid2x2, Pencil, Play, Scissors, Square, Trash2, Wand2, X } from '@glacier/icons';
 import { useServerSession } from '@attackfm/app/serverSession';
 import { useLibrary } from '@attackfm/app/library';
 import { LANES, LoopEngine, PAD_COUNT, emptyLoopPad, laneOf, type LoopPad } from './engine.ts';
@@ -59,40 +59,72 @@ const wrap: CSSProperties = {
   padding: 'var(--glacier-space-4)',
   maxWidth: 760,
 };
+/** The performing surface: the grid and nothing else, over everything else.
+ *  Fixed rather than merely tall, because the app's header and nav bar are
+ *  chrome you are not looking at while playing - and a plugin cannot ask the
+ *  shell to hide them, but it can sit in front of them. */
+const stage: CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  // Above the app's own chrome, which tops out at 70 (header 70, nav 60,
+  // player strip 56). At 40 this layer would have rendered UNDERNEATH the
+  // header it was supposed to replace - measured, not guessed.
+  zIndex: 90,
+  background: 'var(--glacier-bg)',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 'clamp(6px, 1.4vmin, 12px)',
+  padding: `calc(env(safe-area-inset-top, 0px) + 8px) 8px calc(env(safe-area-inset-bottom, 0px) + 8px)`,
+};
+const stageGrid: CSSProperties = {
+  flex: 1,
+  minHeight: 0,
+  display: 'grid',
+  gridTemplateColumns: 'repeat(6, 1fr)',
+  gridTemplateRows: 'repeat(6, 1fr)',
+  gap: 'clamp(4px, 1.2vmin, 10px)',
+  touchAction: 'none',
+};
 const gridStyle: CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: 'repeat(4, 1fr)',
-  gap: 10,
-  touchAction: 'manipulation',
+  gridTemplateColumns: 'repeat(6, 1fr)',
+  gap: 8,
+  touchAction: 'none',
 };
+/**
+ * The pad face.
+ *
+ * White at rest and coloured only while it sounds - the hardware convention,
+ * and the reason it exists: a grid of thirty-six permanently coloured squares
+ * is a picture, while a white grid that lights under your hands is an
+ * instrument you can read at a glance. What is ON right now is the only thing
+ * worth colour, so colour says exactly that and nothing else.
+ *
+ * The glow is a box-shadow rather than a filter: shadows are composited and a
+ * filter is not, and thirty-six live filters is how a grid drops frames on a
+ * phone. Loaded pads sit a touch brighter than empty ones so the board still
+ * shows what it is holding.
+ */
 const padFace = (
   hue: number,
   loaded: boolean,
   live: boolean,
   waiting: boolean,
   editing: boolean,
-  row = 0,
 ): CSSProperties => ({
   position: 'relative',
-  aspectRatio: '1',
-  borderRadius: 14,
-  border: editing
-    ? '2px solid var(--glacier-text)'
-    : live
-      ? `2px solid hsl(${hue} 85% 70%)`
-      : '1px solid var(--glacier-border)',
-  // Lightness steps down the column, so the four variations of a lane are
-  // one family rather than four identical squares.
-  background: loaded
-    ? `radial-gradient(120% 120% at 30% 20%, hsl(${hue} 75% ${(live ? 62 : 44) - row * 5}%), hsl(${hue} 65% ${(live ? 40 : 24) - row * 4}%))`
-    : 'var(--glacier-bg-surface)',
-  boxShadow: live ? `0 0 20px -4px hsl(${hue} 85% 60% / 0.8)` : 'none',
-  color: loaded ? '#fff' : 'var(--glacier-text-muted)',
-  display: 'flex',
-  flexDirection: 'column',
-  justifyContent: 'space-between',
-  alignItems: 'flex-start',
-  padding: 10,
+  borderRadius: 'clamp(6px, 1.6vmin, 12px)',
+  border: editing ? '2px solid var(--glacier-accent-9)' : '1px solid rgba(0,0,0,0.18)',
+  background: live
+    ? `hsl(${hue} 90% 62%)`
+    : loaded
+      ? 'rgba(255,255,255,0.96)'
+      : 'rgba(255,255,255,0.62)',
+  boxShadow: live
+    ? `0 0 0 1px hsl(${hue} 90% 72%), 0 0 22px 2px hsl(${hue} 95% 60% / 0.75), 0 0 46px 6px hsl(${hue} 95% 55% / 0.45)`
+    : waiting
+      ? `inset 0 0 0 2px hsl(${hue} 85% 60% / 0.85)`
+      : '0 1px 2px rgba(0,0,0,0.25)',
   cursor: 'pointer',
   userSelect: 'none',
   WebkitUserSelect: 'none',
@@ -100,9 +132,12 @@ const padFace = (
   // `none`, not `manipulation`: manipulation still lets the browser take pan
   // and pinch, which is how a second finger gets swallowed by a scroll.
   touchAction: 'none',
-  opacity: waiting ? 0.65 : 1,
-  transition: 'background 140ms ease, box-shadow 140ms ease, opacity 140ms ease',
+  transform: live ? 'scale(0.965)' : 'none',
+  // Fast in, slower out - a light that decays reads as a hit, one that snaps
+  // off reads as a bug.
+  transition: live ? 'none' : 'background 260ms ease, box-shadow 260ms ease, transform 120ms ease',
 });
+
 const rowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' };
 const knob: CSSProperties = {
   display: 'grid',
@@ -122,7 +157,12 @@ export function LooperPage() {
     try {
       const raw = localStorage.getItem(KIT_KEY);
       const parsed = raw ? (JSON.parse(raw) as LoopPad[]) : null;
-      if (Array.isArray(parsed) && parsed.length === PAD_COUNT) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // A kit saved when the grid was smaller keeps what it had and grows
+        // into the new one, rather than being thrown away for being the
+        // wrong length.
+        return Array.from({ length: PAD_COUNT }, (_, i) => parsed[i] ?? emptyLoopPad());
+      }
     } catch {
       // A kit that will not parse never existed.
     }
@@ -137,6 +177,10 @@ export function LooperPage() {
    *           fingers and still work the rest of the page.
    * Launch stays quantised in both; only the release differs. */
   const [touch, setTouch] = useState<'hold' | 'latch'>('hold');
+  /** The performing surface: grid only, over the app's own chrome. On by
+   *  default, because that is what the instrument is for; the small × gets
+   *  back to the setup page, since a layer with no way out is a trap. */
+  const [stageMode, setStageMode] = useState(true);
   const [editing, setEditing] = useState<number | null>(null);
   const [live, setLive] = useState<Set<number>>(new Set());
   const [waiting, setWaiting] = useState<Set<number>>(new Set());
@@ -419,6 +463,53 @@ export function LooperPage() {
     [tracks],
   );
 
+  /** One pad, drawn the same whether it is on the stage or the setup page. */
+  const padButton = (p: LoopPad, i: number) => (
+    <button
+      key={i}
+      type="button"
+      aria-label={p.name || `Pad ${i + 1}`}
+      style={padFace(p.hue, loaded.has(i), live.has(i), waiting.has(i), editing === i)}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        // Capture, so a finger sliding off the pad still belongs to it and
+        // the lift lands here rather than on whatever is underneath.
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+          // Some engines refuse capture for a pointer already gone.
+        }
+        pressPad(i, e.pointerId);
+      }}
+      onPointerUp={(e) => releasePad(e.pointerId)}
+      onPointerCancel={(e) => releasePad(e.pointerId)}
+    />
+  );
+
+  if (stageMode && mode === 'play') {
+    return (
+      <div style={stage}>
+        <div style={stageGrid} role="group" aria-label="Loop pads">
+          {pads.map((p, i) => padButton(p, i))}
+        </div>
+        {/* The only chrome the surface keeps: a way out, and the two facts
+            worth knowing while playing. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between' }}>
+          <Text size="xs" tone="muted" mono>{bpm} BPM · {touch === 'hold' ? 'hold' : 'latch'}</Text>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button size="sm" variant="ghost" onClick={() => { engine.stopAll(); setRunning(false); }}>
+              <Square size={13} /> Stop
+            </Button>
+            <Button size="sm" variant="ghost" aria-label="Leave the performing surface"
+              onClick={() => setStageMode(false)}>
+              <X size={14} />
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="homePage">
       <div style={wrap}>
@@ -430,6 +521,9 @@ export function LooperPage() {
               Sample a song, cut it up, and play the pieces in time with each other.
             </Text>
           </div>
+          <Button variant="solid" size="sm" onClick={() => { setMode('play'); setStageMode(true); }}>
+            <Grid2x2 size={14} /> Play surface
+          </Button>
           <Button variant={running ? 'ghost' : 'solid'} size="sm" onClick={() => void toggleTransport()}>
             {running ? (<><Square size={14} /> Stop</>) : (<><Play size={14} /> Start</>)}
           </Button>
@@ -486,57 +580,11 @@ export function LooperPage() {
           </Text>
         )}
 
-        {/* The grid. Columns are lanes that loop independently; the four pads
+        {/* The grid. Columns are lanes that loop independently; the pads
             down a column are variations of that lane, and only one of them
             sounds at a time. */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }} aria-hidden>
-          {Array.from({ length: LANES }, (_, lane) => (
-            <Text key={lane} size="xs" tone="muted" style={{ textAlign: 'center' }}>
-              <span style={{
-                display: 'inline-block', width: 8, height: 8, borderRadius: 4,
-                background: `hsl(${LANE_HUES[lane]} 70% 55%)`, marginRight: 5,
-              }} />
-              Lane {lane + 1}
-            </Text>
-          ))}
-        </div>
         <div style={gridStyle} role="group" aria-label="Loop pads">
-          {pads.map((p, i) => {
-            const isLoaded = loaded.has(i);
-            return (
-              <button
-                key={i}
-                type="button"
-                aria-label={p.name || `Pad ${i + 1}`}
-                style={padFace(p.hue, isLoaded, live.has(i), waiting.has(i), editing === i, Math.floor(i / LANES))}
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  // Capture, so a finger sliding off the pad still belongs to
-                  // it and the lift lands here rather than on whatever is
-                  // underneath.
-                  try {
-                    e.currentTarget.setPointerCapture(e.pointerId);
-                  } catch {
-                    // Some engines refuse capture for a pointer already gone.
-                  }
-                  pressPad(i, e.pointerId);
-                }}
-                onPointerUp={(e) => releasePad(e.pointerId)}
-                onPointerCancel={(e) => releasePad(e.pointerId)}
-              >
-                <Text size="xs" style={{ opacity: 0.8, color: 'inherit' }}>{i + 1}</Text>
-                <Text size="xs" style={{ lineHeight: 1.15, color: 'inherit', opacity: isLoaded ? 1 : 0.55 }}>
-                  {isLoaded ? `${(p.end - p.start).toFixed(1)}s` : 'empty'}
-                </Text>
-                {waiting.has(i) && (
-                  <span aria-hidden style={{
-                    position: 'absolute', inset: 0, borderRadius: 12,
-                    border: '2px dashed rgba(255,255,255,0.7)',
-                  }} />
-                )}
-              </button>
-            );
-          })}
+          {pads.map((p, i) => padButton(p, i))}
         </div>
 
         {note && <Text size="sm" tone="muted">{note}</Text>}

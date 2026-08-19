@@ -17,14 +17,13 @@
  * good alternative in Web Audio.
  */
 
-export const PAD_COUNT = 16;
+export const PAD_COUNT = 36;
 /** The grid is four wide, and that geometry carries meaning rather than just
- *  fitting a phone: a COLUMN is a lane that loops on its own, and the four
- *  pads down it are variations of that lane - a verse and a chorus of the
- *  same part. Only one variation per lane sounds at a time, so the grid holds
- *  four simultaneous loops and sixteen things to put in them. Four is also
- *  about as many loops as stay music rather than mud. */
-export const LANES = 4;
+ *  fitting a phone: a COLUMN is a lane that loops on its own, and the pads
+ *  down it are variations of that lane - a verse and a chorus of the same
+ *  part. Only one variation per lane sounds at a time, so six lanes of six
+ *  is six simultaneous loops and thirty-six things to put in them. */
+export const LANES = 6;
 export const laneOf = (pad: number): number => pad % LANES;
 
 export interface LoopPad {

@@ -72,17 +72,17 @@
     {
       "id": "looper",
       "name": "Looper",
-      "version": "0.1.2",
+      "version": "0.2.0",
       "description": "Sample any song into sixteen coloured pads, cut on its own beat, and play the pieces in time with each other.",
       "author": "AttackFM",
       "tags": [
         "Sound",
         "Instrument"
       ],
-      "entry": "looper-0.1.2.js",
+      "entry": "looper-0.2.0.js",
       "api": 1,
-      "bytes": 21907,
-      "sha256": "52fdadd51994d5f056e589a925def00ef193256278cc5b95e7da8a8efe9f1933",
+      "bytes": 22314,
+      "sha256": "e9e86c13b9f8b66e94680e5a08f75f8029cccaefcc97d9f08afcbac26d2afcee",
       "requiresServer": true,
       "public": true
     },
