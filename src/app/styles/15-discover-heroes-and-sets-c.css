@@ -632,19 +632,18 @@ body [class*='_panel_']:has(> .dlPanel) {
   border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
 }
 
+/* Search and the drawer rail. Not sticky, and so not a material.
+   It was pinned to the top of the scroller, which meant it needed an opaque
+   backing to hide the rows sliding under it - and over a panel that is already
+   glass that backing is a second pane, which reads as a slab across the middle
+   of the console. Exactly the same trade the room switcher lost. Keeping it in
+   reach is not worth a permanent block: the shelf it filters is directly below
+   it, so scrolling back to it is the same gesture as scrolling to the top of
+   what it is filtering. */
 .fxShelf__filters {
-  position: sticky;
-  /* The body's own top: the header is outside the scroller now, so there is
-     no bar above this one to offset against. */
-  inset-block-start: 0;
-  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-2);
-  padding-block: var(--glacier-space-2);
-  background: var(--glacier-glass-regular);
-  backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
 }
 
 .fxShelf__search {
