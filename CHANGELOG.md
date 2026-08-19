@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.205
+
+- Each part in the Stems tab now moves to its own music: the drums pulse on the beat while a held string line sits calm beside them, instead of every row twitching to the same mix
+- A part switched out holds still, and each row's line shows that part's own shape across the song
+
 ## 0.3.203
 
 - Scratching a song you have slowed down or sped up lands where you let go. The platter was reading the song at its original speed, so letting go dropped you somewhere else in the track — half a minute out at 1.25x, further the deeper in you were
