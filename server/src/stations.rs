@@ -240,20 +240,33 @@ async fn ai_stations(state: &Arc<AppState>, user: i64, url: &str) -> Option<Vec<
         .map(|t| format!("{} — {}", t.artist, t.title))
         .collect();
 
+    // The rules are explicit because the first version of this prompt was not,
+    // and the model answered with KEXP Seattle, BNN Boston and H2 Radio
+    // Houston - real broadcast stations, which is what "the kind of name a
+    // station would have" means to a model unless you say otherwise. It also
+    // handed back the artist list as the vibe phrase, which steers the DJ
+    // nowhere it was not already going.
     let prompt = format!(
-        "You are a radio DJ who knows one listener's collection well.\n\
+        "You are the private DJ for ONE listener's personal music collection. \
+         This is not broadcast radio.\n\n\
          Their most-played artists this month: {}.\n\
          Genres they live in: {}.\n\
          Recently played: {}.\n\n\
-         Suggest {WANT} RADIO STATIONS for them. A station is not a playlist: it never ends, so \
-         describe a LANE the music can keep walking down, not a fixed set. Make them genuinely \
-         different from each other - one built on an artist they love, one on a mood or a time of \
-         day, one that pushes into what they nearly listen to but have not yet. Names short and \
-         evocative (2-4 words), the kind a station would have. Blurbs one plain warm line, no \
-         exclamation marks. Also give each a 'seed': a short phrase describing the SOUND to steer \
-         by, as you would describe it to another DJ - instruments, texture, energy, era - not a \
-         list of artist names.\n\
-         Answer with STRICT JSON, nothing else: \
+         Suggest {WANT} STATIONS for them. A station is not a playlist: it never ends, \
+         so name a LANE the music can keep walking down.\n\n\
+         RULES, all mandatory:\n\
+         - NEVER use the name of a real radio station, call letters (KEXP, BBC, WFMU), \
+         a city, or a frequency. These are not broadcast stations. A name that could \
+         appear on a real radio dial is WRONG.\n\
+         - Names are 2-4 evocative words describing the FEELING or the lane, like \
+         \"Bedroom Static\", \"The Slow Hours\", \"Fuzz and Sunlight\".\n\
+         - Blurb: one plain warm line. No exclamation marks.\n\
+         - \"seed\" describes the SOUND to steer by - instruments, texture, energy, \
+         tempo, era. It must NOT be a list of artist names. Good: \"hazy lo-fi soul, \
+         soft falsetto, slow tempo, warm tape\". Bad: \"{}\".\n\
+         - Make the {WANT} genuinely different from each other: not all slow, not all \
+         quiet. Some of this listener's music is loud.\n\n\
+         Answer with STRICT JSON only: \
          [{{\"name\":\"...\",\"blurb\":\"...\",\"seed\":\"...\"}}]",
         top_artists
             .iter()
@@ -266,6 +279,9 @@ async fn ai_stations(state: &Arc<AppState>, user: i64, url: &str) -> Option<Vec<
             .collect::<Vec<_>>()
             .join(", "),
         recent.join("; "),
+        // The bad example is built from THEIR artists, so the instruction
+        // names the exact mistake it is trying to prevent.
+        top_artists.iter().take(3).map(|(a, _)| a.as_str()).collect::<Vec<_>>().join(", "),
     );
 
     let client = reqwest::Client::builder()
@@ -305,6 +321,23 @@ async fn ai_stations(state: &Arc<AppState>, user: i64, url: &str) -> Option<Vec<
         if name.is_empty() || seed.is_empty() {
             continue;
         }
+        // Defence in depth against the failure the prompt describes: if the
+        // model regresses to naming real stations, those are dropped and the
+        // listener keeps the heuristics rather than being offered a dial full
+        // of somebody else's radio.
+        if reads_as_broadcast(&name) {
+            continue;
+        }
+        // A seed that just repeats the artists steers the DJ nowhere it was
+        // not already going - the whole point of a vibe phrase is to describe
+        // a SOUND.
+        let lower_seed = seed.to_lowercase();
+        if top_artists
+            .iter()
+            .any(|(a, _)| a.len() > 3 && lower_seed.contains(&a.to_lowercase()))
+        {
+            continue;
+        }
         out.push(Station {
             id: format!("ai-{i}"),
             name: name.chars().take(48).collect(),
@@ -314,4 +347,45 @@ async fn ai_stations(state: &Arc<AppState>, user: i64, url: &str) -> Option<Vec<
         });
     }
     (!out.is_empty()).then_some(out)
+}
+
+/// Whether a name reads as a real broadcast station rather than a lane.
+fn reads_as_broadcast(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    // Call letters: four capitals starting K or W is the American pattern the
+    // model reached for unprompted.
+    let call_sign = name
+        .split_whitespace()
+        .any(|w| w.len() >= 3 && w.chars().all(|c| c.is_ascii_uppercase()) && (w.starts_with('K') || w.starts_with('W') || w.starts_with('B')));
+    call_sign
+        || lower.split_whitespace().any(|w| w == "fm" || w == "am" || w == "radio")
+        // "97.3", "101.1" - a frequency is never a lane.
+        || name.split_whitespace().any(|w| {
+            w.contains('.') && w.chars().all(|c| c.is_ascii_digit() || c == '.')
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn broadcast_names_are_refused() {
+        // The exact names the model produced before the prompt was fixed.
+        assert!(reads_as_broadcast("KEXP Seattle"));
+        assert!(reads_as_broadcast("BNN - Boston"));
+        assert!(reads_as_broadcast("H2 Radio - Houston"));
+        assert!(reads_as_broadcast("Indie 103.1"));
+        assert!(reads_as_broadcast("Jazz FM"));
+    }
+
+    #[test]
+    fn real_station_names_pass() {
+        // What the fixed prompt actually returns.
+        assert!(!reads_as_broadcast("Dreamscapes Velvet"));
+        assert!(!reads_as_broadcast("Sunset Shadows"));
+        assert!(!reads_as_broadcast("Fuzz and Sunlight"));
+        assert!(!reads_as_broadcast("The Slow Hours"));
+        assert!(!reads_as_broadcast("Bedroom Static"));
+    }
 }

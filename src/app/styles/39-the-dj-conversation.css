@@ -306,3 +306,74 @@
   text-shadow: 0 1px 12px rgb(0 0 0 / 0.5);
 }
 
+
+/* ── Stations the DJ suggests ───────────────────────────────────────────────
+   A rail of places to tune to, above the steering chips. Cards rather than
+   chips because a station has a name AND a line explaining it, and because
+   these are the personal ones - built from what this listener actually plays
+   - while the chips below are the same three for everybody. */
+.djStations {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  inline-size: 100%;
+}
+
+.djStations__title {
+  margin: 0;
+  font-size: var(--glacier-font-size-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--glacier-text-muted);
+}
+
+/* Scrolls sideways rather than wrapping: six stations should read as a dial
+   you run along, and a wrapped grid of them takes the whole first screen. */
+.djStations__row {
+  display: flex;
+  gap: var(--glacier-space-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-block-end: 2px;
+  scroll-snap-type: x proximity;
+}
+
+.djStations__row::-webkit-scrollbar {
+  display: none;
+}
+
+.djStation {
+  flex: 0 0 auto;
+  inline-size: 11.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: start;
+  padding: var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg);
+  border: 1px solid var(--glacier-border);
+  background: var(--glacier-bg-surface);
+  color: var(--glacier-text);
+  cursor: pointer;
+  scroll-snap-align: start;
+  transition: border-color 140ms ease, transform 140ms ease;
+}
+
+.djStation:hover {
+  border-color: var(--glacier-accent-7);
+}
+
+.djStation:active {
+  transform: scale(0.985);
+}
+
+.djStation__name {
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.djStation__blurb {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  line-height: 1.3;
+}
