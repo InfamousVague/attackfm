@@ -37,7 +37,7 @@ if (!base || !token) {
 
 // The recipes are TS; read them as text rather than adding a build step for a
 // checker. Each entry is `{ t: 'x', params: { k: n } }`.
-const source = readFileSync(resolve(root, 'plugins-repo/filters/filters.ts'), 'utf8');
+const source = readFileSync(resolve(root, 'src/app/player/filters.ts'), 'utf8');
 const recipes = [...source.matchAll(/\{\s*t:\s*'([a-z0-9]+)',\s*params:\s*\{([^}]*)\}\s*\}/g)].map(
   ([, t, body]) => ({
     t,

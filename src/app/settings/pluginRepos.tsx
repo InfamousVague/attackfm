@@ -2,6 +2,7 @@ import { Button, Input, Label, Pill, Spinner, Text } from '@glacier/react';
 import { useEffect, useState } from 'react';
 import {
   addSource,
+  DEPRECATED_PLUGINS,
   fetchManifest,
   installPlugin,
   readSources,
@@ -187,14 +188,26 @@ export function PluginBrowse({
     const seen = byId.get(offer.listing.id);
     if (!seen || isNewer(offer.listing.version, seen.listing.version)) byId.set(offer.listing.id, offer);
   }
-  const available = [...byId.values()].filter(({ listing }) => !remoteInstalled.has(listing.id));
+  // Not installed, and not one this app has taken over. A retired plugin can
+  // still be sitting in a repository index - dropping it from the shelf is a
+  // publish step, and other people's hubs publish on their own schedule - and
+  // offering Install for one is offering a round trip: it lands, registers a
+  // second copy of a UI the player already has, and pruneDeprecatedPlugins
+  // removes it again at the next launch.
+  // What a repository is really offering: retired ids do not count, or a hub
+  // that lists nothing else reads as "everything is already installed" when in
+  // truth it has nothing to give.
+  const offerable = offered.filter(({ listing }) => !DEPRECATED_PLUGINS.includes(listing.id));
+  const available = [...byId.values()].filter(
+    ({ listing }) => !remoteInstalled.has(listing.id) && !DEPRECATED_PLUGINS.includes(listing.id),
+  );
 
   if (available.length === 0) {
     return (
       <Text size="sm" tone="subtle">
         {loading
           ? 'Looking for plugins…'
-          : offered.length === 0
+          : offerable.length === 0
             ? 'No repository is offering anything. Add one under Sources.'
             : 'Everything on offer is already installed.'}
       </Text>
@@ -259,7 +272,7 @@ export function PluginSources({
 
       {sources.map((source) => {
         const feed = feeds.get(source);
-        const count = listingsOf(feed).length;
+        const count = listingsOf(feed).filter((l) => !DEPRECATED_PLUGINS.includes(l.id)).length;
         return (
           <div key={source} className="pluginRepo">
             <div className="pluginRepoHead">

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { installSheetDismiss } from './playerDismiss.ts';
 import { fireNativeHaptic } from '../core/haptics.ts';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
@@ -9,8 +9,10 @@ import { AudioLines, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Heart, Ima
 import { isMobile } from '../core/platform.ts';
 import { PluginSlot } from '../../plugins/runtime.tsx';
 import { EqPanel } from './EqPanel.tsx';
-import { PedalsPanel } from './PedalsPanel.tsx';
-import { HiFiPanel } from './HiFiPanel.tsx';
+import { FxRoom } from './FxRoom.tsx';
+import { FiltersRoom } from './FiltersRoom.tsx';
+import { FILTERS, signature } from './filters.ts';
+import { FxSaved } from './FxSaved.tsx';
 import { FX_NODES, setFxChainOn, useFxChain } from './fxChain.ts';
 import { MarqueeText } from './MarqueeText.tsx';
 import { SpinningDisc } from './SpinningDisc.tsx';
@@ -647,11 +649,12 @@ export function NowPlayingSheet({
 /**
  * The hi-fi chain's presence in CORE chrome, beside the EQ it composes with.
  *
- * The chain is edited in the HiFi Lab plugin, but its state persists and
- * plugins can be removed - and a persistent audio process with no visible
- * switch is the exact trap the old effects rack solved by purging itself.
- * This row is the other solution: as long as a chain is coloring playback,
- * the player itself says so and can turn it off, plugin or no plugin.
+ * The chain is edited in the console above, but a plugin can put nodes in it
+ * too (Pedals does), its state persists, and plugins can be removed - and a
+ * persistent audio process with no visible switch is the exact trap the old
+ * effects rack solved by purging itself. This row is the other solution: as
+ * long as a chain is colouring playback, the player itself says so and can
+ * turn it off, whatever built it.
  */
 /**
  * One door onto the whole signal path.
@@ -667,18 +670,50 @@ export function NowPlayingSheet({
  * were last in is where you land next time - the chain persists, so the
  * console should remember which end of it you were working on.
  */
+/** The console's three rooms: the graphic EQ, the chain you build, and the
+ *  shelf of finished sounds. */
+type Room = 'eq' | 'hifi' | 'filters';
+
 export function SoundConsole({ narrow }: { narrow: boolean }) {
   const chain = useFxChain();
-  const [room, setRoom] = useState<'eq' | 'hifi' | 'pedals'>(() => {
+  const [room, setRoom] = useState<Room>(() => {
     try {
       const held = localStorage.getItem(CONSOLE_KEY);
-      return held === 'hifi' || held === 'pedals' ? held : 'eq';
+      // 'pedals' is what this key held while the board was the third room.
+      // Anyone whose last visit was there lands on Filters rather than on a
+      // room that no longer exists - which would otherwise silently fall back
+      // to EQ and look like the preference was never saved.
+      if (held === 'pedals') return 'filters';
+      return held === 'hifi' || held === 'filters' ? held : 'eq';
     } catch {
       return 'eq';
     }
   });
 
-  const go = (next: 'eq' | 'hifi' | 'pedals') => {
+  /**
+   * The tab bar's real height, published to CSS.
+   *
+   * The shelf's own filter bar sticks BELOW this one, which means it needs
+   * this height as its offset - and a hand-written guess is wrong the moment
+   * the kit's control changes size. It was wrong immediately: the guess said
+   * 2.9rem and the bar is 3.65rem, so the search field spent twelve pixels
+   * underneath the tabs. Measured, the two bars cannot drift apart.
+   */
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const consoleRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const bar = tabsRef.current;
+    const root = consoleRef.current;
+    if (!bar || !root) return;
+    const sync = () => root.style.setProperty('--fx-tabs-h', `${bar.getBoundingClientRect().height}px`);
+    sync();
+    if (typeof ResizeObserver === 'undefined') return; // the CSS default stands
+    const watch = new ResizeObserver(sync);
+    watch.observe(bar);
+    return () => watch.disconnect();
+  }, []);
+
+  const go = (next: Room) => {
     setRoom(next);
     try {
       localStorage.setItem(CONSOLE_KEY, next);
@@ -690,39 +725,54 @@ export function SoundConsole({ narrow }: { narrow: boolean }) {
   // What is actually in the chain, so the tabs can say so at a glance rather
   // than making somebody open each room to find out where their sound is
   // coming from.
-  const counts = chain.nodes.reduce(
-    (acc, n) => {
-      const group = FX_NODES.find((s) => s.t === n.t)?.group;
-      if (!group) return acc;
-      if (group === 'pedal') acc.pedals += n.on ? 1 : 0;
-      else acc.hifi += n.on ? 1 : 0;
-      return acc;
-    },
-    { hifi: 0, pedals: 0 },
-  );
+  // Every live node, pedals included: the HiFi room lists the whole chain, so
+  // a count that quietly skipped half of it would disagree with the room it
+  // labels.
+  const hifiCount = chain.nodes.filter((n) => n.on).length;
+
+  // The Filters tab says which filter is on rather than how many boxes it is
+  // made of: the whole point of a filter is that its parts are not the unit
+  // anybody is thinking in.
+  const filterOn = useMemo(() => {
+    if (!chain.on || chain.nodes.length === 0) return null;
+    const now = signature(chain.nodes.map((n) => ({ t: n.t, params: n.params })));
+    return FILTERS.find((f) => signature(f.nodes) === now)?.name ?? null;
+  }, [chain]);
 
   return (
-    <div className="soundConsole">
-      <SegmentedControl
-        aria-label="Sound"
-        size="sm"
-        fullWidth
-        value={room}
-        options={[
-          { value: 'eq', label: 'EQ' },
-          { value: 'hifi', label: counts.hifi > 0 ? `HiFi ${counts.hifi}` : 'HiFi' },
-          { value: 'pedals', label: counts.pedals > 0 ? `Pedals ${counts.pedals}` : 'Pedals' },
-        ]}
-        onValueChange={(v) => go(v as 'eq' | 'hifi' | 'pedals')}
-      />
+    <div className="soundConsole" ref={consoleRef}>
+      {/* Sticky, because the shelf below runs to thirty-five rows and the way
+          back to another room should not be a scroll to the top. */}
+      <div className="soundConsole__tabs" ref={tabsRef}>
+        <SegmentedControl
+          aria-label="Sound"
+          size="sm"
+          fullWidth
+          value={room}
+          options={[
+            { value: 'eq', label: 'EQ' },
+            { value: 'hifi', label: hifiCount > 0 ? `HiFi ${hifiCount}` : 'HiFi' },
+            { value: 'filters', label: filterOn ? 'Filters ●' : 'Filters' },
+          ]}
+          onValueChange={(v) => go(v as Room)}
+        />
+      </div>
       {room === 'eq' && (
         <>
           <EqPanel narrow={narrow} />
           <FxChainRow />
         </>
       )}
-      {room === 'hifi' && <HiFiPanel />}
-      {room === 'pedals' && <PedalsPanel />}
+      {room === 'hifi' && (
+        <>
+          <FxRoom />
+          {/* Below the room, because A/B and saving act on the whole chain -
+              pedals and filters included - and hanging them inside one room
+              made them look like that room's own. */}
+          <FxSaved />
+        </>
+      )}
+      {room === 'filters' && <FiltersRoom />}
     </div>
   );
 }

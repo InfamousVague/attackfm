@@ -34,7 +34,8 @@ export const pedals: Plugin = {
     'that matter and a footswitch. Your server renders the sound in its ' +
     'encoder, so the board needs a server connection and applies to streamed ' +
     'play; a limiter always guards the output. The board shares one signal ' +
-    'path with HiFi Lab racks - pedals first, rack after, or however you ' +
-    'stack it.',
+    'path with the player\u2019s own sound console - pedals first, rack after, ' +
+    'or however you stack it - and anything you put on the board shows up ' +
+    'there too, so a pedal is never stuck behind this page.',
   pages: [{ id: 'board', label: 'Pedals', icon: <Zap size={18} />, Content: PedalsPage }],
 };
