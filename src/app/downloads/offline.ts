@@ -13,6 +13,8 @@
 
 import { effectsOn } from '../player/effects.ts';
 import { fxChainOn } from '../player/fxChain.ts';
+import { stemDropParam } from '../player/stemDrop.ts';
+import { trackIdFromPath } from '../server.ts';
 import { isTauri, setOfflineAudioResolver, tauriCall, type Track } from '../core/tauri.ts';
 
 /** Library path -> absolute file path on this device. */
@@ -91,8 +93,27 @@ export function heldPath(path: string): string | null {
  * playback goes to the server to be coloured. Turning the effects off returns
  * every pinned track to playing offline.
  */
+/**
+ * The held file, unless the listener has asked for a sound it cannot make.
+ *
+ * A copy on this device beats the wire every time - except when what is wanted
+ * is not what is in the file. The rack and the chain were already understood
+ * here; a part taken OUT was not, and that was the whole of the bug where
+ * seeking put the stems back. The held file is the finished mix, so it has no
+ * way to be missing a part; handing it to the element silently undoes the
+ * console, and because this resolver is consulted again on every reload, a
+ * song could start correctly from the server and then flip to the whole mix
+ * the moment anything reloaded it - a seek being the obvious way in, and the
+ * device cache quietly acquiring the track mid-listen being the reason it
+ * struck a song that had been fine a minute earlier.
+ *
+ * Keyed to THIS track rather than asked globally, the way `effectsOn` is: a
+ * drop belongs to the song it was made on, so it must not push some other
+ * song off its local copy.
+ */
 function offlineSource(path: string): string | null {
   if (effectsOn() || fxChainOn()) return null;
+  if (stemDropParam(trackIdFromPath(path)) !== null) return null;
   return heldPath(path);
 }
 
