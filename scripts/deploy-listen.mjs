@@ -72,7 +72,17 @@ function ssh(env, command, { capture = false } = {}) {
 const env = loadEnv();
 
 step('Building the web app');
-run('npx', ['vite', 'build'], { cwd: root, env: { ...process.env, AFM_WEB: '1' } });
+// VITE_DEFAULT_SERVER: this build is reached from attack.fm, which advertises
+// one particular library, so its sign-in arrives pointed at that library rather
+// than at an empty box reading "music.example.com". Editable, and only ever set
+// for THIS build - the installed apps ship with no default, because someone who
+// downloaded AttackFM to run their own server should not be handed Matt's.
+const DEFAULT_SERVER = process.env.AFM_LISTEN_SERVER || 'https://matt.attack.fm';
+console.log(`  pointing this build at ${DEFAULT_SERVER}`);
+run('npx', ['vite', 'build'], {
+  cwd: root,
+  env: { ...process.env, AFM_WEB: '1', VITE_DEFAULT_SERVER: DEFAULT_SERVER },
+});
 
 const indexPath = resolve(DIST, 'index.html');
 if (!existsSync(indexPath)) fail(`Build produced no index.html in ${DIST}.`);
