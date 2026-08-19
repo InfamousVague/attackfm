@@ -1,4 +1,4 @@
-import { Button, Drawer, Spinner, Text, useToast } from '@glacier/react';
+import { Button, Drawer, Spinner, Text, Textarea, useToast } from '@glacier/react';
 import { Play, Sparkles } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from '../library/library.tsx';
@@ -138,8 +138,10 @@ export function DjTraitSheet({ track, open, onClose, quick = false }: {
               {analysis.traits.map((trait: DjTrait) => {
                 const active = selected.has(trait.id);
                 return (
-                  <button
+                  <Button
                     type="button"
+                    variant={active ? 'solid' : 'outline'}
+                    size="sm"
                     key={trait.id}
                     className="djTrait"
                     data-selected={active || undefined}
@@ -153,13 +155,13 @@ export function DjTraitSheet({ track, open, onClose, quick = false }: {
                   >
                     <span className="djTrait__label">{trait.label}</span>
                     <span className="djTrait__category">{trait.category.replace('_', ' ')}</span>
-                  </button>
+                  </Button>
                 );
               })}
             </div>
             <div className="djNoteEditor">
               <label htmlFor={`dj-note-${trackId}`}>Your DJ note</label>
-              <textarea id={`dj-note-${trackId}`} value={djNote} maxLength={2000}
+              <Textarea id={`dj-note-${trackId}`} value={djNote} maxLength={2000}
                 placeholder="Mix role, transition points, crowd response, or anything the model should know…"
                 onChange={(event) => { setDjNote(event.target.value); setNoteSaved(false); }} />
               <Button variant="outline" size="sm" disabled={noteSaved || busy} onClick={() => {
@@ -257,11 +259,11 @@ export function DjCollectionTraitSheet({ source, name, seedTracks, open, onClose
       {analysis && <><Text tone="muted" size="sm" className="djTraitSummary">{analysis.summary}</Text>
         <div className="djTraitCloud" aria-label="Musical traits">{analysis.traits.map((trait) => {
           const active = selected.has(trait.id);
-          return <button type="button" key={trait.id} className="djTrait" data-selected={active || undefined}
+          return <Button type="button" variant={active ? 'solid' : 'outline'} size="sm" key={trait.id} className="djTrait" data-selected={active || undefined}
             aria-pressed={active} title={trait.description} onClick={() => setSelected((previous) => {
               const next = new Set(previous); if (next.has(trait.id)) next.delete(trait.id); else next.add(trait.id); return next;
             })}><span className="djTrait__label">{trait.label}</span>
-            <span className="djTrait__category">{trait.category.replace('_', ' ')}</span></button>;
+            <span className="djTrait__category">{trait.category.replace('_', ' ')}</span></Button>;
         })}</div></>}
     </div>
   </Drawer>;
