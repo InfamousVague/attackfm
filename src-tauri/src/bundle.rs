@@ -219,9 +219,18 @@ pub async fn bundle_install(
     if files.is_empty() {
         return Err("a bundle with no files is not a bundle".into());
     }
-    // The loader looks for exactly this entry; without it nothing could run.
-    if !files.iter().any(|f| f.name == "app.js") {
-        return Err("a bundle must contain app.js".into());
+    // The loader looks for exactly these two entries. Both are required, and
+    // the stylesheet is not the lenient half: a bundle that arrives with only
+    // app.js installs cleanly, boots, and reports its wager as won - while the
+    // loader quietly falls back to the stylesheet baked into the native app.
+    // The result is this build's markup drawn against a much older build's CSS,
+    // which reads as the newest parts of the app losing their styling
+    // altogether. Refusing the download is how that becomes a failed update
+    // anybody can see rather than a silent half-update nobody can explain.
+    for required in ["app.js", "app.css"] {
+        if !files.iter().any(|f| f.name == required) {
+            return Err(format!("a bundle must contain {required}"));
+        }
     }
 
     let base = root(&app)?;
