@@ -32,6 +32,13 @@ export type PluginSlotId =
    * RIGHT NOW rather than one you go and find - karaoke is the first, and the
    * distinction is the whole point: it belongs where the song is, not in a menu
    * of destinations.
+   *
+   * TWO homes, because "where the song is" differs by platform: the Now Playing
+   * sheet on touch, and the player strip's trailing cluster on desktop, which
+   * has no such sheet. It rendered only in the sheet for a while, and since the
+   * sheet is gated behind `mobileControls` that made every plugin living here
+   * invisible on desktop rather than merely differently placed. Anything added
+   * to this slot needs both.
    */
   | 'now-playing-actions';
 
