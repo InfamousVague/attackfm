@@ -536,7 +536,7 @@ pub async fn transcode(
         let _ = child.wait().await;
     });
 
-    let stream = tokio_util_reader_stream(stdout);
+    let stream = reader_stream(stdout);
     Ok((
         StatusCode::OK,
         [
@@ -553,7 +553,7 @@ pub async fn transcode(
 
 /// Adapts an async reader into the stream `Body::from_stream` wants, without
 /// pulling in `tokio-util` for the one thing it would be used for.
-fn tokio_util_reader_stream<R>(reader: R) -> impl futures_util::Stream<Item = std::io::Result<Vec<u8>>>
+pub fn reader_stream<R>(reader: R) -> impl futures_util::Stream<Item = std::io::Result<Vec<u8>>>
 where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
 {

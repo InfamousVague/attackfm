@@ -635,6 +635,7 @@ async fn main() {
         .route("/api/loudness", get(loudness::table))
         .route("/api/tempo", get(features::tempo_table))
         .route("/api/stems/{track}", get(stems::status).post(stems::request))
+        .route("/api/stems/{track}/mix", get(stems::mix))
         .route("/api/stems/{track}/{stem}", get(stems::file))
         .route("/api/fx/presets", get(fx::presets).post(fx::save_preset))
         .route("/api/fx/presets/{id}", axum::routing::delete(fx::delete_preset))
