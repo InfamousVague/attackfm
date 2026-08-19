@@ -137,7 +137,9 @@ export function StemsPanel({ track, onClose }: { track: Track; onClose: () => vo
               tone="muted"
               style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
             >
-              {problem || (progress ? track.title : 'Tap to drop a part, hold to drop it while you hold.')}
+              {problem ||
+                cast.fault ||
+                (progress ? track.title : 'Tap to drop a part, hold to drop it while you hold.')}
             </Text>
           </div>
           <IconButton variant="ghost" aria-label="Close stems" onClick={leave}>

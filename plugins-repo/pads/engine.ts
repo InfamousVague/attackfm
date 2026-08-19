@@ -138,6 +138,9 @@ export class StemDeck {
   /** True while the playhead has run past what has been fetched - the page
    *  shows it rather than looking frozen. */
   starved = false;
+  /** Set when playback stopped for a reason worth telling somebody, rather
+   *  than for a hiccup it will recover from. */
+  fault = '';
 
   /**
    * Builds the graph, synchronously, and asks for a resume in the background.
@@ -311,8 +314,15 @@ export class StemDeck {
         let blocks: (AudioBuffer | null)[];
         try {
           blocks = await Promise.all(stems.map((stem) => this.decode(stem, songFrom, len)));
-        } catch {
+        } catch (e) {
+          // A slow connection and a server that cannot serve blocks at all look
+          // identical from here unless the second one says so - and the second
+          // one never recovers, so it has to stop rather than retry forever.
           this.starved = true;
+          this.fault = e instanceof Error ? e.message : 'The parts stopped arriving.';
+          this.running = false;
+          window.clearInterval(this.ticker);
+          this.ticker = undefined;
           return;
         }
         if (this.generation !== era || !this.running || !this.ctx) return;
@@ -369,14 +379,33 @@ export class StemDeck {
   private async decode(stem: string, from: number, len: number): Promise<AudioBuffer | null> {
     if (!this.fetchBlock || !this.ctx) return null;
     const bytes = await this.fetchBlock(stem, from, len, this.flac);
+    let buffer: AudioBuffer | null;
     try {
-      return await this.ctx.decodeAudioData(bytes.slice(0));
+      buffer = await this.ctx.decodeAudioData(bytes.slice(0));
     } catch {
       if (!this.flac) return null;
       this.flac = false;
       const plain = await this.fetchBlock(stem, from, len, false);
-      return this.ctx.decodeAudioData(plain.slice(0)).catch(() => null);
+      buffer = await this.ctx.decodeAudioData(plain.slice(0)).catch(() => null);
     }
+    if (!buffer) return null;
+
+    /*
+     * Did the server actually cut a block?
+     *
+     * A server older than this endpoint does not know `from` and `len` - and an
+     * unknown query parameter is not an error, it is ignored, so it cheerfully
+     * answers with the WHOLE stem. That is the single most damaging way this can
+     * go wrong: every ten seconds of playback would fetch and decode the entire
+     * song six times over, which is hundreds of megabytes of PCM arriving on a
+     * phone every few seconds until it dies. Loud and stopped beats quiet and
+     * melting, so a block that is nothing like the length asked for is treated
+     * as a server that cannot do this rather than as audio.
+     */
+    if (buffer.duration > len * 1.5 + 1) {
+      throw new Error('Your server is too old for this - update it and try again.');
+    }
+    return buffer;
   }
 
   private silence(): void {
@@ -414,6 +443,7 @@ export class StemDeck {
     this.duration = 0;
     this.trackId = null;
     this.starved = false;
+    this.fault = '';
     this.fetchBlock = null;
   }
 }

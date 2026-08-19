@@ -45,6 +45,8 @@ export function returnOutput(resumeAt?: number): void {
 export interface Board {
   /** The parts on the deck, in board order. */
   stems: string[];
+  /** Why playback stopped, when it stopped for a reason worth saying. */
+  fault: string;
   /** Which are in the mix. */
   on: Record<string, boolean>;
   playing: boolean;
@@ -67,6 +69,7 @@ export function useBoard(total: number): Board {
     Object.fromEntries(deck.stems.map((s) => [s, deck.isOn(s)])),
   );
   const [playing, setPlaying] = useState(deck.playing);
+  const [fault, setFault] = useState(deck.fault);
 
   const meters = useRef(new Map<string, HTMLElement>());
   const head = useRef<HTMLElement | null>(null);
@@ -77,6 +80,7 @@ export function useBoard(total: number): Board {
   const refresh = useCallback(() => {
     setOn(Object.fromEntries(deck.stems.map((s) => [s, deck.isOn(s)])));
     setPlaying(deck.playing);
+    setFault(deck.fault);
     setRevision((n) => n + 1);
   }, []);
 
@@ -99,6 +103,13 @@ export function useBoard(total: number): Board {
       }
       if (head.current && total > 0) {
         head.current.style.width = `${Math.min(100, (deck.position() / total) * 100).toFixed(2)}%`;
+      }
+      // The deck can stop itself - a server that cannot serve blocks never
+      // recovers, so it gives up rather than retrying forever. This loop is
+      // already running; noticing costs one comparison and saves a timer.
+      if (!deck.playing) {
+        setPlaying(false);
+        setFault(deck.fault);
       }
     };
     raf = requestAnimationFrame(tick);
@@ -145,6 +156,7 @@ export function useBoard(total: number): Board {
 
   return {
     stems: deck.stems,
+    fault,
     on,
     playing,
     revision,

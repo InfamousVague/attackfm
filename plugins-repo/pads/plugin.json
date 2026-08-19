@@ -1,7 +1,7 @@
 {
   "id": "pads",
   "name": "Pads",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Your own records, taken apart and handed back as an instrument: the song keeps playing and the pads decide which parts of it you hear.",
   "author": "AttackFM",
   "tags": [
