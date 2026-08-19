@@ -286,12 +286,26 @@ pub fn spawn(state: Arc<AppState>) {
 ///     forget_stems does not touch - and left alone for a month.
 ///
 /// AFM_STEM_PREFETCH=off turns it off entirely.
+/// The key the operator's switch is stored under.
+pub const PREFETCH_PREF: &str = "stems.prefetch";
+
+/// Whether to separate ahead, right now.
+///
+/// Checked on every sweep rather than once at boot, so flipping the switch in
+/// the app takes effect within the sweep interval instead of at the next
+/// restart. The stored choice wins; with none stored the environment variable
+/// still decides, so an operator who set AFM_STEM_PREFETCH=off before this
+/// switch existed is not quietly overridden by the default.
+pub fn prefetch_wanted(state: &AppState) -> bool {
+    match state.db.server_pref(PREFETCH_PREF).as_deref() {
+        Some("off") => false,
+        Some(_) => true,
+        None => !std::env::var("AFM_STEM_PREFETCH").map(|v| v == "off").unwrap_or(false),
+    }
+}
+
 pub fn spawn_prefetch(state: Arc<AppState>) {
     tokio::spawn(async move {
-        if std::env::var("AFM_STEM_PREFETCH").map(|v| v == "off").unwrap_or(false) {
-            eprintln!("[stems] separating ahead is off (AFM_STEM_PREFETCH=off)");
-            return;
-        }
         if separator_bin().is_none() {
             // Nothing written, so installing demucs later starts clean.
             eprintln!("[stems] no demucs found - separating ahead is off");
@@ -302,6 +316,13 @@ pub fn spawn_prefetch(state: Arc<AppState>) {
         tokio::time::sleep(Duration::from_secs(300)).await;
 
         loop {
+            // Re-read each pass: the switch is live, and a paused prefetcher
+            // must keep its loop rather than exiting, or turning it back on
+            // would need a restart.
+            if !prefetch_wanted(&state) {
+                tokio::time::sleep(PREFETCH_SWEEP).await;
+                continue;
+            }
             if state.db.prefetch_bytes(MODEL) >= PREFETCH_BUDGET_BYTES {
                 tokio::time::sleep(PREFETCH_SWEEP).await;
                 continue;
@@ -622,8 +643,11 @@ pub async fn prefetch_status(
         .map_err(|s| (s, "sign in first".to_string()))?;
     let (wanted, done, failed, evicted) = state.db.prefetch_summary();
     Ok(Json(json!({
-        "enabled": separator_bin().is_some()
-            && !std::env::var("AFM_STEM_PREFETCH").map(|v| v == "off").unwrap_or(false),
+        "enabled": prefetch_wanted(&state),
+        // Distinct from `enabled`: a server with no demucs cannot do this at
+        // all, and a switch that flips but changes nothing is worse than a row
+        // that explains itself.
+        "available": separator_bin().is_some(),
         "wanted": wanted,
         "done": done,
         "failed": failed,
@@ -631,6 +655,34 @@ pub async fn prefetch_status(
         "bytes": state.db.prefetch_bytes(MODEL),
         "budgetBytes": PREFETCH_BUDGET_BYTES,
     })))
+}
+
+/// `POST /api/stems/prefetch` - the operator turns separating-ahead on or off.
+///
+/// Admin only: it spends the server's GPU and up to half its stem cache, which
+/// is the operator's to give, not each listener's.
+pub async fn set_prefetch(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<serde_json::Value>,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers)
+        .map_err(|s| (s, "sign in first".to_string()))?;
+    if !caller.is_admin {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "only an admin can change what the server does in the background".to_string(),
+        ));
+    }
+    let on = body.get("enabled").and_then(|v| v.as_bool()).ok_or((
+        StatusCode::BAD_REQUEST,
+        "enabled must be true or false".to_string(),
+    ))?;
+    state
+        .db
+        .set_server_pref(PREFETCH_PREF, if on { "on" } else { "off" })
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(json!({ "enabled": on })))
 }
 
 pub async fn request(
