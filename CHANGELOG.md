@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.192
+
+- The console's search row loses its backing too — nothing in the popover sits on a second pane now
+
 ## 0.3.191
 
 - More room inside the sound console, and the same margin on every side
