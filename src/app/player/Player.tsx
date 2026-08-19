@@ -1,4 +1,6 @@
 import { clearEnhancers, nextEnhancer, primeEnhancers } from './smartShuffle.ts';
+import { useDesktopLayout } from '../ux/useDesktopLayout.ts';
+
 import { trackIdFromPath } from '../server.ts';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
@@ -298,7 +300,23 @@ export function Player({
   // lift and becomes a room that is simply always there; the rest of the app
   // lives in the left pane (appWindow shrinks by --np-dock-width, app.css).
   const npWide = useMediaQuery('(min-width: 700px)');
-  const npDocked = mobileControls && npWide && deckOwned;
+  /**
+   * The desktop wears the same split as an unfolded foldable.
+   *
+   * The dock used to be gated on `mobileControls`, which is touch-or-narrow -
+   * so the one shape with the MOST room for a permanent player was the only
+   * one that never got it. On the desktop Now Playing was not merely
+   * undocked, it was never mounted at all: the strip was the whole player,
+   * and the artwork had nowhere to be. Reading either shape here gives the
+   * desktop the foldable's two rooms and leaves the phone exactly as it was.
+   *
+   * `mobileControls` still decides CONTROL SIZE on its own further down - the
+   * thumb-sized transport belongs to touch, not to width - so widening this
+   * one condition does not put phone-sized buttons on a desktop.
+   */
+  const deskShape = useDesktopLayout();
+  const sheetShape = mobileControls || deskShape;
+  const npDocked = sheetShape && npWide && deckOwned;
   // The overflow popover state now lives in PlayerStrip.
   // The song being filed into a playlist, or null when that sheet is shut.
   const [filing, setFiling] = useState<Track | null>(null);
@@ -2755,10 +2773,11 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         setFiling={setFiling}
       />
 
-      {/* The full-screen Now Playing surface, on touch only - extracted whole
-          into NowPlayingSheet (which portals itself to the body). It reuses
-          every handler the strip does, so the two never diverge. */}
-      {mobileControls && (npOpen || npDocked) && (
+      {/* Now Playing: the full-screen surface on touch, the docked right pane
+          on any shape wide enough to hold one - extracted whole into
+          NowPlayingSheet (which portals itself to the body). It reuses every
+          handler the strip does, so the two never diverge. */}
+      {sheetShape && (npOpen || npDocked) && (
         <NowPlayingSheet
           npOpen={npOpen}
           npDocked={npDocked}
