@@ -20,10 +20,10 @@ export const filters: Plugin = {
   id: 'filters',
   name: 'Filters',
   description:
-    'A shelf of finished sounds: lofi, vinyl, cassette, telephone, cathedral, night drive and two dozen more, each one tap away.',
+    'A shelf of finished sounds: slowed, sped up, nightcore, lofi, vinyl, cathedral, night drive and two dozen more, each one tap away.',
   icon: <Sparkles size={22} />,
   author: 'AttackFM',
-  version: '0.1.0',
+  version: '0.2.0',
   tags: ['Sound', 'Filters'],
   details:
     `Adds a Filters page: ${FILTERS.length} whole sounds you put on in one tap, ` +

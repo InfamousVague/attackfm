@@ -1,5 +1,11 @@
 import {
   Activity,
+  FastForward,
+  Gauge,
+  Hourglass,
+  Rabbit,
+  Snowflake,
+  Turtle,
   AudioWaveform,
   Binary,
   Church,
@@ -68,9 +74,73 @@ export interface Filter {
   nodes: FilterNode[];
 }
 
-export const FAMILIES = ['Tape & lofi', 'Broadcast', 'Rooms', 'Colour', 'Stereo', 'Movement'] as const;
+export const FAMILIES = ['Speed', 'Tape & lofi', 'Broadcast', 'Rooms', 'Colour', 'Stereo', 'Movement'] as const;
 
 export const FILTERS: Filter[] = [
+  // --- Speed ----------------------------------------------------------------
+  // These are the only recipes that change how LONG the song is. `speed` moves
+  // pitch with the tempo, the way a turntable does, which is the sound "slowed"
+  // and "nightcore" are named after; `tempo` holds pitch instead. The player
+  // reads the rate back out of the chain to keep the seek bar honest - see
+  // chainRate() in fxChain.ts.
+  {
+    id: 'slowed',
+    name: 'Slowed',
+    blurb: 'Dragged below speed, pitch falling with it',
+    family: 'Speed',
+    icon: Turtle,
+    nodes: [{ t: 'speed', params: { rate: 0.85 } }],
+  },
+  {
+    id: 'slowedverb',
+    name: 'Slowed + reverb',
+    blurb: 'Slowed, with the room turned up',
+    family: 'Speed',
+    icon: Snowflake,
+    nodes: [
+      { t: 'speed', params: { rate: 0.82 } },
+      { t: 'bass', params: { f: 100, g: 3 } },
+      { t: 'lp', params: { f: 14000 } },
+      { t: 'spring', params: { mix: 0.45, size: 0.8 } },
+    ],
+  },
+  {
+    id: 'spedup',
+    name: 'Sped up',
+    blurb: 'Pushed above speed, pitch rising with it',
+    family: 'Speed',
+    icon: Rabbit,
+    nodes: [{ t: 'speed', params: { rate: 1.25 } }],
+  },
+  {
+    id: 'nightcore',
+    name: 'Nightcore',
+    blurb: 'Faster and higher, with the top end lifted',
+    family: 'Speed',
+    icon: FastForward,
+    nodes: [
+      { t: 'speed', params: { rate: 1.35 } },
+      { t: 'treble', params: { f: 9000, g: 2 } },
+      { t: 'comp', params: { thr: -16, ratio: 3, att: 20, rel: 200, mk: 2 } },
+    ],
+  },
+  {
+    id: 'halfspeed',
+    name: 'Half speed',
+    blurb: 'An octave down, at half the pace',
+    family: 'Speed',
+    icon: Hourglass,
+    nodes: [{ t: 'speed', params: { rate: 0.5 } }],
+  },
+  {
+    id: 'quick',
+    name: 'Faster, same pitch',
+    blurb: 'Quicker without the chipmunk',
+    family: 'Speed',
+    icon: Gauge,
+    nodes: [{ t: 'tempo', params: { rate: 1.25 } }],
+  },
+
   // --- Tape & lofi ----------------------------------------------------------
   {
     id: 'lofi',
@@ -431,19 +501,17 @@ export const FILTERS: Filter[] = [
 ];
 
 /**
- * Filters that need something the server cannot do yet, shown rather than
- * hidden so it is clear they are coming and not simply missing.
+ * Node kinds a recipe needs, for the availability check on the page.
  *
- * Changing playback speed needs `atempo` / `asetrate` in the encoder, and no
- * such node kind exists. It is also not purely a server job: a slowed track
- * runs longer than its stored duration, so the seek bar and the remaining-time
- * clock would both be wrong until the player is taught the rate as well.
+ * A server that does not implement a kind applies it cleanly and does nothing,
+ * so a filter has to be able to say "this box cannot do me" rather than just
+ * sounding weak. Speed is the live case: it landed in the encoder long after
+ * the deployed hubs were built.
  */
-export const PENDING = [
-  { name: 'Slowed', blurb: 'Played below speed, pitch falling with it' },
-  { name: 'Sped up', blurb: 'Played above speed' },
-  { name: 'Nightcore', blurb: 'Faster and higher at once' },
-] as const;
+export function kindsUsed(filter: Filter): string[] {
+  return [...new Set(filter.nodes.map((n) => n.t))];
+}
+
 
 /** A recipe's fingerprint, for spotting which filter the chain currently is. */
 export function signature(nodes: { t: string; params: Record<string, number> }[]): string {

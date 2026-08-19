@@ -14,7 +14,7 @@ import { usePlayback } from './playback.tsx';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { VOLUME_UNITY } from './VolumeControl.tsx';
 import { useEffects } from './effects.ts';
-import { useFxChain } from './fxChain.ts';
+import { useFxChain, chainRate } from './fxChain.ts';
 import { recordDiag } from '../diag/diagLog.ts';
 import { loadAudioUrl, reactivateAudioSession, systemOutputVolume, type Track } from '../core/tauri.ts';
 import { isPendingPath } from './pendingPlay.tsx';
@@ -492,6 +492,22 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   // The hi-fi chain re-colours in place by the same mechanism. Object identity
   // is the change signal, same as the rack's array identity.
   const chain = useFxChain();
+  /**
+   * How much faster the chain is playing, for the timeline.
+   *
+   * A ref rather than the value itself: the four timelineDuration() callers
+   * below sit inside event handlers and crossfade bookkeeping that capture
+   * their scope once, so reading `chain` there would give whatever it was when
+   * the handler was made. The effect also recomputes the CURRENT duration, so
+   * turning speed on re-lengths the bar immediately instead of waiting for the
+   * reload to report new metadata.
+   */
+  const rateRef = useRef(1);
+  useEffect(() => {
+    rateRef.current = chainRate(chain);
+    const track = liveRef.current.track;
+    if (track) setDuration(timelineDuration(activeAudio()?.duration ?? 0, track.duration, rateRef.current));
+  }, [chain]);
   const rackWas = useRef(rack);
   const chainWas = useRef(chain);
   const recolourTimer = useRef<number | undefined>(undefined);
@@ -1007,7 +1023,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       };
       const onMeta = () => {
         if (isActive()) {
-          setDuration(timelineDuration(audio.duration, liveRef.current.track?.duration));
+          setDuration(timelineDuration(audio.duration, liveRef.current.track?.duration, rateRef.current));
         }
       };
       // Through the ref: this listener is bound once, the queue changes often.
@@ -1271,7 +1287,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       // Seed the timeline from the indexed metadata immediately. Android may
       // later describe a streamed response as infinitely long; onMeta keeps
       // this finite value instead of replacing it with that sentinel.
-      setDuration(timelineDuration(0, track.duration));
+      setDuration(timelineDuration(0, track.duration, rateRef.current));
       // Aborted again here, not just at the effect's top: a blend can begin in
       // the gap the await opened, off the old track's last timeupdates.
       abortCrossfadeRef.current();
@@ -1954,7 +1970,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         // shared path re-asserts the fader on whichever deck now answers.
         applyVolume();
         setPosition(nowActive.currentTime);
-        setDuration(timelineDuration(nowActive.duration, flight.next.duration));
+        setDuration(timelineDuration(nowActive.duration, flight.next.duration, rateRef.current));
         wantPlaying.current = true;
         setPlaying(true);
         adoptedPath.current = flight.next.path;
@@ -2014,7 +2030,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         seatOf(nowActive)?.setLevel(1);
         applyVolume();
         setPosition(0);
-        setDuration(timelineDuration(nowActive.duration, warm.next.duration));
+        setDuration(timelineDuration(nowActive.duration, warm.next.duration, rateRef.current));
         wantPlaying.current = true;
         setPlaying(true);
         void nowActive.play().catch(() => {

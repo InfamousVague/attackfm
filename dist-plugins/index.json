@@ -38,17 +38,17 @@
     {
       "id": "filters",
       "name": "Filters",
-      "version": "0.1.0",
-      "description": "A shelf of finished sounds: lofi, vinyl, cassette, telephone, cathedral, night drive and two dozen more, each one tap away.",
+      "version": "0.2.0",
+      "description": "A shelf of finished sounds: slowed, sped up, nightcore, lofi, vinyl, cathedral, night drive and two dozen more, each one tap away.",
       "author": "AttackFM",
       "tags": [
         "Sound",
         "Filters"
       ],
-      "entry": "filters-0.1.0.js",
+      "entry": "filters-0.2.0.js",
       "api": 1,
-      "bytes": 12398,
-      "sha256": "feb0c1608052f7a432a7896e009258f847da9f091c83bde0a2e3b94a0e759418",
+      "bytes": 12992,
+      "sha256": "c256be4bdc25d926c6842235a52bf84543f91489d46a887e04f430dd52c64e9f",
       "requiresServer": true,
       "public": true
     },

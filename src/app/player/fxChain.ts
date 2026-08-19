@@ -566,7 +566,59 @@ export const FX_NODES: FxNodeSpec[] = [
       { key: 'amt', label: 'Amount', min: 0, max: 1, step: 0.05, default: 0.5 },
     ],
   },
+
+  // Rate. The only two nodes here that change how LONG the song is, which is
+  // why chainRate() below exists and why the player has to ask for it: the
+  // library's stored duration describes the file, not what you are hearing.
+  {
+    t: 'speed', label: 'Speed', blurb: 'Faster or slower, pitch going with it', group: 'utility',
+    repeatable: false,
+    params: [
+      { key: 'rate', label: 'Speed', min: 0.5, max: 2, step: 0.01, default: 0.8, unit: 'x' },
+    ],
+  },
+  {
+    t: 'tempo', label: 'Tempo', blurb: 'Faster or slower at the original pitch', group: 'utility',
+    repeatable: false,
+    params: [
+      { key: 'rate', label: 'Tempo', min: 0.5, max: 2, step: 0.01, default: 1, unit: 'x' },
+    ],
+  },
 ];
+
+/** Node kinds that change playback rate, and so the length of the song. */
+const RATE_NODES = new Set(['speed', 'tempo']);
+
+/**
+ * How much faster the chain is playing the song, 1 being untouched.
+ *
+ * The one thing the rest of the fx system never had to care about: every other
+ * node colours the sound and leaves the timeline alone, so the library's stored
+ * duration was always the truth. A speed node breaks that - a track slowed to
+ * 0.8x runs a quarter longer than the number in the database - and nothing in
+ * the media element can put it right, because a live encode reports a duration
+ * of Infinity and has no addressable end.
+ *
+ * So the client works it out from the chain it asked for. Multiplied rather
+ * than taken from the first match, because Speed and Tempo can be stacked (a
+ * nightcore lift with the tempo pulled back is a real thing people build), and
+ * because two of a kind would otherwise be silently ignored. Nodes switched off
+ * do not count, since a bypassed node is not in the filter graph either.
+ */
+export function chainRate(chain: FxChainState): number {
+  if (!chain.on) return 1;
+  let rate = 1;
+  for (const node of chain.nodes) {
+    if (!node.on || !RATE_NODES.has(node.t)) continue;
+    const asked = node.params.rate;
+    if (typeof asked === 'number' && Number.isFinite(asked) && asked > 0) {
+      // The same clamp the server applies, so the client's timeline matches
+      // the audio rather than the request.
+      rate *= Math.min(Math.max(asked, 0.5), 2);
+    }
+  }
+  return rate;
+}
 
 export function nodeSpec(t: string): FxNodeSpec | undefined {
   return FX_NODES.find((n) => n.t === t);
