@@ -34,7 +34,6 @@ import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const DIST = join(ROOT, 'dist', 'assets');
 const REGISTRY = 'https://registry.attack.fm';
 
 const CHROME = [
@@ -51,7 +50,43 @@ const die = (m) => {
 };
 
 if (!CHROME) die('no Chrome found; this check drives one over CDP');
-if (!existsSync(join(DIST, 'app.js'))) die('no dist/assets/app.js - run `npm run build` first');
+
+/**
+ * Build the bundle this run will test, into a directory the script owns.
+ *
+ * It used to read `dist/` and merely assert app.js existed. That produced a
+ * confident RED against a stale tree - a leftover dist from an earlier version
+ * carries the OLD styleGuard, so the check correctly reports that the old guard
+ * does not work while appearing to report on the current one. Somebody then
+ * goes hunting a bug that is not there.
+ *
+ * Which is precisely the disease this whole file exists to catch, one layer
+ * out: an instrument that answers confidently about something it did not
+ * measure. A precondition you report on is a precondition somebody skips, so
+ * this removes it instead - the two seconds are worth not having to trust the
+ * state of a directory.
+ *
+ * AFM_OTA=1 because that is what ships. The plain build splits assets and the
+ * OTA build inlines them into exactly app.js + app.css, which is the shape the
+ * device's loader deals with and therefore the shape the guard must handle.
+ */
+async function buildBundle() {
+  const out = await mkdtemp(join(tmpdir(), 'afm-styleguard-build-'));
+  say('  building the OTA bundle to test (AFM_OTA=1)…');
+  await new Promise((ok, no) => {
+    const vite = spawn(
+      'npx',
+      ['vite', 'build', '--outDir', out, '--emptyOutDir', '--logLevel', 'error'],
+      { cwd: ROOT, env: { ...process.env, AFM_OTA: '1' }, stdio: 'inherit' },
+    );
+    vite.on('exit', (code) => (code === 0 ? ok() : no(new Error(`vite build exited ${code}`))));
+    vite.on('error', no);
+  });
+  if (!existsSync(join(out, 'assets', 'app.js'))) {
+    die('the build produced no assets/app.js');
+  }
+  return join(out, 'assets');
+}
 
 /** Serve one directory, and report which paths were actually asked for. */
 function serve(dir) {
@@ -137,11 +172,11 @@ const PROBE = `(async () => {
 })()`;
 
 /** Stage a bundle directory, with or without its stylesheet beside app.js. */
-async function stage(withCss, version) {
+async function stage(built, withCss, version) {
   const dir = await mkdtemp(join(tmpdir(), 'afm-styleguard-'));
   await mkdir(join(dir, 'assets'));
-  await copyFile(join(DIST, 'app.js'), join(dir, 'assets', 'app.js'));
-  if (withCss) await copyFile(join(DIST, 'app.css'), join(dir, 'assets', 'app.css'));
+  await copyFile(join(built, 'app.js'), join(dir, 'assets', 'app.js'));
+  if (withCss) await copyFile(join(built, 'app.css'), join(dir, 'assets', 'app.css'));
   await writeFile(
     join(dir, 'index.html'),
     `<!doctype html><html><head><meta charset="utf-8">` +
@@ -179,6 +214,9 @@ const cleanup = [];
 let failed = false;
 
 try {
+  const built = await buildBundle();
+  cleanup.push(dirname(built));
+
   // Wait for the debugger to answer rather than sleeping a guessed interval.
   for (let i = 0; ; i += 1) {
     try {
@@ -222,7 +260,7 @@ try {
       say(`\x1b[33m•\x1b[0m skipped (registry unreachable): ${c.name}`);
       continue;
     }
-    const dir = await stage(c.withCss, c.version);
+    const dir = await stage(built, c.withCss, c.version);
     cleanup.push(dir);
     const server = await serve(dir);
     const url = `http://127.0.0.1:${server.address().port}/`;
@@ -240,7 +278,11 @@ try {
       say(`    rules are live but came from "${got.source}", expected "${c.want}"`);
       failed = true;
     } else {
-      say(`\x1b[32m✓\x1b[0m ${c.name} (${got.bytes.toLocaleString()} bytes)`);
+      // The PROVENANCE is the proof, not the size. An OTA build inlines
+      // everything, so the local file and the published one are the same
+      // number of bytes and a size comparison would prove nothing about which
+      // route the recovery actually took.
+      say(`\x1b[32m✓\x1b[0m ${c.name} — from ${got.source} (${got.bytes.toLocaleString()} bytes)`);
     }
   }
 } finally {
