@@ -5,8 +5,8 @@
 import { type ServerSession } from '../server.ts';
 import { setNativeSyncing } from '../player/androidAudio.ts';
 import { isTauri } from '../core/tauri.ts';
-import { onMeteredConnection, onNetworkChange } from '../core/network.ts';
-import { wifiOnlyDownloads } from '../settings/behaviourPrefs.ts';
+import { onNetworkChange } from '../core/network.ts';
+import { autoDownloadAllowed } from '../settings/behaviourPrefs.ts';
 import { sweepCache } from './cacheSweep.ts';
 
 // --- when it runs ----------------------------------------------------------
@@ -21,27 +21,26 @@ const FIRST_SWEEP_DELAY_MS = 90_000;
 let sweeping = false;
 
 /**
- * Whether a pass may spend data right now.
+ * THE LINE THE WI-FI SWITCH DRAWS, and where this file sits on it.
  *
- * THIS GUARDS THE AUTOMATIC PATH ONLY, and that is the whole design of the
- * Wi-Fi switch rather than an omission. Everything that reaches a download
- * without being asked - the six-hourly schedule, the heart's nudge, the Date
- * deck - comes through `sweepIfIdle` and is held here. Everything a person
- * asked for out loud goes somewhere else: `Check now` calls `sweepCache`
- * directly, and pinning a song calls `pinTrack`. Neither is stopped, because
- * refusing a stated request to protect somebody from the request they just
- * made is not restraint, it is a bug with a rationale.
+ * Everything that reaches a download without being asked - the six-hourly
+ * schedule, the heart's nudge, the Date deck - comes through `sweepIfIdle` and
+ * is held by `autoDownloadAllowed`. Everything a person asked for out loud
+ * goes somewhere else and is NOT held: `Check now` calls `sweepCache`
+ * directly, and pinning a song calls `pinTrack`. Refusing a stated request to
+ * protect somebody from the request they just made is not restraint, it is a
+ * bug with a rationale - and a pin is usually somebody about to lose signal,
+ * which is the worst possible moment to be told no.
  *
  * Held, not cancelled: nothing is queued or remembered, because the schedule
  * already re-runs on foreground and every thirty minutes, so joining Wi-Fi
- * picks the work up on its own within one look. That is also why this is the
- * last check before a pass and not a subscription - by the time it matters,
- * the answer is fresh.
+ * picks the work up within one look. That is also why the check sits here, as
+ * the last thing before a pass, rather than being subscribed to somewhere - by
+ * the time it matters, the answer is fresh.
+ *
+ * The test itself lives in behaviourPrefs beside the switch, because the sweep
+ * turned out not to be the only thing that downloads on its own.
  */
-async function mayDownload(): Promise<boolean> {
-  if (!wifiOnlyDownloads()) return true;
-  return !(await onMeteredConnection());
-}
 
 /**
  * Whether the last automatic pass stood down for data rather than running.
@@ -56,7 +55,7 @@ let heldForData = false;
 /** Run a pass unless one is already going. Safe to call from anywhere. */
 export async function sweepIfIdle(session: ServerSession): Promise<void> {
   if (sweeping || !isTauri()) return;
-  if (!(await mayDownload())) {
+  if (!(await autoDownloadAllowed())) {
     heldForData = true;
     return;
   }

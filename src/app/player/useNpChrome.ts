@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { fetchCanvas, trackIdFromPath, type ServerSession } from '../server.ts';
-import { nowPlayingVideoEnabled } from '../settings/behaviourPrefs.ts';
+import { autoDownloadAllowed, nowPlayingVideoEnabled } from '../settings/behaviourPrefs.ts';
 import { cachedCanvas, keepCanvas } from '../cache/canvasCache.ts';
 import { setIdleTimerDisabled } from './carplay.ts';
 import type { Track } from '../core/tauri.ts';
@@ -152,9 +152,27 @@ export function useNpChrome({
         setNpCanvas(held);
         return;
       }
-      // Not held: fetch it once, keep it, and play from those same bytes. The
-      // plain URL is the fallback for a device with no Cache API and for a
-      // clip that would not come down.
+      /*
+       * Not held, so this is a download - and on this screen it is one PER
+       * SONG, because the effect runs again on every track change while the
+       * sheet is open. Sitting on Now Playing over cellular was several
+       * megabytes a song with the Wi-Fi switch turned on and promising
+       * otherwise; opening the screen is you asking to see it, but it is not
+       * you asking to fetch a video for every song that follows.
+       *
+       * Nulled rather than falling back to `url`, which is the trap here: the
+       * fallback exists for a device with no Cache API, and handing the plain
+       * URL to a <video> streams the same megabytes through the media stack
+       * instead. Null is the path the screen already draws for a song with no
+       * clip - the blurred cover - so nothing new has to work.
+       */
+      if (!(await autoDownloadAllowed())) {
+        if (!controller.signal.aborted) setNpCanvas(null);
+        return;
+      }
+      // Fetch it once, keep it, and play from those same bytes. The plain URL
+      // is the fallback for a device with no Cache API and for a clip that
+      // would not come down.
       const kept = await keepCanvas(url);
       if (!controller.signal.aborted) setNpCanvas(kept ?? url);
     });

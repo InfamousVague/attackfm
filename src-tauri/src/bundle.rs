@@ -168,7 +168,15 @@ pub async fn bundle_state(app: tauri::AppHandle) -> Result<BundleState, String> 
         .active
         .as_ref()
         .and_then(|v| root(&app).ok().map(|r| r.join(v)))
-        .filter(|p| p.join("app.js").exists())
+        // BOTH files, not just app.js. Checking only the script is how a bundle
+        // whose stylesheet has gone still gets handed to the loader: the module
+        // boots, the boot wager is won, and the <link> beside it quietly 404s -
+        // leaving new JS painting itself with the embedded build's old CSS,
+        // which is not "a version behind on looks" but two halves of different
+        // versions. Everything added since that embedded build then renders as
+        // naked HTML. Requiring the pair means a bundle missing either one
+        // falls back whole, which is a state the app can actually be in.
+        .filter(|p| p.join("app.js").exists() && p.join("app.css").exists())
         .map(|p| p.to_string_lossy().into_owned());
 
     // An active pointer whose files have gone (an OS reclaim, a wipe) is not an

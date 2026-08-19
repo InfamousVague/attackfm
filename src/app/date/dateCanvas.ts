@@ -1,4 +1,5 @@
 import { fetchCanvas, trackIdFromPath, type ServerSession } from '../server.ts';
+import { autoDownloadAllowed } from '../settings/behaviourPrefs.ts';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -66,6 +67,22 @@ export function warmDateCanvas(session: ServerSession, track: Track): void {
     // "No clip" is an answer worth keeping: promotion should show the cover
     // at once rather than asking again.
     if (!url) return null;
+    /*
+     * Warming is the definition of an automatic download - these are clips for
+     * cards nobody has reached yet, megabytes each, several deep. So it stops
+     * on mobile data when the switch is on.
+     *
+     * THROWN rather than returned as null, and the difference matters: null
+     * settles as "this song has no clip" and is remembered, so a deck warmed
+     * on the train would show covers for the rest of the session. The throw
+     * lands in the catch below, which leaves no trace on purpose, so the card
+     * falls back to its own fetch now and warms properly once on Wi-Fi.
+     *
+     * Checked here rather than at the top so the lookup above still settles:
+     * it is a small JSON answer, it is worth keeping, and it is not the part
+     * that costs anything.
+     */
+    if (!(await autoDownloadAllowed())) throw new Error('held for mobile data');
     const reply = await fetch(url);
     if (!reply.ok) throw new Error(`clip fetch ${reply.status}`);
     const blob = await reply.blob();
