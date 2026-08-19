@@ -1,0 +1,14 @@
+{
+  "id": "pads",
+  "name": "Pads",
+  "version": "0.1.0",
+  "description": "A sampler you play with your thumbs — pull any song into vocals, drums, bass and everything else, chop them, and hit them.",
+  "author": "AttackFM",
+  "tags": [
+    "Sound",
+    "Instrument"
+  ],
+  "entry": "plugin.ts",
+  "public": true,
+  "requiresServer": true
+}

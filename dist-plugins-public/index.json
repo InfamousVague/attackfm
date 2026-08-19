@@ -70,6 +70,23 @@
       "public": true
     },
     {
+      "id": "pads",
+      "name": "Pads",
+      "version": "0.1.0",
+      "description": "A sampler you play with your thumbs — pull any song into vocals, drums, bass and everything else, chop them, and hit them.",
+      "author": "AttackFM",
+      "tags": [
+        "Sound",
+        "Instrument"
+      ],
+      "entry": "pads-0.1.0.js",
+      "api": 1,
+      "bytes": 15063,
+      "sha256": "b758249bf10a7e90bd6d2cbdf2b9191d71a1a4a4c1cd8242f0eb1b678b4998ab",
+      "requiresServer": true,
+      "public": true
+    },
+    {
       "id": "pedals",
       "name": "Pedals",
       "version": "0.3.3",

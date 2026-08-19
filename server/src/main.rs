@@ -40,6 +40,7 @@ mod dj;
 mod enrichment;
 mod features;
 mod loudness;
+mod stems;
 mod friends;
 mod home;
 mod hot;
@@ -433,6 +434,8 @@ async fn main() {
     features::spawn(state.clone());
     // Real loudness per track, for playback normalisation - see loudness.rs.
     loudness::spawn(state.clone());
+    // Stems, for the Pads sampler - see stems.rs.
+    stems::spawn(state.clone());
 
     // The Spotify mirror: keeps watched playlists, albums and saved tracks in
     // step with their local copies.
@@ -630,6 +633,8 @@ async fn main() {
         .route("/api/transcode/{id}", get(stream::transcode))
         .route("/api/fx/nodes", get(fx::nodes))
         .route("/api/loudness", get(loudness::table))
+        .route("/api/stems/{track}", get(stems::status).post(stems::request))
+        .route("/api/stems/{track}/{stem}", get(stems::file))
         .route("/api/fx/presets", get(fx::presets).post(fx::save_preset))
         .route("/api/fx/presets/{id}", axum::routing::delete(fx::delete_preset))
         .route("/api/spotify/status", get(spotify::status))

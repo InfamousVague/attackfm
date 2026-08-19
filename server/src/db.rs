@@ -969,6 +969,36 @@ CREATE INDEX IF NOT EXISTS curator_pulls_user_time ON curator_pulls(user_id, cre
 -- Its own table on purpose: Db::open only ever runs CREATE TABLE IF NOT
 -- EXISTS, so a new TABLE lands on the deployed database and a new COLUMN
 -- silently never would.
+-- Separated stems: one row per (track, stem). The audio itself lives on disk
+-- under the data dir - a few megabytes per stem is not a thing to put in
+-- SQLite - and this is the index plus the cache bookkeeping.
+--
+-- `model` is part of the identity so a better separator later can coexist
+-- with what is already on disk instead of silently mixing two qualities.
+CREATE TABLE IF NOT EXISTS track_stems (
+  track_id   INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+  stem       TEXT NOT NULL,          -- vocals | drums | bass | other
+  model      TEXT NOT NULL,
+  rel_path   TEXT NOT NULL,          -- under <data>/stems
+  bytes      INTEGER NOT NULL,
+  made_at    INTEGER NOT NULL,
+  used_at    INTEGER NOT NULL,       -- for eviction: least recently played
+  PRIMARY KEY (track_id, stem, model)
+);
+CREATE INDEX IF NOT EXISTS track_stems_used ON track_stems(used_at);
+
+-- The work queue. A track is asked for once and separated once; the client
+-- polls this rather than holding a connection open for the minutes it takes.
+CREATE TABLE IF NOT EXISTS stem_jobs (
+  track_id     INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+  state        TEXT NOT NULL,        -- queued | running | done | failed
+  error        TEXT NOT NULL DEFAULT '',
+  requested_at INTEGER NOT NULL,
+  started_at   INTEGER NOT NULL DEFAULT 0,
+  finished_at  INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS stem_jobs_state ON stem_jobs(state, requested_at);
+
 CREATE TABLE IF NOT EXISTS track_loudness (
   track_id    INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
   lufs        REAL NOT NULL,
@@ -4895,6 +4925,153 @@ impl Db {
     /// half of the row: an existing tempo always wins over the analyser's
     /// (and keeps its bpm_source), a vector is never touched, and a fresh row
     /// leaves checked_at at 0 so the enricher still gets its turn.
+    // --- stems ------------------------------------------------------------
+
+    /// Ask for a track's stems. Idempotent: a track already queued, running or
+    /// done keeps the state it has, so a listener tapping twice does not send
+    /// it round again. A FAILED job is retried, because the usual reason is a
+    /// file that has since been replaced.
+    pub fn request_stems(&self, track_id: i64) -> rusqlite::Result<String> {
+        let conn = self.lock();
+        conn.execute(
+            "INSERT INTO stem_jobs (track_id, state, requested_at)
+             VALUES (?1, 'queued', ?2)
+             ON CONFLICT(track_id) DO UPDATE SET
+               state        = CASE WHEN stem_jobs.state = 'failed' THEN 'queued' ELSE stem_jobs.state END,
+               error        = CASE WHEN stem_jobs.state = 'failed' THEN '' ELSE stem_jobs.error END,
+               requested_at = CASE WHEN stem_jobs.state = 'failed' THEN ?2 ELSE stem_jobs.requested_at END",
+            params![track_id, now_ms()],
+        )?;
+        conn.query_row(
+            "SELECT state FROM stem_jobs WHERE track_id = ?1",
+            params![track_id],
+            |r| r.get(0),
+        )
+    }
+
+    /// The next track waiting to be separated, oldest ask first.
+    pub fn next_stem_job(&self) -> Option<(i64, String)> {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT j.track_id, t.rel_path FROM stem_jobs j
+               JOIN tracks t ON t.id = j.track_id
+              WHERE j.state = 'queued' AND t.deleted = 0
+              ORDER BY j.requested_at ASC LIMIT 1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .ok()
+    }
+
+    pub fn mark_stem_job(&self, track_id: i64, state: &str, error: &str) -> rusqlite::Result<()> {
+        let now = now_ms();
+        self.lock().execute(
+            "UPDATE stem_jobs SET state = ?2, error = ?3,
+               started_at  = CASE WHEN ?2 = 'running' THEN ?4 ELSE started_at END,
+               finished_at = CASE WHEN ?2 IN ('done','failed') THEN ?4 ELSE finished_at END
+             WHERE track_id = ?1",
+            params![track_id, state, error, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn save_stem(
+        &self,
+        track_id: i64,
+        stem: &str,
+        model: &str,
+        rel_path: &str,
+        bytes: i64,
+    ) -> rusqlite::Result<()> {
+        let now = now_ms();
+        self.lock().execute(
+            "INSERT INTO track_stems (track_id, stem, model, rel_path, bytes, made_at, used_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
+             ON CONFLICT(track_id, stem, model) DO UPDATE SET
+               rel_path = excluded.rel_path, bytes = excluded.bytes, made_at = excluded.made_at",
+            params![track_id, stem, model, rel_path, bytes, now],
+        )?;
+        Ok(())
+    }
+
+    /// One track's stems, and the job state that explains their absence.
+    pub fn stems_for(&self, track_id: i64) -> (String, String, Vec<(String, String, i64)>) {
+        let conn = self.lock();
+        let (state, error): (String, String) = conn
+            .query_row(
+                "SELECT state, error FROM stem_jobs WHERE track_id = ?1",
+                params![track_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap_or_else(|_| ("none".to_string(), String::new()));
+        let mut rows = Vec::new();
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT stem, rel_path, bytes FROM track_stems WHERE track_id = ?1 ORDER BY stem",
+        ) {
+            if let Ok(iter) = stmt.query_map(params![track_id], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            }) {
+                rows = iter.filter_map(Result::ok).collect();
+            }
+        }
+        (state, error, rows)
+    }
+
+    /// One stem's file, and a note that it was wanted just now - which is what
+    /// the eviction sweep reads.
+    pub fn stem_path(&self, track_id: i64, stem: &str) -> Option<String> {
+        let conn = self.lock();
+        let path: String = conn
+            .query_row(
+                "SELECT rel_path FROM track_stems WHERE track_id = ?1 AND stem = ?2",
+                params![track_id, stem],
+                |r| r.get(0),
+            )
+            .ok()?;
+        let _ = conn.execute(
+            "UPDATE track_stems SET used_at = ?3 WHERE track_id = ?1 AND stem = ?2",
+            params![track_id, stem, now_ms()],
+        );
+        Some(path)
+    }
+
+    /// Total bytes held by the stem cache, for the budget.
+    pub fn stems_bytes(&self) -> i64 {
+        self.lock()
+            .query_row("SELECT COALESCE(SUM(bytes),0) FROM track_stems", [], |r| r.get(0))
+            .unwrap_or(0)
+    }
+
+    /// The coldest track's stems, for eviction. All of a track's stems go
+    /// together: three quarters of a kit is not a kit.
+    pub fn coldest_stem_track(&self) -> Option<(i64, Vec<String>)> {
+        let conn = self.lock();
+        let track_id: i64 = conn
+            .query_row(
+                "SELECT track_id FROM track_stems GROUP BY track_id
+                  ORDER BY MAX(used_at) ASC LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .ok()?;
+        let mut paths = Vec::new();
+        if let Ok(mut stmt) =
+            conn.prepare("SELECT rel_path FROM track_stems WHERE track_id = ?1")
+        {
+            if let Ok(iter) = stmt.query_map(params![track_id], |r| r.get::<_, String>(0)) {
+                paths = iter.filter_map(Result::ok).collect();
+            }
+        }
+        Some((track_id, paths))
+    }
+
+    pub fn forget_stems(&self, track_id: i64) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute("DELETE FROM track_stems WHERE track_id = ?1", params![track_id])?;
+        conn.execute("DELETE FROM stem_jobs WHERE track_id = ?1", params![track_id])?;
+        Ok(())
+    }
+
     /// One track's measured loudness. Replaces any earlier reading: a
     /// re-measure happens because the file changed, and the new number is the
     /// true one.
