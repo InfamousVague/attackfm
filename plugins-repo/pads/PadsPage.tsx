@@ -174,7 +174,7 @@ export function PadsPage() {
   const load = useCallback(
     async (target: Song, from: number) => {
       if (!session) return;
-      setProgress({ phase: 'asking', fraction: null, filed: 0, parts: 6 });
+      setProgress({ phase: 'asking', fraction: null, filed: 0, parts: 6, seconds: 0, ahead: null });
       setSong(target);
       loadedSong = target;
       claimOutput();

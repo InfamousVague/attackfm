@@ -66,6 +66,8 @@ export function StemsPanel({ track, onClose }: { track: Track; onClose: () => vo
     fraction: null,
     filed: 0,
     parts: 6,
+    seconds: 0,
+    ahead: null,
   });
   const [problem, setProblem] = useState('');
   const cast = useBoard(track.duration ?? 0);
