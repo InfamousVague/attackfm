@@ -1,6 +1,6 @@
 import { Mic2 } from '@glacier/icons';
 import type { Plugin } from '../../src/plugins/types.ts';
-import { KaraokePage } from './KaraokePage.tsx';
+import { KaraokeButton } from './KaraokeButton.tsx';
 
 /**
  * Karaoke Maker: any song in the library, minus the singer.
@@ -22,15 +22,21 @@ export const karaoke: Plugin = {
     'Turn any song in your library into karaoke — the vocal lifted out, the words full screen, in time.',
   icon: <Mic2 size={22} />,
   author: 'AttackFM',
-  version: '0.1.0',
+  version: '0.2.0',
   tags: ['Sound', 'Karaoke'],
   details:
-    'Adds a Karaoke Maker page. Search your library, pick a song, and your ' +
-    'server separates it and hands back the track without its vocal — the ' +
-    'band still playing, the singer gone. The words fill the screen and ' +
-    'follow the music line by line when the song carries timed lyrics, with ' +
-    'transport controls underneath. Separation happens once per song and is ' +
-    'kept, so the second time is instant. Needs a server connection; a song ' +
-    'with no lyrics still works as an instrumental.',
-  pages: [{ id: 'room', label: 'Karaoke', icon: <Mic2 size={18} />, Content: KaraokePage }],
+    'Puts a microphone on the Now Playing screen. Press it while a song is ' +
+    'playing and your server separates that track and hands it back without ' +
+    'its vocal — the band still playing, the singer gone — with the words ' +
+    'full screen, following the music line by line when the song carries ' +
+    'timed lyrics. Tap a line to jump to it. Separation happens once per song ' +
+    'and is kept, so every time after is instant. Needs a server connection; a ' +
+    'song with no lyrics still works as an instrumental.',
+  // A microphone on the Now Playing screen, NOT a page in the More menu.
+  // Karaoke only ever applies to one particular song, and when you want it you
+  // are already listening to that song - so making it a destination meant
+  // finding the same track a second time in a second search. The button acts on
+  // what is playing, and the stage it opens fills the screen: no navigation
+  // bar, no player strip, nothing but the words.
+  slots: { 'now-playing-actions': KaraokeButton },
 };

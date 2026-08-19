@@ -23,7 +23,17 @@ import type { Track } from '../app/core/tauri.ts';
  * a slot: they are a data contract (PluginPlaylistTile) so the showcase keeps
  * the house tile look and wires play-through itself.
  */
-export type PluginSlotId = 'titlebar-end' | 'player-trailing';
+export type PluginSlotId =
+  | 'titlebar-end'
+  | 'player-trailing'
+  /**
+   * The row of secondary controls on the Now Playing screen, beside the queue
+   * and the equaliser. For a plugin that acts on the song you are listening to
+   * RIGHT NOW rather than one you go and find - karaoke is the first, and the
+   * distinction is the whole point: it belongs where the song is, not in a menu
+   * of destinations.
+   */
+  | 'now-playing-actions';
 
 /** One tab a plugin adds to the settings modal's rail. */
 export interface PluginSettingsSection {
