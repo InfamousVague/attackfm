@@ -68,16 +68,32 @@ pub fn spawn(state: Arc<AppState>) {
                 tokio::time::sleep(IDLE_SLEEP).await;
                 continue;
             }
+            let mut said = false;
             for (id, rel) in pending {
-                let path = state.music_root.join(&rel);
-                match measure(&path).await {
-                    Some(m) => {
+                // Resolved rather than joined: the same guard every other
+                // reader of this library uses, which also means a row whose
+                // file has gone is skipped here instead of failing ffmpeg.
+                let Some(path) = crate::stream::resolve_in_root(&state.music_root, &rel) else {
+                    if !said {
+                        eprintln!("[loudness] cannot resolve {rel} under the music root");
+                        said = true;
+                    }
+                    continue;
+                };
+                match measure_reported(&path).await {
+                    Ok(m) => {
                         if let Err(e) = state.db.save_loudness(id, m.lufs, m.peak_db, m.lra) {
                             eprintln!("[loudness] could not store track {id}: {e}");
                             tokio::time::sleep(FAIL_PAUSE).await;
                         }
                     }
-                    None => {
+                    Err(why) => {
+                        // Once per batch: a library with a bad codec in it
+                        // should say so, not print four thousand times.
+                        if !said {
+                            eprintln!("[loudness] {} - {why}", path.display());
+                            said = true;
+                        }
                         // No row is written, so the track is simply offered
                         // again next pass. A file ffmpeg cannot read is worth
                         // retrying after a restart or a re-rip, and writing a
@@ -135,6 +151,17 @@ pub struct Measured {
 /// Measures one file. None when ffmpeg fails, times out, or prints a summary
 /// this cannot read - in every case the caller simply tries again later.
 pub async fn measure(path: &Path) -> Option<Measured> {
+    match measure_reported(path).await {
+        Ok(m) => Some(m),
+        Err(_) => None,
+    }
+}
+
+/// The same, with the reason kept. A job that can only say "it did not work"
+/// is a job nobody can debug from the outside - which is exactly the hole
+/// this fell into on its first deploy, sitting at zero measurements with an
+/// empty log.
+pub async fn measure_reported(path: &Path) -> Result<Measured, String> {
     let mut child = tokio::process::Command::new("ffmpeg")
         .arg("-nostdin")
         .arg("-v")
@@ -155,9 +182,9 @@ pub async fn measure(path: &Path) -> Option<Measured> {
         // that is not the output stream.
         .stderr(Stdio::piped())
         .spawn()
-        .ok()?;
+        .map_err(|e| format!("could not start ffmpeg: {e}"))?;
 
-    let stderr = child.stderr.take()?;
+    let stderr = child.stderr.take().ok_or("ffmpeg gave no stderr")?;
     let reader = tokio::spawn(async move {
         use tokio::io::AsyncReadExt;
         let mut buf = String::new();
@@ -169,10 +196,20 @@ pub async fn measure(path: &Path) -> Option<Measured> {
     let waited = tokio::time::timeout(TIMEOUT, child.wait()).await;
     if waited.is_err() {
         let _ = child.kill().await;
-        return None;
+        return Err(format!("timed out after {}s", TIMEOUT.as_secs()));
     }
-    let text = reader.await.ok()?;
-    parse(&text)
+    let text = reader.await.map_err(|e| format!("could not read ffmpeg: {e}"))?;
+    parse(&text).ok_or_else(|| {
+        // ffmpeg's own last words are far more use than "parse failed" - they
+        // name a missing file, a codec it lacks, or a permission it wants.
+        let tail: Vec<&str> = text
+            .lines()
+            .rev()
+            .filter(|l| !l.trim().is_empty())
+            .take(2)
+            .collect();
+        format!("no usable summary ({})", tail.join(" | "))
+    })
 }
 
 /// Pulls the three numbers out of ebur128's trailing summary.
@@ -316,6 +353,34 @@ size=N/A time=00:00:08.00 bitrate=N/A speed= 315x elapsed=0:00:00.02
         let no_peak = REAL.replace("  True peak:\n    Peak:      -27.1 dBFS", "");
         let m = parse(&no_peak).expect("loudness still parses");
         assert_eq!(m.peak_db, 0.0);
+    }
+
+    /// The whole path, against real ffmpeg: generate a tone at a known level,
+    /// measure it, and check the answer. Skips itself where there is no
+    /// ffmpeg rather than failing a machine that was never going to pass.
+    #[tokio::test]
+    async fn measures_a_real_file_end_to_end() {
+        let dir = std::env::temp_dir().join("afm-loudness-test");
+        let _ = std::fs::create_dir_all(&dir);
+        let wav = dir.join("tone.flac");
+        let made = std::process::Command::new("ffmpeg")
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i"])
+            .arg("sine=frequency=440:duration=6:sample_rate=44100,pan=stereo|c0=c0|c1=c0")
+            .args(["-af", "volume=-9dB"])
+            .arg(&wav)
+            .status();
+        match made {
+            Ok(st) if st.success() => {}
+            // No ffmpeg here, or it refused: not this test's business.
+            _ => return,
+        }
+        let m = measure(&wav).await.expect("a generated tone measures");
+        // A -9 dBFS sine sits near -21 LUFS; the tolerance is wide because the
+        // point is "it read the file and produced a sane number", not a
+        // calibration check on ffmpeg's own filter.
+        assert!(m.lufs < -5.0 && m.lufs > -40.0, "implausible loudness: {}", m.lufs);
+        assert!(m.peak_db <= 0.0, "peak above full scale: {}", m.peak_db);
+        let _ = std::fs::remove_file(&wav);
     }
 
     #[test]
