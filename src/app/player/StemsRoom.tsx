@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Button, Switch, Text } from '@glacier/react';
+import { Button, SeekBar, Switch, Text, useBeat, useLiveLevels } from '@glacier/react';
 import { AudioWaveform, Drum, Guitar, Mic, Piano, Waves } from '@glacier/icons';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { trackIdFromPath } from '../server.ts';
@@ -41,7 +41,7 @@ type State =
 
 export function StemsRoom() {
   const { session } = useServerSession();
-  const { track } = useNowPlayingMotion();
+  const { track, meter, audible, position } = useNowPlayingMotion();
   const drop = useStemDrop();
   const id = track ? trackIdFromPath(track.path) : null;
 
@@ -82,6 +82,32 @@ export function StemsRoom() {
         return { kind: 'none' };
     }
   }, [stems.state, stems.progress, stems.stems, stems.problem]);
+
+  /**
+   * A line under each part that moves with the song.
+   *
+   * One meter, one beat, one playhead - shared by every row, because that is
+   * the truth: the parts you kept are mixed down to a SINGLE stream before it
+   * leaves the server, so this device never hears them apart and could not
+   * meter them apart if it wanted to. What honestly differs row to row is
+   * whether that part is in what you are hearing at all, and that is what the
+   * rows show: a part in the mix rides the beat, a part taken out holds still.
+   * Anything more per-row would be six copies of one signal wearing different
+   * hats, which is a picture of data that does not exist.
+   *
+   * The playhead itself steps at the motion source's ~4Hz, not at frame rate.
+   * That is deliberate and unnoticeable here: what the eye follows on a bar
+   * this small is the beat deforming it, which does run every frame.
+   *
+   * Both hooks idle while nothing is audible or no parts exist yet, so the
+   * other rooms of the console cost nothing for this.
+   */
+  const ready = state.kind === 'ready';
+  const moving = ready && audible;
+  const duration = Math.max(1, track?.duration ?? 0);
+  const progress = Math.min(1, position / duration);
+  const beat = useBeat({ meter, active: moving, at: progress });
+  const levels = useLiveLevels({ meter, progress, active: moving });
 
   if (!session) {
     return (
@@ -169,6 +195,30 @@ export function StemsRoom() {
                     checked={on}
                     onCheckedChange={(want: boolean) => setStemDropped(id, part, !want)}
                   />
+                  {/* `inert` rather than a bare `aria-hidden`: this bar is a
+                      picture of the song, not a second transport, and hiding
+                      it from a screen reader while leaving a slider in the tab
+                      order is the worst of both. Inert takes it out of both at
+                      once. The row's control is the switch; the seek that
+                      matters is the one on the sheet behind this panel. */}
+                  <span className="stemsRoom__pulse" inert>
+                    <SeekBar
+                      aria-label={label}
+                      duration={duration}
+                      value={position}
+                      size="sm"
+                      shape="wave"
+                      fill="tonal"
+                      rail="contrast"
+                      tone={on ? 'accent' : 'neutral'}
+                      levels={levels}
+                      beat={beat}
+                      // 0 is the kit's own way to say "hold still" without the
+                      // caller tearing its meter down - so a part that is out
+                      // of the song simply stops moving, in place.
+                      intensity={on ? 1 : 0}
+                    />
+                  </span>
                 </li>
               );
             })}
