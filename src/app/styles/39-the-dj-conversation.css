@@ -352,7 +352,7 @@
   padding: var(--glacier-space-3);
   border-radius: var(--glacier-radius-lg);
   border: 1px solid var(--glacier-border);
-  background: var(--glacier-bg-surface);
+  background: var(--glacier-surface);
   color: var(--glacier-text);
   cursor: pointer;
   scroll-snap-align: start;
