@@ -15,6 +15,14 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.198
+
+- Stems moved into the sound console, beside the EQ: take the vocal or the drums out of what you are listening to without leaving the song
+- The player keeps playing and keeps its place — no separate screen, no second set of controls
+- Parts go back the moment you put them back, and they reset when the song changes
+- Taking a song apart says how far along it is, and how many songs are ahead of it in the queue
+- Long separations are no longer cut off partway through and reported as failures
+
 ## 0.3.197
 
 - Stems: a button on the now playing screen takes the song apart where it stands — drop the vocal, drop the drums, put them back

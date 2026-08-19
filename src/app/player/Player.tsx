@@ -30,6 +30,7 @@ import { useJamOptional } from './jam.tsx';
 import { useSystemBack } from '../nav/systemBack.ts';
 import { usePlayerDismiss } from './playerDismiss.ts';
 import { subscribeDeckHold } from './deckHold.ts';
+import { stemDropFollowsTrack, useStemDrop } from './stemDrop.ts';
 import { initDockWave } from './dockWave.ts';
 import { useMediaQuery } from '../ux/useMediaQuery.ts';
 import { REDUCED_MOTION_QUERY } from '../ux/useReducedMotion.ts';
@@ -505,21 +506,57 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
    * turning speed on re-lengths the bar immediately instead of waiting for the
    * reload to report new metadata.
    */
+  /**
+   * Parts taken out belong to the song they were taken out of.
+   *
+   * A drop cannot outlive its track: it only means anything on a song that has
+   * been separated, so carrying it forward would be silently inert across most
+   * of a library and then surprising on the one track where it still applied.
+   */
+  useEffect(() => {
+    stemDropFollowsTrack(track ? trackIdFromPath(track.path) : null);
+  }, [track]);
+
   const rateRef = useRef(1);
   useEffect(() => {
     rateRef.current = chainRate(chain);
     const track = liveRef.current.track;
     if (track) setDuration(timelineDuration(activeAudio()?.duration ?? 0, track.duration, rateRef.current));
   }, [chain]);
+  /*
+   * Parts taken out of the song, which change the sound exactly the way a pedal
+   * does - so they reload in place through the same coalesced path rather than
+   * getting a mechanism of their own. `parts.join` rather than the array, so a
+   * re-render that rebuilds an identical list is not a change.
+   */
+  const drop = useStemDrop().parts.join(',');
   const rackWas = useRef(rack);
   const chainWas = useRef(chain);
+  const dropWas = useRef(drop);
+  const trackWas = useRef<string | null>(null);
   const recolourTimer = useRef<number | undefined>(undefined);
   useEffect(() => {
     const beforeRack = rackWas.current;
     const beforeChain = chainWas.current;
+    const beforeDrop = dropWas.current;
+    const beforeTrack = trackWas.current;
+    const nowTrack = liveRef.current.track?.path ?? null;
     rackWas.current = rack;
     chainWas.current = chain;
-    if (beforeRack === rack && beforeChain === chain) return;
+    dropWas.current = drop;
+    trackWas.current = nowTrack;
+    /*
+     * A new song is not a change of sound.
+     *
+     * The track effect is already loading it, and the parts a listener had taken
+     * out are forgotten with the song they were taken out of - so this pass sees
+     * `drop` go from something to nothing and would schedule a reload of a track
+     * that had only just started. Recording the new state and standing down is
+     * the whole fix, and it covers the same case for a rack changed in the
+     * moment a song ends.
+     */
+    if (beforeTrack !== nowTrack) return;
+    if (beforeRack === rack && beforeChain === chain && beforeDrop === drop) return;
     if (!liveRef.current.track || !isRemotePath(liveRef.current.track.path)) return;
 
     // Coalesce a burst of changes into ONE reload.
@@ -542,7 +579,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
 
     return () => window.clearTimeout(recolourTimer.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the rack and chain are the triggers; resumeInPlace is redefined every render
-  }, [rack, chain]);
+  }, [rack, chain, drop]);
 
   /** Arm the ladder. Idempotent: an episode already running keeps its timer. */
   const noteStall = () => {

@@ -72,17 +72,17 @@
     {
       "id": "pads",
       "name": "Pads",
-      "version": "0.3.2",
-      "description": "Your own records, taken apart and handed back as an instrument: the song keeps playing and the pads decide which parts of it you hear.",
+      "version": "0.4.0",
+      "description": "A board fed by your own library: any song pulled into six parts you can play with your thumbs.",
       "author": "AttackFM",
       "tags": [
         "Sound",
         "Instrument"
       ],
-      "entry": "pads-0.3.2.js",
+      "entry": "pads-0.4.0.js",
       "api": 1,
-      "bytes": 26489,
-      "sha256": "5ca185fa9e48246f4f80c3d927506686b3bcab3bf5bf305be6e2e60706afc6af",
+      "bytes": 19153,
+      "sha256": "cf588680f6215a9af5cb9e6c966f6e0c54fa897f2d57456f88f7de47cdf47ce3",
       "requiresServer": true,
       "public": true
     },

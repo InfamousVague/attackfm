@@ -489,13 +489,31 @@ pub async fn transcode(
         .filter(|s| s.is_finite() && *s >= 0.0)
         .unwrap_or(0.0);
 
+    // Parts to leave out. Present only when the listener has taken something
+    // out of the song in the sound console, and honoured only when the track has
+    // actually been separated - otherwise this is an ordinary transcode of an
+    // ordinary file, which is what a song nobody has pulled apart should be.
+    let dropped = crate::stems::parse_drop(params.get("drop"));
+    let kept = crate::stems::kept_stem_paths(&state, id, &dropped);
+
     let mut command = tokio::process::Command::new("ffmpeg");
     // -ss before -i seeks by keyframe index instead of decoding up to the
-    // point, which is the difference between instant and a minute.
-    if seek > 0.0 {
-        command.arg("-ss").arg(format!("{seek:.3}"));
+    // point, which is the difference between instant and a minute. With several
+    // inputs it has to be repeated: it applies to the NEXT input only, and one
+    // unseeked stem would play the top of the song under all the others.
+    if kept.is_empty() {
+        if seek > 0.0 {
+            command.arg("-ss").arg(format!("{seek:.3}"));
+        }
+        command.arg("-i").arg(&path).args(["-map", "0:a:0"]);
+    } else {
+        for stem in &kept {
+            if seek > 0.0 {
+                command.arg("-ss").arg(format!("{seek:.3}"));
+            }
+            command.arg("-i").arg(stem);
+        }
     }
-    command.arg("-i").arg(&path).args(["-map", "0:a:0"]);
     // The effects, when any were asked for and recognised. Two vocabularies
     // feed one -af flag: the fixed rack (fx, names looked up above) and the
     // hi-fi chain (fx2, typed nodes compiled in fx.rs). When both arrive the
@@ -509,8 +527,26 @@ pub async fn transcode(
         (None, Some(r)) => Some(r),
         (None, None) => None,
     };
-    if let Some(chain) = af {
-        command.args(["-af", &chain]);
+    if kept.is_empty() {
+        if let Some(chain) = af {
+            command.args(["-af", &chain]);
+        }
+    } else {
+        // Summing the parts back together, with the effects after them. The
+        // parts were separated FROM one mix, so adding them up is meant to
+        // reconstruct it: `normalize=0` because normalising would divide each by
+        // the count and hand back something several decibels quiet. The limiter
+        // catches the rare sum that overshoots.
+        //
+        // -filter_complex rather than -af because there is more than one input,
+        // and the two cannot both describe the same output.
+        let mut fc = format!("amix=inputs={}:normalize=0", kept.len());
+        if let Some(chain) = af {
+            fc.push(',');
+            fc.push_str(&chain);
+        }
+        fc.push_str(",alimiter=limit=0.95");
+        command.args(["-filter_complex", &fc]);
     }
     command
         .args(["-c:a", "aac"])

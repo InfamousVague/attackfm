@@ -1,8 +1,8 @@
 {
   "id": "pads",
   "name": "Pads",
-  "version": "0.3.2",
-  "description": "Your own records, taken apart and handed back as an instrument: the song keeps playing and the pads decide which parts of it you hear.",
+  "version": "0.4.0",
+  "description": "A board fed by your own library: any song pulled into six parts you can play with your thumbs.",
   "author": "AttackFM",
   "tags": [
     "Sound",

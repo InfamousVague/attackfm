@@ -11,6 +11,7 @@ import { PluginSlot } from '../../plugins/runtime.tsx';
 import { EqPanel } from './EqPanel.tsx';
 import { FxRoom } from './FxRoom.tsx';
 import { FiltersRoom } from './FiltersRoom.tsx';
+import { StemsRoom, useStemsOut } from './StemsRoom.tsx';
 import { FILTERS, signature } from './filters.ts';
 import { FxSaved } from './FxSaved.tsx';
 import { FX_NODES, setFxChainOn, useFxChain } from './fxChain.ts';
@@ -672,10 +673,12 @@ export function NowPlayingSheet({
  */
 /** The console's three rooms: the graphic EQ, the chain you build, and the
  *  shelf of finished sounds. */
-type Room = 'eq' | 'hifi' | 'filters';
+type Room = 'eq' | 'hifi' | 'filters' | 'stems';
 
 export function SoundConsole({ narrow }: { narrow: boolean }) {
   const chain = useFxChain();
+  // How many parts are out of the song right now, for the tab's dot.
+  const stemsOut = useStemsOut();
   const [room, setRoom] = useState<Room>(() => {
     try {
       const held = localStorage.getItem(CONSOLE_KEY);
@@ -684,7 +687,7 @@ export function SoundConsole({ narrow }: { narrow: boolean }) {
       // room that no longer exists - which would otherwise silently fall back
       // to EQ and look like the preference was never saved.
       if (held === 'pedals') return 'filters';
-      return held === 'hifi' || held === 'filters' ? held : 'eq';
+      return held === 'hifi' || held === 'filters' || held === 'stems' ? held : 'eq';
     } catch {
       return 'eq';
     }
@@ -744,6 +747,18 @@ export function SoundConsole({ narrow }: { narrow: boolean }) {
               ),
             },
             {
+              value: 'stems',
+              label: (
+                <span className="soundConsole__tab">
+                  Stems
+                  {/* A count, not a dot: "two parts out" is a thing somebody
+                      wants to know at a glance, and unlike a filter the number
+                      genuinely means something. */}
+                  {stemsOut > 0 && <CounterBadge count={stemsOut} size="sm" tone="accent" />}
+                </span>
+              ),
+            },
+            {
               value: 'filters',
               label: (
                 <span className="soundConsole__tab">
@@ -784,6 +799,7 @@ export function SoundConsole({ narrow }: { narrow: boolean }) {
           </>
         )}
         {room === 'filters' && <FiltersRoom />}
+        {room === 'stems' && <StemsRoom />}
       </div>
     </div>
   );
