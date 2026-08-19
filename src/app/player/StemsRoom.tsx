@@ -8,6 +8,8 @@ import { clearStemDrop, setStemDropped, useStemDrop } from './stemDrop.ts';
 import { useStems } from './stemsReady.ts';
 import { chainRate, useFxChain } from './fxChain.ts';
 import { ENV_HZ, envelopeMeter, loadStemEnvelopes, type StemEnvelopes } from './stemLevels.ts';
+import { onMeteredConnection } from '../core/network.ts';
+import { wifiOnlyDownloads } from '../settings/behaviourPrefs.ts';
 
 /**
  * The part's own shape across the whole song, thinned to something a bar can
@@ -245,15 +247,26 @@ export function StemsRoom() {
   const partsKey = ready ? state.parts.join(',') : '';
   useEffect(() => {
     const path = track?.path ?? null;
+    // Lofi is a standing "spend less of my data", and nine megabytes to draw
+    // six lines is not what somebody who asked for that had in mind.
     if (!ready || !path || !session || settings.quality === 'transcode') return;
     const key = `${path}|${partsKey}`;
     if (measured.current === key) return;
     measured.current = key;
     setEnvelopes(new Map());
     const stop = new AbortController();
-    void loadStemEnvelopes(track!, session, partsKey.split(','), stop.signal).then((got) => {
+    void (async () => {
+      // The same rule the cache sweep applies (mayDownload, cacheSchedule.ts),
+      // composed from the same two primitives rather than shared, because this
+      // is the player and that is the cache. Opening a panel is not a request
+      // to spend nine megabytes of somebody's mobile data, and "only download
+      // on Wi-Fi" plainly covers a nine-megabyte download. Unknown stays
+      // permissive, which is that module's contract and not ours to reverse.
+      if (wifiOnlyDownloads() && (await onMeteredConnection())) return;
+      if (stop.signal.aborted) return;
+      const got = await loadStemEnvelopes(track!, session, partsKey.split(','), stop.signal);
       if (!stop.signal.aborted && got.size > 0) setEnvelopes(got);
-    });
+    })();
     return () => stop.abort();
   }, [ready, track?.path, partsKey, session, settings.quality]);
 
