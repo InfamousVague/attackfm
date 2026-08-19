@@ -95,9 +95,9 @@ export function FxSaved() {
       localStorage.setItem(AB_KEY, JSON.stringify(raw));
       const incoming = Array.isArray(raw[to]) ? (raw[to] as FxNode[]) : [];
       // Switching into a slot you have never filled leaves the chain empty,
-      // and an empty chain that claims to be on is a lie the store would fix
-      // anyway - so disarm rather than let the switch flicker back.
-      edit(incoming, incoming.length > 0 ? chain.on : false);
+      // which is its own answer now that a chain is on exactly when something
+      // in it is.
+      edit(incoming);
     } catch {
       // A storage that will not hold the other side still lets the label move.
     }
@@ -208,7 +208,7 @@ export function FxSaved() {
                         type="button"
                         className="fxSaved__load"
                         onClick={() => {
-                          edit(fromWire(p.chain), true);
+                          edit(fromWire(p.chain));
                           say(`Loaded “${p.name}”.`);
                         }}
                       >

@@ -40,8 +40,30 @@ interface Options {
 
 const POLL_MS = 1000;
 
-/** One in-flight wait per song, so two surfaces on the same track share it. */
-const inFlight = new Map<string, Promise<StemsOutcome>>();
+/**
+ * One in-flight wait per song, so two surfaces on the same track share it.
+ *
+ * The job is deliberately NOT cancellable by a participant. Sharing a promise
+ * and letting the first caller's AbortSignal reach into it meant one watcher
+ * going away killed the work for everyone still waiting - and worse, handed
+ * them its `aborted` result, which every caller correctly reads as "somebody
+ * else owns this now" and quietly renders nothing. Two watchers were enough:
+ * React mounts an effect, tears it down and mounts it again, so the second one
+ * inherited the first one's cancellation and the panel sat on "looking for this
+ * song's parts" forever.
+ *
+ * So the work runs to completion, progress fans out to whoever is listening,
+ * and each caller decides for itself whether it still cares.
+ */
+interface Job {
+  promise: Promise<StemsOutcome>;
+  listeners: Set<(p: StemProgress) => void>;
+  /** The last progress seen, so a watcher that arrives late is not blank
+   *  until the next poll. */
+  last: StemProgress | null;
+}
+
+const inFlight = new Map<string, Job>();
 
 function key(session: ServerSession, trackId: number): string {
   return `${session.url}#${trackId}`;
@@ -62,20 +84,44 @@ export async function ensureStems(
   opts: Options = {},
 ): Promise<StemsOutcome> {
   const k = key(session, trackId);
-  const running = inFlight.get(k);
-  if (running) return running;
+  const { onProgress, signal, make } = opts;
 
-  const job = run(session, trackId, opts).finally(() => {
-    if (inFlight.get(k) === job) inFlight.delete(k);
-  });
-  inFlight.set(k, job);
-  return job;
+  let job = inFlight.get(k);
+  if (!job) {
+    const fresh: Job = { promise: null as unknown as Promise<StemsOutcome>, listeners: new Set(), last: null };
+    fresh.promise = run(session, trackId, {
+      make,
+      onProgress: (p) => {
+        fresh.last = p;
+        for (const l of fresh.listeners) l(p);
+      },
+    }).finally(() => {
+      if (inFlight.get(k) === fresh) inFlight.delete(k);
+    });
+    inFlight.set(k, fresh);
+    job = fresh;
+  }
+
+  const mine = job;
+  if (onProgress) {
+    mine.listeners.add(onProgress);
+    // Caught up at once rather than at the next poll, so a panel opened
+    // halfway through a separation shows the bar instead of a blank.
+    if (mine.last) onProgress(mine.last);
+  }
+  try {
+    const out = await mine.promise;
+    // The work finished either way; this caller just may not want it any more.
+    return signal?.aborted ? { ok: false, reason: 'aborted', problem: '' } : out;
+  } finally {
+    if (onProgress) mine.listeners.delete(onProgress);
+  }
 }
 
 async function run(
   session: ServerSession,
   trackId: number,
-  { onProgress, signal, make = true }: Options,
+  { onProgress, make = true }: Omit<Options, 'signal'>,
 ): Promise<StemsOutcome> {
   const began = Date.now();
   const since = () => Math.round((Date.now() - began) / 1000);
@@ -88,14 +134,11 @@ async function run(
       seconds: since(),
     });
 
-  const gone = () => signal?.aborted === true;
-
   let now: StemStatus;
   try {
     tell('asking', null);
-    now = await stemStatus(session, trackId, signal);
+    now = await stemStatus(session, trackId);
   } catch (err) {
-    if (gone()) return { ok: false, reason: 'aborted', problem: '' };
     return { ok: false, reason: 'offline', problem: message(err) };
   }
 
@@ -110,19 +153,15 @@ async function run(
   try {
     await requestStems(session, trackId);
   } catch (err) {
-    if (gone()) return { ok: false, reason: 'aborted', problem: '' };
     return { ok: false, reason: 'offline', problem: message(err) };
   }
 
   for (;;) {
-    if (gone()) return { ok: false, reason: 'aborted', problem: '' };
     await new Promise((r) => window.setTimeout(r, POLL_MS));
-    if (gone()) return { ok: false, reason: 'aborted', problem: '' };
 
     try {
-      now = await stemStatus(session, trackId, signal);
+      now = await stemStatus(session, trackId);
     } catch (err) {
-      if (gone()) return { ok: false, reason: 'aborted', problem: '' };
       return { ok: false, reason: 'offline', problem: message(err) };
     }
 

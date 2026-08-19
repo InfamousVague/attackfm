@@ -946,9 +946,21 @@ body [class*='_panel_']:has(> .dlPanel) {
 }
 
 .stemsRoom__part {
-  display: flex;
+  /* Two lines: the part on top, the line it is playing along underneath.
+     Inline between the name and the switch was the first try and it does not
+     fit - the labels run from "Bass" to "Strings & horns", so a name column
+     wide enough for the longest leaves the bar a stub, and one sized to
+     content starts every bar at a different place down the list. Given its
+     own row the bar is full width, always aligned, and never argues with the
+     label. */
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'glyph name  switch'
+    'pulse pulse pulse';
   align-items: center;
-  gap: var(--glacier-space-3);
+  column-gap: var(--glacier-space-3);
+  row-gap: var(--glacier-space-2);
   padding: var(--glacier-space-2) var(--glacier-space-3);
   border-radius: var(--glacier-radius-lg);
   background: var(--glacier-surface);
@@ -957,6 +969,20 @@ body [class*='_panel_']:has(> .dlPanel) {
      the row that looks different - the default state stays quiet. */
   opacity: 0.55;
   transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+/* Glyph, name and the bar are placed; the switch is the one child left, and
+   the one cell left is the one meant for it. Naming it here would mean
+   guessing at the kit's own class, which is not ours to depend on. */
+.stemsRoom__glyph { grid-area: glyph; }
+
+/* The moving line. `inert` already makes it untouchable; this is only about
+   it not looking like something you could grab. */
+.stemsRoom__pulse {
+  grid-area: pulse;
+  display: block;
+  min-inline-size: 0;
+  cursor: default;
 }
 
 .stemsRoom__part[data-on] {
@@ -979,7 +1005,7 @@ body [class*='_panel_']:has(> .dlPanel) {
 }
 
 .stemsRoom__name {
-  flex: 1;
+  grid-area: name;
   min-inline-size: 0;
 }
 
@@ -1030,4 +1056,26 @@ body [class*='_panel_']:has(> .dlPanel) {
     inline-size: 100%;
     opacity: 0.4;
   }
+}
+
+/* "All out" - what the chain's master switch used to be, said as an action
+   rather than a state. It only appears while something is in, so it is never
+   a control that does nothing, which is exactly what the switch became. */
+.fxRoom__allOff,
+.eqFxChainRow__allOff {
+  appearance: none;
+  border: 1px solid var(--glacier-border);
+  background: transparent;
+  color: var(--glacier-text-muted);
+  border-radius: var(--glacier-radius-full, 999px);
+  padding: 0.15rem 0.6rem;
+  font-size: var(--glacier-font-size-xs);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.fxRoom__allOff:hover,
+.eqFxChainRow__allOff:hover {
+  color: var(--glacier-text);
+  border-color: var(--glacier-text-subtle);
 }

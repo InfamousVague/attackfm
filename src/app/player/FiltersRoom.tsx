@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Input, SegmentedControl, Switch, Text } from '@glacier/react';
 import { CircleOff, Search, X } from '@glacier/icons';
-import { setFxChain, setFxChainOn, useFxChain, useServerFxNodes, type FxNode } from './fxChain.ts';
+import { setFxChain, useFxChain, useServerFxNodes, type FxNode } from './fxChain.ts';
 import { FAMILIES, FILTERS, kindsUsed, signature, type Filter } from './filters.ts';
 import { scrollOwner } from './fxEditing.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
@@ -54,7 +54,7 @@ export function FiltersRoom() {
    * stop a filter claiming to be on, and this is what makes that automatic.
    */
   const activeId = useMemo(() => {
-    if (!chain.on || chain.nodes.length === 0) return null;
+    if (chain.nodes.length === 0) return null;
     const now = signature(chain.nodes.map((n) => ({ t: n.t, params: n.params })));
     return FILTERS.find((f) => signature(f.nodes) === now)?.id ?? null;
   }, [chain]);
@@ -70,7 +70,7 @@ export function FiltersRoom() {
       params: { ...n.params },
       key: freshKey(),
     }));
-    setFxChain(nodes, true);
+    setFxChain(nodes);
     // Back to the top, where the row that is now lit lives. The shelf runs to
     // thirty-five and tapping from the bottom of it would otherwise leave you
     // with no sign anything happened.
@@ -109,13 +109,6 @@ export function FiltersRoom() {
         <Text tone="muted" size="xs">
           {activeId ? (FILTERS.find((f) => f.id === activeId)?.name ?? 'on') : 'none'}
         </Text>
-        {/* The whole chain's switch, not this room's - a filter IS the chain
-            while it is on, so there is nothing else for it to mean. */}
-        <Switch
-          aria-label="Filters on"
-          checked={chain.on && chain.nodes.some((n) => n.on)}
-          onCheckedChange={(v: boolean) => setFxChainOn(v)}
-        />
       </div>
 
       {!session && (
@@ -131,7 +124,7 @@ export function FiltersRoom() {
           type="button"
           className="fxFilters__clear"
           disabled={chain.nodes.length === 0}
-          onClick={() => setFxChain([], false)}
+          onClick={() => setFxChain([])}
         >
           <CircleOff size={14} />
           No filter

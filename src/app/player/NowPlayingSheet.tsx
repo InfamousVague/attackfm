@@ -14,7 +14,7 @@ import { FiltersRoom } from './FiltersRoom.tsx';
 import { StemsRoom, useStemsOut } from './StemsRoom.tsx';
 import { FILTERS, signature } from './filters.ts';
 import { FxSaved } from './FxSaved.tsx';
-import { FX_NODES, setFxChainOn, useFxChain } from './fxChain.ts';
+import { FX_NODES, silenceFxChain, useFxChain } from './fxChain.ts';
 import { MarqueeText } from './MarqueeText.tsx';
 import { SpinningDisc } from './SpinningDisc.tsx';
 import { QueuePanel } from './QueuePanel.tsx';
@@ -713,7 +713,7 @@ export function SoundConsole({ narrow }: { narrow: boolean }) {
   // made of: the whole point of a filter is that its parts are not the unit
   // anybody is thinking in.
   const filterOn = useMemo(() => {
-    if (!chain.on || chain.nodes.length === 0) return null;
+    if (chain.nodes.length === 0) return null;
     const now = signature(chain.nodes.map((n) => ({ t: n.t, params: n.params })));
     return FILTERS.find((f) => signature(f.nodes) === now)?.name ?? null;
   }, [chain]);
@@ -814,13 +814,13 @@ function FxChainRow() {
   return (
     <div className="eqFxChainRow">
       <span className="eqFxChainRow__label">
-        HiFi chain · {chain.on && live > 0 ? `${live} node${live === 1 ? '' : 's'}` : 'off'}
+        HiFi chain · {live > 0 ? `${live} node${live === 1 ? '' : 's'}` : 'all out'}
       </span>
-      <Switch
-        checked={chain.on && live > 0}
-        onCheckedChange={(v: boolean) => setFxChainOn(v)}
-        aria-label="HiFi chain"
-      />
+      {live > 0 && (
+        <button type="button" className="eqFxChainRow__allOff" onClick={silenceFxChain}>
+          All out
+        </button>
+      )}
     </div>
   );
 }
