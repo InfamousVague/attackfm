@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.203
+
+- Scratching a song you have slowed down or sped up lands where you let go. The platter was reading the song at its original speed, so letting go dropped you somewhere else in the track — half a minute out at 1.25x, further the deeper in you were
+
 ## 0.3.202
 
 - Taking a part out, or moving an effect, picks up where you are — it used to rebuild the song from the beginning first, and the wait grew the deeper into a track you were
