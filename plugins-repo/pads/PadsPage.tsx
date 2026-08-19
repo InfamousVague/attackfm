@@ -18,13 +18,35 @@ import { PAD_COUNT, PadEngine, emptyPad, type PadSettings } from './engine.ts';
  * with Web Audio - see engine.ts.
  */
 
+/**
+ * The parts, in the order a board wants them: voice, then the rhythm section,
+ * then what is played over the top.
+ *
+ * "Everything else" used to be a quarter of this list and most of the record -
+ * the guitars, the keys, the strings and the horns in one pad you could only
+ * mute wholesale. The six-stem separator splits guitar and piano out, so the
+ * remainder is genuinely a remainder, and it is named for what it actually
+ * holds rather than for everything the other three are not.
+ */
+const STEM_ORDER = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'] as const;
+
 const STEM_LABELS: Record<string, string> = {
   vocals: 'Vocals',
   drums: 'Drums',
   bass: 'Bass',
-  other: 'Everything else',
+  guitar: 'Guitar',
+  piano: 'Keys',
+  other: 'Strings & horns',
 };
-const STEM_HUES: Record<string, number> = { vocals: 320, drums: 28, bass: 265, other: 190 };
+
+const STEM_HUES: Record<string, number> = {
+  vocals: 320,
+  drums: 28,
+  bass: 265,
+  guitar: 96,
+  piano: 200,
+  other: 190,
+};
 const KIT_KEY = 'attackfm-pads-kit-v1';
 
 interface Session {
@@ -129,6 +151,18 @@ export function PadsPage() {
   /** Pads whose audio is actually decoded in this session - a kit restored
    *  from storage has settings but no sound until it is reloaded. */
   const [loaded, setLoaded] = useState<Set<number>>(new Set());
+
+  /**
+   * The board as it stands, for code that runs between renders.
+   *
+   * autoMap awaits a fetch and a decode per stem, so by the time it looks for
+   * the next free pad it would be reading the `pads` its closure captured
+   * before any of them landed - and would put every stem on the same pad.
+   */
+  const padsRef = useRef(pads);
+  padsRef.current = pads;
+  const loadedRef = useRef(loaded);
+  loadedRef.current = loaded;
 
   const say = (text: string) => {
     setNote(text);
@@ -246,7 +280,10 @@ export function PadsPage() {
         );
         if (!live) return;
         setJobState(res.state);
-        setReady(res.stems.map((s) => s.stem));
+        const have = res.stems.map((s) => s.stem);
+        setReady(have);
+        // Lay them out the moment they exist.
+        if (res.state === 'done' && have.length > 0) void autoMap(pickTrack, have);
       } catch {
         if (live) setJobState('none');
       }
@@ -260,6 +297,47 @@ export function PadsPage() {
       window.clearInterval(timer);
     };
   }, [session, pickTrack, jobState]);
+
+  /**
+   * Put a freshly separated track on the board without being asked.
+   *
+   * Separating a song and then assigning each part to a pad by hand is two
+   * jobs, and the second one has exactly one sensible answer: the parts in the
+   * order a board wants them, on the first free pads. Six stems meant six
+   * manual assignments to reach the state everybody wanted anyway.
+   *
+   * Only ever fills pads that are EMPTY, and never touches one already holding
+   * something - a board someone has built is theirs, and a separation finishing
+   * in the background must not rearrange it. Anything it does can be undone by
+   * assigning over it, exactly as before.
+   */
+  const autoMap = async (trackId: number, have: readonly string[]) => {
+    // Canonical order first, then anything the model produced that this build
+    // does not know about - a newer separator adding a stem should still land
+    // on the board rather than being silently dropped.
+    const ordered = [
+      ...STEM_ORDER.filter((s) => have.includes(s)),
+      ...have.filter((s) => !STEM_ORDER.includes(s as (typeof STEM_ORDER)[number])),
+    ];
+
+    const taken = new Set<number>();
+    for (const stem of ordered) {
+      // Already on the board from an earlier pass? Leave it where it is.
+      const existing = padsRef.current.findIndex(
+        (p) => p.source?.trackId === trackId && p.source?.stem === stem,
+      );
+      if (existing !== -1) {
+        taken.add(existing);
+        continue;
+      }
+      const free = padsRef.current.findIndex(
+        (p, i) => !taken.has(i) && !p.source && !loadedRef.current.has(i),
+      );
+      if (free === -1) break; // A full board is a deliberate one; stop.
+      taken.add(free);
+      await assign(free, trackId, stem);
+    }
+  };
 
   const assign = async (index: number, trackId: number, stem: string) => {
     if (!session) return;
