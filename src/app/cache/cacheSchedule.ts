@@ -5,6 +5,8 @@
 import { type ServerSession } from '../server.ts';
 import { setNativeSyncing } from '../player/androidAudio.ts';
 import { isTauri } from '../core/tauri.ts';
+import { onMeteredConnection, onNetworkChange } from '../core/network.ts';
+import { wifiOnlyDownloads } from '../settings/behaviourPrefs.ts';
 import { sweepCache } from './cacheSweep.ts';
 
 // --- when it runs ----------------------------------------------------------
@@ -18,9 +20,47 @@ const FIRST_SWEEP_DELAY_MS = 90_000;
 
 let sweeping = false;
 
+/**
+ * Whether a pass may spend data right now.
+ *
+ * THIS GUARDS THE AUTOMATIC PATH ONLY, and that is the whole design of the
+ * Wi-Fi switch rather than an omission. Everything that reaches a download
+ * without being asked - the six-hourly schedule, the heart's nudge, the Date
+ * deck - comes through `sweepIfIdle` and is held here. Everything a person
+ * asked for out loud goes somewhere else: `Check now` calls `sweepCache`
+ * directly, and pinning a song calls `pinTrack`. Neither is stopped, because
+ * refusing a stated request to protect somebody from the request they just
+ * made is not restraint, it is a bug with a rationale.
+ *
+ * Held, not cancelled: nothing is queued or remembered, because the schedule
+ * already re-runs on foreground and every thirty minutes, so joining Wi-Fi
+ * picks the work up on its own within one look. That is also why this is the
+ * last check before a pass and not a subscription - by the time it matters,
+ * the answer is fresh.
+ */
+async function mayDownload(): Promise<boolean> {
+  if (!wifiOnlyDownloads()) return true;
+  return !(await onMeteredConnection());
+}
+
+/**
+ * Whether the last automatic pass stood down for data rather than running.
+ *
+ * Only so rejoining Wi-Fi can go immediately instead of at the next look. The
+ * settings pane does NOT read this - it derives what it says from the switch
+ * and the live connection, both of which re-render, where this is a module
+ * variable that would sit stale on screen.
+ */
+let heldForData = false;
+
 /** Run a pass unless one is already going. Safe to call from anywhere. */
 export async function sweepIfIdle(session: ServerSession): Promise<void> {
   if (sweeping || !isTauri()) return;
+  if (!(await mayDownload())) {
+    heldForData = true;
+    return;
+  }
+  heldForData = false;
   sweeping = true;
   setNativeSyncing(true);
   try {
@@ -94,11 +134,22 @@ export function startCacheSweeps(session: ServerSession): () => void {
   const timer = window.setInterval(maybe, 30 * 60 * 1000);
   document.addEventListener('visibilitychange', maybe);
 
+  // Joining Wi-Fi is the moment a held pass should go, and the half-hour
+  // interval is far too slow to feel like a response to it - you get home,
+  // the phone joins the house network, and nothing happens for what could be
+  // twenty-nine minutes. A pass held for data is deliberately treated as
+  // interrupted rather than finished, so this only has to get past the
+  // one-minute floor rather than the six-hour cadence.
+  const unwatch = onNetworkChange((kind) => {
+    if (kind === 'wifi' && heldForData) maybe();
+  });
+
   return () => {
     stopped = true;
     if (activeSession === session) activeSession = null;
     window.clearTimeout(first);
     window.clearInterval(timer);
     document.removeEventListener('visibilitychange', maybe);
+    unwatch();
   };
 }

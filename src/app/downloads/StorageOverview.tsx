@@ -1,4 +1,4 @@
-import { Button, Label, SegmentedBar, Slider, Text } from '@glacier/react';
+import { Button, Label, SegmentedBar, Slider, Switch, Text } from '@glacier/react';
 import { artSized } from '../server.ts';
 import { useCallback, useEffect, useState } from 'react';
 import { useServerSession } from '../servers/serverSession.tsx';
@@ -17,6 +17,8 @@ import {
 } from './autoCache.ts';
 import { offlineSpace, onOfflineChange } from './offline.ts';
 import { isTauri } from '../core/tauri.ts';
+import { networkKindNow, onNetworkChange, type NetworkKind } from '../core/network.ts';
+import { setWifiOnlyDownloads, wifiOnlyDownloads } from '../settings/behaviourPrefs.ts';
 import { formatBytes } from '../ux/format.ts';
 
 /**
@@ -54,6 +56,30 @@ function sinceLabel(at: number): string {
   return `${days} ${days === 1 ? 'day' : 'days'} ago`;
 }
 
+/**
+ * The line under the Wi-Fi switch, which says what is happening rather than
+ * what the setting is called.
+ *
+ * The `unknown` case is the one worth reading twice. Some devices cannot tell
+ * Wi-Fi from cellular - a browser tab, a Windows desktop, an iPhone still on a
+ * binary from before the check existed - and there the switch genuinely does
+ * nothing. Saying so is unattractive and necessary: a switch that silently
+ * fails to protect you is worse than one that admits it cannot, because you
+ * would go on believing it worked.
+ */
+function wifiOnlyText(on: boolean, network: NetworkKind): string {
+  if (!on) {
+    return 'Automatic downloads use whatever connection is here, mobile data included. Downloads only happen while the app is open.';
+  }
+  if (network === 'cellular') {
+    return 'Paused — this device is on mobile data. It picks up again on Wi-Fi. Playing music, pinned songs and Check now are unaffected.';
+  }
+  if (network === 'unknown') {
+    return 'This device cannot tell Wi-Fi from mobile data, so downloads carry on regardless. Playing music, pinned songs and Check now are never held back.';
+  }
+  return 'Automatic downloads wait for Wi-Fi. Playing music, pinned songs and Check now are unaffected — those are you asking.';
+}
+
 export function StorageOverview() {
   const { session } = useServerSession();
   const [limit, setLimit] = useState(cacheLimitBytes);
@@ -68,6 +94,11 @@ export function StorageOverview() {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [report, setReport] = useState(lastSweep);
   const [plan, setPlan] = useState(sweepManifest);
+  const [wifiOnly, setWifiOnly] = useState(wifiOnlyDownloads);
+  // What this device is on right now, so the row can say whether the switch is
+  // currently holding anything back rather than only what it would do.
+  const [network, setNetwork] = useState<NetworkKind>(networkKindNow);
+  useEffect(() => onNetworkChange(setNetwork), []);
 
   const refresh = useCallback(() => {
     void cacheUsage().then(setUsage);
@@ -252,12 +283,22 @@ export function StorageOverview() {
           <span className="cacheLimit__value">{gbLabel(limit)}</span>
         </div>
 
-        {/* Said plainly rather than buried: this is the one setting on the page
-            that can spend somebody's mobile data without being asked. */}
-        <Text size="xs" tone="subtle">
-          Downloads happen while the app is open. There is no wi-fi-only switch yet, so this can use
-          mobile data.
-        </Text>
+        {/* This used to be a paragraph apologising for the absence of the
+            switch below it. The apology was the honest thing to write at the
+            time and the wrong thing to leave standing. */}
+        <div data-setting="wifi-only">
+          <Switch
+            label="Only download on Wi-Fi"
+            checked={wifiOnly}
+            onCheckedChange={(on: boolean) => {
+              setWifiOnlyDownloads(on);
+              setWifiOnly(on);
+            }}
+          />
+          <Text size="xs" tone="subtle">
+            {wifiOnlyText(wifiOnly, network)}
+          </Text>
+        </div>
 
         <div className="cacheActions">
           <Button size="sm" variant="soft" disabled={busy || !session || limit === 0} onClick={() => void update()}>

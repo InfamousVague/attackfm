@@ -88,6 +88,43 @@ export function setAutoUpload(serverUrl: string, isAdmin: boolean, value: boolea
   set(`${UPLOAD_KEY}:${serverUrl}`, value, isAdmin);
 }
 
+// ── Filling the phone's cache ───────────────────────────────────────────────
+
+const WIFI_ONLY_KEY = 'attackfm-wifi-only';
+
+/**
+ * Whether automatic downloads wait for a connection nobody is billed for.
+ *
+ * ON by default, which changes the shipped behaviour rather than preserving
+ * it - the one place in this file that does. The justification is that the app
+ * already agreed: the storage pane carried the line "there is no wi-fi-only
+ * switch yet, so this can use mobile data", which is a feature apologising for
+ * its own default. Something that fills a 15 GB cache in the background should
+ * not have been spending mobile data unasked in the first place, and the
+ * people most affected by that are the least likely to go looking for a switch
+ * to stop it.
+ *
+ * Turning it on costs less than it looks like it should, because of what it
+ * does NOT cover. Playing music is untouched - streaming a song you asked for
+ * is not a download. Pinning is untouched: `Keep on this device` is you
+ * asking, out loud, usually because you are about to lose signal, and that is
+ * the worst imaginable moment to be refused. `Check now` is untouched for the
+ * same reason - a button press is a request. What is left is exactly the part
+ * that runs on its own six-hourly schedule while you are looking at something
+ * else, which is the part that should have been asking permission.
+ *
+ * And it only ever holds where the device can actually TELL. See network.ts:
+ * an unknown connection downloads, so this never silently disables the cache
+ * on a platform that cannot answer the question.
+ */
+export function wifiOnlyDownloads(): boolean {
+  return on(WIFI_ONLY_KEY, true);
+}
+
+export function setWifiOnlyDownloads(value: boolean): void {
+  set(WIFI_ONLY_KEY, value, true);
+}
+
 // ── The clip behind Now Playing ─────────────────────────────────────────────
 
 const CANVAS_KEY = 'attackfm-now-playing-video';
