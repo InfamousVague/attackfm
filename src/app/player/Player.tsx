@@ -2364,6 +2364,30 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   // Falls back to the old seek-preview scratch wherever the engine cannot
   // stand: no worklet, the music sounding on another device (a remote's disc
   // moves that device's song by seeks over the wire), or a brake mid-fall.
+  /**
+   * The scrub tape runs at the FILE's speed; the bar runs at the chain's.
+   *
+   * loadScrubTape fetches the song with no fx at all - deliberately, because
+   * it is one whole-song fetch per track and re-taking it every time a pedal
+   * moved would be absurd. Harmless while nothing changes speed. But a speed
+   * node makes the deck play the file at `rate`, so a bar reading 2:00 is
+   * 2:30 of tape at 1.25x, and handing the engine bar seconds parked its head
+   * half a minute early - you scratched one part of the song and released
+   * into another.
+   *
+   * So the two clocks meet here, and only here: everything else in the
+   * scratch keeps bar seconds, which is what the bar, the seek and the hub
+   * all speak.
+   */
+  const tapeRate = () => {
+    const r = rateRef.current;
+    return Number.isFinite(r) && r > 0 ? r : 1;
+  };
+  /** Bar seconds -> tape seconds. */
+  const toTape = (barSeconds: number) => barSeconds * tapeRate();
+  /** Tape seconds -> bar seconds. */
+  const fromTape = (tapeSeconds: number) => tapeSeconds / tapeRate();
+
   const scratchPos = useRef(0);
   const lastScratchWrite = useRef(0);
   /** An audible, engine-backed scratch is in progress. */
@@ -2412,7 +2436,10 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     const audio = activeAudio();
     if (!audio || scrubbing.current) return;
     scrubbing.current = true;
-    scratchPos.current = audio.currentTime || 0;
+    // Song time, not the element's: it lands in commitSeek and setPosition,
+    // both of which speak the bar's clock, and on a source the encoder wound
+    // forward those two are not the same number.
+    scratchPos.current = deckTime(audio);
     const scrub = analyserRef.current?.scrub;
     const live = !!scrub && scrub.ready() && !activeElsewhere && !windingDown.current;
     scratchLive.current = live;
@@ -2420,7 +2447,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     scratchAnchor.current = scratchPos.current;
     scratchTarget.current = 0;
     scratchRolling.current = !audio.paused;
-    scrub.hold(scratchAnchor.current);
+    scrub.hold(toTape(scratchAnchor.current));
     armScrubTape();
     if (!audio.paused) {
       // Freeze, not pause: intent stays "playing" (the guard in the pause
@@ -2440,11 +2467,11 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     // A move with no begin (the disc grabbed before the engine existed, or a
     // stale capture): fall into the legacy path below from where the song is.
     if (!scrubbing.current) {
-      scratchPos.current = audio.currentTime || 0;
+      scratchPos.current = deckTime(audio);
       scrubbing.current = true;
       scratchLive.current = false;
     }
-    const limit = duration || audio.duration || 0;
+    const limit = duration || deckSpan(audio) || 0;
     if (scratchLive.current) {
       const scrub = analyserRef.current?.scrub;
       // The hand's position, capped to the song. The engine parks at its own
@@ -2456,20 +2483,21 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
           scratchTarget.current + deltaSeconds,
         ),
       );
-      scrub?.move(scratchTarget.current);
+      scrub?.move(toTape(scratchTarget.current));
       // The bar follows what is heard: the head's actual whereabouts, which
       // lag the hand by the spring's ~30ms. Only where the head cannot go -
       // forward of the grab with no whole-song tape yet - does the hand's own
       // position carry the story, as a silent jog.
+      // The head's whereabouts come back in tape seconds; the hand's own
+      // position is already in the bar's.
+      const head = scrub ? fromTape(scrub.offset()) : scratchTarget.current;
       const shown =
-        scratchTarget.current > 0 && !scrub?.loaded()
-          ? scratchTarget.current
-          : (scrub?.offset() ?? scratchTarget.current);
+        scratchTarget.current > 0 && !scrub?.loaded() ? scratchTarget.current : head;
       scratchPos.current = Math.max(
         0,
         limit > 0 ? Math.min(limit, scratchAnchor.current + shown) : scratchAnchor.current + shown,
       );
-      setPosition(scratchPos.current + srcOffset.current);
+      setPosition(scratchPos.current);
       return;
     }
     // Legacy scratch: the seek-preview. Twelve decoder restarts a second is
@@ -2479,12 +2507,12 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       0,
       limit > 0 ? Math.min(limit, scratchPos.current + deltaSeconds) : scratchPos.current + deltaSeconds,
     );
-    setPosition(scratchPos.current + srcOffset.current);
+    setPosition(scratchPos.current);
     const now = performance.now();
     if (now - lastScratchWrite.current < 80) return;
     lastScratchWrite.current = now;
     try {
-      audio.currentTime = scratchPos.current;
+      seekDeck(audio, scratchPos.current);
     } catch {
       // A source mid-load refuses the write; the next move tries again.
     }
@@ -2503,11 +2531,11 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     const scrub = analyserRef.current?.scrub;
     // What was heard is where we land: the settled head. Only a silent
     // forward jog (no whole-song tape yet) uses the hand's own position.
-    const settled = scrub ? scrub.release() : 0;
+    const settled = scrub ? fromTape(scrub.release()) : 0;
     const offset =
       scratchTarget.current > 0 && !scrub?.loaded() ? scratchTarget.current : settled;
     const audio = activeAudio();
-    const limit = duration || audio?.duration || 0;
+    const limit = duration || (audio ? deckSpan(audio) : 0) || 0;
     const to = Math.max(
       0,
       limit > 0 ? Math.min(limit, scratchAnchor.current + offset) : scratchAnchor.current + offset,
@@ -2524,7 +2552,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       scratchRolling.current = false;
       if (!moved) {
         scrubbing.current = false;
-        setPosition(scratchAnchor.current + srcOffset.current);
+        setPosition(scratchAnchor.current);
         setPlayingState(true);
         return;
       }
@@ -2551,7 +2579,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       // A grab-and-release that went nowhere owes no seek - a seek is a
       // refetch on a stream - just its scrubbing flag back.
       scrubbing.current = false;
-      setPosition(scratchAnchor.current + srcOffset.current);
+      setPosition(scratchAnchor.current);
     }
   };
 
