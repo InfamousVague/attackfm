@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { installSheetDismiss } from './playerDismiss.ts';
 import { fireNativeHaptic } from '../core/haptics.ts';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
@@ -13,7 +13,6 @@ import { FxRoom } from './FxRoom.tsx';
 import { FiltersRoom } from './FiltersRoom.tsx';
 import { FILTERS, signature } from './filters.ts';
 import { FxSaved } from './FxSaved.tsx';
-import { scrollOwner } from './fxEditing.tsx';
 import { FX_NODES, setFxChainOn, useFxChain } from './fxChain.ts';
 import { MarqueeText } from './MarqueeText.tsx';
 import { SpinningDisc } from './SpinningDisc.tsx';
@@ -691,40 +690,6 @@ export function SoundConsole({ narrow }: { narrow: boolean }) {
     }
   });
 
-  /**
-   * The tab bar's real height, published to CSS.
-   *
-   * The shelf's own filter bar sticks BELOW this one, which means it needs
-   * this height as its offset - and a hand-written guess is wrong the moment
-   * the kit's control changes size. It was wrong immediately: the guess said
-   * 2.9rem and the bar is 3.65rem, so the search field spent twelve pixels
-   * underneath the tabs. Measured, the two bars cannot drift apart.
-   */
-  const tabsRef = useRef<HTMLDivElement>(null);
-  const consoleRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const bar = tabsRef.current;
-    const root = consoleRef.current;
-    if (!bar || !root) return;
-    const sync = () => {
-      root.style.setProperty('--fx-tabs-h', `${bar.getBoundingClientRect().height}px`);
-      // The hosting panel's own padding, so the pinned bars can run the full
-      // width of the popover and cover the strip above themselves. The kit
-      // owns that padding and it moves with density, so it is read rather
-      // than written down.
-      const host = scrollOwner(root);
-      if (!host) return;
-      const box = getComputedStyle(host);
-      root.style.setProperty('--fx-pad-x', box.paddingInlineStart);
-      root.style.setProperty('--fx-pad-y', box.paddingBlockStart);
-    };
-    sync();
-    if (typeof ResizeObserver === 'undefined') return; // the CSS default stands
-    const watch = new ResizeObserver(sync);
-    watch.observe(bar);
-    return () => watch.disconnect();
-  }, []);
-
   const go = (next: Room) => {
     setRoom(next);
     try {
@@ -752,10 +717,14 @@ export function SoundConsole({ narrow }: { narrow: boolean }) {
   }, [chain]);
 
   return (
-    <div className="soundConsole" ref={consoleRef}>
-      {/* Sticky, because the shelf below runs to thirty-five rows and the way
-          back to another room should not be a scroll to the top. */}
-      <div className="soundConsole__tabs" ref={tabsRef}>
+    <div className="soundConsole">
+      {/* A real header, outside the scroller.
+          It used to be a sticky bar inside it, which meant it needed a frosted
+          backdrop to hide the rows sliding underneath - and that backdrop is a
+          second dark pane laid over a panel that is already glass, which is
+          exactly the block it looked like. Nothing passes behind it now, so it
+          needs no material of its own. */}
+      <div className="soundConsole__tabs">
         <SegmentedControl
           aria-label="Sound"
           size="sm"
@@ -768,9 +737,9 @@ export function SoundConsole({ narrow }: { narrow: boolean }) {
               label: (
                 <span className="soundConsole__tab">
                   HiFi
-                  {/* CounterBadge renders nothing at zero, so an empty chain
-                      leaves a plain label rather than a "0" nobody needs. */}
-                  <CounterBadge count={hifiCount} size="sm" tone="neutral" />
+                  {/* A count badge does hide itself at zero, but it is said
+                      here too so the two tabs read the same way. */}
+                  {hifiCount > 0 && <CounterBadge count={hifiCount} size="sm" tone="neutral" />}
                 </span>
               ),
             },
@@ -779,15 +748,15 @@ export function SoundConsole({ narrow }: { narrow: boolean }) {
               label: (
                 <span className="soundConsole__tab">
                   Filters
-                  {/* A dot, not a number: a filter is one thing or nothing,
-                      and "1" would invite the question of what two would mean. */}
-                  <CounterBadge
-                    count={filterOn ? 1 : 0}
-                    dot
-                    tone="accent"
-                    size="sm"
-                    aria-label={filterOn ? `${filterOn} is on` : undefined}
-                  />
+                  {/* A dot, not a number: a filter is one thing or nothing, and
+                      "1" would invite the question of what two would mean.
+                      Rendered conditionally rather than leaning on count={0}:
+                      CounterBadge hides a zero COUNT, but `dot` draws the dot
+                      whatever the count is, so the tab claimed a filter was on
+                      when none was. */}
+                  {filterOn && (
+                    <CounterBadge count={1} dot tone="accent" size="sm" aria-label={`${filterOn} is on`} />
+                  )}
                 </span>
               ),
             },
@@ -795,22 +764,27 @@ export function SoundConsole({ narrow }: { narrow: boolean }) {
           onValueChange={(v) => go(v as Room)}
         />
       </div>
-      {room === 'eq' && (
-        <>
-          <EqPanel narrow={narrow} />
-          <FxChainRow />
-        </>
-      )}
-      {room === 'hifi' && (
-        <>
-          <FxRoom />
-          {/* Below the room, because A/B and saving act on the whole chain -
-              pedals and filters included - and hanging them inside one room
-              made them look like that room's own. */}
-          <FxSaved />
-        </>
-      )}
-      {room === 'filters' && <FiltersRoom />}
+      {/* The scroller. Moving it here from the popover panel is what lets the
+          header above be a header: the panel no longer scrolls, so no row ever
+          passes through its padding or behind the tabs. */}
+      <div className="soundConsole__body">
+        {room === 'eq' && (
+          <>
+            <EqPanel narrow={narrow} />
+            <FxChainRow />
+          </>
+        )}
+        {room === 'hifi' && (
+          <>
+            <FxRoom />
+            {/* Below the room, because A/B and saving act on the whole chain -
+                pedals and filters included - and hanging them inside one room
+                made them look like that room's own. */}
+            <FxSaved />
+          </>
+        )}
+        {room === 'filters' && <FiltersRoom />}
+      </div>
     </div>
   );
 }

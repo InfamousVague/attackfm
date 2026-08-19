@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.189
+
+- The Filters tab no longer shows its dot when no filter is on
+- The sound console's room switcher is a plain header now — no dark bar behind it, and no gap at its edge
+
 ## 0.3.188
 
 - The sound console is glass again — the artwork reads through the panels instead of sitting behind black cards
