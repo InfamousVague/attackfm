@@ -70,6 +70,23 @@
       "public": true
     },
     {
+      "id": "karaoke",
+      "name": "Karaoke Maker",
+      "version": "0.1.0",
+      "description": "Turn any song in your library into karaoke — the vocal lifted out, the words full screen, in time.",
+      "author": "AttackFM",
+      "tags": [
+        "Sound",
+        "Karaoke"
+      ],
+      "entry": "karaoke-0.1.0.js",
+      "api": 1,
+      "bytes": 10266,
+      "sha256": "8db179b5dbd504fa0618b9afa9800c797427c48d3323b5f2725d23344ede7bc5",
+      "requiresServer": true,
+      "public": true
+    },
+    {
       "id": "looper",
       "name": "Looper",
       "version": "0.2.0",

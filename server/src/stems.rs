@@ -27,11 +27,12 @@
 use crate::auth;
 use crate::AppState;
 use axum::body::Body;
-use axum::extract::{Path as AxumPath, State};
+use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::Response;
 use axum::Json;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
@@ -396,5 +397,103 @@ pub async fn file(
         .header(header::CONTENT_TYPE, "audio/ogg")
         .header(header::CACHE_CONTROL, "private, max-age=86400")
         .body(Body::from(bytes))
+        .unwrap())
+}
+
+/// `GET /api/stems/{track}/mix?t=<streamToken>&drop=vocals`
+///
+/// The track with a part taken out, as one stream - which is karaoke when the
+/// part is the vocal.
+///
+/// Mixed here rather than in the browser on purpose. The client COULD fetch
+/// three stems and start three buffer sources together, and they would even
+/// stay in sync, but it would hold ninety megabytes of decoded audio to do it
+/// and could not seek without rebuilding all three. One stream is a plain
+/// `<audio>` element: seekable, cheap, and it behaves like every other song
+/// in the app.
+///
+/// `amix` with `normalize=0` because the parts were separated from one mix
+/// and adding them back is meant to reconstruct it - normalising would divide
+/// each by three and hand back something four decibels quiet. The limiter
+/// catches the rare case where the sum overshoots.
+pub async fn mix(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    AxumPath(track_id): AxumPath<i64>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Response, (StatusCode, String)> {
+    crate::stream::caller_from_either(&state, &headers, &params)
+        .map_err(|s| (s, "sign in first".to_string()))?;
+    if !state.ffmpeg {
+        return Err((StatusCode::SERVICE_UNAVAILABLE, "no ffmpeg on this server".into()));
+    }
+    // What to leave out. Only a known stem name, matched against the registry
+    // - the tag is never interpolated into anything.
+    let drop = params.get("drop").map(String::as_str).unwrap_or("vocals");
+    if !STEMS.contains(&drop) {
+        return Err((StatusCode::BAD_REQUEST, "no such part".into()));
+    }
+
+    let root = stem_root(&state);
+    let mut inputs: Vec<PathBuf> = Vec::new();
+    for stem in STEMS {
+        if stem == drop {
+            continue;
+        }
+        let Some(rel) = state.db.stem_path(track_id, stem) else {
+            continue;
+        };
+        let path = root.join(rel);
+        if path.is_file() {
+            inputs.push(path);
+        }
+    }
+    if inputs.is_empty() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            "this track has not been separated yet".into(),
+        ));
+    }
+
+    let mut command = tokio::process::Command::new("ffmpeg");
+    command.args(["-nostdin", "-v", "error"]);
+    // Seeking re-runs the encode from a point, exactly as the transcode
+    // endpoint does - a live encode has no addressable end to range over.
+    if let Some(seek) = params.get("seek").and_then(|v| v.parse::<f64>().ok()) {
+        if seek > 0.0 {
+            command.arg("-ss").arg(format!("{seek:.3}"));
+        }
+    }
+    for path in &inputs {
+        command.arg("-i").arg(path);
+    }
+    let filter = format!(
+        "amix=inputs={}:normalize=0,alimiter=limit=0.95",
+        inputs.len()
+    );
+    command
+        .args(["-filter_complex", &filter])
+        .args(["-c:a", "aac", "-b:a", "192k", "-f", "adts", "-"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+
+    let mut child = command
+        .spawn()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or((StatusCode::INTERNAL_SERVER_ERROR, "no output".to_string()))?;
+    // The child is adopted by the stream: when the listener goes away the body
+    // is dropped, the pipe closes, and ffmpeg stops on its own.
+    tokio::spawn(async move {
+        let _ = child.wait().await;
+    });
+    let body = Body::from_stream(crate::stream::reader_stream(stdout));
+    Ok(Response::builder()
+        .header(header::CONTENT_TYPE, "audio/aac")
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(body)
         .unwrap())
 }

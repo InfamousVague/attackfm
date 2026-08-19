@@ -1,0 +1,14 @@
+{
+  "id": "karaoke",
+  "name": "Karaoke Maker",
+  "version": "0.1.0",
+  "description": "Turn any song in your library into karaoke — the vocal lifted out, the words full screen, in time.",
+  "author": "AttackFM",
+  "tags": [
+    "Sound",
+    "Karaoke"
+  ],
+  "entry": "plugin.ts",
+  "public": true,
+  "requiresServer": true
+}
