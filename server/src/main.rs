@@ -633,6 +633,7 @@ async fn main() {
         .route("/api/transcode/{id}", get(stream::transcode))
         .route("/api/fx/nodes", get(fx::nodes))
         .route("/api/loudness", get(loudness::table))
+        .route("/api/tempo", get(features::tempo_table))
         .route("/api/stems/{track}", get(stems::status).post(stems::request))
         .route("/api/stems/{track}/{stem}", get(stems::file))
         .route("/api/fx/presets", get(fx::presets).post(fx::save_preset))

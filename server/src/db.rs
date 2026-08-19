@@ -5111,6 +5111,23 @@ impl Db {
             .unwrap_or_default()
     }
 
+    /// Every known tempo, for a client that needs a beat grid. Same compact
+    /// shape as the loudness table and for the same reason: the caller holds
+    /// it all and consults it per track.
+    pub fn all_bpm(&self) -> Vec<(i64, f64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT f.track_id, f.bpm FROM track_features f
+               JOIN tracks t ON t.id = f.track_id
+              WHERE f.bpm IS NOT NULL AND f.bpm > 0 AND t.deleted = 0",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
     /// Every measurement, for the client's normalisation table. Compact by
     /// design - one row per track, four numbers - because the client holds the
     /// whole thing in memory and consults it on every track change.
