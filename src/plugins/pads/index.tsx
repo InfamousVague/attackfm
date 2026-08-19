@@ -1,5 +1,5 @@
 import { Grid2x2 } from '@glacier/icons';
-import type { Plugin } from '../../src/plugins/types.ts';
+import type { Plugin } from '../types.ts';
 import { PadsPage } from './PadsPage.tsx';
 
 /**

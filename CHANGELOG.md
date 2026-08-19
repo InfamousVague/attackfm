@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.200
+
+- The Pads board is built into the app now, not a plugin you install
+- Closing the board hands the song back where it had got to, instead of leaving it paused
+
 ## 0.3.199
 
 - Karaoke is built in, and now actually starts the separation instead of waiting forever for one nobody asked for

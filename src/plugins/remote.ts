@@ -86,6 +86,9 @@ export const DEPRECATED_PLUGINS: readonly string[] = [
   // could never queue its own separation - it only ever polled - so it hung on
   // any song the pads had not already taken apart.
   'karaoke',
+  // Pads is compiled in now (src/plugins/pads). An installed copy would shadow
+  // the built-in one and keep its own, un-deduplicated stems client.
+  'pads',
 ];
 
 /** One plugin as a repository's manifest lists it. */
