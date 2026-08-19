@@ -3,16 +3,17 @@ import { Button, SegmentedControl, Slider, Switch, Text } from '@glacier/react';
 import { Disc3, Pencil, Play, Scissors, Square, Trash2, Wand2 } from '@glacier/icons';
 import { useServerSession } from '@attackfm/app/serverSession';
 import { useLibrary } from '@attackfm/app/library';
-import { LoopEngine, PAD_COUNT, emptyLoopPad, type LoopPad } from './engine.ts';
+import { LANES, LoopEngine, PAD_COUNT, emptyLoopPad, laneOf, type LoopPad } from './engine.ts';
 import { autoSlice } from './slicer.ts';
 
 /**
  * The Looper.
  *
  * A record goes in and comes out as sixteen coloured pads that play in time
- * with each other. The colours are the song's own running order - hue walks
- * the spectrum from the first slice to the last - so the grid is a picture of
- * where you are in the track, not decoration.
+ * with each other. The grid's geometry is the instrument: a COLUMN is a lane
+ * that loops on its own, the four pads down it are variations of that lane,
+ * and only one of them sounds at a time - so four loops layer, and sixteen
+ * things are available to put in them. Hue names the lane, lightness the row.
  *
  * Two modes, one grid. In PLAY a pad launches on the next bar line. In EDIT a
  * pad opens its slice in the whole song's waveform, where the region can be
@@ -21,7 +22,9 @@ import { autoSlice } from './slicer.ts';
  */
 
 const KIT_KEY = 'attackfm-looper-kit-v1';
-const SESSION_KEY = 'attackfm-looper-session-v1';
+/** One hue per lane. Four colours a person can name, spaced far enough apart
+ *  to tell at a glance under stage-ish conditions. */
+const LANE_HUES = [16, 140, 210, 288];
 
 interface Session {
   url: string;
@@ -68,6 +71,7 @@ const padFace = (
   live: boolean,
   waiting: boolean,
   editing: boolean,
+  row = 0,
 ): CSSProperties => ({
   position: 'relative',
   aspectRatio: '1',
@@ -77,8 +81,10 @@ const padFace = (
     : live
       ? `2px solid hsl(${hue} 85% 70%)`
       : '1px solid var(--glacier-border)',
+  // Lightness steps down the column, so the four variations of a lane are
+  // one family rather than four identical squares.
   background: loaded
-    ? `radial-gradient(120% 120% at 30% 20%, hsl(${hue} 75% ${live ? 62 : 42}%), hsl(${hue} 65% ${live ? 40 : 22}%))`
+    ? `radial-gradient(120% 120% at 30% 20%, hsl(${hue} 75% ${(live ? 62 : 44) - row * 5}%), hsl(${hue} 65% ${(live ? 40 : 24) - row * 4}%))`
     : 'var(--glacier-bg-surface)',
   boxShadow: live ? `0 0 20px -4px hsl(${hue} 85% 60% / 0.8)` : 'none',
   color: loaded ? '#fff' : 'var(--glacier-text-muted)',
@@ -230,9 +236,11 @@ export function LooperPage() {
             start: slice.start,
             end: slice.end,
             loop: true,
-            // Hue walks the spectrum in the song's own order, so the grid
-            // reads as a timeline rather than a bag of colours.
-            hue: Math.round((i / PAD_COUNT) * 300),
+            // Hue is the LANE, not the slice number: during a set the eye
+            // learns "the amber column is the drums", and a colour that
+            // meant slice-order would change meaning every time a pad was
+            // re-sampled. Row is read from position instead.
+            hue: LANE_HUES[laneOf(i)] ?? 210,
           };
         }),
       );
@@ -268,7 +276,7 @@ export function LooperPage() {
         source: { trackId, title: track?.title ?? 'Sample' },
         start: 0,
         end: Math.min(buffer.duration, bars * 2),
-        hue: Math.round((pad / PAD_COUNT) * 300),
+        hue: LANE_HUES[laneOf(pad)] ?? 210,
       });
       setLoaded((prev) => new Set(prev).add(pad));
       setEditing(pad);
@@ -423,9 +431,11 @@ export function LooperPage() {
           </label>
         </div>
 
-        {mode === 'play' && running && (
+        {mode === 'play' && (
           <Text tone="muted" size="xs">
-            Pads join on the next bar — press one and it waits for the count.
+            {running
+              ? 'Pads join on the next bar — and a pad replaces whatever else its lane was playing.'
+              : 'The first pad you press sets the downbeat; everything after joins in time with it.'}
           </Text>
         )}
         {mode === 'edit' && (
@@ -434,7 +444,20 @@ export function LooperPage() {
           </Text>
         )}
 
-        {/* The grid */}
+        {/* The grid. Columns are lanes that loop independently; the four pads
+            down a column are variations of that lane, and only one of them
+            sounds at a time. */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }} aria-hidden>
+          {Array.from({ length: LANES }, (_, lane) => (
+            <Text key={lane} size="xs" tone="muted" style={{ textAlign: 'center' }}>
+              <span style={{
+                display: 'inline-block', width: 8, height: 8, borderRadius: 4,
+                background: `hsl(${LANE_HUES[lane]} 70% 55%)`, marginRight: 5,
+              }} />
+              Lane {lane + 1}
+            </Text>
+          ))}
+        </div>
         <div style={gridStyle} role="group" aria-label="Loop pads">
           {pads.map((p, i) => {
             const isLoaded = loaded.has(i);
@@ -443,7 +466,7 @@ export function LooperPage() {
                 key={i}
                 type="button"
                 aria-label={p.name || `Pad ${i + 1}`}
-                style={padFace(p.hue, isLoaded, live.has(i), waiting.has(i), editing === i)}
+                style={padFace(p.hue, isLoaded, live.has(i), waiting.has(i), editing === i, Math.floor(i / LANES))}
                 onPointerDown={(e) => {
                   e.preventDefault();
                   hitPad(i);
