@@ -26,6 +26,8 @@ import {
   transcodeUrl,
   type ServerSession,
 } from '../server.ts';
+import { originFromPath } from '../api/library.ts';
+import { rememberSession, sessionForOrigin } from './sessions.ts';
 import { effectsParam } from '../player/effects.ts';
 import { fxChainParam } from '../player/fxChain.ts';
 import { setRemoteAudioResolver } from '../core/tauri.ts';
@@ -135,7 +137,14 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setRemoteAudioResolver((path) => {
-      const live = sessionRef.current;
+      // Which server owns this track. A path carrying no origin is one of this
+      // server's own - every path written before multi-server existed, and all
+      // of them on a single-server install - so the current session answers,
+      // exactly as it always did. A path that names another library is played
+      // from THAT library's session, which is what lets a search across several
+      // servers produce a queue you can just press play on.
+      const owner = sessionForOrigin(originFromPath(path));
+      const live = owner ?? sessionRef.current;
       if (!live || !isRemotePath(path)) return null;
       const id = trackIdFromPath(path);
       if (id === null) return null;
@@ -321,6 +330,11 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
     // which is what lets the Profile page offer every past server as a one-tap
     // switch instead of an address to retype.
     if (next) rememberServer({ url: next.url, username: next.username, isAdmin: next.isAdmin });
+    // And the SESSION is kept in the multi-server set, so signing into a second
+    // library ADDS one rather than replacing the first. The single-session
+    // storage above is still the source of truth for "which server am I on";
+    // this is what lets the others stay reachable while you are on this one.
+    if (next) rememberSession(next);
     try {
       if (next) localStorage.setItem(SESSION_KEY, JSON.stringify(next));
       else localStorage.removeItem(SESSION_KEY);

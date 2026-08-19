@@ -50,7 +50,36 @@ export const SYNCED_KEYS = [
   'attackfm-eq',
   // Servers and identity: which libraries you belong to, and their order.
   'attackfm-known-servers',
+  // The rest of the person-level settings. Each of these answers "how do I like
+  // my music", never "what is this machine".
+  'attackfm-playback',        // crossfade, shuffle manners, what a pause means
+  'attackfm-effects',         // the named effects rack
+  'attackfm-loudness-mode',   // how levels are evened out
+  'attackfm-haptics',         // a taste, on the devices that have them
+  'attackfm-art-view',        // how artwork is shown
+  'attackfm-online-metadata', // whether to look things up on the internet
+  'attackfm-share-listening', // a privacy choice, and the one most worth carrying
+  'attackfm-search-recents',  // what you have been looking for
 ] as const;
+
+/**
+ * Deliberately NOT synced, with the reason, because the temptation is to add
+ * everything and each of these would be a bug:
+ *
+ * - `attackfm-server-quality`: lossless or transcoded is a NETWORK decision. A
+ *   phone on cellular and a desktop on ethernet want different answers, and
+ *   syncing it means one of them is always wrong.
+ * - `attackfm-cache-limit`, `attackfm-autocache*`, `attackfm-cache-deny`: how
+ *   much of a particular disk to spend. One device's storage decision must not
+ *   become another's.
+ * - `attackfm-device-id`, `attackfm-device-name`: the things that tell devices
+ *   APART. Syncing them would merge every device into one.
+ * - `attackfm-server-session`, `attackfm-registry-session`: credentials.
+ * - `attackfm-music-dir`, `attackfm-mirror-*`: paths and network topology that
+ *   only mean anything on the machine that wrote them.
+ * - art, canvas and warm caches: derived data, larger than the settings and
+ *   rebuildable from nothing.
+ */
 
 const REV_KEY = 'attackfm-prefs-rev';
 const REGISTRY = 'https://registry.attack.fm';
