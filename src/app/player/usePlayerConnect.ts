@@ -5,6 +5,7 @@ import { VOLUME_MAX, VOLUME_UNITY } from './VolumeControl.tsx';
 import { useConnect } from './playbackSync.tsx';
 import { useJamOptional } from './jam.tsx';
 import { usePlayback } from './playback.tsx';
+import { recordDiag } from '../diag/diagLog.ts';
 import type { Track } from '../core/tauri.ts';
 
 type ConnectValue = ReturnType<typeof useConnect>;
@@ -30,6 +31,9 @@ export interface PlayerLiveState {
   libraryTracks: Track[];
   onTrackChange: ((track: Track) => void) | undefined;
   onQueueChange: ((tracks: Track[]) => void) | undefined;
+  /** Whether `track` is this device's own deck or a mirror of the one that
+   *  holds playback - see the prop of the same name on Player. */
+  deckOwned: boolean;
 }
 
 /** A cross-track "play here": the track is loaded via onTrackChange, then this
@@ -127,9 +131,31 @@ export function usePlayerConnect({
         }
         liveRef.current.onTrackChange?.(pick);
       },
+      /**
+       * This device has just been handed the seat: load what the session is
+       * playing, put it where the song actually is, and start it.
+       *
+       * The trap here is that `liveRef.current.track` is what the STRIP is
+       * showing, not what this device's deck holds. A device that has only
+       * ever been a remote is showing the hub's now-playing, mirrored out of
+       * the library - so "the track already matches, just seek it" was true
+       * of the picture and false of the audio. That path seeked a deck with
+       * no source, started nothing, and - because it never handed the track
+       * up - left the host's `current` null. The moment the state frame
+       * flipped this device to active, the mirror it was mounted for went
+       * away too, so PlayerHost tore the whole player down: no sound, and the
+       * bar vanished. Handing back to the first device looked like a fix
+       * because THAT device really did own its deck.
+       *
+       * So the fast path is gated on owning the deck, and every other route
+       * goes through the same load-then-resume the app uses for any other
+       * cross-track play.
+       */
       becomeActive: (state) => {
-        const cur = liveRef.current.track;
-        if (state.trackId == null) return;
+        if (state.trackId == null) {
+          recordDiag('connect', 'handed playback with no track in the session');
+          return;
+        }
         // The server froze the position at the moment of the hand-off; add the
         // little that has elapsed since (network + load) so playback resumes
         // where the song actually is, not a beat behind. Capped so a skewed
@@ -138,16 +164,43 @@ export function usePlayerConnect({
           ? Math.min(15000, Math.max(0, Date.now() - state.updatedAt))
           : 0;
         const positionMs = state.positionMs + elapsedMs;
-        if (cur && trackIdFromPath(cur.path) === state.trackId) {
+        const cur = liveRef.current.track;
+        const sameTrack = cur != null && trackIdFromPath(cur.path) === state.trackId;
+
+        // The seat carries the whole play context, not just the song. The hub
+        // holds the queue for exactly this ("a transfer target can rebuild
+        // it", connect.rs) and it was being dropped: the handed-to device got
+        // one track and an empty list, so it played that song and stopped,
+        // with its skip buttons dead. Anything the library cannot resolve is
+        // left out rather than blanking a queue that is already right.
+        const queued = (state.queue ?? [])
+          .map(findByConnectId)
+          .filter((t): t is Track => t != null);
+        if (queued.length > 0) liveRef.current.onQueueChange?.(queued);
+
+        // Already spinning this exact song on this device's own deck: a seek
+        // is the whole hand-off, and reloading would restart it.
+        if (sameTrack && liveRef.current.deckOwned) {
           liveRef.current.commitSeek(positionMs / 1000);
           liveRef.current.setPlayingState(!!state.playing);
           return;
         }
-        const t = findByConnectId(state.trackId);
-        if (t) {
-          resumeRef.current = { trackId: state.trackId, positionMs, play: !!state.playing };
-          liveRef.current.onTrackChange?.(t);
+
+        const t = sameTrack ? cur : findByConnectId(state.trackId);
+        if (!t) {
+          // Nothing to play and the seat is held here, which is silence on
+          // every device until someone moves it back. Worth a line in the
+          // report rather than a shrug.
+          recordDiag('connect', `handed playback of track ${state.trackId}, not in this library`);
+          return;
         }
+        resumeRef.current = { trackId: state.trackId, positionMs, play: !!state.playing };
+        // A fresh object on purpose. When this device was mirroring, the host
+        // is already rendering THIS track - passing it back unchanged is not a
+        // state change, so the deck would never load it. The clone is what
+        // makes the load effect run (and what gives the host a `current` of
+        // its own, so it stops depending on the mirror to stay mounted).
+        liveRef.current.onTrackChange?.({ ...t });
       },
 
       release: () => liveRef.current.setPlayingState(false),

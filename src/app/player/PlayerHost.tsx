@@ -56,6 +56,17 @@ export function PlayerHost({
   // A local track always wins: this device's own deck is what its transport
   // drives once it has one.
   const shown = current ?? remoteTrack;
+  /**
+   * Whether the strip's track is this device's OWN deck, or a mirror of one
+   * elsewhere. `current` is the app's track - set only by something this
+   * device chose to play - so a device that has done nothing but watch shows
+   * a track it does not hold.
+   *
+   * The Connect hand-off has to know the difference. `shown` looks the same
+   * either way, and a device handed the seat while mirroring must LOAD the
+   * song rather than assume its deck already has it.
+   */
+  const deckOwned = current !== null;
   if (!shown) return null;
   return (
     <div className="appPlayer" data-hidden={hidden || undefined}>
@@ -70,11 +81,11 @@ export function PlayerHost({
         // Nothing this device chose to play, so nothing to start.
         autoplay={current ? autoplay : false}
         // The docked sheet may only stand for THIS device's deck. While the
-        // strip mirrors a remote (current is null, shown is the remote's
-        // track), the sheet's own clock and transport are honestly empty -
-        // it was never reachable in that state before the dock existed, and
-        // mounting it there showed a dead player beside a live strip.
-        allowDock={current !== null}
+        // strip mirrors a remote the sheet's own clock and transport are
+        // honestly empty - it was never reachable in that state before the
+        // dock existed, and mounting it there showed a dead player beside a
+        // live strip.
+        deckOwned={deckOwned}
       />
     </div>
   );

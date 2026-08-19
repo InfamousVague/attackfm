@@ -82,7 +82,7 @@ export function Player({
   onQueueChange,
   onOpenArtist,
   autoplay = true,
-  allowDock = true,
+  deckOwned = true,
 }: {
   track: Track | null;
   /** The tracks around the current one, in played order. Empty means no list. */
@@ -95,9 +95,17 @@ export function Player({
   /** Opens an artist's page - the Now Playing sheet's artist line links
    *  through here, closing the sheet as it goes. */
   onOpenArtist?: (artist: string) => void;
-  /** Whether the wide-screen docked sheet may mount. The host turns this off
-   *  while the strip is only mirroring a remote device's playback. */
-  allowDock?: boolean;
+  /**
+   * Whether `track` is this device's OWN deck rather than a mirror of the
+   * device that holds playback. The host knows, because it is the difference
+   * between its `current` and the track it resolved out of the hub's session.
+   *
+   * Two things read it. The wide-screen docked sheet may only mount over a
+   * real deck - over a mirror its clock and transport are honestly empty. And
+   * the Connect hand-off has to load the song rather than seek a deck that
+   * was never holding it; see becomeActive in usePlayerConnect.
+   */
+  deckOwned?: boolean;
   /**
    * Whether a newly handed track starts playing once loaded. Off for the
    * launch seed - the app opens with a song on the deck, not blaring - and
@@ -290,7 +298,7 @@ export function Player({
   // lift and becomes a room that is simply always there; the rest of the app
   // lives in the left pane (appWindow shrinks by --np-dock-width, app.css).
   const npWide = useMediaQuery('(min-width: 700px)');
-  const npDocked = mobileControls && npWide && allowDock;
+  const npDocked = mobileControls && npWide && deckOwned;
   // The overflow popover state now lives in PlayerStrip.
   // The song being filed into a playlist, or null when that sheet is shut.
   const [filing, setFiling] = useState<Track | null>(null);
@@ -2563,12 +2571,12 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   const liveRef = useRef<PlayerLiveState>({
     playing, position, duration, track, shuffle, repeat, volume, queue,
     setPlayingState, skipForward, skipBack, commitSeek, setVolumeState,
-    libraryTracks, onTrackChange, onQueueChange,
+    libraryTracks, onTrackChange, onQueueChange, deckOwned,
   });
   liveRef.current = {
     playing, position, duration, track, shuffle, repeat, volume, queue,
     setPlayingState, skipForward, skipBack, commitSeek, setVolumeState,
-    libraryTracks, onTrackChange, onQueueChange,
+    libraryTracks, onTrackChange, onQueueChange, deckOwned,
   };
   // A cross-track "play here": the track is loaded via onTrackChange, then this
   // remembered seek+play is applied once it has actually loaded (in the hook).
