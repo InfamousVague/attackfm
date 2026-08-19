@@ -29,7 +29,10 @@ export interface PadSettings {
   /** Fractions of the buffer, 0..1. */
   start: number;
   end: number;
-  /** Hold to sustain (gate) rather than one-shot. */
+  /** Sounds while the pad is held, and stops when it is let go. On by
+   *  default: a pad is a key, and a key you press and release is the thing
+   *  everyone reaches for first. Off makes it a one-shot - a hit fires the
+   *  whole slice and lifting does nothing, which is what a drum stab wants. */
   gate: boolean;
   loop: boolean;
   reverse: boolean;
@@ -46,7 +49,7 @@ export function emptyPad(): PadSettings {
     pitch: 0,
     start: 0,
     end: 1,
-    gate: false,
+    gate: true,
     loop: false,
     reverse: false,
     choke: 0,

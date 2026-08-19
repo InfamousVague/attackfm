@@ -23,7 +23,7 @@ export const looper: Plugin = {
     'Sample any song into sixteen coloured pads, cut on its own beat, and play the pieces in time with each other.',
   icon: <Disc3 size={22} />,
   author: 'AttackFM',
-  version: '0.1.1',
+  version: '0.1.2',
   tags: ['Sound', 'Instrument'],
   details:
     'Adds a Looper page: sixteen big colour-coded pads fed by your own ' +
