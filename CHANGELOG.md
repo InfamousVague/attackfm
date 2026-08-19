@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.196
+
+- Karaoke shows up on desktop — plugins that act on the playing song had no home there at all
+
 ## 0.3.195
 
 - One settings cog on desktop, not two — the rail's has gone, the title bar's stays
