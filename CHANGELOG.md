@@ -15,6 +15,14 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.197
+
+- Stems: a button on the now playing screen takes the song apart where it stands — drop the vocal, drop the drums, put them back
+- Tap a part to drop it, hold it to drop it just while you hold; close and the song carries on exactly where the stems got to
+- The Pads board plays whole songs now instead of one loop, and fits on one screen with nothing to scroll
+- Songs split into six parts, so guitar and keys are their own controls instead of being buried in "everything else"
+- Taking a song apart shows how far along it is, and the parts light up as they land
+
 ## 0.3.196
 
 - Karaoke shows up on desktop — plugins that act on the playing song had no home there at all
