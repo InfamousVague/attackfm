@@ -20,7 +20,7 @@ import { recordResume } from '../servers/resumeSync.ts';
 import { useEffects } from './effects.ts';
 import { useFxChain, chainRate } from './fxChain.ts';
 import { recordDiag } from '../diag/diagLog.ts';
-import { loadAudioUrl, reactivateAudioSession, systemOutputVolume, type Track } from '../core/tauri.ts';
+import { loadAudioSource, loadAudioUrl, reactivateAudioSession, systemOutputVolume, type Track } from '../core/tauri.ts';
 import { isPendingPath } from './pendingPlay.tsx';
 import { isRemotePath } from '../server.ts';
 import { fireNativeHaptic } from '../core/haptics.ts';
@@ -392,6 +392,26 @@ export function Player({
   const stalledAt = useRef(0);
   /** The last position the deck reported, to resume to. */
   const lastGoodPos = useRef(0);
+  /**
+   * Where in the SONG the loaded source begins.
+   *
+   * Zero for everything the element can seek on its own - a held file, the
+   * original served with byte ranges - which is every source the app had
+   * before the encoder learned to start partway in. It goes non-zero only
+   * after a change of sound mid-song, when the server is asked for a live
+   * encode from where the listener already was: that stream's clock reads
+   * zero at `srcOffset` seconds in, so element time and song time stop being
+   * the same number and the two helpers below are how everything crosses
+   * between them. Adding zero is what it does in every pre-existing case,
+   * which is deliberate - the whole feature is inert until a toggle arms it.
+   */
+  const srcOffset = useRef(0);
+  /** Element clock -> song clock. */
+  const deckTime = (el: HTMLAudioElement) => el.currentTime + srcOffset.current;
+  /** Song clock -> element clock, for a seek the element can actually do. */
+  const seekDeck = (el: HTMLAudioElement, songSeconds: number) => {
+    el.currentTime = Math.max(0, songSeconds - srcOffset.current);
+  };
   /** Reloads spent on THIS track, reset whenever the listener moves. */
   const resumeCount = useRef(0);
   /** Bumped per reload so a re-resolved URL is never byte-identical: an
@@ -473,29 +493,39 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       setBuffering(false);
       return;
     }
-    const at = audio.currentTime || lastGoodPos.current;
+    const at = deckTime(audio) || lastGoodPos.current;
     resumeCount.current += 1;
-    const url = await loadAudioUrl(current.path);
-    if (!url) return;
+    // `at`, not zero: on the encoder path this is what turns a reload from
+    // "re-encode the song from the top and stream all of it" into one that
+    // begins where the listener is. A source that seeks itself answers
+    // offset 0 and takes the loadedmetadata path below, exactly as before.
+    const source = await loadAudioSource(current.path, at);
+    if (!source) return;
+    const { url, offset } = source;
     // A crossfade may have swapped decks while that resolved; landing this on
     // the wrong element would restart a track nobody asked for.
     if (activeAudio() !== audio || liveRef.current.track?.path !== current.path) return;
     const fresh = url.startsWith('http')
       ? `${url}${url.includes('?') ? '&' : '?'}r=${(resumeNonce.current += 1)}`
       : url;
-    // Seek before the element is audible: loadedmetadata always precedes
-    // canplay, so the start that canplay performs is already at the right spot.
-    audio.addEventListener(
-      'loadedmetadata',
-      () => {
-        try {
-          audio.currentTime = at;
-        } catch {
-          // A source that refuses the seek still plays; it just starts over.
-        }
-      },
-      { once: true },
-    );
+    srcOffset.current = offset;
+    // A source the server already wound forward needs no seek - asking for one
+    // would land it `at` seconds past the spot it opened on.
+    if (offset === 0) {
+      // Seek before the element is audible: loadedmetadata always precedes
+      // canplay, so the start that canplay performs is already at the right spot.
+      audio.addEventListener(
+        'loadedmetadata',
+        () => {
+          try {
+            audio.currentTime = at;
+          } catch {
+            // A source that refuses the seek still plays; it just starts over.
+          }
+        },
+        { once: true },
+      );
+    }
     pendingPlay.current = true;
     setActiveSrc(fresh);
   };
@@ -1101,11 +1131,11 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       const isActive = () => audio === activeAudio();
       const onTime = () => {
         if (!isActive()) return;
-        if (!scrubbing.current) setPosition(audio.currentTime);
+        if (!scrubbing.current) setPosition(deckTime(audio));
         // The clock moving IS the proof sound is coming out, and the spot a
         // recovery would return to. Both are recorded here, in the one handler
         // that only fires while the deck is genuinely advancing.
-        lastGoodPos.current = audio.currentTime;
+        lastGoodPos.current = deckTime(audio);
         noteFlowing();
         // Where you are, for the account rather than this device. Throttled
         // inside recordResume, and only from the deck that is actually
@@ -1115,7 +1145,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         if (here) {
           void recordResume({
             path: here.path,
-            position: audio.currentTime,
+            position: deckTime(audio),
             title: here.title,
             artist: here.artist,
           });
@@ -1386,6 +1416,10 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       const url = await loadAudioUrl(track.path);
       if (cancelled || !url) return;
       created = url;
+      // A new track is loaded from the top, so element time is song time
+      // again. Cleared here rather than where the last one was set, because
+      // this is the one path every track change goes through.
+      srcOffset.current = 0;
       setPosition(0);
       // Seed the timeline from the indexed metadata immediately. Android may
       // later describe a streamed response as infinitely long; onMeta keeps
@@ -1980,7 +2014,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     if (playbackRef.current.sleep === 'end-of-track') return;
     const duration = el.duration;
     if (!Number.isFinite(duration) || duration < PREFETCH_LEAD_S + 4) return;
-    const remaining = duration - el.currentTime;
+    const remaining = duration - deckTime(el);
     if (remaining > PREFETCH_LEAD_S || remaining <= 0.5) return;
     const next = pickNext(1, repeat === 'all');
     if (next === null || next === 'rewind' || next.path === current.path) return;
@@ -2023,7 +2057,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     const duration = el.duration;
     // Short files are all edges: a blend needs a middle to blend over.
     if (!Number.isFinite(duration) || duration < settings.crossfade + 8) return;
-    const remaining = duration - el.currentTime;
+    const remaining = duration - deckTime(el);
     // A lead over the fade window covers the file's load time.
     if (remaining > settings.crossfade + 0.4 || remaining <= 0.5) return;
     const next = pickNext(1, repeat === 'all');
@@ -2064,6 +2098,9 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       xfadeToken.current += 1;
       xfadeRef.current = null;
       activeIsB.current = !activeIsB.current;
+      // The incoming deck was prefetched from the start of its own track, so
+      // whatever offset the outgoing one carried does not belong to it.
+      srcOffset.current = 0;
       const nowActive = activeAudio();
       // Only a live deck is worth adopting: one that already ended (a pick
       // shorter than the blend) or errored would wedge the strip on silence.
@@ -2177,7 +2214,10 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     // The title only adds something when it is not just "Chapter N" again.
     return title && title.toLowerCase() !== `chapter ${idx + 1}` ? `${ord} · ${title}` : ord;
   })();
-  const chapterNow = () => (activeAudio()?.currentTime ?? positionRef.current) * 1000;
+  const chapterNow = () => {
+    const el = activeAudio();
+    return (el ? deckTime(el) : positionRef.current) * 1000;
+  };
   const currentChapter = () => {
     const t = chapterNow();
     let idx = 0;
@@ -2222,7 +2262,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     const audio = activeAudio();
     // Early in a track, back means the previous one; later it means the top
     // of this one - the convention every player shares.
-    if (audio && audio.currentTime > 3) {
+    if (audio && deckTime(audio) > 3) {
       rewind();
       return;
     }
@@ -2390,7 +2430,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         0,
         limit > 0 ? Math.min(limit, scratchAnchor.current + shown) : scratchAnchor.current + shown,
       );
-      setPosition(scratchPos.current);
+      setPosition(scratchPos.current + srcOffset.current);
       return;
     }
     // Legacy scratch: the seek-preview. Twelve decoder restarts a second is
@@ -2400,7 +2440,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       0,
       limit > 0 ? Math.min(limit, scratchPos.current + deltaSeconds) : scratchPos.current + deltaSeconds,
     );
-    setPosition(scratchPos.current);
+    setPosition(scratchPos.current + srcOffset.current);
     const now = performance.now();
     if (now - lastScratchWrite.current < 80) return;
     lastScratchWrite.current = now;
@@ -2445,7 +2485,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       scratchRolling.current = false;
       if (!moved) {
         scrubbing.current = false;
-        setPosition(scratchAnchor.current);
+        setPosition(scratchAnchor.current + srcOffset.current);
         setPlayingState(true);
         return;
       }
@@ -2472,7 +2512,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       // A grab-and-release that went nowhere owes no seek - a seek is a
       // refetch on a stream - just its scrubbing flag back.
       scrubbing.current = false;
-      setPosition(scratchAnchor.current);
+      setPosition(scratchAnchor.current + srcOffset.current);
     }
   };
 
@@ -2521,7 +2561,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         }
       }, 1200);
     }
-    audio.currentTime = to;
+    seekDeck(audio, to);
   };
 
   // The car's handles on this player, refreshed every render so the listener

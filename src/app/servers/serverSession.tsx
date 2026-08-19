@@ -137,7 +137,7 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
   settingsRef.current = settings;
 
   useEffect(() => {
-    setRemoteAudioResolver((path) => {
+    setRemoteAudioResolver((path, seek) => {
       // Which server owns this track. A path carrying no origin is one of this
       // server's own - every path written before multi-server existed, and all
       // of them on a single-server install - so the current session answers,
@@ -150,9 +150,16 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
       const id = trackIdFromPath(path);
       if (id === null) return null;
       const { quality, bitrate } = settingsRef.current;
-      // The transcode path deliberately starts from zero: it is a live encode,
-      // so there is no range to resume into. Seeking on it is a fresh request,
-      // which the player performs by reloading the source.
+      // The transcode path starts WHERE IT IS ASKED TO. It is a live encode
+      // with no range to resume into, so the only way back to the middle of a
+      // song is to have the encoder begin there - which is a fresh request
+      // carrying `seek`, and which `-ss` before `-i` gives away for nothing.
+      //
+      // It used to always pass 0 and let the element seek, which on a
+      // length-less body it cannot do: the server re-encoded from the top and
+      // the listener waited through the whole song-so-far every time they
+      // touched the console. That was the delay on changing an effect or
+      // taking out a part, and the reason it got worse the further in you were.
       //
       // An effect forces that path even on a fast connection, because the
       // encoder IS the effects rack - the untouched file has nowhere for a
@@ -179,9 +186,13 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
       // be missing from. The parts themselves are on the server; this only
       // names which ones to leave out.
       const drop = stemDropParam(id);
-      return quality === 'transcode' || fx || fx2 || drop
-        ? transcodeUrl(from, rowId, bitrate, 0, fx, fx2, drop)
-        : streamUrl(from, rowId);
+      if (!(quality === 'transcode' || fx || fx2 || drop)) {
+        // The original file, served with byte ranges: the element seeks it
+        // itself, so it never wants a pre-seeked source.
+        return { url: streamUrl(from, rowId), offset: 0 };
+      }
+      const at = Number.isFinite(seek) && seek > 0 ? seek : 0;
+      return { url: transcodeUrl(from, rowId, bitrate, at, fx, fx2, drop), offset: at };
     });
     return () => setRemoteAudioResolver(null);
   }, []);
