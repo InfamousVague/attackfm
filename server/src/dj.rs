@@ -31,6 +31,11 @@ const PER_ARTIST_CAP: usize = 2;
 const RECENT_WINDOW: i64 = 80;
 
 const TRAIT_CACHE_MS: i64 = 7 * 24 * 60 * 60 * 1000;
+/// Trait extraction is optional polish around an already enriched track. Keep
+/// its deadline comfortably below the Booth's 90-second request deadline so a
+/// busy or looping local model can never turn "choose the sound" into a client
+/// timeout; the canonical enrichment-backed fallback remains useful on its own.
+const TRAIT_AI_DEADLINE: Duration = Duration::from_secs(45);
 /// Per-generation movement for close matches. Four percentage points peak to
 /// peak changes ordering inside a quality tier without letting a weak match
 /// leapfrog a clearly better one.
@@ -681,13 +686,21 @@ pub async fn analyze_seed(
         )
         };
         let schema = trait_schema();
-        match client.chat_json::<TraitAnalysis>(
-            "You are AttackFM's local music curator. Return compact, evidence-aware structured traits for the listener's own library.",
-            &prompt, "attackfm_trait_analysis", schema, true,
+        match tokio::time::timeout(
+            TRAIT_AI_DEADLINE,
+            client.chat_json::<TraitAnalysis>(
+                "You are AttackFM's local music curator. Return compact, evidence-aware structured traits for the listener's own library.",
+                &prompt, "attackfm_trait_analysis", schema, true,
+            ),
         ).await {
-            Ok(value) => (value, true),
-            Err(error) => {
-                eprintln!("[attackfm] song trait AI failed; using measured fallback: {error}");
+            Ok(Ok(value)) => (value, true),
+            Ok(Err(error)) => {
+                eprintln!("[attackfm] song trait AI failed; using enriched fallback: {error}");
+                let track = &tracks[0];
+                (heuristic_analysis(track, feature_by_id.get(&track.id)), false)
+            }
+            Err(_) => {
+                eprintln!("[attackfm] song trait AI exceeded 45s; using enriched fallback");
                 let track = &tracks[0];
                 (heuristic_analysis(track, feature_by_id.get(&track.id)), false)
             }
@@ -1257,6 +1270,46 @@ fn heuristic_analysis(
                 genres: vec![preferred_genre.to_string()],
                 ..Default::default()
             },
+        );
+    }
+    // The local model is optional. When it is busy, expose useful choices
+    // straight from the canonical enrichment instead of collapsing to broad
+    // file tags and measured energy alone.
+    if let Some(sonic) = track.ai_sonic_traits.first().filter(|v| !v.trim().is_empty()) {
+        add(
+            sonic,
+            "sonic",
+            "More with this enriched sonic character.".into(),
+            sonic.to_string(),
+            TraitSignals::default(),
+        );
+    }
+    if let Some(production) = track
+        .ai_production_descriptors
+        .first()
+        .filter(|v| !v.trim().is_empty())
+    {
+        add(
+            production,
+            "production",
+            "More with this production or instrumentation character.".into(),
+            production.to_string(),
+            TraitSignals::default(),
+        );
+    }
+    if let Some(mood) = track
+        .ai_moods
+        .iter()
+        .chain(&track.ai_vibes)
+        .next()
+        .filter(|v| !v.trim().is_empty())
+    {
+        add(
+            mood,
+            "mood",
+            "More with this enriched mood and vibe.".into(),
+            mood.to_string(),
+            TraitSignals::default(),
         );
     }
     if let Some(year) = track.year {
