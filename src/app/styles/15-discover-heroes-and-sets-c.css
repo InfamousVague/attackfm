@@ -419,8 +419,12 @@ body [class*='_panel_']:has(> .dlPanel) {
   inset-block-start: 0;
   z-index: 2;
   padding-block: var(--glacier-space-2);
-  background: color-mix(in srgb, var(--glacier-surface) 92%, transparent);
-  backdrop-filter: blur(12px);
+  /* The kit's glass, not a near-opaque surface. `--glacier-surface` at 92% is
+     a black slab in a dark theme, which is what turned this bar into a lid
+     over the artwork instead of a pane in front of it. */
+  background: var(--glacier-glass-regular);
+  backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
 }
 
 /* The strip of panel padding ABOVE the pinned bar.
@@ -449,9 +453,12 @@ body [class*='_panel_']:has(> .dlPanel) {
   position: absolute;
   inset-inline: 0;
   inset-block-end: 100%;
-  block-size: 2rem;
+  /* Exactly the panel's top padding, so the band is covered and nothing
+     extends past the scrollport. */
+  block-size: var(--fx-pad-y, 0px);
   background: inherit;
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
   pointer-events: none;
 }
 
@@ -491,8 +498,8 @@ body [class*='_panel_']:has(> .dlPanel) {
   gap: var(--glacier-space-2);
   padding: var(--glacier-space-2);
   border-radius: var(--glacier-radius-md);
-  background: var(--glacier-surface);
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  background: var(--glacier-glass-thin);
+  border: var(--glacier-hairline) solid var(--glacier-glass-border);
   /* Pedals paint their own tint over this; rack boxes stay uniform, which is
      the difference between a pedalboard and a rack of matched units. */
   transition: background 200ms ease, border-color 200ms ease;
@@ -531,7 +538,7 @@ body [class*='_panel_']:has(> .dlPanel) {
   inline-size: 1.75rem;
   block-size: 1.75rem;
   border-radius: var(--glacier-radius-md);
-  background: var(--glacier-surface-sunken);
+  background: color-mix(in oklch, var(--glacier-text) 9%, transparent);
   color: var(--glacier-text-muted);
 }
 
@@ -649,9 +656,24 @@ body [class*='_panel_']:has(> .dlPanel) {
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-2);
-  padding-block: var(--glacier-space-1);
-  background: color-mix(in srgb, var(--glacier-surface) 92%, transparent);
-  backdrop-filter: blur(12px);
+  padding-block: var(--glacier-space-2);
+  background: var(--glacier-glass-regular);
+  backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
+}
+
+/* Both pinned bars run the full width of the panel, not the width of its
+   CONTENT box - a frosted bar that stops short of the popover's own padding
+   reads as a floating black card with a gap either side of it, and the gap is
+   where the rows underneath show through.
+   The inset is the panel's padding, measured by SoundConsole into --fx-pad-x,
+   because the kit owns that value and it moves with density. Exactly the
+   padding and no more: bleeding further would put the bar outside the
+   scrollport and hang a horizontal scrollbar off the popover. */
+.soundConsole__tabs,
+.fxShelf__filters {
+  margin-inline: calc(var(--fx-pad-x, 0px) * -1);
+  padding-inline: var(--fx-pad-x, 0px);
 }
 
 .fxShelf__search {
@@ -701,9 +723,9 @@ body [class*='_panel_']:has(> .dlPanel) {
   align-items: center;
   gap: var(--glacier-space-2);
   padding: var(--glacier-space-2);
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border: var(--glacier-hairline) solid var(--glacier-glass-border);
   border-radius: var(--glacier-radius-md);
-  background: var(--glacier-surface);
+  background: var(--glacier-glass-thin);
   color: inherit;
   text-align: start;
   cursor: pointer;
@@ -800,7 +822,7 @@ body [class*='_panel_']:has(> .dlPanel) {
   padding: var(--glacier-space-2);
   border: 0;
   border-radius: var(--glacier-radius-md);
-  background: var(--glacier-surface);
+  background: var(--glacier-glass-thin);
   color: inherit;
   text-align: start;
   cursor: pointer;
@@ -899,7 +921,7 @@ body [class*='_panel_']:has(> .dlPanel) {
 
 .fxShelf__item[data-active='true'] {
   border-color: var(--glacier-accent-9);
-  background: color-mix(in oklch, var(--glacier-accent-9) 14%, var(--glacier-surface));
+  background: color-mix(in oklch, var(--glacier-accent-9) 18%, var(--glacier-glass-thin));
 }
 
 .fxShelf__icon[data-active='true'] {
@@ -915,4 +937,13 @@ body [class*='_panel_']:has(> .dlPanel) {
   color: var(--glacier-accent-contrast);
   font-size: var(--glacier-font-size-xs);
   font-weight: 600;
+}
+
+/* A tab label and its count. Inline-flex so the badge sits on the text's
+   baseline row rather than stretching the segment, and a small gap so the
+   number reads as attached to the word rather than as part of it. */
+.soundConsole__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
 }

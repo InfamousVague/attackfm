@@ -3,7 +3,7 @@ import { installSheetDismiss } from './playerDismiss.ts';
 import { fireNativeHaptic } from '../core/haptics.ts';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { createPortal } from 'react-dom';
-import { ContextMenu, IconButton, MenuItem, Popover, SeekBar, SegmentedControl, Switch, useBeat, useLiveLevels } from '@glacier/react';
+import { ContextMenu, CounterBadge, IconButton, MenuItem, Popover, SeekBar, SegmentedControl, Switch, useBeat, useLiveLevels } from '@glacier/react';
 import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
 import { AudioLines, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Heart, Image as ImageIcon, ListMusic, ListPlus, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Sparkles, Volume2 } from '@glacier/icons';
 import { isMobile } from '../core/platform.ts';
@@ -13,6 +13,7 @@ import { FxRoom } from './FxRoom.tsx';
 import { FiltersRoom } from './FiltersRoom.tsx';
 import { FILTERS, signature } from './filters.ts';
 import { FxSaved } from './FxSaved.tsx';
+import { scrollOwner } from './fxEditing.tsx';
 import { FX_NODES, setFxChainOn, useFxChain } from './fxChain.ts';
 import { MarqueeText } from './MarqueeText.tsx';
 import { SpinningDisc } from './SpinningDisc.tsx';
@@ -705,7 +706,18 @@ export function SoundConsole({ narrow }: { narrow: boolean }) {
     const bar = tabsRef.current;
     const root = consoleRef.current;
     if (!bar || !root) return;
-    const sync = () => root.style.setProperty('--fx-tabs-h', `${bar.getBoundingClientRect().height}px`);
+    const sync = () => {
+      root.style.setProperty('--fx-tabs-h', `${bar.getBoundingClientRect().height}px`);
+      // The hosting panel's own padding, so the pinned bars can run the full
+      // width of the popover and cover the strip above themselves. The kit
+      // owns that padding and it moves with density, so it is read rather
+      // than written down.
+      const host = scrollOwner(root);
+      if (!host) return;
+      const box = getComputedStyle(host);
+      root.style.setProperty('--fx-pad-x', box.paddingInlineStart);
+      root.style.setProperty('--fx-pad-y', box.paddingBlockStart);
+    };
     sync();
     if (typeof ResizeObserver === 'undefined') return; // the CSS default stands
     const watch = new ResizeObserver(sync);
@@ -751,8 +763,34 @@ export function SoundConsole({ narrow }: { narrow: boolean }) {
           value={room}
           options={[
             { value: 'eq', label: 'EQ' },
-            { value: 'hifi', label: hifiCount > 0 ? `HiFi ${hifiCount}` : 'HiFi' },
-            { value: 'filters', label: filterOn ? 'Filters ●' : 'Filters' },
+            {
+              value: 'hifi',
+              label: (
+                <span className="soundConsole__tab">
+                  HiFi
+                  {/* CounterBadge renders nothing at zero, so an empty chain
+                      leaves a plain label rather than a "0" nobody needs. */}
+                  <CounterBadge count={hifiCount} size="sm" tone="neutral" />
+                </span>
+              ),
+            },
+            {
+              value: 'filters',
+              label: (
+                <span className="soundConsole__tab">
+                  Filters
+                  {/* A dot, not a number: a filter is one thing or nothing,
+                      and "1" would invite the question of what two would mean. */}
+                  <CounterBadge
+                    count={filterOn ? 1 : 0}
+                    dot
+                    tone="accent"
+                    size="sm"
+                    aria-label={filterOn ? `${filterOn} is on` : undefined}
+                  />
+                </span>
+              ),
+            },
           ]}
           onValueChange={(v) => go(v as Room)}
         />
