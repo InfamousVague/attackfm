@@ -8,8 +8,7 @@ import { clearStemDrop, setStemDropped, useStemDrop } from './stemDrop.ts';
 import { useStems } from './stemsReady.ts';
 import { chainRate, useFxChain } from './fxChain.ts';
 import { ENV_HZ, envelopeMeter, loadStemEnvelopes, type StemEnvelopes } from './stemLevels.ts';
-import { onMeteredConnection } from '../core/network.ts';
-import { wifiOnlyDownloads } from '../settings/behaviourPrefs.ts';
+import { autoDownloadAllowed } from '../settings/behaviourPrefs.ts';
 
 /**
  * The part's own shape across the whole song, thinned to something a bar can
@@ -256,13 +255,14 @@ export function StemsRoom() {
     setEnvelopes(new Map());
     const stop = new AbortController();
     void (async () => {
-      // The same rule the cache sweep applies (mayDownload, cacheSchedule.ts),
-      // composed from the same two primitives rather than shared, because this
-      // is the player and that is the cache. Opening a panel is not a request
-      // to spend nine megabytes of somebody's mobile data, and "only download
-      // on Wi-Fi" plainly covers a nine-megabyte download. Unknown stays
-      // permissive, which is that module's contract and not ours to reverse.
-      if (wifiOnlyDownloads() && (await onMeteredConnection())) return;
+      // The one rule, asked where it lives now rather than rebuilt here.
+      // Opening a panel is not a request to spend nine megabytes of somebody's
+      // mobile data, and "only download on Wi-Fi" plainly covers a
+      // nine-megabyte download. This composed the same test from the same two
+      // primitives when it was written, which was correct and is now merely a
+      // second copy - and a second copy of a policy is one the next person to
+      // change the policy will miss.
+      if (!(await autoDownloadAllowed())) return;
       if (stop.signal.aborted) return;
       const got = await loadStemEnvelopes(track!, session, partsKey.split(','), stop.signal);
       if (!stop.signal.aborted && got.size > 0) setEnvelopes(got);
