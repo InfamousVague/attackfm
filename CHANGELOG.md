@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.202
+
+- Taking a part out, or moving an effect, picks up where you are — it used to rebuild the song from the beginning first, and the wait grew the deeper into a track you were
+- The seek bar works on a song with effects or parts taken out: drag it anywhere, forward or back, and it goes there
+- A song kept on this device no longer forgets the parts you took out of it
+
 ## 0.3.201
 
 - On a desktop, Now Playing is simply there: the record, the artwork and the transport keep the right half of the window while the library carries on in the left, the way it already worked on an unfolded foldable. Before this the desktop had no Now Playing at all, only the strip along the bottom
