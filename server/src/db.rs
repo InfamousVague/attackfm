@@ -355,6 +355,15 @@ CREATE TABLE IF NOT EXISTS playlists (
 );
 CREATE INDEX IF NOT EXISTS playlists_user ON playlists(user_id);
 
+CREATE TABLE IF NOT EXISTS fx_presets (
+  id         INTEGER PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  chain      TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE(user_id, name)
+);
+
 CREATE TABLE IF NOT EXISTS playlist_tracks (
   playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
   track_id    INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
@@ -947,6 +956,56 @@ CREATE TABLE IF NOT EXISTS curator_pulls (
   UNIQUE (user_id, ext_id)
 );
 CREATE INDEX IF NOT EXISTS curator_pulls_user_time ON curator_pulls(user_id, created_at DESC);
+
+-- Real loudness, as opposed to track_features.loudness - which is a rough 0-1
+-- impression taken from ninety seconds of the middle of a file and is right
+-- for mood playlists and wrong for gain. These are the ITU/EBU numbers,
+-- measured across the WHOLE track, and they are what playback normalisation
+-- rides on:
+--   lufs    integrated loudness in LUFS, negative, quiet is more negative
+--   peak_db true peak in dBTP - the reason a boost can be refused, since
+--           lifting a track that already touches 0 dBFS is just clipping
+--   lra     loudness range in LU, the honest "how dynamic is this master"
+-- Its own table on purpose: Db::open only ever runs CREATE TABLE IF NOT
+-- EXISTS, so a new TABLE lands on the deployed database and a new COLUMN
+-- silently never would.
+-- Separated stems: one row per (track, stem). The audio itself lives on disk
+-- under the data dir - a few megabytes per stem is not a thing to put in
+-- SQLite - and this is the index plus the cache bookkeeping.
+--
+-- `model` is part of the identity so a better separator later can coexist
+-- with what is already on disk instead of silently mixing two qualities.
+CREATE TABLE IF NOT EXISTS track_stems (
+  track_id   INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+  stem       TEXT NOT NULL,          -- vocals | drums | bass | other
+  model      TEXT NOT NULL,
+  rel_path   TEXT NOT NULL,          -- under <data>/stems
+  bytes      INTEGER NOT NULL,
+  made_at    INTEGER NOT NULL,
+  used_at    INTEGER NOT NULL,       -- for eviction: least recently played
+  PRIMARY KEY (track_id, stem, model)
+);
+CREATE INDEX IF NOT EXISTS track_stems_used ON track_stems(used_at);
+
+-- The work queue. A track is asked for once and separated once; the client
+-- polls this rather than holding a connection open for the minutes it takes.
+CREATE TABLE IF NOT EXISTS stem_jobs (
+  track_id     INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+  state        TEXT NOT NULL,        -- queued | running | done | failed
+  error        TEXT NOT NULL DEFAULT '',
+  requested_at INTEGER NOT NULL,
+  started_at   INTEGER NOT NULL DEFAULT 0,
+  finished_at  INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS stem_jobs_state ON stem_jobs(state, requested_at);
+
+CREATE TABLE IF NOT EXISTS track_loudness (
+  track_id    INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+  lufs        REAL NOT NULL,
+  peak_db     REAL NOT NULL,
+  lra         REAL NOT NULL,
+  measured_at INTEGER NOT NULL
+);
 
 -- Which library rows a landed pull became - what lets an adoption find its
 -- pull, and a pull report its real size.
@@ -2027,6 +2086,52 @@ impl Db {
     }
 
     // --- playlists --------------------------------------------------------
+
+    // --- the hi-fi chain's presets ---------------------------------------
+
+    /// Saved chains, newest-touched first - the order a picker wants.
+    pub fn fx_presets(&self, user_id: i64) -> Vec<(i64, String, String, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT id, name, chain, updated_at FROM fx_presets
+              WHERE user_id = ?1 ORDER BY updated_at DESC",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    /// Save-or-replace by (user, name): re-saving "Warm Nights" updates it.
+    pub fn fx_preset_save(&self, user_id: i64, name: &str, chain: &str) -> rusqlite::Result<i64> {
+        let conn = self.lock();
+        conn.execute(
+            "INSERT INTO fx_presets (user_id, name, chain, updated_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(user_id, name)
+             DO UPDATE SET chain = excluded.chain, updated_at = excluded.updated_at",
+            params![user_id, name, chain, now_ms()],
+        )?;
+        let id = conn.query_row(
+            "SELECT id FROM fx_presets WHERE user_id = ?1 AND name = ?2",
+            params![user_id, name],
+            |r| r.get(0),
+        )?;
+        Ok(id)
+    }
+
+    /// True when a row actually went - the handler turns false into 404.
+    pub fn fx_preset_delete(&self, user_id: i64, id: i64) -> rusqlite::Result<bool> {
+        let conn = self.lock();
+        let n = conn.execute(
+            "DELETE FROM fx_presets WHERE user_id = ?1 AND id = ?2",
+            params![user_id, id],
+        )?;
+        Ok(n > 0)
+    }
 
     pub fn create_playlist(&self, user_id: i64, name: &str) -> rusqlite::Result<i64> {
         let conn = self.lock();
@@ -4852,6 +4957,226 @@ impl Db {
     /// half of the row: an existing tempo always wins over the analyser's
     /// (and keeps its bpm_source), a vector is never touched, and a fresh row
     /// leaves checked_at at 0 so the enricher still gets its turn.
+    // --- stems ------------------------------------------------------------
+
+    /// Ask for a track's stems. Idempotent: a track already queued, running or
+    /// done keeps the state it has, so a listener tapping twice does not send
+    /// it round again. A FAILED job is retried, because the usual reason is a
+    /// file that has since been replaced.
+    pub fn request_stems(&self, track_id: i64) -> rusqlite::Result<String> {
+        let conn = self.lock();
+        conn.execute(
+            "INSERT INTO stem_jobs (track_id, state, requested_at)
+             VALUES (?1, 'queued', ?2)
+             ON CONFLICT(track_id) DO UPDATE SET
+               state        = CASE WHEN stem_jobs.state = 'failed' THEN 'queued' ELSE stem_jobs.state END,
+               error        = CASE WHEN stem_jobs.state = 'failed' THEN '' ELSE stem_jobs.error END,
+               requested_at = CASE WHEN stem_jobs.state = 'failed' THEN ?2 ELSE stem_jobs.requested_at END",
+            params![track_id, now_ms()],
+        )?;
+        conn.query_row(
+            "SELECT state FROM stem_jobs WHERE track_id = ?1",
+            params![track_id],
+            |r| r.get(0),
+        )
+    }
+
+    /// The next track waiting to be separated, oldest ask first.
+    pub fn next_stem_job(&self) -> Option<(i64, String)> {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT j.track_id, t.rel_path FROM stem_jobs j
+               JOIN tracks t ON t.id = j.track_id
+              WHERE j.state = 'queued' AND t.deleted = 0
+              ORDER BY j.requested_at ASC LIMIT 1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .ok()
+    }
+
+    pub fn mark_stem_job(&self, track_id: i64, state: &str, error: &str) -> rusqlite::Result<()> {
+        let now = now_ms();
+        self.lock().execute(
+            "UPDATE stem_jobs SET state = ?2, error = ?3,
+               started_at  = CASE WHEN ?2 = 'running' THEN ?4 ELSE started_at END,
+               finished_at = CASE WHEN ?2 IN ('done','failed') THEN ?4 ELSE finished_at END
+             WHERE track_id = ?1",
+            params![track_id, state, error, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn save_stem(
+        &self,
+        track_id: i64,
+        stem: &str,
+        model: &str,
+        rel_path: &str,
+        bytes: i64,
+    ) -> rusqlite::Result<()> {
+        let now = now_ms();
+        self.lock().execute(
+            "INSERT INTO track_stems (track_id, stem, model, rel_path, bytes, made_at, used_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
+             ON CONFLICT(track_id, stem, model) DO UPDATE SET
+               rel_path = excluded.rel_path, bytes = excluded.bytes, made_at = excluded.made_at",
+            params![track_id, stem, model, rel_path, bytes, now],
+        )?;
+        Ok(())
+    }
+
+    /// One track's stems, and the job state that explains their absence.
+    pub fn stems_for(&self, track_id: i64) -> (String, String, Vec<(String, String, i64)>) {
+        let conn = self.lock();
+        let (state, error): (String, String) = conn
+            .query_row(
+                "SELECT state, error FROM stem_jobs WHERE track_id = ?1",
+                params![track_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap_or_else(|_| ("none".to_string(), String::new()));
+        let mut rows = Vec::new();
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT stem, rel_path, bytes FROM track_stems WHERE track_id = ?1 ORDER BY stem",
+        ) {
+            if let Ok(iter) = stmt.query_map(params![track_id], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            }) {
+                rows = iter.filter_map(Result::ok).collect();
+            }
+        }
+        (state, error, rows)
+    }
+
+    /// One stem's file, and a note that it was wanted just now - which is what
+    /// the eviction sweep reads.
+    pub fn stem_path(&self, track_id: i64, stem: &str) -> Option<String> {
+        let conn = self.lock();
+        let path: String = conn
+            .query_row(
+                "SELECT rel_path FROM track_stems WHERE track_id = ?1 AND stem = ?2",
+                params![track_id, stem],
+                |r| r.get(0),
+            )
+            .ok()?;
+        let _ = conn.execute(
+            "UPDATE track_stems SET used_at = ?3 WHERE track_id = ?1 AND stem = ?2",
+            params![track_id, stem, now_ms()],
+        );
+        Some(path)
+    }
+
+    /// Total bytes held by the stem cache, for the budget.
+    pub fn stems_bytes(&self) -> i64 {
+        self.lock()
+            .query_row("SELECT COALESCE(SUM(bytes),0) FROM track_stems", [], |r| r.get(0))
+            .unwrap_or(0)
+    }
+
+    /// The coldest track's stems, for eviction. All of a track's stems go
+    /// together: three quarters of a kit is not a kit.
+    pub fn coldest_stem_track(&self) -> Option<(i64, Vec<String>)> {
+        let conn = self.lock();
+        let track_id: i64 = conn
+            .query_row(
+                "SELECT track_id FROM track_stems GROUP BY track_id
+                  ORDER BY MAX(used_at) ASC LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .ok()?;
+        let mut paths = Vec::new();
+        if let Ok(mut stmt) =
+            conn.prepare("SELECT rel_path FROM track_stems WHERE track_id = ?1")
+        {
+            if let Ok(iter) = stmt.query_map(params![track_id], |r| r.get::<_, String>(0)) {
+                paths = iter.filter_map(Result::ok).collect();
+            }
+        }
+        Some((track_id, paths))
+    }
+
+    pub fn forget_stems(&self, track_id: i64) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute("DELETE FROM track_stems WHERE track_id = ?1", params![track_id])?;
+        conn.execute("DELETE FROM stem_jobs WHERE track_id = ?1", params![track_id])?;
+        Ok(())
+    }
+
+    /// One track's measured loudness. Replaces any earlier reading: a
+    /// re-measure happens because the file changed, and the new number is the
+    /// true one.
+    pub fn save_loudness(
+        &self,
+        track_id: i64,
+        lufs: f64,
+        peak_db: f64,
+        lra: f64,
+    ) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO track_loudness (track_id, lufs, peak_db, lra, measured_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(track_id) DO UPDATE SET
+               lufs = excluded.lufs, peak_db = excluded.peak_db,
+               lra = excluded.lra, measured_at = excluded.measured_at",
+            params![track_id, lufs, peak_db, lra, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// Live tracks with no loudness reading yet, oldest-added first so a
+    /// library that has been sitting there gets measured before today's
+    /// imports. Books are skipped: nobody normalises a chapter against a song.
+    pub fn tracks_needing_loudness(&self, limit: i64) -> Vec<(i64, String)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT t.id, t.rel_path FROM tracks t
+              LEFT JOIN track_loudness l ON l.track_id = t.id
+              WHERE t.deleted = 0 AND t.kind = 'music' AND l.track_id IS NULL
+              ORDER BY t.added_at ASC LIMIT ?1",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![limit], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Every known tempo, for a client that needs a beat grid. Same compact
+    /// shape as the loudness table and for the same reason: the caller holds
+    /// it all and consults it per track.
+    pub fn all_bpm(&self) -> Vec<(i64, f64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT f.track_id, f.bpm FROM track_features f
+               JOIN tracks t ON t.id = f.track_id
+              WHERE f.bpm IS NOT NULL AND f.bpm > 0 AND t.deleted = 0",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Every measurement, for the client's normalisation table. Compact by
+    /// design - one row per track, four numbers - because the client holds the
+    /// whole thing in memory and consults it on every track change.
+    pub fn all_loudness(&self) -> Vec<(i64, f64, f64, f64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT l.track_id, l.lufs, l.peak_db, l.lra FROM track_loudness l
+               JOIN tracks t ON t.id = l.track_id
+              WHERE t.deleted = 0",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
     pub fn save_audio_features(
         &self,
         track_id: i64,

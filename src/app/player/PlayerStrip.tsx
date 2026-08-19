@@ -17,7 +17,7 @@ import {
   Mic,
   MonitorSpeaker,
 } from '@glacier/icons';
-import { EqPanel } from './EqPanel.tsx';
+import { SoundConsole } from './NowPlayingSheet.tsx';
 import { PluginSlot } from '../../plugins/runtime.tsx';
 import { SpinningDisc } from './SpinningDisc.tsx';
 import { BeatWave } from './BeatWave.tsx';
@@ -71,6 +71,7 @@ export function PlayerStrip({
   onSkipBackDisp,
   onSkipForwardDisp,
   shuffle,
+  smart,
   setShuffle,
   repeat,
   setRepeat,
@@ -114,10 +115,19 @@ export function PlayerStrip({
   pauseStyle: PauseStyle;
   onScrubDisp: (to: number) => void;
   onSeekEndDisp: (seconds: number) => void;
-  onPlayingChangeDisp: (playing: boolean) => void;
+  /** Absent when the control cannot act - a remote whose socket is down. The
+   *  kit disables the button, the same way it does for the skips. */
+  onPlayingChangeDisp?: (playing: boolean) => void;
   onSkipBackDisp: (() => void) | undefined;
   onSkipForwardDisp: (() => void) | undefined;
   shuffle: boolean;
+  /** Smart shuffle is on. The strip does not CYCLE the mode - its row of small
+   *  targets is the wrong place for a three-state control, and one tap should
+   *  still mean off - but it has to SHOW it: smart is the mode that changes
+   *  what you hear, and the strip is the surface people actually look at. A
+   *  sparkle here with no explanation is better than an unfamiliar song with
+   *  no explanation. */
+  smart: boolean;
   setShuffle: Dispatch<SetStateAction<boolean>>;
   repeat: PlayerRepeat;
   setRepeat: Dispatch<SetStateAction<PlayerRepeat>>;
@@ -242,6 +252,10 @@ export function PlayerStrip({
         onSkipForward={onSkipForwardDisp}
         shuffle={shuffle}
         onShuffleChange={setShuffle}
+        // Renaming the control is the honest way to badge it: a screen reader
+        // announces the mode, and the CSS sparkle hangs off the same name
+        // rather than off a hashed kit class that could change under us.
+        labels={shuffle && smart ? { shuffle: 'Smart shuffle' } : undefined}
         repeat={repeat}
         onRepeatChange={setRepeat}
         favorite={favorite}
@@ -421,7 +435,10 @@ export function PlayerStrip({
                   )}
                   {moreView === 'eq' && (
                     <div className="eqPopover">
-                      <EqPanel />
+                      {/* The same console the sheet shows, so the two
+                          surfaces cannot drift into different ideas of what
+                          the sound controls are. */}
+                      <SoundConsole narrow={false} />
                     </div>
                   )}
                   {moreView === 'devices' && <DeviceList />}

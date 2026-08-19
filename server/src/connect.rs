@@ -100,6 +100,11 @@ struct UserHub {
     /// device id -> its live outbound connection. Absent means offline.
     conns: HashMap<String, Conn>,
     session: Session,
+    /// The last command aimed at the active device while its socket was in a
+    /// grace-period blip - delivered the moment it re-hellos. One, not a
+    /// queue: transport commands supersede each other, and replaying a burst
+    /// of stale ones at a device that just woke up is how playback teleports.
+    pending: Option<Command>,
 }
 
 #[derive(Default)]
@@ -299,6 +304,15 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, user_id: i64) {
     writer.abort();
 }
 
+/// How long a vanished active device keeps its seat. A phone that blipped -
+/// backgrounded WebView, a doorway, a proxy idling the socket - reconnects
+/// well inside this; a device that is really gone loses the seat when it
+/// lapses. Before this grace existed the seat opened the instant a socket
+/// dropped, and a remote clicking during the blip would play locally and
+/// STEAL the seat - then the phone came back, took it back, and paused the
+/// remote: both devices lost.
+const SEAT_GRACE_MS: u64 = 30_000;
+
 // --- handlers ----------------------------------------------------------------
 
 fn broadcast(hub: &UserHub, message: &str) {
@@ -319,7 +333,13 @@ fn devices_message(hub: &UserHub) -> String {
 }
 
 fn state_message(hub: &UserHub) -> String {
-    json!({ "type": "state", "state": hub.session }).to_string()
+    // `now` is the hub's clock at send time. Remotes extrapolate the position
+    // as base + (now - updatedAt), and both of those stamps must come from
+    // the SAME clock: a phone whose clock ran behind the server's computed a
+    // negative elapsed, clamped it to zero, and showed a position frozen at
+    // the last report. With the server's now on the wire, the client measures
+    // its own skew and the phone's clock stops being part of the answer.
+    json!({ "type": "state", "state": hub.session, "now": now_ms() }).to_string()
 }
 
 async fn on_hello(
@@ -344,7 +364,7 @@ async fn on_hello(
         },
     );
     hub.conns.insert(
-        id,
+        id.clone(),
         Conn {
             conn_id,
             tx: tx.clone(),
@@ -354,6 +374,13 @@ async fn on_hello(
     // the refreshed device list.
     let _ = tx.send(devices_message(hub));
     let _ = tx.send(state_message(hub));
+    // The seat-holder returning from a blip collects what was aimed at it
+    // while it was gone.
+    if hub.session.active_device_id.as_deref() == Some(id.as_str()) {
+        if let Some(cmd) = hub.pending.take() {
+            let _ = tx.send(json!({ "type": "command", "command": cmd }).to_string());
+        }
+    }
     let devices = devices_message(hub);
     for (dev_id, conn) in hub.conns.iter() {
         if conn.conn_id != conn_id {
@@ -429,19 +456,23 @@ async fn on_state(
 }
 
 async fn on_command(state: &Arc<AppState>, user_id: i64, command: Command) {
-    let users = state.connect.users.lock().await;
-    let Some(hub) = users.get(&user_id) else {
+    let mut users = state.connect.users.lock().await;
+    let Some(hub) = users.get_mut(&user_id) else {
         return;
     };
-    let Some(active) = &hub.session.active_device_id else {
+    let Some(active) = hub.session.active_device_id.clone() else {
         return;
     };
-    let Some(conn) = hub.conns.get(active) else {
-        return;
-    };
-    let _ = conn
-        .tx
-        .send(json!({ "type": "command", "command": command }).to_string());
+    match hub.conns.get(&active) {
+        Some(conn) => {
+            let _ = conn
+                .tx
+                .send(json!({ "type": "command", "command": command }).to_string());
+        }
+        // The seat-holder is in its grace blip: hold the command for its
+        // return rather than dropping it on the floor. Latest wins.
+        None => hub.pending = Some(command),
+    }
 }
 
 async fn on_transfer(state: &Arc<AppState>, user_id: i64, target: &str) {
@@ -507,13 +538,44 @@ async fn on_disconnect(state: &Arc<AppState>, user_id: i64, device: &str, conn_i
         dev.online = false;
         dev.last_seen = now_ms();
     }
-    // If the device that just left was the one playing, playback is orphaned:
-    // no device owns the audio anymore, so the session goes paused and seatless.
+    // The device that just left was the one playing. Its audio is very likely
+    // still sounding - a dropped WebSocket says nothing about a media
+    // pipeline - so the seat is NOT vacated here. It holds through a grace
+    // window, long enough for a backgrounded WebView or an idled proxy to
+    // reconnect; only if the device is still gone when the window lapses does
+    // the session go paused and seatless. Unseating instantly was the seat-
+    // stealing bug: a remote clicking during a two-second blip played locally,
+    // took the seat, and got paused right back when the phone returned.
     if hub.session.active_device_id.as_deref() == Some(device) {
-        hub.session.active_device_id = None;
-        hub.session.playing = false;
-        hub.session.epoch += 1;
-        hub.session.updated_at = now_ms();
+        let epoch_at_drop = hub.session.epoch;
+        let state = Arc::clone(state);
+        let device = device.to_string();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(SEAT_GRACE_MS)).await;
+            let mut users = state.connect.users.lock().await;
+            let Some(hub) = users.get_mut(&user_id) else {
+                return;
+            };
+            // Still gone, still the holder, and nothing (a transfer, its own
+            // return) has moved the session on: now the seat opens.
+            let lapsed = !hub.conns.contains_key(&device)
+                && hub.session.active_device_id.as_deref() == Some(device.as_str())
+                && hub.session.epoch == epoch_at_drop;
+            if !lapsed {
+                return;
+            }
+            hub.session.active_device_id = None;
+            hub.session.playing = false;
+            hub.session.epoch += 1;
+            hub.session.updated_at = now_ms();
+            hub.pending = None;
+            hub.devices
+                .retain(|id, d| d.online || Some(id) == hub.session.active_device_id.as_ref());
+            let devices = devices_message(hub);
+            let state_msg = state_message(hub);
+            broadcast(hub, &devices);
+            broadcast(hub, &state_msg);
+        });
     }
     // Forget devices that are offline and not the active one, so the picker does
     // not accrete dead tabs forever. A device the session still references is

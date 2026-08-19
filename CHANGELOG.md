@@ -7,572 +7,104 @@ sends those lines to every device, where they appear in the update banner
 before the restart and again as "what changed" after it. Keep the lines short:
 they are read on a phone, in a strip, one thumb away from a song.
 
-## 0.3.150
+This history was reset on 2026-08-18 and starts again from the next release.
+The whole file ships inside the app (`settings/WhatsNew.tsx` imports it with
+`?raw` and stands every section up as a timeline in About), so a line written
+here is not a note to ourselves - it is product copy on every device, kept for
+good. Write it as something a listener should read, and leave out anything
+about how music gets onto the disk in the first place: the app plays a library,
+and where that library came from is not the app's story to tell.
 
-- The DJ now completes and normalizes the first enrichment layer across the library before beginning the second, and the Booth shows live progress for both passes
+## 0.3.193
 
-## 0.3.149
+- The lyrics view and the queue sheet are glass too — the cover shows through them instead of being covered up
 
-- Find a playlist and pull the whole thing: Discover has a lookup box now — leave it empty for what's popular, or type a name — and each result downloads in one tap through your importer
-- It only appears when your downloader plugin is actually running, since a row whose only verb is Download has nothing to say without one
+## 0.3.192
 
-## 0.3.148
+- The console's search row loses its backing too — nothing in the popover sits on a second pane now
 
-- Unfolded, Now Playing takes nearly half the screen instead of a third — room for the art to actually be art, with the app still the wider half
+## 0.3.191
 
-## 0.3.147
+- More room inside the sound console, and the same margin on every side
 
-- The fullscreen search sits on the same black as every page, not a grey card ground
+## 0.3.190
 
-## 0.3.146
+- Fixes the sound console losing its styling — the app now notices when its stylesheet did not load at startup and puts it back
 
-- Search is the whole screen now: pull down and the page itself takes over under the ATTACK mark — no card bar, no X, no rounded shoulders. Drag it down (or back, or Escape) to leave, same as ever
+## 0.3.189
 
-## 0.3.145
+- The Filters tab no longer shows its dot when no filter is on
+- The sound console's room switcher is a plain header now — no dark bar behind it, and no gap at its edge
 
-- The DJ's main station hears with everything it has: sets are now ranked on how songs actually sound — sonic character, the measured audio fingerprint, lyrics and community signals together — instead of words-and-tempo alone, and asking for "something mellow" now steers by sound rather than by what the lyrics say
+## 0.3.188
 
-## 0.3.144
+- The sound console is glass again — the artwork reads through the panels instead of sitting behind black cards
+- Its pinned headers run the full width of the popover, and the counts on the tabs are proper badges
 
-- The DJ explains itself. Every song in a DJ-built queue now shows the reason it was picked, right under the artist — the server always knew, and the app finally says
-- The DJ's spoken lines are grounded: it may only mention facts the app actually knows — a first appearance, an artist you've hearted, the genre on file — and never invents biography. Matters most for the small artists it now finds, where a model left to its own devices simply makes things up
+## 0.3.187
 
-## 0.3.143
+- The sound console is the whole editor now: build a HiFi chain right in the popover — add boxes from a searchable shelf, reorder them, bypass one to hear what it was doing
+- Filters take the console's third tab: slowed, sped up, nightcore, lofi, vinyl, cathedral and thirty more, one tap each
+- Pedals stays a plugin with its own page — fifty-five stompboxes is a board you go somewhere to build
+- The HiFi Lab and Filters plugins retire into the player; they uninstall themselves on next launch
+- A/B and saved chains moved below the tabs, where it is plain they act on the whole signal path
 
-- The DJ starts finding genuinely small artists: new music is now sourced from ListenBrainz's similarity graph with a hard ceiling on worldwide listeners, and from the bandmates, side projects and collaborators of obscure artists you've hearted — scenes, not charts
-- Every DJ set now spends two slots on a considered gamble: an artist you've never met, chosen by how your past gambles went, seated mid-set. Ones you finish or heart return more often; ones you skip fade out on their own
+## 0.3.186
 
-## 0.3.142
+- The DJ's station cards get their background back — they were see-through
 
-- The DJ starts learning from what you actually do: every listen now records which part of the app started it, the DJ keeps a ledger of what it offered you, and your taste profile is built from verdicts — a song you finish counts whole, a song you keep bailing on barely counts at all, a heart counts extra
+## 0.3.185
 
-## 0.3.141
+- One door for sound. The equaliser and pedals popovers are now a single console with EQ, HiFi and Pedals tabs — and the HiFi tab finally has real controls, every knob of every box in your chain rather than just an on switch. It opens where you left it
+- HiFi Lab comes installed now, so the HiFi tab is somewhere to go rather than an advert for a page you don't have
+- Panels that should have had a background were rendering see-through on the Pads and Looper pages
 
-- The search card's top bar breathes like the rest of the app: a full-size close button with proper spacing off the corner, matching the Now Playing sheet it mirrors
-- Under the hood the DJ stopped poisoning its own pool: quarantined auditions can no longer sneak into a mix, the discovery shelf re-scores itself as your taste moves, fame is no longer a scoring bonus in the one place meant to find small artists, and a song the catalogue lacked once gets another chance a month later
+## 0.3.184
 
-## 0.3.140
+- The DJ suggests stations now. Unlike a mix, a station never ends — it keeps going in the lane you picked. They're on the Booth page, named from what you actually listen to, and tapping one just asks the DJ for it
 
-- The pulled-in search and the open search page sit under the ATTACK logo again, starting exactly where the page content does — a rewrite had let them climb to the very top of the screen, over the header
+## 0.3.183
 
-## 0.3.139
+- Karaoke is a microphone on the Now Playing screen now, rather than a page you go and find. Press it while a song is playing and the singer comes out of that song, with the words full screen and nothing else on it
+- The lyrics button wears a book, since the microphone now means singing
 
-- The pulled-in search page arrives out of frost: for the first stretch of the pull you mostly see the screen you're on, then search fades in and sharpens as you commit — and its cards no longer play their own entrance animation against the pull
-- The open search page drags down as a card from anywhere on it, including rows and genre tiles — it only refused drags that started on its buttons before, which was most of the page
+## 0.3.182
 
-## 0.3.138
+- Pick up where you left off. Stop on one device and the next one you open knows what you were in the middle of, and how far in you were
 
-- The pull-down is all about search now. Pull from the top and the search page itself fades in — field, recents, your genre cards — over the page you're leaving as it blurs; let go past the commit point and you're in, let go early and it all springs back. The refresh stage is gone
-- Search no longer throws the keyboard at you when it opens. The page arrives whole, and the keyboard waits for a tap on the field
-- Swipe the open search page down to put it away — it leaves as a card with the page resolving behind it, exactly like Now Playing
+## 0.3.181
 
-## 0.3.137
+- You can be on several servers at once. Join a friend's library and it stays with you: their songs turn up in your searches and shelves alongside your own, and play without switching anywhere first
+- The rest of your settings follow your account too now, including how playback behaves, your effects, loudness, haptics and the choice about sharing what you listen to
 
-- The page behind the Now Playing screen stays blurry for much more of the pull — it only fully sharpens once you've dragged about a third of the screen, instead of snapping clear just past the point of no return
+## 0.3.180
 
-## 0.3.136
+- Your settings follow your account now. Sign in on a new phone, or open the player in a browser, and the app arrives looking the way you left it: the theme and accent, the plugins you run, your equaliser and pedalboard, and the servers you belong to
+- Opening the player at attack.fm no longer asks which server you want; it arrives pointed at the library it was opened from, and you can still change it
+- The artwork behind genres and moods loads again
 
-- Share a Spotify link to AttackFM. In Spotify: Share → AttackFM, and the song lands in search ready to add. This works with Spotify left exactly as it is — tapping an open.spotify.com link can never reach us, because Android gives verified links to the app that owns the domain
-- Needs the 0.3.136 APK: share handling is native
+## 0.3.179
 
-## 0.3.135
+- An invite can now make your account for you. Opening an invite with no AttackFM account used to show a Join button that did nothing at all; it now offers to create the account (or sign in) right there and carries straight on into the server
+- The shared artwork behind genres, moods and the curator is served from attack.fm itself. It was pointed at a hub that no longer had it, so those images were missing for everyone, and it also meant listening on a friend's server quietly fetched pictures from someone else's house
+- Songs can be played slower or faster: Slowed, Slowed + reverb, Sped up, Nightcore, Half speed, and one that speeds up without raising the pitch. The seek bar and the time remaining follow the new length instead of the original one
+- A filter your server is too old to play says so, instead of applying and changing nothing
 
-- Pulling the Now Playing screen down now reveals what is behind it gradually: heavily blurred at the first millimetre, resolving into the page as you commit
-- Pulling down for search opens onto the real search page, not a gap with a bar in it — the recents below the field are the actual ones, rising out of the seam while the page you were on softens behind them
+## 0.3.178
 
-## 0.3.134
+- Volume levelling. Your server measures how loud each song actually is, and playback evens the library out — a 1979 vinyl rip and a 2019 remaster now arrive at the same level, so you stop riding the volume knob across your own collection
+- Choose per-album levelling (records keep their quiet tracks quiet) or per-song (best for shuffling), in Settings → Playback. A song is never boosted to the point where it would distort
+- The measuring runs quietly in the background; songs it hasn't reached yet simply play as they always did
 
-- The little server light in the header beats once a second now — a live pulse, not a minute-old reading
+## 0.3.177
 
-## 0.3.133
+- Now Playing on a second device keeps up with the song again. If that device's clock was off by even a few seconds, the position bar sat frozen where the track started; it now reads time from your server's clock instead of its own
+- The skip and transport buttons work the moment you pick the phone up. They used to do nothing until the connection happened to come back on its own — now waking the screen reconnects immediately, and a tap made in that gap is delivered rather than dropped
 
-- Spotify links can open in AttackFM. Your phone offers the choice, and the link lands in search already claimed — the record, its art, and Add
-- Every Spotify link opened in AttackFM carries an "Open in Spotify" action too, so you can always get across to Spotify — even if you picked AttackFM with "Always" and Android stopped asking
-- Needs the 0.3.133 APK: link handling is native, so an over-the-air update cannot carry it
+## 0.3.176
 
-## 0.3.132
+- Picking up your phone while the desktop is playing no longer stops the music. A device whose connection dropped now stays a remote showing what's actually playing, instead of quietly becoming its own paused player and stealing playback when you pressed play
 
-- The lyrics on the Now Playing screen sit in the middle now, over the disc, instead of running down the right-hand edge where long words were being cut in half
+## 0.3.175
 
-## 0.3.131
-
-- The AI DJ button left the playlist page — the playlist's own Play and Shuffle are the page's verbs, and the DJ lives in the Booth
-
-## 0.3.130
-
-- Much more room between the search bar and the refresh on a first pull. The bar now sits there for nearly twice as long before the pull starts becoming a refresh, so it stops being something you sail past on the way
-- Pulling the Now Playing screen down is felt as well as seen: soft ticks that close up and firm up as you approach the point where letting go closes it
-
-## 0.3.129
-
-- A swipe down that doesn't go far enough now always springs the Now Playing screen back into place. A quick short nudge could close it on speed alone, which is not something you can mean to do
-
-## 0.3.128
-
-- Pull the Now Playing screen down to close it. It follows your thumb and springs back if you change your mind — the only way out used to be a chevron in the top-left corner, which is the one corner you cannot reach holding a phone
-- It knows what not to take: the scrub disc, the seek bar, the volume slider, and any list you have already scrolled all keep their own downward drag
-
-## 0.3.127
-
-- With the search bar already open, pulling down again goes straight for the refresh. It picks up where the first pull stopped instead of making you travel the whole way again — and the page moves from the first millimetre rather than sitting still for the first half of it
-
-## 0.3.126
-
-- No more flash before a Canvas appears. The clip stays hidden until it is actually showing frames, so the blurred cover holds that space instead of the app's own mark stretched across your screen
-- Canvas clips are kept on the device now, like your songs. A song you play often fetches its clip once instead of every time, and it starts instantly after that — including with the server unreachable
-
-## 0.3.125
-
-- Android Auto works from the dashboard. Tapping Liked, All songs or Shuffle all in the car starts them — the rows were drawn but every tap was landing nowhere, and from a cold start there was nothing listening at all
-
-## 0.3.124
-
-- Album art reaches the Android lock screen, the notification and the car. The cover was being dropped on its way out for any song whose art had already loaded — which was almost all of them
-
-## 0.3.123
-
-- The pull is felt building. Instead of one tick when you arrive, the run-up to each stop ticks softly and far apart at first, then closer and firmer as it comes — so your thumb knows a stop is approaching rather than only that it has passed one
-
-## 0.3.122
-
-- The pulled-down search bar is the same size as the one on the search page now, rather than a larger version of it — and the space the page makes for it shrank to match
-
-## 0.3.121
-
-- The search bar is much harder to miss. It now arrives and *stays* partway down the pull — the page all but stops while it sits there, with a tick when it lands — so a normal pull finds it instead of sliding straight past
-- Refreshing takes a longer, deliberate pull than before. It used to arm at about the length of an ordinary flick, which is why you kept getting a refresh when you wanted the search bar
-
-## 0.3.120
-
-- Pull-to-refresh actually refreshes now. It asks your server to re-read its own folder and then pulls in whatever that found — before this it was wired to a placeholder and did nothing at all
-- Push the search bar back up, or just scroll, and it goes away — the same gesture that revealed it, run backwards
-- The pull is felt as well as seen: a tick when the search bar is within reach, a firmer one when you have pulled far enough to refresh, and a confirmation when the library comes back
-
-## 0.3.119
-
-- The search bar sits centred in the space the pull opens, and no longer overlaps your music. It was landing a row too low and, on a phone specifically, was also measuring the top of the screen twice — so the status bar's height became overlap
-
-## 0.3.118
-
-- The pulled-down search bar is the app's real search field now, the same control the search page wears — full height, proper border and focus ring, instead of the skinny pill that only looked like a field
-- The space the page makes for it is measured from the bar itself, so it cannot sit on top of your music no matter how tall the field renders
-
-## 0.3.117
-
-- The pull now moves the page. A drag from the top slides the whole page down and the search bar is uncovered underneath it, instead of a bar appearing on top of your music — pull further and the page keeps going to make room for refresh
-- Starting that pull on artwork or an icon works now. It only ever armed when your thumb happened to land on plain background, which on a screen made of album covers was most of the time
-- The app itself no longer bounces on Android. The rule that stops it was behind an iOS-only check, so every Android build had a rubber-banding document under the app
-
-## 0.3.116
-
-- Pulling down from the top now has two stops: a short pull reveals the search bar, and holding it further brings up refresh. The short pull leaves the bar standing so you can tap it when you're ready, instead of dropping you straight into a full search page you didn't ask for
-- Pull far enough to refresh and the spinner now stays put while the library re-reads, so a hard pull no longer looks like nothing happened
-
-## 0.3.115
-
-- Music Date recovers from a stuck song: ten silent seconds and the card re-finds its music from whichever of your servers is actually answering, instead of waiting on one that went dark mid-load
-
-## 0.3.114
-
-- The DJ conversation keeps the app's own header instead of floating a second back button over it — one arrow, where it always is
-
-## 0.3.113
-
-- Album art is kept on the phone now: when your server is unreachable, your covers are still there instead of grey squares
-- Covers ride along with the songs the app downloads, so anything on your device arrives with its artwork
-
-## 0.3.112
-
-- Settings → Diagnostics: every failure this device has hit, with the reason it failed — and a Copy report button, so "it says unreachable" can become something you can paste to someone
-- Unreachable now says why. The reachability check used to throw the reason away, so a grey dot was the whole story; it now names the address it tried and what came back
-- A server that answers with a sign-in page instead of your music — hotel Wi-Fi, captive portals — is caught and named instead of failing silently
-- Nothing leaves the device, and stream tokens are stripped out of the report before you can copy it
-
-## 0.3.111
-
-- When your home server is unreachable, covers now come from whichever of your servers holds the song — the hot mirror steps in the way it already does for playback
-- Liked songs remember their last answer on the device: a dark server shows yesterday's hearts instead of an empty page, refreshed the moment it's back
-- (Your home server picks up the mirror-art trick after its next update; the attack.fm mirror speaks it already)
-
-## 0.3.110
-
-- Fixed the launch that never finished: the app could open to skeletons forever (green dot and all) after a network hop or a cold start behind the lock screen — every request now has a deadline, the library cache can't wedge the first sync, and a stuck sync strip un-sticks itself
-- The header dot earned its color: it now actually checks your server before showing green, and says "Checking…" instead of guessing while it hasn't
-
-## 0.3.109
-
-- The Handbook fills the screen now — no card around the page, and the arrows live along the bottom where thumbs are
-- The counter between the arrows opens the whole index: every page of every chapter, one tap from anywhere, with a "you are here"
-- Long handbook pages scroll inside themselves, and a page turn always starts you at its top
-
-## 0.3.108
-
-- Artist pages fetch missing covers again — 0.3.107 shipped with the lookup's wiring half-connected
-- Cover lookups are remembered for a month, misses included, so an artist page asks Apple once instead of on every visit
-- The cover cache lives in one tidy entry now instead of one browser key per album; old keys are swept up on first use
-
-## 0.3.107
-
-- Settings grew a Handbook: how the app works and how to build plugins for it, 28 illustrated pages you can swipe, arrow, or jump through
-- Scrolling while music plays is smoother — the beat's sixty-a-second pulse now redraws just the player, not the whole app
-- A cold launch no longer resets your storage limit or resurrects songs you deleted by hand
-- Storage sizes agree with themselves everywhere — a full 15 GB cache no longer reads "16 GB of 15 GB"
-- An album opened before its songs arrived now picks up the header's Play and title when you scroll, instead of staying bare until a reopen
-- Discover's entrance ripple survives a trip into an artist's catalogue and back
-- "Check now" in Downloads & space says why a check failed instead of going quiet
-
-## 0.3.106
-
-- The edge-swipe back and pull-to-search work on the very first run now — they used to play dead until the app was reopened once after onboarding
-
-## 0.3.105
-
-- Playlists sort by whichever is newer — your last edit or this device's last listen — so last night's list is at your thumb
-- The add-to-playlist popup shows each playlist's own four-cover face, flush rows instead of padded buttons
-- The lock screen, notification and Android Auto finally get the album cover (needs the new app install, not just this update)
-- Under the hood: the whole app was spring-cleaned — dead code stripped, a hundred flat files folded into rooms, the giants split — nothing should look or behave differently
-
-## 0.3.104
-
-- The lit tab's square got the softer, deeper corner curve — properly squircle now, on every engine
-
-## 0.3.103
-
-- The stray dots beside "Mixes freshened…" are gone — model health lives in the brain card, where it gets words
-
-## 0.3.102
-
-- The tab squares hug their icon and name tighter, and the bar slimmed down with them
-
-## 0.3.101
-
-- The bar grew a little so the lit tab could become an actual square — icon and name in one app-icon-shaped plate, identical on every tab
-
-## 0.3.100
-
-- The lit tab's squircle covers the icon and its name again — at one fixed size, so Discover's plate is exactly Booth's
-- The download counts are the kit's own badges now, so they match every other count in the app
-- The ⋯ icon sits at the same size as its neighbours, and the tabs spread evenly instead of packing left
-
-## 0.3.99
-
-- The lit tab's square is actually square now — measured, not eyeballed
-
-## 0.3.98
-
-- The ⋯ menu sits right on the bar now instead of floating a room's height above it
-- Downloads live in the ⋯ menu, with the count riding both the row and the ⋯ button itself — pink while pulling, red when something failed
-- The lit tab is finally a compact rounded square around the icon, the same size on every tab, instead of stretching with the name
-
-## 0.3.97
-
-- A third pair of updates crossed mid-air today; this one carries both — the ⋯ menu toggle, the mini player's queue button, the squircle tab, and all the unfolded-screen fixes below
-
-## 0.3.96
-
-- Tapping ⋯ a second time closes the menu instead of blinking it shut and open again
-- The mini player has a queue button beside the speaker one — one press to what's next
-- The lit tab on the bottom bar is a true squircle now, not a rounded box
-- Unfolded: everything respects the seam now — the DJ's spoken lines, dialogs, sheets and toasts stay in the app's half instead of sliding behind (or over) the Now Playing card
-- Unfolded: search, settings and the DJ conversation open beside the player instead of covering it, and tapping the card dismisses an open menu like tapping anywhere else
-- The Booth's DJ chat is properly fullscreen on the phone — no more player bar and nav bar sitting on top of the composer, and one back button instead of two
-
-## 0.3.95
-
-- Two 0.3.94s crossed in the air again; this one carries both halves
-- The album page's full-height, tap-anywhere song rows, and the Booth's new instrument panel — the hero, the moods, the platter, the brain, the tune buttons — whichever your phone caught, it now has everything
-
-## 0.3.94
-
-- Tapping a song on an album page plays it from anywhere in the row, not just exactly on its title
-- Album songs are proper song rows now — full height, the guest credit under the title, and holes lining up in the same column
-- The Booth is an instrument panel now: everything on it is a live reading from the AI that runs your library
-- Drop the needle — one big button starts a set built from what you play, with mood chips (chill, energy, late night, focus) that steer it in one tap
-- On the platter: whatever's playing, as the DJ hears it — its traits as little glyphed chips, your note if you wrote one, and an honest byline saying whether a model heard it or it was read by ear
-- The header pill shows what the curator is doing right now; the brain card counts what's been read, fingerprinted, and collected
-- Every mix card has a tune button — rebuild that mix by the traits that made it
-- The DJ conversation opens fullscreen now instead of living in a cramped card
-
-## 0.3.93
-
-- Two 0.3.92s went out minutes apart from two working sessions; this one carries both, so whichever your phone caught, nothing is missing
-- Undo for removals, hold-a-cover menus, the release history in About, the floating downloads chip
-- The rebuilt Booth with Music Date up top, its true fullscreen, and albums finding their missing songs across artist pages, misspellings and bonus discs
-
-## 0.3.92
-
-- Removing a song from the queue, a playlist, or your likes now offers Undo for a few seconds - and puts it back exactly where it was
-- Hold any album cover - home, artist page, search - for Play, Shuffle, queueing the whole record, and the artist
-- About now shows the whole release history, with a "you are here" on the version you're running
-- Downloads left the menus: while anything is pulling, a chip floats above the player saying so from every page - tap it for the queue
-- The Booth got rebuilt: Music Date up top, the DJ in his own card with the mascot and his openers, your mixes underneath — no more chat chrome floating in the dark
-- Music Date is properly fullscreen now: no nav bar, no player strip, just the introductions — the floating arrow (or a back swipe) leaves
-- Records the catalogue files under a second artist page (that Joji deluxe) now show their missing songs — the record is searched for itself, misspelled tag and all
-- Bonus discs count too: a deluxe's second disc shows its holes right where they sit, and the header says so — "21 of 30 songs · 2 discs"
-
-## 0.3.91
-
-- An album's missing songs sit in the running order now — track 3 between 2 and 4 whether you own it or not — just a shade quieter, with their + right there
-- The header says "7 of 10 songs" when a record has holes
-
-## 0.3.90
-
-- The AI DJ got ears: point it at a song, album or playlist, pick which parts of the sound matter, and it builds a queue from what the music actually is - not just what it is filed under
-- Songs can carry your own DJ note ("works best late at night"), and the models can read it but never rewrite it
-- The hub studies your library quietly in the background - measured audio first, models second, and it pauses itself whenever anyone is listening
-- Dragging the seek bar quickly no longer swallows the first inch of the drag
-- On Android, songs that streamed without a length no longer pin the scrubber at zero
-
-## 0.3.89
-
-- The Booth: the DJ, your mixes, and what the curator is up to — one room, with its own preferences, in the nav where Search used to be
-- Search is a pull now: drag down on any page (or ⌘K) and it drops in; close it and you're right where you were
-- Profile is about you: This week and Dates live there as rooms, not buried in the ⋯ menu
-- A little light in the header says whether your server is close, far, or unreachable — tap it for the story and the controls
-- Settings has a search field, remembers the panes you use, and is two panes lighter
-
-## 0.3.88
-
-- Android: play, pause and skip work from outside the app now — lock screen, a paired computer's media panel, a car — even resuming while the app sleeps in the background
-- Android: pausing no longer makes the controls vanish everywhere; they stay until you swipe them away
-- Android Auto: AttackFM shows up with Liked, All songs and Shuffle all, and the dashboard buttons drive the deck (new app install needed for this one)
-
-## 0.3.87
-
-- An album page now shows the whole record: the songs you have, and the ones you don't, dimmed with a + to pull them
-- Missing-song numbers are the sleeve's own now, not a count of what survived
-
-## 0.3.86
-
-- Tapping an album now opens it: the whole record, in running order, with its discs and its guests
-- Artist pages were missing songs and whole albums — anything with a guest credit did not count. Fixed, so the counts are right too
-- Search no longer splits one record into two when a guest sings on it
-
-## 0.3.85
-
-- Two new notifications: songs the collector found waiting for a date, and a weekly recap of what you played
-- "While you were away" now names who most of the new music was by
-- A Notifications pane in settings, with a switch for each kind
-
-## 0.3.84
-
-- Paused, the player bar can be swiped down out of the way; it comes back on its own with the next song
-
-## 0.3.83
-
-- Dragging up or down on a row of albums scrolls the page again, instead of doing nothing
-
-## 0.3.82
-
-- The app now notices a new version within a couple of minutes while you are using it, instead of only when you come back to it
-
-## 0.3.81
-
-- Shelves finally do both: swipe one sideways from anywhere on it, or pull down from the same spot to scroll the page
-
-## 0.3.80
-
-- Shelves swipe sideways reliably again — scroll the page from the gaps between them
-
-## 0.3.79
-
-- An artist page now shows the songs missing from albums you own part of — dimmed, with a plus to add each one, or Add all to finish the record
-
-## 0.3.78
-
-- A download that fails from a network hiccup is retried twice on its own before it ever shows red
-- Download lanes start staggered, so a fresh check no longer drops its first connections
-
-## 0.3.77
-
-- "Wrong song" now says plainly when your server is too old for it, instead of failing with a number
-
-## 0.3.76
-
-- Failed downloads can be retried in one tap, and the error note can be dismissed
-
-## 0.3.75
-
-- Downloads run six at a time while nothing is playing, and step back to two under a song so the music never stutters for the cache
-
-## 0.3.74
-
-- Downloads keep going when you switch apps: the check now holds the phone awake the way playback does, with its own "Downloading your music" notification
-
-## 0.3.73
-
-- Download failures now say their real reason — the layer that was eating the server's answer is gone
-- A download that stops answering is given up on and the sweep moves to the next song, instead of wedging the whole pass
-
-## 0.3.72
-
-- The Overview shows the last check's whole plan as a wall of covers — green landed, red refused, pulsing while it downloads — so what should be on the phone is visible, song by song
-- A check interrupted by locking the phone resumes on return instead of waiting six hours
-- Freshly downloaded songs no longer show as "no longer in the library" in Files
-
-## 0.3.71
-
-- When downloads fail, the Overview now says which server refused and what it said, instead of only counting the failures
-
-## 0.3.70
-
-- Downloads & space is redesigned: an Overview with one picture of the space and the last check's receipt, and a Files browser of everything on the device — by artist and album, or biggest first — with delete on every row
-- Deleting an automatic download now sticks: the cache stops bringing that song back
-- The AI page is gone from the More menu — the Curator pane in Settings carries the same information
-
-## 0.3.69
-
-- Offline and Storage are one pane now — Downloads & space — since they were two halves of the same question
-
-## 0.3.68
-
-- Scrolling now carries the cover up too: a playlist's album, an artist's portrait, or the collection's own mark, beside its name in the top bar
-
-## 0.3.67
-
-- Play and Shuffle now fade into the top bar in step with the name, instead of snapping in
-- Artist pages do it too: scroll past the artist and their name, Play and Shuffle move up
-
-## 0.3.66
-
-- The changelog no longer parks itself on the home screen after an update — it is said once and then gone
-
-## 0.3.65
-
-- The library's week now leads with how long you listened, three numbers under it, and a View all stats button
-
-## 0.3.64
-
-- Settings → Offline now says what the last check actually did, so "nothing kept" can tell you why
-
-## 0.3.63
-
-- Settings → Servers is split into This server / Network / Access, so it is one chunk at a time instead of one long page
-- The server's name and address fit on a line each again instead of breaking mid-word
-
-## 0.3.62
-
-- Servers are one place now: Settings → Servers holds the box you are on, how near each one is, and the servers saved to your account
-- Fixed: the old Servers page could not scroll, so a long list had no way down
-
-## 0.3.61
-
-- Now Playing wears the app's own colour again — the heart and the other lit controls had turned blue
-
-## 0.3.60
-
-- Fixed: opening or leaving a playlist could take the whole app down
-
-## 0.3.59
-
-- Playlists scroll like the song collections do: the cover travels with the songs, and the playlist's name and its Play and Shuffle move up into the top bar
-
-## 0.3.58
-
-- Songs scrolling up a collection dissolve into the top bar again instead of cutting off at a hard edge
-
-## 0.3.57
-
-- Scrolling a song list now fades its name into the top bar in place of the logo, and the little strip that used to repeat it underneath is gone
-
-## 0.3.56
-
-- Play and Shuffle move up into the top bar when you scroll a song list, instead of crowding the strip below it
-
-## 0.3.55
-
-- The "what changed" note after an update is a one-line banner again — tap +N to read the rest
-
-## 0.3.54
-
-- Light mode: the Liked, All songs and On repeat tiles no longer wear their dark-mode colours
-- Light mode: the bar's unselected icons use ink picked for a light bar instead of the dark one's grey
-
-## 0.3.53
-
-- Friends has its own place in the ⋮ menu, so you can go straight there instead of through Profile
-- The frosted top bar is gone again — the header is back to plain
-
-## 0.3.52
-
-- The top bar is frosted glass now, the same material as the bar along the bottom
-
-## 0.3.51
-
-- Loading placeholders all shimmer the same way now: covers still arriving no longer sweep out of step with the cards holding their place
-- With reduced motion on, a still-loading cover gently pulses instead of sitting frozen
-
-## 0.3.50
-
-- Coming back to the app now checks for an update straight away, instead of only once an hour
-
-## 0.3.49
-
-- Music keeps playing on Android when you switch to maps or another app
-- A spoken direction from navigation no longer stops the music for good — it ducks and comes back
-- The bottom bar is a touch smaller, giving the page back a little room
-- Android only: needs the new app from your installer, not just this update
-
-## 0.3.48
-
-- New updates arrive as a proper panel now, with the whole changelog instead of one line behind a chevron
-- Every change carries an icon for what it is: a fix, something new, your phone, the way things look
-- The panel shows the version you're leaving and the one you're getting, and asks once — say Later and the small strip keeps the offer
-
-## 0.3.47
-
-- Playlist tiles and album covers now flex a little with the screen: rows pack edge to edge instead of leaving white gaps
-- Phones fit one more cover per row; unfolded and wide screens get slightly larger art instead of empty space
-
-## 0.3.46
-
-- Installing a newer app now wins over an older downloaded update that used to quietly keep running instead
-
-## 0.3.45
-
-- Updates now come straight from attack.fm — the same place you sign in — whichever server your music lives on
-- Checking works even before you've joined a server
-- About says exactly where updates come from
-
-## 0.3.44
-
-- A live test of the new update pipe — if you're reading this on your phone, it worked
-- Nothing else changed; enjoy the fireworks
-
-## 0.3.43
-
-- Android: the back swipe goes back inside the app — closes the sheet, steps to the last page — instead of quitting; at the very start it just tucks the app away, music still playing
-- Updates actually arrive now: the download itself was failing silently on every device, since the first one
-- Settings → About has a Check for updates button, and says what happened either way
-- About shows the version you're really running, and it moves when an update lands
-- The app also looks for updates when you come back to it, not just on a slow clock
-
-## 0.3.42
-
-- Liked, All songs and On repeat: the header scrolls away into a small sticky bar with the title, Play and Shuffle
-- Fixed: the update banner no longer squeezes the app into a sliver when it appears
-- Light mode looks right everywhere: Now Playing keeps its dark, art-first look while the rest of the app goes light
-- The fade at the top of scrolling lists matches the theme instead of always being black
-- The little loading ring on song add buttons is visible on light now
-- Unfolded: the nav bar's glow no longer cuts off at the edge of the Now Playing card
-- Android: the white strip under the app is gone
-
-## 0.3.40
-
-- Stream from whichever of your servers answers fastest and has the song
-- New Servers page: how near each server is, how much of your library it holds, how full its disk is
-- Free up space on any server you host — pick songs, see which are your only copy
-- The phone now keeps your liked and most-played songs on it automatically, up to 15 GB, rotating as taste moves
-- Dates: clips loop, the next twenty wait on the phone, and "Wrong song?" swaps in the right recording
-- Profile is about you now — your week as stat tiles, a listening-shape radar, when you listen, and what you played
-- Friends moved to their own page, with cards showing each friend's most-played artist
-- Removing a friend works again
-- Scrolling down no longer dies when your thumb is over a shelf
-- Stats page rebuilt, and friends carry a stats card
-- Everything that loads now shows a placeholder instead of a blank or a wrong "nothing here"
-- Android: the app runs, with its own nav card, icon, and Now Playing beside the library on a wide screen
-- The app can now update itself from your hub — no cable, no store
-
-## 0.3.39
-
-- The first version published over the air
+- A pedal your server is too old to play now says so, rather than looking exactly like one that works. Effects are rendered by your server, and it ignores any it does not recognise, so those pedals went into the chain, changed nothing, and sounded like a weak effect instead of a missing one. The shelf marks them, and a pedal already on your board tells you it is passing through silently

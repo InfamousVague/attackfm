@@ -1,4 +1,5 @@
 import { ScrollArea, Text } from '@glacier/react';
+import { useRefreshNonce } from '../nav/pageRefresh.tsx';
 import { Sparkles } from '@glacier/icons';
 import { useEffect, useMemo, useState } from 'react';
 import { useLibrary } from './library.tsx';
@@ -49,6 +50,8 @@ export function ForYouShelf({
 }) {
   const { forYou } = useLibrary();
   const { session } = useServerSession();
+  // Pull-to-refresh re-runs the fetch below - see nav/pageRefresh.tsx.
+  const refreshNonce = useRefreshNonce();
   const [status, setStatus] = useState<CollectorStatus | null>(null);
 
   // Refreshed when the quarantine changes size - a landing or an adoption is
@@ -65,7 +68,7 @@ export function ForYouShelf({
         // An older server has no collector; the shelf simply never shows.
       });
     return () => ctrl.abort();
-  }, [session, forYou.length]);
+  }, [session, forYou.length, refreshNonce]);
 
   const mine = useMemo(() => {
     if (!status) return [];

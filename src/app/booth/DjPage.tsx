@@ -1,6 +1,6 @@
 import { Button, ConversationView, Input, MessageBar, Text, TypingIndicator } from '@glacier/react';
 import { ListPlus, ListMusic, Play, Plus, X } from '@glacier/icons';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { usePlaylists } from '../playlists/playlists.tsx';
 import { useQueueControls } from '../player/queueControls.tsx';
@@ -9,6 +9,7 @@ import { useDjChat, useDjPlay, DJ_AUTHOR, type DjEmbed, type DjMessage } from '.
 import { TrackMenu } from '../library/TrackMenu.tsx';
 import type { Track } from '../core/tauri.ts';
 import djMascot from '../../assets/dj-mascot.png';
+import { fetchDjStations, type DjStation } from '../api/dj.ts';
 
 /**
  * The DJ, as a conversation.
@@ -242,6 +243,54 @@ function rowsOfId(track: Track): number | null {
   return m ? Number(m[1]) : null;
 }
 
+/**
+ * The stations the DJ suggests, on the page where the DJ lives.
+ *
+ * Tapping one asks for it in words, exactly as the chips below do - so the
+ * transcript reads the same whether the listener tapped a station, tapped a
+ * chip, or typed the vibe themselves, and there is only ever one way a set
+ * gets started.
+ */
+function DjStations({ onPick }: { onPick: (text: string) => void }) {
+  const { session } = useServerSession();
+  const [stations, setStations] = useState<DjStation[]>([]);
+  useEffect(() => {
+    if (!session) return;
+    let live = true;
+    void fetchDjStations(session)
+      .then((list) => {
+        if (live) setStations(list);
+      })
+      .catch(() => {
+        // No stations is a quiet absence, not an error worth a banner: the
+        // chips below still work and the DJ still answers typing.
+      });
+    return () => {
+      live = false;
+    };
+  }, [session]);
+
+  if (stations.length === 0) return null;
+  return (
+    <div className="djStations">
+      <p className="djStations__title">Stations for you</p>
+      <div className="djStations__row">
+        {stations.map((st) => (
+          <button
+            key={st.id}
+            type="button"
+            className="djStation"
+            onClick={() => onPick(`Put on ${st.name} — ${st.seed}`)}
+          >
+            <span className="djStation__name">{st.name}</span>
+            {st.blurb && <span className="djStation__blurb">{st.blurb}</span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function DjPage() {
   const chat = useDjChat();
   const { session } = useServerSession();
@@ -264,6 +313,7 @@ export function DjPage() {
         <div className="djFresh">
           <img className="djFresh__mascot" src={djMascot} alt="" />
           {greeting && <p className="djFresh__line">{greeting}</p>}
+          <DjStations onPick={(text) => chat.send(text)} />
           <div className="djChips djFresh__chips">
             {chips.map((o) => (
               <button

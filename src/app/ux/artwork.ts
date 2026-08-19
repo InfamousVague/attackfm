@@ -14,7 +14,12 @@
 
 const ASSETS_URL =
   (import.meta.env?.VITE_ASSETS_URL as string | undefined)?.replace(/\/+$/, '') ||
-  'https://matt.attack.fm/api/assets';
+  // The STATIC site, not a hub. This used to point at matt.attack.fm/api/assets,
+  // which stopped working the day that domain's /api began proxying to the home
+  // Mac: the publish step writes to the VPS, so every one of these 404ed. It
+  // also meant a listener on somebody else's server fetched art through Matt's
+  // house for no reason. Plain files on the marketing domain are neither.
+  'https://attack.fm/art';
 
 /** A served asset's URL. Unauthenticated, cacheable, plain JPEG. */
 export function artworkUrl(slug: string): string {

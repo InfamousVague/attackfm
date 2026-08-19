@@ -83,7 +83,7 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
 
   const playbackBits = [
     pb.crossfade > 0 ? `Crossfade ${pb.crossfade}s` : null,
-    pb.smartShuffle ? 'Smart shuffle' : null,
+    pb.smartShuffle ? 'Shuffle manners' : null,
     pb.autoDj ? 'Auto DJ' : null,
     pb.nightMode ? 'Night mode' : null,
   ].filter(Boolean);

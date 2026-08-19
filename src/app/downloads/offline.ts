@@ -12,6 +12,7 @@
 //! songs it does not.
 
 import { effectsOn } from '../player/effects.ts';
+import { fxChainOn } from '../player/fxChain.ts';
 import { isTauri, setOfflineAudioResolver, tauriCall, type Track } from '../core/tauri.ts';
 
 /** Library path -> absolute file path on this device. */
@@ -91,7 +92,7 @@ export function heldPath(path: string): string | null {
  * every pinned track to playing offline.
  */
 function offlineSource(path: string): string | null {
-  if (effectsOn()) return null;
+  if (effectsOn() || fxChainOn()) return null;
   return heldPath(path);
 }
 

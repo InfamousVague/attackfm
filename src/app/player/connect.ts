@@ -37,6 +37,9 @@ export interface ConnectSession {
   queueIndex: number;
   updatedAt: number;
   epoch: number;
+  /** Client-only: this device's clock minus the server's, measured when the
+   *  state frame arrived. Never on the wire; playbackSync stamps it. */
+  clockSkewMs?: number;
 }
 
 /** A transport command a remote asks the active device to perform. */
@@ -63,7 +66,7 @@ export interface ReportedState {
 /** Everything the server pushes down, as a discriminated union. */
 export type ServerMessage =
   | { type: 'devices'; devices: ConnectDevice[]; activeDeviceId: string | null }
-  | { type: 'state'; state: ConnectSession }
+  | { type: 'state'; state: ConnectSession; now?: number }
   | { type: 'command'; command: ConnectCommand }
   | { type: 'becomeActive'; state: ConnectSession }
   | { type: 'release' }
@@ -176,12 +179,43 @@ export class ConnectSocket {
   private closed = false;
   private backoff = 1000;
   private reconnectTimer: number | null = null;
+  private heartbeatTimer: number | null = null;
+  /** A transport command tapped while the socket was down, kept just long
+   *  enough for the wake-up reconnect to deliver it. */
+  private pendingCommand: { command: ConnectCommand; expires: number } | null = null;
+  private readonly wake = () => {
+    if (document.visibilityState === 'hidden') return;
+    this.reviveNow();
+  };
+  private readonly onlineWake = () => this.reviveNow();
 
   constructor(
     private readonly session: ServerSession,
     private readonly onMessage: (msg: ServerMessage) => void,
     private readonly onOpenChange?: (open: boolean) => void,
   ) {
+    /*
+     * The moment the phone wakes is the moment its person is looking at a
+     * remote screen that went stale while the WebView's timers were frozen.
+     * Waiting out an exponential backoff that was scheduled before the nap
+     * is how "the skip button stopped working" happens - so screen-on and
+     * network-return both reconnect NOW, not on the old schedule.
+     */
+    document.addEventListener('visibilitychange', this.wake);
+    window.addEventListener('online', this.onlineWake);
+    this.open();
+  }
+
+  /** Reconnect immediately if the socket is anything but open. */
+  private reviveNow(): void {
+    if (this.closed) return;
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) return;
+    if (this.reconnectTimer !== null) {
+      window.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.backoff = 1000;
+    if (this.ws && this.ws.readyState === WebSocket.CONNECTING) return;
     this.open();
   }
 
@@ -195,12 +229,49 @@ export class ConnectSocket {
       return;
     }
     this.ws = ws;
+    /*
+     * Every handler below first asks "am I still the current socket?".
+     * reviveNow() can call open() while a previous socket is still CLOSING -
+     * that socket's onclose then arrives AFTER the replacement is live, and
+     * without this guard it would null out `this.ws` (pointing at the new,
+     * healthy socket) and schedule a third connection on top of it. The
+     * symptom would be exactly what this change set out to fix: a phone that
+     * looks connected and quietly is not.
+     */
     ws.onopen = () => {
+      if (this.ws !== ws) {
+        // Superseded while connecting: this one is nobody's socket now.
+        try {
+          ws.close();
+        } catch {
+          // Already gone; nothing to release.
+        }
+        return;
+      }
       this.backoff = 1000;
       this.onOpenChange?.(true);
       this.hello();
+      /*
+       * A quiet Connect socket is an idle TCP stream through two reverse
+       * proxies and however many NATs the phone is behind, and idle streams
+       * get reaped. Every reap looked identical to the phone leaving: the
+       * hub unseated it, a remote's pick landed on an empty seat, and sync
+       * "randomly" stopped working. A small ping keeps the stream visibly
+       * alive end to end; the server answers with a pong it already had.
+       */
+      this.heartbeatTimer = window.setInterval(() => {
+        this.raw({ type: 'ping' });
+      }, 25_000);
+      // A tap that landed in the gap gets its chance, but only a fresh one:
+      // a skip delivered ten seconds late is a skip nobody asked for anymore.
+      const held = this.pendingCommand;
+      this.pendingCommand = null;
+      if (held && Date.now() < held.expires) {
+        this.raw({ type: 'command', command: held.command });
+      }
     };
     ws.onmessage = (event) => {
+      if (this.ws !== ws) return;
       try {
         this.onMessage(JSON.parse(event.data as string) as ServerMessage);
       } catch {
@@ -208,6 +279,12 @@ export class ConnectSocket {
       }
     };
     ws.onclose = () => {
+      // A superseded socket's teardown is not news about the live one.
+      if (this.ws !== ws) return;
+      if (this.heartbeatTimer !== null) {
+        window.clearInterval(this.heartbeatTimer);
+        this.heartbeatTimer = null;
+      }
       this.onOpenChange?.(false);
       this.ws = null;
       this.scheduleReconnect();
@@ -247,7 +324,13 @@ export class ConnectSocket {
   }
 
   command(command: ConnectCommand): void {
-    this.raw({ type: 'command', command });
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.raw({ type: 'command', command });
+      return;
+    }
+    // Held for the wake-up reconnect, latest wins, three seconds and gone.
+    this.pendingCommand = { command, expires: Date.now() + 3000 };
+    this.reviveNow();
   }
 
   transfer(target: string): void {
@@ -256,9 +339,16 @@ export class ConnectSocket {
 
   close(): void {
     this.closed = true;
+    document.removeEventListener('visibilitychange', this.wake);
+    window.removeEventListener('online', this.onlineWake);
+    this.pendingCommand = null;
     if (this.reconnectTimer !== null) {
       window.clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+    if (this.heartbeatTimer !== null) {
+      window.clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
     }
     const ws = this.ws;
     this.ws = null;

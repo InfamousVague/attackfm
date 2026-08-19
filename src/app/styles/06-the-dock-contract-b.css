@@ -343,6 +343,37 @@
   text-overflow: ellipsis;
 }
 
+/* Text that bounces when it does not fit - see player/MarqueeText.tsx.
+   Generic on purpose: any single-line label can wear .marquee. */
+.marquee {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* Capped and ellipsised while still, so text that fits (or that is not allowed
+   to move) looks exactly as it did before this existed. An inline-block child
+   would otherwise be clipped with no ellipsis at all. */
+.marquee__inner {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  /* Without this the inline-block sits on the baseline and adds descender
+     space, which shifts the line against the artist name below it. */
+  vertical-align: top;
+}
+
+/* Set only while an animation is actually running: the text needs its full
+   width and no ellipsis to read as one moving line. */
+.marquee[data-scrolling='true'] .marquee__inner {
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  will-change: transform;
+}
+
 .npScreen__artist {
   font-size: 1rem;
   color: var(--glacier-text-muted);

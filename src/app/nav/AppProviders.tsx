@@ -14,6 +14,7 @@ import {
   PluginsProvider,
 } from '../../plugins/runtime.tsx';
 import { QueueControlsBridge } from '../player/queueControls.tsx';
+import { PlayNowBridge } from '../player/playNow.tsx';
 import { RadioProvider } from '../player/radio.tsx';
 import { PlaylistsProvider } from '../playlists/playlists.tsx';
 import { LibrarySyncProvider } from '../library/librarySync.tsx';
@@ -33,12 +34,16 @@ export function AppProviders({
   extendQueue,
   playNext,
   addToQueue,
+  playNow,
   children,
 }: {
   queue: Track[];
   extendQueue: (more: Track[]) => void;
   playNext: (track: Track) => void;
   addToQueue: (track: Track) => void;
+  /** App's own playFrom, published so any surface can start a song without
+   *  having been handed an onPlay - see playNow.tsx. */
+  playNow: (track: Track, context?: Track[]) => void;
   children: ReactNode;
 }) {
   return (
@@ -112,6 +117,9 @@ export function AppProviders({
                 below - onto this deck's queue, or, when following a jam, into
                 the room the host folds it into. */}
             <QueueControlsBridge localPlayNext={playNext} localAddToQueue={addToQueue}>
+            {/* Just-play-it, for every track surface below. Inside the queue
+                bridge so a row can offer both verbs from one place. */}
+            <PlayNowBridge play={playNow}>
             {/* The station feeds the one queue rather than keeping its own -
                 see radio.tsx. It wraps the CONTENT as well as the deck: a
                 song offers to start a station wherever it is drawn, and a
@@ -119,6 +127,7 @@ export function AppProviders({
             <RadioProvider queue={queue} onExtend={extendQueue}>
             {children}
             </RadioProvider>
+            </PlayNowBridge>
             </QueueControlsBridge>
             </AcquireProvider>
             </NowPlayingMotionProvider>

@@ -29,6 +29,8 @@ export function PrimaryNav({
   tab: string;
   onTab: (tab: string) => void;
   onSettings: () => void;
+  /** Opens the full-screen search. Never a tab - it is an overlay over
+   *  whatever you were doing, and it gives that page back when it closes. */
 }) {
   const pages = usePluginPages();
   // Downloads is a plugin surface, not a core one: the tab appears only while an
@@ -87,9 +89,10 @@ export function PrimaryNav({
           the rail anchors the queue button to its foot, by Settings - see the
           `end` slot below. A queue you visit occasionally does not deserve a
           permanent seat in a bar of four. */}
-      {/* Search stopped being a station: it is a summons now - pull down on
-          any page, or ⌘K - so its old seat belongs to the Booth, the taste
-          engine's one room. */}
+      {/* No Search station. It was a tab, then a pull-down summons, then an
+          icon here - and it is now a bar on Library and Discover themselves,
+          which is where people look when they want to look something up. The
+          legacy /search route still opens the page, through useNavStack. */}
       <NavBarItem
         icon={<Disc3 size={18} />}
         label="Booth"
@@ -148,8 +151,9 @@ export function PrimaryNav({
   // up out of the bar - so the core tabs stay put however many plugins are on.
   return (
     <nav className="appNavBar" aria-label="Primary">
-      {/* Search is a summons now (pull down anywhere); its old seat holds the
-          Booth - a real place, the taste engine's room. */}
+      {/* No Search seat here either - see the rail above. The bar it was
+          standing in for now lives on Library and Discover themselves, which
+          is a bigger target than this tab was and needs no explaining. */}
       <BarTab
         icon={<Disc3 size={22} />}
         label="Booth"

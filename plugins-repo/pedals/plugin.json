@@ -1,0 +1,14 @@
+{
+  "id": "pedals",
+  "name": "Pedals",
+  "version": "0.3.4",
+  "description": "A pedalboard for your music: fifty-five stompboxes across drive, lo-fi, filter, modulation, time, space and dynamics, wired in the order you stack them.",
+  "author": "AttackFM",
+  "tags": [
+    "Sound",
+    "Pedals"
+  ],
+  "entry": "plugin.ts",
+  "public": true,
+  "requiresServer": true
+}

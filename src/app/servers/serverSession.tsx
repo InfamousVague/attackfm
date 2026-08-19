@@ -26,7 +26,10 @@ import {
   transcodeUrl,
   type ServerSession,
 } from '../server.ts';
+import { originFromPath } from '../api/library.ts';
+import { rememberSession, sessionForOrigin } from './sessions.ts';
 import { effectsParam } from '../player/effects.ts';
+import { fxChainParam } from '../player/fxChain.ts';
 import { setRemoteAudioResolver } from '../core/tauri.ts';
 import { syncPushRegistration } from '../core/notifications.ts';
 
@@ -134,7 +137,14 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setRemoteAudioResolver((path) => {
-      const live = sessionRef.current;
+      // Which server owns this track. A path carrying no origin is one of this
+      // server's own - every path written before multi-server existed, and all
+      // of them on a single-server install - so the current session answers,
+      // exactly as it always did. A path that names another library is played
+      // from THAT library's session, which is what lets a search across several
+      // servers produce a queue you can just press play on.
+      const owner = sessionForOrigin(originFromPath(path));
+      const live = owner ?? sessionRef.current;
       if (!live || !isRemotePath(path)) return null;
       const id = trackIdFromPath(path);
       if (id === null) return null;
@@ -148,6 +158,9 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
       // filter to live. The bitrate stays whatever was chosen, so asking for
       // lofi does not quietly also cost quality.
       const fx = effectsParam();
+      // The chain forces the encoder for the same reason an effect does: the
+      // untouched file has nowhere for a filter to live.
+      const fx2 = fxChainParam();
       // Which BOX serves the bytes is a separate question from which library
       // this is. A mirror that holds the same song and answers faster from
       // wherever the phone woke up takes the fetch; everything else about the
@@ -160,8 +173,8 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
         ? { ...live, url: via.url, streamToken: via.streamToken }
         : live;
       const rowId = via ? via.trackId : id;
-      return quality === 'transcode' || fx
-        ? transcodeUrl(from, rowId, bitrate, 0, fx)
+      return quality === 'transcode' || fx || fx2
+        ? transcodeUrl(from, rowId, bitrate, 0, fx, fx2)
         : streamUrl(from, rowId);
     });
     return () => setRemoteAudioResolver(null);
@@ -179,18 +192,18 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
   // not a sign-out: the box may simply be unreachable from wherever the phone
   // woke up, and the cached library is still worth showing.
   useEffect(() => {
-    const stored = readSession();
-    if (!stored) {
-      setRestoring(false);
-      return;
-    }
-    const remaining = streamTokenExpiresAt(stored.streamToken) - Date.now();
-    if (remaining > 48 * 60 * 60 * 1000) {
-      setRestoring(false);
-      return;
-    }
     let live = true;
-    void (async () => {
+    const renewIfNeeded = async (first: boolean) => {
+      const stored = readSession();
+      if (!stored) {
+        if (first) setRestoring(false);
+        return;
+      }
+      const remaining = streamTokenExpiresAt(stored.streamToken) - Date.now();
+      if (remaining > 48 * 60 * 60 * 1000) {
+        if (first) setRestoring(false);
+        return;
+      }
       try {
         const streamToken = await refreshStreamToken(stored);
         if (!live) return;
@@ -201,11 +214,23 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
         // Offline, or the session is genuinely dead. Either way the stored
         // credentials stay put; the next deliberate action will find out which.
       } finally {
-        if (live) setRestoring(false);
+        if (live && first) setRestoring(false);
       }
-    })();
+    };
+    void renewIfNeeded(true);
+    /*
+     * At launch AND on the hour, because launch-only renewal assumes the app
+     * relaunches. A desktop that stays open outlives its own seven-day stream
+     * token: streams keep working only until the token in the session object
+     * lapses, and the Connect socket - which authenticates with this exact
+     * token on every reconnect - dies quietly behind its retry backoff. The
+     * hourly check costs a subtraction; renewing costs one request every five
+     * days.
+     */
+    const timer = window.setInterval(() => void renewIfNeeded(false), 60 * 60 * 1000);
     return () => {
       live = false;
+      window.clearInterval(timer);
     };
   }, []);
 
@@ -305,6 +330,11 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
     // which is what lets the Profile page offer every past server as a one-tap
     // switch instead of an address to retype.
     if (next) rememberServer({ url: next.url, username: next.username, isAdmin: next.isAdmin });
+    // And the SESSION is kept in the multi-server set, so signing into a second
+    // library ADDS one rather than replacing the first. The single-session
+    // storage above is still the source of truth for "which server am I on";
+    // this is what lets the others stay reachable while you are on this one.
+    if (next) rememberSession(next);
     try {
       if (next) localStorage.setItem(SESSION_KEY, JSON.stringify(next));
       else localStorage.removeItem(SESSION_KEY);

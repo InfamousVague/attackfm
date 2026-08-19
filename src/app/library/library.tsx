@@ -1,4 +1,20 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
+import {
+  allSessions,
+  normalise,
+  sessionsSnapshot,
+  subscribeSessions,
+} from '../servers/sessions.ts';
 import {
   defaultMusicDir,
   ensureDir,
@@ -433,10 +449,93 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
     };
   }, [session]);
 
+
+  // Re-reads the merged list when a server is added or removed. The set is a
+  // plain store rather than context because it is read from non-React code too
+  // (the player's audio resolver), and useSyncExternalStore is how a component
+  // follows one without a provider.
+  const [secondaryRev, setSecondaryRev] = useState(0);
+  const sessionsTick = useSyncExternalStore(subscribeSessions, sessionsSnapshot, sessionsSnapshot);
+
+  /**
+   * Keep the OTHER servers' libraries current in the background.
+   *
+   * Without this, a second library is only as fresh as the last time you were
+   * standing on it - which is the difference between "several servers" and
+   * "several servers, one of which is stale". syncLibrary is a delta against a
+   * cached revision, so a quiet pass costs one request and writes nothing.
+   *
+   * Deliberately unhurried and deliberately silent. This is not what the person
+   * is looking at, so it must not compete with the current library's own sync
+   * for bandwidth, and a server that is unreachable (someone else's box, asleep)
+   * is an ordinary state here rather than an error worth reporting.
+   */
+  useEffect(() => {
+    const primary = session ? normalise(session.url) : '';
+    const others = allSessions().filter((o) => normalise(o.url) !== primary);
+    if (others.length === 0) return;
+
+    const controller = new AbortController();
+    let cancelled = false;
+
+    const pass = async () => {
+      for (const other of others) {
+        if (cancelled) return;
+        try {
+          await syncLibrary(other, { signal: controller.signal });
+        } catch {
+          // Another person's server being unreachable is normal, not a fault.
+        }
+      }
+      // A re-render so a newly-arrived library appears without a navigation.
+      if (!cancelled) setSecondaryRev((n) => n + 1);
+    };
+
+    // A beat after mount, so the library you ARE on finishes first.
+    const first = window.setTimeout(() => void pass(), 4000);
+    const repeat = window.setInterval(() => void pass(), 5 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      controller.abort();
+      window.clearTimeout(first);
+      window.clearInterval(repeat);
+    };
+  }, [session, sessionsTick]);
+
+
+  /**
+   * Every OTHER server this device is signed in to, folded into the same list.
+   *
+   * Read from each one's cached index rather than fetched here: the cache is
+   * already how a library survives a relaunch, it is per-server by URL, and it
+   * means a second library appears instantly instead of after a round trip on
+   * every render. `syncSecondaryLibraries` below is what keeps those caches
+   * current while you are on a different server.
+   *
+   * Their paths carry an origin (toTrack's third argument) so the player can
+   * ask the right server for the bytes. The primary's do not, which is what
+   * keeps every playlist, favourite and saved queue written before today
+   * pointing at the same rows they always did.
+   */
+  const secondary = useMemo(() => {
+    const primary = session ? normalise(session.url) : '';
+    const out: Track[] = [];
+    for (const other of allSessions()) {
+      if (normalise(other.url) === primary) continue;
+      for (const r of loadCachedIndex(other.url).tracks) out.push(toTrack(other, r, true));
+    }
+    return out;
+    // sessionsTick changes when a server is added or removed, which is exactly
+    // when this list should be rebuilt.
+  }, [session, sessionsTick, secondaryRev]);
+
   const mapped = useMemo(
     // Newest first, matching the order the table opens on for a local library.
-    () => remote.map((r) => toTrack(session, r)).sort((a, b) => b.addedAt - a.addedAt),
-    [remote, session],
+    () =>
+      [...remote.map((r) => toTrack(session, r)), ...secondary].sort(
+        (a, b) => b.addedAt - a.addedAt,
+      ),
+    [remote, session, secondary],
   );
   // The quarantine line: collector downloads stay off the main shelves until
   // someone adopts them (a listen-through or a heart flips curatorPromoted).

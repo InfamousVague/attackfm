@@ -133,3 +133,28 @@ export async function generateDjCollectionQueue(
     body: JSON.stringify({ trackIds, traits, count }),
   });
 }
+
+/** One station the DJ suggests: a place to tune to, not a list to play. */
+export interface DjStation {
+  id: string;
+  name: string;
+  blurb: string;
+  /** The vibe the DJ steers by - what tapping the card asks for. */
+  seed: string;
+  /** 'ai' when a model named it, 'heuristic' when it came from the play log. */
+  flavor: string;
+}
+
+/**
+ * The DJ's suggested stations.
+ *
+ * Never blocks on the model: the server answers from its cache and refreshes
+ * behind the request, so an empty list here means a brand-new listener rather
+ * than a slow one.
+ */
+export async function fetchDjStations(session: ServerSession): Promise<DjStation[]> {
+  const out = await request<{ stations?: DjStation[] }>(session.url, '/api/dj/stations', {
+    token: session.token,
+  });
+  return out.stations ?? [];
+}

@@ -289,7 +289,7 @@ export function DjChatProvider({
       // is how a whole-array write clobbers an edit made somewhere else.
       patchDraft(draftId, (e) => ({ ...e, saved: true }));
       liveDraft.current = null;
-      void create(name, ids.map(remotePath))
+      void create(name, ids.map((id) => remotePath(id)))
         .then((playlistId) => {
           say('Filed. It is in your playlists.', {
             kind: 'receipt',
