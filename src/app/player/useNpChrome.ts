@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { fetchCanvas, trackIdFromPath, type ServerSession } from '../server.ts';
+import { nowPlayingVideoEnabled } from '../settings/behaviourPrefs.ts';
 import { cachedCanvas, keepCanvas } from '../cache/canvasCache.ts';
 import { setIdleTimerDisabled } from './carplay.ts';
 import type { Track } from '../core/tauri.ts';
@@ -118,7 +119,11 @@ export function useNpChrome({
   // full-screen surface nobody sees from the mini strip.
   useEffect(() => {
     setNpCanvas(null);
-    if (!npOpen || !track || !playSession) return;
+    // The switch is read here rather than around the effect so that turning it
+    // off mid-song clears the clip on the next track change instead of leaving
+    // the last one looping. A song with no clip already falls back to the
+    // blurred cover, so off is a path the screen was always able to draw.
+    if (!npOpen || !track || !playSession || !nowPlayingVideoEnabled()) return;
     const controller = new AbortController();
     void fetchCanvas(
       playSession,

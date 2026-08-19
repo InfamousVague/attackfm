@@ -3,7 +3,6 @@ import { Cloud, Disc3, FolderOpen, LogOut, Mic2, Music, Timer } from '@glacier/i
 import { useMemo, useState } from 'react';
 import { canPickFolder } from '../core/tauri.ts';
 import { useLibrary } from '../library/library.tsx';
-import { onlineMetadataEnabled, setOnlineMetadata } from './netPrefs.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 
 /**
@@ -15,9 +14,6 @@ import { useServerSession } from '../servers/serverSession.tsx';
 export function General() {
   const { source, musicDir, loading, isDefault, choose, reset, tracks } = useLibrary();
   const { session, disconnect } = useServerSession();
-  // A module-level pref rather than context: the two consumers are plain
-  // async functions, so the switch just re-reads on each render.
-  const [online, setOnline] = useState(onlineMetadataEnabled);
 
   // The library, counted: what the folder (or the server) amounts to.
   const libStats = useMemo(() => {
@@ -32,23 +28,9 @@ export function General() {
     return { artists: artists.size, albums: albums.size, hours: Math.round(seconds / 3600) };
   }, [tracks]);
 
-  const onlineSwitch = (
-    <div className="prefsSection">
-      <Label>Privacy</Label>
-      <Switch
-        label="Online metadata lookups"
-        checked={online}
-        onCheckedChange={(on) => {
-          setOnlineMetadata(on);
-          setOnline(on);
-        }}
-      />
-      <Text tone="muted" size="sm">
-        Fetches lyrics from LRCLIB and album art from Apple, keyed by track titles.
-        Off keeps the app entirely between your devices and your own server.
-      </Text>
-    </div>
-  );
+  // "Online metadata lookups" moved to the Privacy pane, where it sits with the
+  // other three switches about what leaves this device. It had been here under
+  // a literal <Label>Privacy</Label>, which was the pane asking to exist.
 
   // Remove the signed-in account from this device. `disconnect` clears the
   // stored session (so the app is signed out here) and best-effort tells the
@@ -99,7 +81,6 @@ export function General() {
             <Input readOnly value={musicDir} aria-label="Music library" leadingIcon={<Cloud size={16} />} />
           </Field>
         </div>
-        {onlineSwitch}
         {accountSection}
       </div>
     );
@@ -140,7 +121,6 @@ export function General() {
           </div>
         )}
       </div>
-      {onlineSwitch}
       {accountSection}
     </div>
   );

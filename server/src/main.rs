@@ -653,7 +653,10 @@ async fn main() {
         .route("/api/tempo", get(features::tempo_table))
         // Before the {track} route: axum would otherwise read "prefetch" as a
         // track id and the i64 extractor would reject it.
-        .route("/api/stems/prefetch", get(stems::prefetch_status))
+        .route(
+            "/api/stems/prefetch",
+            get(stems::prefetch_status).post(stems::set_prefetch),
+        )
         .route("/api/stems/{track}", get(stems::status).post(stems::request))
         .route("/api/stems/{track}/mix", get(stems::mix))
         .route("/api/stems/{track}/{stem}", get(stems::file))

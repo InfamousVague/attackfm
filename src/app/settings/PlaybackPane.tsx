@@ -2,6 +2,7 @@ import { Field, Label, SegmentedControl, Select, Slider, Switch, Text } from '@g
 import { useEffect, useState } from 'react';
 import { fireNativeHaptic, setHapticsPref, useHapticsPref } from '../core/haptics.ts';
 import { usePlayback, type SleepTimer } from '../player/playback.tsx';
+import { nowPlayingVideoEnabled, setNowPlayingVideo } from './behaviourPrefs.ts';
 import {
   loudnessCoverage,
   setLoudnessMode,
@@ -48,6 +49,7 @@ function SleepCountdown({ sleep }: { sleep: SleepTimer }) {
  */
 export function PlaybackSettings() {
   const pb = usePlayback();
+  const [video, setVideo] = useState(nowPlayingVideoEnabled);
   const hapticsOn = useHapticsPref();
 
   const sleepValue =
@@ -221,16 +223,26 @@ export function PlaybackSettings() {
           actually press answer - scrolling and loading stay silent.
         </Text>
       </div>
-      <div className="prefsSection">
-        <Label>History</Label>
+      {/* "Save listening history" moved to Privacy, with the other switches
+          about what leaves the device. Its copy here said "Off, nothing is
+          written anywhere", which was not true: the player was also sending
+          your position to registry.attack.fm on a twenty-second timer, gated
+          by nothing. Both switches sit together now, where that claim can be
+          read against the row that contradicted it. */}
+      <div className="prefsSection" data-setting="now-playing-video">
+        <Label>Now Playing</Label>
         <Switch
-          label="Save listening history"
-          checked={pb.saveHistory}
-          onCheckedChange={(on) => pb.update({ saveHistory: on })}
+          label="Video clips on Now Playing"
+          checked={video}
+          onCheckedChange={(on: boolean) => {
+            setNowPlayingVideo(on);
+            setVideo(on);
+          }}
         />
         <Text tone="muted" size="sm">
-          Reports finished listens to your server - it is what feeds the Home page&rsquo;s
-          recently-played shelves and your mixes. Off, nothing is written anywhere.
+          Plays the song&rsquo;s short looping clip behind the full player. Each new song
+          pulls down a few megabytes of video, and your server asks Spotify for it by
+          song title. Off leaves the blurred cover.
         </Text>
       </div>
       <div className="prefsSection">

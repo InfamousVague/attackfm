@@ -1020,6 +1020,15 @@ CREATE TABLE IF NOT EXISTS stem_prefetch (
 );
 CREATE INDEX IF NOT EXISTS stem_prefetch_state ON stem_prefetch(state, queued_at);
 
+-- Server-wide choices the operator makes from the app rather than from a unit
+-- file. Deliberately a key/value table and not columns: these are settings, not
+-- data, and a new COLUMN does not land on a deployed database through
+-- execute_batch(SCHEMA) while a new TABLE does.
+CREATE TABLE IF NOT EXISTS server_prefs (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
 -- The enumeration probes both by track_id, which neither primary key serves:
 -- favorites is keyed (user_id, track_id) and playlist_tracks (playlist_id,
 -- position). Without these it full-scans both on every pass.
@@ -5206,6 +5215,32 @@ impl Db {
             }
         }
         Some((track_id, paths))
+    }
+
+    // --- the operator's own switches ------------------------------------------
+
+    /// A server-wide setting, or None if it has never been set.
+    ///
+    /// None is meaningful: it means "nobody has chosen", which is what lets an
+    /// environment variable still act as the default for an operator who set one
+    /// before this table existed.
+    pub fn server_pref(&self, key: &str) -> Option<String> {
+        self.lock()
+            .query_row(
+                "SELECT value FROM server_prefs WHERE key = ?1",
+                params![key],
+                |r| r.get(0),
+            )
+            .ok()
+    }
+
+    pub fn set_server_pref(&self, key: &str, value: &str) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO server_prefs (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
+        Ok(())
     }
 
     // --- separating ahead of being asked -------------------------------------
