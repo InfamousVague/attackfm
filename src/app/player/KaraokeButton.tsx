@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { IconButton } from '@glacier/react';
 import { Mic } from '@glacier/icons';
-import { useNowPlayingMotion } from '@attackfm/app/nowPlaying';
+import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { KaraokeStage } from './KaraokeStage.tsx';
 
 /**

@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useMemo } from 'react';
 import { Button, Switch, Text } from '@glacier/react';
 import { AudioWaveform, Drum, Guitar, Mic, Piano, Waves } from '@glacier/icons';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { trackIdFromPath } from '../server.ts';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { clearStemDrop, setStemDropped, useStemDrop } from './stemDrop.ts';
+import { useStems } from './stemsReady.ts';
 
 /**
  * Stems: the song you are listening to, with parts taken out.
@@ -38,103 +39,49 @@ type State =
   | { kind: 'ready'; parts: string[] }
   | { kind: 'problem'; why: string };
 
-interface Status {
-  state: string;
-  error?: string;
-  available?: boolean;
-  progress?: number | null;
-  phase?: string | null;
-  parts?: number;
-  stems: { stem: string }[];
-}
-
 export function StemsRoom() {
   const { session } = useServerSession();
   const { track } = useNowPlayingMotion();
   const drop = useStemDrop();
-  const [state, setState] = useState<State>({ kind: 'idle' });
-  const began = useRef(0);
-
   const id = track ? trackIdFromPath(track.path) : null;
 
-  const ask = useCallback(
-    async (path: string): Promise<Status | null> => {
-      if (!session || id === null) return null;
-      const res = await fetch(`${session.url}/api/stems/${id}${path}`, {
-        method: path === '' ? 'GET' : 'POST',
-        headers: { authorization: `Bearer ${session.token}` },
-      });
-      if (!res.ok) throw new Error(await res.text().catch(() => String(res.status)));
-      return (await res.json()) as Status;
-    },
-    [session, id],
-  );
-
-  /** What exists for this song, without asking for anything to be made. */
-  useEffect(() => {
-    if (!session || id === null) {
-      setState({ kind: 'idle' });
-      return;
-    }
-    let live = true;
-    setState({ kind: 'checking' });
-    void ask('')
-      .then((s) => {
-        if (!live || !s) return;
-        setState(s.stems.length > 0 ? { kind: 'ready', parts: s.stems.map((x) => x.stem) } : { kind: 'none' });
-      })
-      .catch(() => live && setState({ kind: 'none' }));
-    return () => {
-      live = false;
-    };
-  }, [session, id, ask]);
-
   /**
-   * Ask for the separation, and watch it.
+   * Asking, waiting and describing the wait all live in stemsReady now.
    *
-   * Polled once a second with the elapsed time always on show. A percentage is
-   * not always available - an older server sends none - and a wait of minutes
-   * with nothing moving on it is how a job that is working comes to look like
-   * one that has died.
+   * This room used to do it here, and built its POST as `/api/stems/{id}/` -
+   * with a trailing slash, which axum does not normalise, so the request that
+   * was meant to START a separation answered 404 and this panel printed the
+   * words "not found". The button never worked. Sharing the client is what
+   * makes that unrepeatable rather than merely fixed.
+   *
+   * `make: false` because opening a tab must not commit the machine to half a
+   * minute of demucs; the button below is the commitment.
    */
-  const separate = async () => {
-    if (!session || id === null) return;
-    began.current = Date.now();
-    const since = () => Math.round((Date.now() - began.current) / 1000);
-    setState({ kind: 'working', phase: 'queued', percent: null, filed: 0, seconds: 0 });
-    try {
-      let now = await ask('');
-      if (now && now.stems.length === 0) await ask('/');
-      for (;;) {
-        now = await ask('');
-        if (!now) return;
-        if (now.stems.length > 0 && now.state !== 'running' && now.state !== 'queued') break;
-        if (now.state === 'failed') {
-          setState({ kind: 'problem', why: now.error || 'That one could not be separated.' });
-          return;
-        }
-        if (now.stems.length > 0 && now.state === 'done') break;
-        setState({
+  const stems = useStems(track?.path ?? null, { make: false });
+  const separate = stems.make;
+
+  const state: State = useMemo(() => {
+    switch (stems.state) {
+      case 'checking':
+        return { kind: 'checking' };
+      case 'making':
+        return {
           kind: 'working',
-          // A missing phase is not the same as queued: the JOB STATE knows, and
-          // a server that cannot report a percentage is still working.
-          phase: now.phase ?? (now.state === 'running' ? 'separating' : 'queued'),
-          percent: typeof now.progress === 'number' ? Math.round(now.progress * 100) : null,
-          filed: now.stems.length,
-          seconds: since(),
-        });
-        await new Promise((r) => window.setTimeout(r, 1000));
-      }
-      const done = await ask('');
-      setState(
-        done && done.stems.length > 0
-          ? { kind: 'ready', parts: done.stems.map((x) => x.stem) }
-          : { kind: 'problem', why: 'Nothing came back for that song.' },
-      );
-    } catch (e) {
-      setState({ kind: 'problem', why: e instanceof Error ? e.message : 'Your server did not answer.' });
+          phase: stems.progress?.phase ?? 'queued',
+          percent: stems.progress?.fraction === null || stems.progress === null
+            ? null
+            : Math.round(stems.progress.fraction * 100),
+          filed: stems.progress?.filed ?? 0,
+          seconds: stems.progress?.seconds ?? 0,
+        };
+      case 'ready':
+        return { kind: 'ready', parts: stems.stems };
+      case 'problem':
+        return { kind: 'problem', why: stems.problem };
+      default:
+        return { kind: 'none' };
     }
-  };
+  }, [stems.state, stems.progress, stems.stems, stems.problem]);
 
   if (!session) {
     return (

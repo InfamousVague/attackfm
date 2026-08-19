@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { createAnalyserMeter, IconButton, SeekBar, Text, useBeat, useLiveLevels } from '@glacier/react';
-import type { LoudnessMeter } from '@glacier/react';
+import type { AnalyserMeter, LoudnessMeter } from '@glacier/react';
 import { Loader, Pause, Play, RotateCcw, X } from '@glacier/icons';
-import { useServerSession } from '@attackfm/app/serverSession';
-import { lineAt, parseLyrics, type Line } from './lyrics.ts';
+import { useServerSession } from '../servers/serverSession.tsx';
+import { trackIdFromPath } from '../server.ts';
+import { stemMixUrl } from '../api/stems.ts';
+import { useStems } from './stemsReady.ts';
+import { lineAt, parseLyrics, type Line } from './karaokeLyrics.ts';
 
 /**
  * The karaoke stage: one song, its words, and no app around it.
@@ -23,21 +26,6 @@ interface Track {
   artist: string;
   duration: number | null;
   lyrics?: string | null;
-}
-
-interface Session {
-  url: string;
-  token: string;
-  streamToken: string;
-}
-
-/** `afm://123` or `afm://123@origin` - the id is what the stems API wants. */
-function trackId(path: string): number | null {
-  if (!path.startsWith('afm://')) return null;
-  const body = path.slice('afm://'.length);
-  const at = body.indexOf('@');
-  const id = Number(at === -1 ? body : body.slice(0, at));
-  return Number.isFinite(id) ? id : null;
 }
 
 const stage: CSSProperties = {
@@ -69,9 +57,8 @@ const row: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10 };
 
 export function KaraokeStage({ track, onClose }: { track: Track; onClose: () => void }) {
   const { session } = useServerSession();
-  const id = trackId(track.path);
+  const id = track ? trackIdFromPath(track.path) : null;
 
-  const [state, setState] = useState<'checking' | 'making' | 'ready' | 'failed'>('checking');
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(track.duration ?? 0);
@@ -85,56 +72,41 @@ export function KaraokeStage({ track, onClose }: { track: Track; onClose: () => 
    * component sitting perfectly still while a song plays through it.
    */
   const [meter, setMeter] = useState<LoudnessMeter | null>(null);
-  const meterRef = useRef<LoudnessMeter | null>(null);
+  // The analyser is the object with resume() and the graph; `meter` is the
+  // LoudnessMeter it exposes, which is what useBeat/useLiveLevels take. Kept
+  // apart because conflating them typechecked only while this was a plugin,
+  // bundled away from the kit's real types.
+  const analyserRef = useRef<AnalyserMeter | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lineRefs = useRef(new Map<number, HTMLParagraphElement>());
 
-  const mixUrl = useMemo(() => {
-    if (!session || id === null) return null;
-    const s = session as Session;
-    // The token rides in the query because an <audio> element sends none of our
-    // headers - the same door the rest of the audio uses.
-    return `${s.url}/api/stems/${id}/mix?drop=vocals&t=${encodeURIComponent(s.streamToken)}`;
-  }, [session, id]);
+  // The token rides in the query because an <audio> element sends none of our
+  // headers - stemMixUrl is the one place that knows which of the stem routes
+  // accepts one (mix does, the per-stem file route does not).
+  const mixUrl = useMemo(
+    () => (session && id !== null ? stemMixUrl(session, id, ['vocals']) : null),
+    [session, id],
+  );
 
-  /** Ask the server to separate this song, and wait for it if it has not. */
-  useEffect(() => {
-    if (!session || id === null) return;
-    const s = session as Session;
-    let live = true;
-    let timer: number | undefined;
-
-    const poll = async () => {
-      try {
-        const res = await fetch(`${s.url}/api/stems/${id}`, {
-          headers: { Authorization: `Bearer ${s.token}` },
-        });
-        if (!res.ok) throw new Error(String(res.status));
-        const body = (await res.json()) as { state?: string; stems?: { stem: string }[] };
-        if (!live) return;
-        if (body.state === 'done' || (body.stems?.length ?? 0) > 0) {
-          setState('ready');
-          return;
-        }
-        if (body.state === 'failed') {
-          setState('failed');
-          return;
-        }
-        // Separation is minutes of work the first time and instant afterwards,
-        // because the result is kept.
-        setState('making');
-        timer = window.setTimeout(() => void poll(), 2500);
-      } catch {
-        if (live) setState('failed');
-      }
-    };
-
-    void poll();
-    return () => {
-      live = false;
-      window.clearTimeout(timer);
-    };
-  }, [session, id]);
+  /**
+   * Separate this song, and wait for it.
+   *
+   * `make: true` because pressing a microphone IS the request - this is the one
+   * surface where the separation is the whole point rather than an option.
+   *
+   * This used to be a local poll that only ever issued GET. It never asked for
+   * the work, so on any song the pads had not already taken apart it sat on
+   * "Taking the singer out" forever, waiting for a job nobody had queued.
+   */
+  const stems = useStems(track?.path ?? null, { make: true });
+  const state: 'checking' | 'making' | 'ready' | 'failed' =
+    stems.state === 'ready'
+      ? 'ready'
+      : stems.state === 'problem'
+        ? 'failed'
+        : stems.state === 'making'
+          ? 'making'
+          : 'checking';
 
   /** Start as soon as the mix exists - you pressed a microphone, not "prepare". */
   useEffect(() => {
@@ -149,11 +121,11 @@ export function KaraokeStage({ track, onClose }: { track: Track; onClose: () => 
   /** Build the analyser once the element exists, and let it out of suspend. */
   useEffect(() => {
     const el = audioRef.current;
-    if (!el || meterRef.current) return;
+    if (!el || analyserRef.current) return;
     try {
-      meterRef.current = createAnalyserMeter(el);
-      setMeter(meterRef.current);
-      void meterRef.current.resume();
+      analyserRef.current = createAnalyserMeter(el);
+      setMeter(analyserRef.current.meter);
+      void analyserRef.current.resume();
     } catch {
       // No audio graph available: the bar stays still, everything else works.
     }

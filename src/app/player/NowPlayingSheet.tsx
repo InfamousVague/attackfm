@@ -12,6 +12,7 @@ import { EqPanel } from './EqPanel.tsx';
 import { FxRoom } from './FxRoom.tsx';
 import { FiltersRoom } from './FiltersRoom.tsx';
 import { StemsRoom, useStemsOut } from './StemsRoom.tsx';
+import { KaraokeButton } from './KaraokeButton.tsx';
 import { FILTERS, signature } from './filters.ts';
 import { FxSaved } from './FxSaved.tsx';
 import { FX_NODES, setFxChainOn, useFxChain } from './fxChain.ts';
@@ -541,6 +542,9 @@ export function NowPlayingSheet({
         </IconButton>
         {/* Whatever wants to act on the song playing right now. Karaoke lands
             here; the mic is its own. */}
+        {/* Karaoke is core now, so it mounts directly rather than through the
+            slot beside it. The slot stays for whatever else wants that seat. */}
+        <KaraokeButton />
         <PluginSlot id="now-playing-actions" />
         <DevicePicker />
         <Popover

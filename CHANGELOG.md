@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.199
+
+- Karaoke is built in, and now actually starts the separation instead of waiting forever for one nobody asked for
+- "Take it apart" in the Stems tab works — it had been asking the wrong address and reporting "not found"
+
 ## 0.3.198
 
 - Stems moved into the sound console, beside the EQ: take the vocal or the drums out of what you are listening to without leaving the song

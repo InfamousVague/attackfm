@@ -82,6 +82,10 @@ export const DEPRECATED_PLUGINS: readonly string[] = [
   // slider, so it keeps its page and stays a plugin.
   'hifi-lab',
   'filters',
+  // Karaoke is core now (src/app/player/KaraokeButton.tsx). As a plugin it
+  // could never queue its own separation - it only ever polled - so it hung on
+  // any song the pads had not already taken apart.
+  'karaoke',
 ];
 
 /** One plugin as a repository's manifest lists it. */
