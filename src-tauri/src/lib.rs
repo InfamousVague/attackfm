@@ -36,6 +36,11 @@ mod offline;
 // unconditionally; only iOS links the real Swift engine (AudioEngine.swift).
 mod native_audio;
 
+// Wi-Fi or cellular, for the download switch. Compiled everywhere and
+// registered on both handlers: the frontend asks unconditionally and reads a
+// missing command as "cannot tell", so an older binary keeps working.
+mod network;
+
 /// Makes the app's window the key window once the scene has attached it.
 ///
 /// Under the scene lifecycle (UIApplicationSupportsMultipleScenes, which iOS
@@ -199,6 +204,7 @@ fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'stat
         offline::offline_unpin,
         offline::offline_clear,
         offline::offline_space,
+        network::network_kind,
         nearby::nearby_start,
         nearby::nearby_stop,
         nearby::nearby_peers,
@@ -239,6 +245,10 @@ fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'stat
         offline::offline_unpin,
         offline::offline_clear,
         offline::offline_space,
+        // The one that matters most on this handler: iOS has no
+        // navigator.connection, so without this the Wi-Fi-only switch would
+        // have nothing to read on the device that actually pays for data.
+        network::network_kind,
         nearby::nearby_start,
         nearby::nearby_stop,
         nearby::nearby_peers,

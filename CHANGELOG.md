@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.206
+
+- Automatic downloads wait for Wi-Fi now, and that is on by default. The app had been filling the phone's cache over mobile data without asking. Playing a song, keeping one on this device and "Check now" are never held back — those are you asking, and they still work anywhere
+- Settings has a Privacy section: online lookups, listening history, what you are playing and what friends see, gathered in one place and ordered by how far each one travels
+- The app had been sending the song, the artist and how far in to your account every twenty seconds, while the screen said nothing was written anywhere. It is off until something actually offers to pick a song up where you left it
+- The More menu's entries rise into place again instead of arriving all at once
+
 ## 0.3.205
 
 - Each part in the Stems tab now moves to its own music: the drums pulse on the beat while a held string line sits calm beside them, instead of every row twitching to the same mix

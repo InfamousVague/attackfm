@@ -14,7 +14,7 @@ export const PANE_KEYWORDS: Record<string, string> = {
   general: 'haptics vibration folder music directory metadata artwork lyrics online',
   playback: 'crossfade gapless sleep timer equalizer eq bands pause style shuffle repeat quality volume',
   server: 'server connect sign in url mirror network invite join host latency devices speakers where you listen seat',
-  storage: 'cache offline downloads space disk limit pins clear',
+  storage: 'cache offline downloads space disk limit pins clear wifi wi-fi mobile data cellular',
   notifications: 'push alerts recap weekly interrupt',
   plugins: 'plugin extension import spotify buy discover sources',
   about: 'version update check whats new shell licenses github',
@@ -95,6 +95,17 @@ export const SETTINGS_INDEX: SettingEntry[] = [
     label: 'Separate songs before you ask',
     description: 'Pulls liked and playlisted songs apart in the background so the Pads open instantly.',
     keywords: 'stems separate demucs pads sampler karaoke vocals drums bass prefetch ahead gpu disk background auto stemming',
+  },
+  {
+    id: 'wifi-only',
+    pane: 'storage',
+    label: 'Only download on Wi-Fi',
+    description: 'Automatic downloads wait for Wi-Fi; playing, pins and Check now are unaffected.',
+    // "roaming", "allowance" and "bill" are here because they are what somebody
+    // types when they have just been charged for something, which is the moment
+    // most people go looking for this row.
+    keywords:
+      'wifi wi-fi cellular mobile data 4g 5g lte metered roaming allowance bill cap data saver background download',
   },
 ];
 
