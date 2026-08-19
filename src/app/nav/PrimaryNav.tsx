@@ -129,7 +129,10 @@ export function PrimaryNav({
     // strip is its door, and an idle queue offers no door at all.
     return (
       <NavBar
-        orientation="vertical"
+        /* Horizontal, because it lies along the bottom now rather than running
+           up the side. The kit lays a vertical bar out as a column and would
+           fight the CSS that turns it. */
+        orientation="horizontal"
         aria-label="Primary"
         className="appNavRail"
       >

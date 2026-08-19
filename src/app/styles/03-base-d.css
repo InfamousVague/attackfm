@@ -302,33 +302,41 @@
   z-index: 1;
 }
 
-/* Room for the floating rail. Only where the rail exists: the phone's bar
-   sits at the bottom and must not indent anything. */
+/* Room for the floating rail. Only where the rail exists.
+   It used to be an inline gutter, because the plate rode the leading edge and
+   held a column the content could not use. The plate lies along the BOTTOM
+   now, so what it occupies is a band - and every page in the app already pads
+   for one of those, because the phone has had a bottom bar all along. Setting
+   the same token is the whole change: no page needs to learn a second rule. */
 .appBody:has(> .appNavRail) {
-  padding-inline-start: var(--app-nav-rail-gutter);
+  --app-nav-height: calc(var(--app-nav-rail-height) + var(--glacier-space-3));
 }
 
 /* Desktop primary navigation: a slim icon-only rail, the same floating pill
    as the phone's turned on its side - a lifted, rounded, frosted plate riding
    the leading edge. */
 .appNavRail {
-  /* FLOATING, not a column. In flow it reserved a full-height gutter the
-     content could never use, and the plate stretched to fill it - a tall slab
-     of frost with its icons huddled at the top. Out of flow it is what it
-     looks like: a small island against the leading edge, vertically centred,
-     with the page running full width behind it. `.appBody` pads by
-     --app-nav-rail-gutter so nothing ever sits underneath it. */
+  /* FLOATING, and lying down. It rode the leading edge, vertically centred -
+     which put the app's primary navigation in the one place nothing else on
+     the screen lives, halfway up the left of a window whose content, player
+     and header are all arranged around the bottom and the top. A bar along the
+     bottom is where the hand already is on every other surface of this app,
+     and left-aligned rather than centred so it reads as an anchor rather than
+     as a second, competing player. */
   position: absolute;
   inset-inline-start: var(--glacier-space-3);
-  inset-block-start: 50%;
-  transform: translateY(-50%);
+  /* Clear of the player's band - which is zero in split view, so this one line
+     lands correctly in both layouts instead of needing a rule per layout. */
+  inset-block-end: calc(var(--app-player-height) + var(--glacier-space-3));
   z-index: 3;
-  /* Hug the items. The kit's vertical NavBar stretches to its container by
-     default, which is what made the plate run the height of the window. */
+  /* Hug the items in BOTH directions now. The kit stretches a bar to its
+     container, which lying down would mean a plate the width of the window. */
   block-size: fit-content;
+  inline-size: fit-content;
+  max-inline-size: calc(100% - var(--glacier-space-3) * 2);
   flex: none;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: var(--glacier-space-1);
   padding: var(--glacier-space-1);
   /* A rounded rectangle, not a capsule and not a squircle - a plate with a
@@ -342,12 +350,10 @@
   -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
   border: var(--glacier-hairline) solid var(--glacier-border);
   box-shadow: var(--glacier-shadow-md), inset 0 var(--glacier-hairline) 0 var(--glacier-glass-highlight);
-  /* The rail may never run under the floating player: it stops short of the
-     player's band and scrolls its own items when the window is that small, so
-     the bottom icons stay reachable instead of losing their clicks to the
-     plate above them. */
-  max-block-size: calc(100% - var(--app-player-height) - 2 * var(--glacier-space-3));
-  overflow-y: auto;
+  /* A window too narrow for every item scrolls the plate rather than letting
+     the last ones fall off the end - the same reasoning as the tall case it
+     replaces, turned through ninety degrees. */
+  overflow-x: auto;
   scrollbar-width: none;
 }
 
@@ -355,9 +361,11 @@
    the content's inset can never drift apart. */
 :root {
   --app-nav-rail-item: 2.375rem;
-  /* item + the plate's own padding on both sides + the margin it floats by,
-     plus the same margin again as breathing room before the content starts. */
-  --app-nav-rail-gutter: calc(var(--app-nav-rail-item) + var(--glacier-space-1) * 2 + var(--glacier-space-3) * 2);
+  /* item + the plate's own padding above and below. The body adds the margin
+     the plate floats by; keeping that out of here means the height is the
+     plate's real height and nothing else, which is what the bottom inset
+     wants to reason about. */
+  --app-nav-rail-height: calc(var(--app-nav-rail-item) + var(--glacier-space-1) * 2);
 }
 
 .appNavRail button,
