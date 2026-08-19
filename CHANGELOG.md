@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.183
+
+- Karaoke is a microphone on the Now Playing screen now, rather than a page you go and find. Press it while a song is playing and the singer comes out of that song, with the words full screen and nothing else on it
+- The lyrics button wears a book, since the microphone now means singing
+
 ## 0.3.182
 
 - Pick up where you left off. Stop on one device and the next one you open knows what you were in the middle of, and how far in you were
