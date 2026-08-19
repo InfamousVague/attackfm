@@ -72,7 +72,7 @@ export function installHostRuntime(): PluginHost {
       '@attackfm/app/librarySync': { useLibrarySync },
       '@attackfm/app/serverSession': { useServerSession },
       // The output claim: a plugin whose page IS the sound - the sampler, the
-      // karaoke stage - takes the deck off before it starts, so the two are
+      // pad board - takes the deck off before it starts, so the two are
       // never playing at once. Read the module for why releasing it does not
       // start the deck back up.
       '@attackfm/app/deckHold': { holdDeck, deckHeld },

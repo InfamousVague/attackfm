@@ -4,7 +4,7 @@ import { request, type ServerSession } from './http.ts';
  * Talking to the separator: one place, for everything that wants a song in parts.
  *
  * Three surfaces grew their own copy of this — the Stems room on Now Playing,
- * the karaoke stage, and the pads sampler — and each got a different subset of
+ * the sound console and the pads board — and each got a different subset of
  * it right. The separator itself was never duplicated (there is one demucs, in
  * server/src/stems.rs); what was duplicated is the far easier thing to get
  * wrong: which URL to call, which of them takes a token, and how to tell "not
@@ -13,7 +13,7 @@ import { request, type ServerSession } from './http.ts';
  * Both of the copies that were not Pads had a real defect. The Stems room built
  * its POST with a trailing slash, which axum does not normalise, so asking for
  * a separation answered 404 and the panel printed the word "not found". The
- * karaoke stage never issued a POST at all, so it waited forever on any song
+ * console never issued a POST at all, so it waited forever on any song
  * that Pads had not already taken apart.
  */
 
@@ -97,7 +97,7 @@ export async function requestStems(
  * HEADER auth only - pass `stemAuthHeaders`. The handler calls
  * `auth::require_caller(&state.db, &headers)` and reads no token from the
  * query, whatever the comment above it says. So this URL must never be handed
- * to an `<audio src>`, which cannot carry a header; use `stemMixUrl` for that.
+ * to an `<audio src>`, which cannot carry a header.
  */
 export function stemBlockUrl(
   session: ServerSession,
@@ -115,16 +115,3 @@ export function stemAuthHeaders(session: ServerSession): HeadersInit {
   return { authorization: `Bearer ${session.token}` };
 }
 
-/**
- * The whole song with parts left out, as one ordinary seekable stream.
- *
- * TOKEN auth, because this is what goes in an `<audio src>`: the handler uses
- * `caller_from_either`, so the stream token in the query is a real door here
- * even though it is not one on `stemBlockUrl`.
- */
-export function stemMixUrl(session: ServerSession, trackId: number, drop: readonly string[]): string {
-  const parts = drop.join(',');
-  return `${session.url}/api/stems/${trackId}/mix?drop=${encodeURIComponent(parts)}&t=${encodeURIComponent(
-    session.streamToken,
-  )}`;
-}

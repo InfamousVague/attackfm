@@ -2,11 +2,10 @@
  * Somebody else needs the speakers.
  *
  * The deck assumes it is the only thing making sound, and for a long time it
- * was. It is not any more: karaoke plays its own vocal-less mix, and the pad
- * sampler runs a song's stems as a loop you play over. Both of those are the
- * whole output while they are up, and both of them used to start on top of
- * whatever the deck was already playing - two songs at once, and no way for
- * either surface to do anything about it, because the deck's transport is
+ * was. It is not any more: the pad board runs a song's stems as a loop you
+ * play over, and that is the whole output while it is up. It used to start on
+ * top of whatever the deck was already playing - two songs at once, and no way
+ * for the surface to do anything about it, because the deck's transport is
  * closed over inside Player and nothing outside can reach it.
  *
  * So this is the smallest possible door: a count of how many surfaces currently
@@ -22,7 +21,7 @@
  * it reached is not, and the difference is entirely whether the surface says so.
  *
  * Counted rather than boolean because two claims can overlap (the sampler page
- * left open behind the karaoke stage), and the first release must not hand the
+ * left open behind another), and the first release must not hand the
  * output back while the second holder is still using it.
  */
 

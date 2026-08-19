@@ -29,7 +29,7 @@ export type PluginSlotId =
   /**
    * The row of secondary controls on the Now Playing screen, beside the queue
    * and the equaliser. For a plugin that acts on the song you are listening to
-   * RIGHT NOW rather than one you go and find - karaoke is the first, and the
+   * RIGHT NOW rather than one you go and find - the
    * distinction is the whole point: it belongs where the song is, not in a menu
    * of destinations.
    *
