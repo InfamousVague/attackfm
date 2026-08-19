@@ -38,13 +38,20 @@ export const DEFAULT_SOURCES: readonly string[] = ['https://plugins.attack.fm'];
  * It shipped an equalizer, which put an unexplained extra destination in front
  * of everyone who had never asked for one - and a newcomer counting the things
  * they must understand does not need a graphic EQ to be among them on launch
- * day. The plugin is a keystroke away in Plugins for anyone who wants it.
+ * day.
+ *
+ * HiFi Lab is the exception, and it earns it: the player's sound console has
+ * a HiFi room whether or not the plugin is installed - the chain is core, and
+ * a switch you cannot see is a switch you cannot turn off - so without the
+ * plugin that room can only ever say "nothing in the rack yet" and point at a
+ * page the listener does not have. Shipping it by default is what makes the
+ * console's middle tab a place rather than an advertisement.
  *
  * The machinery around this stays: anything listed here is fetched from
  * whatever source carries it and, like a default source, remembered when
  * removed so uninstalling is not undone on the next launch.
  */
-export const DEFAULT_PLUGINS: readonly string[] = [];
+export const DEFAULT_PLUGINS: readonly string[] = ['hifi-lab'];
 
 /** Default plugins the user has removed, so the auto-install never re-adds them. */
 const REMOVED_DEFAULT_PLUGINS_KEY = 'attackfm-plugins-removed-defaults';

@@ -17,7 +17,7 @@ import {
   Mic,
   MonitorSpeaker,
 } from '@glacier/icons';
-import { EqPanel } from './EqPanel.tsx';
+import { SoundConsole } from './NowPlayingSheet.tsx';
 import { PluginSlot } from '../../plugins/runtime.tsx';
 import { SpinningDisc } from './SpinningDisc.tsx';
 import { BeatWave } from './BeatWave.tsx';
@@ -435,7 +435,10 @@ export function PlayerStrip({
                   )}
                   {moreView === 'eq' && (
                     <div className="eqPopover">
-                      <EqPanel />
+                      {/* The same console the sheet shows, so the two
+                          surfaces cannot drift into different ideas of what
+                          the sound controls are. */}
+                      <SoundConsole narrow={false} />
                     </div>
                   )}
                   {moreView === 'devices' && <DeviceList />}

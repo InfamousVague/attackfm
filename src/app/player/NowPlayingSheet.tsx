@@ -3,23 +3,15 @@ import { installSheetDismiss } from './playerDismiss.ts';
 import { fireNativeHaptic } from '../core/haptics.ts';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { createPortal } from 'react-dom';
-import {
-  ContextMenu,
-  IconButton,
-  MenuItem,
-  Popover,
-  SeekBar,
-  Switch,
-  useBeat,
-  useLiveLevels,
-} from '@glacier/react';
+import { ContextMenu, IconButton, MenuItem, Popover, SeekBar, SegmentedControl, Switch, useBeat, useLiveLevels } from '@glacier/react';
 import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
-import { AudioLines, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Heart, Image as ImageIcon, ListMusic, ListPlus, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Sparkles, Volume2, Zap } from '@glacier/icons';
+import { AudioLines, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Heart, Image as ImageIcon, ListMusic, ListPlus, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Sparkles, Volume2 } from '@glacier/icons';
 import { isMobile } from '../core/platform.ts';
 import { PluginSlot } from '../../plugins/runtime.tsx';
 import { EqPanel } from './EqPanel.tsx';
 import { PedalsPanel } from './PedalsPanel.tsx';
-import { setFxChainOn, useFxChain } from './fxChain.ts';
+import { HiFiPanel } from './HiFiPanel.tsx';
+import { FX_NODES, setFxChainOn, useFxChain } from './fxChain.ts';
 import { MarqueeText } from './MarqueeText.tsx';
 import { SpinningDisc } from './SpinningDisc.tsx';
 import { QueuePanel } from './QueuePanel.tsx';
@@ -559,25 +551,7 @@ export function NowPlayingSheet({
           }
         >
           <div className="eqPopover">
-            <EqPanel narrow={narrowEq} />
-            <FxChainRow />
-          </div>
-        </Popover>
-        {/* The board gets its own door rather than another row inside the
-            equaliser's: they are different instruments, and burying a stomp
-            switch under the EQ is how you fail to find it mid-song. */}
-        <Popover
-          placement="top"
-          aria-label="Pedals"
-          className="eqPopoverPanel"
-          trigger={
-            <IconButton variant="ghost" aria-label="Pedals">
-              <Zap size={20} />
-            </IconButton>
-          }
-        >
-          <div className="eqPopover">
-            <PedalsPanel />
+            <SoundConsole narrow={narrowEq} />
           </div>
         </Popover>
         {/* No fader on a phone: volume is pinned at unity there and the
@@ -679,6 +653,83 @@ export function NowPlayingSheet({
  * This row is the other solution: as long as a chain is coloring playback,
  * the player itself says so and can turn it off, plugin or no plugin.
  */
+/**
+ * One door onto the whole signal path.
+ *
+ * These were two popovers - an equaliser and a pedalboard - on the reasoning
+ * that they are different instruments and burying a stomp switch under an EQ
+ * is how you fail to find it mid-song. True, but the answer was wrong: two
+ * icons for one signal chain made the third thing, the hi-fi rack, homeless,
+ * and it had to make do with a single switch at the bottom of the EQ.
+ *
+ * A segmented control fixes the finding problem better than a second icon
+ * did. One place to reach for sound, three rooms behind it, and the room you
+ * were last in is where you land next time - the chain persists, so the
+ * console should remember which end of it you were working on.
+ */
+export function SoundConsole({ narrow }: { narrow: boolean }) {
+  const chain = useFxChain();
+  const [room, setRoom] = useState<'eq' | 'hifi' | 'pedals'>(() => {
+    try {
+      const held = localStorage.getItem(CONSOLE_KEY);
+      return held === 'hifi' || held === 'pedals' ? held : 'eq';
+    } catch {
+      return 'eq';
+    }
+  });
+
+  const go = (next: 'eq' | 'hifi' | 'pedals') => {
+    setRoom(next);
+    try {
+      localStorage.setItem(CONSOLE_KEY, next);
+    } catch {
+      // A storage that will not take the preference is not worth failing over.
+    }
+  };
+
+  // What is actually in the chain, so the tabs can say so at a glance rather
+  // than making somebody open each room to find out where their sound is
+  // coming from.
+  const counts = chain.nodes.reduce(
+    (acc, n) => {
+      const group = FX_NODES.find((s) => s.t === n.t)?.group;
+      if (!group) return acc;
+      if (group === 'pedal') acc.pedals += n.on ? 1 : 0;
+      else acc.hifi += n.on ? 1 : 0;
+      return acc;
+    },
+    { hifi: 0, pedals: 0 },
+  );
+
+  return (
+    <div className="soundConsole">
+      <SegmentedControl
+        aria-label="Sound"
+        size="sm"
+        fullWidth
+        value={room}
+        options={[
+          { value: 'eq', label: 'EQ' },
+          { value: 'hifi', label: counts.hifi > 0 ? `HiFi ${counts.hifi}` : 'HiFi' },
+          { value: 'pedals', label: counts.pedals > 0 ? `Pedals ${counts.pedals}` : 'Pedals' },
+        ]}
+        onValueChange={(v) => go(v as 'eq' | 'hifi' | 'pedals')}
+      />
+      {room === 'eq' && (
+        <>
+          <EqPanel narrow={narrow} />
+          <FxChainRow />
+        </>
+      )}
+      {room === 'hifi' && <HiFiPanel />}
+      {room === 'pedals' && <PedalsPanel />}
+    </div>
+  );
+}
+
+/** Which room of the console was last open. */
+const CONSOLE_KEY = 'attackfm-sound-console-room';
+
 function FxChainRow() {
   const chain = useFxChain();
   if (chain.nodes.length === 0) return null;
