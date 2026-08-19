@@ -16,10 +16,13 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
  * because its UI vanished and an invisible switch must not keep re-encoding
  * playback forever. The chain earns persistence differently: a corrective
  * curve for your headphones is exactly the kind of thing that should survive
- * a relaunch - but the same trap waits if the HiFi Lab plugin is removed
- * while its chain plays on. So the CORE surfaces the state too: the player's
+ * a relaunch - but the same trap waits whenever whatever BUILT the chain can
+ * go away while the chain plays on. The console is core now, so the everyday
+ * case is covered; the Pedals plugin can still put nodes in here and then be
+ * uninstalled. So the CORE surfaces the state regardless: the player's
  * overflow shows a "HiFi chain" row with a kill switch whenever the chain is
- * live (PlayerStrip), plugin installed or not. The state is never invisible,
+ * live (PlayerStrip), and the console draws pedal nodes it cannot edit as
+ * "N pedals here" rather than omitting them. The state is never invisible,
  * which is the actual rule the rack's purge was protecting.
  */
 
@@ -640,7 +643,10 @@ export interface FxChainState {
 }
 
 const KEY = 'attackfm-fxchain-v1';
-const MAX_NODES = 16;
+/** The cap the sanitiser enforces. Exported so the editor can refuse an add
+ *  out loud rather than letting the seventeenth box be dropped on the way to
+ *  storage, which looks exactly like the add never happened. */
+export const MAX_NODES = 16;
 
 function freshKey(): string {
   return Math.random().toString(36).slice(2, 10);

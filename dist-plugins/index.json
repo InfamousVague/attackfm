@@ -36,40 +36,6 @@
       "public": true
     },
     {
-      "id": "filters",
-      "name": "Filters",
-      "version": "0.2.0",
-      "description": "A shelf of finished sounds: slowed, sped up, nightcore, lofi, vinyl, cathedral, night drive and two dozen more, each one tap away.",
-      "author": "AttackFM",
-      "tags": [
-        "Sound",
-        "Filters"
-      ],
-      "entry": "filters-0.2.0.js",
-      "api": 1,
-      "bytes": 12992,
-      "sha256": "c256be4bdc25d926c6842235a52bf84543f91489d46a887e04f430dd52c64e9f",
-      "requiresServer": true,
-      "public": true
-    },
-    {
-      "id": "hifi-lab",
-      "name": "HiFi Lab",
-      "version": "0.1.2",
-      "description": "Chain EQs, filters and dynamics into a signal path of your own — reorder the boxes, save the racks you build.",
-      "author": "AttackFM",
-      "tags": [
-        "Sound",
-        "HiFi"
-      ],
-      "entry": "hifi-lab-0.1.2.js",
-      "api": 1,
-      "bytes": 11023,
-      "sha256": "2fad388895f467c6f5c1ca2ae2e91d2b3a28be30a29dcf7bcabf3356fac5e824",
-      "requiresServer": true,
-      "public": true
-    },
-    {
       "id": "karaoke",
       "name": "Karaoke Maker",
       "version": "0.2.0",
@@ -123,17 +89,17 @@
     {
       "id": "pedals",
       "name": "Pedals",
-      "version": "0.3.3",
+      "version": "0.3.4",
       "description": "A pedalboard for your music: fifty-five stompboxes across drive, lo-fi, filter, modulation, time, space and dynamics, wired in the order you stack them.",
       "author": "AttackFM",
       "tags": [
         "Sound",
         "Pedals"
       ],
-      "entry": "pedals-0.3.3.js",
+      "entry": "pedals-0.3.4.js",
       "api": 1,
-      "bytes": 10367,
-      "sha256": "3a446103667589eb4640163e7a864d449fb7f5a1b27cbeae0fe3971e0ebe7730",
+      "bytes": 10487,
+      "sha256": "0c2efafe00dcf160621c5d725f37e57e1fc12fc2a9a71b1dff35a1a0308907ea",
       "requiresServer": true,
       "public": true
     },

@@ -64,7 +64,9 @@ export function installHostRuntime(): PluginHost {
       // song needs to know which song that is, and the sheet passes everything
       // as props rather than through a context, so this is the seam.
       '@attackfm/app/nowPlaying': { useNowPlayingMotion },
-      // The hi-fi chain: read, edit, toggle - the HiFi Lab plugin's seam.
+      // The hi-fi chain: read, edit, toggle. Core owns the console that edits
+      // it; this is the seam that lets a plugin put its own nodes in the same
+      // signal path - the Pedals board is the one that does.
       '@attackfm/app/fxChain': fxChain,
       '@attackfm/app/librarySync': { useLibrarySync },
       '@attackfm/app/serverSession': { useServerSession },

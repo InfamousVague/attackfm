@@ -41,17 +41,24 @@ import {
  * The filter recipes.
  *
  * A filter is a whole sound in one tap, where a pedalboard is a sound you
- * build. Same machinery underneath - every recipe is ordinary fx-chain nodes,
+ * build. It lives in the core player rather than in a plugin because the
+ * console's Filters room IS this shelf now - the page it used to have added
+ * nothing the popover cannot hold, and a sound you can turn on should not be
+ * behind a plugin you have to know to install. Same machinery underneath - every recipe is ordinary fx-chain nodes,
  * rendered by the server's encoder with its limiter last - but the unit of
  * choice is the finished look rather than the parts.
  *
  * HARD CONSTRAINT: only node kinds the SERVER actually renders may appear here.
- * The client vocabulary in fxChain.ts currently lists far more kinds than the
- * deployed server implements, and a recipe naming one of those would apply
- * silently and do nothing at all - the worst possible failure, because it looks
- * like the filter simply is not very strong. The list below was taken from a
- * live `GET /api/fx/nodes` (25 kinds), and `npm run filters:check` re-checks it
- * against whatever server you point it at.
+ * A recipe naming a kind the encoder does not implement applies silently and
+ * does nothing at all - the worst possible failure, because it reads as a
+ * filter that simply is not very strong.
+ *
+ * When this was written the reference server implemented 25 of the client's
+ * kinds and the recipes were cut to fit. It answers with all 67 as of
+ * 2026-08-19, so nothing here is currently gated - but the check is not
+ * therefore obsolete: other people's hubs run older builds, which is exactly
+ * who the "Needs a newer server" row in the Filters room is for. Verify with
+ * `npm run filters:check`, or read `GET /api/fx/nodes` off the box itself.
  *
  * Values are inside each parameter's real range, also from that endpoint; the
  * server clamps anyway, but a clamped value is a recipe that does not sound the

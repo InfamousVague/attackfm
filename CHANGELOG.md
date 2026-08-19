@@ -15,6 +15,14 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.187
+
+- The sound console is the whole editor now: build a HiFi chain right in the popover — add boxes from a searchable shelf, reorder them, bypass one to hear what it was doing
+- Filters take the console's third tab: slowed, sped up, nightcore, lofi, vinyl, cathedral and thirty more, one tap each
+- Pedals stays a plugin with its own page — fifty-five stompboxes is a board you go somewhere to build
+- The HiFi Lab and Filters plugins retire into the player; they uninstall themselves on next launch
+- A/B and saved chains moved below the tabs, where it is plain they act on the whole signal path
+
 ## 0.3.186
 
 - The DJ's station cards get their background back — they were see-through
