@@ -16,7 +16,10 @@ import { refresh as apiRefresh, type RegistryAccount, type RegistrySession } fro
 /** Where the registry session lives. Exported because serverSync reads the
  *  token straight from storage (it runs outside React) - a second literal of
  *  this key was one rename away from a sync that silently stopped. */
-export const REGISTRY_SESSION_KEY = 'attackfm-registry-session';
+import { usePrefsSync } from './prefsSync.ts';
+import { REGISTRY_SESSION_KEY } from './registryKeys.ts';
+
+export { REGISTRY_SESSION_KEY };
 const KEY = REGISTRY_SESSION_KEY;
 
 interface RegistrySessionValue {
@@ -47,6 +50,11 @@ export function RegistrySessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<RegistrySession | null>(read);
   const sessionRef = useRef(session);
   sessionRef.current = session;
+
+  // Settings that belong to the person ride with the identity, so they are kept
+  // in step here rather than anywhere that has to remember to ask. Does nothing
+  // at all until there is an account to sync to.
+  usePrefsSync(session?.token);
 
   const persist = useCallback((next: RegistrySession | null) => {
     setSession(next);

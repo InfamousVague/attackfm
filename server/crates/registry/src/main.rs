@@ -314,6 +314,77 @@ async fn add_device(
 
 /// `POST /v1/refresh` - a fresh token for a still-valid one, so a long-running
 /// app renews without a re-login.
+/// `GET /v1/prefs` - this account's synced settings.
+///
+/// Settings that belong to a PERSON rather than to a device or a library: what
+/// the app looks like, which plugins they run, which servers they are on. They
+/// lived in localStorage, which meant a new phone, or the player at
+/// attack.fm/listen, started blank every time - and a person with three devices
+/// had three different-looking apps.
+///
+/// The body is opaque here on purpose. The registry stores and returns it and
+/// never reads inside, so adding a synced setting stays a client change instead
+/// of a schema migration on a service other people's servers depend on.
+async fn prefs_get(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
+    let who = caller(&state, &headers)?;
+    match state.db.prefs(who.sub) {
+        // rev 0 and a null body says "nothing has ever been stored", which the
+        // client must tell apart from stored-and-empty: the first means keep
+        // what this device has and push it, the second means someone cleared it.
+        None => Ok(Json(json!({ "rev": 0, "body": Value::Null }))),
+        Some((body, rev)) => {
+            let parsed: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
+            Ok(Json(json!({ "rev": rev, "body": parsed })))
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct PrefsBody {
+    /// The revision this write is based on; 0 for "I have never seen one".
+    rev: i64,
+    body: Value,
+}
+
+/// `PUT /v1/prefs` - store settings, if nobody moved them first.
+///
+/// A stale revision is refused rather than merged here, because the registry
+/// cannot merge what it will not read. The client gets 409 and the current
+/// state, and it CAN merge - it knows which keys it changed.
+async fn prefs_put(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<PrefsBody>,
+) -> ApiResult {
+    let who = caller(&state, &headers)?;
+    let text = serde_json::to_string(&body.body)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "settings could not be stored".to_string()))?;
+    // A cap, because this is a free-form blob on a shared service and nothing
+    // else stops one account filling the disk. Generous next to what settings
+    // weigh; refuse rather than truncate, since half a settings object is worse
+    // than none.
+    const MAX: usize = 256 * 1024;
+    if text.len() > MAX {
+        return Err((StatusCode::PAYLOAD_TOO_LARGE, "those settings are too large to sync".into()));
+    }
+    match state.db.set_prefs(who.sub, &text, body.rev, now_secs()) {
+        Some(rev) => Ok(Json(json!({ "rev": rev }))),
+        None => {
+            let (current, rev) = state
+                .db
+                .prefs(who.sub)
+                .map(|(b, r)| (serde_json::from_str::<Value>(&b).unwrap_or(Value::Null), r))
+                .unwrap_or((Value::Null, 0));
+            // 409 with the winning state, so the client can merge and retry
+            // instead of guessing what it collided with.
+            Err((
+                StatusCode::CONFLICT,
+                json!({ "rev": rev, "body": current }).to_string(),
+            ))
+        }
+    }
+}
+
 async fn refresh(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
     let who = caller(&state, &headers)?;
     let account = state
@@ -924,6 +995,7 @@ async fn main() {
     let app = Router::new()
         .route("/health", get(health))
         .route("/v1/pubkey", get(pubkey))
+        .route("/v1/prefs", get(prefs_get).put(prefs_put))
         .route("/v1/signup", post(signup))
         .route("/v1/login", post(login))
         .route("/v1/login/challenge", post(challenge))
