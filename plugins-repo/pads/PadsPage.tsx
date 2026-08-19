@@ -326,7 +326,7 @@ export function PadsPage() {
               {song.title}
             </Text>
             <Text size="xs" tone="muted">
-              {note || `${song.artist} · ${clock(total)}`}
+              {cast.fault || note || `${song.artist} · ${clock(total)}`}
             </Text>
             <div style={seekRail} onPointerDown={scrub} role="presentation" aria-label="Seek">
               <span
