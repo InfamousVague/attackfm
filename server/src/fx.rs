@@ -279,6 +279,19 @@ enum Node {
     /// Glue: a slow compander across the whole mix.
     #[serde(rename = "glue")]
     Glue { amt: f64 },
+
+    // Rate. The only two nodes that change how LONG the song is, which is why
+    // the client has to be told about them as well - see chainRate() in
+    // fxChain.ts and timelineDuration() in deckShared.ts. Everything else in
+    // this file colours the sound and leaves the timeline alone.
+    /// Speed: play faster or slower, pitch rising and falling with it. The
+    /// turntable, and the sound "slowed" and "nightcore" are both named after.
+    #[serde(rename = "speed")]
+    Speed { rate: f64 },
+    /// Tempo: faster or slower at the ORIGINAL pitch. The same knob a DJ uses
+    /// to beat-match without the singer changing voice.
+    #[serde(rename = "tempo")]
+    Tempo { rate: f64 },
 }
 
 /// The tap-and-decay pattern the reverbs share.
@@ -679,6 +692,22 @@ impl Node {
                 // One knob walks the middle point: more amount, more squeeze.
                 -30.0 + clamp(*amt, 0.0, 1.0) * 15.0,
             ),
+            // Normalise to a known sample rate FIRST, then set the rate against
+            // it. asetrate takes a number, not an expression, so without the
+            // leading aresample the maths would depend on whatever rate the
+            // source happens to be and a 44.1k file and a 48k file would play at
+            // different speeds from the same knob. The trailing aresample puts
+            // the stream back where the encoder expects it.
+            Node::Speed { rate } => {
+                let r = clamp(*rate, 0.5, 2.0);
+                format!(
+                    "aresample=44100,asetrate={:.0},aresample=44100",
+                    44100.0 * r
+                )
+            }
+            // atempo holds pitch. Its own accepted range starts at 0.5, which is
+            // exactly where this clamps, so one instance is always enough.
+            Node::Tempo { rate } => format!("atempo={:.4}", clamp(*rate, 0.5, 2.0)),
         }
     }
 }
@@ -885,7 +914,14 @@ fn nodes_part4() -> Vec<Value> {
                                              "rel": { "min": 10, "max": 2000, "default": 200 } } },
         { "t": "deess",     "params": { "amt": { "min": 0, "max": 1, "default": 0.4 } } },
         { "t": "punch",     "params": { "amt": { "min": 0, "max": 100, "default": 45 } } },
-        { "t": "glue",      "params": { "amt": { "min": 0, "max": 1, "default": 0.5 } } }
+        { "t": "glue",      "params": { "amt": { "min": 0, "max": 1, "default": 0.5 } } },
+        // Rate. Published like any other node so a client can DISCOVER whether
+        // this server can change speed at all - which is the whole point of the
+        // endpoint: a node the encoder does not know applies silently and does
+        // nothing, and speed doing nothing is indistinguishable from a slow
+        // connection. 0.5..2.0 on both, which is also atempo's own floor.
+        { "t": "speed",     "params": { "rate": { "min": 0.5, "max": 2, "default": 0.8 } } },
+        { "t": "tempo",     "params": { "rate": { "min": 0.5, "max": 2, "default": 1.0 } } }
     ]) {
         Value::Array(v) => v,
         // json!([..]) is an array by construction; this arm cannot run.
@@ -1048,6 +1084,41 @@ mod tests {
     /// it kills the encode, so "it compiles in Rust" is not enough. Driving it
     /// from the published catalogue also means the defaults the client is told
     /// about are the exact ones proved to work.
+    /// Speed normalises the sample rate before setting it.
+    ///
+    /// asetrate takes a NUMBER, not an expression, so without the leading
+    /// aresample the multiplier would be applied against whatever rate the
+    /// source happens to carry: the same 0.8 knob would slow a 44.1k file to
+    /// 0.8x and a 48k file to 0.735x. This pins the normalise-set-restore shape
+    /// and the arithmetic, which is the part that is silently wrong rather than
+    /// broken if it regresses.
+    #[test]
+    fn speed_is_independent_of_the_source_sample_rate() {
+        let chain = chain_from_wire(Some(&r#"[{"t":"speed","rate":0.8}]"#.to_string())).expect("compiles");
+        assert!(
+            chain.starts_with("aresample=44100,asetrate=35280,aresample=44100"),
+            "unexpected speed filter: {chain}"
+        );
+
+        // Its own range is the clamp, so a wild value cannot reach ffmpeg.
+        let fast = chain_from_wire(Some(&r#"[{"t":"speed","rate":9}]"#.to_string())).expect("compiles");
+        assert!(fast.contains("asetrate=88200"), "rate not clamped to 2.0: {fast}");
+        let slow = chain_from_wire(Some(&r#"[{"t":"speed","rate":0.01}]"#.to_string())).expect("compiles");
+        assert!(slow.contains("asetrate=22050"), "rate not clamped to 0.5: {slow}");
+    }
+
+    /// Tempo holds pitch, and stays inside atempo's own accepted range so one
+    /// instance is always enough - chaining two would be needed beyond it.
+    #[test]
+    fn tempo_stays_within_atempos_range() {
+        let chain = chain_from_wire(Some(&r#"[{"t":"tempo","rate":1.25}]"#.to_string())).expect("compiles");
+        assert!(chain.starts_with("atempo=1.2500"), "unexpected tempo filter: {chain}");
+        for (asked, want) in [(9.0, "atempo=2.0000"), (0.1, "atempo=0.5000")] {
+            let c = chain_from_wire(Some(&format!(r#"[{{"t":"tempo","rate":{asked}}}]"#))).expect("compiles");
+            assert!(c.contains(want), "rate {asked} not clamped: {c}");
+        }
+    }
+
     #[test]
     fn dump_every_node_at_its_defaults() {
         let mut all: Vec<Value> = Vec::new();
@@ -1055,7 +1126,7 @@ mod tests {
         all.extend(nodes_part2());
         all.extend(nodes_part3());
         all.extend(nodes_part4());
-        assert_eq!(all.len(), 65, "catalogue size changed; update this count");
+        assert_eq!(all.len(), 67, "catalogue size changed; update this count");
 
         for entry in all {
             let t = entry["t"].as_str().expect("every entry has a tag");

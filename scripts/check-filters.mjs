@@ -65,10 +65,15 @@ const known = new Map(nodes.map((n) => [n.t, n.params ?? {}]));
 console.log(`server renders ${known.size} kinds; checking ${recipes.length} recipe nodes\n`);
 
 const problems = [];
+// Unknown kinds are no longer a hard failure: the page asks the same endpoint
+// and disables any filter this server cannot render, so an old hub shows them
+// greyed rather than pretending. Still reported, because it tells you exactly
+// what a listener on that server will not be offered.
+const unavailable = [];
 for (const node of recipes) {
   const spec = known.get(node.t);
   if (!spec) {
-    problems.push(`unknown node "${node.t}" - the server will ignore it silently`);
+    unavailable.push(node.t);
     continue;
   }
   for (const [key, value] of Object.entries(node.params)) {
@@ -83,9 +88,17 @@ for (const node of recipes) {
   }
 }
 
+if (unavailable.length) {
+  const kinds = [...new Set(unavailable)];
+  console.log(`! this server cannot render: ${kinds.join(', ')}`);
+  console.log('  filters using them will show as "Needs a newer server" rather than applying silently.');
+}
+
 if (problems.length) {
+  // A value the server clamps IS still a hard failure: nothing in the UI can
+  // detect it, so the filter applies, looks fine, and sounds wrong.
   console.error('✗ ' + problems.length + ' problem(s):');
   for (const p of [...new Set(problems)]) console.error('   ' + p);
   process.exit(1);
 }
-console.log('✓ every recipe node is a kind the server renders, with every value in range');
+console.log('✓ every value is in range for the kinds this server implements');

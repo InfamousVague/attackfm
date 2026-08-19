@@ -5,10 +5,11 @@ import {
   setFxChain,
   setFxChainOn,
   useFxChain,
+  useServerFxNodes,
   type FxNode,
 } from '@attackfm/app/fxChain';
 import { useServerSession } from '@attackfm/app/serverSession';
-import { FAMILIES, FILTERS, PENDING, signature, type Filter } from './filters.ts';
+import { FAMILIES, FILTERS, kindsUsed, signature, type Filter } from './filters.ts';
 
 /**
  * Filters: one tap, one whole sound.
@@ -25,7 +26,9 @@ function freshKey(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-const card = (active: boolean): CSSProperties => ({
+const card = (active: boolean, unavailable = false): CSSProperties => ({
+  opacity: unavailable ? 0.45 : 1,
+  cursor: unavailable ? 'not-allowed' : 'pointer',
   borderRadius: 14,
   border: `1px solid ${active ? 'var(--glacier-accent-9)' : 'var(--glacier-border)'}`,
   background: active
@@ -35,7 +38,6 @@ const card = (active: boolean): CSSProperties => ({
   display: 'flex',
   alignItems: 'center',
   gap: 12,
-  cursor: 'pointer',
   textAlign: 'left',
   width: '100%',
   transition: 'border-color 160ms ease, background 160ms ease',
@@ -63,6 +65,14 @@ const grid: CSSProperties = {
 export function FiltersPage() {
   const chain = useFxChain();
   const { session } = useServerSession();
+  /**
+   * What this server's encoder actually implements.
+   *
+   * null means unknown - a server not reached yet, or one that answered oddly -
+   * and unknown reads as SUPPORTED. Marking every filter dead because a fetch
+   * failed would be a worse lie than the one this is here to prevent.
+   */
+  const supported = useServerFxNodes(session?.url);
 
   /**
    * Which filter the chain currently IS, if any.
@@ -77,6 +87,10 @@ export function FiltersPage() {
     const now = signature(chain.nodes.map((n) => ({ t: n.t, params: n.params })));
     return FILTERS.find((f) => signature(f.nodes) === now)?.id ?? null;
   }, [chain]);
+
+  /** Kinds this filter needs that the server has told us it cannot render. */
+  const missingFor = (filter: Filter): string[] =>
+    supported ? kindsUsed(filter).filter((t) => !supported.has(t)) : [];
 
   const apply = (filter: Filter) => {
     const nodes: FxNode[] = filter.nodes.map((n) => ({
@@ -133,13 +147,21 @@ export function FiltersPage() {
               <div style={grid}>
                 {inFamily.map((filter) => {
                   const active = filter.id === activeId;
+                  const missing = missingFor(filter);
+                  const unavailable = missing.length > 0;
                   const Icon = filter.icon;
                   return (
                     <button
                       key={filter.id}
                       type="button"
-                      style={card(active)}
+                      style={card(active, unavailable)}
                       aria-pressed={active}
+                      disabled={unavailable}
+                      title={
+                        unavailable
+                          ? `This server's encoder cannot do ${missing.join(', ')} yet`
+                          : undefined
+                      }
                       onClick={() => apply(filter)}
                     >
                       <span style={iconTile(active)} aria-hidden>
@@ -147,7 +169,9 @@ export function FiltersPage() {
                       </span>
                       <span style={{ minWidth: 0 }}>
                         <Text weight="bold" size="sm">{filter.name}</Text>
-                        <Text tone="muted" size="xs">{filter.blurb}</Text>
+                        <Text tone="muted" size="xs">
+                          {unavailable ? 'Needs a newer server' : filter.blurb}
+                        </Text>
                       </span>
                     </button>
                   );
@@ -157,32 +181,7 @@ export function FiltersPage() {
           );
         })}
 
-        {/* Named rather than hidden: these are the filters people ask for first,
-            and "not yet, and here is why" is more useful than their absence. */}
-        <section aria-label="Not yet" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <Text weight="bold" size="sm">Not yet</Text>
-          <Text tone="muted" size="xs">
-            Speed filters need the encoder to change playback rate, which it cannot do yet. The
-            player also has to be told the rate, or the seek bar and the time remaining would both
-            be wrong.
-          </Text>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
-            {PENDING.map((p) => (
-              <span
-                key={p.name}
-                title={p.blurb}
-                style={{
-                  borderRadius: 999,
-                  border: '1px dashed var(--glacier-border)',
-                  padding: '4px 10px',
-                  opacity: 0.6,
-                }}
-              >
-                <Text tone="muted" size="xs">{p.name}</Text>
-              </span>
-            ))}
-          </div>
-        </section>
+
       </div>
     </div>
   );
