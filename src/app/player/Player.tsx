@@ -406,11 +406,30 @@ export function Player({
    * which is deliberate - the whole feature is inert until a toggle arms it.
    */
   const srcOffset = useRef(0);
+  /** Whether the loaded source is one the element can seek; see AudioSource. */
+  const srcSeekable = useRef(true);
   /** Element clock -> song clock. */
   const deckTime = (el: HTMLAudioElement) => el.currentTime + srcOffset.current;
   /** Song clock -> element clock, for a seek the element can actually do. */
   const seekDeck = (el: HTMLAudioElement, songSeconds: number) => {
     el.currentTime = Math.max(0, songSeconds - srcOffset.current);
+  };
+  /**
+   * How long the WHOLE song is, as this element can describe it.
+   *
+   * timelineDuration prefers the element's own number whenever it is finite,
+   * and rightly so - it is the length of what is coming out, speed effects
+   * already applied, which the library's number is not. But a source the
+   * encoder wound forward holds only the tail: a 433s track asked for from
+   * 5:00 IS a 133s stream, and that is a true answer to a different question.
+   * Handing it over unadjusted would put the bar's end before the playhead,
+   * and `remaining` in the crossfade windows would go negative - which reads
+   * as "this track is over" and would throw the deck into the next song a
+   * moment after anyone touched an effect.
+   */
+  const deckSpan = (el: HTMLAudioElement | null | undefined) => {
+    const d = el?.duration ?? 0;
+    return Number.isFinite(d) && d > 0 ? d + srcOffset.current : d;
   };
   /** Reloads spent on THIS track, reset whenever the listener moves. */
   const resumeCount = useRef(0);
@@ -476,7 +495,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
    * as it always does. No second start path, no new fade, nothing for the
    * careful machinery below to fight with.
    */
-  const resumeInPlace = async () => {
+  const resumeInPlace = async (toSeconds?: number) => {
     const audio = activeAudio();
     const current = liveRef.current.track;
     if (!audio || !current || remoteOnlyRef.current) return;
@@ -493,13 +512,24 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       setBuffering(false);
       return;
     }
-    const at = deckTime(audio) || lastGoodPos.current;
-    resumeCount.current += 1;
+    // A destination given outright is a SEEK, not a recovery: it is the
+    // listener asking for a spot, so it does not spend an attempt from the
+    // budget that exists to stop a broken source reloading forever.
+    const asked = toSeconds != null && Number.isFinite(toSeconds);
+    const at = asked ? Math.max(0, toSeconds!) : deckTime(audio) || lastGoodPos.current;
+    if (!asked) resumeCount.current += 1;
     // `at`, not zero: on the encoder path this is what turns a reload from
     // "re-encode the song from the top and stream all of it" into one that
     // begins where the listener is. A source that seeks itself answers
     // offset 0 and takes the loadedmetadata path below, exactly as before.
-    const source = await loadAudioSource(current.path, at);
+    //
+    // Scaled by the chain's rate on the way out, because the two clocks are
+    // not the same one: `at` is a position on the BAR, which counts the
+    // seconds coming out, while ffmpeg's -ss counts seconds of the FILE going
+    // in. With a speed pedal on, a bar reading 2:00 at 1.25x is 2:30 into the
+    // file, and asking for 120 would land the listener half a minute early.
+    const rate = Number.isFinite(rateRef.current) && rateRef.current > 0 ? rateRef.current : 1;
+    const source = await loadAudioSource(current.path, at * rate);
     if (!source) return;
     const { url, offset } = source;
     // A crossfade may have swapped decks while that resolved; landing this on
@@ -508,10 +538,13 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     const fresh = url.startsWith('http')
       ? `${url}${url.includes('?') ? '&' : '?'}r=${(resumeNonce.current += 1)}`
       : url;
-    srcOffset.current = offset;
+    // Back into bar seconds: `offset` came back in file seconds because that
+    // is what the encoder was asked for.
+    srcOffset.current = offset > 0 ? offset / rate : 0;
+    srcSeekable.current = source.seekable;
     // A source the server already wound forward needs no seek - asking for one
     // would land it `at` seconds past the spot it opened on.
-    if (offset === 0) {
+    if (source.seekable) {
       // Seek before the element is audible: loadedmetadata always precedes
       // canplay, so the start that canplay performs is already at the right spot.
       audio.addEventListener(
@@ -526,7 +559,10 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         { once: true },
       );
     }
-    pendingPlay.current = true;
+    // A recovery was always mid-playback, so it resumes. A seek is only a
+    // seek: asked for while paused, it must land on the new spot and stay
+    // there rather than start the music.
+    pendingPlay.current = asked ? wantPlaying.current : true;
     setActiveSrc(fresh);
   };
 
@@ -577,7 +613,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   useEffect(() => {
     rateRef.current = chainRate(chain);
     const track = liveRef.current.track;
-    if (track) setDuration(timelineDuration(activeAudio()?.duration ?? 0, track.duration, rateRef.current));
+    if (track) setDuration(timelineDuration(deckSpan(activeAudio()), track.duration, rateRef.current));
   }, [chain]);
   /*
    * Parts taken out of the song, which change the sound exactly the way a pedal
@@ -1156,7 +1192,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       };
       const onMeta = () => {
         if (isActive()) {
-          setDuration(timelineDuration(audio.duration, liveRef.current.track?.duration, rateRef.current));
+          setDuration(timelineDuration(deckSpan(audio), liveRef.current.track?.duration, rateRef.current));
         }
       };
       // Through the ref: this listener is bound once, the queue changes often.
@@ -1413,13 +1449,15 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     let cancelled = false;
     let created: string | null = null;
     void (async () => {
-      const url = await loadAudioUrl(track.path);
-      if (cancelled || !url) return;
+      const source = await loadAudioSource(track.path, 0);
+      if (cancelled || !source) return;
+      const url = source.url;
       created = url;
       // A new track is loaded from the top, so element time is song time
       // again. Cleared here rather than where the last one was set, because
       // this is the one path every track change goes through.
       srcOffset.current = 0;
+      srcSeekable.current = source.seekable;
       setPosition(0);
       // Seed the timeline from the indexed metadata immediately. Android may
       // later describe a streamed response as infinitely long; onMeta keeps
@@ -2101,6 +2139,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       // The incoming deck was prefetched from the start of its own track, so
       // whatever offset the outgoing one carried does not belong to it.
       srcOffset.current = 0;
+      srcSeekable.current = true;
       const nowActive = activeAudio();
       // Only a live deck is worth adopting: one that already ended (a pick
       // shorter than the blend) or errored would wedge the strip on silence.
@@ -2561,7 +2600,16 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         }
       }, 1200);
     }
-    seekDeck(audio, to);
+    if (srcSeekable.current) {
+      seekDeck(audio, to);
+      return;
+    }
+    // A live encode cannot be scrubbed: `currentTime` reaches only what is
+    // buffered and clamps silently otherwise - which is why a drag BACK past
+    // the point an effect was switched on used to land on the switch instead
+    // of where it was aimed, and a drag forward went nowhere at all. The
+    // server seeks these; ask it again from where the listener pointed.
+    void resumeInPlace(to);
   };
 
   // The car's handles on this player, refreshed every render so the listener

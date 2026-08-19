@@ -189,10 +189,12 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
       if (!(quality === 'transcode' || fx || fx2 || drop)) {
         // The original file, served with byte ranges: the element seeks it
         // itself, so it never wants a pre-seeked source.
-        return { url: streamUrl(from, rowId), offset: 0 };
+        return { url: streamUrl(from, rowId), offset: 0, seekable: true };
       }
       const at = Number.isFinite(seek) && seek > 0 ? seek : 0;
-      return { url: transcodeUrl(from, rowId, bitrate, at, fx, fx2, drop), offset: at };
+      // Not element-seekable: a live encode has no ranges, so the player
+      // seeks it by coming back here with a new `seek`.
+      return { url: transcodeUrl(from, rowId, bitrate, at, fx, fx2, drop), offset: at, seekable: false };
     });
     return () => setRemoteAudioResolver(null);
   }, []);
