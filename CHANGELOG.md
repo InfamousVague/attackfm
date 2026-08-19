@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.188
+
+- The sound console is glass again — the artwork reads through the panels instead of sitting behind black cards
+- Its pinned headers run the full width of the popover, and the counts on the tabs are proper badges
+
 ## 0.3.187
 
 - The sound console is the whole editor now: build a HiFi chain right in the popover — add boxes from a searchable shelf, reorder them, bypass one to hear what it was doing

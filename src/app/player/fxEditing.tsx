@@ -374,7 +374,10 @@ export const ALL_DRAWERS = ' all';
 export function scrollOwner(from: HTMLElement | null): HTMLElement | null {
   for (let n = from?.parentElement ?? null; n; n = n.parentElement) {
     const oy = getComputedStyle(n).overflowY;
-    if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight + 4) return n;
+    // No "is it overflowing yet" test: this is also asked at mount, before the
+    // shelf has rendered, and scrolling something that turns out not to
+    // overflow is a no-op anyway.
+    if (oy === 'auto' || oy === 'scroll') return n;
   }
   return null;
 }
