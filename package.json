@@ -30,7 +30,8 @@
     "listen:deploy": "node scripts/deploy-listen.mjs",
     "listen:build": "AFM_WEB=1 vite build",
     "filters:check": "node scripts/check-filters.mjs",
-    "ai-ui:check": "node scripts/check-ai-glacier.mjs"
+    "ai-ui:check": "node scripts/check-ai-glacier.mjs",
+    "check:styles": "node scripts/check-style-guard.mjs"
   },
   "dependencies": {
     "@glacier/icons": "file:./vendor/@glacier/icons",
