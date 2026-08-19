@@ -1,10 +1,9 @@
 /* --- a friend's stats, in a small modal ----------------------------------- */
 
-.friendCard__actions {
+.friendRow__actions {
   display: flex;
+  align-items: center;
   gap: var(--glacier-space-1);
-  flex-wrap: wrap;
-  justify-content: center;
 }
 
 .friendStats {
