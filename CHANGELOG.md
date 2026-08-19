@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.190
+
+- Fixes the sound console losing its styling — the app now notices when its stylesheet did not load at startup and puts it back
+
 ## 0.3.189
 
 - The Filters tab no longer shows its dot when no filter is on
