@@ -44,9 +44,9 @@ export class ServerError extends Error {
 export async function request<T>(
   url: string,
   path: string,
-  init: RequestInit & { token?: string } = {},
+  init: RequestInit & { token?: string; timeoutMs?: number } = {},
 ): Promise<T> {
-  const { token, ...rest } = init;
+  const { token, timeoutMs = 30_000, ...rest } = init;
   const headers = new Headers(rest.headers);
   if (token) headers.set('authorization', `Bearer ${token}`);
   if (rest.body && !headers.has('content-type')) headers.set('content-type', 'application/json');
@@ -56,10 +56,12 @@ export async function request<T>(
   // await upstream of it becomes a zombie - the exact "app never loads while
   // the dot is green" wedge. Thirty seconds is long enough for the largest
   // first-sync payload on a slow link and short enough that the caller's
-  // error path (retry heartbeats, error strips) actually gets to run.
+  // error path (retry heartbeats, error strips) actually gets to run. A few
+  // explicitly long-running endpoints (such as local AI analysis) opt into a
+  // larger deadline without weakening this default for ordinary requests.
   // Hand-rolled rather than AbortSignal.any/timeout, which older WebKit lacks.
   const control = new AbortController();
-  const deadline = window.setTimeout(() => control.abort(new Error('request timed out')), 30_000);
+  const deadline = window.setTimeout(() => control.abort(new Error('request timed out')), timeoutMs);
   if (rest.signal) {
     const outer = rest.signal;
     if (outer.aborted) control.abort(outer.reason);

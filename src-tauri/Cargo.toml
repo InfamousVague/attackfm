@@ -69,6 +69,9 @@ objc2-foundation = { version = "0.3", features = ["NSGeometry", "NSData"] }
 [features]
 # Kept in sync with tauri.conf.json > app > security > csp.
 custom-protocol = ["tauri/custom-protocol"]
+# A diagnostic desktop build that always runs its embedded frontend and never
+# accepts an OTA bundle. This keeps a test client stable while releases move.
+pinned-build = []
 
 # tao 0.35.3 (the newest tao any released tauri accepts) returns a
 # UISceneConfiguration from application:configurationForConnectingSceneSession:
