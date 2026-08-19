@@ -20,6 +20,14 @@ and where that library came from is not the app's story to tell.
 - Each part in the Stems tab now moves to its own music: the drums pulse on the beat while a held string line sits calm beside them, instead of every row twitching to the same mix
 - A part switched out holds still, and each row's line shows that part's own shape across the song
 
+## 0.3.204
+
+- Karaoke has gone. Turn Vocals off in the sound console's Stems tab and open the lyrics popover instead — the words follow the song exactly now, because it is the same player rather than a second one running its own copy
+- The Stems tab could sit on "looking for this song's parts" and never finish. It finds them
+- The HiFi chain has no on/off switch any more. A chain is on when a box in it is on, and "All out" puts them all down at once — no more rack full of lit pedals with the whole room greyed out from a switch at the top
+- The Pads board has gone. Taking a part out of the song you are listening to lives in the sound console, where the seek bar and the transport are the song's own
+- On a computer, the navigation moved from a rail up the left edge to a bar along the bottom, tucked to the left. The page runs full width behind it
+
 ## 0.3.203
 
 - Scratching a song you have slowed down or sped up lands where you let go. The platter was reading the song at its original speed, so letting go dropped you somewhere else in the track — half a minute out at 1.25x, further the deeper in you were
