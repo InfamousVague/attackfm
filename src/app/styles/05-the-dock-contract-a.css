@@ -36,11 +36,11 @@ body:has(.npScreen[data-docked]) div[class*='_viewport_1nbns_'] {
 
 body:has(.npScreen[data-docked]) .settingsScreen,
 body:has(.npScreen[data-docked]) .searchSummon,
+body:has(.npScreen[data-docked]) .summonPull,
 body:has(.npScreen[data-docked]) .djLayer {
   inset-inline-end: var(--np-dock-width);
 }
 
-body:has(.npScreen[data-docked]) .summonPull,
 /* Transform only - never opacity. An animation that is frozen at its first
    frame (a throttled or backgrounded webview does exactly this: the animation
    reports "running" while its clock never advances) would leave an
