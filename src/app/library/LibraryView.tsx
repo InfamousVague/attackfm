@@ -1,3 +1,4 @@
+import { SearchEntry } from '../search/SearchEntry.tsx';
 import { Button, IconButton, ScrollArea } from '@glacier/react';
 import { Download } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -242,6 +243,8 @@ export function LibraryView({
 
   return (
     <div className="homePage libraryPage" ref={setRippleRoot}>
+      {/* Search, where people look for it: on the page, not behind an icon. */}
+      <SearchEntry />
       {/* The desktop's copy of the action row. Everywhere else these two live
           in the app header (see App.tsx) - but the desktop has no such header,
           it has a title bar and a rail, so the page keeps them. */}

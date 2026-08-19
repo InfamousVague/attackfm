@@ -1,4 +1,4 @@
-import { SearchField, Text } from '@glacier/react';
+import { SearchField, SegmentedControl, Text } from '@glacier/react';
 import {
   Compass,
   Disc3,
@@ -103,6 +103,8 @@ export function SearchPage({
   onOpenArtist,
   onOpenAlbum,
   onOpenPlaylist,
+  initialFilter,
+  placeholder,
 }: {
   onPlay: (track: Track, queue: Track[]) => void;
   onOpenArtist: (artist: string) => void;
@@ -110,6 +112,12 @@ export function SearchPage({
    *  something to look at first. */
   onOpenAlbum?: (album: string, albumArtist: string) => void;
   onOpenPlaylist: (id: string) => void;
+  /** Which scope the page opens on. Library's bar sends 'mine' so its search
+   *  answers only from what is already downloaded; unset means 'all'. */
+  initialFilter?: Filter;
+  /** The words the bar that opened this was wearing, so the two read as one
+   *  bar rather than swapping text as the page arrives. */
+  placeholder?: string;
 }) {
   const { tracks } = useLibrary();
   const { playlists } = usePlaylists();
@@ -151,6 +159,16 @@ export function SearchPage({
     [],
   );
   const [filter, setFilter] = useState<Filter>('all');
+  /*
+   * Scope and kind are different questions, so they are different state. The
+   * chips narrow WHAT ('Songs', 'Albums'); this says WHERE FROM. They shared
+   * one value once, which meant picking a kind silently reset the scope - and
+   * a toggle that moves when you did not touch it is worse than no toggle.
+   *
+   * Off by default: the bar sits on pages that are already yours, and a song
+   * you own should not have to share a list with an offer to go and buy it.
+   */
+  const [discover, setDiscover] = useState(initialFilter === 'all');
   const [friends, setFriends] = useState<RegistryFriend[]>([]);
   // Which row the keyboard is on, as an index into the flat item list; -1 is
   // "none". The field keeps DOM focus throughout, so typing never stops.
@@ -208,8 +226,14 @@ export function SearchPage({
 
   // The remote half: the debounced catalogue fetch, the dedupe against the
   // songs already shown, and the Add verb - see useCatalogSearch.ts.
+  //
+  // Scoped to 'mine' it is not merely hidden, it is never asked: the hook
+  // treats an empty query as "nothing to fetch" and clears itself, so the
+  // Library's bar makes no network call per keystroke. That matters on a hub
+  // reached over the tailnet, where the catalogue fetch is the slowest thing
+  // on the page and the one most likely to time out.
   const { catalog, outside, adding, acquireResult } = useCatalogSearch({
-    query,
+    query: discover ? query : '',
     parsedPhrase: parsed.phrase,
     shownPaths: shown,
     owned,
@@ -344,12 +368,14 @@ export function SearchPage({
   /* ----------------------------------------------------------- sections --- */
 
   /** True while the page is showing everything rather than one promoted kind. */
-  const wide = filter === 'all' || filter === 'mine';
+  const wide = filter === 'all';
   const cap = (key: Filter) => (filter === key ? EXPANDED : COLLAPSED);
   /** Whether a section shows at all under the current chip. */
   const on = (key: Filter): boolean => {
+    // The catalogue is a scope, not a kind: it appears when Discover is on and
+    // never otherwise, whatever the chips are set to.
+    if (key === 'catalog') return discover;
     if (filter === 'all') return true;
-    if (filter === 'mine') return key !== 'catalog';
     return filter === key;
   };
 
@@ -372,8 +398,12 @@ export function SearchPage({
     if (song) return { t: 'song', id: `song:${song.track.path}`, track: song.track, why: song.why };
     // Nothing of theirs is owned, but the catalogue knows who they are: the
     // artist you typed is still the answer, so their page leads the page
-    // rather than three of their songs with Add buttons.
-    const catalogArtist = outside.find((r) => r.kind === 'artist' && isAbout(r.title, phrase));
+    // rather than three of their songs with Add buttons. Not in 'mine',
+    // though - a scope that promises only what you have must not lead with
+    // something you do not.
+    const catalogArtist = discover
+      ? outside.find((r) => r.kind === 'artist' && isAbout(r.title, phrase))
+      : undefined;
     if (catalogArtist) {
       return { t: 'catalog', id: `catalog:${catalogArtist.id}`, result: catalogArtist, mine: null };
     }
@@ -382,7 +412,7 @@ export function SearchPage({
     const anyAlbum = lib.albums[0];
     if (anyAlbum) return { t: 'album', id: `album:${albumKey(anyAlbum)}`, album: anyAlbum };
     return null;
-  }, [lib.albums, lib.artists, lib.songs, outside, parsed]);
+  }, [discover, lib.albums, lib.artists, lib.songs, outside, parsed]);
 
   // Whether the page is wearing its hero. A query of nothing but operators
   // (`genre:"shoegaze"`) has no free text to be most-likely-about, so there is
@@ -572,14 +602,17 @@ export function SearchPage({
   walk.forEach((item, n) => position.set(item.id, n));
 
   // A new query is a new set of rows; the cursor cannot survive it.
-  useEffect(() => setCursor(-1), [query, filter]);
+  useEffect(() => setCursor(-1), [query, filter, discover]);
 
   const current = cursor >= 0 ? walk[cursor] : undefined;
 
   const available = useMemo(
     () =>
       CHIPS.filter(({ id }) => {
-        if (id === 'all' || id === 'mine') return true;
+        // The three scope chips became a segmented toggle above: one control
+        // that says what the page is answering from, rather than three chips
+        // competing with six more about what to narrow to.
+        if (id === 'all' || id === 'mine' || id === 'catalog') return false;
         if (id === 'songs') return lib.songs.length > 0;
         if (id === 'artists') return lib.artists.length > 0;
         if (id === 'albums') return lib.albums.length > 0;
@@ -738,21 +771,44 @@ export function SearchPage({
         value={query}
         onValueChange={setQuery}
         onKeyDown={onFieldKey}
-        placeholder="Songs, artists, albums, lyrics — or artist: album: genre:"
+        placeholder={placeholder ?? 'Songs, artists, albums, lyrics — or artist: album: genre:'}
         aria-label="Search"
         role="combobox"
         aria-expanded={walk.length > 0}
         aria-controls="searchResults"
         aria-activedescendant={cursor >= 0 ? `searchHit-${cursor}` : undefined}
         autoComplete="off"
-        /* Only where a keyboard is already on the desk. On a phone, focusing
-           the field on open throws the software keyboard over half the page
-           you just revealed - the genre cards, the recents - before you have
-           said you want to type. The field is one tap away when you do. */
-        autoFocus={
-          typeof matchMedia !== 'undefined' && matchMedia('(pointer: fine)').matches
-        }
+        /* Focused on open, phone included. This used to be desk-only: search
+           arrived by a PULL from the top, which is a gesture you can make by
+           accident, so throwing the keyboard over the page you just revealed
+           was the wrong answer. Search now arrives by tapping a search bar -
+           an act with exactly one meaning - and landing on a page whose field
+           is not ready costs a second tap for no reason. */
+        autoFocus
       />
+
+      {/*
+        * Where the answers come from. One search, library first: the page you
+        * came from was always your own, and a song you already own should not
+        * have to share a list with an offer to go and buy it. Turning Discover
+        * on folds the catalogue back in - same rows, same shapes, just more of
+        * them - which is also the answer when your own library genuinely does
+        * not have the thing you typed.
+        */}
+      {searching && !claimed && (
+        <SegmentedControl
+          className="searchScope"
+          aria-label="Where to search"
+          size="sm"
+          fullWidth
+          value={discover ? 'discover' : 'mine'}
+          options={[
+            { value: 'mine', label: 'Your library' },
+            { value: 'discover', label: 'Discover' },
+          ]}
+          onValueChange={(v) => setDiscover(v === 'discover')}
+        />
+      )}
 
       {searching && !claimed && available.some((f) => f.group === 'kind') && (
         <div className="searchFilters" role="tablist" aria-label="Narrow these results">

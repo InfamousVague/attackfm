@@ -19,6 +19,11 @@ const pkgVersion = JSON.parse(readFileSync('./package.json', 'utf8')).version as
 // bigger on the wire, but self-contained by construction. The embedded build
 // keeps its splits; only what ships over the air pays the inlining tax.
 const ota = process.env.AFM_OTA === '1';
+// The web build (attack.fm/listen). Unlike the shipped app it is fetched over
+// HTTP by ordinary browsers, which is the one context where the stable
+// filenames below are a liability rather than a feature - see the comment on
+// entryFileNames.
+const web = process.env.AFM_WEB === '1';
 
 // A relative base so the built app works when Tauri serves it from a custom
 // protocol rather than the server root. @glacier/react resolves from the
@@ -37,10 +42,19 @@ export default defineConfig({
         // bundle, and cache-busting is pointless here anyway: the embedded
         // copy ships inside the binary, and a downloaded one lives in its own
         // version directory. See src-tauri/src/bundle.rs.
-        entryFileNames: 'assets/app.js',
+        //
+        // The web build is the exception, and it inverts the reasoning. Served
+        // over HTTP to browsers that cache heuristically, `app.js` is a name
+        // that never changes for bytes that do - the classic way a returning
+        // visitor is pinned to a stale app with no way to ask for a new one.
+        // Nothing loads it by name there (the boot loader only swaps files for
+        // Tauri), so hashing costs nothing and buys correct caching.
+        entryFileNames: web ? 'assets/app-[hash].js' : 'assets/app.js',
         chunkFileNames: 'assets/[name]-[hash].js',
         assetFileNames: (info) =>
-          info.name && info.name.endsWith('.css') ? 'assets/app.css' : 'assets/[name]-[hash][extname]',
+          info.name && info.name.endsWith('.css') && !web
+            ? 'assets/app.css'
+            : 'assets/[name]-[hash][extname]',
       },
     },
   },

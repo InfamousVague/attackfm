@@ -496,8 +496,20 @@ pub async fn transcode(
         command.arg("-ss").arg(format!("{seek:.3}"));
     }
     command.arg("-i").arg(&path).args(["-map", "0:a:0"]);
-    // The effects, when any were asked for and recognised.
-    if let Some(chain) = effect_chain(params.get("fx")) {
+    // The effects, when any were asked for and recognised. Two vocabularies
+    // feed one -af flag: the fixed rack (fx, names looked up above) and the
+    // hi-fi chain (fx2, typed nodes compiled in fx.rs). When both arrive the
+    // chain runs first - corrective EQ belongs before colour - and the rack's
+    // own limiter stays the last thing before the encoder.
+    let rack = effect_chain(params.get("fx"));
+    let hifi = crate::fx::chain_from_wire(params.get("fx2"));
+    let af = match (hifi, rack) {
+        (Some(h), Some(r)) => Some(format!("{h},{r}")),
+        (Some(h), None) => Some(h),
+        (None, Some(r)) => Some(r),
+        (None, None) => None,
+    };
+    if let Some(chain) = af {
         command.args(["-af", &chain]);
     }
     command
@@ -524,7 +536,7 @@ pub async fn transcode(
         let _ = child.wait().await;
     });
 
-    let stream = tokio_util_reader_stream(stdout);
+    let stream = reader_stream(stdout);
     Ok((
         StatusCode::OK,
         [
@@ -541,7 +553,7 @@ pub async fn transcode(
 
 /// Adapts an async reader into the stream `Body::from_stream` wants, without
 /// pulling in `tokio-util` for the one thing it would be used for.
-fn tokio_util_reader_stream<R>(reader: R) -> impl futures_util::Stream<Item = std::io::Result<Vec<u8>>>
+pub fn reader_stream<R>(reader: R) -> impl futures_util::Stream<Item = std::io::Result<Vec<u8>>>
 where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
 {

@@ -383,6 +383,55 @@
   max-inline-size: 34rem;
 }
 
+/*
+ * The search bar that lives ON Library and Discover.
+ *
+ * A wrapper rather than a bare field because the field is inert - it is a
+ * picture of the search page's own field, and the wrapper takes the tap (see
+ * SearchEntry.tsx). The kit's field supplies every visual; this only places
+ * it and keeps the same readable measure the pages give their own search.
+ */
+.searchEntry {
+  display: block;
+  inline-size: 100%;
+  max-inline-size: 34rem;
+  cursor: pointer;
+}
+
+/* Inert: taps belong to the wrapper, so the field cannot take focus and raise
+   a keyboard over a page that is about to be replaced. */
+.searchEntry > * {
+  pointer-events: none;
+}
+
+.searchEntry input {
+  cursor: pointer;
+}
+
+/*
+ * The bar keeps the search page's measure, not the page's section rhythm.
+ *
+ * No inline margin: both pages already pad themselves by space-4, and adding
+ * a margin on top of that indented the bar to twice the gutter of everything
+ * below it - the bar sat at 36px while the shelves started at 18.
+ *
+ * The negative block margin is the deliberate half. These pages put a wide
+ * rhythm between their sections (measured: 36px) while the search page sets
+ * space-4 under its field (18px). A search bar is a control belonging to the
+ * top of the page, not a section peer, so it takes the tighter measure - and
+ * matching the two is what stops the layout jumping when the tap swaps one
+ * field for the other.
+ *
+ * Pulling back by exactly space-4 lands it there, because the page rhythm is
+ * two of them. Written as the negative of the token rather than a literal so
+ * it tracks the scale; if the page rhythm itself is ever retuned this needs
+ * re-measuring, which is why the number it targets is written down: 18px.
+ */
+.libraryPage > .searchEntry,
+.discoverPage > .searchEntry {
+  margin-block-end: calc(-1 * var(--glacier-space-4));
+}
+
 /* Home's local-search results: the same square cards the shelves use, laid out
    as a wrapping grid rather than a single scrolling rail. */
 .homeResults .homeResultsGrid {

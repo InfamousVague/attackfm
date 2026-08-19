@@ -34,8 +34,13 @@ pub struct AddBody {
     pub title: String,
     #[serde(default)]
     pub subtitle: String,
+    /// Nullable, unlike the neighbours: a search result with no artwork sends
+    /// `cover: null`, and `serde(default)` only fills a MISSING key - an
+    /// explicit null is a type error against String, which 422s the whole
+    /// request and silently loses the entry. `search.rs` already models the
+    /// same field this way.
     #[serde(default)]
-    pub cover: String,
+    pub cover: Option<String>,
     #[serde(default)]
     pub url: String,
 }
@@ -56,7 +61,15 @@ pub async fn add(
     }
     state
         .db
-        .touch_recent(caller.id, kind, key, title, &body.subtitle, &body.cover, &body.url)
+        .touch_recent(
+            caller.id,
+            kind,
+            key,
+            title,
+            &body.subtitle,
+            body.cover.as_deref().unwrap_or(""),
+            &body.url,
+        )
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(json!({ "ok": true })))
 }

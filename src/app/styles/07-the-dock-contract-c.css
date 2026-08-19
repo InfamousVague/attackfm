@@ -96,8 +96,18 @@
   display: flex;
   flex-direction: column;
   padding: var(--glacier-space-4);
-  background: var(--glacier-surface);
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  /* Glass, like every other panel that floats over the deck's artwork. It was
+     an opaque surface, which turns the sheet's own cover into a thing the
+     panel sits ON rather than a thing it sits IN - and the cover is the whole
+     reason this view is a panel over the song instead of a page away from it.
+     Regular rather than thick: thick is 0.85 opaque, which over a cover reads
+     as the solid panel this was replacing. The large blur is what carries
+     legibility - it flattens the artwork into a wash before the tint lands on
+     it - so the tint can stay light enough to see the song through. */
+  background: var(--glacier-glass-regular);
+  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  border: var(--glacier-hairline) solid var(--glacier-glass-border);
   border-radius: var(--glacier-radius-xl);
   box-shadow: var(--glacier-shadow-5);
   animation: npRise 0.24s var(--glacier-ease-out);
@@ -152,8 +162,18 @@
   left: var(--glacier-space-4);
   z-index: 11;
   display: flex;
-  background: var(--glacier-surface);
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  /* Glass, like every other panel that floats over the deck's artwork. It was
+     an opaque surface, which turns the sheet's own cover into a thing the
+     panel sits ON rather than a thing it sits IN - and the cover is the whole
+     reason this view is a panel over the song instead of a page away from it.
+     Regular rather than thick: thick is 0.85 opaque, which over a cover reads
+     as the solid panel this was replacing. The large blur is what carries
+     legibility - it flattens the artwork into a wash before the tint lands on
+     it - so the tint can stay light enough to see the song through. */
+  background: var(--glacier-glass-regular);
+  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  border: var(--glacier-hairline) solid var(--glacier-glass-border);
   border-radius: var(--glacier-radius-xl);
   box-shadow: var(--glacier-shadow-5);
   animation: npRise 0.24s var(--glacier-ease-out);

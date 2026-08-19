@@ -1,4 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { clearEnhancers, nextEnhancer, primeEnhancers } from './smartShuffle.ts';
+import { trackIdFromPath } from '../server.ts';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   createAnalyserMeter,
   volumeAmplitude,
@@ -8,10 +10,14 @@ import type { AnalyserMeter, LoudnessMeter, PlayerRepeat } from '@glacier/react'
 import { isIOS, isMobile } from '../core/platform.ts';
 import { useLibrary } from '../library/library.tsx';
 import { useEqualizer } from './equalizer.tsx';
+import { gainFor, useLoudnessMode, useLoudnessTable } from './loudness.ts';
 import { usePlayback } from './playback.tsx';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { VOLUME_UNITY } from './VolumeControl.tsx';
+import { recordResume } from '../servers/resumeSync.ts';
 import { useEffects } from './effects.ts';
+import { useFxChain, chainRate } from './fxChain.ts';
+import { recordDiag } from '../diag/diagLog.ts';
 import { loadAudioUrl, reactivateAudioSession, systemOutputVolume, type Track } from '../core/tauri.ts';
 import { isPendingPath } from './pendingPlay.tsx';
 import { isRemotePath } from '../server.ts';
@@ -110,7 +116,19 @@ export function Player({
   // Shuffle, repeat, and the fader survive a relaunch the way every other
   // playback preference does - a player that forgets its own dials every
   // morning reads as broken, not fresh.
-  const [shuffle, setShuffle] = useState(() => readDeckPref('shuffle') === 'on');
+  /*
+   * Shuffle has three states now, not two: off, on, and smart.
+   *
+   * `shuffle` stays a boolean so every consumer of it - pickNext, the strip,
+   * the sheet, Connect - keeps working untouched; `smart` rides alongside and
+   * only means anything while shuffle is on. Stored as one pref so an old
+   * build reading 'on' still finds shuffle on.
+   */
+  const [shuffle, setShuffle] = useState(() => {
+    const stored = readDeckPref('shuffle');
+    return stored === 'on' || stored === 'smart';
+  });
+  const [smart, setSmart] = useState(() => readDeckPref('shuffle') === 'smart');
   const [repeat, setRepeat] = useState<PlayerRepeat>(() => {
     const saved = readDeckPref('repeat');
     return saved === 'all' || saved === 'one' ? saved : 'off';
@@ -135,7 +153,29 @@ export function Player({
   const [muted, setMuted] = useState(false);
 
   // Written on change rather than on quit - there is no reliable "on quit".
-  useEffect(() => writeDeckPref('shuffle', shuffle ? 'on' : 'off'), [shuffle]);
+  useEffect(
+    () => writeDeckPref('shuffle', shuffle ? (smart ? 'smart' : 'on') : 'off'),
+    [shuffle, smart],
+  );
+
+  // Read by pickNext, which must not re-create itself when the mode flips.
+  const enhanceStep = useRef(0);
+  const smartRef = useRef(smart);
+  smartRef.current = smart;
+
+  /** off -> shuffle -> smart shuffle -> off. One control, three answers. */
+  const cycleShuffle = useCallback(() => {
+    if (!shuffle) {
+      setShuffle(true);
+      setSmart(false);
+    } else if (!smart) {
+      setSmart(true);
+    } else {
+      setShuffle(false);
+      setSmart(false);
+    }
+    enhanceStep.current = 0;
+  }, [shuffle, smart]);
   useEffect(() => writeDeckPref('repeat', repeat), [repeat]);
   useEffect(() => {
     if (!isMobile) writeDeckPref('volume', String(Math.round(volume)));
@@ -154,10 +194,32 @@ export function Player({
   // here because the audio loader below has to consult it - a remote must
   // never fetch the file it is not playing, which on a phone would be a whole
   // track pulled over the network for nothing.
+  /*
+   * NOT gated on `connect.connected`, and that is the whole point.
+   *
+   * "My socket is down" and "nobody else is playing" are different facts, and
+   * conflating them cost a listener their music. A phone that has been asleep
+   * wakes with a dead socket: connected goes false while activeDeviceId still
+   * correctly names the desktop. Under the old test the phone then believed it
+   * was an ordinary local player, and every symptom followed from that one
+   * belief - it showed its own idle state (paused, though the desktop was
+   * playing), its transport drove local audio so the skip buttons fell back to
+   * `canSkip ? skip : undefined` and went dead against an empty local queue,
+   * and pressing play started a local play. Then the socket reconnected, the
+   * report effect saw `playing` true with another device holding the seat, and
+   * did the one thing it is built to do: transferred the seat here, releasing
+   * the desktop. Nothing was playing on the phone either, so the music simply
+   * stopped - and the desktop, now a remote, rendered the hub's optimistic
+   * `playing: true` while silent.
+   *
+   * The seat is the last thing we were told, and it stays true until we are
+   * told otherwise. It is React state tied to the session, so a fresh launch
+   * starts null (local, correct) and a reconnect replaces it with the truth.
+   */
   const remoteOnly =
-    connect.connected &&
-    connect.session?.activeDeviceId != null &&
-    connect.session.activeDeviceId !== connect.thisDeviceId;
+    connect.activeDeviceId != null && connect.activeDeviceId !== connect.thisDeviceId;
+  /** A remote whose socket is down cannot command anything - see the transport. */
+  const remoteAdrift = remoteOnly && !connect.connected;
   const remoteOnlyRef = useRef(remoteOnly);
   remoteOnlyRef.current = remoteOnly;
   const listLoading = libraryLoading || scanning;
@@ -313,7 +375,17 @@ export function Player({
   /** How long a frozen clock is tolerated before reaching for the source. */
   const STALL_GRACE_MS = 1600;
   /** Waits between reloads, then giving up honestly. */
-  const RETRY_BACKOFF_MS = [400, 1500, 4000];
+  /**
+ * How long the rack waits for the tapping to stop before re-colouring.
+ *
+ * The effects are applied by ffmpeg ON THE SERVER, so a change can never be
+ * heard without fetching the stream again - there is no client-side DSP to
+ * turn a knob on. This does not make that fetch faster; it makes sure a run of
+ * changes only pays for it once.
+ */
+const RECOLOUR_COALESCE_MS = 320;
+
+const RETRY_BACKOFF_MS = [400, 1500, 4000];
   const MAX_RELOADS_PER_TRACK = 3;
 
   /** The warning buzz's visible half: whichever transport is on screen - the
@@ -419,16 +491,57 @@ export function Player({
    * applies effects), so reloading would restart the song to no purpose.
    */
   const rack = useEffects();
-  const rackWas = useRef(rack);
+  // The hi-fi chain re-colours in place by the same mechanism. Object identity
+  // is the change signal, same as the rack's array identity.
+  const chain = useFxChain();
+  /**
+   * How much faster the chain is playing, for the timeline.
+   *
+   * A ref rather than the value itself: the four timelineDuration() callers
+   * below sit inside event handlers and crossfade bookkeeping that capture
+   * their scope once, so reading `chain` there would give whatever it was when
+   * the handler was made. The effect also recomputes the CURRENT duration, so
+   * turning speed on re-lengths the bar immediately instead of waiting for the
+   * reload to report new metadata.
+   */
+  const rateRef = useRef(1);
   useEffect(() => {
-    const before = rackWas.current;
+    rateRef.current = chainRate(chain);
+    const track = liveRef.current.track;
+    if (track) setDuration(timelineDuration(activeAudio()?.duration ?? 0, track.duration, rateRef.current));
+  }, [chain]);
+  const rackWas = useRef(rack);
+  const chainWas = useRef(chain);
+  const recolourTimer = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    const beforeRack = rackWas.current;
+    const beforeChain = chainWas.current;
     rackWas.current = rack;
-    if (before === rack) return;
+    chainWas.current = chain;
+    if (beforeRack === rack && beforeChain === chain) return;
     if (!liveRef.current.track || !isRemotePath(liveRef.current.track.path)) return;
-    resumeCount.current = 0;
-    void resumeInPlace();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the rack is the trigger; resumeInPlace is redefined every render
-  }, [rack]);
+
+    // Coalesce a burst of changes into ONE reload.
+    //
+    // Building a sound means stacking several pedals in a row, and every toggle
+    // used to throw the open connection away and make the server start
+    // transcoding again from the current position. Three quick taps cost three
+    // reloads, each one interrupting the last before it had finished buffering,
+    // so the rack felt slowest exactly when it was being used hardest. Waiting
+    // for the tapping to stop turns that into a single reload.
+    //
+    // Short enough that a single deliberate toggle still feels immediate.
+    window.clearTimeout(recolourTimer.current);
+    recolourTimer.current = window.setTimeout(() => {
+      recolourTimer.current = undefined;
+      if (!liveRef.current.track || !isRemotePath(liveRef.current.track.path)) return;
+      resumeCount.current = 0;
+      void resumeInPlace();
+    }, RECOLOUR_COALESCE_MS);
+
+    return () => window.clearTimeout(recolourTimer.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the rack and chain are the triggers; resumeInPlace is redefined every render
+  }, [rack, chain]);
 
   /** Arm the ladder. Idempotent: an episode already running keeps its timer. */
   const noteStall = () => {
@@ -517,6 +630,10 @@ export function Player({
       // Seed the EQ filters with the stored curve, and the graph with the
       // sound settings in force.
       analyserRef.current.setEqGains(eqGainsRef.current);
+      // The graph is built on the first gesture, which is usually mid-track:
+      // without this seed the first song plays unlevelled and only its
+      // successor gets the treatment.
+      analyserRef.current.setTrackGain(trackGainRef.current);
       analyserRef.current.setDynamics(playbackRef.current.nightMode);
       analyserRef.current.setMono(playbackRef.current.mono);
       // Dev-only: the graph on the window, so a driven browser can assert
@@ -766,6 +883,26 @@ export function Player({
   // repeat-one restarts it, so every spin is logged. Server only - local
   // listening has no account to write history against.
   const { session: playSession, renew: renewSession } = useServerSession();
+
+  /*
+   * The enhancer pool follows the queue. Primed on a queue change rather than
+   * at pick time because a track change is the worst possible moment to wait
+   * on a network round trip; by the time shuffle reaches for one it is already
+   * in hand. Cleared whenever the mode is off, so nothing stale survives a
+   * toggle.
+   */
+  useEffect(() => {
+    if (!shuffle || !smart) {
+      clearEnhancers();
+      return;
+    }
+    void primeEnhancers(
+      playSession,
+      queue,
+      (id) => libraryTracks.find((t) => trackIdFromPath(t.path) === id),
+      (path) => trackIdFromPath(path),
+    );
+  }, [shuffle, smart, queue, playSession, libraryTracks]);
   const playSessionRef = useRef(playSession);
   playSessionRef.current = playSession;
   const renewSessionRef = useRef(renewSession);
@@ -803,6 +940,26 @@ export function Player({
   useEffect(() => {
     analyserRef.current?.setEqGains(eqGains);
   }, [eqGains]);
+
+  /*
+   * Volume levelling. The table is the server's measurements; the gain is
+   * this track's distance from the target, already capped by its own true
+   * peak so a boost cannot clip - see loudness.ts.
+   *
+   * Applied on the meter's own stage rather than by touching the fader, so
+   * the volume control still means what it says and a fade still fades from
+   * wherever the listener left it.
+   */
+  useLoudnessTable(playSession);
+  const loudnessMode = useLoudnessMode();
+  const trackGain = gainFor(track ?? null, libraryTracks);
+  const trackGainRef = useRef(trackGain);
+  trackGainRef.current = trackGain;
+  useEffect(() => {
+    analyserRef.current?.setTrackGain(trackGain);
+    // loudnessMode is not read here - it is already folded into trackGain -
+    // but a mode change with the same track must still re-push.
+  }, [trackGain, loudnessMode, track]);
 
   // The sound settings ride the graph the same way. Before the first gesture
   // there is no graph; ensureMeter seeds it with these on creation.
@@ -886,13 +1043,26 @@ export function Player({
         // that only fires while the deck is genuinely advancing.
         lastGoodPos.current = audio.currentTime;
         noteFlowing();
+        // Where you are, for the account rather than this device. Throttled
+        // inside recordResume, and only from the deck that is actually
+        // advancing - so a crossfade's idle deck never reports a position
+        // nobody is listening to.
+        const here = liveRef.current.track;
+        if (here) {
+          void recordResume({
+            path: here.path,
+            position: audio.currentTime,
+            title: here.title,
+            artist: here.artist,
+          });
+        }
         // The crossfade watches the clock from here: the one place the active
         // deck's remaining time is always fresh.
         tickRef.current(audio);
       };
       const onMeta = () => {
         if (isActive()) {
-          setDuration(timelineDuration(audio.duration, liveRef.current.track?.duration));
+          setDuration(timelineDuration(audio.duration, liveRef.current.track?.duration, rateRef.current));
         }
       };
       // Through the ref: this listener is bound once, the queue changes often.
@@ -1119,7 +1289,16 @@ export function Player({
     // Mirroring another device: show its song, fetch nothing. The strip exists
     // here to display progress and send commands, and buffering a file this
     // device will not play is pure cost.
-    if (remoteOnlyRef.current) return;
+    //
+    // EXCEPT when a resume is pending for THIS track: that means this device is
+    // taking playback OVER - a Connect hand-off (becomeActive) or a jam follow -
+    // so it will play the file. `remoteOnly` is derived from the hub's
+    // activeDeviceId, and the becomeActive frame can beat the state update that
+    // flips it false; bailing here on that stale flag is exactly why a
+    // handed-to device would show the song but sit silent (it loads nothing, and
+    // the [track]-keyed effect never re-runs once the flag clears). Loading is
+    // right - the resume effect seeks and plays the moment it lands.
+    if (remoteOnlyRef.current && resumeRef.current?.trackId !== trackIdFromPath(track.path)) return;
     // A track a crossfade already carried onto the other deck arrives here
     // pre-played: the handover flipped the decks and handed the track up, so
     // there is nothing to load - loading would start it over from the top.
@@ -1147,7 +1326,7 @@ export function Player({
       // Seed the timeline from the indexed metadata immediately. Android may
       // later describe a streamed response as infinitely long; onMeta keeps
       // this finite value instead of replacing it with that sentinel.
-      setDuration(timelineDuration(0, track.duration));
+      setDuration(timelineDuration(0, track.duration, rateRef.current));
       // Aborted again here, not just at the effect's top: a blend can begin in
       // the gap the await opened, off the old track's last timeupdates.
       abortCrossfadeRef.current();
@@ -1501,6 +1680,19 @@ export function Player({
         const fresh = pool.filter((i) => !recent.has(queue[i]!.path));
         if (fresh.length > 0) pool = fresh;
       }
+      /*
+       * Smart shuffle spends an enhancer on every fourth step: a song the
+       * server says belongs in this queue but is not in it. Counted, not
+       * rolled - a coin flip clusters, and two enhancers back to back would
+       * read as the app taking the queue over rather than adding to it.
+       */
+      if (playbackRef.current.smartShuffle && smartRef.current) {
+        const extra = nextEnhancer(enhanceStep.current, new Set(recentRef.current));
+        enhanceStep.current += 1;
+        if (extra) return extra;
+      } else {
+        enhanceStep.current = 0;
+      }
       nextIndex = pool[Math.floor(Math.random() * pool.length)]!;
     } else {
       nextIndex = index + dir;
@@ -1520,6 +1712,29 @@ export function Player({
   const advance = (dir: 1 | -1, wrap: boolean) => {
     const next = pickNext(dir, wrap);
     if (next === null) {
+      /*
+       * Stopping is sometimes right (the end of a list nobody asked to loop)
+       * and sometimes the bug reported as "it plays one song and pauses" -
+       * and from the outside those look identical. So the stop says which it
+       * was, in the log the listener can hand over.
+       *
+       * Written here rather than in pickNext because this is the branch that
+       * actually stops the music: a null that the DJ or a rewind absorbed is
+       * not a stop and is not worth a line. Cheap and rare by construction -
+       * once per stop, not once per track.
+       */
+      if (dir === 1) {
+        const inQueue = track ? queue.findIndex((t) => t.path === track.path) : -1;
+        recordDiag(
+          'queue',
+          queue.length === 0
+            ? 'stopped: the queue was empty (the surface that started this play passed no list)'
+            : inQueue === -1
+              ? `stopped: the playing track is not in its own queue of ${queue.length} ` +
+                '(paths disagree - the list and the pick came from different sources)'
+              : `stopped: reached the end of a ${queue.length}-track queue at position ${inQueue + 1}`,
+        );
+      }
       // The element too, not just the bar: reached from a skip as well as
       // from a natural end, and a skip's deck is still mid-song. Intent drops
       // first: the pause event this fires must read as ours, not the system's.
@@ -1794,7 +2009,7 @@ export function Player({
         // shared path re-asserts the fader on whichever deck now answers.
         applyVolume();
         setPosition(nowActive.currentTime);
-        setDuration(timelineDuration(nowActive.duration, flight.next.duration));
+        setDuration(timelineDuration(nowActive.duration, flight.next.duration, rateRef.current));
         wantPlaying.current = true;
         setPlaying(true);
         adoptedPath.current = flight.next.path;
@@ -1854,7 +2069,7 @@ export function Player({
         seatOf(nowActive)?.setLevel(1);
         applyVolume();
         setPosition(0);
-        setDuration(timelineDuration(nowActive.duration, warm.next.duration));
+        setDuration(timelineDuration(nowActive.duration, warm.next.duration, rateRef.current));
         wantPlaying.current = true;
         setPlaying(true);
         void nowActive.play().catch(() => {
@@ -2367,21 +2582,36 @@ export function Player({
   // local deck so a remote's playback holds the bar here too.
   const { dismissed, shellRef, draggedRef } = usePlayerDismiss(dispPlaying);
 
+  /*
+   * A remote with no socket can send nothing. Handing it live-looking controls
+   * would make every press a silent no-op, so they are withheld (undefined =
+   * disabled) until the connection is back. Disabled-and-honest beats
+   * enabled-and-inert; the alternative that caused this bug was worse than
+   * both, because it made the controls drive local audio instead.
+   */
   const onPlayingChangeDisp = activeElsewhere
-    ? (p: boolean) => connect.sendCommand({ action: p ? 'play' : 'pause' })
+    ? remoteAdrift
+      ? undefined
+      : (p: boolean) => connect.sendCommand({ action: p ? 'play' : 'pause' })
     : setPlayingState;
   const onSkipBackDisp = activeElsewhere
-    ? () => connect.sendCommand({ action: 'prev' })
+    ? remoteAdrift
+      ? undefined
+      : () => connect.sendCommand({ action: 'prev' })
     : canSkip
       ? skipBack
       : undefined;
   const onSkipForwardDisp = activeElsewhere
-    ? () => connect.sendCommand({ action: 'next' })
+    ? remoteAdrift
+      ? undefined
+      : () => connect.sendCommand({ action: 'next' })
     : canSkip
       ? skipForward
       : undefined;
   const onSeekEndDisp = activeElsewhere
-    ? (s: number) => connect.sendCommand({ action: 'seek', positionMs: Math.round(s * 1000) })
+    ? remoteAdrift
+      ? () => {}
+      : (s: number) => connect.sendCommand({ action: 'seek', positionMs: Math.round(s * 1000) })
     : commitSeek;
   const onScrubDisp = activeElsewhere ? () => {} : onScrub;
 
@@ -2429,6 +2659,7 @@ export function Player({
         onSkipBackDisp={onSkipBackDisp}
         onSkipForwardDisp={onSkipForwardDisp}
         shuffle={shuffle}
+        smart={smart}
         setShuffle={setShuffle}
         repeat={repeat}
         setRepeat={setRepeat}
@@ -2491,7 +2722,8 @@ export function Player({
           onScrub={onScrub}
           commitSeek={commitSeek}
           shuffle={shuffle}
-          setShuffle={setShuffle}
+          smart={smart}
+          cycleShuffle={cycleShuffle}
           canSkip={canSkip}
           skipBack={skipBack}
           skipForward={skipForward}

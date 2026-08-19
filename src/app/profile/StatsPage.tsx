@@ -11,6 +11,7 @@ import {
   User,
 } from '@glacier/icons';
 import { useEffect, useMemo, useState } from 'react';
+import { useRefreshNonce } from '../nav/pageRefresh.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { Button, StatTile, TimeSeriesChart } from '@glacier/react';
@@ -64,6 +65,8 @@ export function StatsPage({
   onOpenArtist: (artist: string) => void;
 }) {
   const { session } = useServerSession();
+  // Pull-to-refresh re-runs the fetch below - see nav/pageRefresh.tsx.
+  const refreshNonce = useRefreshNonce();
   const { tracks } = useLibrary();
   const [range, setRange] = useState<StatsRange>('week');
   const [summary, setSummary] = useState<StatsSummary | null>(null);
@@ -89,7 +92,7 @@ export function StatsPage({
         if (!ctrl.signal.aborted) setState('error');
       });
     return () => ctrl.abort();
-  }, [session, range]);
+  }, [session, range, refreshNonce]);
 
   useEffect(() => {
     if (!more || yearDays !== null || !session) return;
@@ -100,7 +103,7 @@ export function StatsPage({
         // The fold simply opens without the heatmap.
       });
     return () => ctrl.abort();
-  }, [more, yearDays, session]);
+  }, [more, yearDays, session, refreshNonce]);
 
   // The summary names tracks by server id; artwork lives on the synced
   // library's Track rows. One map bridges them for every cover on the page.

@@ -427,3 +427,24 @@ mod tests {
         assert!(cosine(&low, &nearby) > cosine(&low, &high));
     }
 }
+
+/// `GET /api/tempo` - every known BPM, as `[trackId, bpm]` rows.
+///
+/// The looper needs a beat grid to cut a song on, and the server has already
+/// measured one for most of the library (tempo.rs). Publishing it saves every
+/// client re-deriving the same number from the same audio - and a client's
+/// own guess from a lossy transcode would be the worse of the two.
+pub async fn tempo_table(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> ApiResult {
+    crate::auth::require_caller(&state.db, &headers)
+        .map_err(|s| (s, "sign in first".to_string()))?;
+    let rows: Vec<serde_json::Value> = state
+        .db
+        .all_bpm()
+        .into_iter()
+        .map(|(id, bpm)| json!([id, (bpm * 10.0).round() / 10.0]))
+        .collect();
+    Ok(Json(json!({ "tracks": rows })))
+}

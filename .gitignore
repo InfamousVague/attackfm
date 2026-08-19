@@ -48,6 +48,12 @@ src-tauri/gen/android/app/src/main/java/com/mattssoftware/attackfm/generated/
 !src-tauri/gen/android/app/src/main/res/values-sw600dp/**
 !src-tauri/gen/android/app/src/main/res/xml/
 !src-tauri/gen/android/app/src/main/res/xml/**
+# The app's build script is no longer purely generated: it carries the release
+# signingConfigs that make a Play-acceptable bundle. Untracked, that wiring
+# lived on one Mac's disk and a fresh clone silently produced unsigned
+# releases again. The secrets it READS stay out - keystore.properties is
+# ignored above and the .jks lives outside the repo entirely.
+!src-tauri/gen/android/app/build.gradle.kts
 
 # Song data never belongs in this repo. The library lives in the OS music
 # folder or on the streaming server; the one time audio appeared here it was
@@ -74,3 +80,9 @@ __pycache__/
 # The server's runtime database lives here in local dev; it is a
 # listener's data, never the repo's.
 data/
+dist-site/
+
+# Screenshot-capture seed: holds a live session + stream token, must stay
+# untracked AND ignored - it once sat untracked-but-not-ignored in this shared
+# tree, one `git add -A` away from a public repo.
+public/__seed.json

@@ -14,6 +14,7 @@
 //! /api/curator/pulls simply loses that line, never the page.
 
 import { Modal, Spinner, Text } from '@glacier/react';
+import { useRefreshNonce } from '../nav/pageRefresh.tsx';
 import {
   AudioLines,
   AudioWaveform,
@@ -111,6 +112,8 @@ export function BoothPage({
   onOpenDj: () => void;
 }) {
   const { session } = useServerSession();
+  // Pull-to-refresh re-runs the fetch below - see nav/pageRefresh.tsx.
+  const refreshNonce = useRefreshNonce();
   const { track: playing } = useNowPlayingMotion();
   const chat = useDjChat();
 
@@ -140,7 +143,7 @@ export function BoothPage({
       window.clearInterval(timer);
       ctrl.abort();
     };
-  }, [session]);
+  }, [session, refreshNonce]);
 
   // On the platter: the song playing right now, as the DJ hears it. The
   // analysis is server-cached for a week, so following the listener from

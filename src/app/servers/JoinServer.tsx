@@ -10,6 +10,7 @@ import { Button, Field, Input, OtpField, Text } from '@glacier/react';
 import { LogIn, Link2 } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { useRegistry } from './registrySession.tsx';
+import { AccountSetup } from '../profile/RegistryFriends.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { previewInvite, type InvitePreview } from './registry.ts';
 import { enterServer } from '../server.ts';
@@ -23,7 +24,7 @@ function codeFrom(text: string): string {
 }
 
 export function JoinServer() {
-  const { session: registry } = useRegistry();
+  const { session: registry, apply: applyRegistry } = useRegistry();
   const { applySession } = useServerSession();
   const [value, setValue] = useState('');
   const [preview, setPreview] = useState<InvitePreview | null>(null);
@@ -59,13 +60,21 @@ export function JoinServer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- subscribe once; look reads the code it is handed
   }, []);
 
-  const join = async () => {
-    if (!registry || !preview) return;
+  /**
+   * Join, using whichever identity we have.
+   *
+   * Takes the session as an argument rather than reading `registry` from scope
+   * because the account may have been made a moment ago, in the card below: the
+   * provider's state has not necessarily re-rendered this closure yet, and
+   * joining with the stale null is the bug this whole path is about.
+   */
+  const join = async (identity = registry) => {
+    if (!identity || !preview) return;
     const code = codeFrom(value).toUpperCase();
     setBusy(true);
     setError(null);
     try {
-      const session = await enterServer(preview.serverUrl, registry.token, code);
+      const session = await enterServer(preview.serverUrl, identity.token, code);
       // Adopting the session drops us into that server's library at once.
       applySession(session);
     } catch (err) {
@@ -127,9 +136,32 @@ export function JoinServer() {
             Join <strong>{preview.serverName || 'a server'}</strong>
             {preview.from ? ` — invited by ${preview.from}` : ''}?
           </Text>
-          <Button variant="solid" size="sm" onClick={() => void join()} disabled={busy}>
-            <LogIn size={15} /> {busy ? 'Joining…' : 'Join'}
-          </Button>
+          {registry ? (
+            <Button variant="solid" size="sm" onClick={() => void join()} disabled={busy}>
+              <LogIn size={15} /> {busy ? 'Joining…' : 'Join'}
+            </Button>
+          ) : (
+            <>
+              {/* Someone arriving on an invite link usually has no account yet -
+                  the invite IS their first contact with AttackFM. This used to
+                  render a Join button that returned immediately and silently
+                  when there was no identity to join WITH, so the invite looked
+                  broken. Make the account here and carry straight on into the
+                  server, rather than sending them away to find a settings page
+                  and then find this screen again. */}
+              <Text size="sm" tone="muted">
+                You need an AttackFM account to join. It works on every server, and it is free.
+              </Text>
+              <AccountSetup
+                onDone={(made) => {
+                  applyRegistry(made);
+                  // Straight through with the identity just created; waiting for
+                  // the provider to re-render would make them press Join twice.
+                  void join(made);
+                }}
+              />
+            </>
+          )}
         </div>
       )}
 

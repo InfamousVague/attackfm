@@ -1,0 +1,14 @@
+{
+  "id": "looper",
+  "name": "Looper",
+  "version": "0.2.1",
+  "description": "Sample any song into sixteen coloured pads, cut on its own beat, and play the pieces in time with each other.",
+  "author": "AttackFM",
+  "tags": [
+    "Sound",
+    "Instrument"
+  ],
+  "entry": "plugin.ts",
+  "public": true,
+  "requiresServer": true
+}

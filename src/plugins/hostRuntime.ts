@@ -24,11 +24,13 @@ import * as tauriBridge from '../app/core/tauri.ts';
 import * as platform from '../app/core/platform.ts';
 import * as importsBridge from './importsBridge.ts';
 import { openExternal } from '../app/core/openExternal.ts';
+import { useNowPlayingMotion } from '../app/player/nowPlayingMotion.tsx';
 import { useLibrary } from '../app/library/library.tsx';
 import { useLibrarySync } from '../app/library/librarySync.tsx';
 import { useServerSession } from '../app/servers/serverSession.tsx';
 import { usePlaylists } from '../app/playlists/playlists.tsx';
 import { EQ_BANDS, EQ_PRESETS, useEqualizer } from '../app/player/equalizer.tsx';
+import * as fxChain from '../app/player/fxChain.ts';
 
 export const HOST_API_VERSION = 1;
 
@@ -58,6 +60,14 @@ export function installHostRuntime(): PluginHost {
       '@attackfm/app/importsBridge': importsBridge,
       '@attackfm/app/openExternal': { openExternal },
       '@attackfm/app/library': { useLibrary },
+      // What is playing right now, read-only. A plugin acting on the current
+      // song needs to know which song that is, and the sheet passes everything
+      // as props rather than through a context, so this is the seam.
+      '@attackfm/app/nowPlaying': { useNowPlayingMotion },
+      // The hi-fi chain: read, edit, toggle. Core owns the console that edits
+      // it; this is the seam that lets a plugin put its own nodes in the same
+      // signal path - the Pedals board is the one that does.
+      '@attackfm/app/fxChain': fxChain,
       '@attackfm/app/librarySync': { useLibrarySync },
       '@attackfm/app/serverSession': { useServerSession },
       // Added for the 2026-08 plugin batch (additive - the table only grows).

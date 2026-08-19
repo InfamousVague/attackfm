@@ -369,3 +369,551 @@ body [class*='_panel_']:has(> .dlPanel) {
   padding-block-end: calc(var(--app-player-height) + var(--app-nav-height, 0px));
 }
 
+
+/* The hi-fi chain's one line of core chrome, under the EQ it feeds into.
+   Present only while a chain exists; the row IS the guarantee that a
+   persistent server-side process always has a visible switch, even with the
+   plugin that edits it removed. */
+.eqFxChainRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+  margin-block-start: var(--glacier-space-2);
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+}
+
+/* ── The sound console ──────────────────────────────────────────────────────
+   One popover, three things: a header that switches rooms, the room, and the
+   two controls that act on the whole chain.
+
+   THE CONSOLE OWNS ITS SCROLLING, not the popover panel around it. That is the
+   fix for a whole family of problems rather than a preference. While the panel
+   scrolled, the header had to be a sticky bar, a sticky bar needs an opaque
+   backdrop to hide the rows sliding under it, and that backdrop is a second
+   dark pane laid over a panel that is already glass - so it read as a block.
+   It also could not cover the panel's own padding (a sticky box cannot rise
+   past its containing block), which left a strip at the top where rows showed
+   through, and it stopped short of the panel's sides for the same reason.
+
+   Scoping the scroll to the body makes all of that go away: nothing ever
+   passes behind the header, so the header needs no material at all. */
+.soundConsole {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  min-inline-size: 17rem;
+  min-block-size: 0;
+}
+
+/* A header, not a bar. No background, no blur, no bleed - there is nothing
+   behind it to hide. */
+.soundConsole__tabs {
+  flex: none;
+}
+
+.soundConsole__body {
+  flex: 1;
+  min-block-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  overflow-y: auto;
+  /* Capped just below what the panel can hold, so the panel never needs to
+     scroll as well - two nested scrollers in one popover is a surface where a
+     drag does something different depending on where it started. The panel
+     caps at min(70dvh, 34rem); this leaves room for its padding, the header
+     above, and the back button the player strip puts above that. */
+  max-block-size: min(58dvh, 26rem);
+  /* A flick that reaches the end stays here rather than chaining to the page
+     underneath and dismissing the popover on the way. */
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  /* No visible scrollbar, like every other scroller in the app. `thin` was the
+     one outlier here, and it is not merely inconsistent: a thin scrollbar is a
+     request for a CLASSIC one, which takes layout width. The header sits
+     outside this scroller and does not lose that width, so wherever the
+     platform honours the request the body's right edge pulls in and the
+     popover looks padded further on one side than the other. */
+  scrollbar-width: none;
+}
+
+.soundConsole__body::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── A room: half the chain, and the shelf it is built from ────────────────── */
+.fxRoom {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.fxRoom__head {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding-block-end: var(--glacier-space-2);
+  border-block-end: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+/* The count gives up its space first when a long name pushes the row. */
+.fxRoom__head > :nth-child(2) {
+  margin-inline-start: auto;
+}
+
+.fxRoom__chain,
+.fxShelf__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.fxRoom__box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-glass-thin);
+  border: var(--glacier-hairline) solid var(--glacier-glass-border);
+  /* Pedals paint their own tint over this; rack boxes stay uniform, which is
+     the difference between a pedalboard and a rack of matched units. */
+  transition: background 200ms ease, border-color 200ms ease;
+}
+
+.fxRoom__box:not([data-on='true']) {
+  opacity: 0.72;
+}
+
+.fxRoom__boxHead {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+/* The whole row folds and unfolds, not a chevron the size of a fingernail. */
+.fxRoom__open {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.fxRoom__icon,
+.fxShelf__icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border-radius: var(--glacier-radius-md);
+  background: color-mix(in oklch, var(--glacier-text) 9%, transparent);
+  color: var(--glacier-text-muted);
+}
+
+.fxRoom__label,
+.fxShelf__text {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.fxRoom__name,
+.fxShelf__name {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The folded line carries the setting, so a collapsed chain is still readable
+   as a chain rather than a list of names. */
+.fxRoom__summary,
+.fxShelf__blurb {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A box the connected server cannot compile: it sits in the chain and is
+   dropped from the audio, which without a marker looks exactly like a box that
+   works but sounds weak. Struck through rather than hidden - the box is real,
+   and the server it needs may be one update away. */
+.fxRoom__name[data-unsupported='true'],
+.fxShelf__name[data-unsupported='true'] {
+  color: var(--glacier-text-muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.fxRoom__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  padding-block-start: var(--glacier-space-1);
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+/* Fixed columns so every knob's label, rail and readout line up down the box,
+   whatever the parameters are called. The rail is the one that yields. */
+.fxRoom__knob {
+  display: grid;
+  grid-template-columns: 4.4rem minmax(0, 1fr) 3.6rem;
+  gap: var(--glacier-space-2);
+  align-items: center;
+}
+
+.fxRoom__value {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.fxRoom__boxTools {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  padding-block-start: var(--glacier-space-1);
+}
+
+.fxRoom__spacer {
+  flex: 1;
+}
+
+.fxRoom__tool {
+  display: grid;
+  place-items: center;
+  inline-size: 1.9rem;
+  block-size: 1.9rem;
+  border: 0;
+  border-radius: var(--glacier-radius-md);
+  background: none;
+  color: var(--glacier-text-muted);
+  cursor: pointer;
+}
+
+.fxRoom__tool:hover:not(:disabled) {
+  background: var(--glacier-hover);
+  color: var(--glacier-text);
+}
+
+.fxRoom__tool:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* ── The shelf ──────────────────────────────────────────────────────────────
+   One row per box rather than a grid of tiles. At this width auto-fill gives
+   two columns of near-squares whose blurbs have nowhere to go, and the blurb is
+   the half that says what the thing is FOR. */
+.fxShelf {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding-block-start: var(--glacier-space-2);
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+/* Search and the drawer rail. Not sticky, and so not a material.
+   It was pinned to the top of the scroller, which meant it needed an opaque
+   backing to hide the rows sliding under it - and over a panel that is already
+   glass that backing is a second pane, which reads as a slab across the middle
+   of the console. Exactly the same trade the room switcher lost. Keeping it in
+   reach is not worth a permanent block: the shelf it filters is directly below
+   it, so scrolling back to it is the same gesture as scrolling to the top of
+   what it is filtering. */
+.fxShelf__filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.fxShelf__search {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  color: var(--glacier-text-muted);
+}
+
+.fxShelf__search > :nth-child(2) {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.fxShelf__clear {
+  display: grid;
+  place-items: center;
+  inline-size: 1.6rem;
+  block-size: 1.6rem;
+  border: 0;
+  border-radius: var(--glacier-radius-md);
+  background: none;
+  color: var(--glacier-text-muted);
+  cursor: pointer;
+}
+
+.fxShelf__clear:hover {
+  background: var(--glacier-hover);
+  color: var(--glacier-text);
+}
+
+/* Eight segments run together if they are made to share the panel's width, so
+   the rail scrolls sideways instead and keeps each label readable. */
+.fxShelf__rail {
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.fxShelf__rail::-webkit-scrollbar {
+  display: none;
+}
+
+.fxShelf__item {
+  inline-size: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-2);
+  border: var(--glacier-hairline) solid var(--glacier-glass-border);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-glass-thin);
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.fxShelf__item:hover:not(:disabled) {
+  background: var(--glacier-hover);
+}
+
+.fxShelf__item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.fxShelf__taken {
+  font-weight: 400;
+  color: var(--glacier-text-muted);
+}
+
+/* ── Whole-chain controls ───────────────────────────────────────────────────
+   A/B and saving belong to neither room: both read and write the entire chain,
+   pedals included. Below the room, where that is plain. */
+.fxSaved {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding-block-start: var(--glacier-space-2);
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.fxSaved__row {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+.fxSaved__toggle {
+  margin-inline-start: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  padding: var(--glacier-space-1) var(--glacier-space-2);
+  border: 0;
+  border-radius: var(--glacier-radius-md);
+  background: none;
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+  cursor: pointer;
+}
+
+.fxSaved__toggle:hover {
+  background: var(--glacier-hover);
+  color: var(--glacier-text);
+}
+
+.fxSaved__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.fxSaved__save {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.fxSaved__save > :first-child {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.fxSaved__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.fxSaved__item {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}
+
+.fxSaved__load {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-2);
+  border: 0;
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-glass-thin);
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.fxSaved__load:hover {
+  background: var(--glacier-hover);
+}
+
+.fxSaved__name {
+  flex: 1;
+  min-inline-size: 0;
+  font-size: var(--glacier-font-size-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fxSaved__count {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.fxSaved__drop {
+  display: grid;
+  place-items: center;
+  inline-size: 1.9rem;
+  block-size: 1.9rem;
+  border: 0;
+  border-radius: var(--glacier-radius-md);
+  background: none;
+  color: var(--glacier-text-muted);
+  cursor: pointer;
+}
+
+.fxSaved__drop:hover {
+  background: var(--glacier-hover);
+  color: var(--glacier-text);
+}
+
+/* ── What just landed ───────────────────────────────────────────────────────
+   The shelf is long, so adding from the bottom of it scrolls you back to a
+   chain that has gained a box somewhere. A ring rather than a border, so
+   nothing reflows while it pulses. Scoped to the room: the plugin page this
+   came from declared a bare [data-fresh] into the whole document. */
+@keyframes afmFxLanded {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50% { box-shadow: 0 0 0 2px var(--glacier-accent-9); }
+}
+
+.fxRoom__box[data-fresh='true'] {
+  animation: afmFxLanded 900ms ease-in-out 6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fxRoom__box[data-fresh='true'] {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--glacier-accent-9);
+  }
+}
+
+/* ── The filters room ───────────────────────────────────────────────────────
+   Same shelf furniture as the rack's, with one addition the rack does not
+   need: a filter is a state the chain is IN, so the row that is on has to say
+   so. The rack's rows are all equally "in the chain" and need no such mark. */
+.fxFilters__clearRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  flex-wrap: wrap;
+}
+
+.fxFilters__clear {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  padding: var(--glacier-space-1) var(--glacier-space-2);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-md);
+  background: none;
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+  cursor: pointer;
+}
+
+.fxFilters__clear:hover:not(:disabled) {
+  background: var(--glacier-hover);
+  color: var(--glacier-text);
+}
+
+.fxFilters__clear:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.fxShelf__item[data-active='true'] {
+  border-color: var(--glacier-accent-9);
+  background: color-mix(in oklch, var(--glacier-accent-9) 18%, var(--glacier-glass-thin));
+}
+
+.fxShelf__icon[data-active='true'] {
+  background: var(--glacier-accent-9);
+  color: var(--glacier-accent-contrast);
+}
+
+.fxShelf__on {
+  flex: none;
+  padding: 2px var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-accent-9);
+  color: var(--glacier-accent-contrast);
+  font-size: var(--glacier-font-size-xs);
+  font-weight: 600;
+}
+
+/* A tab label and its count. Inline-flex so the badge sits on the text's
+   baseline row rather than stretching the segment, and a small gap so the
+   number reads as attached to the word rather than as part of it. */
+.soundConsole__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}

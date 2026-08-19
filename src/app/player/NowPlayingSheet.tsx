@@ -1,42 +1,21 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { installSheetDismiss } from './playerDismiss.ts';
 import { fireNativeHaptic } from '../core/haptics.ts';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { createPortal } from 'react-dom';
-import {
-  ContextMenu,
-  IconButton,
-  MenuItem,
-  Popover,
-  SeekBar,
-  useBeat,
-  useLiveLevels,
-} from '@glacier/react';
+import { ContextMenu, CounterBadge, IconButton, MenuItem, Popover, SeekBar, SegmentedControl, Switch, useBeat, useLiveLevels } from '@glacier/react';
 import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
-import {
-  AudioLines,
-  Check,
-  ChevronDown,
-  Disc3,
-  EyeOff,
-  Heart,
-  Image as ImageIcon,
-  ListMusic,
-  ListPlus,
-  Mic,
-  Pause,
-  Play,
-  Repeat,
-  Repeat1,
-  Shuffle,
-  SkipBack,
-  SkipForward,
-  Volume2,
-} from '@glacier/icons';
+import { AudioLines, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Heart, Image as ImageIcon, ListMusic, ListPlus, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Sparkles, Volume2 } from '@glacier/icons';
 import { isMobile } from '../core/platform.ts';
+import { PluginSlot } from '../../plugins/runtime.tsx';
 import { EqPanel } from './EqPanel.tsx';
+import { FxRoom } from './FxRoom.tsx';
+import { FiltersRoom } from './FiltersRoom.tsx';
+import { FILTERS, signature } from './filters.ts';
+import { FxSaved } from './FxSaved.tsx';
+import { FX_NODES, setFxChainOn, useFxChain } from './fxChain.ts';
+import { MarqueeText } from './MarqueeText.tsx';
 import { SpinningDisc } from './SpinningDisc.tsx';
-import { NowPlayingBackdrop } from './NowPlayingBackdrop.tsx';
 import { QueuePanel } from './QueuePanel.tsx';
 import { DevicePicker } from './DevicePicker.tsx';
 import { VolumeRow } from './VolumeControl.tsx';
@@ -137,7 +116,8 @@ export function NowPlayingSheet({
   onScrub,
   commitSeek,
   shuffle,
-  setShuffle,
+  smart,
+  cycleShuffle,
   canSkip,
   skipBack,
   skipForward,
@@ -195,7 +175,10 @@ export function NowPlayingSheet({
   onScrub: (to: number) => void;
   commitSeek: (to: number) => void;
   shuffle: boolean;
-  setShuffle: Dispatch<SetStateAction<boolean>>;
+  /** Smart shuffle: enhancers mixed in. Only meaningful while shuffle is on. */
+  smart: boolean;
+  /** off -> shuffle -> smart shuffle -> off. */
+  cycleShuffle: () => void;
   canSkip: boolean;
   skipBack: () => void;
   skipForward: () => void;
@@ -336,10 +319,12 @@ export function NowPlayingSheet({
           content={npArtMenu}
         />
       ) : null}
-      {/* The lyric words run the full height of the sheet, behind the
-          controls. Drawn AFTER the clip on purpose: a canvas is a backdrop,
-          not a cover, and the words are the thing worth reading over it. */}
-      <NowPlayingBackdrop wordsOnly artwork={artwork ?? npPlaceholderArt} seed={track?.path ?? 'np'} />
+      {/* The lyric words that used to run the full height of the sheet are
+          gone. They sat over the artwork and the disc, and on a screen whose
+          whole job is the record in front of you they were reading material
+          competing with the thing being played. The Lyrics panel is still
+          here, one tap away, where lyrics are what you actually came for.
+          The backdrop itself still draws behind the app (see App.tsx). */}
       {/* A blur that rises through the bottom third, so the transport, the
           times and the title read against something settled instead of
           against whatever frame the clip happens to be on. Sits over the
@@ -426,7 +411,7 @@ export function NowPlayingSheet({
 
       <div className="npScreen__meta">
         <div className="npScreen__lines">
-          <span className="npScreen__title">{track?.title ?? ''}</span>
+          <MarqueeText className="npScreen__title" text={track?.title ?? ''} />
           {onOpenArtist && track ? (
             <button
               type="button"
@@ -495,14 +480,22 @@ export function NowPlayingSheet({
       )}
 
       <div className="npScreen__transport">
+        {/* Three states in one control: off, shuffle, smart shuffle. The
+            sparkle only appears on the third, because it is the only one that
+            adds anything to the queue - a badge that lit for ordinary shuffle
+            would be decoration promising a feature. */}
         <IconButton
           variant="ghost"
-          aria-label="Shuffle"
+          aria-label={smart ? 'Smart shuffle' : 'Shuffle'}
           aria-pressed={shuffle}
           data-on={shuffle || undefined}
-          onClick={() => setShuffle((s) => !s)}
+          data-smart={(shuffle && smart) || undefined}
+          onClick={cycleShuffle}
         >
-          <Shuffle size={20} />
+          <span className="shuffleGlyph">
+            <Shuffle size={20} />
+            {shuffle && smart && <Sparkles className="shuffleGlyph__spark" size={11} />}
+          </span>
         </IconButton>
         <IconButton variant="ghost" aria-label="Previous" disabled={!canSkip} onClick={skipBack}>
           <SkipBack size={26} fill="currentColor" />
@@ -538,9 +531,16 @@ export function NowPlayingSheet({
         <IconButton variant="ghost" aria-label="Queue" onClick={() => setNpQueue(true)}>
           <ListMusic size={20} />
         </IconButton>
+        {/* Words, not a microphone. The mic used to open this, which left
+            nothing obvious for singing along to - and a microphone is a strange
+            glyph for "show me the words" once something else on the row
+            genuinely is a microphone. */}
         <IconButton variant="ghost" aria-label="Lyrics" onClick={() => setNpLyrics(true)}>
-          <Mic size={20} />
+          <BookOpenText size={20} />
         </IconButton>
+        {/* Whatever wants to act on the song playing right now. Karaoke lands
+            here; the mic is its own. */}
+        <PluginSlot id="now-playing-actions" />
         <DevicePicker />
         <Popover
           placement="top"
@@ -553,7 +553,7 @@ export function NowPlayingSheet({
           }
         >
           <div className="eqPopover">
-            <EqPanel narrow={narrowEq} />
+            <SoundConsole narrow={narrowEq} />
           </div>
         </Popover>
         {/* No fader on a phone: volume is pinned at unity there and the
@@ -643,5 +643,169 @@ export function NowPlayingSheet({
       </div>
     </>,
     document.body,
+  );
+}
+
+/**
+ * The hi-fi chain's presence in CORE chrome, beside the EQ it composes with.
+ *
+ * The chain is edited in the console above, but a plugin can put nodes in it
+ * too (Pedals does), its state persists, and plugins can be removed - and a
+ * persistent audio process with no visible switch is the exact trap the old
+ * effects rack solved by purging itself. This row is the other solution: as
+ * long as a chain is colouring playback, the player itself says so and can
+ * turn it off, whatever built it.
+ */
+/**
+ * One door onto the whole signal path.
+ *
+ * These were two popovers - an equaliser and a pedalboard - on the reasoning
+ * that they are different instruments and burying a stomp switch under an EQ
+ * is how you fail to find it mid-song. True, but the answer was wrong: two
+ * icons for one signal chain made the third thing, the hi-fi rack, homeless,
+ * and it had to make do with a single switch at the bottom of the EQ.
+ *
+ * A segmented control fixes the finding problem better than a second icon
+ * did. One place to reach for sound, three rooms behind it, and the room you
+ * were last in is where you land next time - the chain persists, so the
+ * console should remember which end of it you were working on.
+ */
+/** The console's three rooms: the graphic EQ, the chain you build, and the
+ *  shelf of finished sounds. */
+type Room = 'eq' | 'hifi' | 'filters';
+
+export function SoundConsole({ narrow }: { narrow: boolean }) {
+  const chain = useFxChain();
+  const [room, setRoom] = useState<Room>(() => {
+    try {
+      const held = localStorage.getItem(CONSOLE_KEY);
+      // 'pedals' is what this key held while the board was the third room.
+      // Anyone whose last visit was there lands on Filters rather than on a
+      // room that no longer exists - which would otherwise silently fall back
+      // to EQ and look like the preference was never saved.
+      if (held === 'pedals') return 'filters';
+      return held === 'hifi' || held === 'filters' ? held : 'eq';
+    } catch {
+      return 'eq';
+    }
+  });
+
+  const go = (next: Room) => {
+    setRoom(next);
+    try {
+      localStorage.setItem(CONSOLE_KEY, next);
+    } catch {
+      // A storage that will not take the preference is not worth failing over.
+    }
+  };
+
+  // What is actually in the chain, so the tabs can say so at a glance rather
+  // than making somebody open each room to find out where their sound is
+  // coming from.
+  // Every live node, pedals included: the HiFi room lists the whole chain, so
+  // a count that quietly skipped half of it would disagree with the room it
+  // labels.
+  const hifiCount = chain.nodes.filter((n) => n.on).length;
+
+  // The Filters tab says which filter is on rather than how many boxes it is
+  // made of: the whole point of a filter is that its parts are not the unit
+  // anybody is thinking in.
+  const filterOn = useMemo(() => {
+    if (!chain.on || chain.nodes.length === 0) return null;
+    const now = signature(chain.nodes.map((n) => ({ t: n.t, params: n.params })));
+    return FILTERS.find((f) => signature(f.nodes) === now)?.name ?? null;
+  }, [chain]);
+
+  return (
+    <div className="soundConsole">
+      {/* A real header, outside the scroller.
+          It used to be a sticky bar inside it, which meant it needed a frosted
+          backdrop to hide the rows sliding underneath - and that backdrop is a
+          second dark pane laid over a panel that is already glass, which is
+          exactly the block it looked like. Nothing passes behind it now, so it
+          needs no material of its own. */}
+      <div className="soundConsole__tabs">
+        <SegmentedControl
+          aria-label="Sound"
+          size="sm"
+          fullWidth
+          value={room}
+          options={[
+            { value: 'eq', label: 'EQ' },
+            {
+              value: 'hifi',
+              label: (
+                <span className="soundConsole__tab">
+                  HiFi
+                  {/* A count badge does hide itself at zero, but it is said
+                      here too so the two tabs read the same way. */}
+                  {hifiCount > 0 && <CounterBadge count={hifiCount} size="sm" tone="neutral" />}
+                </span>
+              ),
+            },
+            {
+              value: 'filters',
+              label: (
+                <span className="soundConsole__tab">
+                  Filters
+                  {/* A dot, not a number: a filter is one thing or nothing, and
+                      "1" would invite the question of what two would mean.
+                      Rendered conditionally rather than leaning on count={0}:
+                      CounterBadge hides a zero COUNT, but `dot` draws the dot
+                      whatever the count is, so the tab claimed a filter was on
+                      when none was. */}
+                  {filterOn && (
+                    <CounterBadge count={1} dot tone="accent" size="sm" aria-label={`${filterOn} is on`} />
+                  )}
+                </span>
+              ),
+            },
+          ]}
+          onValueChange={(v) => go(v as Room)}
+        />
+      </div>
+      {/* The scroller. Moving it here from the popover panel is what lets the
+          header above be a header: the panel no longer scrolls, so no row ever
+          passes through its padding or behind the tabs. */}
+      <div className="soundConsole__body">
+        {room === 'eq' && (
+          <>
+            <EqPanel narrow={narrow} />
+            <FxChainRow />
+          </>
+        )}
+        {room === 'hifi' && (
+          <>
+            <FxRoom />
+            {/* Below the room, because A/B and saving act on the whole chain -
+                pedals and filters included - and hanging them inside one room
+                made them look like that room's own. */}
+            <FxSaved />
+          </>
+        )}
+        {room === 'filters' && <FiltersRoom />}
+      </div>
+    </div>
+  );
+}
+
+/** Which room of the console was last open. */
+const CONSOLE_KEY = 'attackfm-sound-console-room';
+
+function FxChainRow() {
+  const chain = useFxChain();
+  if (chain.nodes.length === 0) return null;
+  const live = chain.nodes.filter((n) => n.on).length;
+  return (
+    <div className="eqFxChainRow">
+      <span className="eqFxChainRow__label">
+        HiFi chain · {chain.on && live > 0 ? `${live} node${live === 1 ? '' : 's'}` : 'off'}
+      </span>
+      <Switch
+        checked={chain.on && live > 0}
+        onCheckedChange={(v: boolean) => setFxChainOn(v)}
+        aria-label="HiFi chain"
+      />
+    </div>
   );
 }

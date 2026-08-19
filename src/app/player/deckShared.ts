@@ -18,10 +18,24 @@ export const TRACK_ART: string | null = null;
  * element's duration when it is real, otherwise keep the duration indexed in
  * the library for this track.
  */
-export function timelineDuration(mediaDuration: number, trackDuration?: number | null): number {
+export function timelineDuration(
+  mediaDuration: number,
+  trackDuration?: number | null,
+  /**
+   * How much faster the fx chain is playing the song, 1 being untouched.
+   * See chainRate() in fxChain.ts.
+   */
+  rate = 1,
+): number {
+  // The element's own duration is already the duration of what is COMING OUT,
+  // rate included, so it must never be scaled. Only the library's number needs
+  // correcting: that describes the file on disk, and a track slowed to 0.8x
+  // runs a quarter longer than it. Without this the bar fills while the song is
+  // still playing and the remaining time counts to zero early.
   if (Number.isFinite(mediaDuration) && mediaDuration > 0) return mediaDuration;
   if (trackDuration != null && Number.isFinite(trackDuration) && trackDuration > 0) {
-    return trackDuration;
+    const scale = Number.isFinite(rate) && rate > 0 ? rate : 1;
+    return trackDuration / scale;
   }
   return 0;
 }

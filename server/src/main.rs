@@ -32,12 +32,16 @@ mod canvas;
 mod collector;
 mod connect;
 mod curator;
+mod fx;
 mod db;
 mod discover;
 mod discovery;
 mod dj;
 mod enrichment;
 mod features;
+mod loudness;
+mod stations;
+mod stems;
 mod friends;
 mod home;
 mod hot;
@@ -127,6 +131,8 @@ pub struct AppState {
     pub mirror: Arc<mirror::MirrorState>,
     /// The home feed's per-user mix cache (AI curation on a long TTL).
     pub home: Arc<home::HomeState>,
+    /// The DJ's suggested stations, cached per listener - see stations.rs.
+    pub stations: Arc<stations::StationState>,
     /// Cached suggested-playlist metadata for the discover surface.
     pub discover: Arc<discover::DiscoverState>,
     /// AttackFM Connect: device registry + the authoritative playback session,
@@ -389,6 +395,7 @@ async fn main() {
         filing: Arc::new(tokio::sync::Mutex::new(())),
         mirror: Arc::new(mirror::MirrorState::default()),
         home: home::HomeState::new(),
+        stations: stations::StationState::new(),
         discover: discover::DiscoverState::new(),
         connect: connect::ConnectState::new(),
         jams: jams::JamState::new(),
@@ -429,6 +436,10 @@ async fn main() {
     // The audio analyser: measures each file's loudness and brightness (and a
     // tempo where the curator has none), one polite track at a time.
     features::spawn(state.clone());
+    // Real loudness per track, for playback normalisation - see loudness.rs.
+    loudness::spawn(state.clone());
+    // Stems, for the Pads sampler - see stems.rs.
+    stems::spawn(state.clone());
 
     // The Spotify mirror: keeps watched playlists, albums and saved tracks in
     // step with their local copies.
@@ -593,6 +604,7 @@ async fn main() {
         .route("/api/mirror/status", get(mirror::status))
         .route("/api/curator/pulls/settings", post(collector::settings))
         .route("/api/dj", get(dj::station))
+        .route("/api/dj/stations", get(stations::stations))
         .route("/api/dj/analyze", post(dj::analyze_seed))
         .route("/api/dj/note", post(dj::set_note))
         .route("/api/dj/queue", post(dj::trait_queue))
@@ -601,6 +613,7 @@ async fn main() {
             "/api/debug/song-profiles/{id}",
             get(enrichment::debug_profile),
         )
+        .route("/api/queue/enhance", post(curator::enhance_queue))
         .route(
             "/api/playlists/{id}/suggestions",
             get(curator::playlist_suggestions),
@@ -623,6 +636,14 @@ async fn main() {
         .route("/api/art/{id}", get(stream::art))
         .route("/api/art/track/{id}", get(stream::art_by_track))
         .route("/api/transcode/{id}", get(stream::transcode))
+        .route("/api/fx/nodes", get(fx::nodes))
+        .route("/api/loudness", get(loudness::table))
+        .route("/api/tempo", get(features::tempo_table))
+        .route("/api/stems/{track}", get(stems::status).post(stems::request))
+        .route("/api/stems/{track}/mix", get(stems::mix))
+        .route("/api/stems/{track}/{stem}", get(stems::file))
+        .route("/api/fx/presets", get(fx::presets).post(fx::save_preset))
+        .route("/api/fx/presets/{id}", axum::routing::delete(fx::delete_preset))
         .route("/api/spotify/status", get(spotify::status))
         .route("/api/spotify/connect", post(spotify::connect))
         .route("/api/spotify/callback", get(spotify::callback))

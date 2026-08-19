@@ -81,6 +81,7 @@ DEF_EMBED="$(prev AFM_AI_EMBED_MODEL)"; DEF_EMBED="${DEF_EMBED:-nomic-embed-text
 # through SpotiFLAC's metadata client or, failing that, these. Blank is fine
 # where SpotiFLAC is installed; without either, songs can be browsed but not
 # added, and the curator finds nothing to buy.
+DEF_PUBLIC="$(prev AFM_PUBLIC_URL)"
 DEF_SPOT_ID="$(prev AFM_SPOTIFY_CLIENT_ID)"
 DEF_SPOT_SECRET="$(prev AFM_SPOTIFY_CLIENT_SECRET)"
 
@@ -111,6 +112,22 @@ mkdir -p "$DATA_DIR"
 
 read -r -p "  Port [$DEF_PORT]: " PORT
 PORT="${PORT:-$DEF_PORT}"
+
+# --- public address ----------------------------------------------------------
+bold "The address other people reach this server on"
+say "The name friends type, not this machine's own. Behind a reverse proxy the"
+say "server never sees it, so it has to be told: without it, invites are all"
+say "rejected as being for a different server, and Spotify links do not resolve."
+say "Leave blank if nobody outside this machine uses it."
+read -r -p "  Public URL [${DEF_PUBLIC:-none}]: " PUBLIC_URL
+PUBLIC_URL="${PUBLIC_URL:-$DEF_PUBLIC}"
+# A trailing slash or a missing scheme are the two ways this is typed wrong, and
+# both make it fail the exact-match the invite check does.
+PUBLIC_URL="${PUBLIC_URL%/}"
+case "$PUBLIC_URL" in
+  ""|http://*|https://*) ;;
+  *) PUBLIC_URL="https://$PUBLIC_URL"; say "  (reading that as $PUBLIC_URL)" ;;
+esac
 
 # --- Spotify app (optional) --------------------------------------------------
 bold "Spotify app credentials (optional)"
@@ -192,6 +209,7 @@ cat > "$PLIST" <<PLIST
   <key>StandardOutPath</key><string>$LOG_DIR/server.log</string>
   <key>StandardErrorPath</key><string>$LOG_DIR/server.log</string>
   <key>EnvironmentVariables</key><dict>
+    <key>AFM_PUBLIC_URL</key><string>$PUBLIC_URL</string>
     <key>AFM_MUSIC_DIR</key><string>$MUSIC_DIR</string>
     <key>AFM_DATA_DIR</key><string>$DATA_DIR</string>
     <key>AFM_PORT</key><string>$PORT</string>

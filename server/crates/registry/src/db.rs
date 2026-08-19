@@ -356,6 +356,85 @@ impl Db {
         let _ = c.execute("UPDATE accounts SET server_url = ?2 WHERE id = ?1", (id, url));
     }
 
+    /// Where this account was last listening, and when.
+    pub fn resume(&self, id: i64) -> Option<(String, i64)> {
+        let c = self.conn.lock().unwrap();
+        c.query_row(
+            "SELECT body, updated_at FROM resume WHERE account_id = ?1",
+            [id],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)),
+        )
+        .ok()
+    }
+
+    /// Record it. Most recent wins, and an older write is DROPPED rather than
+    /// applied: a device that was offline for an hour must not, on reconnect,
+    /// tell the account that an hour-old position is where you are now.
+    pub fn set_resume(&self, id: i64, body: &str, at: i64) -> bool {
+        let c = self.conn.lock().unwrap();
+        c.execute(
+            "INSERT INTO resume (account_id, body, updated_at)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(account_id) DO UPDATE SET
+               body = excluded.body, updated_at = excluded.updated_at
+             WHERE excluded.updated_at >= resume.updated_at",
+            (id, body, at),
+        )
+        .is_ok()
+    }
+
+    /// This account's synced settings, and the revision they were at.
+    ///
+    /// Absent is not an error and not an empty object: a device that has never
+    /// synced must be able to tell "nothing has ever been stored" (keep what is
+    /// on this device, then push it) apart from "stored, and it is empty"
+    /// (someone cleared it, so clear here too).
+    pub fn prefs(&self, id: i64) -> Option<(String, i64)> {
+        let c = self.conn.lock().unwrap();
+        c.query_row(
+            "SELECT body, rev FROM prefs WHERE account_id = ?1",
+            [id],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)),
+        )
+        .ok()
+    }
+
+    /// Store settings, refusing a write built on a revision that has moved.
+    ///
+    /// Returns the new revision, or None when `expected` is stale. Last-write-
+    /// wins would be wrong here for a real reason: two devices that both went
+    /// offline and both came back would each believe they were current, and the
+    /// slower one would silently erase the other's changes. Refusing lets the
+    /// client re-read and merge, which it can do because it knows which keys it
+    /// touched.
+    ///
+    /// `expected` of 0 means "I have never seen a revision", which is only
+    /// allowed when nothing is stored yet.
+    pub fn set_prefs(&self, id: i64, body: &str, expected: i64, now: i64) -> Option<i64> {
+        let c = self.conn.lock().unwrap();
+        let current: Option<i64> = c
+            .query_row("SELECT rev FROM prefs WHERE account_id = ?1", [id], |r| r.get(0))
+            .ok();
+        match (current, expected) {
+            // First write for this account.
+            (None, 0) => {}
+            // Ordinary update from whoever holds the current revision.
+            (Some(rev), want) if rev == want => {}
+            // Anything else is a write against a revision that has moved on.
+            _ => return None,
+        }
+        let next = current.unwrap_or(0) + 1;
+        c.execute(
+            "INSERT INTO prefs (account_id, body, rev, updated_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(account_id) DO UPDATE SET
+               body = excluded.body, rev = excluded.rev, updated_at = excluded.updated_at",
+            (id, body, next, now),
+        )
+        .ok()?;
+        Some(next)
+    }
+
     pub fn set_stats(&self, id: i64, songs: i64, playlists: i64, artists: i64, now: i64) {
         let c = self.conn.lock().unwrap();
         let _ = c.execute(
@@ -597,6 +676,33 @@ CREATE INDEX IF NOT EXISTS friendships_b ON friendships(b_id);
 
 -- A cached glance of a library's size, announced by the owner's app, so a
 -- friends list shows everyone's numbers without waking everyone's server.
+CREATE TABLE IF NOT EXISTS resume (
+  account_id  INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+  -- Where this person was, last time any of their devices was playing. Opaque
+  -- like prefs, and for the same reason.
+  --
+  -- NO revision here, deliberately, and it is the one place that is right: the
+  -- question "where was I" has exactly one correct answer, which is whatever
+  -- happened MOST RECENTLY. Two devices cannot both be the last thing you
+  -- listened on, so a merge would be inventing a conflict that does not exist.
+  body        TEXT NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS prefs (
+  account_id  INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+  -- One JSON object per account. Deliberately opaque to the registry: it stores
+  -- and returns it, and only the app knows what is inside. That keeps a new
+  -- synced setting from being a schema migration on a service that other
+  -- people's servers depend on.
+  body        TEXT NOT NULL,
+  -- Bumped on every write. The client sends the revision it last saw, so a
+  -- second device that has been offline cannot silently overwrite newer work -
+  -- it is told to merge instead.
+  rev         INTEGER NOT NULL DEFAULT 1,
+  updated_at  INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS stats (
   account_id INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
   songs      INTEGER NOT NULL DEFAULT 0,
@@ -614,3 +720,109 @@ CREATE TABLE IF NOT EXISTS stats (
   listened_at     INTEGER NOT NULL DEFAULT 0
 );
 "#;
+
+#[cfg(test)]
+mod prefs_tests {
+    use super::Db;
+
+    fn db() -> Db {
+        // A file in a temp dir rather than :memory:, so this exercises the same
+        // open() path (and the same schema) the service actually runs.
+        let dir = std::env::temp_dir().join(format!("afm-prefs-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join(format!("{}.sqlite3", rand_suffix()));
+        Db::open(&path).expect("opens")
+    }
+
+    /// prefs.account_id is a foreign key, so an account has to exist first -
+    /// which is correct, and was the reason the first version of these tests
+    /// failed. Returns the new account's id.
+    fn account(db: &Db, handle: &str) -> i64 {
+        db.create_account(handle, "x", 100).expect("account created").id
+    }
+
+    fn rand_suffix() -> String {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos().to_string()
+    }
+
+    /// Nothing stored is not the same as stored-and-empty, and the difference
+    /// decides whether a fresh device pushes what it has or wipes itself.
+    #[test]
+    fn nothing_stored_reads_as_absent() {
+        let db = db();
+        let id = account(&db, "nobody");
+        assert!(db.prefs(id).is_none());
+    }
+
+    #[test]
+    fn the_first_write_needs_revision_zero_and_becomes_one() {
+        let db = db();
+        let id = account(&db, "one");
+        assert_eq!(db.set_prefs(id, r#"{"theme":"dark"}"#, 0, 100), Some(1));
+        let (body, rev) = db.prefs(id).expect("stored");
+        assert_eq!(rev, 1);
+        assert!(body.contains("dark"));
+    }
+
+    /// The whole reason for revisions: two devices that both went offline must
+    /// not silently erase each other. The one holding the stale number is
+    /// refused so it can re-read and merge.
+    #[test]
+    fn a_write_against_a_moved_revision_is_refused() {
+        let db = db();
+        let id = account(&db, "two");
+        assert_eq!(db.set_prefs(id, r#"{"a":1}"#, 0, 100), Some(1));
+        assert_eq!(db.set_prefs(id, r#"{"a":2}"#, 1, 101), Some(2));
+        // A second device still thinks the world is at revision 1.
+        assert_eq!(db.set_prefs(id, r#"{"a":3}"#, 1, 102), None);
+        // ...and the winner's value is untouched.
+        assert!(db.prefs(id).expect("stored").0.contains("\"a\":2"));
+    }
+
+    /// Writing "first write" against an account that already has settings is
+    /// the same mistake wearing different clothes - a device that lost its
+    /// memory of the revision must not therefore win.
+    #[test]
+    fn revision_zero_cannot_overwrite_existing_settings() {
+        let db = db();
+        let id = account(&db, "three");
+        assert_eq!(db.set_prefs(id, r#"{"a":1}"#, 0, 100), Some(1));
+        assert_eq!(db.set_prefs(id, r#"{"a":9}"#, 0, 101), None);
+    }
+
+    /// The rule that makes last-write-wins safe: a device that was offline
+    /// must not, on reconnect, announce a stale position as current. Without
+    /// the WHERE clause on the upsert, the straggler wins simply by arriving
+    /// last, and you get sent back to where you were an hour ago.
+    #[test]
+    fn an_older_resume_write_is_dropped() {
+        let db = db();
+        let id = account(&db, "resumer");
+        db.set_resume(id, r#"{"at":"now"}"#, 500);
+        db.set_resume(id, r#"{"at":"stale"}"#, 400);
+        assert!(db.resume(id).expect("stored").0.contains("now"));
+    }
+
+    /// Same instant is not older, and re-recording the same second must not be
+    /// silently dropped - a position updates far faster than the clock ticks.
+    #[test]
+    fn a_write_in_the_same_second_still_lands() {
+        let db = db();
+        let id = account(&db, "sameinstant");
+        db.set_resume(id, r#"{"p":1}"#, 500);
+        db.set_resume(id, r#"{"p":2}"#, 500);
+        assert!(db.resume(id).expect("stored").0.contains("\"p\":2"));
+    }
+
+    #[test]
+    fn accounts_do_not_see_each_other() {
+        let db = db();
+        let a = account(&db, "alpha");
+        let b = account(&db, "beta");
+        db.set_prefs(a, r#"{"who":"one"}"#, 0, 100);
+        db.set_prefs(b, r#"{"who":"two"}"#, 0, 100);
+        assert!(db.prefs(a).unwrap().0.contains("one"));
+        assert!(db.prefs(b).unwrap().0.contains("two"));
+    }
+}

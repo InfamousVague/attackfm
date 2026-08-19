@@ -26,6 +26,7 @@ import {
 } from '../../plugins/runtime.tsx';
 import type { DownloadItem } from '../../plugins/types.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
+import { useOwnedTrack, usePlayNowOptional } from '../player/playNow.tsx';
 import { artSized } from '../server.ts';
 import { useArtLoad } from '../ux/artLoad.ts';
 import placeholderArt from '../../assets/attack-wave.png';
@@ -128,6 +129,21 @@ function JobCard({ row, showSource }: { row: Row; showSource: boolean }) {
   // (the bar, the percentage, the part coming down now) says enough without
   // it, and the count on the toggle makes opening an informed choice.
   const [open, setOpen] = useState(false);
+  /*
+   * A download row is about a song, and if that song is already ours the row
+   * should be able to start it - including on a row that FAILED. "Earrings"
+   * reporting an error while sitting in the library is exactly the confusion
+   * this page kept creating: the job is the news, the song is the thing you
+   * wanted. So the verb is offered whenever the title resolves to something
+   * downloaded, not only when this particular job succeeded.
+   *
+   * It resolves by name because a job only ever knew a name - see
+   * useOwnedTrack. No match, no button: the page never offers a play it
+   * cannot perform.
+   */
+  const playNow = usePlayNowOptional();
+  const ownedTrack = useOwnedTrack();
+  const owned = ownedTrack(item.title, item.subtitle ?? undefined);
   const pct = total > 0 ? Math.round(((item.completed ?? 0) / total) * 100) : null;
   // The card draws its cover at thumb size, so ask for the 160 variant; the
   // skeleton shimmer holds the square while it downloads alongside the songs.
@@ -233,6 +249,17 @@ function JobCard({ row, showSource }: { row: Row; showSource: boolean }) {
       {/* Verbs a source did not hand over simply do not render: a book queue
           that cannot cancel shows no cancel, rather than a button that lies. */}
       <div className="dlCard__actions">
+        {owned && playNow && (
+          <button
+            type="button"
+            className="dlCard__act"
+            aria-label={`Play ${item.title}`}
+            title="Play"
+            onClick={() => playNow(owned)}
+          >
+            <Play size={16} />
+          </button>
+        )}
         {item.state === 'error' && item.retry && (
           <button type="button" className="dlCard__act" aria-label="Retry" title="Retry" onClick={item.retry}>
             <RotateCcw size={16} />

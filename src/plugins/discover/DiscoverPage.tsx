@@ -1,3 +1,4 @@
+import { SearchEntry } from '../../app/search/SearchEntry.tsx';
 import { Button, Modal, ScrollArea, SearchField, Spinner, Text } from '@glacier/react';
 import { Check, Compass, ListMusic, Music, Play, Plus, Sparkles } from '@glacier/icons';
 import { searchPlaylists, type PlaylistResult } from '../../app/server.ts';
@@ -675,6 +676,9 @@ export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
 
   return (
     <div className="discoverPage" ref={setRippleRoot}>
+      {/* Same bar as Library. Discover is where you look for what you do NOT
+          have, so the prompt says so - the page it opens searches both. */}
+      <SearchEntry placeholder="Search for music to add" />
       <header className="discoverHead">
         <span className="discoverHead__glyph" aria-hidden>
           <Compass size={22} />

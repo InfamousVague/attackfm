@@ -36,50 +36,6 @@ mod offline;
 // unconditionally; only iOS links the real Swift engine (AudioEngine.swift).
 mod native_audio;
 
-/// Holds the window square while it is resized.
-///
-/// macOS has this natively: an aspect ratio on the window is honoured by the
-/// window server itself, so the drag is constrained as it happens rather than
-/// corrected after the fact - the edge follows the pointer along one axis and
-/// the other side keeps up, with no frame ever painted at the wrong shape.
-/// Tauri's window API has no word for it, so it is set straight on the NSWindow.
-#[cfg(target_os = "macos")]
-fn square_aspect(window: &tauri::WebviewWindow) {
-    use objc2_app_kit::NSWindow;
-    use objc2_foundation::NSSize;
-
-    let Ok(ptr) = window.ns_window() else { return };
-    if ptr.is_null() {
-        return;
-    }
-    // Tauri hands back the NSWindow it owns; it outlives this borrow, and setup
-    // runs on the main thread, which is where AppKit requires the call.
-    let ns_window: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
-    // The frame, not the content view: the square the user sees is the window,
-    // and the title bar sits over the content rather than above it.
-    ns_window.setAspectRatio(NSSize::new(1.0, 1.0));
-}
-
-/// Holds the window square while it is resized.
-///
-/// Off macOS there is no aspect ratio to hand the window manager, so the shape
-/// is restored after each resize instead: the longer side wins, which reads as
-/// the window following whichever edge is being dragged. The guard is what ends
-/// it - the size this sets comes back as another resize event, and a square one
-/// asks for nothing further.
-#[cfg(all(desktop, not(target_os = "macos")))]
-fn square_aspect(window: &tauri::WebviewWindow) {
-    let win = window.clone();
-    window.on_window_event(move |event| {
-        if let tauri::WindowEvent::Resized(size) = event {
-            if size.width != size.height {
-                let side = size.width.max(size.height);
-                let _ = win.set_size(tauri::PhysicalSize::new(side, side));
-            }
-        }
-    });
-}
-
 /// Makes the app's window the key window once the scene has attached it.
 ///
 /// Under the scene lifecycle (UIApplicationSupportsMultipleScenes, which iOS
@@ -199,7 +155,6 @@ fn desktop_setup(app: &tauri::App, main: &tauri::WebviewWindow) {
                     }
                 });
             }
-            square_aspect(main);
     }
 }
 

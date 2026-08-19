@@ -64,9 +64,23 @@ fn is_audio(path: &Path) -> bool {
 fn walk(root: &Path) -> Vec<(PathBuf, String)> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
+    // A directory this cannot open is the difference between "the library is
+    // empty" and "the library is unreachable", and the two want opposite
+    // responses. Swallowing the error made a scan that could read NOTHING
+    // look exactly like a scan of an empty folder - which is how a hub can
+    // sit for days reporting no audio under a folder holding four thousand
+    // songs. The first refusal says so; the rest are counted.
+    let mut refused = 0usize;
     while let Some(dir) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(e) => {
+                if refused == 0 {
+                    eprintln!("[attackfm] scan cannot read {}: {e}", dir.display());
+                }
+                refused += 1;
+                continue;
+            }
         };
         for entry in entries.flatten() {
             let path = entry.path();
@@ -89,6 +103,9 @@ fn walk(root: &Path) -> Vec<(PathBuf, String)> {
                 }
             }
         }
+    }
+    if refused > 1 {
+        eprintln!("[attackfm] scan could not read {refused} directories in total");
     }
     out.sort_by(|a, b| a.1.cmp(&b.1));
     out

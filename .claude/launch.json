@@ -4,8 +4,20 @@
     {
       "name": "attackfm-web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 5240
+    },
+    {
+      "name": "attackfm-site",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "site:dev"
+      ],
+      "port": 5250
     }
   ]
 }

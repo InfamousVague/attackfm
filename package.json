@@ -1,7 +1,7 @@
 {
   "name": "attackfm",
   "private": true,
-  "version": "0.3.150",
+  "version": "0.3.193",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -19,9 +19,17 @@
     "server": "cargo run --manifest-path server/Cargo.toml",
     "redeploy": "node scripts/redeploy.mjs",
     "redeploy:setup": "node scripts/redeploy.mjs setup",
+    "redeploy:registry": "node scripts/deploy-registry.mjs",
     "bundle:home": "node scripts/home-bundle.mjs",
     "android:emulator": "\"$HOME/Library/Android/sdk/emulator/emulator\" -avd attackfm -netdelay none -netspeed full",
-    "ship": "node scripts/ship-update.mjs"
+    "ship": "node scripts/ship-update.mjs",
+    "site:dev": "vite --config vite.site.config.ts",
+    "site:build": "vite build --config vite.site.config.ts",
+    "site:preview": "vite preview --config vite.site.config.ts",
+    "site:deploy": "node scripts/deploy-site.mjs",
+    "listen:deploy": "node scripts/deploy-listen.mjs",
+    "listen:build": "AFM_WEB=1 vite build",
+    "filters:check": "node scripts/check-filters.mjs"
   },
   "dependencies": {
     "@glacier/icons": "file:./vendor/@glacier/icons",

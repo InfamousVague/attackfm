@@ -6,17 +6,19 @@
 // (current/queue) and the queue verbs stay HERE - they close over live state
 // through refs and everything else threads off them.
 import { IconButton, TitleBar } from '@glacier/react';
-import { ChevronLeft, ChevronRight, Search, Settings } from '@glacier/icons';
+import { ChevronLeft, ChevronRight, RefreshCw, Search, Settings } from '@glacier/icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NowPlayingBackdrop } from './player/NowPlayingBackdrop.tsx';
 import { PluginHookScope } from '../plugins/runtime.tsx';
 import { isDesktopApp } from './core/platform.ts';
+import { useDesktopLayout } from './ux/useDesktopLayout.ts';
 import type { Track } from './core/tauri.ts';
 import { NetworkDot } from './servers/NetworkDot.tsx';
 import { SettingsModal } from './settings/SettingsModal.tsx';
 import { SearchPage } from './search/SearchPage.tsx';
 import { onSpotifyLink } from './servers/deepLink.ts';
 import { markPlaySurface } from './player/listens.ts';
+import { onOpenSearchPage, type OpenSearch } from './search/SearchEntry.tsx';
 import { installShelfPan } from './ux/shelfPan.ts';
 import { DjChatProvider } from './booth/djChat.tsx';
 import { DatePage } from './date/DatePage.tsx';
@@ -41,6 +43,7 @@ import { APP_NAME, HeaderActionButtons, HeaderIdent } from './nav/HeaderChrome.t
 import { AppMain } from './nav/AppMain.tsx';
 import { useNavStack } from './nav/useNavStack.ts';
 import { useSearchSummon } from './nav/useSearchSummon.ts';
+import { PageRefreshProvider } from './nav/pageRefresh.tsx';
 import { useLibrary } from './library/library.tsx';
 import { AppProviders } from './nav/AppProviders.tsx';
 import wordmark from '../assets/attack-white.png';
@@ -49,7 +52,17 @@ import wordmark from '../assets/attack-white.png';
 // Tauri build. A phone build is inside Tauri too, but has no frame and no
 // traffic lights - so it gets the plain header below instead, as does the
 // browser.
-const DESKTOP = isDesktopApp;
+/*
+ * Two different questions, and conflating them is what kept the web build
+ * phone-shaped on a 27-inch monitor:
+ *
+ *   isDesktopApp    - is this a Tauri window? (a frame, a drag region, a
+ *                     traffic-light gutter, a local folder). Fixed at load.
+ *   useDesktopLayout - is there room and a cursor? Changes as a browser
+ *                     window is resized, so it is a hook, not a constant.
+ *
+ * Window chrome keys on the first; shape keys on the second.
+ */
 
 /**
  * Lends App the library's rescan.
@@ -82,6 +95,8 @@ export function App() {
   // toggle, so the value stays 'summary'. Kept as state so AppMain's prop and
   // its type need no change if the flip returns elsewhere later.
   const [libraryView] = useState<'summary' | 'all'>('summary');
+  /** Bumped by the pull gesture; pages hang their own fetches off it. */
+  const [refreshNonce, setRefreshNonce] = useState(0);
   // Which of Profile's rooms is open - This week (stats). Lives here rather
   // than in ProfilePage because the old 'stats' TAB redirects into the room
   // so every stored link keeps working.
@@ -106,6 +121,7 @@ export function App() {
   // of AppMain, so the host does not exist when this component's effects first
   // run - the gesture hooks have to re-attach when it finally mounts, which
   // only a state-carried node can tell them.
+  const DESKTOP = useDesktopLayout();
   const [swipeEl, setSwipeEl] = useState<HTMLElement | null>(null);
 
   const swipeRef = useCallback((node: HTMLElement | null) => setSwipeEl(node), []);
@@ -120,10 +136,16 @@ export function App() {
   // chord live in useSearchSummon.
   const {
     pulling,
-    summonHint,
+    refreshing,
     searchOpen,
     setSearchOpen,
-  } = useSearchSummon(swipeEl);
+  } = useSearchSummon(swipeEl, async () => {
+    // A pull means "re-read what I am looking at". That is the library (the
+    // box re-walks its folder and we pull the delta) AND the page's own
+    // fetches, which hang off this counter - see nav/pageRefresh.tsx.
+    setRefreshNonce((n) => n + 1);
+    await libraryRefresh.current();
+  });
   /*
    * A Spotify link opens the search overlay, where the field claims it.
    *
@@ -132,6 +154,18 @@ export function App() {
    * field that knows what it is.
    */
   useEffect(() => onSpotifyLink(() => setSearchOpen(true)), [setSearchOpen]);
+
+  // The search bars on Library and Discover. An event rather than a prop
+  // because Discover is a plugin page - see SearchEntry.tsx.
+  const [searchOpenWith, setSearchOpenWith] = useState<OpenSearch>({});
+  useEffect(
+    () =>
+      onOpenSearchPage((open) => {
+        setSearchOpenWith(open);
+        setSearchOpen(true);
+      }),
+    [setSearchOpen],
+  );
 
   /*
    * The open search page leaves the way the Now Playing sheet does: pulled
@@ -378,7 +412,9 @@ export function App() {
       extendQueue={extendQueue}
       playNext={playNext}
       addToQueue={addToQueue}
+      playNow={playFrom}
     >
+      <PageRefreshProvider nonce={refreshNonce}>
       {/* Fills libraryRefresh with the real rescan. Without it mounted the
           ref keeps its inert initial value, and a pull-to-refresh awaits a
           function that does nothing - which is exactly what it was doing. */}
@@ -416,7 +452,17 @@ export function App() {
                 data-tauri-drag-region
                 surface
                 border
-                trafficLightInset
+                // The one part of this bar that is about a WINDOW rather than
+                // a layout: the gutter reserving room for the macOS traffic
+                // lights. In a browser nobody paints those, so the inset is
+                // just ~70px of dead space before the wordmark - measured, the
+                // logo sat at x=104 with it on. The drag-region attribute
+                // beside it needs no such guard: the kit writes it on the bar
+                // regardless, and without Tauri's runtime to read it, it is an
+                // inert data attribute. Everything else here - wordmark,
+                // history, network light, settings - is just the top bar, and
+                // the web wants all of it.
+                trafficLightInset={isDesktopApp}
                 start={
                   // Back and forward live left of the wordmark in a reserved
                   // slot that is always present, so the top bar's layout - and
@@ -667,27 +713,17 @@ export function App() {
                 is the mount, and paying it on every frame of a drag would cost
                 the drag. `!searchOpen` keeps it exclusive with the overlay, so
                 there is only ever one SearchPage alive. */}
-            {!DESKTOP && pulling && <div className="pullBehind" aria-hidden="true" />}
-            {!DESKTOP && pulling && !searchOpen && (
-              <div className="pullPreview" aria-hidden="true">
-                <PluginHookScope>
-                  <SearchPage
-                    onPlay={playFrom}
-                    onOpenArtist={go}
-                    onOpenAlbum={goAlbum}
-                    onOpenPlaylist={goPlaylist}
-                  />
-                </PluginHookScope>
+            {/* What the pull reveals now: a turning mark in the gap the page
+                opens above itself. The whole SearchPage used to be rendered
+                here as a live preview, which was a second copy of the heaviest
+                screen in the app mounted on a gesture; a mark is the honest
+                weight for "the library is re-reading itself". Kept mounted
+                while the refresh runs, so the gap does not snap shut under a
+                spinner that is still spinning. */}
+            {!DESKTOP && (pulling || refreshing) && !searchOpen && (
+              <div className="pullMark" data-spinning={refreshing || undefined} aria-hidden="true">
+                <RefreshCw size={18} />
               </div>
-            )}
-            {summonHint && !DESKTOP && !searchOpen && (tab === 'home' || tab === 'library') && (
-              <button
-                type="button"
-                className="summonHintChip"
-                onClick={() => setSearchOpen(true)}
-              >
-                <Search size={13} /> Pull down for search
-              </button>
             )}
             {searchOpen && (
               <>
@@ -707,6 +743,8 @@ export function App() {
                     the system back, and Escape) is the whole way out. */}
                 <PluginHookScope>
                   <SearchPage
+                    initialFilter={searchOpenWith.scope}
+                    placeholder={searchOpenWith.placeholder}
                     onPlay={playFrom}
                     onOpenArtist={(artist) => {
                       setSearchOpen(false);
@@ -734,6 +772,7 @@ export function App() {
               pane={settingsPane}
             />
             </div>
+      </PageRefreshProvider>
     </AppProviders>
   );
 }

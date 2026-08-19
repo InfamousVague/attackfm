@@ -5,21 +5,24 @@
 .searchSummon {
   position: fixed;
   /* A sheet under the header, not a screen over it: it begins exactly where
-     the page content does - the measured line the pull preview also uses - so
-     the ATTACK mark stays visible above it and the field lands where the
-     preview showed it. The fallback is the header's own arithmetic, for the
-     first frame before anything has been measured. */
+     the page content does - the measured line pull-to-refresh's mark also
+     uses - so the ATTACK mark stays visible above it. The fallback is the
+     header's own arithmetic, for the first frame before anything has been
+     measured; --app-content-top itself is written by useSearchSummon, and
+     without it this climbs over the header (fixed once already in 0.3.140). */
   inset-inline: 0;
   bottom: 0;
   top: var(--app-content-top, calc(env(safe-area-inset-top, 0px) + var(--app-header-height, 3.25rem)));
   z-index: 60;
   display: flex;
   flex-direction: column;
-  /* The page's own ground, not the raised-surface grey: this IS the page
-     while it is up, and a page is black like every other page. */
+  /* Solid, square, flat. Search opens from a bar ON the page now, so it is
+     the page's own destination rather than a pane floating over it - and a
+     surface you type into wants the same ground everything else reads on,
+     not a translucent one competing with whatever is behind it.
+     Deliberately no backdrop-filter, no shoulders, no hairline, no shadow:
+     every one of those said "card", and this is not a card. */
   background: var(--glacier-bg);
-  /* Square shoulders: rounded top corners read as a sheet visiting the
-     page; this IS the page while it is up, edge to edge under the header. */
   animation: summonDrop 0.26s var(--glacier-ease-out);
 }
 
@@ -33,29 +36,6 @@
 .searchSummon .searchPage {
   flex: 1;
   min-block-size: 0;
-}
-
-
-/* The one-time teacher: a chip under the header until the pull is used once. */
-.summonHintChip {
-  position: fixed;
-  top: calc(env(safe-area-inset-top, 0px) + 3.4rem);
-  left: 50%;
-  translate: -50% 0;
-  z-index: 30;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  border: none;
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--glacier-font-size-xs);
-  font-weight: 600;
-  color: var(--glacier-accent-text);
-  background: color-mix(in oklab, var(--glacier-accent-solid) 14%, var(--glacier-surface-raised));
-  padding: 0.35rem 0.85rem;
-  border-radius: 999px;
-  box-shadow: var(--glacier-shadow-2);
 }
 
 
@@ -87,64 +67,11 @@
   transition: none;
 }
 
-/* The search page arriving: the real SearchPage, full-bleed under the header,
-   fading in with finger travel. Inert until the release actually opens it -
-   a half-revealed row that could be tapped is a target moving under the
-   finger holding it. */
-.pullPreview {
-  position: fixed;
-  inset-inline: 0;
-  top: var(--app-content-top, 0px);
-  bottom: 0;
-  z-index: 2;
-  overflow: hidden;
-  pointer-events: none;
-  /* Late and steep rather than early and even: for the first 70px of travel
-     the main screen still owns the view, then the search page comes through.
-     A fade that started immediately read as the page already being there. */
-  opacity: clamp(0, calc((var(--app-travel, 0px) - 70px) / 150px), 1);
-  /* And it arrives out of frost: the incoming content is blurred hardest
-     when it is faintest, resolving to sharp as the fade completes - the
-     same move the page behind makes, run in the opposite direction. */
-  filter: blur(max(0px, 12px - var(--app-travel, 0px) * 0.055));
-}
-
-/*
- * The wave-in stands down inside the preview.
- *
- * Cards normally ripple in on their own clock as they meet the view. Under a
- * pull that clock is wrong twice over: items would animate from transparent
- * while the LAYER is also fading in (two fades multiply into "fully
- * transparent when they animate in"), and a time-based entrance ignores the
- * finger, which is the only clock this surface has. Inside the preview every
- * item stands already-landed and the pull drives the one fade there is.
- */
-.pullPreview [data-ripple-seen]:not([data-rippled]) {
-  opacity: 1;
-}
-
-.pullPreview [data-rippled] {
-  animation: none;
-}
 
 /* The page being left, softening as the search page arrives over it. Keyed to
    travel, not the damped slide, so the blur builds across the whole gesture:
    nothing at rest, full depth around the commit point. */
-.pullBehind {
-  display: none;
-  position: fixed;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-}
-
-:root[data-pulling] .pullBehind {
-  display: block;
-  -webkit-backdrop-filter: blur(min(16px, var(--app-travel, 0px) * 0.08));
-  backdrop-filter: blur(min(16px, var(--app-travel, 0px) * 0.08));
-}
-
-/* The open search page leaves the way the Now Playing sheet does: dragged
+:root[data-pulling] /* The open search page leaves the way the Now Playing sheet does: dragged
    down as a card. The gesture module writes --np-drag on the element and
    data-dragging while a finger is down; short of the mark the transition
    springs it home. */
@@ -154,11 +81,14 @@
 }
 
 .searchSummon[data-dragging] {
+  /* The only line of this block that was ever about the DRAG: without it the
+     translate eases and the sheet lags the thumb.
+     Everything else here existed to compensate for glass - killing the
+     backdrop-filter for per-frame cost, and forcing an opaque ground so the
+     85%-translucent surface did not go see-through mid-drag. The sheet is
+     solid and square at rest now, so both are moot, and the radius/shadow
+     that came with them were the card look this surface no longer wears. */
   transition: none;
-  border-radius: var(--glacier-radius-xl, 1.25rem);
-  overflow: hidden;
-  /* Lifted off the page, so the card reads as a card against the blur. */
-  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.45);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -177,4 +107,105 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The pull's one piece of chrome: a mark in the gap the page opens above
+   itself, keyed to the same travel the page slides on. It fades and turns in
+   with the pull so the gesture reads as building toward something, then spins
+   on its own clock once the refresh is actually running - the turn under the
+   thumb is position, the spin after release is time, and they are different
+   things on purpose. */
+.pullMark {
+  position: fixed;
+  inset-inline: 0;
+  top: var(--app-content-top, 0px);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  block-size: var(--app-pull, 0px);
+  pointer-events: none;
+  color: var(--glacier-text-muted);
+  opacity: clamp(0, calc(var(--app-travel, 0px) / 90px), 1);
+}
+
+/* Under the thumb: the glyph turns with travel, a full half-turn by the
+   commit point, so the detent you feel has something to look at. */
+.pullMark svg {
+  rotate: calc(var(--app-travel, 0px) * 1.2deg);
+}
+
+/* Released and running: the gap is held open by the mark's own height and the
+   glyph turns on a clock instead of a finger. */
+.pullMark[data-spinning] {
+  block-size: 3.25rem;
+  opacity: 1;
+  color: var(--glacier-accent-text);
+}
+
+.pullMark[data-spinning] svg {
+  rotate: none;
+  animation: pullSpin 0.9s linear infinite;
+}
+
+@keyframes pullSpin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pullMark[data-spinning] svg {
+    animation-duration: 2.4s;
+  }
+}
+
+/* Smart shuffle's badge: the sparkle rides the shuffle glyph's top-right
+   corner rather than sitting beside it, so the control keeps one silhouette
+   and one tap target at every state. It appears only in the third state -
+   a badge that lit for ordinary shuffle would promise a feature that state
+   does not have. */
+.shuffleGlyph {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shuffleGlyph__spark {
+  position: absolute;
+  inset-block-start: -3px;
+  inset-inline-end: -5px;
+  color: var(--glacier-accent-text);
+}
+
+/* The lit state a mode this quiet still needs: shuffle's own `data-on` tint
+   plus the accent, so smart reads as further along the same control rather
+   than as a different button. */
+[data-smart] .shuffleGlyph {
+  color: var(--glacier-accent-text);
+}
+
+/* The same sparkle on the mini strip, drawn rather than composed: the strip's
+   transport is the kit's own, so there is no element of ours to put an icon
+   inside. It hangs off the control's accessible NAME, which PlayerStrip
+   rewrites to "Smart shuffle" in that mode - a contract the kit exposes on
+   purpose, unlike its hashed class names. If the kit ever renames the
+   control the sparkle quietly stops appearing, which is the right way for a
+   badge to fail. */
+.appPlayer [aria-label='Smart shuffle'] {
+  position: relative;
+  color: var(--glacier-accent-text);
+}
+
+.appPlayer [aria-label='Smart shuffle']::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 4px;
+  inline-size: 5px;
+  block-size: 5px;
+  border-radius: 50%;
+  background: var(--glacier-accent-solid);
+  box-shadow: 0 0 6px var(--glacier-accent-solid);
 }

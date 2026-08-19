@@ -35,6 +35,31 @@ fn now_secs() -> i64 {
         .unwrap_or(0)
 }
 
+/// The address this request actually arrived on, as the listener typed it.
+///
+/// The whole point: a server behind a reverse proxy never sees its own public
+/// name, so it cannot answer "is this invite for me?" from configuration it was
+/// never given. It CAN read the name the request came in under. Caddy and nginx
+/// both forward it, and the standard header wins over the literal Host because
+/// behind a proxy Host is the upstream (a .ts.net name, or localhost) rather
+/// than the domain a person typed.
+///
+/// This is not a security boundary and is not treated as one: it is only ever
+/// used to ACCEPT an invite that already passed the registry's signature,
+/// alongside the configured address, never to grant anything on its own.
+fn request_origin(headers: &HeaderMap) -> Option<String> {
+    let get = |name: &str| {
+        headers
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.split(',').next().unwrap_or(v).trim().to_string())
+            .filter(|v| !v.is_empty())
+    };
+    let host = get("x-forwarded-host").or_else(|| get("host"))?;
+    let scheme = get("x-forwarded-proto").unwrap_or_else(|| "https".to_string());
+    Some(format!("{scheme}://{host}"))
+}
+
 /// Two server URLs naming the same place, trailing slash and case aside.
 fn same_server(a: &str, b: &str) -> bool {
     let norm = |s: &str| s.trim().trim_end_matches('/').to_ascii_lowercase();
@@ -154,7 +179,11 @@ pub async fn link(
 }
 
 /// `POST /api/registry/enter` - trade a registry identity for a session here.
-pub async fn enter(State(state): State<Arc<AppState>>, Json(body): Json<EnterBody>) -> ApiResult {
+pub async fn enter(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<EnterBody>,
+) -> ApiResult {
     let verifier = ensure_verifier(&state)
         .await
         .ok_or((StatusCode::SERVICE_UNAVAILABLE, "The identity service is unreachable right now.".into()))?;
@@ -204,9 +233,42 @@ pub async fn enter(State(state): State<Arc<AppState>>, Json(body): Json<EnterBod
         .await
         .map_err(|_| (StatusCode::BAD_REQUEST, "That invite could not be read.".into()))?;
 
+    // Does this invite name THIS server? Two ways to be sure, and either will do.
+    //
+    // AFM_PUBLIC_URL is the configured answer, and the better one when it is
+    // set. But it defaults to empty, and a server behind a reverse proxy is
+    // exactly the case where nobody thinks to set it - so for a while every
+    // invite ever minted was rejected as "for a different server", which sent
+    // the person joining to check their link and the operator to check the
+    // registry while the fault was one unset variable here.
+    //
+    // So the address the request ARRIVED on counts too. That is the name the
+    // listener actually typed, which is by definition the name this server
+    // answers to. It cannot be used to grant anything by itself: we are already
+    // past the registry's signed, unspent, unexpired check, and this only
+    // decides whether a valid invite belongs here.
     let inv_server = preview.get("serverUrl").and_then(|v| v.as_str()).unwrap_or("");
-    if !same_server(inv_server, &state.public_url) {
-        return Err((StatusCode::BAD_REQUEST, "That invite is for a different server.".into()));
+    let arrived_on = request_origin(&headers);
+    let matches_config = same_server(inv_server, &state.public_url);
+    let matches_request = arrived_on
+        .as_deref()
+        .is_some_and(|origin| same_server(inv_server, origin));
+
+    if !matches_config && !matches_request {
+        // Name every address involved. "That invite is for a different server"
+        // on its own is the least useful true sentence available here.
+        let here = match (&state.public_url, arrived_on.as_deref()) {
+            (c, Some(o)) if !c.trim().is_empty() && !same_server(c, o) => {
+                format!("{c} (and this request arrived on {o})")
+            }
+            (c, _) if !c.trim().is_empty() => c.clone(),
+            (_, Some(o)) => o.to_string(),
+            _ => "an address this server has not been told".to_string(),
+        };
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("That invite is for {inv_server}, and this is {here}."),
+        ));
     }
     if preview.get("spent").and_then(|v| v.as_bool()).unwrap_or(false) {
         return Err((StatusCode::GONE, "That invite has already been used.".into()));
@@ -227,4 +289,82 @@ pub async fn enter(State(state): State<Arc<AppState>>, Json(body): Json<EnterBod
         .await;
 
     Ok(Json(session_json(&state, &user)?))
+}
+
+#[cfg(test)]
+mod invite_target_tests {
+    use super::{request_origin, same_server};
+    use axum::http::{HeaderMap, HeaderName};
+
+    fn headers(pairs: &[(&str, &str)]) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        for (k, v) in pairs {
+            h.insert(
+                k.parse::<HeaderName>().expect("valid header name"),
+                v.parse().expect("valid header value"),
+            );
+        }
+        h
+    }
+
+    /// The forwarded name beats the literal Host, because behind a proxy Host
+    /// is the upstream - a .ts.net name or localhost - and never what a
+    /// listener typed. Getting this backwards would reintroduce the bug for
+    /// every proxied server, which is all of them worth inviting people to.
+    #[test]
+    fn the_forwarded_name_wins_over_the_upstream_one() {
+        let h = headers(&[
+            ("host", "headless-mac.tail83699e.ts.net"),
+            ("x-forwarded-host", "matt.attack.fm"),
+            ("x-forwarded-proto", "https"),
+        ]);
+        assert_eq!(request_origin(&h).as_deref(), Some("https://matt.attack.fm"));
+    }
+
+    /// Unproxied, Host is the only answer there is, and https is the safer
+    /// assumption for anything a person reaches from outside.
+    #[test]
+    fn an_unproxied_request_falls_back_to_host() {
+        let h = headers(&[("host", "music.example.com")]);
+        assert_eq!(request_origin(&h).as_deref(), Some("https://music.example.com"));
+    }
+
+    /// A proxy chain forwards a comma-joined list; the first entry is the
+    /// client's own view, which is the one that matches an invite.
+    #[test]
+    fn a_chain_of_proxies_uses_the_first_name() {
+        let h = headers(&[("x-forwarded-host", "matt.attack.fm, inner.example")]);
+        assert_eq!(request_origin(&h).as_deref(), Some("https://matt.attack.fm"));
+    }
+
+    #[test]
+    fn no_headers_means_no_answer() {
+        assert_eq!(request_origin(&HeaderMap::new()), None);
+    }
+
+
+    /// The trailing slash and the case are the two ways the same address gets
+    /// typed differently, and both used to reject a perfectly good invite.
+    #[test]
+    fn the_same_address_matches_however_it_is_written() {
+        assert!(same_server("https://matt.attack.fm", "https://matt.attack.fm/"));
+        assert!(same_server("https://MATT.attack.fm/", "https://matt.attack.fm"));
+    }
+
+    /// An unset AFM_PUBLIC_URL is why "that invite is for a different server"
+    /// could be the answer to every invite ever minted: the comparison is
+    /// against an empty string, which matches nothing. The caller checks for
+    /// this before comparing and says so; this pins the behaviour it relies on.
+    #[test]
+    fn an_unconfigured_server_matches_nothing() {
+        assert!(!same_server("https://matt.attack.fm", ""));
+        assert!(!same_server("", "https://matt.attack.fm"));
+    }
+
+    #[test]
+    fn a_different_host_is_a_different_server() {
+        assert!(!same_server("https://matt.attack.fm", "https://someone.attack.fm"));
+        // Scheme and port are part of the address, not decoration.
+        assert!(!same_server("http://matt.attack.fm", "https://matt.attack.fm"));
+    }
 }

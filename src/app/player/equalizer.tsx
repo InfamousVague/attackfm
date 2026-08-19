@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { AudioEqualizerBand, AudioEqualizerPreset } from '@glacier/react';
 
 const STORAGE_KEY = 'attackfm-eq';
@@ -86,19 +86,22 @@ export function narrowEqGains(full: readonly number[]): number[] {
 }
 
 /**
- * Five shown gains back into eight real ones. A hand that lands exactly on a
- * preset's shape gets that preset's true curve, hidden bands included. For a
- * manual move, only the hidden bands beside sliders that actually moved are
- * re-interpolated between their shown neighbours - the rest keep whatever a
- * previous preset put there, so nudging the treble does not quietly redraw
- * the bass.
+ * Five shown gains back into eight real ones, for a MANUAL move: only the
+ * hidden bands beside sliders that actually moved are re-interpolated between
+ * their shown neighbours - the rest keep whatever a previous preset put
+ * there, so nudging the treble does not quietly redraw the bass.
+ *
+ * This used to snap-match the five values against every preset's projection
+ * first, and hand back that preset's full curve on a hit. The idea was
+ * "picking a preset while narrow should land the whole shape" - but preset
+ * picks never come through here (EqPanel's choose() sets all eight bands
+ * directly, and the kit's own preset row is hidden), so the only thing the
+ * match ever caught was a hand-drawn curve that COINCIDED with one: dragging
+ * 500Hz from 0 to -1 while on "headphones" happens to spell "late-night" in
+ * five bands, and the three hidden bands moved to a preset the user never
+ * chose. A drag is a drag; it edits what it touched.
  */
 export function expandNarrowGains(shown: readonly number[], previous: readonly number[]): number[] {
-  const presetIdx = EQ_PRESETS_NARROW.findIndex((p) =>
-    p.gains.every((g, j) => g === (shown[j] ?? 0)),
-  );
-  if (presetIdx >= 0) return [...EQ_PRESETS[presetIdx]!.gains];
-
   const full = Array.from({ length: BAND_COUNT }, (_, i) => previous[i] ?? 0);
   const moved = new Set<number>();
   EQ_NARROW_INDICES.forEach((bandIdx, j) => {
@@ -152,10 +155,31 @@ function readStored(): { gains: number[]; preset?: string } {
  * persists them. The Player reads the gains and pushes them onto the audio
  * graph's filters; the Settings panel edits them.
  */
+/** The kit's slider range; a gain outside it cannot be drawn, so one set
+ *  programmatically should not exceed it either. */
+const GAIN_LIMIT = 12;
+
+/**
+ * Whatever arrives becomes exactly eight finite, in-range gains. setGains is
+ * handed to plugins through the host runtime, and the meter's setEqGains
+ * SKIPS holes rather than zeroing them - so a plugin passing five values
+ * would leave bands 5-7 wearing stale gains forever. Short arrays pad flat,
+ * junk reads as flat, and everything clamps to what the sliders could have
+ * drawn.
+ */
+function sanitizeGains(gains: readonly number[]): number[] {
+  return Array.from({ length: BAND_COUNT }, (_, i) => {
+    const g = gains[i];
+    if (typeof g !== 'number' || !Number.isFinite(g)) return 0;
+    return Math.max(-GAIN_LIMIT, Math.min(GAIN_LIMIT, g));
+  });
+}
+
 export function EqualizerProvider({ children }: { children: ReactNode }) {
   const initial = readStored();
-  const [gains, setGains] = useState<number[]>(initial.gains);
+  const [gains, setRawGains] = useState<number[]>(initial.gains);
   const [preset, setPreset] = useState<string | undefined>(initial.preset);
+  const setGains = useCallback((next: number[]) => setRawGains(sanitizeGains(next)), []);
 
   useEffect(() => {
     try {
@@ -167,7 +191,7 @@ export function EqualizerProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<EqualizerContextValue>(
     () => ({ gains, preset, setGains, setPreset }),
-    [gains, preset],
+    [gains, preset, setGains],
   );
 
   return <EqualizerContext.Provider value={value}>{children}</EqualizerContext.Provider>;

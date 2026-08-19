@@ -17,6 +17,7 @@ import { hydrateOffline } from './app/downloads/offline.ts';
 
 import { isAndroid, isIOS } from './app/core/platform.ts';
 import { installGlobalDiag } from './app/diag/diagLog.ts';
+import { ensureBundleStylesheet } from './app/core/styleGuard.ts';
 
 // Stamped once so CSS can ask which glass it is under: an iPhone's screen
 // corners curve (the nav chin sweeps to match); Android's are the webview's
@@ -28,6 +29,11 @@ document.documentElement.dataset.platform = isAndroid ? 'android' : isIOS ? 'ios
 // module that throws on its way up is caught too - that failure is invisible
 // on a phone otherwise, and it is the one that leaves a blank screen.
 installGlobalDiag();
+
+// Before anything renders: if the boot loader could not attach this bundle's
+// stylesheet, the app is about to draw new markup against a native build's old
+// CSS. Put the right sheet back.
+ensureBundleStylesheet();
 
 // Before the first provider runs, so nothing reads a feed cache that a killed
 // app was meant to have forgotten. Cheap, synchronous, and a no-op on resume.

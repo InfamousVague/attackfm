@@ -200,7 +200,7 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
     const playlists: Playlist[] = remote.map((p) => ({
       id: String(p.id),
       name: p.name,
-      paths: p.tracks.map(remotePath),
+      paths: p.tracks.map((id) => remotePath(id)),
       createdAt: p.updatedAt,
     }));
 

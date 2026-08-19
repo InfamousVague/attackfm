@@ -9,14 +9,55 @@ export function isRemotePath(path: string): boolean {
   return path.startsWith(REMOTE_SCHEME);
 }
 
-export function remotePath(trackId: number): string {
-  return `${REMOTE_SCHEME}${trackId}`;
+/**
+ * A track's stable key, optionally carrying WHICH server it came from.
+ *
+ * `afm://123` means the server you are signed in to - every path ever written
+ * before today, and still what a single-server install produces. `afm://123@url`
+ * names one explicitly, which is what lets results from several libraries sit in
+ * one list without a second field to carry alongside them.
+ *
+ * Encoding it in the path rather than adding `Track.origin` is deliberate. The
+ * path is already the opaque key everything downstream passes around - the
+ * queue, the favourites, the player's audio resolver, which is handed a PATH
+ * and nothing else. A separate field would have to be threaded through every
+ * one of those, and anything that lost it would silently ask the wrong server.
+ * The origin is base64url'd so it cannot contain a character that means
+ * something to the rest of the string.
+ */
+export function remotePath(trackId: number, origin?: string | null): string {
+  if (!origin) return `${REMOTE_SCHEME}${trackId}`;
+  return `${REMOTE_SCHEME}${trackId}@${btoa(origin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`;
 }
 
 export function trackIdFromPath(path: string): number | null {
   if (!isRemotePath(path)) return null;
-  const id = Number(path.slice(REMOTE_SCHEME.length));
+  const body = path.slice(REMOTE_SCHEME.length);
+  const at = body.indexOf('@');
+  const id = Number(at === -1 ? body : body.slice(0, at));
   return Number.isFinite(id) ? id : null;
+}
+
+/**
+ * Which server a path names, or null for "whichever one is current".
+ *
+ * Null is the answer for every path written before multi-server existed, and
+ * for a single-server install today, so callers treat it as "the session I
+ * already have" rather than as an error.
+ */
+export function originFromPath(path: string): string | null {
+  if (!isRemotePath(path)) return null;
+  const at = path.indexOf('@', REMOTE_SCHEME.length);
+  if (at === -1) return null;
+  const raw = path.slice(at + 1);
+  try {
+    const padded = raw.replace(/-/g, '+').replace(/_/g, '/');
+    return atob(padded + '='.repeat((4 - (padded.length % 4)) % 4));
+  } catch {
+    // A path we cannot read the origin out of is better treated as the current
+    // server than as unplayable.
+    return null;
+  }
 }
 
 // --- the library ----------------------------------------------------------
@@ -90,6 +131,7 @@ export function transcodeUrl(
   bitrate: number,
   seek = 0,
   fx: string | null = null,
+  fx2: string | null = null,
 ): string {
   const at = seek > 0 ? `&seek=${seek.toFixed(3)}` : '';
   // Effect NAMES, which the server looks up in its own table; it never accepts
@@ -97,7 +139,10 @@ export function transcodeUrl(
   // sends no headers of ours - carries it, and so a change of rack is a change
   // of URL, which is what makes the source reload.
   const with_fx = fx ? `&fx=${encodeURIComponent(fx)}` : '';
-  return `${session.url}/api/transcode/${trackId}?t=${encodeURIComponent(session.streamToken)}&bitrate=${bitrate}${at}${with_fx}`;
+  // The hi-fi chain rides the same way: typed node parameters as JSON, which
+  // the server clamps and compiles (fx.rs). Same reasoning, wider vocabulary.
+  const with_fx2 = fx2 ? `&fx2=${encodeURIComponent(fx2)}` : '';
+  return `${session.url}/api/transcode/${trackId}?t=${encodeURIComponent(session.streamToken)}&bitrate=${bitrate}${at}${with_fx}${with_fx2}`;
 }
 
 export function artUrl(session: ServerSession, artId: string, trackId: number): string {
@@ -133,9 +178,19 @@ export function artSized(url: string | null, px: 160 | 640): string | null {
  * surface - favourites, the queue, the table's row ids - working without
  * knowing a server exists.
  */
-export function toTrack(session: ServerSession, remote: RemoteTrack): Track {
+export function toTrack(
+  session: ServerSession,
+  remote: RemoteTrack,
+  /**
+   * Stamp the origin into the path, for tracks from a server that is NOT the
+   * one the app is currently on. Left off for the primary library so its paths
+   * stay byte-identical to every one already written into a playlist, a
+   * favourite or a saved queue - tagging those would orphan them.
+   */
+  tagOrigin = false,
+): Track {
   return {
-    path: remotePath(remote.id),
+    path: remotePath(remote.id, tagOrigin ? session.url : null),
     title: remote.title,
     artist: remote.artist,
     albumArtist: remote.albumArtist || null,

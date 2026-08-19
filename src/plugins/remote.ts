@@ -38,11 +38,16 @@ export const DEFAULT_SOURCES: readonly string[] = ['https://plugins.attack.fm'];
  * It shipped an equalizer, which put an unexplained extra destination in front
  * of everyone who had never asked for one - and a newcomer counting the things
  * they must understand does not need a graphic EQ to be among them on launch
- * day. The plugin is a keystroke away in Plugins for anyone who wants it.
+ * day.
  *
- * The machinery around this stays: anything listed here is fetched from
- * whatever source carries it and, like a default source, remembered when
- * removed so uninstalling is not undone on the next launch.
+ * HiFi Lab was briefly the exception, on the argument that the console's HiFi
+ * room was useless without the page that built a chain. The better answer was
+ * to stop needing the page: the console builds the chain itself now, so the
+ * exception retired with it and this is empty again.
+ *
+ * The machinery stays: anything listed here is fetched from whatever source
+ * carries it and, like a default source, remembered when removed so
+ * uninstalling is not undone on the next launch.
  */
 export const DEFAULT_PLUGINS: readonly string[] = [];
 
@@ -58,7 +63,26 @@ const REMOVED_DEFAULT_PLUGINS_KEY = 'attackfm-plugins-removed-defaults';
  * here is what takes them off a phone that already had them - a repository
  * dropping a plugin is not, by itself, an uninstall.
  */
-export const DEPRECATED_PLUGINS: readonly string[] = ['audiobooks', 'audible', 'librivox'];
+export const DEPRECATED_PLUGINS: readonly string[] = [
+  'audiobooks',
+  'audible',
+  'librivox',
+  // Folded into the player's sound console, which now carries both whole: the
+  // HiFi room builds a chain box by box, and the Filters room is the same shelf
+  // of finished sounds this plugin was.
+  //
+  // They have to be named here rather than merely dropped from the repository:
+  // an installed bundle lives in this device's own storage and keeps rendering
+  // its page forever, so withdrawing them without this would leave two copies
+  // of the same UI on every phone that ever installed one - and the stale copy
+  // is the one with a nav item pointing at it.
+  //
+  // Pedals is deliberately NOT here. Fifty-five stompboxes is a board you go
+  // somewhere to build, not something to scroll past on the way to a volume
+  // slider, so it keeps its page and stays a plugin.
+  'hifi-lab',
+  'filters',
+];
 
 /** One plugin as a repository's manifest lists it. */
 export interface RemotePluginListing {
