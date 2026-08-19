@@ -40,6 +40,7 @@ mod dj;
 mod enrichment;
 mod features;
 mod loudness;
+mod stations;
 mod stems;
 mod friends;
 mod home;
@@ -130,6 +131,8 @@ pub struct AppState {
     pub mirror: Arc<mirror::MirrorState>,
     /// The home feed's per-user mix cache (AI curation on a long TTL).
     pub home: Arc<home::HomeState>,
+    /// The DJ's suggested stations, cached per listener - see stations.rs.
+    pub stations: Arc<stations::StationState>,
     /// Cached suggested-playlist metadata for the discover surface.
     pub discover: Arc<discover::DiscoverState>,
     /// AttackFM Connect: device registry + the authoritative playback session,
@@ -392,6 +395,7 @@ async fn main() {
         filing: Arc::new(tokio::sync::Mutex::new(())),
         mirror: Arc::new(mirror::MirrorState::default()),
         home: home::HomeState::new(),
+        stations: stations::StationState::new(),
         discover: discover::DiscoverState::new(),
         connect: connect::ConnectState::new(),
         jams: jams::JamState::new(),
@@ -600,6 +604,7 @@ async fn main() {
         .route("/api/mirror/status", get(mirror::status))
         .route("/api/curator/pulls/settings", post(collector::settings))
         .route("/api/dj", get(dj::station))
+        .route("/api/dj/stations", get(stations::stations))
         .route("/api/dj/analyze", post(dj::analyze_seed))
         .route("/api/dj/note", post(dj::set_note))
         .route("/api/dj/queue", post(dj::trait_queue))
