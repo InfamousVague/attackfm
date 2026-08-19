@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.179
+
+- The DJ suggests stations now. Unlike a mix, a station never ends — it keeps going in the lane you picked. You'll find them on the Booth page, named from what you actually listen to, and tapping one just asks the DJ for it
+
 ## 0.3.183
 
 - Karaoke is a microphone on the Now Playing screen now, rather than a page you go and find. Press it while a song is playing and the singer comes out of that song, with the words full screen and nothing else on it
