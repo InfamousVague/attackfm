@@ -120,6 +120,13 @@ pub struct AppState {
     pub refetch: Arc<refetch::RefetchManager>,
     /// Live one-time device-pairing codes (the QR "link a device" flow).
     pub pairing: Arc<pair::PairStore>,
+    /// How far the separator has got on the one job it is running.
+    ///
+    /// In memory rather than in the job row, because it IS ephemeral: a server
+    /// that restarts mid-separation re-runs that job from the top, so a stored
+    /// percentage could only ever be a stale claim about work that is no longer
+    /// happening. See stems::Working.
+    pub separating: Arc<stems::Working>,
     /// Per-track Spotify Canvas URLs (looping now-playing clip). Inert unless
     /// AFM_SPOTIFY_SP_DC is set - the review box never has it.
     pub canvas: Arc<canvas::CanvasCache>,
@@ -384,6 +391,7 @@ async fn main() {
         imports: imports::ImportManager::new(&data_dir),
         refetch: refetch::RefetchManager::new(&data_dir),
         pairing: pair::PairStore::new(),
+        separating: Arc::new(stems::Working::default()),
         canvas: canvas::CanvasCache::new(),
         public_url,
         spotify_client_id,

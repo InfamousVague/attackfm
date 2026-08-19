@@ -45,6 +45,87 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
+/// How far the one running separation has got.
+///
+/// Somebody who presses Stems on a song nobody has separated waits minutes, and
+/// a spinner for minutes is indistinguishable from a hang. demucs prints its
+/// own percentage as it works, so there is a real number to show - this is
+/// where it is parked between the worker writing it and a poll reading it.
+///
+/// One job at a time is the existing design (the box is also somebody's stereo)
+/// so one slot is enough, and the track id says whose it is. Nothing here is
+/// persisted: a restart re-runs the job from the top, and a stored percentage
+/// would be a claim about work that stopped happening.
+#[derive(Default)]
+pub struct Working {
+    inner: std::sync::Mutex<Option<Progress>>,
+}
+
+#[derive(Clone)]
+pub struct Progress {
+    pub track_id: i64,
+    /// 0..1 through the separation itself, or 0 before demucs says anything.
+    pub fraction: f32,
+    /// What is happening, in words: `separating` while the model runs,
+    /// `packing` while the parts are written out.
+    pub phase: &'static str,
+    /// How many parts have been filed, of how many the model produces.
+    pub filed: usize,
+}
+
+impl Working {
+    pub fn set(&self, track_id: i64, fraction: f32, phase: &'static str, filed: usize) {
+        if let Ok(mut slot) = self.inner.lock() {
+            *slot = Some(Progress { track_id, fraction: fraction.clamp(0.0, 1.0), phase, filed });
+        }
+    }
+
+    pub fn clear(&self) {
+        if let Ok(mut slot) = self.inner.lock() {
+            *slot = None;
+        }
+    }
+
+    /// The progress for one track, or None when the worker is elsewhere - which
+    /// is the answer that tells a client it is QUEUED behind something rather
+    /// than being worked on.
+    pub fn get(&self, track_id: i64) -> Option<Progress> {
+        self.inner
+            .lock()
+            .ok()
+            .and_then(|slot| slot.clone())
+            .filter(|p| p.track_id == track_id)
+    }
+}
+
+/// Pulls a percentage out of one line of demucs' output.
+///
+/// It draws a progress bar to stderr with a carriage return rather than a
+/// newline, so the "lines" arrive as one long string with `\r` in it and the
+/// last percentage in a chunk is the current one. Anything unrecognised leaves
+/// the number where it was, which is why this returns an Option rather than
+/// zero - a chunk of warning text must not reset the bar to the start.
+fn percent_in(chunk: &str) -> Option<f32> {
+    let mut found = None;
+    let bytes = chunk.as_bytes();
+    for (i, _) in chunk.match_indices('%') {
+        // Walk back over the digits immediately before the sign.
+        let mut start = i;
+        while start > 0 && bytes[start - 1].is_ascii_digit() {
+            start -= 1;
+        }
+        if start == i {
+            continue;
+        }
+        if let Ok(n) = chunk[start..i].parse::<f32>() {
+            if (0.0..=100.0).contains(&n) {
+                found = Some(n / 100.0);
+            }
+        }
+    }
+    found
+}
+
 /// The separator, and part of a stem's identity: a better model later can sit
 /// beside what is already on disk instead of quietly mixing two qualities.
 const MODEL: &str = "htdemucs_6s";
@@ -112,6 +193,10 @@ pub fn spawn(state: Arc<AppState>) {
                 continue;
             };
             let _ = state.db.mark_stem_job(track_id, "running", "");
+            // Claimed before the work starts, so a poll landing in the first
+            // seconds says "separating, 0%" rather than "queued" - which reads
+            // as nobody having picked it up.
+            state.separating.set(track_id, 0.0, "separating", 0);
             match separate(&state, &python, track_id, &rel).await {
                 Ok(()) => {
                     let _ = state.db.mark_stem_job(track_id, "done", "");
@@ -122,6 +207,9 @@ pub fn spawn(state: Arc<AppState>) {
                     let _ = state.db.mark_stem_job(track_id, "failed", &why);
                 }
             }
+            // Whichever way it ended, nothing is running now - and a stale
+            // percentage would have the next poller watching a finished job.
+            state.separating.clear();
         }
     });
 }
@@ -192,12 +280,27 @@ async fn separate(
             return Err(format!("could not start demucs: {e}"));
         }
     };
+    // Read as it arrives rather than at the end, so the percentage demucs is
+    // printing can be shown while it still means something. The full text is
+    // still collected, because a failure is explained by its last two lines.
     let stderr = child.stderr.take();
+    let watch = state.separating.clone();
     let log = tokio::spawn(async move {
         use tokio::io::AsyncReadExt;
         let mut buf = String::new();
-        if let Some(mut s) = stderr {
-            let _ = s.read_to_string(&mut buf).await;
+        let Some(mut s) = stderr else { return buf };
+        let mut chunk = [0u8; 4096];
+        loop {
+            match s.read(&mut chunk).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    let text = String::from_utf8_lossy(&chunk[..n]);
+                    if let Some(f) = percent_in(&text) {
+                        watch.set(track_id, f, "separating", 0);
+                    }
+                    buf.push_str(&text);
+                }
+            }
         }
         buf
     });
@@ -264,6 +367,12 @@ async fn separate(
                 let rel_path = format!("{track_id}/{stem}.{STEM_CODEC}");
                 let _ = state.db.save_stem(track_id, stem, MODEL, &rel_path, bytes);
                 filed += 1;
+                // Packing is a real, countable phase - six lossless encodes of a
+                // whole song each - so it gets its own progress rather than
+                // sitting at 100% while somebody watches nothing happen.
+                state
+                    .separating
+                    .set(track_id, filed as f32 / STEMS.len() as f32, "packing", filed);
             }
             other => {
                 // One stem failing to pack is not worth losing the others
@@ -388,10 +497,17 @@ pub async fn status(
 ) -> ApiResult {
     auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".to_string()))?;
     let (job_state, error, rows) = state.db.stems_for(track_id, MODEL);
+    // Only when this track is the one being worked on. A queued job reports no
+    // progress at all, which is the truth: nothing has started, and a bar
+    // sitting at zero would say the same thing far less clearly.
+    let live = state.separating.get(track_id);
     Ok(Json(json!({
         "state": job_state,
         "error": error,
         "available": separator_bin().is_some(),
+        "parts": STEMS.len(),
+        "progress": live.as_ref().map(|p| p.fraction),
+        "phase": live.as_ref().map(|p| p.phase),
         "stems": rows
             .into_iter()
             .map(|(stem, _rel, bytes)| json!({ "stem": stem, "bytes": bytes }))
@@ -399,15 +515,67 @@ pub async fn status(
     })))
 }
 
+/// Shortest block worth a round trip, and the longest one anybody may ask for.
+///
+/// The ceiling is a memory budget, not a policy. The sampler decodes what it
+/// asks for into float PCM - 353KB a second per part, so six parts of one
+/// minute is 127MB - and it holds the block that is playing plus the one after
+/// it. Twenty seconds is the point where two block-sets still fit comfortably
+/// on a phone.
+const MIN_BLOCK: f64 = 1.0;
+const MAX_BLOCK: f64 = 20.0;
+
+/// A 44-byte canonical WAV header for a block of 16-bit PCM.
+///
+/// Written here rather than by ffmpeg because ffmpeg cannot write a correct one
+/// to a PIPE: the RIFF and data chunk sizes are patched by seeking back to the
+/// start when the encode finishes, and a pipe does not rewind, so a piped
+/// `-f wav` carries placeholder lengths. Some decoders read to end-of-buffer
+/// anyway; the sampler must not depend on which. Asking for raw `s16le` and
+/// putting the header on ourselves means every length in the file is exact.
+fn wav_header(pcm_len: usize, channels: u16, rate: u32) -> Vec<u8> {
+    let block_align = channels * 2;
+    let byte_rate = rate * u32::from(block_align);
+    let mut h = Vec::with_capacity(44);
+    h.extend_from_slice(b"RIFF");
+    h.extend_from_slice(&((36 + pcm_len) as u32).to_le_bytes());
+    h.extend_from_slice(b"WAVEfmt ");
+    h.extend_from_slice(&16u32.to_le_bytes()); // PCM fmt chunk size
+    h.extend_from_slice(&1u16.to_le_bytes()); // format: PCM
+    h.extend_from_slice(&channels.to_le_bytes());
+    h.extend_from_slice(&rate.to_le_bytes());
+    h.extend_from_slice(&byte_rate.to_le_bytes());
+    h.extend_from_slice(&block_align.to_le_bytes());
+    h.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+    h.extend_from_slice(b"data");
+    h.extend_from_slice(&(pcm_len as u32).to_le_bytes());
+    h
+}
+
 /// `GET /api/stems/{track}/{stem}` - the audio.
 ///
-/// Read whole rather than ranged: a stem is a few megabytes and the sampler
-/// wants all of it decoded into memory anyway, so a range request would only
-/// add round trips to the moment before the first pad works.
+/// Whole by default: a caller that wants one part of a song wants the part, and
+/// a range request would only add round trips before the first sound.
+///
+/// `?from=<seconds>&len=<seconds>` asks for a BLOCK instead, and that is what
+/// the sampler uses. It plays a whole song out of six parts at once, which it
+/// cannot do by holding them: six whole stems decoded is most of half a
+/// gigabyte of float PCM and no phone has that to spare. So it streams them -
+/// a block of every part, decoded and scheduled, then the next one - and the
+/// only thing this endpoint has to guarantee is that the same `from` and `len`
+/// give every part exactly the same number of samples. That is what keeps six
+/// separately-fetched blocks landing on the same instant.
+///
+/// `&fmt=flac` for the same block losslessly compressed, which is roughly half
+/// the bytes. WAV is the default because every browser decodes it; a client
+/// that has checked its own decoder can ask for FLAC and halve its traffic.
+/// Both are lossless and both are sample-exact - the choice costs nothing but
+/// bandwidth either way.
 pub async fn file(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     AxumPath((track_id, stem)): AxumPath<(i64, String)>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<Response, (StatusCode, String)> {
     // The stream token, because an <audio> element and a fetch for an
     // ArrayBuffer cannot both carry a header - same door the rest of the
@@ -421,13 +589,91 @@ pub async fn file(
         .stem_path(track_id, &stem, MODEL)
         .ok_or((StatusCode::NOT_FOUND, "not separated yet".to_string()))?;
     let path = stem_root(&state).join(rel);
+
+    if let Some(len) = params.get("len").and_then(|v| v.parse::<f64>().ok()) {
+        let from = params
+            .get("from")
+            .and_then(|v| v.parse::<f64>().ok())
+            .unwrap_or(0.0)
+            .max(0.0);
+        let flac = params.get("fmt").map(String::as_str) == Some("flac");
+        return block(&state, &path, from, len, flac).await;
+    }
+
     let bytes = tokio::fs::read(&path)
         .await
         .map_err(|_| (StatusCode::NOT_FOUND, "the stem file has gone".to_string()))?;
     Ok(Response::builder()
-        .header(header::CONTENT_TYPE, "audio/ogg")
+        .header(header::CONTENT_TYPE, "audio/flac")
         .header(header::CACHE_CONTROL, "private, max-age=86400")
         .body(Body::from(bytes))
+        .unwrap())
+}
+
+/// Cuts `len` seconds from `from` and hands it back whole.
+///
+/// Collected in full rather than streamed. The caller decodes the entire block
+/// before it can play a sample of it, and a WAV header cannot be written until
+/// the byte count is known - so there is nothing to gain by answering early,
+/// and streaming would mean lying about the length in the header.
+async fn block(
+    state: &Arc<AppState>,
+    path: &Path,
+    from: f64,
+    len: f64,
+    flac: bool,
+) -> Result<Response, (StatusCode, String)> {
+    if !state.ffmpeg {
+        return Err((StatusCode::SERVICE_UNAVAILABLE, "no ffmpeg on this server".into()));
+    }
+    let len = len.clamp(MIN_BLOCK, MAX_BLOCK);
+    let mut command = tokio::process::Command::new("ffmpeg");
+    command
+        .args(["-nostdin", "-v", "error"])
+        .arg("-i")
+        .arg(path)
+        // AFTER the input, so the seek is decoded to the exact sample rather
+        // than snapped to a frame boundary. Every part of one track is cut with
+        // the same numbers, and only an exact cut keeps them in phase.
+        .args(["-ss", &format!("{from:.4}")])
+        .args(["-t", &format!("{len:.4}")])
+        .args(["-ac", "2", "-ar", "44100"]);
+    if flac {
+        // Level 3 rather than the default 5: this is encoded per request while
+        // somebody is waiting for it, and the last two levels buy about a
+        // percent of size for real time.
+        command.args(["-c:a", "flac", "-compression_level", "3", "-f", "flac", "-"]);
+    } else {
+        command.args(["-c:a", "pcm_s16le", "-f", "s16le", "-"]);
+    }
+    let output = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if output.stdout.is_empty() {
+        // Past the end of the stem, or a file ffmpeg could not read. Either way
+        // there is no block here, and an empty one would decode to silence that
+        // looks loaded.
+        return Err((StatusCode::NOT_FOUND, "nothing at that point in the song".into()));
+    }
+    let (kind, body) = if flac {
+        ("audio/flac", output.stdout)
+    } else {
+        let mut wav = wav_header(output.stdout.len(), 2, 44100);
+        wav.extend_from_slice(&output.stdout);
+        ("audio/wav", wav)
+    };
+    Ok(Response::builder()
+        .header(header::CONTENT_TYPE, kind)
+        // Blocks are addressed by exact offset, so the same request always
+        // means the same samples - and a seek back over ground already played
+        // costs nothing.
+        .header(header::CACHE_CONTROL, "private, max-age=3600")
+        .body(Body::from(body))
         .unwrap())
 }
 
@@ -527,4 +773,78 @@ pub async fn mix(
         .header(header::CACHE_CONTROL, "no-store")
         .body(body)
         .unwrap())
+}
+
+#[cfg(test)]
+mod block_tests {
+    use super::*;
+
+    #[test]
+    fn a_wav_header_declares_the_exact_lengths_it_was_given() {
+        // The whole reason this is hand-written: every length must be right,
+        // because a piped ffmpeg cannot go back and fix them.
+        let pcm = 44_100 * 2 * 2; // one second, stereo, 16-bit
+        let h = wav_header(pcm, 2, 44100);
+        assert_eq!(h.len(), 44);
+        assert_eq!(&h[0..4], b"RIFF");
+        assert_eq!(&h[8..12], b"WAVE");
+        assert_eq!(&h[36..40], b"data");
+        let riff = u32::from_le_bytes(h[4..8].try_into().unwrap());
+        let data = u32::from_le_bytes(h[40..44].try_into().unwrap());
+        assert_eq!(data as usize, pcm);
+        assert_eq!(riff as usize, pcm + 36, "RIFF size counts everything after itself");
+        let byte_rate = u32::from_le_bytes(h[28..32].try_into().unwrap());
+        assert_eq!(byte_rate, 44_100 * 4);
+        let align = u16::from_le_bytes(h[32..34].try_into().unwrap());
+        assert_eq!(align, 4);
+    }
+
+    #[test]
+    fn a_block_request_cannot_ask_for_more_than_a_phone_can_hold() {
+        // The sampler holds two block-sets of six parts at once. At the ceiling
+        // that is six parts times twenty seconds times two, decoded to float -
+        // and the point of the clamp is that no client, current or future, can
+        // ask for a number that puts that past what a phone will give it.
+        let resident = MAX_BLOCK * 44_100.0 * 2.0 * 4.0 * 6.0 * 2.0;
+        assert!(resident < 220_000_000.0, "two block-sets is {resident} bytes");
+        assert!(MIN_BLOCK > 0.0 && MIN_BLOCK < MAX_BLOCK);
+    }
+}
+
+#[cfg(test)]
+mod progress_tests {
+    use super::*;
+
+    #[test]
+    fn the_last_percentage_in_a_chunk_is_the_current_one() {
+        // demucs redraws its bar with carriage returns, so one read can carry
+        // several frames of it. The newest is the one at the end.
+        assert_eq!(percent_in("  4%|#   \r 12%|##  \r 37%|### "), Some(0.37));
+        assert_eq!(percent_in("100%|####|"), Some(1.0));
+        assert_eq!(percent_in("0%|"), Some(0.0));
+    }
+
+    #[test]
+    fn a_chunk_with_no_percentage_leaves_the_bar_alone() {
+        // The important half: demucs writes warnings to the same stream, and a
+        // warning must not reset a bar that is most of the way along.
+        assert_eq!(percent_in("Selected model is a bag of 1 models"), None);
+        assert_eq!(percent_in(""), None);
+        assert_eq!(percent_in("%"), None);
+        assert_eq!(percent_in("nan%"), None);
+        // Out of range is somebody else's number, not a percentage of this.
+        assert_eq!(percent_in("240%"), None);
+    }
+
+    #[test]
+    fn progress_belongs_to_one_track_at_a_time() {
+        // The point of the track id: a client polling about a song that is
+        // QUEUED behind another one must not be shown the other one's bar.
+        let w = Working::default();
+        w.set(7, 0.5, "separating", 0);
+        assert!(w.get(7).is_some());
+        assert!(w.get(8).is_none(), "another track's poll sees nothing");
+        w.clear();
+        assert!(w.get(7).is_none());
+    }
 }

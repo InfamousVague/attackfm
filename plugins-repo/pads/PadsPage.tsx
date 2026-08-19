@@ -1,632 +1,405 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Button, SegmentedControl, Slider, Switch, Text } from '@glacier/react';
-import { Grid2x2, Loader, Music, Scissors, Trash2, Volume2 } from '@glacier/icons';
+import {
+  useCallback,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
+import { Button, IconButton, Input, Text } from '@glacier/react';
+import { AudioWaveform, Loader, Pause, Play, Search, Wand2, X } from '@glacier/icons';
 import { useServerSession } from '@attackfm/app/serverSession';
 import { useLibrary } from '@attackfm/app/library';
-import { PAD_COUNT, PadEngine, emptyPad, type PadSettings } from './engine.ts';
+import { useNowPlayingMotion } from '@attackfm/app/nowPlaying';
+import { deck, STEM_HUES, STEM_LABELS } from './engine.ts';
+import { clock, putOnDeck, trackId, type Preparing, type Session, type Song } from './openSong.ts';
+import { PreparingView } from './Preparing.tsx';
+import { meterFill, padFace, seekRail, STEM_ICONS } from './padStyles.ts';
+import { claimOutput, returnOutput, useBoard } from './usePads.ts';
 
 /**
- * The Pads page.
+ * The board.
  *
- * Three things happen here and they are deliberately kept apart: asking the
- * server to separate a track (slow, remote, polled), loading the result onto
- * pads (once, up front), and playing (immediate, local, outside React).
+ * One screen, and it does not move: somewhere to find a song, a button that
+ * puts it on the pads, and the pads. The version before this was a page you
+ * scrolled - a grid, then the selected pad's eight controls, then a song
+ * picker, then the list of parts the separator had produced, then a note about
+ * kits. Every one of those was a reasonable thing to show, and together they
+ * made an instrument you had to read.
  *
- * The page never routes audio through the server. A pad has to answer a thumb
- * in a handful of milliseconds and the encoder is a hundred times too far
- * away for that, so stems are fetched once, decoded to buffers, and played
- * with Web Audio - see engine.ts.
+ * What replaced them is the deck (see engine.ts): the song plays, and a pad
+ * decides whether you hear that part of it. That removed most of the controls
+ * rather than hiding them - trim, pitch, reverse and choke are things you do to
+ * a sample you are firing, and nothing here is fired any more. The parts are
+ * locked to each other and to the song.
  */
+
+/** Nine, because six parts want a square and a square wants nine. The last
+ *  three sit empty on today's separator and are where a richer one lands. */
+const SLOT_COUNT = 9;
 
 /**
- * The parts, in the order a board wants them: voice, then the rhythm section,
- * then what is played over the top.
+ * The page fills its column and never scrolls.
  *
- * "Everything else" used to be a quarter of this list and most of the record -
- * the guitars, the keys, the strings and the horns in one pad you could only
- * mute wholesale. The six-stem separator splits guitar and piano out, so the
- * remainder is genuinely a remainder, and it is named for what it actually
- * holds rather than for everything the other three are not.
+ * Deliberately NOT `.homePage`, which is the app's standard scroller: an
+ * instrument that moves under your thumb while you are playing it is not an
+ * instrument. The bottom inset is the player strip and the nav bar, which sit
+ * over this column rather than beside it - without it the bottom row of pads
+ * lives under the transport.
  */
-const STEM_ORDER = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'] as const;
-
-const STEM_LABELS: Record<string, string> = {
-  vocals: 'Vocals',
-  drums: 'Drums',
-  bass: 'Bass',
-  guitar: 'Guitar',
-  piano: 'Keys',
-  other: 'Strings & horns',
-};
-
-const STEM_HUES: Record<string, number> = {
-  vocals: 320,
-  drums: 28,
-  bass: 265,
-  guitar: 96,
-  piano: 200,
-  other: 190,
-};
-const KIT_KEY = 'attackfm-pads-kit-v1';
-
-interface Session {
-  url: string;
-  token: string;
-}
-
-async function api<T>(session: Session, path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${session.url}${path}`, {
-    ...init,
-    headers: { authorization: `Bearer ${session.token}` },
-  });
-  if (!res.ok) throw new Error(await res.text().catch(() => `${res.status}`));
-  return (await res.json()) as T;
-}
-
-async function fetchStem(session: Session, trackId: number, stem: string): Promise<ArrayBuffer> {
-  const res = await fetch(`${session.url}/api/stems/${trackId}/${stem}`, {
-    headers: { authorization: `Bearer ${session.token}` },
-  });
-  if (!res.ok) throw new Error(`${res.status}`);
-  return res.arrayBuffer();
-}
-
-/* ── styles: a dark instrument face, because that is what these are ──────── */
-const page: CSSProperties = {
+const shell: CSSProperties = {
+  flex: 1,
+  minHeight: 0,
   display: 'flex',
   flexDirection: 'column',
-  gap: 16,
+  gap: 12,
   padding: 'var(--glacier-space-4)',
-  maxWidth: 760,
-};
-const grid: CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(4, 1fr)',
-  gap: 8,
-  touchAction: 'manipulation',
-};
-const padFace = (hue: number | null, lit: boolean, selected: boolean): CSSProperties => ({
-  aspectRatio: '1',
-  borderRadius: 10,
-  border: selected ? '2px solid var(--glacier-accent-9)' : '1px solid var(--glacier-border)',
-  background: hue === null
-    ? 'var(--glacier-surface)'
-    : `linear-gradient(150deg, hsl(${hue} 55% ${lit ? 52 : 30}% / ${lit ? 0.95 : 0.5}), var(--glacier-surface))`,
-  color: 'var(--glacier-text)',
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'flex-start',
-  justifyContent: 'flex-end',
-  gap: 2,
-  padding: 8,
-  cursor: 'pointer',
-  userSelect: 'none',
-  WebkitUserSelect: 'none',
-  WebkitTapHighlightColor: 'transparent',
-  // `none`, not `manipulation`: manipulation still lets the browser own pan
-  // and pinch, and on a grid of sixteen small targets that is exactly how a
-  // second finger gets swallowed by a scroll gesture instead of playing.
-  touchAction: 'none',
-  transform: lit ? 'scale(0.97)' : 'none',
-  transition: lit ? 'none' : 'transform 120ms ease, background 160ms ease',
+  paddingBottom:
+    'calc(var(--app-player-height, 0px) + var(--app-nav-height, 0px) + var(--glacier-space-3))',
   overflow: 'hidden',
-});
-const row: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10 };
-const knob: CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: '74px 1fr 52px',
-  gap: 10,
-  alignItems: 'center',
+  position: 'relative',
 };
+
+const topRow: CSSProperties = {
+  position: 'relative',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+};
+
+/** Hung off the search row itself, so it lands under the box whatever height
+ *  the control turns out to be. The page does not scroll; this does. */
+const results: CSSProperties = {
+  position: 'absolute',
+  top: 'calc(100% + 6px)',
+  left: 0,
+  right: 0,
+  zIndex: 5,
+  background: 'var(--glacier-surface)',
+  border: '1px solid var(--glacier-border)',
+  borderRadius: 10,
+  boxShadow: 'var(--glacier-shadow-3, 0 18px 40px -18px rgb(0 0 0 / 0.55))',
+  maxHeight: 300,
+  overflowY: 'auto',
+  padding: 4,
+};
+
+const hit: CSSProperties = {
+  display: 'block',
+  width: '100%',
+  textAlign: 'left',
+  background: 'transparent',
+  border: 0,
+  color: 'var(--glacier-text)',
+  padding: '8px 10px',
+  borderRadius: 7,
+  cursor: 'pointer',
+};
+
+const boardWrap: CSSProperties = {
+  flex: 1,
+  minHeight: 0,
+  display: 'flex',
+  justifyContent: 'center',
+};
+
+const board: CSSProperties = {
+  flex: 1,
+  minHeight: 0,
+  maxWidth: 820,
+  display: 'grid',
+  gridTemplateColumns: 'repeat(3, 1fr)',
+  gridTemplateRows: 'repeat(3, 1fr)',
+  gap: 8,
+  touchAction: 'none',
+};
+
+/** What is on the deck, kept beside the deck rather than in the component: the
+ *  deck outlives this page, so the labels describing it have to as well, or
+ *  coming back shows a board playing a song it cannot name. */
+let loadedSong: Song | null = null;
 
 export function PadsPage() {
   const { session } = useServerSession();
   const { tracks } = useLibrary();
-  const engineRef = useRef<PadEngine | null>(null);
-  if (engineRef.current === null) engineRef.current = new PadEngine();
-  const engine = engineRef.current;
+  const { track: nowPlaying, position: nowAt } = useNowPlayingMotion();
 
-  const [pads, setPads] = useState<PadSettings[]>(() => {
-    try {
-      const raw = localStorage.getItem(KIT_KEY);
-      const parsed = raw ? (JSON.parse(raw) as PadSettings[]) : null;
-      if (Array.isArray(parsed) && parsed.length === PAD_COUNT) return parsed;
-    } catch {
-      // A kit that will not parse is a kit that never existed.
-    }
-    return Array.from({ length: PAD_COUNT }, emptyPad);
-  });
-  const [selected, setSelected] = useState(0);
-  /* Multitouch is the default assumption, not a special case: a Set of lit
-   * pads and a voice per POINTER. The first cut kept one `lit` number and one
-   * release function, which meant a second finger stole the first one's
-   * release - so lifting either finger stopped the wrong sound, or none. */
-  const [lit, setLit] = useState<Set<number>>(new Set());
-  const [note, setNote] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  /** Which track the stem picker is looking at. */
-  const [pickTrack, setPickTrack] = useState<number | null>(null);
-  const [jobState, setJobState] = useState<string>('none');
-  const [ready, setReady] = useState<string[]>([]);
-  /** Pads whose audio is actually decoded in this session - a kit restored
-   *  from storage has settings but no sound until it is reloaded. */
-  const [loaded, setLoaded] = useState<Set<number>>(new Set());
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [song, setSong] = useState<Song | null>(loadedSong);
+  const [progress, setProgress] = useState<Preparing | null>(null);
+  const [note, setNote] = useState('');
 
-  /**
-   * The board as it stands, for code that runs between renders.
-   *
-   * autoMap awaits a fetch and a decode per stem, so by the time it looks for
-   * the next free pad it would be reading the `pads` its closure captured
-   * before any of them landed - and would put every stem on the same pad.
-   */
-  const padsRef = useRef(pads);
-  padsRef.current = pads;
-  const loadedRef = useRef(loaded);
-  loadedRef.current = loaded;
+  const total = song?.duration || deck.duration || 1;
+  const cast = useBoard(total);
 
-  const say = (text: string) => {
-    setNote(text);
-    window.setTimeout(() => setNote(null), 4000);
-  };
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(KIT_KEY, JSON.stringify(pads));
-    } catch {
-      // Not worth failing over.
-    }
-  }, [pads]);
-
-  useEffect(() => () => engine.dispose(), [engine]);
-
-  const patch = (index: number, next: Partial<PadSettings>) =>
-    setPads((prev) => prev.map((p, i) => (i === index ? { ...p, ...next } : p)));
-
-  /* ── playing ─────────────────────────────────────────────────────────── */
-
-  /** One entry per live pointer (or key), so fingers cannot take each other's
-   *  sound away. */
-  const heldRef = useRef(new Map<number, { pad: number; release: (() => void) | null }>());
-
-  const strike = useCallback(
-    (index: number, velocity: number, pointer: number) => {
-      // Synchronous. The whole reason this is not awaited is that a promise
-      // costs a microtask at best, and an instrument that answers a microtask
-      // late is an instrument that feels broken.
-      const release = engine.hit(index, pads, velocity);
-      heldRef.current.set(pointer, { pad: index, release: pads[index]?.gate ? release : null });
-      setLit((prev) => {
-        const next = new Set(prev);
-        next.add(index);
-        return next;
-      });
-    },
-    [engine, pads],
-  );
-
-  /** Lifts one pointer, releasing only the sound that pointer started. */
-  const letGo = useCallback((pointer: number) => {
-    const held = heldRef.current.get(pointer);
-    if (!held) return;
-    heldRef.current.delete(pointer);
-    held.release?.();
-    setLit((prev) => {
-      // Only unlight if no OTHER pointer is still holding this pad.
-      for (const other of heldRef.current.values()) if (other.pad === held.pad) return prev;
-      const next = new Set(prev);
-      next.delete(held.pad);
-      return next;
-    });
-  }, []);
-
-  // The desktop keyboard, laid out like the grid it plays: 1234 / qwer /
-  // asdf / zxcv, so the keys sit where the pads do.
-  useEffect(() => {
-    const keys = '1234qwerasdfzxcv';
-    const down = (e: KeyboardEvent) => {
-      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
-      const target = e.target as HTMLElement | null;
-      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
-      const index = keys.indexOf(e.key.toLowerCase());
-      if (index === -1) return;
-      e.preventDefault();
-      // Negative ids so a key and a finger can never collide.
-      strike(index, 1, -1 - index);
-    };
-    const up = (e: KeyboardEvent) => {
-      const index = keys.indexOf(e.key.toLowerCase());
-      if (index !== -1) letGo(-1 - index);
-    };
-    window.addEventListener('keydown', down);
-    window.addEventListener('keyup', up);
-    return () => {
-      window.removeEventListener('keydown', down);
-      window.removeEventListener('keyup', up);
-    };
-  }, [strike, letGo]);
-
-  /* ── separating ──────────────────────────────────────────────────────── */
-
-  const askForStems = async (trackId: number) => {
-    if (!session) return;
-    setBusy(true);
-    try {
-      const res = await api<{ state: string }>(session as Session, `/api/stems/${trackId}`, {
-        method: 'POST',
-      });
-      setJobState(res.state);
-      say(
-        res.state === 'done'
-          ? 'Already separated — pick a part.'
-          : 'Separating. This takes about half a minute a song.',
-      );
-    } catch (e) {
-      say(e instanceof Error && e.message ? e.message : 'Could not ask the server.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // Poll while a separation runs. Stops the moment it is done or fails, so an
-  // open page is not a permanent request loop.
-  useEffect(() => {
-    if (!session || pickTrack === null) return;
-    let live = true;
-    const check = async () => {
-      try {
-        const res = await api<{ state: string; stems: { stem: string }[] }>(
-          session as Session,
-          `/api/stems/${pickTrack}`,
-        );
-        if (!live) return;
-        setJobState(res.state);
-        const have = res.stems.map((s) => s.stem);
-        setReady(have);
-        // Lay them out the moment they exist.
-        if (res.state === 'done' && have.length > 0) void autoMap(pickTrack, have);
-      } catch {
-        if (live) setJobState('none');
-      }
-    };
-    void check();
-    const timer = window.setInterval(() => {
-      if (jobState === 'queued' || jobState === 'running') void check();
-    }, 3000);
-    return () => {
-      live = false;
-      window.clearInterval(timer);
-    };
-  }, [session, pickTrack, jobState]);
-
-  /**
-   * Put a freshly separated track on the board without being asked.
-   *
-   * Separating a song and then assigning each part to a pad by hand is two
-   * jobs, and the second one has exactly one sensible answer: the parts in the
-   * order a board wants them, on the first free pads. Six stems meant six
-   * manual assignments to reach the state everybody wanted anyway.
-   *
-   * Only ever fills pads that are EMPTY, and never touches one already holding
-   * something - a board someone has built is theirs, and a separation finishing
-   * in the background must not rearrange it. Anything it does can be undone by
-   * assigning over it, exactly as before.
-   */
-  const autoMap = async (trackId: number, have: readonly string[]) => {
-    // Canonical order first, then anything the model produced that this build
-    // does not know about - a newer separator adding a stem should still land
-    // on the board rather than being silently dropped.
-    const ordered = [
-      ...STEM_ORDER.filter((s) => have.includes(s)),
-      ...have.filter((s) => !STEM_ORDER.includes(s as (typeof STEM_ORDER)[number])),
-    ];
-
-    const taken = new Set<number>();
-    for (const stem of ordered) {
-      // Already on the board from an earlier pass? Leave it where it is.
-      const existing = padsRef.current.findIndex(
-        (p) => p.source?.trackId === trackId && p.source?.stem === stem,
-      );
-      if (existing !== -1) {
-        taken.add(existing);
-        continue;
-      }
-      const free = padsRef.current.findIndex(
-        (p, i) => !taken.has(i) && !p.source && !loadedRef.current.has(i),
-      );
-      if (free === -1) break; // A full board is a deliberate one; stop.
-      taken.add(free);
-      await assign(free, trackId, stem);
-    }
-  };
-
-  const assign = async (index: number, trackId: number, stem: string) => {
-    if (!session) return;
-    setBusy(true);
-    try {
-      const bytes = await fetchStem(session as Session, trackId, stem);
-      await engine.load(index, bytes);
-      const track = tracks.find((t) => t.path.endsWith(`${trackId}`) || false);
-      patch(index, {
-        name: `${STEM_LABELS[stem] ?? stem}${track ? ` · ${track.title}` : ''}`,
-        source: { trackId, stem },
-        start: 0,
-        end: 1,
-        // Hold is the default for every pad now (see emptyPad), and it
-        // matters most here: a stem is a WHOLE track, so a one-shot pad would
-        // play three minutes of vocal however briefly it was touched.
-        gate: true,
-      });
-      setLoaded((prev) => new Set(prev).add(index));
-      say('On the pad. Hit it.');
-    } catch {
-      say('That part is not ready yet.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  /** Re-decode a kit restored from storage. */
-  const reloadKit = async () => {
-    if (!session) return;
-    setBusy(true);
-    let ok = 0;
-    for (let i = 0; i < pads.length; i += 1) {
-      const src = pads[i]?.source;
-      if (!src) continue;
-      try {
-        const bytes = await fetchStem(session as Session, src.trackId, src.stem);
-        await engine.load(i, bytes);
-        setLoaded((prev) => new Set(prev).add(i));
-        ok += 1;
-      } catch {
-        // A stem that has been evicted since: the pad keeps its settings and
-        // simply has no sound until it is separated again.
-      }
-    }
-    setBusy(false);
-    say(ok > 0 ? `Reloaded ${ok} pad${ok === 1 ? '' : 's'}.` : 'Nothing to reload.');
-  };
-
-  const conf = pads[selected] ?? emptyPad();
-  const peaks = useMemo(
-    () => (loaded.has(selected) ? engine.peaks(selected, 120) : []),
-    [engine, selected, loaded],
-  );
-
-  const musicTracks = useMemo(
-    () => tracks.filter((t) => t.path.startsWith('afm://')).slice(0, 400),
+  const music = useMemo(
+    () => tracks.filter((t) => t.kind !== 'book' && trackId(t.path) !== null),
     [tracks],
   );
 
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return music
+      .filter(
+        (t) =>
+          t.title.toLowerCase().includes(q) ||
+          t.artist.toLowerCase().includes(q) ||
+          t.album.toLowerCase().includes(q),
+      )
+      .slice(0, 40);
+  }, [music, query]);
+
+  /** The parts on the deck, in board order, padded out to a full grid. */
+  const slots = useMemo(
+    () => Array.from({ length: SLOT_COUNT }, (_, i) => cast.stems[i] ?? null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the deck's list is not React state; revision is how it announces a change
+    [cast.revision],
+  );
+
+  const say = useCallback((text: string) => {
+    setNote(text);
+    window.setTimeout(() => setNote((n) => (n === text ? '' : n)), 4000);
+  }, []);
+
+  const asSong = useCallback(
+    (t: { path: string; title: string; artist: string; duration: number | null }): Song | null => {
+      const id = trackId(t.path);
+      if (id === null) return null;
+      return { id, title: t.title, artist: t.artist, duration: t.duration ?? 0 };
+    },
+    [],
+  );
+
+  const load = useCallback(
+    async (target: Song, from: number) => {
+      if (!session) return;
+      setProgress({ phase: 'asking', fraction: null, filed: 0, parts: 6 });
+      setSong(target);
+      loadedSong = target;
+      claimOutput();
+      cast.refresh();
+      const outcome = await putOnDeck(session as Session, target, from, setProgress);
+      if (outcome.superseded) return;
+      setProgress(null);
+      if (!outcome.ok) {
+        say(outcome.problem ?? 'That did not work.');
+        return;
+      }
+      cast.refresh();
+    },
+    [session, say, cast],
+  );
+
+  /** Where in the song to pick it up. */
+  const startingPoint = useCallback(
+    (target: Song): number => {
+      // The song already playing, at the point you are listening to: you heard
+      // the bit you want, and this hands it straight over mid-phrase - which is
+      // the whole difference between taking over from the player and starting
+      // the song again. Anything else opens at the top, like a song should.
+      const playingId = nowPlaying ? trackId(nowPlaying.path) : null;
+      return playingId === target.id && nowAt > 5 ? nowAt : 0;
+    },
+    [nowPlaying, nowAt],
+  );
+
+  /**
+   * The Map button.
+   *
+   * Takes the top match when a search is running, and otherwise whatever is
+   * playing - which is the case that matters most: you are listening to
+   * something and want to take it apart, and typing its name back into a box to
+   * do that is asking you to tell the app what it already knows.
+   */
+  const mapTarget = useMemo(() => {
+    if (query.trim() && matches[0]) return asSong(matches[0]);
+    return nowPlaying ? asSong(nowPlaying) : null;
+  }, [query, matches, nowPlaying, asSong]);
+
+  const scrub = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!song || cast.stems.length === 0) return;
+    const box = e.currentTarget.getBoundingClientRect();
+    deck.seek(((e.clientX - box.left) / Math.max(1, box.width)) * total);
+  };
+
+  const clearBoard = () => {
+    deck.clear();
+    returnOutput();
+    loadedSong = null;
+    setSong(null);
+    cast.refresh();
+  };
+
   return (
-    <div className="homePage">
-      <div style={page}>
-        <header style={row}>
-          <Grid2x2 size={22} aria-hidden />
-          <div style={{ flex: 1 }}>
-            <Text weight="bold" size="lg">Pads</Text>
-            <Text tone="muted" size="sm">
-              Sixteen pads, fed by your own records. Keys 1234 / qwer / asdf / zxcv play them.
-            </Text>
+    <div style={shell}>
+      <div style={topRow}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <Input
+            aria-label="Find a song"
+            placeholder="Find a song"
+            value={query}
+            leadingIcon={<Search size={16} />}
+            trailingIcon={
+              query ? (
+                <IconButton
+                  variant="ghost"
+                  size="sm"
+                  aria-label="Clear"
+                  onClick={() => {
+                    setQuery('');
+                    setOpen(false);
+                  }}
+                >
+                  <X size={14} />
+                </IconButton>
+              ) : undefined
+            }
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+            style={{ width: '100%' }}
+          />
+        </div>
+        <Button
+          variant="solid"
+          onClick={() => {
+            if (!mapTarget) return;
+            setOpen(false);
+            setQuery('');
+            void load(mapTarget, startingPoint(mapTarget));
+          }}
+          disabled={!session || !mapTarget || progress !== null}
+        >
+          {progress ? <Loader size={16} /> : <Wand2 size={16} />} Map
+        </Button>
+
+        {open && matches.length > 0 && (
+          <div style={results} role="listbox" aria-label="Songs">
+            {matches.map((t) => (
+              <button
+                key={t.path}
+                type="button"
+                role="option"
+                aria-selected={false}
+                style={hit}
+                onClick={() => {
+                  const target = asSong(t);
+                  if (!target) return;
+                  setOpen(false);
+                  setQuery('');
+                  void load(target, startingPoint(target));
+                }}
+              >
+                <Text size="sm">{t.title}</Text>
+                <Text size="xs" tone="muted">
+                  {t.artist}
+                </Text>
+              </button>
+            ))}
           </div>
-          <Button variant="ghost" size="sm" onClick={() => engine.panic()}>Stop all</Button>
-        </header>
-
-        {!session && (
-          <Text tone="muted" size="sm">
-            Separating a song happens on your server — sign in to one to pull tracks apart.
-          </Text>
         )}
+      </div>
 
-        {/* The instrument */}
-        <div style={grid} role="group" aria-label="Pads">
-          {pads.map((p, i) => {
-            const hue = p.source ? (STEM_HUES[p.source.stem] ?? 200) : null;
-            const live = loaded.has(i);
+      {!session ? (
+        <Text tone="muted" size="sm">
+          Pulling a song apart happens on your server. Sign in to one to use the board.
+        </Text>
+      ) : song ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <IconButton
+            variant="solid"
+            aria-label={cast.playing ? 'Pause' : 'Play'}
+            onClick={cast.toggleRun}
+            disabled={cast.stems.length === 0}
+          >
+            {cast.playing ? <Pause size={18} /> : <Play size={18} />}
+          </IconButton>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <Text
+              size="sm"
+              weight="bold"
+              style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            >
+              {song.title}
+            </Text>
+            <Text size="xs" tone="muted">
+              {note || `${song.artist} · ${clock(total)}`}
+            </Text>
+            <div style={seekRail} onPointerDown={scrub} role="presentation" aria-label="Seek">
+              <span
+                ref={cast.headRef}
+                style={{
+                  position: 'absolute',
+                  inset: '0 auto 0 0',
+                  width: '0%',
+                  background: 'var(--glacier-accent-solid)',
+                  borderRadius: 3,
+                }}
+              />
+            </div>
+          </div>
+          <IconButton variant="ghost" aria-label="Clear the board" onClick={clearBoard}>
+            <X size={18} />
+          </IconButton>
+        </div>
+      ) : (
+        <Text tone="muted" size="sm">
+          {note || 'Find a song, or press Map to take apart what is playing.'}
+        </Text>
+      )}
+
+      {progress ? (
+        <div style={{ ...boardWrap, alignItems: 'center' }}>
+          <div style={{ width: '100%', maxWidth: 820 }}>
+            <PreparingView progress={progress} />
+          </div>
+        </div>
+      ) : (
+      <div style={boardWrap}>
+        <div style={board} role="group" aria-label="Parts">
+          {slots.map((stem, i) => {
+            if (!stem) return <div key={`empty-${i}`} style={padFace(null, false)} aria-hidden />;
+            const Icon = STEM_ICONS[stem] ?? AudioWaveform;
+            const live = cast.on[stem] ?? false;
             return (
               <button
-                key={i}
+                key={stem}
                 type="button"
-                aria-label={p.name || `Pad ${i + 1}`}
-                style={padFace(hue, lit.has(i), selected === i)}
+                aria-pressed={live}
+                aria-label={STEM_LABELS[stem] ?? stem}
+                style={padFace(STEM_HUES[stem] ?? 200, live)}
                 onPointerDown={(e) => {
                   e.preventDefault();
-                  setSelected(i);
-                  if (!live) return;
-                  // Capture, so this pad keeps the pointer even if the finger
-                  // slides off it. Without this a drum roll across the grid
-                  // loses every pad the finger leaves, and pointerup lands on
-                  // whatever element happens to be under the lift.
+                  // Capture, so a finger that slides off still releases on the
+                  // pad it pressed rather than on whatever is under the lift.
                   try {
                     e.currentTarget.setPointerCapture(e.pointerId);
                   } catch {
                     // Some engines refuse capture for a pointer already gone.
                   }
-                  // Velocity from where the pad was struck: the lower the
-                  // thumb lands, the harder it reads - the same convention
-                  // hardware pads use for their own strike zones.
-                  const box = e.currentTarget.getBoundingClientRect();
-                  const y = (e.clientY - box.top) / Math.max(1, box.height);
-                  strike(i, 0.55 + Math.max(0, Math.min(1, y)) * 0.45, e.pointerId);
+                  cast.press(stem, e.pointerId);
                 }}
-                onPointerUp={(e) => letGo(e.pointerId)}
-                onPointerCancel={(e) => letGo(e.pointerId)}
+                onPointerUp={(e) => cast.lift(e.pointerId)}
+                onPointerCancel={(e) => cast.lift(e.pointerId)}
               >
-                <Text size="xs" tone="muted" style={{ opacity: 0.75 }}>{i + 1}</Text>
-                <Text size="xs" style={{ lineHeight: 1.15, opacity: live ? 1 : 0.5 }}>
-                  {p.name ? p.name.split(' · ')[0] : 'empty'}
+                <span ref={cast.meterRef(stem)} style={meterFill} aria-hidden />
+                <Icon size={20} style={{ opacity: live ? 1 : 0.55, position: 'relative' }} />
+                <Text
+                  size="sm"
+                  weight="bold"
+                  style={{ position: 'relative', opacity: live ? 1 : 0.6, lineHeight: 1.1 }}
+                >
+                  {STEM_LABELS[stem] ?? stem}
                 </Text>
               </button>
             );
           })}
         </div>
-
-        {note && <Text size="sm" tone="muted">{note}</Text>}
-
-        {/* The selected pad */}
-        <section style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <Text weight="bold" size="sm">Pad {selected + 1}{conf.name ? ` — ${conf.name}` : ''}</Text>
-
-          {peaks.length > 0 && (
-            <div
-              aria-hidden
-              style={{
-                display: 'flex', alignItems: 'center', gap: 1, height: 44,
-                background: 'var(--glacier-surface)', borderRadius: 6, padding: '0 6px',
-                border: '1px solid var(--glacier-border)',
-              }}
-            >
-              {peaks.map((v, i) => {
-                const at = i / peaks.length;
-                const inside = at >= conf.start && at <= conf.end;
-                return (
-                  <span
-                    key={i}
-                    style={{
-                      flex: 1,
-                      height: `${Math.max(2, v * 100)}%`,
-                      background: inside ? 'var(--glacier-accent-9)' : 'var(--glacier-border)',
-                      borderRadius: 1,
-                    }}
-                  />
-                );
-              })}
-            </div>
-          )}
-
-          {loaded.has(selected) ? (
-            <>
-              <label style={knob}>
-                <Text size="xs" tone="muted">Level</Text>
-                <Slider aria-label="Level" min={0} max={1.5} step={0.05} value={conf.gain}
-                  onValueChange={(v: number) => patch(selected, { gain: v })} />
-                <Text size="xs" style={{ textAlign: 'right' }}>{Math.round(conf.gain * 100)}%</Text>
-              </label>
-              <label style={knob}>
-                <Text size="xs" tone="muted">Pitch</Text>
-                <Slider aria-label="Pitch" min={-12} max={12} step={1} value={conf.pitch}
-                  onValueChange={(v: number) => patch(selected, { pitch: v })} />
-                <Text size="xs" style={{ textAlign: 'right' }}>{conf.pitch > 0 ? '+' : ''}{conf.pitch}</Text>
-              </label>
-              <label style={knob}>
-                <Text size="xs" tone="muted">Start</Text>
-                <Slider aria-label="Start" min={0} max={0.98} step={0.01} value={conf.start}
-                  onValueChange={(v: number) => patch(selected, { start: Math.min(v, conf.end - 0.01) })} />
-                <Text size="xs" style={{ textAlign: 'right' }}>{Math.round(conf.start * 100)}%</Text>
-              </label>
-              <label style={knob}>
-                <Text size="xs" tone="muted">End</Text>
-                <Slider aria-label="End" min={0.02} max={1} step={0.01} value={conf.end}
-                  onValueChange={(v: number) => patch(selected, { end: Math.max(v, conf.start + 0.01) })} />
-                <Text size="xs" style={{ textAlign: 'right' }}>{Math.round(conf.end * 100)}%</Text>
-              </label>
-              <div style={{ ...row, flexWrap: 'wrap', gap: 16 }}>
-                <label style={row} title="On: the pad sounds while you hold it. Off: one hit plays the whole slice.">
-                  <Switch aria-label="Hold" checked={conf.gate}
-                    onCheckedChange={(v: boolean) => patch(selected, { gate: v })} />
-                  <Text size="xs" tone="muted">Hold</Text>
-                </label>
-                <label style={row}>
-                  <Switch aria-label="Loop" checked={conf.loop}
-                    onCheckedChange={(v: boolean) => patch(selected, { loop: v })} />
-                  <Text size="xs" tone="muted">Loop</Text>
-                </label>
-                <label style={row}>
-                  <Switch aria-label="Reverse" checked={conf.reverse}
-                    onCheckedChange={(v: boolean) => patch(selected, { reverse: v })} />
-                  <Text size="xs" tone="muted">Reverse</Text>
-                </label>
-                <label style={row}>
-                  <Text size="xs" tone="muted">Choke</Text>
-                  <SegmentedControl aria-label="Choke group" size="sm"
-                    value={String(conf.choke)}
-                    options={[
-                      { value: '0', label: 'None' },
-                      { value: '1', label: '1' },
-                      { value: '2', label: '2' },
-                    ]}
-                    onValueChange={(v) => patch(selected, { choke: Number(v) })} />
-                </label>
-              </div>
-              <div style={row}>
-                <Button variant="ghost" size="sm"
-                  onClick={() => { patch(selected, emptyPad()); setLoaded((p) => { const n = new Set(p); n.delete(selected); return n; }); }}>
-                  <Trash2 size={14} /> Clear pad
-                </Button>
-              </div>
-            </>
-          ) : (
-            <Text tone="muted" size="sm">
-              {conf.source
-                ? 'This pad has a sound saved but not loaded yet — use Reload kit below.'
-                : 'Nothing on this pad. Pick a song below, separate it, and choose a part.'}
-            </Text>
-          )}
-        </section>
-
-        {/* Feeding the pads */}
-        <section style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <Text weight="bold" size="sm"><Scissors size={14} /> Pull a song apart</Text>
-          <select
-            aria-label="Song to separate"
-            value={pickTrack ?? ''}
-            onChange={(e) => {
-              const id = Number(e.target.value);
-              setPickTrack(Number.isFinite(id) && id > 0 ? id : null);
-              setReady([]);
-              setJobState('none');
-            }}
-            style={{
-              padding: '8px 10px', borderRadius: 8, background: 'var(--glacier-surface)',
-              color: 'var(--glacier-text)', border: '1px solid var(--glacier-border)',
-            }}
-          >
-            <option value="">Choose a song…</option>
-            {musicTracks.map((t) => {
-              const id = Number(t.path.replace('afm://', ''));
-              return Number.isFinite(id) ? (
-                <option key={t.path} value={id}>{t.title} — {t.artist}</option>
-              ) : null;
-            })}
-          </select>
-
-          {pickTrack !== null && (
-            <div style={{ ...row, flexWrap: 'wrap' }}>
-              <Button size="sm" variant="solid" disabled={busy || jobState === 'running' || jobState === 'queued'}
-                onClick={() => void askForStems(pickTrack)}>
-                {jobState === 'running' || jobState === 'queued'
-                  ? (<><Loader size={14} /> Separating…</>)
-                  : (<><Music size={14} /> Separate this song</>)}
-              </Button>
-              {jobState === 'failed' && <Text size="sm" tone="muted">That one failed — try another.</Text>}
-            </div>
-          )}
-
-          {ready.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {ready.map((stem) => (
-                <Button key={stem} size="sm" variant="ghost" disabled={busy}
-                  onClick={() => pickTrack !== null && void assign(selected, pickTrack, stem)}>
-                  <Volume2 size={14} /> {STEM_LABELS[stem] ?? stem} → pad {selected + 1}
-                </Button>
-              ))}
-            </div>
-          )}
-
-          <Text size="xs" tone="muted">
-            Pads sound while you hold them and stop when you let go. Turn Hold off on a pad to
-            make it a one-shot instead.
-          </Text>
-          <div style={row}>
-            <Button variant="ghost" size="sm" disabled={busy} onClick={() => void reloadKit()}>
-              Reload kit
-            </Button>
-            <Text size="xs" tone="muted">
-              Kits are saved on this device; the sounds are fetched again when you come back.
-            </Text>
-          </div>
-        </section>
       </div>
+      )}
     </div>
   );
 }

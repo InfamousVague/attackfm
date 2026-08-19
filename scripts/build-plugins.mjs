@@ -51,6 +51,7 @@ const HOST_MODULES = new Set([
   '@attackfm/app/nowPlaying',
   '@attackfm/app/librarySync',
   '@attackfm/app/serverSession',
+  '@attackfm/app/deckHold',
   '@attackfm/app/playlists',
   '@attackfm/app/equalizer',
   '@attackfm/app/fxChain',
