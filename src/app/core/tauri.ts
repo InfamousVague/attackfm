@@ -463,7 +463,39 @@ export async function systemOutputVolume(): Promise<number> {
  * `crossOrigin="anonymous"` on the element the graph is untainted and readable.
  * The asset scope in tauri.conf.json must cover the file (the audio + home trees).
  */
+/**
+ * The audio source for a path, asking to START at `from` seconds.
+ *
+ * Only a live encode can honour that, and only the server can do it: `-ss`
+ * before `-i` seeks by keyframe index, which measured at 110ms to first byte
+ * against 116ms unseeked - free, in other words. It matters because the
+ * alternative is what the app used to do, which was ask for the stream from
+ * zero and then set `currentTime`: on a length-less ADTS body the element
+ * cannot seek past what it has, so every change of sound made the server
+ * re-encode the song from the top and the listener wait for all of it to
+ * arrive. Three minutes in, that is about 2.4 seconds of encode and 3.8MB of
+ * audio nobody hears, and it grows the deeper into the track you are.
+ *
+ * Anything the element can seek itself - a file on this device, a range-capable
+ * stream - comes back with `offset: 0` and is seeked the ordinary way.
+ */
+export async function loadAudioSource(
+  path: string,
+  from = 0,
+): Promise<AudioSource | null> {
+  const url = await loadLocalAudioUrl(path);
+  if (url) return { url, offset: 0 };
+  const remote = resolveRemoteAudioSource(path, from);
+  if (remote) return remote;
+  return null;
+}
+
+/** The plain URL, from the top. Every caller that is not resuming in place. */
 export async function loadAudioUrl(path: string): Promise<string | null> {
+  return (await loadAudioSource(path, 0))?.url ?? null;
+}
+
+async function loadLocalAudioUrl(path: string): Promise<string | null> {
   // A copy on this device wins over the wire, always: it plays with no
   // network at all, costs the hub nothing, and starts instantly. The asset
   // protocol serves it range-capable and CORS-clean, so the analyser - and
@@ -494,12 +526,10 @@ export async function loadAudioUrl(path: string): Promise<string | null> {
     }
   }
 
-  // A server track resolves to an ordinary HTTPS URL, which the element plays
-  // exactly the way it plays the asset protocol - and, being CORS-clean, reads
-  // through the analyser the same way too. The whole remote-library feature
-  // lands on this one branch.
-  const remote = resolveRemoteAudioUrl(path);
-  if (remote) return remote;
+  // A server track is not this function's business - `loadAudioSource` above
+  // asks the remote resolver, which is the one that knows how to start a
+  // stream partway in.
+  if (isRemotePathLike(path)) return null;
 
   if (!isTauri()) return null;
   try {
@@ -549,7 +579,23 @@ async function androidVaultUrl(local: string): Promise<string | null> {
  */
 type RemoteResolver = (path: string) => string | null;
 
-let remoteResolver: RemoteResolver | null = null;
+/**
+ * A remote answer, and where in the song it actually begins.
+ *
+ * `offset` is 0 for anything the element can seek on its own - a range-capable
+ * stream, a file on this device. It is non-zero only when the answer is a LIVE
+ * ENCODE that the server started partway in, because that stream's clock reads
+ * zero at `offset` seconds into the song and every reader of `currentTime` has
+ * to know it.
+ */
+export interface AudioSource {
+  url: string;
+  offset: number;
+}
+
+type SeekingResolver = (path: string, seek: number) => AudioSource | null;
+
+let remoteResolver: SeekingResolver | null = null;
 
 /**
  * The same seam for the offline vault, and for the same reason: this module
@@ -562,11 +608,15 @@ export function setOfflineAudioResolver(resolver: RemoteResolver | null): void {
   offlineResolver = resolver;
 }
 
-export function setRemoteAudioResolver(resolver: RemoteResolver | null): void {
+export function setRemoteAudioResolver(resolver: SeekingResolver | null): void {
   remoteResolver = resolver;
 }
 
-function resolveRemoteAudioUrl(path: string): string | null {
+function isRemotePathLike(path: string): boolean {
+  return path.startsWith('afm://');
+}
+
+function resolveRemoteAudioSource(path: string, seek: number): AudioSource | null {
   if (!path.startsWith('afm://')) return null;
-  return remoteResolver?.(path) ?? null;
+  return remoteResolver?.(path, seek) ?? null;
 }
