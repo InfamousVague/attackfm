@@ -39,6 +39,18 @@ export interface Preparing {
   /** Parts written so far, of how many the model makes. */
   filed: number;
   parts: number;
+  /** Separations ahead of this one, where the server can say. */
+  ahead: number | null;
+  /**
+   * Seconds since this wait began.
+   *
+   * The one number that is always available. A server that predates live
+   * progress sends no percentage at all, and without this the panel had nothing
+   * moving on it for the entire separation - which for a job that takes minutes
+   * is indistinguishable from a hang, and is exactly how a working separation
+   * came to look broken.
+   */
+  seconds: number;
 }
 
 export type Progress = (p: Preparing) => void;
@@ -111,7 +123,9 @@ export async function putOnDeck(
     let have = (await status()).stems.map((x) => x.stem);
 
     if (have.length === 0) {
-      say({ phase: 'asking', fraction: null, filed: 0, parts: 6 });
+      const began = Date.now();
+      const since = () => Math.round((Date.now() - began) / 1000);
+      say({ phase: 'asking', fraction: null, filed: 0, parts: 6, seconds: 0, ahead: null });
       const asked = await api<{ state: string }>(session, `/api/stems/${song.id}`, {
         method: 'POST',
       });
@@ -125,21 +139,40 @@ export async function putOnDeck(
         await new Promise((r) => window.setTimeout(r, 1000));
         const now = await status();
         state = now.state;
-        // No `phase` means the worker is on somebody else's song: this one is
-        // genuinely queued, and saying so beats a bar frozen at zero.
+        /*
+         * A missing `phase` is not the same as being queued, and treating it as
+         * one was a real bug: servers older than live progress never send the
+         * field, so every separation on one of them read "waiting for the
+         * separator" from the first second to the last. The JOB STATE is the
+         * thing that knows - `running` means the model is working on this song,
+         * whether or not the box can say how far along it is.
+         */
+        const phase = now.phase ?? (state === 'running' ? 'separating' : 'queued');
         say({
-          phase: now.phase ?? 'queued',
+          phase,
           fraction: typeof now.progress === 'number' ? now.progress : null,
           filed: now.stems.length,
           parts: now.parts ?? 6,
+          seconds: since(),
+          ahead: typeof now.queuedAhead === 'number' ? now.queuedAhead : null,
         });
       }
       if (!mine()) return { ok: false, stems: [], superseded: true };
-      if (state === 'failed') return { ok: false, stems: [], problem: 'That one could not be separated.' };
+      if (state === 'failed') {
+        // The server knows exactly why - it timed out, or demucs said something.
+        // Replacing that with a shrug is how a diagnosable failure becomes a
+        // mystery, and this one threw the answer away.
+        const why = (await status().catch(() => null))?.error;
+        return {
+          ok: false,
+          stems: [],
+          problem: why ? `Could not separate that: ${why}` : 'That one could not be separated.',
+        };
+      }
       have = (await status()).stems.map((x) => x.stem);
     }
     if (!mine()) return { ok: false, stems: [], superseded: true };
-    say({ phase: 'loading', fraction: null, filed: have.length, parts: have.length });
+    say({ phase: 'loading', fraction: null, filed: have.length, parts: have.length, seconds: 0, ahead: null });
 
     // Canonical order first, then anything a newer separator produced that this
     // build has never heard of - which should still land on the board rather
