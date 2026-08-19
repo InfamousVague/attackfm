@@ -8,7 +8,7 @@
 //!
 //! Two exported faces, composed by the Profile page:
 //!   - `AccountSetup`: create an account (or sign in to an existing one).
-//!   - `FriendsSection`: the friends graph - one grid holding friends and
+//!   - `FriendsSection`: the friends graph - one list holding friends and
 //!     still-waiting invites alike, with the add-by-handle verb in the section
 //!     head. Identity chrome (whose account this is, signing out) and the
 //!     server-shaped verbs (inviting someone in, joining elsewhere) live on
@@ -26,7 +26,7 @@ import {
   StatTile,
   Text,
 } from '@glacier/react';
-import { ChartNoAxesColumn, Check, Clock, Flame, UserPlus, X } from '@glacier/icons';
+import { ArrowUpRight, ChartNoAxesColumn, Check, Clock, Flame, UserPlus, X } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { artistImageKnown, cachedArtistImage, resolveArtistImage } from '../albumArtist/artistImage.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
@@ -49,7 +49,7 @@ import { fmtMinutes } from './stats.ts';
  * A person, as a mark: a deterministic two-tone gradient from their handle
  * with their initial on it. The hue is the handle's and nobody else's, so the
  * same friend wears the same colour on every device and every visit - the
- * grid reads as PEOPLE at a glance, not a column of grey monograms.
+ * list reads as PEOPLE at a glance, not a column of grey monograms.
  */
 export function FriendAvatar({
   handle,
@@ -75,7 +75,7 @@ export function FriendAvatar({
   );
 }
 
-/** "now", "4h ago" - the coarse read a friend card wants, never a timestamp. */
+/** "now", "4h ago" - the coarse read a friend row wants, never a timestamp. */
 function seenAgo(stamp: number): string | null {
   if (!stamp) return null;
   // The registry stamps in seconds; anything suspiciously small is treated as
@@ -353,15 +353,19 @@ export function FriendsSection({
         {feed === null ? (
           /* Loading is NOT emptiness. Falling through to the empty state here
              told people they had no friends before the answer had arrived -
-             and on a slow link that claim sat on screen for seconds. Six
-             card-shaped seats say "counting" instead, in the grid the real
-             cards will use. */
-          <div className="friendGrid" aria-busy>
-            {[0, 1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="friendCard friendCard--pending">
-                <Skeleton variant="circle" width="3rem" height="3rem" />
-                <Skeleton variant="text" width="4.5rem" />
-                <Skeleton variant="text" width="6rem" />
+             and on a slow link that claim sat on screen for seconds. Four
+             row-shaped seats say "counting" instead, in the list the real
+             rows will use. */
+          <div className="friendRows" aria-busy>
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="friendRow friendRow--pending">
+                <span className="friendRow__face">
+                  <Skeleton variant="circle" width="2.75rem" height="2.75rem" />
+                </span>
+                <span className="friendRow__who">
+                  <Skeleton variant="text" width="6rem" />
+                  <Skeleton variant="text" width="9rem" />
+                </span>
               </div>
             ))}
           </div>
@@ -376,67 +380,79 @@ export function FriendsSection({
             <div className="friendsEmptyAdd">{addForm}</div>
           </div>
         ) : (
-          <div className="friendGrid">
+          <div className="friendRows">
             {friends.map((f) => {
               const seen = seenAgo(f.seenAt);
               const online = seen === 'online now';
               const glance = weekGlance(f);
-              // `artTick` is read here so the memo-free grid re-renders when a
+              // `artTick` is read here so the memo-free list re-renders when a
               // batch of pictures lands; the value itself is meaningless.
               void artTick;
               const backdrop = cachedArtistImage(f.weekTopArtist ?? '');
               return (
-                <div key={f.id} className="friendCard" data-online={online || undefined}>
+                <div key={f.id} className="friendRow" data-online={online || undefined}>
                   {backdrop && (
                     <img
-                      className="friendCard__backdrop"
+                      className="friendRow__backdrop"
                       src={backdrop}
                       alt=""
                       aria-hidden
                       loading="lazy"
                     />
                   )}
-                  <FriendAvatar handle={f.handle} size="lg" className="friendCard__face" />
-                  <span className="friendCard__handle">{f.handle}</span>
-                  <span className="friendCard__meta">
-                    {[f.songs > 0 ? `${f.songs.toLocaleString()} songs` : 'no library yet', online ? null : seen]
-                      .filter(Boolean)
-                      .join(' · ')}
+                  <FriendAvatar handle={f.handle} size="md" className="friendRow__face" />
+                  <span className="friendRow__who">
+                    <span className="friendRow__handle">{f.handle}</span>
+                    <span className="friendRow__meta">
+                      {[f.songs > 0 ? `${f.songs.toLocaleString()} songs` : 'no library yet', online ? null : seen]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
                   </span>
                   {/* What they've been playing, if they share it - the line
-                      that makes the grid about music rather than accounts. */}
-                  {glance && <span className="friendCard__glance">{glance}</span>}
-                  {/* Their library is somewhere this device is not listening
-                      from - offer the walk over. The page decides what that
-                      means (a one-tap switch, or the truth about invites). */}
-                  <div className="friendCard__actions">
+                      that makes the list about music rather than accounts. On
+                      a wide row it takes the middle, which is the room the
+                      grid used to waste; on a narrow one it drops under the
+                      handle. */}
+                  {glance && <span className="friendRow__glance">{glance}</span>}
+                  {/* Visit leads and Stats trails, which is the opposite of
+                      the reading order you would guess - but visiting is the
+                      conditional one, and with it last, `Stats` landed at a
+                      different x on every row depending on whether the friend
+                      happened to be elsewhere. The verb that EVERY row has
+                      goes last, so on a wide screen it makes a column. */}
+                  <div className="friendRow__actions">
+                    {/* Their library is somewhere this device is not listening
+                        from - offer the walk over. The page decides what that
+                        means (a one-tap switch, or the truth about invites). */}
+                    {onVisit && f.serverUrl && server?.url !== f.serverUrl.replace(/\/+$/, '') && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        aria-label={`Visit their server, ${f.handle}`}
+                        onClick={() => onVisit(f)}
+                      >
+                        <ArrowUpRight size={15} />
+                        Visit their server
+                      </Button>
+                    )}
                     {/* Their numbers, from what the registry already holds -
                         no extra request, and nothing they have not chosen to
                         announce. */}
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="friendCard__stats"
+                      aria-label={`Stats for ${f.handle}`}
                       onClick={() => setStatsFor(f)}
                     >
-                      <ChartNoAxesColumn size={14} />
+                      <ChartNoAxesColumn size={15} />
                       Stats
                     </Button>
-                    {onVisit && f.serverUrl && server?.url !== f.serverUrl.replace(/\/+$/, '') && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="friendCard__visit"
-                        onClick={() => onVisit(f)}
-                      >
-                        Visit their server
-                      </Button>
-                    )}
                   </div>
                   <IconButton
                     variant="ghost"
                     size="sm"
-                    className="friendCard__remove"
+                    className="friendRow__remove"
                     disabled={busy}
                     aria-label={`Remove ${f.handle}`}
                     onClick={() => void act(() => removeFriend(token, f.id))}
@@ -446,14 +462,16 @@ export function FriendsSection({
                 </div>
               );
             })}
-            {/* Asks still in the air share the grid as ghosts: an invited
-                person is already a person, just not yet a yes - one grid of
+            {/* Asks still in the air share the list as ghosts: an invited
+                person is already a person, just not yet a yes - one list of
                 people beats a separate strip of chips. */}
             {outgoing.map((r) => (
-              <div key={`out-${r.id}`} className="friendCard friendCard--waiting">
-                <FriendAvatar handle={r.handle} size="lg" className="friendCard__face" />
-                <span className="friendCard__handle">{r.handle}</span>
-                <span className="friendCard__meta">invited · waiting</span>
+              <div key={`out-${r.id}`} className="friendRow friendRow--waiting">
+                <FriendAvatar handle={r.handle} size="md" className="friendRow__face" />
+                <span className="friendRow__who">
+                  <span className="friendRow__handle">{r.handle}</span>
+                  <span className="friendRow__meta">invited · waiting</span>
+                </span>
               </div>
             ))}
           </div>

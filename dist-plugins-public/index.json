@@ -72,17 +72,17 @@
     {
       "id": "pads",
       "name": "Pads",
-      "version": "0.1.3",
-      "description": "A sampler you play with your thumbs — pull any song into vocals, drums, bass and everything else, chop them, and hit them.",
+      "version": "0.3.1",
+      "description": "Your own records, taken apart and handed back as an instrument: the song keeps playing and the pads decide which parts of it you hear.",
       "author": "AttackFM",
       "tags": [
         "Sound",
         "Instrument"
       ],
-      "entry": "pads-0.1.3.js",
+      "entry": "pads-0.3.1.js",
       "api": 1,
-      "bytes": 15720,
-      "sha256": "7f9d41ff1d7e10d4a0ca0d56fb29dca5dc95e9de9e2f54cd3cc4f4480a159c20",
+      "bytes": 25914,
+      "sha256": "511343fd8b82fa4f8b9663f594c097703a180780b70fd3715574b8cf73556adf",
       "requiresServer": true,
       "public": true
     },
@@ -99,7 +99,7 @@
       "entry": "pedals-0.3.4.js",
       "api": 1,
       "bytes": 10487,
-      "sha256": "0c2efafe00dcf160621c5d725f37e57e1fc12fc2a9a71b1dff35a1a0308907ea",
+      "sha256": "979ed16c6b1ba4bbca3bfd708049ae29834b82a1a273b7c9d6b26ab008dd65d7",
       "requiresServer": true,
       "public": true
     }

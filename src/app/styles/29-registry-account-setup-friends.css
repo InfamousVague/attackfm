@@ -194,10 +194,6 @@
   margin: 0;
 }
 
-.friendCard__visit {
-  margin-block-start: var(--glacier-space-1);
-}
-
 .registryFriends {
   display: flex;
   flex-direction: column;

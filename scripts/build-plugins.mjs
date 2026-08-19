@@ -21,7 +21,7 @@
  */
 import { build } from 'esbuild';
 import { createHash } from 'node:crypto';
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -51,6 +51,7 @@ const HOST_MODULES = new Set([
   '@attackfm/app/nowPlaying',
   '@attackfm/app/librarySync',
   '@attackfm/app/serverSession',
+  '@attackfm/app/deckHold',
   '@attackfm/app/playlists',
   '@attackfm/app/equalizer',
   '@attackfm/app/fxChain',
@@ -139,6 +140,23 @@ for (const entry of readdirSync(REPO, { withFileTypes: true })) {
       console.log(`skipped ${meta.id} (retired)`);
       continue;
     }
+    // The version lives in TWO places - plugin.json (which names the file and
+    // the manifest) and the Plugin object in index.tsx (which the app shows in
+    // the marketplace). They drift silently: an edit to one looks like it
+    // worked, the bundle ships under one number and reports another, and a
+    // device that already has the plugin sees no reason to refetch. Caught
+    // here, once, rather than in a marketplace card three deploys later.
+    const entrySource = existsSync(join(dir, 'index.tsx'))
+      ? readFileSync(join(dir, 'index.tsx'), 'utf8')
+      : '';
+    const declared = entrySource.match(/version:\s*'([^']+)'/)?.[1];
+    if (declared && declared !== meta.version) {
+      throw new Error(
+        `${meta.id}: plugin.json says ${meta.version} but index.tsx says ${declared}. ` +
+          `Make them agree - the file is named from plugin.json and the card reads index.tsx.`,
+      );
+    }
+
     const outFile = `${meta.id}-${meta.version}.js`;
 
     await build({

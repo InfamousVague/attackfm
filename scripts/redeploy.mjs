@@ -2,7 +2,8 @@
 /**
  * One-shot production redeploy for the AttackFM music server.
  *
- *   npm run redeploy            # cross-compile, ship, restart
+ *   npm run redeploy            # bump the version, cross-compile, ship, restart
+ *   npm run redeploy -- --keep  # re-ship the current version, unbumped
  *   npm run redeploy -- setup   # first run: make the user, dirs, and unit
  *
  * Target credentials come from a gitignored `.env` at the repo root:
@@ -20,7 +21,7 @@
  * Mirrors PrettyCardboard's scripts/redeploy.mjs, which deploys to the same box.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -163,7 +164,48 @@ function setup(env) {
   console.log(`${c.dim('(set your hostname), then: systemctl reload caddy')}`);
 }
 
+/**
+ * Moves the server's version on, so a deploy is identifiable from the outside.
+ *
+ * The server has always reported `CARGO_PKG_VERSION` over /api/server and
+ * /api/stats, and the app has always shown it in About - but nothing ever
+ * changed it, so every server that has ever run has said 0.1.0 and the field
+ * told you nothing. A version that cannot move is not a version; it is a
+ * constant with a version's name.
+ *
+ * The bump lives here rather than in a separate command because this is the
+ * only moment that is definitely a new server build. Both places that build one
+ * read the same manifest: this script cross-compiles from the working tree, and
+ * the home hub runs `git pull && server/home-install.sh`, so the number has to
+ * be COMMITTED for the M4 to agree with the VPS about what it is running.
+ *
+ * `npm run redeploy -- --keep` re-ships the current version untouched, for when
+ * the deploy is a retry rather than a change.
+ */
+function bumpServerVersion() {
+  if (process.argv.includes('--keep')) {
+    step('Keeping the server version');
+    return readServerVersion();
+  }
+  const path = join(ROOT, 'server/Cargo.toml');
+  const raw = readFileSync(path, 'utf8');
+  // The FIRST version key under [package]; a dependency's own version pin must
+  // not be what gets rewritten.
+  const match = raw.match(/^version\s*=\s*"(\d+)\.(\d+)\.(\d+)"/m);
+  if (!match) fail('Could not find a version in server/Cargo.toml.');
+  const next = `${match[1]}.${match[2]}.${Number(match[3]) + 1}`;
+  writeFileSync(path, raw.replace(match[0], `version = "${next}"`), 'utf8');
+  step(`Server version ${match[1]}.${match[2]}.${match[3]} → ${next}`);
+  return next;
+}
+
+function readServerVersion() {
+  const raw = readFileSync(join(ROOT, 'server/Cargo.toml'), 'utf8');
+  return raw.match(/^version\s*=\s*"([^"]+)"/m)?.[1] ?? 'unknown';
+}
+
 function deploy(env) {
+  const version = bumpServerVersion();
   step('Cross-compiling for Linux');
   run('cargo', ['zigbuild', '--release', '--target', RUST_TARGET], {
     cwd: join(ROOT, 'server'),
@@ -189,7 +231,7 @@ function deploy(env) {
     ].join(' && '),
   );
 
-  step('Checking it came back');
+  step(`Checking it came back (expecting v${version})`);
   const status = ssh(env, `systemctl is-active ${SERVICE} || true`, { capture: true });
   if (status !== 'active') {
     ssh(env, `journalctl -u ${SERVICE} -n 30 --no-pager || true`);
