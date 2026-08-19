@@ -22,6 +22,97 @@ export const PANE_KEYWORDS: Record<string, string> = {
     'handbook guide manual documentation docs how it works help plugin develop developer api build publish gestures',
 };
 
+/**
+ * Every individual setting, so the search box can find one.
+ *
+ * The field says "Find a setting" and until now found only PANES: typing
+ * "stems" or "crossfade" matched whatever pane happened to list that word in
+ * PANE_KEYWORDS, and answered with a rail entry rather than the row. Anything
+ * not thought of when the keyword string was written was simply unfindable -
+ * which is how a settings screen quietly becomes a place people give up on.
+ *
+ * Each row registers itself here with the words somebody would actually type,
+ * including the ones the row does not say out loud: "wifi" for a download
+ * switch, "phone home" for a telemetry one.
+ */
+export interface SettingEntry {
+  /** Stable id, also the row's anchor for scroll-to. */
+  id: string;
+  /** Which pane holds it - a SettingsSection.id. */
+  pane: string;
+  label: string;
+  description: string;
+  /** What someone would type looking for it, beyond the words above. */
+  keywords?: string;
+}
+
+export const SETTINGS_INDEX: SettingEntry[] = [
+  {
+    id: 'online-metadata',
+    pane: 'privacy',
+    label: 'Online metadata lookups',
+    description: 'Lyrics from LRCLIB and album art from Apple, keyed by track titles.',
+    keywords: 'lyrics artwork album art lrclib apple itunes third party internet offline',
+  },
+  {
+    id: 'listening-history',
+    pane: 'privacy',
+    label: 'Save listening history',
+    description: 'Reports finished listens to your server, which feeds recently-played and your mixes.',
+    keywords: 'history scrobble plays recently played mixes recap stats tracking',
+  },
+  {
+    id: 'share-position',
+    pane: 'privacy',
+    label: 'Keep my place across devices',
+    description: 'Sends what you are playing and how far in to your AttackFM account.',
+    keywords: 'resume position where i left off sync registry account telemetry phone home now playing',
+  },
+  {
+    id: 'share-week',
+    pane: 'privacy',
+    label: 'Share my week with friends',
+    description: 'Minutes listened, your top artist and your streak, visible to friends you accept.',
+    keywords: 'friends social share week streak top artist stats registry',
+  },
+  {
+    id: 'now-playing-video',
+    pane: 'playback',
+    label: 'Video clips on Now Playing',
+    description: "The song's short looping clip behind the full player.",
+    keywords: 'canvas video clip loop spotify animation background data cellular battery',
+  },
+  {
+    id: 'auto-upload',
+    pane: 'server',
+    label: 'Send new music to this server',
+    description: 'Uploads anything in your music folder this server does not have.',
+    keywords: 'upload sync folder send push library bandwidth friend someone else server',
+  },
+  {
+    id: 'stem-prefetch',
+    pane: 'server',
+    label: 'Separate songs before you ask',
+    description: 'Pulls liked and playlisted songs apart in the background so the Pads open instantly.',
+    keywords: 'stems separate demucs pads sampler karaoke vocals drums bass prefetch ahead gpu disk background auto stemming',
+  },
+];
+
+/** Does one row answer this query? Same AND-across-words rule as the panes. */
+export function settingMatches(entry: SettingEntry, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const hay = [entry.label, entry.description, entry.keywords ?? ''].join(' ').toLowerCase();
+  return q.split(/\s+/).every((word) => hay.includes(word));
+}
+
+/** The rows a query finds, in index order. */
+export function settingsMatching(query: string): SettingEntry[] {
+  const q = query.trim();
+  if (!q) return [];
+  return SETTINGS_INDEX.filter((e) => settingMatches(e, q));
+}
+
 export function paneMatches(section: SettingsSection, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;

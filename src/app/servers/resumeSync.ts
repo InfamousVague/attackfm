@@ -1,4 +1,5 @@
 import { REGISTRY_SESSION_KEY } from './registryKeys.ts';
+import { sharePositionEnabled } from '../settings/behaviourPrefs.ts';
 
 /**
  * Where you were, so another device can pick it up.
@@ -61,6 +62,13 @@ let lastPath = '';
  * another device offers the song before last.
  */
 export async function recordResume(point: ResumePoint, force = false): Promise<void> {
+  // Asked first, before the token even. This ran ungated: every twenty seconds
+  // the song, artist, full path and position went to a central service, while
+  // the Playback pane promised "Off, nothing is written anywhere" under a
+  // switch that governed something else entirely. Off is now the default,
+  // because `fetchResume` still has no callers - nothing in the app has ever
+  // read this back.
+  if (!sharePositionEnabled()) return;
   const auth = token();
   if (!auth) return;
   if (point.position < MIN_POSITION && !force) return;

@@ -3,20 +3,7 @@
 // GeneralPane / PlaybackPane / PluginsPane (+ pluginRepos) / MobileSettings,
 // shared bits in settingsShared.ts, useMediaQuery deduped into ux/.
 import { SearchField, TabbedModal } from '@glacier/react';
-import {
-  Bell,
-  Blocks,
-  BookOpen,
-  HardDrive,
-  Info,
-  MonitorSpeaker,
-  Palette,
-  Play,
-  Server,
-  Settings,
-  Sparkles,
-  Stethoscope,
-} from '@glacier/icons';
+import { Bell, Blocks, BookOpen, HardDrive, Info, MonitorSpeaker, Palette, Play, Server, Settings, Shield, Sparkles, Stethoscope } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { APP_VERSION } from '../core/version.ts';
 import { noteSettingsPane } from './settingsRecency.ts';
@@ -43,6 +30,10 @@ import { useMediaQuery } from '../ux/useMediaQuery.ts';
 import { formatBytes } from '../ux/format.ts';
 import { Appearance } from './AppearancePane.tsx';
 import { General } from './GeneralPane.tsx';
+import { Privacy, privacySummary } from './PrivacyPane.tsx';
+import { useSharing } from '../profile/listeningShare.tsx';
+import { sharePositionEnabled } from './behaviourPrefs.ts';
+import { onlineMetadataEnabled } from './netPrefs.ts';
 import { PlaybackSettings } from './PlaybackPane.tsx';
 import { PluginsSettings } from './PluginsPane.tsx';
 import { MobileSettings } from './MobileSettings.tsx';
@@ -76,6 +67,7 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
   // disagree. Cheap enough to compute on every open.
   const { theme, accent } = useAppearance();
   const pb = usePlayback();
+  const sharingWeek = useSharing();
   const { session } = useServerSession();
   const { connected, devices } = useConnect();
   const { all: allPlugins, isEnabled } = usePlugins();
@@ -164,6 +156,22 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
     // recent pulls, and how far the enrichment has read the library.
     // The curator's preferences moved into the Booth - they are the taste
     // engine's own, opened from its room, not a pane about an abstraction.
+    {
+      id: 'privacy',
+      label: 'Privacy',
+      icon: <Shield size={16} />,
+      content: <Privacy />,
+      // Counts what is switched OFF, because that is the number somebody who
+      // came here to turn something off wants to see.
+      summary: privacySummary(
+        onlineMetadataEnabled(),
+        pb.saveHistory,
+        sharePositionEnabled(),
+        sharingWeek,
+      ),
+      tint: 'blue',
+      group: 1,
+    },
     {
       id: 'storage',
       label: 'Downloads & space',
