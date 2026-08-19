@@ -14,8 +14,9 @@ import {
   useLiveLevels,
 } from '@glacier/react';
 import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
-import { AudioLines, Check, ChevronDown, Disc3, EyeOff, Heart, Image as ImageIcon, ListMusic, ListPlus, Mic, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Sparkles, Volume2, Zap } from '@glacier/icons';
+import { AudioLines, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Heart, Image as ImageIcon, ListMusic, ListPlus, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Sparkles, Volume2, Zap } from '@glacier/icons';
 import { isMobile } from '../core/platform.ts';
+import { PluginSlot } from '../../plugins/runtime.tsx';
 import { EqPanel } from './EqPanel.tsx';
 import { PedalsPanel } from './PedalsPanel.tsx';
 import { setFxChainOn, useFxChain } from './fxChain.ts';
@@ -536,9 +537,16 @@ export function NowPlayingSheet({
         <IconButton variant="ghost" aria-label="Queue" onClick={() => setNpQueue(true)}>
           <ListMusic size={20} />
         </IconButton>
+        {/* Words, not a microphone. The mic used to open this, which left
+            nothing obvious for singing along to - and a microphone is a strange
+            glyph for "show me the words" once something else on the row
+            genuinely is a microphone. */}
         <IconButton variant="ghost" aria-label="Lyrics" onClick={() => setNpLyrics(true)}>
-          <Mic size={20} />
+          <BookOpenText size={20} />
         </IconButton>
+        {/* Whatever wants to act on the song playing right now. Karaoke lands
+            here; the mic is its own. */}
+        <PluginSlot id="now-playing-actions" />
         <DevicePicker />
         <Popover
           placement="top"

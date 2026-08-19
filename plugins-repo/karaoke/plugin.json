@@ -1,8 +1,8 @@
 {
   "id": "karaoke",
   "name": "Karaoke Maker",
-  "version": "0.1.0",
-  "description": "Turn any song in your library into karaoke — the vocal lifted out, the words full screen, in time.",
+  "version": "0.2.0",
+  "description": "Sing along: a microphone on Now Playing that lifts the vocal out of whatever is playing and puts the words full screen.",
   "author": "AttackFM",
   "tags": [
     "Sound",

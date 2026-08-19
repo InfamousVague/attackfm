@@ -72,17 +72,17 @@
     {
       "id": "karaoke",
       "name": "Karaoke Maker",
-      "version": "0.1.0",
-      "description": "Turn any song in your library into karaoke — the vocal lifted out, the words full screen, in time.",
+      "version": "0.2.0",
+      "description": "Sing along: a microphone on Now Playing that lifts the vocal out of whatever is playing and puts the words full screen.",
       "author": "AttackFM",
       "tags": [
         "Sound",
         "Karaoke"
       ],
-      "entry": "karaoke-0.1.0.js",
+      "entry": "karaoke-0.2.0.js",
       "api": 1,
-      "bytes": 10266,
-      "sha256": "8db179b5dbd504fa0618b9afa9800c797427c48d3323b5f2725d23344ede7bc5",
+      "bytes": 12600,
+      "sha256": "35d7357ce3c12ba1ec4db728361c781c62f074026ef147724db7e6cdeeb12a21",
       "requiresServer": true,
       "public": true
     },
