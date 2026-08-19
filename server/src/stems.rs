@@ -149,7 +149,22 @@ const BUDGET_BYTES: i64 = 120 * 1024 * 1024 * 1024;
 /// Never let the cache push the volume below this much free.
 const KEEP_FREE_BYTES: i64 = 20 * 1024 * 1024 * 1024;
 /// A separation that has not finished by now is not going to.
-const TIMEOUT: Duration = Duration::from_secs(900);
+///
+/// Fifteen minutes, when this was written, was enormous: four stems on Metal is
+/// well under a minute a track. Two things have happened since. The model is
+/// htdemucs_6s, which is half again as much work as the four-stem one. And a
+/// box whose torch has no Metal falls back to CPU by itself - correct, but ten
+/// to thirty minutes for a four-minute song, which the old ceiling killed
+/// silently at the fifteen-minute mark. On top of that the FIRST run of a model
+/// downloads its weights - about 300MB for this one - inside this same budget.
+///
+/// So it is generous now. The cost of being generous is one stuck job holding
+/// the queue; the cost of being tight is killing real work and reporting it as
+/// a failure the person cannot act on, which is what was happening.
+const TIMEOUT: Duration = Duration::from_secs(2700);
+/// A ceiling on packing ONE part. Lossless-encoding a song is seconds; this is
+/// here so a wedged ffmpeg cannot hold the worker, not to cut real work short.
+const PACK_TIMEOUT: Duration = Duration::from_secs(300);
 /// How often the worker looks for something to do when idle.
 const IDLE: Duration = Duration::from_secs(20);
 /// Stems are stored LOSSLESS.
@@ -310,7 +325,11 @@ async fn separate(
         Err(_) => {
             let _ = child.kill().await;
             let _ = tokio::fs::remove_dir_all(&scratch).await;
-            return Err(format!("timed out after {}s", TIMEOUT.as_secs()));
+            return Err(format!(
+                "{MODEL} did not finish within {} minutes - if this machine has no Metal, \
+                 demucs is running on the CPU and needs longer",
+                TIMEOUT.as_secs() / 60
+            ));
         }
         Ok(Err(e)) => {
             let _ = tokio::fs::remove_dir_all(&scratch).await;
@@ -344,17 +363,26 @@ async fn separate(
             continue;
         };
         let packed_path = dest_dir.join(format!("{stem}.{STEM_CODEC}"));
-        let packed = tokio::process::Command::new("ffmpeg")
-            .args(["-nostdin", "-v", "error", "-y", "-i"])
-            .arg(&wav)
-            // Lossless, and compression_level 5 because these are written once
-            // and read many times: the slower levels buy a few percent of disk
-            // for real time on a job that is already minutes long.
-            .args(["-c:a", "flac", "-compression_level", "5"])
-            .arg(&packed_path)
-            .stdin(Stdio::null())
-            .output()
-            .await;
+        // Bounded, like the separation itself. This used to be the one step
+        // with no ceiling at all: demucs was killed if it hung, and then six
+        // ffmpeg encodes ran afterwards with nothing watching them - so a stall
+        // here held the single worker, and therefore every other song's
+        // separation, for as long as the process lived.
+        let packed = tokio::time::timeout(
+            PACK_TIMEOUT,
+            tokio::process::Command::new("ffmpeg")
+                .args(["-nostdin", "-v", "error", "-y", "-i"])
+                .arg(&wav)
+                // Lossless, and compression_level 5 because these are written
+                // once and read many times: the slower levels buy a few percent
+                // of disk for real time on a job already minutes long.
+                .args(["-c:a", "flac", "-compression_level", "5"])
+                .arg(&packed_path)
+                .stdin(Stdio::null())
+                .output(),
+        )
+        .await
+        .unwrap_or_else(|_| Err(std::io::Error::other("packing timed out")));
         let bytes = tokio::fs::metadata(&packed_path)
             .await
             .map(|m| m.len() as i64)
@@ -508,6 +536,15 @@ pub async fn status(
         "parts": STEMS.len(),
         "progress": live.as_ref().map(|p| p.fraction),
         "phase": live.as_ref().map(|p| p.phase),
+        // What it is waiting BEHIND. Only meaningful while it waits, and the
+        // difference between "your server is thinking" and "your server is
+        // busy with two other songs first" is the difference between a person
+        // waiting and a person deciding something is broken.
+        "queuedAhead": if job_state == "queued" {
+            Some(state.db.stems_queued_ahead(track_id))
+        } else {
+            None
+        },
         "stems": rows
             .into_iter()
             .map(|(stem, _rel, bytes)| json!({ "stem": stem, "bytes": bytes }))

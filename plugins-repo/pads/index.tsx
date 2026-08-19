@@ -24,7 +24,7 @@ export const pads: Plugin = {
     'Your own records, taken apart and handed back as an instrument: the song keeps playing and the pads decide which parts of it you hear.',
   icon: <Grid2x2 size={22} />,
   author: 'AttackFM',
-  version: '0.3.1',
+  version: '0.3.2',
   tags: ['Sound', 'Instrument'],
   details:
     'Adds two things. On the Now Playing screen, a Stems button takes the song ' +
