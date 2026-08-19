@@ -82,7 +82,7 @@
       "entry": "pads-0.2.0.js",
       "api": 1,
       "bytes": 16309,
-      "sha256": "9c6a37249f5a95762856fc350d36154891a6202539ed6524ec7b96f082be7d7f",
+      "sha256": "6302c0bd456631f8e546044343adcdf21733be0a8ef3dd16e16fce05e4aeccab",
       "requiresServer": true,
       "public": true
     },
@@ -99,7 +99,7 @@
       "entry": "pedals-0.3.4.js",
       "api": 1,
       "bytes": 10487,
-      "sha256": "0c2efafe00dcf160621c5d725f37e57e1fc12fc2a9a71b1dff35a1a0308907ea",
+      "sha256": "979ed16c6b1ba4bbca3bfd708049ae29834b82a1a273b7c9d6b26ab008dd65d7",
       "requiresServer": true,
       "public": true
     },
@@ -116,7 +116,7 @@
       "entry": "spotify-import-1.3.7.js",
       "api": 1,
       "bytes": 72417,
-      "sha256": "1d6159e1ea73f250fda404f4b3065f10a921b3329c9aa3e0e2b7ceb065f9ed69",
+      "sha256": "987309a2019adb080b0088d1118834d8d537bb572b5fa7909f8b0c1184878730",
       "requiresServer": true
     }
   ]

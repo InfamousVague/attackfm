@@ -24,7 +24,7 @@ export const pedals: Plugin = {
     'A pedalboard for your music — overdrive, fuzz, chorus, echo, spring and ten more stompboxes, wired in the order you stack them.',
   icon: <Zap size={22} />,
   author: 'AttackFM',
-  version: '0.1.0',
+  version: '0.3.4',
   tags: ['Sound', 'Pedals'],
   details:
     'Adds a Pedals page: a board you stack stompboxes onto, in the order the ' +

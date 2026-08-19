@@ -82,7 +82,7 @@
       "entry": "pads-0.2.0.js",
       "api": 1,
       "bytes": 16309,
-      "sha256": "9c6a37249f5a95762856fc350d36154891a6202539ed6524ec7b96f082be7d7f",
+      "sha256": "6302c0bd456631f8e546044343adcdf21733be0a8ef3dd16e16fce05e4aeccab",
       "requiresServer": true,
       "public": true
     },
@@ -99,7 +99,7 @@
       "entry": "pedals-0.3.4.js",
       "api": 1,
       "bytes": 10487,
-      "sha256": "0c2efafe00dcf160621c5d725f37e57e1fc12fc2a9a71b1dff35a1a0308907ea",
+      "sha256": "979ed16c6b1ba4bbca3bfd708049ae29834b82a1a273b7c9d6b26ab008dd65d7",
       "requiresServer": true,
       "public": true
     }
