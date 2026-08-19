@@ -356,6 +356,33 @@ impl Db {
         let _ = c.execute("UPDATE accounts SET server_url = ?2 WHERE id = ?1", (id, url));
     }
 
+    /// Where this account was last listening, and when.
+    pub fn resume(&self, id: i64) -> Option<(String, i64)> {
+        let c = self.conn.lock().unwrap();
+        c.query_row(
+            "SELECT body, updated_at FROM resume WHERE account_id = ?1",
+            [id],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)),
+        )
+        .ok()
+    }
+
+    /// Record it. Most recent wins, and an older write is DROPPED rather than
+    /// applied: a device that was offline for an hour must not, on reconnect,
+    /// tell the account that an hour-old position is where you are now.
+    pub fn set_resume(&self, id: i64, body: &str, at: i64) -> bool {
+        let c = self.conn.lock().unwrap();
+        c.execute(
+            "INSERT INTO resume (account_id, body, updated_at)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(account_id) DO UPDATE SET
+               body = excluded.body, updated_at = excluded.updated_at
+             WHERE excluded.updated_at >= resume.updated_at",
+            (id, body, at),
+        )
+        .is_ok()
+    }
+
     /// This account's synced settings, and the revision they were at.
     ///
     /// Absent is not an error and not an empty object: a device that has never
@@ -649,6 +676,19 @@ CREATE INDEX IF NOT EXISTS friendships_b ON friendships(b_id);
 
 -- A cached glance of a library's size, announced by the owner's app, so a
 -- friends list shows everyone's numbers without waking everyone's server.
+CREATE TABLE IF NOT EXISTS resume (
+  account_id  INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+  -- Where this person was, last time any of their devices was playing. Opaque
+  -- like prefs, and for the same reason.
+  --
+  -- NO revision here, deliberately, and it is the one place that is right: the
+  -- question "where was I" has exactly one correct answer, which is whatever
+  -- happened MOST RECENTLY. Two devices cannot both be the last thing you
+  -- listened on, so a merge would be inventing a conflict that does not exist.
+  body        TEXT NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS prefs (
   account_id  INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
   -- One JSON object per account. Deliberately opaque to the registry: it stores
@@ -749,6 +789,30 @@ mod prefs_tests {
         let id = account(&db, "three");
         assert_eq!(db.set_prefs(id, r#"{"a":1}"#, 0, 100), Some(1));
         assert_eq!(db.set_prefs(id, r#"{"a":9}"#, 0, 101), None);
+    }
+
+    /// The rule that makes last-write-wins safe: a device that was offline
+    /// must not, on reconnect, announce a stale position as current. Without
+    /// the WHERE clause on the upsert, the straggler wins simply by arriving
+    /// last, and you get sent back to where you were an hour ago.
+    #[test]
+    fn an_older_resume_write_is_dropped() {
+        let db = db();
+        let id = account(&db, "resumer");
+        db.set_resume(id, r#"{"at":"now"}"#, 500);
+        db.set_resume(id, r#"{"at":"stale"}"#, 400);
+        assert!(db.resume(id).expect("stored").0.contains("now"));
+    }
+
+    /// Same instant is not older, and re-recording the same second must not be
+    /// silently dropped - a position updates far faster than the clock ticks.
+    #[test]
+    fn a_write_in_the_same_second_still_lands() {
+        let db = db();
+        let id = account(&db, "sameinstant");
+        db.set_resume(id, r#"{"p":1}"#, 500);
+        db.set_resume(id, r#"{"p":2}"#, 500);
+        assert!(db.resume(id).expect("stored").0.contains("\"p\":2"));
     }
 
     #[test]

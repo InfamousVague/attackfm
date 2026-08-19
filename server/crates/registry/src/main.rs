@@ -314,6 +314,51 @@ async fn add_device(
 
 /// `POST /v1/refresh` - a fresh token for a still-valid one, so a long-running
 /// app renews without a re-login.
+/// `GET /v1/resume` - where this account was last listening.
+///
+/// Separate from prefs because it answers a different kind of question. Settings
+/// are merged when two devices disagree; a listening position is not - the most
+/// recent one is simply the truth, and there is no sense in which two devices
+/// both hold the real answer. It also changes far more often, and putting it in
+/// the settings blob would bump that revision constantly and turn every genuine
+/// settings edit into a conflict.
+async fn resume_get(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
+    let who = caller(&state, &headers)?;
+    match state.db.resume(who.sub) {
+        None => Ok(Json(json!({ "at": 0, "body": Value::Null }))),
+        Some((body, at)) => {
+            let parsed: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
+            Ok(Json(json!({ "at": at, "body": parsed })))
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct ResumeBody {
+    body: Value,
+}
+
+/// `PUT /v1/resume` - record where you are.
+async fn resume_put(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<ResumeBody>,
+) -> ApiResult {
+    let who = caller(&state, &headers)?;
+    let text = serde_json::to_string(&body.body)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "could not be stored".to_string()))?;
+    // Small by construction - one track and a position. A cap anyway, because
+    // this is a free-form blob on a shared service.
+    if text.len() > 8 * 1024 {
+        return Err((StatusCode::PAYLOAD_TOO_LARGE, "too large".into()));
+    }
+    // The server's clock decides recency, not the device's. A phone with a
+    // wrong clock would otherwise be able to pin itself permanently as "most
+    // recent" and never be overwritten.
+    state.db.set_resume(who.sub, &text, now_secs());
+    Ok(Json(json!({ "ok": true })))
+}
+
 /// `GET /v1/prefs` - this account's synced settings.
 ///
 /// Settings that belong to a PERSON rather than to a device or a library: what
@@ -996,6 +1041,7 @@ async fn main() {
         .route("/health", get(health))
         .route("/v1/pubkey", get(pubkey))
         .route("/v1/prefs", get(prefs_get).put(prefs_put))
+        .route("/v1/resume", get(resume_get).put(resume_put))
         .route("/v1/signup", post(signup))
         .route("/v1/login", post(login))
         .route("/v1/login/challenge", post(challenge))
