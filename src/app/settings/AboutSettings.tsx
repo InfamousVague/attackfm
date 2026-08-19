@@ -144,7 +144,11 @@ export function AboutSettings() {
               <span className="aboutRow__icon" aria-hidden="true">
                 {row.icon}
               </span>
-              <span className="aboutRow__label">{row.label}</span>
+              {/* The label can be a server's own name, which truncates in a
+                  fixed column - so the full one stays reachable here. */}
+              <span className="aboutRow__label" title={row.label}>
+                {row.label}
+              </span>
               <span className="aboutRow__value">{row.value}</span>
             </div>
           ))}
