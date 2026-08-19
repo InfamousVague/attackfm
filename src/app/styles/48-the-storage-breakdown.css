@@ -200,11 +200,12 @@
   }
 }
 
-/* A friend card holding a seat: the real card's box, without a face in it. */
-.friendCard--pending {
-  gap: var(--glacier-space-2);
-  min-block-size: 9.5rem;
-  justify-content: center;
+/* A friend row holding a seat: the real row's box, without a face in it.
+   Sized to a settled row on the wide shape; on a phone, where the real row
+   grows a line of verbs, the seat is deliberately the shorter of the two -
+   a seat that under-promises settles by growing, which reads as arriving. */
+.friendRow--pending {
+  min-block-size: 3.75rem;
 }
 
 /* --- skeletons on raised surfaces ---------------------------------------- */
@@ -229,7 +230,7 @@
  */
 .statTile [class*='_skeleton_'],
 .serverMetric [class*='_skeleton_'],
-.friendCard [class*='_skeleton_'],
+.friendRow [class*='_skeleton_'],
 .radarKey [class*='_skeleton_'],
 .genreBar [class*='_skeleton_'],
 .prefsSection [class*='_skeleton_'] {

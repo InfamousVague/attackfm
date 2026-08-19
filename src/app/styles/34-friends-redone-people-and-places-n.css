@@ -97,121 +97,205 @@
   gap: var(--glacier-space-1);
 }
 
-/* The graph itself: a grid of people. Cards, coloured by their owners, with
-   the remove tucked into the corner where it waits without being the point. */
-.friendGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
-  gap: var(--glacier-space-3);
-}
-
-.friendCard {
-  position: relative;
+/* The graph itself: a list of people.
+ *
+ * Rows, not a grid of squares. A friends list is read DOWN the handles - who
+ * is here, who is around, what they have been playing - and square cards make
+ * every one of those its own little paragraph, so the eye has to re-find the
+ * handle in each tile instead of running down one column of them. Stacked
+ * rows put the handles in that column, and hand the horizontal room the grid
+ * was spending on padding to the thing actually worth reading: what they are
+ * listening to.
+ *
+ * One bordered container with hairlines between the rows, rather than a stack
+ * of separately-bordered cards - otherwise this is just a one-column grid
+ * wearing a different name. */
+.friendRows {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: var(--glacier-space-2);
-  padding: var(--glacier-space-4) var(--glacier-space-3) var(--glacier-space-3);
   border: var(--glacier-hairline) solid var(--glacier-border);
   border-radius: var(--glacier-radius-lg);
   background: var(--glacier-surface);
-  text-align: center;
-  /* The artist photo is clipped to the card's own corners. */
+  /* The container's corners clip the rows inside it, backdrops included. */
   overflow: hidden;
+}
+
+/* Narrow shape: the face at the left spanning the text, handle and meta
+   stacked beside it, what they're playing dropped underneath, and the verbs
+   on a line of their own across the bottom.
+ *
+ * The verbs sat inline at the trailing edge first, and the row was measured
+ * rather than eyeballed: at 375px the two buttons and the remove took 146 of
+ * the 298 available, leaving 69px for a handle that wanted 113 - so a name
+ * truncated to "brand..." while a bar chart icon beside it got its full
+ * width. Dropping the labels to icons only recovered about 47px of that,
+ * which still was not enough AND cost the labels. A third line costs height
+ * on a page that holds a handful of people, and buys back every character of
+ * the thing the row is actually for. */
+.friendRow {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'face    who     remove'
+    'face    glance  remove'
+    'actions actions .';
+  align-items: center;
+  column-gap: var(--glacier-space-3);
+  /* No row-gap on purpose. A friend who shares nothing has no second line,
+     and a gap would reserve space between the tracks whether or not the
+     second one holds anything - every quiet row would carry a few dead
+     pixels. The glance brings its own margin instead. */
+  row-gap: 0;
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  min-block-size: 3.75rem;
   isolation: isolate;
+}
+
+.friendRow + .friendRow {
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border);
+}
+
+@media (hover: hover) {
+  .friendRow:hover {
+    background: var(--glacier-hover);
+  }
+}
+
+/* Wide shape: everything on one line, and the glance takes the middle - the
+   room a grid of cards could only leave empty. */
+@media (min-width: 48rem) {
+  .friendRow {
+    /* 12rem, not 15: the desktop app spends a rail's worth of the window
+       before this list starts, so the row is routinely 300px narrower than
+       the viewport, and every rem the handle column reserves comes straight
+       out of the glance. 12rem holds a normal handle and leaves the playing
+       line room to finish its sentence. */
+    grid-template-columns: auto minmax(0, 12rem) minmax(0, 1fr) auto auto;
+    grid-template-areas: 'face who glance actions remove';
+  }
+}
+
+.friendRow__face {
+  grid-area: face;
+}
+
+.friendRow__who {
+  grid-area: who;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.friendRow__actions {
+  grid-area: actions;
 }
 
 /* Whoever they played most this week, behind them.
  *
- * Held well back on purpose: this is a card about a PERSON, and a photograph
- * at full strength would make it a card about a band with a name written over
- * it. Dimmed, desaturated a little and faded out downward, it reads as colour
- * and texture behind the handle - and the text above keeps its contrast
- * without needing a scrim of its own. */
-.friendCard__backdrop {
+ * A row is too short to wear a photograph the way the old card did - at this
+ * height a full-bleed image is a texture directly under the handle, and the
+ * handle is the point. So it lives at the trailing end instead, faded in and
+ * back out again so it never reaches either the text on the left or the
+ * verbs on the right: colour arriving from off the edge, not a picture with
+ * a name written over it. */
+.friendRow__backdrop {
   position: absolute;
-  inset: 0;
+  inset-block: 0;
+  inset-inline-end: 0;
+  inline-size: min(24rem, 55%);
+  block-size: 100%;
   object-fit: cover;
   z-index: -1;
-  opacity: 0.28;
+  opacity: 0.22;
   filter: saturate(0.85);
-  -webkit-mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.95), transparent 78%);
-  mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.95), transparent 78%);
+  -webkit-mask-image: linear-gradient(to right, transparent, rgb(0 0 0 / 0.9) 60%, transparent);
+  mask-image: linear-gradient(to right, transparent, rgb(0 0 0 / 0.9) 60%, transparent);
   pointer-events: none;
-}
-
-/* A photograph carries its own light, so the card no longer needs the
-   surface behind it to say "card". */
-.friendCard:has(.friendCard__backdrop) {
-  background: var(--glacier-surface-raised);
 }
 
 /* A green ring on the mark while they are around - presence worn where the
    eye already is, not another line of text. */
-.friendCard[data-online] .friendCard__face {
+.friendRow[data-online] .friendRow__face {
   box-shadow:
-    0 0 0 2px var(--glacier-bg),
+    0 0 0 2px var(--glacier-surface),
     0 0 0 4px oklch(0.72 0.17 150);
 }
 
-.friendCard__handle {
+.friendRow__handle {
   font-weight: 650;
-  max-inline-size: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.friendCard__meta {
+.friendRow__meta {
   color: var(--glacier-text-muted);
   font-size: var(--glacier-font-size-xs);
-  max-inline-size: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* The shared listening line: slightly brighter than the meta above it, so a
+/* The shared listening line: slightly brighter than the meta beside it, so a
    friend who shares reads as playing, not as more bookkeeping. */
-.friendCard__glance {
+.friendRow__glance {
+  grid-area: glance;
+  min-inline-size: 0;
   color: var(--glacier-text);
   font-size: var(--glacier-font-size-xs);
-  max-inline-size: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* An ask still in the air: the same card, worn as a ghost - dashed edge, no
-   remove, waiting to become solid the moment they say yes. */
-.friendCard--waiting {
-  border-style: dashed;
-  background: transparent;
+/* The two things the narrow shape stacks want the gap the row itself
+   refuses to reserve. */
+@media (max-width: 47.999rem) {
+  .friendRow__glance {
+    margin-block-start: 2px;
+  }
+
+  .friendRow__actions {
+    margin-block-start: var(--glacier-space-1);
+  }
 }
 
-.friendCard--waiting .friendCard__face {
+/* An ask still in the air: the same row, worn as a ghost. The dashed edge
+   moved to the leading side when the cards became rows - a row has no border
+   of its own to make dashed, and a dashed rule down the left of the stack is
+   the same promise: this one is not solid yet. */
+.friendRow--waiting {
+  border-inline-start: 2px dashed var(--glacier-border);
+  /* Paid back out of the padding so the faces still line up with the rows
+     above and below. */
+  padding-inline-start: calc(var(--glacier-space-3) - 2px);
+}
+
+.friendRow--waiting .friendRow__face {
   opacity: 0.55;
 }
 
-.friendCard--waiting .friendCard__handle {
+.friendRow--waiting .friendRow__handle {
   color: var(--glacier-text-muted);
 }
 
-.friendCard__remove {
-  position: absolute;
-  inset-block-start: var(--glacier-space-1);
-  inset-inline-end: var(--glacier-space-1);
+/* Remove keeps its own cell rather than floating over the corner, so fading
+   it in on hover moves nothing. */
+.friendRow__remove {
+  grid-area: remove;
   opacity: 0;
   transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
 }
 
-.friendCard:hover .friendCard__remove,
-.friendCard__remove:focus-visible {
+.friendRow:hover .friendRow__remove,
+.friendRow__remove:focus-visible {
   opacity: 1;
 }
 
 @media (pointer: coarse) {
-  .friendCard__remove {
+  .friendRow__remove {
     opacity: 0.6;
   }
 }
