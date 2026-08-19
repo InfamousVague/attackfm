@@ -97,6 +97,26 @@ export class LoopEngine {
   private startedAt = 0;
   running = false;
 
+  /** Builds the graph synchronously; a resume is asked for but never awaited.
+   *  A press must reach the audio thread in the same task it happened in. */
+  ensure(): void {
+    if (!this.ctx) {
+      const Ctor: typeof AudioContext =
+        window.AudioContext ??
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      this.ctx = new Ctor({ latencyHint: 'interactive' });
+      this.master = this.ctx.createGain();
+      this.master.connect(this.ctx.destination);
+    }
+    if (this.ctx.state !== 'running') void this.ctx.resume().catch(() => {});
+  }
+
+  /** The same press, without the await - what the pads actually call. */
+  launchNow(pad: number, pads: LoopPad[]): void {
+    this.ensure();
+    void this.launch(pad, pads);
+  }
+
   async unlock(): Promise<void> {
     if (!this.ctx) {
       const Ctor: typeof AudioContext =

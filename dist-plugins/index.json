@@ -72,34 +72,34 @@
     {
       "id": "looper",
       "name": "Looper",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Sample any song into sixteen coloured pads, cut on its own beat, and play the pieces in time with each other.",
       "author": "AttackFM",
       "tags": [
         "Sound",
         "Instrument"
       ],
-      "entry": "looper-0.1.0.js",
+      "entry": "looper-0.1.1.js",
       "api": 1,
-      "bytes": 20955,
-      "sha256": "b62c84f3fb31749b246942498e8fa611edf8a590ca717c26ef20a5003703f334",
+      "bytes": 21260,
+      "sha256": "343977910673ac9bff34827c378e9dac69d55246380a6a14d0b455dbc3b34f8a",
       "requiresServer": true,
       "public": true
     },
     {
       "id": "pads",
       "name": "Pads",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "A sampler you play with your thumbs — pull any song into vocals, drums, bass and everything else, chop them, and hit them.",
       "author": "AttackFM",
       "tags": [
         "Sound",
         "Instrument"
       ],
-      "entry": "pads-0.1.0.js",
+      "entry": "pads-0.1.1.js",
       "api": 1,
-      "bytes": 15063,
-      "sha256": "b758249bf10a7e90bd6d2cbdf2b9191d71a1a4a4c1cd8242f0eb1b678b4998ab",
+      "bytes": 15580,
+      "sha256": "9914fe671fdb365138d5e32e1a8c0cc119208815507a1925370ee205bf21ddbd",
       "requiresServer": true,
       "public": true
     },
