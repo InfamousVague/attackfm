@@ -917,3 +917,117 @@ body [class*='_panel_']:has(> .dlPanel) {
   align-items: center;
   gap: var(--glacier-space-2);
 }
+
+/* ── Stems: the song with parts taken out ─────────────────────────────────
+   The console's fourth room. Rows rather than a grid of pads: this is a
+   mixer strip, not an instrument - the board on the Pads page is where you
+   play - and a row can carry a name that reads at a glance without being
+   cropped, which "Strings & horns" needs. */
+.stemsRoom {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+}
+
+.stemsRoom__ask {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--glacier-space-2);
+}
+
+.stemsRoom__parts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.stemsRoom__part {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+  border: 1px solid var(--glacier-border);
+  /* A part that is OUT is the one worth marking, so the row that changed is
+     the row that looks different - the default state stays quiet. */
+  opacity: 0.55;
+  transition: opacity var(--glacier-duration-fast) var(--glacier-ease-out);
+}
+
+.stemsRoom__part[data-on] {
+  opacity: 1;
+}
+
+.stemsRoom__glyph {
+  display: grid;
+  place-items: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface-2, var(--glacier-bg));
+  color: var(--glacier-text-muted);
+  flex: none;
+}
+
+.stemsRoom__part[data-on] .stemsRoom__glyph {
+  color: var(--glacier-accent-text);
+}
+
+.stemsRoom__name {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.stemsRoom__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+  flex-wrap: wrap;
+}
+
+.stemsRoom__rail {
+  position: relative;
+  inline-size: 100%;
+  block-size: 6px;
+  border-radius: 3px;
+  background: var(--glacier-border);
+  overflow: hidden;
+}
+
+.stemsRoom__railFill {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inline-size: 0;
+  border-radius: 3px;
+  background: var(--glacier-accent-solid);
+  transition: inline-size 400ms linear;
+}
+
+/* No percentage to show: a bar parked at zero says "nothing is happening",
+   which is the one thing that is not true. A sweep says "working" without
+   claiming to know how far. */
+.stemsRoom__railFill[data-unknown] {
+  inline-size: 35%;
+  transition: none;
+  animation: stemsSweep 1.4s ease-in-out infinite;
+}
+
+@keyframes stemsSweep {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(320%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stemsRoom__railFill[data-unknown] {
+    animation: none;
+    inline-size: 100%;
+    opacity: 0.4;
+  }
+}

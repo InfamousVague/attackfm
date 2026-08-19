@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { stemDropParam } from '../player/stemDrop.ts';
 import { rememberProfile } from './household.ts';
 import { rememberServer } from './servers.ts';
 import { pickSource, startMirrorHeartbeat } from './mirrors.ts';
@@ -173,8 +174,13 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
         ? { ...live, url: via.url, streamToken: via.streamToken }
         : live;
       const rowId = via ? via.trackId : id;
-      return quality === 'transcode' || fx || fx2
-        ? transcodeUrl(from, rowId, bitrate, 0, fx, fx2)
+      // Muting a part forces the encoder for exactly the reason an effect does:
+      // the untouched file is one mixed-down stream with nowhere for a part to
+      // be missing from. The parts themselves are on the server; this only
+      // names which ones to leave out.
+      const drop = stemDropParam(id);
+      return quality === 'transcode' || fx || fx2 || drop
+        ? transcodeUrl(from, rowId, bitrate, 0, fx, fx2, drop)
         : streamUrl(from, rowId);
     });
     return () => setRemoteAudioResolver(null);

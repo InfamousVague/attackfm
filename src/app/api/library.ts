@@ -132,6 +132,7 @@ export function transcodeUrl(
   seek = 0,
   fx: string | null = null,
   fx2: string | null = null,
+  drop: string | null = null,
 ): string {
   const at = seek > 0 ? `&seek=${seek.toFixed(3)}` : '';
   // Effect NAMES, which the server looks up in its own table; it never accepts
@@ -142,7 +143,10 @@ export function transcodeUrl(
   // The hi-fi chain rides the same way: typed node parameters as JSON, which
   // the server clamps and compiles (fx.rs). Same reasoning, wider vocabulary.
   const with_fx2 = fx2 ? `&fx2=${encodeURIComponent(fx2)}` : '';
-  return `${session.url}/api/transcode/${trackId}?t=${encodeURIComponent(session.streamToken)}&bitrate=${bitrate}${at}${with_fx}${with_fx2}`;
+  // Parts to leave out, by name. The server matches them against its own
+  // registry and discards anything else, so this never becomes a filter.
+  const with_drop = drop ? `&drop=${encodeURIComponent(drop)}` : '';
+  return `${session.url}/api/transcode/${trackId}?t=${encodeURIComponent(session.streamToken)}&bitrate=${bitrate}${at}${with_fx}${with_fx2}${with_drop}`;
 }
 
 export function artUrl(session: ServerSession, artId: string, trackId: number): string {
