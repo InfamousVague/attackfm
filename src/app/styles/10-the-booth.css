@@ -50,10 +50,13 @@
 /* The invitation: one warm row, deliberately small - Music Date's real face
    is the fullscreen layer, and a card that oversold it here would just be a
    second version of the page it opens. */
-.boothDate {
+.boothPage .boothDate {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: var(--glacier-space-3);
+  block-size: auto;
+  min-block-size: var(--glacier-control-height-md);
   padding: var(--glacier-space-3) var(--glacier-space-4);
   border: var(--glacier-hairline) solid var(--glacier-border-subtle);
   border-radius: var(--glacier-radius-lg);
@@ -61,6 +64,7 @@
   color: inherit;
   font: inherit;
   text-align: start;
+  white-space: normal;
   cursor: pointer;
   transition: transform 0.12s var(--glacier-ease-out);
 }
@@ -105,10 +109,12 @@
 /* The pill in the header: the curator loop's live phase, plus two dots for
    the two halves of the model stack (embedder, chat). It is also a door to
    the brain's preferences - status and control are one object. */
-.boothPulse {
+.boothPage .boothPulse {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-start;
   gap: var(--glacier-space-2);
+  block-size: auto;
   padding: var(--glacier-space-1) var(--glacier-space-3);
   border: var(--glacier-hairline) solid var(--glacier-border-subtle);
   border-radius: 999px;
@@ -130,10 +136,13 @@
 
 /* Drop the needle: the page's one hero. A solid accent disc with a halo, so
    the single most rewarding tap on the page also looks like it. */
-.boothHero {
+.boothPage .boothHero {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: var(--glacier-space-4);
+  block-size: auto;
+  min-block-size: var(--glacier-control-height-lg);
   padding: var(--glacier-space-4);
   border: var(--glacier-hairline) solid var(--glacier-border-subtle);
   border-radius: var(--glacier-radius-lg);
@@ -141,6 +150,7 @@
   color: inherit;
   font: inherit;
   text-align: start;
+  white-space: normal;
   cursor: pointer;
   transition: transform 0.12s var(--glacier-ease-out);
 }
@@ -222,10 +232,13 @@
 }
 
 /* On the platter: the playing song as the DJ hears it. */
-.boothPlatter {
+.boothPage .boothPlatter {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
   gap: var(--glacier-space-2);
+  block-size: auto;
   padding: var(--glacier-space-3) var(--glacier-space-4);
   border: var(--glacier-hairline) solid var(--glacier-border-subtle);
   border-radius: var(--glacier-radius-lg);
@@ -233,6 +246,7 @@
   color: inherit;
   font: inherit;
   text-align: start;
+  white-space: normal;
   cursor: pointer;
 }
 
@@ -346,10 +360,13 @@
 }
 
 /* The brain: three counters and a door, one object. */
-.boothBrain {
+.boothPage .boothBrain {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
   gap: var(--glacier-space-2);
+  block-size: auto;
   padding: var(--glacier-space-3) var(--glacier-space-4);
   border: var(--glacier-hairline) solid var(--glacier-border-subtle);
   border-radius: var(--glacier-radius-lg);
@@ -357,6 +374,7 @@
   color: inherit;
   font: inherit;
   text-align: start;
+  white-space: normal;
   cursor: pointer;
 }
 
@@ -427,6 +445,65 @@
   background: color-mix(in srgb, currentcolor 12%, transparent);
   font-size: var(--glacier-font-size-xs);
   font-weight: 650;
+}
+
+/* The staged semantic pass: Qwen completes the library before Gemma starts. */
+.boothEnrichment {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-4);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+}
+
+.boothEnrichment__head {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.boothEnrichment__head > span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.boothEnrichment__status {
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+}
+
+.boothEnrichment__layer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.boothEnrichment__label {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.boothEnrichment__track {
+  display: block;
+  block-size: 0.35rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--glacier-border-strong) 55%, transparent);
+}
+
+.boothEnrichment__fill {
+  display: block;
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--glacier-accent-solid);
+  transition: inline-size 300ms var(--glacier-ease-out);
 }
 
 /* The crates: the curator's shelf re-laid as a grid - every mix visible by
@@ -566,4 +643,3 @@
   display: flex;
   flex-direction: column;
 }
-

@@ -3531,14 +3531,23 @@ impl Db {
                     f.dynamic_range, f.rhythmic_activity,
                     COALESCE(f.ai_summary,''), COALESCE(f.ai_genres,''),
                     COALESCE(f.ai_vibes,''), COALESCE(f.ai_sonic_traits,''),
-                    COALESCE(f.ai_lyrical_themes,''), COALESCE(f.ai_confidence,0)
+                    COALESCE(f.ai_lyrical_themes,''), COALESCE(f.ai_confidence,0),
+                    COALESCE(p.canonical_profile,'')
              FROM tracks t LEFT JOIN track_features f ON f.track_id = t.id
+             LEFT JOIN song_profile_layers p ON p.track_id = t.id
              WHERE t.deleted = 0 AND t.id IN ({list})"
         );
         let Ok(mut stmt) = conn.prepare(&sql) else {
             return Vec::new();
         };
         stmt.query_map([], |r| {
+            let canonical_raw: String = r.get(22)?;
+            let canonical: Option<crate::enrichment::SemanticProfile> =
+                serde_json::from_str(&canonical_raw).ok();
+            let legacy_genres = comma_terms(r.get(17)?);
+            let legacy_moods = comma_terms(r.get(18)?);
+            let legacy_traits = comma_terms(r.get(19)?);
+            let legacy_themes = comma_terms(r.get(20)?);
             Ok(CurationTrack {
                 id: r.get(0)?,
                 title: r.get(1)?,
@@ -3556,11 +3565,15 @@ impl Db {
                 loudness: r.get(13)?,
                 dynamic_range: r.get(14)?,
                 rhythmic_activity: r.get(15)?,
-                ai_summary: r.get(16)?,
-                ai_genres: comma_terms(r.get(17)?),
-                ai_moods: comma_terms(r.get(18)?),
-                ai_sonic_traits: comma_terms(r.get(19)?),
-                ai_lyrical_themes: comma_terms(r.get(20)?),
+                ai_summary: canonical.as_ref().map(|p| p.summary.clone()).filter(|v| !v.is_empty()).unwrap_or(r.get(16)?),
+                ai_genres: canonical.as_ref().map(|p| p.genres.clone()).filter(|v| !v.is_empty()).unwrap_or(legacy_genres),
+                ai_moods: canonical.as_ref().map(|p| p.moods.clone()).filter(|v| !v.is_empty()).unwrap_or(legacy_moods),
+                ai_vibes: canonical.as_ref().map(|p| p.vibes.clone()).unwrap_or_default(),
+                ai_sonic_traits: canonical.as_ref().map(|p| p.musical_traits.clone()).filter(|v| !v.is_empty()).unwrap_or(legacy_traits),
+                ai_lyrical_themes: canonical.as_ref().map(|p| p.lyrical_themes.clone()).filter(|v| !v.is_empty()).unwrap_or(legacy_themes),
+                ai_specific_tags: canonical.as_ref().map(|p| p.specific_tags.clone()).unwrap_or_default(),
+                ai_production_descriptors: canonical.as_ref().map(|p| p.production_descriptors.clone()).unwrap_or_default(),
+                ai_influences: canonical.as_ref().map(|p| p.influences.clone()).unwrap_or_default(),
                 ai_confidence: r.get(21)?,
             })
         })
@@ -3967,8 +3980,10 @@ impl Db {
                      COALESCE(f.lyrical_vec_dims,0), f.community_vec, COALESCE(f.community_vec_dims,0),
                      (t.curator_user_id IS NOT NULL AND COALESCE(t.curator_promoted, 0) = 0),
                      f.audio_fingerprint, COALESCE(f.audio_fingerprint_dims,0),
-                     COALESCE(f.ai_genres,''), COALESCE(f.ai_sonic_traits,'')
+                     COALESCE(f.ai_genres,''), COALESCE(f.ai_sonic_traits,''),
+                     COALESCE(p.canonical_profile,'')
              FROM tracks t LEFT JOIN track_features f ON f.track_id = t.id
+             LEFT JOIN song_profile_layers p ON p.track_id = t.id
              WHERE t.deleted = 0",
         ) else {
             return Vec::new();
@@ -3991,13 +4006,19 @@ impl Db {
                             .collect()
                     })
             };
+            let canonical_raw: String = r.get(24)?;
+            let canonical: Option<crate::enrichment::SemanticProfile> =
+                serde_json::from_str(&canonical_raw).ok();
             Ok(TrackFeatures {
                 track_id: r.get(0)?,
                 bpm: r.get(1)?,
                 lyric_vec: vec,
                 genre: r.get(4)?,
-                ai_genres: comma_terms(r.get(22)?),
-                ai_sonic_traits: comma_terms(r.get(23)?),
+                ai_genres: canonical.as_ref().map(|p| p.genres.clone()).filter(|v| !v.is_empty())
+                    .unwrap_or(comma_terms(r.get(22)?)),
+                ai_specific_tags: canonical.as_ref().map(|p| p.specific_tags.clone()).unwrap_or_default(),
+                ai_sonic_traits: canonical.as_ref().map(|p| p.musical_traits.clone()).filter(|v| !v.is_empty())
+                    .unwrap_or(comma_terms(r.get(23)?)),
                 artist: r.get(5)?,
                 energy: r.get(6)?,
                 brightness: r.get(7)?,
@@ -4053,6 +4074,39 @@ impl Db {
             one("SELECT COUNT(*) FROM track_features f JOIN tracks t ON t.id = f.track_id AND t.deleted = 0 WHERE f.bpm IS NOT NULL"),
             one("SELECT COUNT(*) FROM track_features f JOIN tracks t ON t.id = f.track_id AND t.deleted = 0 WHERE f.vec_dims > 0"),
             one("SELECT COUNT(*) FROM tracks WHERE deleted = 0"),
+        )
+    }
+
+    /// Current semantic-enrichment pass: normalized fast profiles completed,
+    /// normalized refinements completed, tracks eligible for refinement, and
+    /// total live tracks. Rejected fast profiles count as processed for this
+    /// pass, but not as refinement targets.
+    pub fn layered_enrichment_counts(&self, stale_before: i64) -> (i64, i64, i64, i64) {
+        let conn = self.lock();
+        let one = |sql: &str| -> i64 {
+            conn.query_row(sql, params![stale_before], |r| r.get(0))
+                .unwrap_or(0)
+        };
+        (
+            one(
+                "SELECT COUNT(*) FROM tracks t
+                 LEFT JOIN song_profile_layers p ON p.track_id=t.id
+                 LEFT JOIN track_features f ON f.track_id=t.id
+                 WHERE t.deleted=0 AND (
+                   COALESCE(p.fast_created_at,0) >= ?1 OR
+                   (COALESCE(f.ai_sources,'')='rejected_v3' AND COALESCE(f.ai_enriched_at,0) >= ?1)
+                 )",
+            ),
+            one(
+                "SELECT COUNT(*) FROM tracks t JOIN song_profile_layers p ON p.track_id=t.id
+                 WHERE t.deleted=0 AND p.refined_at >= ?1 AND p.refinement_patch<>''",
+            ),
+            one(
+                "SELECT COUNT(*) FROM tracks t JOIN song_profile_layers p ON p.track_id=t.id
+                 WHERE t.deleted=0 AND p.fast_created_at >= ?1 AND p.fast_profile<>''",
+            ),
+            conn.query_row("SELECT COUNT(*) FROM tracks WHERE deleted=0", [], |r| r.get(0))
+                .unwrap_or(0),
         )
     }
 
@@ -5777,8 +5831,12 @@ pub struct CurationTrack {
     pub ai_summary: String,
     pub ai_genres: Vec<String>,
     pub ai_moods: Vec<String>,
+    pub ai_vibes: Vec<String>,
     pub ai_sonic_traits: Vec<String>,
     pub ai_lyrical_themes: Vec<String>,
+    pub ai_specific_tags: Vec<String>,
+    pub ai_production_descriptors: Vec<String>,
+    pub ai_influences: Vec<String>,
     pub ai_confidence: f64,
 }
 
@@ -5790,6 +5848,7 @@ pub struct TrackFeatures {
     pub lyric_vec: Option<Vec<f32>>,
     pub genre: String,
     pub ai_genres: Vec<String>,
+    pub ai_specific_tags: Vec<String>,
     pub ai_sonic_traits: Vec<String>,
     pub artist: String,
     /// The analyser's audio character (features.rs), None until measured.

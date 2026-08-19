@@ -14,7 +14,7 @@
 //! Draws on the server library and the listener's play history, so it only
 //! offers itself when signed into a server with something to play.
 
-import { Spinner } from '@glacier/react';
+import { Button, IconButton, Spinner } from '@glacier/react';
 import { Flame, Lightbulb, MoonStar, Play, Sparkles, Waves, X } from '@glacier/icons';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -43,9 +43,9 @@ function DjToast({ line, onDismiss }: { line: string; onDismiss: () => void }) {
     <div className="djToast" role="status" aria-live="polite">
       <img className="djToast__face" src={djMascot} alt="" aria-hidden />
       <p className="djToast__line">{line}</p>
-      <button type="button" className="djToast__close" aria-label="Dismiss" onClick={onDismiss}>
+      <IconButton type="button" variant="ghost" size="sm" className="djToast__close" aria-label="Dismiss" onClick={onDismiss}>
         <X size={14} />
-      </button>
+      </IconButton>
     </div>,
     document.body,
   );
@@ -159,8 +159,10 @@ export function DjLauncher({
   if (variant === 'hero') {
     return (
       <>
-        <button
+        <Button
           type="button"
+          variant="gradient"
+          fullWidth
           className="boothHero"
           onClick={() => void start()}
           disabled={busy}
@@ -180,12 +182,14 @@ export function DjLauncher({
             </span>
             <span className="boothHero__caption">A live set, built from what you play</span>
           </span>
-        </button>
+        </Button>
         <div className="boothChips" role="group" aria-label="Set the mood">
           {MOODS.map(({ label, seed, Icon }) => (
-            <button
+            <Button
               key={label}
               type="button"
+              variant={busySeed === seed ? 'solid' : 'outline'}
+              size="sm"
               className="boothChip"
               data-on={busySeed === seed || undefined}
               disabled={busy}
@@ -193,7 +197,7 @@ export function DjLauncher({
             >
               {busySeed === seed ? <Spinner size="sm" aria-label="Cueing" /> : <Icon size={14} />}
               {label}
-            </button>
+            </Button>
           ))}
         </div>
         {toast && <DjToast line={toast} onDismiss={() => setToast(null)} />}
@@ -206,8 +210,9 @@ export function DjLauncher({
   // other two whole-collection doors wear. Pressing it IS the brief.
   return (
     <>
-      <button
+      <Button
         type="button"
+        variant="gradient"
         className="libChip libChip--dj"
         onClick={() => void start()}
         disabled={busy}
@@ -218,7 +223,7 @@ export function DjLauncher({
         <span className="libChip__count">
           {busy ? <Spinner size="sm" aria-label="Cueing" /> : 'A live set, from your taste'}
         </span>
-      </button>
+      </Button>
       {toast && <DjToast line={toast} onDismiss={() => setToast(null)} />}
     </>
   );
