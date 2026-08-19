@@ -460,3 +460,82 @@ body [class*='_panel_']:has(> .dlPanel) {
   text-decoration: line-through;
   text-decoration-thickness: 1px;
 }
+
+/* ── The sound console ──────────────────────────────────────────────────────
+   One popover, three rooms. The segmented control is the whole navigation, so
+   it gets the top of the panel and nothing competes with it. */
+.soundConsole {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  min-inline-size: 17rem;
+}
+
+/* ── The hi-fi rack, over the artwork ───────────────────────────────────────
+   Every knob of every box, unlike the pedals panel's one-headline-knob rule:
+   nobody reaches for a compressor to nudge a single control. That makes this
+   the tallest room in the console, so it scrolls inside itself rather than
+   growing the popover past the screen. */
+.hifiPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.hifiPanel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  max-block-size: 46vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.hifiPanel__box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  padding: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface);
+}
+
+.hifiPanel__boxHead {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.hifiPanel__name {
+  flex: 1;
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 500;
+}
+
+/* A box this server cannot compile is passing through silently; saying so is
+   the difference between "off" and "broken". */
+.hifiPanel__name[data-unsupported='true'] {
+  text-decoration: underline dotted;
+  opacity: 0.7;
+}
+
+.hifiPanel__knobs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hifiPanel__knob {
+  display: grid;
+  grid-template-columns: 4.6rem 1fr 3.4rem;
+  gap: var(--glacier-space-2);
+  align-items: center;
+}
+
+.hifiPanel__value {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}

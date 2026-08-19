@@ -607,7 +607,7 @@ export function LooperPage() {
                   style={{
                     position: 'relative', height: 96, display: 'flex', alignItems: 'center',
                     gap: 1, padding: '0 4px', borderRadius: 8, cursor: 'ew-resize',
-                    background: 'var(--glacier-bg-surface)', border: '1px solid var(--glacier-border)',
+                    background: 'var(--glacier-surface)', border: '1px solid var(--glacier-border)',
                     touchAction: 'none', overflow: 'hidden',
                   }}
                 >
@@ -697,7 +697,7 @@ export function LooperPage() {
               setPickTrack(Number.isFinite(id) && id > 0 ? id : null);
             }}
             style={{
-              padding: '8px 10px', borderRadius: 8, background: 'var(--glacier-bg-surface)',
+              padding: '8px 10px', borderRadius: 8, background: 'var(--glacier-surface)',
               color: 'var(--glacier-text)', border: '1px solid var(--glacier-border)',
             }}
           >

@@ -68,8 +68,8 @@ const padFace = (hue: number | null, lit: boolean, selected: boolean): CSSProper
   borderRadius: 10,
   border: selected ? '2px solid var(--glacier-accent-9)' : '1px solid var(--glacier-border)',
   background: hue === null
-    ? 'var(--glacier-bg-surface)'
-    : `linear-gradient(150deg, hsl(${hue} 55% ${lit ? 52 : 30}% / ${lit ? 0.95 : 0.5}), var(--glacier-bg-surface))`,
+    ? 'var(--glacier-surface)'
+    : `linear-gradient(150deg, hsl(${hue} 55% ${lit ? 52 : 30}% / ${lit ? 0.95 : 0.5}), var(--glacier-surface))`,
   color: 'var(--glacier-text)',
   display: 'flex',
   flexDirection: 'column',
@@ -394,7 +394,7 @@ export function PadsPage() {
               aria-hidden
               style={{
                 display: 'flex', alignItems: 'center', gap: 1, height: 44,
-                background: 'var(--glacier-bg-surface)', borderRadius: 6, padding: '0 6px',
+                background: 'var(--glacier-surface)', borderRadius: 6, padding: '0 6px',
                 border: '1px solid var(--glacier-border)',
               }}
             >
@@ -499,7 +499,7 @@ export function PadsPage() {
               setJobState('none');
             }}
             style={{
-              padding: '8px 10px', borderRadius: 8, background: 'var(--glacier-bg-surface)',
+              padding: '8px 10px', borderRadius: 8, background: 'var(--glacier-surface)',
               color: 'var(--glacier-text)', border: '1px solid var(--glacier-border)',
             }}
           >
