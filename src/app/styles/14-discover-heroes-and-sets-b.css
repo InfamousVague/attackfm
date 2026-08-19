@@ -295,6 +295,13 @@
    here (still clamped to the window) so the curve and bands are not pinched. */
 .eqPopoverPanel {
   max-inline-size: min(30rem, calc(100vw - 2rem));
+  /* The kit's panel padding is space-2, which is right for a menu of six rows
+     and too tight for this: the console is a stack of bordered cards, and a
+     card whose edge sits that close to the panel's edge reads as clipped
+     rather than inset. Written as ONE value so the four sides cannot drift -
+     an inset that differs left to right is the kind of thing you feel before
+     you can name it. */
+  padding: var(--glacier-space-3);
   /* And a height, which is what was missing. The kit's preset row wraps, so a
      rack with a decent number of presets grew taller than the screen - and a
      panel that overflows the viewport cannot be scrolled from the inside, so
