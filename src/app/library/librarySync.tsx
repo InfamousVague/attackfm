@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { defaultMusicDir, listAudioFiles, parseTrackMeta } from '../core/tauri.ts';
 import { fetchMissingTracks, uploadFile, ServerError, type SyncCheckEntry } from '../server.ts';
+import { autoUploadEnabled } from '../settings/behaviourPrefs.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { MUSIC_DIR_KEY, useLibrary } from './library.tsx';
 import { hasLocalLibrary } from '../core/platform.ts';
@@ -270,6 +271,12 @@ export function LibrarySyncProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!serverUrl || !hasLocalLibrary) return;
     unsupported.current = false;
+    // Only onto a server you have said may have it. This started three seconds
+    // after connecting to ANY server, and the upload handlers accept any
+    // signed-in caller rather than an admin - so signing in to a friend's hub
+    // began pushing your library onto their disk. The default is still on
+    // where you are the admin, which is the app's best guess at "my own hub".
+    if (!autoUploadEnabled(serverUrl, session?.isAdmin === true)) return;
     const timer = window.setTimeout(syncNow, 3000);
     return () => window.clearTimeout(timer);
   }, [serverUrl, syncNow]);

@@ -32,6 +32,7 @@ import { useLibrary } from '../library/library.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { gbLabel, uptimeLabel } from './serverFormat.ts';
 import { UsersSection } from './ServerUsers.tsx';
+import { BackgroundWork } from './BackgroundWork.tsx';
 import { UploadSection } from './ServerUpload.tsx';
 
 /** The signed-in status board: who and where, the numbers, the disk, and the
@@ -236,6 +237,7 @@ export function Connected() {
       {/* Household, Link a device and Mirrors moved out to their own chunks of
           the Servers pane (ServersSettings) - this section is now only the box
           you are signed into. */}
+      {session.isAdmin && <BackgroundWork />}
       {session.isAdmin && <UsersSection />}
 
       <div className="prefsSection">
