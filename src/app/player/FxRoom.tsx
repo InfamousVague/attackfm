@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Input, SegmentedControl, Slider, Switch, Text } from '@glacier/react';
 import { ChevronDown, ChevronUp, Plus, Search, Trash2, X } from '@glacier/icons';
-import { nodeSpec, setFxChainOn, useServerFxNodes, type FxNodeSpec } from './fxChain.ts';
+import { nodeSpec, silenceFxChain, useServerFxNodes, type FxNodeSpec } from './fxChain.ts';
 import {
   ALL_DRAWERS,
   FRESH_MS,
@@ -84,15 +84,20 @@ export function FxRoom() {
         <Text tone="muted" size="xs">
           {chain.nodes.length === 0
             ? 'empty'
-            : chain.on && live > 0
+            : live > 0
               ? `${live} of ${chain.nodes.length} in`
-              : 'off'}
+              : 'all out'}
         </Text>
-        <Switch
-          aria-label="Effects on"
-          checked={chain.on && live > 0}
-          onCheckedChange={(v: boolean) => setFxChainOn(v)}
-        />
+        {/* No master switch. There was one, and a rack could sit with every
+            box lit and the whole room greyed out from a single control at the
+            top - which reads as broken, not as off. A box is in or it is out;
+            that is the only state there is. This is the convenience the switch
+            was standing in for, and it says what it does. */}
+        {live > 0 && (
+          <button type="button" className="fxRoom__allOff" onClick={silenceFxChain}>
+            All out
+          </button>
+        )}
       </div>
 
       {!session && (
@@ -172,7 +177,7 @@ export function FxRoom() {
                                 // A bypassed box's knob does nothing audible,
                                 // so it reads as disabled rather than
                                 // pretending otherwise.
-                                disabled={!node.on || !chain.on}
+                                disabled={!node.on}
                                 onValueChange={(v: number) => patch(node.key, p.key, v)}
                               />
                               <Text size="xs" mono className="fxRoom__value">

@@ -273,10 +273,11 @@ export interface ChainEdit {
 export function useChainEdit(): ChainEdit {
   const chain = useFxChain();
 
-  // The default arms the chain the first time anything live goes in: a box
-  // added to a chain nobody switched on is a control that does nothing, and
-  // the master switch is two rooms away from wherever you just tapped.
-  const edit = (nodes: FxNode[], on = chain.on || nodes.some((n) => n.on)) => setFxChain(nodes, on);
+  // No arming step any more. A box added to the chain is in the chain, because
+  // a chain is on exactly when something in it is on - which is what the old
+  // default was reaching for, from two rooms away, with a switch that could
+  // still be down afterwards.
+  const edit = (nodes: FxNode[]) => setFxChain(nodes);
 
   return {
     chain,
@@ -298,7 +299,7 @@ export function useChainEdit(): ChainEdit {
     add: (spec) => {
       if (chain.nodes.length >= MAX_NODES) return null;
       const node = freshNode(spec);
-      edit([...chain.nodes, node], true);
+      edit([...chain.nodes, node]);
       return node.key;
     },
     full: chain.nodes.length >= MAX_NODES,

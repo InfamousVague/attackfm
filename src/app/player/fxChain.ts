@@ -609,7 +609,6 @@ const RATE_NODES = new Set(['speed', 'tempo']);
  * do not count, since a bypassed node is not in the filter graph either.
  */
 export function chainRate(chain: FxChainState): number {
-  if (!chain.on) return 1;
   let rate = 1;
   for (const node of chain.nodes) {
     if (!node.on || !RATE_NODES.has(node.t)) continue;
@@ -637,8 +636,20 @@ export interface FxNode {
   key: string;
 }
 
+/**
+ * The chain has no master switch.
+ *
+ * It had one, and it was a trap: a rack full of boxes could sit there switched
+ * off at the top, every individual pedal lit, and the whole room greyed out
+ * with no explanation on the control that was actually doing it. People read
+ * that as the feature being broken rather than as one switch being down.
+ *
+ * A chain is on when something in it is on. That is the only rule now, and it
+ * cannot disagree with what the boxes say. `on` survives on the STORED shape
+ * only so an install that has one can be migrated (see `sane`); nothing reads
+ * it after that.
+ */
 export interface FxChainState {
-  on: boolean;
   nodes: FxNode[];
 }
 
@@ -653,8 +664,13 @@ function freshKey(): string {
 }
 
 function sane(state: unknown): FxChainState {
-  if (!state || typeof state !== 'object') return { on: false, nodes: [] };
-  const s = state as Partial<FxChainState>;
+  if (!state || typeof state !== 'object') return { nodes: [] };
+  const s = state as Partial<FxChainState> & { on?: boolean };
+  // A chain stored with its master DOWN was silent, and must stay silent: the
+  // switch is gone, so the only way to keep that promise is to put the boxes
+  // down instead. Without this, upgrading would start playing somebody's saved
+  // rack at them out of nowhere.
+  const migrating = s.on === false && Array.isArray(s.nodes) && s.nodes.length > 0;
   const nodes = Array.isArray(s.nodes) ? s.nodes : [];
   const kept: FxNode[] = [];
   for (const n of nodes.slice(0, MAX_NODES)) {
@@ -668,17 +684,22 @@ function sane(state: unknown): FxChainState {
         ? Math.min(p.max, Math.max(p.min, v))
         : p.default;
     }
-    kept.push({ t: spec.t, on: (n as FxNode).on !== false, params, key: (n as FxNode).key || freshKey() });
+    kept.push({
+      t: spec.t,
+      on: migrating ? false : (n as FxNode).on !== false,
+      params,
+      key: (n as FxNode).key || freshKey(),
+    });
   }
-  return { on: s.on === true && kept.length > 0, nodes: kept };
+  return { nodes: kept };
 }
 
 function read(): FxChainState {
   try {
     const raw = localStorage.getItem(KEY);
-    return raw ? sane(JSON.parse(raw)) : { on: false, nodes: [] };
+    return raw ? sane(JSON.parse(raw)) : { nodes: [] };
   } catch {
-    return { on: false, nodes: [] };
+    return { nodes: [] };
   }
 }
 
@@ -699,17 +720,18 @@ export function fxChain(): FxChainState {
   return state;
 }
 
-export function setFxChain(nodes: FxNode[], on: boolean): void {
-  commit(sane({ on, nodes }));
+export function setFxChain(nodes: FxNode[]): void {
+  commit(sane({ nodes }));
 }
 
-/** The core kill switch: everything off, nothing forgotten. */
-export function setFxChainOn(on: boolean): void {
-  commit({ ...state, on: on && state.nodes.length > 0 });
+/** Every box down, nothing forgotten - what the master switch used to do,
+ *  said in the only vocabulary left. */
+export function silenceFxChain(): void {
+  commit({ nodes: state.nodes.map((n) => ({ ...n, on: false })) });
 }
 
 export function fxChainOn(): boolean {
-  return state.on && state.nodes.some((n) => n.on);
+  return state.nodes.some((n) => n.on);
 }
 
 /**
@@ -719,7 +741,6 @@ export function fxChainOn(): boolean {
  * path available.
  */
 export function fxChainParam(): string | null {
-  if (!state.on) return null;
   const live = state.nodes.filter((n) => n.on);
   if (live.length === 0) return null;
   return JSON.stringify(live.map((n) => ({ t: n.t, ...n.params })));
