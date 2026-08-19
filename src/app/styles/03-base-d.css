@@ -340,13 +340,3 @@
   block-size: 3rem;
 }
 
-/* The rail's foot: the download queue button stacked above Settings, both
-   pinned to the bottom by the kit's own `end` region. A column so the two sit
-   one over the other, centred to the rail's icon width. */
-.appNavRail__foot {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--glacier-space-1);
-}
-

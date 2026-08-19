@@ -29,6 +29,7 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { useJamOptional } from './jam.tsx';
 import { useSystemBack } from '../nav/systemBack.ts';
 import { usePlayerDismiss } from './playerDismiss.ts';
+import { subscribeDeckHold } from './deckHold.ts';
 import { initDockWave } from './dockWave.ts';
 import { useMediaQuery } from '../ux/useMediaQuery.ts';
 import { REDUCED_MOTION_QUERY } from '../ux/useReducedMotion.ts';
@@ -2568,6 +2569,38 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     if (activeElsewhere && playing) setPlayingState(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reacts to the mode flip
   }, [activeElsewhere]);
+
+  /*
+   * A surface that IS the output - the karaoke stage, the pad sampler - takes
+   * the deck off first. See deckHold.ts for why this exists at all.
+   *
+   * Subscribed once, and calling through a ref rather than re-subscribing on
+   * every render: setPlayingState is rebuilt each pass, and re-running this
+   * effect for that would tear down and rebuild the subscription several times
+   * a second while a song plays. Pausing needs nothing from the closure anyway -
+   * it reads the deck through refs - so the ref is enough, and the one branch
+   * that does read `track` is the play direction, which never runs here.
+   */
+  const holdHandlers = useRef({ setPlaying: setPlayingState, seek: commitSeek });
+  holdHandlers.current = { setPlaying: setPlayingState, seek: commitSeek };
+  useEffect(
+    () =>
+      subscribeDeckHold((held, resumeAt) => {
+        if (held) {
+          holdHandlers.current.setPlaying(false);
+          return;
+        }
+        // Handed back WITH a position: the surface that had the output was
+        // playing this same song and got it this far, so the deck picks it up
+        // there rather than where it was parked minutes ago. A release with no
+        // position leaves everything alone - see deckHold.ts.
+        if (typeof resumeAt === 'number' && Number.isFinite(resumeAt)) {
+          holdHandlers.current.seek(Math.max(0, resumeAt));
+          holdHandlers.current.setPlaying(true);
+        }
+      }),
+    [],
+  );
 
   // What the strip shows and what its controls do, swapped by mode. Active (or
   // alone): local track, local handlers. Remote: the other device's track, and

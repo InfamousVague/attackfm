@@ -365,6 +365,16 @@ export function PlayerStrip({
                   title bar seats plugins ahead of settings. Empty when none
                   contribute. */}
               <PluginSlot id="player-trailing" />
+              {/* The song-scoped slot, which on the phone belongs to the Now
+                  Playing sheet. Desktop has no such sheet - the strip IS where
+                  the song is - and the sheet is gated behind `mobileControls`,
+                  so without this line a plugin whose only surface is this slot
+                  has nowhere at all to appear on desktop. Karaoke was exactly
+                  that: installed, enabled, and invisible.
+                  Deliberately NOT in the touch branch above, where the sheet
+                  already renders it and a second copy would be a duplicate
+                  button rather than a second home. */}
+              <PluginSlot id="now-playing-actions" />
               {/* The equalizer, playlist filing, and device hand-off fold
                   behind one overflow: five trailing buttons were crowding the
                   bar, and none of the three is a moment-to-moment reach.

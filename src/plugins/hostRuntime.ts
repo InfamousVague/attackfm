@@ -25,6 +25,7 @@ import * as platform from '../app/core/platform.ts';
 import * as importsBridge from './importsBridge.ts';
 import { openExternal } from '../app/core/openExternal.ts';
 import { useNowPlayingMotion } from '../app/player/nowPlayingMotion.tsx';
+import { deckHeld, holdDeck } from '../app/player/deckHold.ts';
 import { useLibrary } from '../app/library/library.tsx';
 import { useLibrarySync } from '../app/library/librarySync.tsx';
 import { useServerSession } from '../app/servers/serverSession.tsx';
@@ -70,6 +71,11 @@ export function installHostRuntime(): PluginHost {
       '@attackfm/app/fxChain': fxChain,
       '@attackfm/app/librarySync': { useLibrarySync },
       '@attackfm/app/serverSession': { useServerSession },
+      // The output claim: a plugin whose page IS the sound - the sampler, the
+      // karaoke stage - takes the deck off before it starts, so the two are
+      // never playing at once. Read the module for why releasing it does not
+      // start the deck back up.
+      '@attackfm/app/deckHold': { holdDeck, deckHeld },
       // Added for the 2026-08 plugin batch (additive - the table only grows).
       '@attackfm/app/playlists': { usePlaylists },
       '@attackfm/app/equalizer': { EQ_BANDS, EQ_PRESETS, useEqualizer },

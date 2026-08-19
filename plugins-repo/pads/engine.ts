@@ -1,95 +1,154 @@
 /**
- * The instrument itself: sixteen pads, and the Web Audio behind them.
+ * The deck: a whole song, in parts, running.
  *
- * The one rule that decides this whole file is that a pad must sound within a
- * few milliseconds of the thumb landing. That rules out fetching, decoding, or
- * building anything at hit time - all of it happens when the kit loads, and a
- * hit does the only thing that is genuinely cheap: make a source node, point
- * it at an already-decoded buffer, and start it. An AudioBufferSourceNode is
- * single-use by design, so one per hit is correct rather than wasteful.
+ * This used to be a sampler in the strict sense - pads that held a sound and
+ * were silent until a thumb landed on one. Which made the default state of the
+ * instrument silence, and playing it the act of assembling a song out of
+ * nothing while it happened. That is a fine instrument and it is not what
+ * anybody wanted from their own records.
  *
- * Everything here is deliberately outside React. A drum pattern played by hand
- * produces events far faster than a component tree can re-render, and a hit
- * that waited for a render would arrive late and unevenly - which on an
- * instrument is the whole difference between playable and not.
+ * So the song plays, start to finish, and the pads decide which parts of it you
+ * can hear. Dropping the drums for four bars and bringing them back on the one
+ * is the thing this does.
+ *
+ * Two rules carry the whole file:
+ *
+ *   1. A part that is off is a part turned DOWN, never a part stopped. Stopping
+ *      a source and starting it again is how parts drift out of phase: the
+ *      restart begins wherever the clock is now, not where the music is. Only
+ *      gain ever moves, so the six of them stay locked to the sample.
+ *
+ *   2. The song is STREAMED as blocks, not held. Decoded audio is float PCM at
+ *      353KB a second per part - six parts of a three-minute song is most of
+ *      half a gigabyte, which is not a thing to ask a phone for. So a block of
+ *      every part is fetched, decoded and scheduled at an absolute time on the
+ *      audio clock, and the next one is fetched while it plays. Two block-sets
+ *      are ever resident: about forty megabytes.
+ *
+ * Rule 2 is what makes rule 1 survive a whole song. The blocks are scheduled
+ * against `AudioContext.currentTime`, which is a sample counter, not a timer -
+ * so a block that starts at t+10.0 starts at exactly the 480,000th sample after
+ * t, on every lane, whatever the main thread was doing at the time. Nothing
+ * here depends on a callback firing punctually; the callbacks only decide what
+ * to fetch next.
  */
 
-export const PAD_COUNT = 16;
+/** The parts, in the order a board wants them: voice, rhythm section, then
+ *  what is played over the top. */
+export const STEM_ORDER = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'] as const;
 
-export interface PadSettings {
-  /** What is on it, for the label. Empty means the pad is unassigned. */
-  name: string;
-  /** Where the sample came from, so a kit can be reloaded later. */
-  source: { trackId: number; stem: string } | null;
-  /** Level, 0..1.5 - a little above unity, because a bass stem often needs it. */
-  gain: number;
-  /** Semitones, -12..12. Playback rate, so it moves the length too, which is
-   *  what a hardware sampler does and what people expect. */
-  pitch: number;
-  /** Fractions of the buffer, 0..1. */
-  start: number;
-  end: number;
-  /** Sounds while the pad is held, and stops when it is let go. On by
-   *  default: a pad is a key, and a key you press and release is the thing
-   *  everyone reaches for first. Off makes it a one-shot - a hit fires the
-   *  whole slice and lifting does nothing, which is what a drum stab wants. */
-  gate: boolean;
-  loop: boolean;
-  reverse: boolean;
-  /** Pads sharing a choke group cut each other off - a closed hi-hat
-   *  silencing an open one is the canonical case. 0 means no group. */
-  choke: number;
-}
+export const STEM_LABELS: Record<string, string> = {
+  vocals: 'Vocals',
+  drums: 'Drums',
+  bass: 'Bass',
+  guitar: 'Guitar',
+  piano: 'Keys',
+  other: 'Strings & horns',
+};
 
-export function emptyPad(): PadSettings {
-  return {
-    name: '',
-    source: null,
-    gain: 1,
-    pitch: 0,
-    start: 0,
-    end: 1,
-    gate: true,
-    loop: false,
-    reverse: false,
-    choke: 0,
-  };
-}
+export const STEM_HUES: Record<string, number> = {
+  vocals: 320,
+  drums: 28,
+  bass: 265,
+  guitar: 96,
+  piano: 200,
+  other: 190,
+};
 
-interface Voice {
-  node: AudioBufferSourceNode;
+/**
+ * Seconds of song fetched at a time.
+ *
+ * The trade is memory against how often the network has to answer. Ten seconds
+ * of six parts is about twenty megabytes decoded, and two block-sets are live
+ * at once, so the deck sits around forty - comfortable on a phone. Longer
+ * blocks would mean fewer, larger stalls when a connection is slow, and a
+ * seek would throw away more work.
+ */
+const BLOCK = 10;
+
+/** How much runway to keep scheduled ahead of the playhead. Just over one
+ *  block: enough that the next one is always fetched and decoded before it is
+ *  needed, without a third block-set ever being resident. */
+const AHEAD = BLOCK * 1.2;
+
+/** Long enough not to click, short enough that a part drops on the beat you
+ *  meant. Twenty milliseconds is about the shortest fade that reads as a cut
+ *  rather than an edge. */
+const RAMP = 0.02;
+
+interface Lane {
   gain: GainNode;
-  pad: number;
+  analyser: AnalyserNode;
+  scratch: Uint8Array;
+  on: boolean;
+  live: Set<AudioBufferSourceNode>;
 }
 
-/** How quickly a choked or released voice falls silent. Short enough to read
- *  as a cut, long enough not to click - a hard stop on a running buffer is an
- *  edge, and an edge is a click. */
-const RELEASE = 0.012;
+/** Fetches one part's bytes for one stretch of the song. */
+export type BlockFetch = (stem: string, from: number, len: number, flac: boolean) => Promise<ArrayBuffer>;
 
-export class PadEngine {
+export interface OpenSong {
+  trackId: number;
+  /** Seconds. Zero when the tags never said, which only costs looping. */
+  duration: number;
+  stems: string[];
+  fetch: BlockFetch;
+  /** Where in the song to start. */
+  from?: number;
+}
+
+export class StemDeck {
   private ctx: AudioContext | null = null;
   private out: GainNode | null = null;
-  private buffers = new Map<number, AudioBuffer>();
-  private voices: Voice[] = [];
-  /** Reversed copies, made once on assignment rather than per hit. */
-  private reversed = new Map<number, AudioBuffer>();
+  private lanes = new Map<string, Lane>();
+  private fetchBlock: BlockFetch | null = null;
+
+  /**
+   * The map from audio-clock time to timeline time.
+   *
+   * TIMELINE, not song position: it counts monotonically through repeats, so a
+   * song that has looped twice is at timeline 2*duration + position. Everything
+   * schedules on the timeline and only the display takes it modulo the song,
+   * which is what keeps the arithmetic from having to special-case the wrap.
+   *
+   * Null until the first block of a run is scheduled, because until then there
+   * is nothing to anchor to - the clock should not start before the audio does.
+   */
+  private origin: { ctx: number; tl: number } | null = null;
+  private scheduledTl = 0;
+  private parkedTl = 0;
+  private running = false;
+  private pumping = false;
+  private ticker: number | undefined;
+  /**
+   * Whether this browser's decoder took FLAC.
+   *
+   * Both formats are lossless and sample-exact; FLAC is about half the bytes.
+   * Every browser decodes WAV, and FLAC is a maybe on some WebKit builds - so
+   * rather than sniff the engine, ask for the cheap one and fall back for good
+   * the first time a decode refuses it.
+   */
+  private flac = true;
+
+  trackId: number | null = null;
+  duration = 0;
+  /** Bumped whenever the deck is emptied, so slow work started under the
+   *  previous song can tell that it has been superseded and stop. */
+  generation = 0;
+  /** True while the playhead has run past what has been fetched - the page
+   *  shows it rather than looking frozen. */
+  starved = false;
+  /** Set when playback stopped for a reason worth telling somebody, rather
+   *  than for a hiccup it will recover from. */
+  fault = '';
 
   /**
    * Builds the graph, synchronously, and asks for a resume in the background.
    *
-   * Synchronous is the whole point. Constructing an AudioContext inside a real
-   * user gesture is what makes it start running, and a hit that waits on a
-   * PROMISE before touching the graph has already lost the argument: the
-   * earliest a `.then()` can run is the next microtask, and on a busy page
-   * that is milliseconds an instrument does not have. So this returns
-   * immediately and `hit` can be called straight from a pointer handler.
-   *
-   * `resume()` is still fired for the case that matters - iOS parks a
-   * long-idle context in its own 'interrupted' state, which is why the check
-   * is "anything but running" rather than "suspended" - but nothing waits for
-   * it. A node started against a suspended context simply sounds when the
-   * context comes back, which is the right behaviour anyway.
+   * Synchronous because it is called from the press that starts everything, and
+   * constructing the context inside a real gesture is what makes it run. The
+   * resume is fired but never awaited: iOS parks a long-idle context in its own
+   * `interrupted` state, which is why the test is "anything but running".
    */
   ensure(): void {
     if (!this.ctx) {
@@ -104,176 +163,297 @@ export class PadEngine {
     if (this.ctx.state !== 'running') void this.ctx.resume().catch(() => {});
   }
 
-  /** Kept for the loading path, which genuinely is async. */
-  async unlock(): Promise<void> {
+  get stems(): string[] {
+    return [...this.lanes.keys()];
+  }
+
+  isOn(stem: string): boolean {
+    return this.lanes.get(stem)?.on ?? false;
+  }
+
+  get playing(): boolean {
+    return this.running;
+  }
+
+  /** Timeline seconds: monotonic, counting through repeats. */
+  private now(): number {
+    if (!this.running || !this.ctx || !this.origin) return this.parkedTl;
+    return this.origin.tl + (this.ctx.currentTime - this.origin.ctx);
+  }
+
+  /** Where in the SONG the playhead is, which is what a bar shows. */
+  position(): number {
+    const tl = this.now();
+    return this.duration > 0 ? tl % this.duration : tl;
+  }
+
+  /** Put a song on the deck and start it. */
+  open(song: OpenSong): void {
     this.ensure();
-    if (this.ctx && this.ctx.state !== 'running') {
-      await this.ctx.resume().catch(() => {});
+    this.clear();
+    if (!this.ctx || !this.out) return;
+    this.trackId = song.trackId;
+    this.duration = song.duration;
+    this.fetchBlock = song.fetch;
+    for (const stem of song.stems) {
+      const gain = this.ctx.createGain();
+      gain.gain.value = 1;
+      const analyser = this.ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.6;
+      // Before the gain, not after: a part that is muted should still show what
+      // it is doing, so you can see the vocal coming and drop it back in on the
+      // line rather than guessing.
+      analyser.connect(gain);
+      gain.connect(this.out);
+      this.lanes.set(stem, {
+        gain,
+        analyser,
+        scratch: new Uint8Array(analyser.frequencyBinCount),
+        on: true,
+        live: new Set(),
+      });
     }
+    this.parkedTl = Math.max(0, song.from ?? 0);
+    this.play();
   }
 
-  get ready(): boolean {
-    return this.ctx?.state === 'running';
+  play(): void {
+    this.ensure();
+    if (this.running || this.lanes.size === 0) return;
+    this.running = true;
+    this.origin = null;
+    this.scheduledTl = this.parkedTl;
+    void this.pump();
+    // Only decides what to fetch next; nothing about when a block SOUNDS
+    // depends on this firing on time.
+    this.ticker = window.setInterval(() => void this.pump(), 700);
   }
 
-  /** Decodes and holds a sample for a pad. Called on load, never on a hit. */
-  async load(pad: number, bytes: ArrayBuffer): Promise<void> {
-    await this.unlock();
-    if (!this.ctx) return;
-    const buffer = await this.ctx.decodeAudioData(bytes.slice(0));
-    this.buffers.set(pad, buffer);
-    this.reversed.delete(pad);
+  pause(): void {
+    if (!this.running) return;
+    this.parkedTl = this.now();
+    this.running = false;
+    this.origin = null;
+    this.starved = false;
+    window.clearInterval(this.ticker);
+    this.ticker = undefined;
+    this.silence();
   }
 
-  has(pad: number): boolean {
-    return this.buffers.has(pad);
+  /** Move the playhead. Every part goes together, because they always do. */
+  seek(songSeconds: number): void {
+    const wasPlaying = this.running;
+    this.pause();
+    const to = this.duration > 0 ? Math.max(0, Math.min(songSeconds, this.duration - 0.5)) : Math.max(0, songSeconds);
+    this.parkedTl = to;
+    this.scheduledTl = to;
+    if (wasPlaying) this.play();
   }
 
-  duration(pad: number): number {
-    return this.buffers.get(pad)?.duration ?? 0;
+  /**
+   * Bring a part in or take it out.
+   *
+   * Note what this does NOT do: it never touches a source node. See the file's
+   * first rule - a stopped part cannot be restarted in phase, so a part that is
+   * out is a part at zero, still running, still counting.
+   */
+  setOn(stem: string, on: boolean): void {
+    const lane = this.lanes.get(stem);
+    if (!lane || !this.ctx) return;
+    lane.on = on;
+    const now = this.ctx.currentTime;
+    lane.gain.gain.cancelScheduledValues(now);
+    lane.gain.gain.setValueAtTime(lane.gain.gain.value, now);
+    lane.gain.gain.linearRampToValueAtTime(on ? 1 : 0, now + RAMP);
   }
 
-  /** Peaks for drawing a waveform, computed once per assignment. */
-  peaks(pad: number, buckets = 160): number[] {
-    const buffer = this.buffers.get(pad);
-    if (!buffer) return [];
-    const data = buffer.getChannelData(0);
-    const per = Math.max(1, Math.floor(data.length / buckets));
-    const out: number[] = [];
-    for (let i = 0; i < buckets; i += 1) {
+  /** How loud each part is right this instant, 0..1, for the board's meters. */
+  levels(): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const [stem, lane] of this.lanes) {
+      if (!this.running) {
+        out[stem] = 0;
+        continue;
+      }
+      lane.analyser.getByteTimeDomainData(lane.scratch);
       let peak = 0;
-      const from = i * per;
-      for (let j = from; j < from + per && j < data.length; j += 1) {
-        const v = Math.abs(data[j]!);
+      for (let i = 0; i < lane.scratch.length; i += 1) {
+        const v = Math.abs((lane.scratch[i] ?? 128) - 128) / 128;
         if (v > peak) peak = v;
       }
-      out.push(peak);
+      out[stem] = peak;
     }
     return out;
   }
 
-  private reversedBuffer(pad: number): AudioBuffer | undefined {
-    const original = this.buffers.get(pad);
-    if (!original || !this.ctx) return undefined;
-    const cached = this.reversed.get(pad);
-    if (cached) return cached;
-    const copy = this.ctx.createBuffer(
-      original.numberOfChannels,
-      original.length,
-      original.sampleRate,
-    );
-    for (let c = 0; c < original.numberOfChannels; c += 1) {
-      const src = original.getChannelData(c);
-      const dst = copy.getChannelData(c);
-      for (let i = 0, j = src.length - 1; i < src.length; i += 1, j -= 1) dst[i] = src[j]!;
-    }
-    this.reversed.set(pad, copy);
-    return copy;
-  }
-
-  /** Silences a pad's voices, and anything sharing its choke group. */
-  private choke(pad: number, settings: PadSettings[]): void {
-    if (!this.ctx) return;
-    const group = settings[pad]?.choke ?? 0;
-    const now = this.ctx.currentTime;
-    this.voices = this.voices.filter((v) => {
-      const sameGroup = group !== 0 && (settings[v.pad]?.choke ?? 0) === group;
-      if (!sameGroup && v.pad !== pad) return true;
-      // Retriggering the same pad also cuts its previous voice: two copies of
-      // one sample a few milliseconds apart is flamming, not layering.
-      v.gain.gain.cancelScheduledValues(now);
-      v.gain.gain.setValueAtTime(v.gain.gain.value, now);
-      v.gain.gain.linearRampToValueAtTime(0, now + RELEASE);
-      try {
-        v.node.stop(now + RELEASE + 0.005);
-      } catch {
-        // Already finished; nothing to stop.
-      }
-      return false;
-    });
-  }
-
   /**
-   * Plays a pad. Returns a function that releases it, for gate mode.
+   * Keep the schedule ahead of the playhead.
    *
-   * `velocity` scales the level: 0..1, from how hard or where the pad was hit.
+   * One block-set at a time, and never two at once - `pumping` is the whole
+   * concurrency control. The six parts of a single block ARE fetched together,
+   * because a block-set is all-or-nothing: five parts scheduled and one still
+   * on the wire is the one arrangement worse than waiting.
    */
-  hit(pad: number, settings: PadSettings[], velocity = 1): (() => void) | null {
-    // Never awaits: see ensure(). Called straight from the pointer handler.
-    this.ensure();
-    const conf = settings[pad];
-    if (!this.ctx || !this.out || !conf) return null;
-    const buffer = conf.reverse ? this.reversedBuffer(pad) : this.buffers.get(pad);
+  private async pump(): Promise<void> {
+    if (this.pumping || !this.running || !this.ctx || !this.fetchBlock) return;
+    this.pumping = true;
+    const era = this.generation;
+    try {
+      while (this.running && this.generation === era && this.scheduledTl < this.now() + AHEAD) {
+        const fromTl = this.scheduledTl;
+        const songFrom = this.duration > 0 ? fromTl % this.duration : fromTl;
+        const len = this.duration > 0 ? Math.min(BLOCK, this.duration - songFrom) : BLOCK;
+        if (len < 0.25) {
+          // Landed on the very end of the song; step over the seam.
+          this.scheduledTl = fromTl + Math.max(0.25, len);
+          continue;
+        }
+
+        const stems = [...this.lanes.keys()];
+        let blocks: (AudioBuffer | null)[];
+        try {
+          blocks = await Promise.all(stems.map((stem) => this.decode(stem, songFrom, len)));
+        } catch (e) {
+          // A slow connection and a server that cannot serve blocks at all look
+          // identical from here unless the second one says so - and the second
+          // one never recovers, so it has to stop rather than retry forever.
+          this.starved = true;
+          this.fault = e instanceof Error ? e.message : 'The parts stopped arriving.';
+          this.running = false;
+          window.clearInterval(this.ticker);
+          this.ticker = undefined;
+          return;
+        }
+        if (this.generation !== era || !this.running || !this.ctx) return;
+
+        /*
+         * Where this block-set sounds.
+         *
+         * The first one of a run sets the origin - the clock does not start
+         * before the audio does, or the playhead runs while nothing is coming
+         * out. After that every block is placed by arithmetic on the origin
+         * rather than by "now", which is what makes a hundred blocks land
+         * end to end with no accumulated error.
+         */
+        if (!this.origin) this.origin = { ctx: this.ctx.currentTime + 0.08, tl: fromTl };
+        let at = this.origin.ctx + (fromTl - this.origin.tl);
+        if (at < this.ctx.currentTime) {
+          // The network did not keep up and this block's moment has passed.
+          // Re-anchor rather than schedule it in the past, which would drop it
+          // silently: a short stall you can hear beats a gap you cannot explain.
+          this.origin = { ctx: this.ctx.currentTime + 0.08, tl: fromTl };
+          at = this.origin.ctx;
+          this.starved = true;
+        } else {
+          this.starved = false;
+        }
+
+        stems.forEach((stem, i) => {
+          const buffer = blocks[i];
+          const lane = this.lanes.get(stem);
+          if (!buffer || !lane || !this.ctx) return;
+          const node = this.ctx.createBufferSource();
+          node.buffer = buffer;
+          node.connect(lane.analyser);
+          node.start(at);
+          // Ends exactly where the next block begins. The decoder may hand back
+          // a buffer a sample or two either side of the length asked for; the
+          // SCHEDULE is what defines the seam, not the buffer.
+          node.stop(at + len);
+          lane.live.add(node);
+          node.onended = () => {
+            lane.live.delete(node);
+          };
+        });
+
+        this.scheduledTl = fromTl + len;
+      }
+    } finally {
+      this.pumping = false;
+    }
+  }
+
+  /** One part of one block, decoded - falling back to WAV for good if this
+   *  browser will not take FLAC. */
+  private async decode(stem: string, from: number, len: number): Promise<AudioBuffer | null> {
+    if (!this.fetchBlock || !this.ctx) return null;
+    const bytes = await this.fetchBlock(stem, from, len, this.flac);
+    let buffer: AudioBuffer | null;
+    try {
+      buffer = await this.ctx.decodeAudioData(bytes.slice(0));
+    } catch {
+      if (!this.flac) return null;
+      this.flac = false;
+      const plain = await this.fetchBlock(stem, from, len, false);
+      buffer = await this.ctx.decodeAudioData(plain.slice(0)).catch(() => null);
+    }
     if (!buffer) return null;
 
-    this.choke(pad, settings);
-
-    const now = this.ctx.currentTime;
-    const node = this.ctx.createBufferSource();
-    node.buffer = buffer;
-    node.playbackRate.value = 2 ** (conf.pitch / 12);
-    const gain = this.ctx.createGain();
-    // A tiny attack rather than an instant one: starting a buffer at full
-    // level mid-waveform is a step, and a step is a click.
-    gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(
-      Math.max(0, Math.min(1.5, conf.gain)) * Math.max(0, Math.min(1, velocity)),
-      now + 0.004,
-    );
-    node.connect(gain);
-    gain.connect(this.out);
-
-    const from = Math.max(0, Math.min(1, conf.start)) * buffer.duration;
-    const to = Math.max(0, Math.min(1, conf.end)) * buffer.duration;
-    const span = Math.max(0.01, to - from);
-    if (conf.loop) {
-      node.loop = true;
-      node.loopStart = from;
-      node.loopEnd = Math.max(from + 0.01, to);
-      node.start(now, from);
-    } else {
-      node.start(now, from, span);
+    /*
+     * Did the server actually cut a block?
+     *
+     * A server older than this endpoint does not know `from` and `len` - and an
+     * unknown query parameter is not an error, it is ignored, so it cheerfully
+     * answers with the WHOLE stem. That is the single most damaging way this can
+     * go wrong: every ten seconds of playback would fetch and decode the entire
+     * song six times over, which is hundreds of megabytes of PCM arriving on a
+     * phone every few seconds until it dies. Loud and stopped beats quiet and
+     * melting, so a block that is nothing like the length asked for is treated
+     * as a server that cannot do this rather than as audio.
+     */
+    if (buffer.duration > len * 1.5 + 1) {
+      throw new Error('Your server is too old for this - update it and try again.');
     }
-
-    const voice: Voice = { node, gain, pad };
-    this.voices.push(voice);
-    node.onended = () => {
-      this.voices = this.voices.filter((v) => v !== voice);
-    };
-
-    return () => {
-      if (!this.ctx) return;
-      const at = this.ctx.currentTime;
-      gain.gain.cancelScheduledValues(at);
-      gain.gain.setValueAtTime(gain.gain.value, at);
-      gain.gain.linearRampToValueAtTime(0, at + RELEASE);
-      try {
-        node.stop(at + RELEASE + 0.005);
-      } catch {
-        // Already done.
-      }
-    };
+    return buffer;
   }
 
-  /** Everything off, now. */
-  panic(): void {
-    if (!this.ctx) return;
-    for (const v of this.voices) {
-      try {
-        v.node.stop();
-      } catch {
-        // Already stopped.
+  private silence(): void {
+    for (const lane of this.lanes.values()) {
+      for (const node of lane.live) {
+        try {
+          node.stop();
+        } catch {
+          // Already finished.
+        }
       }
+      lane.live.clear();
     }
-    this.voices = [];
   }
 
-  dispose(): void {
-    this.panic();
-    this.buffers.clear();
-    this.reversed.clear();
-    void this.ctx?.close().catch(() => {});
-    this.ctx = null;
-    this.out = null;
+  /** Everything off and forgotten, ready for another song. */
+  clear(): void {
+    this.generation += 1;
+    this.running = false;
+    window.clearInterval(this.ticker);
+    this.ticker = undefined;
+    this.silence();
+    for (const lane of this.lanes.values()) {
+      try {
+        lane.gain.disconnect();
+        lane.analyser.disconnect();
+      } catch {
+        // Already detached.
+      }
+    }
+    this.lanes.clear();
+    this.origin = null;
+    this.scheduledTl = 0;
+    this.parkedTl = 0;
+    this.duration = 0;
+    this.trackId = null;
+    this.starved = false;
+    this.fault = '';
+    this.fetchBlock = null;
   }
 }
+
+/**
+ * One deck for the app, not one per mount.
+ *
+ * The page is a tab like any other and people leave it - to find the next song,
+ * to answer something - and a deck owned by the component would stop the music
+ * on the way out. The whole premise is that the song keeps going, so the thing
+ * playing it has to outlive the screen showing it.
+ */
+export const deck = new StemDeck();
