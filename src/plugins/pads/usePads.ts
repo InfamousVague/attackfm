@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { holdDeck } from '@attackfm/app/deckHold';
+import { holdDeck } from '../../app/player/deckHold.ts';
 import { deck } from './engine.ts';
 
 /**

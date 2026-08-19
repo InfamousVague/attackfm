@@ -1,4 +1,12 @@
+import type { ServerSession } from '../../app/api/http.ts';
 import { deck, STEM_ORDER } from './engine.ts';
+import {
+  requestStems,
+  stemAuthHeaders,
+  stemBlockUrl,
+  stemStatus,
+  type StemStatus,
+} from '../../app/api/stems.ts';
 
 /**
  * Putting a song on the deck, in one place.
@@ -11,10 +19,10 @@ import { deck, STEM_ORDER } from './engine.ts';
  * separator has been removed since.
  */
 
-export interface Session {
-  url: string;
-  token: string;
-}
+// The app's own session, not a narrowed copy: this used to declare the two
+// fields it happened to touch, which is exactly how it ended up unable to build
+// a mix URL (that needs streamToken) without casting.
+export type Session = ServerSession;
 
 export interface Song {
   id: number;
@@ -109,8 +117,10 @@ export async function putOnDeck(
   const era = deck.generation;
   const mine = () => deck.generation === era;
 
-  type Status = { state: string; stems: { stem: string }[] };
-  const status = () => api<Status>(session, `/api/stems/${song.id}`);
+    // The shared client, so URL shapes and auth rules live in one place. This
+    // file's own idea of a status was narrower than the server's and dropped
+    // the progress, phase and queue fields it then read back off `any`.
+    const status = (): Promise<StemStatus> => stemStatus(session, song.id);
 
   try {
     // ASK FIRST, and only queue a separation if there is nothing there.
@@ -126,9 +136,7 @@ export async function putOnDeck(
       const began = Date.now();
       const since = () => Math.round((Date.now() - began) / 1000);
       say({ phase: 'asking', fraction: null, filed: 0, parts: 6, seconds: 0, ahead: null });
-      const asked = await api<{ state: string }>(session, `/api/stems/${song.id}`, {
-        method: 'POST',
-      });
+      const asked = await requestStems(session, song.id);
       let state = asked.state;
       // Separation is minutes of GPU the first time and nothing at all after,
       // because the result is kept. Polled at a second rather than the old two
@@ -147,7 +155,15 @@ export async function putOnDeck(
          * thing that knows - `running` means the model is working on this song,
          * whether or not the box can say how far along it is.
          */
-        const phase = now.phase ?? (state === 'running' ? 'separating' : 'queued');
+          // The server's phase is a free string; this model's is a union, so an
+          // unrecognised one falls back to what the JOB state says rather than
+          // being asserted through.
+          const phase: Preparing['phase'] =
+            now.phase === 'separating' || now.phase === 'packing'
+              ? now.phase
+              : state === 'running'
+                ? 'separating'
+                : 'queued';
         say({
           phase,
           fraction: typeof now.progress === 'number' ? now.progress : null,
@@ -189,11 +205,9 @@ export async function putOnDeck(
       stems,
       from,
       fetch: (stem, at, len, flac) =>
-        fetch(
-          `${session.url}/api/stems/${song.id}/${stem}?from=${at.toFixed(3)}&len=${len.toFixed(3)}` +
-            (flac ? '&fmt=flac' : ''),
-          { headers: { authorization: `Bearer ${session.token}` } },
-        ).then((res) => {
+        fetch(stemBlockUrl(session, song.id, stem, { from: at, len, flac }), {
+            headers: stemAuthHeaders(session),
+          }).then((res) => {
           if (!res.ok) throw new Error(String(res.status));
           return res.arrayBuffer();
         }),

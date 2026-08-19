@@ -7,9 +7,9 @@ import {
 } from 'react';
 import { Button, IconButton, Input, Text } from '@glacier/react';
 import { AudioWaveform, Loader, Pause, Play, Search, Wand2, X } from '@glacier/icons';
-import { useServerSession } from '@attackfm/app/serverSession';
-import { useLibrary } from '@attackfm/app/library';
-import { useNowPlayingMotion } from '@attackfm/app/nowPlaying';
+import { useServerSession } from '../../app/servers/serverSession.tsx';
+import { useLibrary } from '../../app/library/library.tsx';
+import { useNowPlayingMotion } from '../../app/player/nowPlayingMotion.tsx';
 import { deck, STEM_HUES, STEM_LABELS } from './engine.ts';
 import { clock, putOnDeck, trackId, type Preparing, type Session, type Song } from './openSong.ts';
 import { PreparingView } from './Preparing.tsx';
@@ -224,8 +224,14 @@ export function PadsPage() {
   };
 
   const clearBoard = () => {
+    // Where the song had got to, read BEFORE clear() tears the lanes down and
+    // stops the clock. Handed to returnOutput so the app's player picks the
+    // song up here rather than sitting wherever it was parked when the board
+    // took the speakers - which is why closing the board looked like it paused
+    // the music. returnOutput's own doc says this argument is the difference.
+    const at = deck.position();
     deck.clear();
-    returnOutput();
+    returnOutput(at);
     loadedSong = null;
     setSong(null);
     cast.refresh();

@@ -79,7 +79,10 @@ const RAMP = 0.02;
 interface Lane {
   gain: GainNode;
   analyser: AnalyserNode;
-  scratch: Uint8Array;
+  /** Backed by a plain ArrayBuffer, not the ArrayBufferLike a bare Uint8Array
+   *  now widens to: getByteTimeDomainData will not take a view that might be
+   *  over shared memory. */
+  scratch: Uint8Array<ArrayBuffer>;
   on: boolean;
   live: Set<AudioBufferSourceNode>;
 }
@@ -209,7 +212,7 @@ export class StemDeck {
       this.lanes.set(stem, {
         gain,
         analyser,
-        scratch: new Uint8Array(analyser.frequencyBinCount),
+        scratch: new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount)),
         on: true,
         live: new Set(),
       });
