@@ -26,9 +26,10 @@ export const pads: Plugin = {
   tags: ['Sound', 'Instrument'],
   details:
     'Adds a Pads page: a 4x4 sampler fed by your own library. Ask the server ' +
-    'to separate any song and it comes back as four stems — vocals, drums, ' +
-    'bass and everything else — each of which can go straight onto a pad or ' +
-    'be chopped into slices first. Pads play instantly in the app rather than ' +
+    'to separate any song and it comes back as six parts — vocals, drums, ' +
+    'bass, guitar, keys, and the strings and horns left over. They land on the ' +
+    'board by themselves, in that order, and each can be chopped into slices ' +
+    'first. Pads play instantly in the app rather than ' +
     'through the server, so they answer a thumb the way an instrument should. ' +
     'Each pad has its own level, pitch, trim and loop, and pads can be put in ' +
     'a choke group so one cuts another off, the way a real hi-hat does. Kits ' +

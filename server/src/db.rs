@@ -4995,7 +4995,16 @@ impl Db {
     }
 
     /// One track's stems, and the job state that explains their absence.
-    pub fn stems_for(&self, track_id: i64) -> (String, String, Vec<(String, String, i64)>) {
+    /// A track's stems FOR ONE MODEL, with the job's state.
+    ///
+    /// The model argument is not decoration. `model` is part of the primary
+    /// key precisely so a better separator can land beside an older one instead
+    /// of overwriting it - but this query used to ignore it, so the moment two
+    /// models existed for a track it returned both sets welded together: ten
+    /// rows, two vintages, two `vocals`. The caller then served whichever came
+    /// first. Asking for one model is what makes the coexistence real rather
+    /// than theoretical.
+    pub fn stems_for(&self, track_id: i64, model: &str) -> (String, String, Vec<(String, String, i64)>) {
         let conn = self.lock();
         let (state, error): (String, String) = conn
             .query_row(
@@ -5006,9 +5015,10 @@ impl Db {
             .unwrap_or_else(|_| ("none".to_string(), String::new()));
         let mut rows = Vec::new();
         if let Ok(mut stmt) = conn.prepare(
-            "SELECT stem, rel_path, bytes FROM track_stems WHERE track_id = ?1 ORDER BY stem",
+            "SELECT stem, rel_path, bytes FROM track_stems
+             WHERE track_id = ?1 AND model = ?2 ORDER BY stem",
         ) {
-            if let Ok(iter) = stmt.query_map(params![track_id], |r| {
+            if let Ok(iter) = stmt.query_map(params![track_id, model], |r| {
                 Ok((r.get(0)?, r.get(1)?, r.get(2)?))
             }) {
                 rows = iter.filter_map(Result::ok).collect();
@@ -5019,18 +5029,22 @@ impl Db {
 
     /// One stem's file, and a note that it was wanted just now - which is what
     /// the eviction sweep reads.
-    pub fn stem_path(&self, track_id: i64, stem: &str) -> Option<String> {
+    pub fn stem_path(&self, track_id: i64, stem: &str, model: &str) -> Option<String> {
         let conn = self.lock();
+        // Model-qualified for the same reason stems_for is: without it, a track
+        // that has been separated twice answers "vocals" with whichever row the
+        // planner happened to reach, which is a coin toss between a four-stem
+        // vintage and a six-stem one.
         let path: String = conn
             .query_row(
-                "SELECT rel_path FROM track_stems WHERE track_id = ?1 AND stem = ?2",
-                params![track_id, stem],
+                "SELECT rel_path FROM track_stems WHERE track_id = ?1 AND stem = ?2 AND model = ?3",
+                params![track_id, stem, model],
                 |r| r.get(0),
             )
             .ok()?;
         let _ = conn.execute(
-            "UPDATE track_stems SET used_at = ?3 WHERE track_id = ?1 AND stem = ?2",
-            params![track_id, stem, now_ms()],
+            "UPDATE track_stems SET used_at = ?4 WHERE track_id = ?1 AND stem = ?2 AND model = ?3",
+            params![track_id, stem, model, now_ms()],
         );
         Some(path)
     }
@@ -5926,5 +5940,53 @@ mod pull_retry_window {
         assert_eq!(job, "job9");
         assert!(db.pulled_ext_ids(user, cutoff).contains("old-fail"), "re-armed rows block again");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod stem_model_isolation {
+    //! Two separations of one track must not be served as one set.
+    //!
+    //! `model` has always been in the primary key so a better separator could
+    //! land beside an older one. The lookups ignored it, so the moment a track
+    //! had been separated twice they returned both vintages welded together -
+    //! two `vocals`, ten rows - and handed back whichever the planner reached
+    //! first. That is the exact failure the schema was shaped to avoid.
+
+    #[test]
+    fn a_track_separated_twice_answers_one_model_at_a_time() {
+        let dir = std::env::temp_dir().join(format!("afm-stems-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = super::Db::open(&dir.join("t.sqlite")).unwrap();
+
+        // A row in tracks, because track_stems references it.
+        db.lock()
+            .execute(
+                "INSERT INTO tracks (id, rel_path, title, artist, album_artist, album, added_at, rev)
+                 VALUES (1, 'a.flac', 'T', 'A', 'A', 'Al', 0, 1)",
+                [],
+            )
+            .unwrap();
+
+        // The old four-stem vintage, then the new six-stem one.
+        for stem in ["vocals", "drums", "bass", "other"] {
+            db.save_stem(1, stem, "htdemucs", &format!("1/{stem}.opus"), 10).unwrap();
+        }
+        for stem in ["vocals", "drums", "bass", "guitar", "piano", "other"] {
+            db.save_stem(1, stem, "htdemucs_6s", &format!("1/{stem}.flac"), 20).unwrap();
+        }
+
+        let (_, _, old) = db.stems_for(1, "htdemucs");
+        let (_, _, new) = db.stems_for(1, "htdemucs_6s");
+        assert_eq!(old.len(), 4, "the old model still answers with its own four");
+        assert_eq!(new.len(), 6, "the new model answers with six, not ten");
+        assert!(new.iter().any(|(s, _, _)| s == "guitar"), "guitar is a stem of its own now");
+
+        // And one stem resolves to the file belonging to the model asked for,
+        // rather than to whichever row the planner happened to reach.
+        assert!(db.stem_path(1, "vocals", "htdemucs").unwrap().ends_with(".opus"));
+        assert!(db.stem_path(1, "vocals", "htdemucs_6s").unwrap().ends_with(".flac"));
+        assert!(db.stem_path(1, "guitar", "htdemucs").is_none(), "the old model had no guitar");
     }
 }

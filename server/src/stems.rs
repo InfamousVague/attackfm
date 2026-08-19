@@ -16,13 +16,20 @@
 //! polls. One at a time on purpose - the box is also somebody's stereo, and
 //! two demucs runs would make both of them slow AND make playback stutter.
 //!
-//! Storage is the constraint that shaped the rest. Four stems of lossless
-//! audio is roughly four times the album it came from; at ~4,600 tracks that
-//! is more disk than the library itself. So stems are Opus (transparent for
-//! this purpose, ~4 MB a stem) and the whole cache is budgeted and evicted
-//! coldest-first, exactly like the phone's download cache. A stem is never
-//! the only copy of anything - the original file is still there - so evicting
-//! one costs a re-separation, not data.
+//! Storage is the constraint that shaped the rest, and the answer changed.
+//! Six stems of lossless audio are several times the album they came from, and
+//! separating a whole library would cost more disk than the library itself. The
+//! first cut spent that budget on Opus at 128k, reasoning that a stem is
+//! simpler spectral content than a mix - true of the stem, false of the use.
+//! These are played SOLO and looped, where nothing is left in the mix to mask a
+//! codec, and separation artefacts land in the same places codec artefacts do.
+//!
+//! So stems are FLAC, and the budget is spent on the CACHE being small rather
+//! than the files being lossy: it is budgeted and evicted coldest-first,
+//! exactly like the phone's download cache. That trade works because a stem is
+//! never the only copy of anything - the original file is still there - so
+//! evicting one costs a re-separation, not data. Nobody separates their whole
+//! library; they separate the songs they are working on.
 
 use crate::auth;
 use crate::AppState;
@@ -40,9 +47,21 @@ use std::time::Duration;
 
 /// The separator, and part of a stem's identity: a better model later can sit
 /// beside what is already on disk instead of quietly mixing two qualities.
-const MODEL: &str = "htdemucs";
+const MODEL: &str = "htdemucs_6s";
 /// What demucs produces, in the order the pads want them.
-const STEMS: [&str; 4] = ["vocals", "drums", "bass", "other"];
+///
+/// Six rather than four. The four-stem model calls everything that is not a
+/// voice, a drum or a bass "other", which on most records is the guitars, the
+/// keys, the strings and the pads all welded into one pad you can only mute
+/// wholesale - the least useful control on the board, and the one people reach
+/// for first. htdemucs_6s splits guitar and piano out of it, so "other" finally
+/// means what is left rather than most of the song.
+///
+/// The model is part of a stem's identity (it is in the primary key), so a
+/// track separated by the old model keeps its four files and is simply not a
+/// match for this one - it re-separates on next use rather than serving a mix
+/// of two vintages.
+const STEMS: [&str; 6] = ["vocals", "drums", "bass", "guitar", "piano", "other"];
 /// How much disk the stem cache may hold before the coldest track is dropped.
 /// Generous, because the volume has room and a re-separation is minutes.
 const BUDGET_BYTES: i64 = 120 * 1024 * 1024 * 1024;
@@ -52,11 +71,23 @@ const KEEP_FREE_BYTES: i64 = 20 * 1024 * 1024 * 1024;
 const TIMEOUT: Duration = Duration::from_secs(900);
 /// How often the worker looks for something to do when idle.
 const IDLE: Duration = Duration::from_secs(20);
-/// Opus bitrate per stem. A stem is simpler spectral content than a full mix,
-/// so this is past transparent for chopping and looping.
-const OPUS_BITRATE: &str = "128k";
+/// Stems are stored LOSSLESS.
+///
+/// They were Opus at 128k, on the reasoning that a stem is simpler spectral
+/// content than a full mix. That is true of the stem and false of the use: a
+/// stem is played SOLO, chopped, looped and pitched, with nothing else in the
+/// mix to mask anything. Separation artefacts and codec artefacts land in the
+/// same places - smeared transients, watery high end - and at 128k the codec's
+/// contribution stops being inaudible the moment the rest of the band is not
+/// there to hide it. FLAC also survives being re-encoded by the mix endpoint,
+/// which Opus was quietly being asked to do twice.
+///
+/// It costs disk: roughly five times per stem, and six stems rather than four.
+/// The cache has a budget and an eviction sweep for exactly this reason, and a
+/// re-separation is minutes rather than a loss.
+const STEM_CODEC: &str = "flac";
 
-/// Where stems live: `<data>/stems/<trackId>/<stem>.opus`.
+/// Where stems live: `<data>/stems/<trackId>/<stem>.flac`.
 fn stem_root(state: &AppState) -> PathBuf {
     state.data_dir.join("stems")
 }
@@ -209,19 +240,19 @@ async fn separate(
         let Some(wav) = find_wav(&scratch, stem) else {
             continue;
         };
-        let opus = dest_dir.join(format!("{stem}.opus"));
-        // `-b:a` takes a rate, and a bare number means BITS per second: the
-        // first cut of this passed "128" and produced four perfectly valid,
-        // perfectly empty files. The k is load-bearing.
+        let packed_path = dest_dir.join(format!("{stem}.{STEM_CODEC}"));
         let packed = tokio::process::Command::new("ffmpeg")
             .args(["-nostdin", "-v", "error", "-y", "-i"])
             .arg(&wav)
-            .args(["-c:a", "libopus", "-b:a", OPUS_BITRATE, "-vbr", "on"])
-            .arg(&opus)
+            // Lossless, and compression_level 5 because these are written once
+            // and read many times: the slower levels buy a few percent of disk
+            // for real time on a job that is already minutes long.
+            .args(["-c:a", "flac", "-compression_level", "5"])
+            .arg(&packed_path)
             .stdin(Stdio::null())
             .output()
             .await;
-        let bytes = tokio::fs::metadata(&opus)
+        let bytes = tokio::fs::metadata(&packed_path)
             .await
             .map(|m| m.len() as i64)
             .unwrap_or(0);
@@ -230,13 +261,13 @@ async fn separate(
             // a file that exists and holds nothing is worse than no file,
             // because the row would claim a stem the pads cannot play.
             Ok(out) if out.status.success() && bytes > 0 => {
-                let rel_path = format!("{track_id}/{stem}.opus");
+                let rel_path = format!("{track_id}/{stem}.{STEM_CODEC}");
                 let _ = state.db.save_stem(track_id, stem, MODEL, &rel_path, bytes);
                 filed += 1;
             }
             other => {
-                // One stem failing to pack is not worth losing the other
-                // three over; the client shows what exists.
+                // One stem failing to pack is not worth losing the others
+                // over; the client shows what exists.
                 let why = match other {
                     Ok(out) => {
                         let err = String::from_utf8_lossy(&out.stderr);
@@ -250,7 +281,7 @@ async fn separate(
                     Err(e) => format!("could not start ffmpeg: {e}"),
                 };
                 eprintln!("[stems] track {track_id} {stem}: {why}");
-                let _ = tokio::fs::remove_file(&opus).await;
+                let _ = tokio::fs::remove_file(&packed_path).await;
             }
         }
     }
@@ -356,7 +387,7 @@ pub async fn status(
     AxumPath(track_id): AxumPath<i64>,
 ) -> ApiResult {
     auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".to_string()))?;
-    let (job_state, error, rows) = state.db.stems_for(track_id);
+    let (job_state, error, rows) = state.db.stems_for(track_id, MODEL);
     Ok(Json(json!({
         "state": job_state,
         "error": error,
@@ -387,7 +418,7 @@ pub async fn file(
     }
     let rel = state
         .db
-        .stem_path(track_id, &stem)
+        .stem_path(track_id, &stem, MODEL)
         .ok_or((StatusCode::NOT_FOUND, "not separated yet".to_string()))?;
     let path = stem_root(&state).join(rel);
     let bytes = tokio::fs::read(&path)
@@ -440,7 +471,7 @@ pub async fn mix(
         if stem == drop {
             continue;
         }
-        let Some(rel) = state.db.stem_path(track_id, stem) else {
+        let Some(rel) = state.db.stem_path(track_id, stem, MODEL) else {
             continue;
         };
         let path = root.join(rel);
