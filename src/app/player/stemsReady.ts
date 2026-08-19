@@ -171,7 +171,7 @@ export interface StemsView {
  *
  * `make` defaults to false: opening a panel should never be what commits a
  * machine to half a minute of demucs. The surfaces that want it immediate
- * (karaoke, whose whole purpose is the separated mix) pass true.
+ * (the board, whose whole purpose is the separated parts) pass true.
  */
 export function useStems(path: string | null, opts: { make?: boolean } = {}): StemsView {
   const { session } = useServerSession();

@@ -86,8 +86,10 @@ export const DEPRECATED_PLUGINS: readonly string[] = [
   // could never queue its own separation - it only ever polled - so it hung on
   // any song the pads had not already taken apart.
   'karaoke',
-  // Pads is compiled in now (src/plugins/pads). An installed copy would shadow
-  // the built-in one and keep its own, un-deduplicated stems client.
+  // The pad board is gone entirely - taking a part out of the song you are
+  // listening to is the console's Stems tab, and that needs no page. Named here
+  // so a copy installed from the repository before it was compiled in comes off
+  // the device too, rather than living on as the only Pads anyone still has.
   'pads',
 ];
 

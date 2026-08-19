@@ -1,7 +1,6 @@
 import { canRunSubprocesses } from '../app/core/platform.ts';
 import type { Plugin } from './types.ts';
 import { buy } from './buy/index.tsx';
-import { pads } from './pads/index.tsx';
 
 export type { Plugin } from './types.ts';
 
@@ -18,12 +17,18 @@ export type { Plugin } from './types.ts';
  */
 // The importer ships through the plugin repository now (plugins-repo/),
 // installed from Settings -> Plugins rather than compiled in.
-// Pads is compiled in rather than downloaded: it is the sampler half of the
-// stems feature, which is core, and a board that only exists if you knew to
-// install it is a strange thing to pair with a Stems tab that is always there.
-// Being compiled in is also what lets it share the stems client - a downloaded
-// bundle may only import what the host allow-list names.
-const REGISTERED: readonly Plugin[] = [buy, pads];
+//
+// Pads was here briefly - the sampler half of stems, a board you played the
+// parts on with your thumbs. It is gone because the half people actually
+// wanted turned out to be the quiet one: taking a part OUT of the song you are
+// already listening to, which is the console's Stems tab and needs no screen
+// of its own. A board is a destination, and a destination in the navigation is
+// a claim on attention that has to keep earning itself. This one stopped.
+//
+// The code is in the history (see the commit that removed it) rather than
+// parked here unreferenced, because a directory nothing imports rots quietly
+// and a commit does not.
+const REGISTERED: readonly Plugin[] = [buy];
 
 /**
  * The plugins this device can host RIGHT NOW, given whether a server is
