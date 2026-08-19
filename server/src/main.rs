@@ -448,6 +448,10 @@ async fn main() {
     loudness::spawn(state.clone());
     // Stems, for the Pads sampler - see stems.rs.
     stems::spawn(state.clone());
+    // Keeps liked songs and playlist tracks separated ahead of being asked, so
+    // nobody waits on demucs for a song they were always going to open. It only
+    // queues; the worker above runs, and drains people's requests first.
+    stems::spawn_prefetch(state.clone());
 
     // The Spotify mirror: keeps watched playlists, albums and saved tracks in
     // step with their local copies.
@@ -647,6 +651,9 @@ async fn main() {
         .route("/api/fx/nodes", get(fx::nodes))
         .route("/api/loudness", get(loudness::table))
         .route("/api/tempo", get(features::tempo_table))
+        // Before the {track} route: axum would otherwise read "prefetch" as a
+        // track id and the i64 extractor would reject it.
+        .route("/api/stems/prefetch", get(stems::prefetch_status))
         .route("/api/stems/{track}", get(stems::status).post(stems::request))
         .route("/api/stems/{track}/mix", get(stems::mix))
         .route("/api/stems/{track}/{stem}", get(stems::file))
