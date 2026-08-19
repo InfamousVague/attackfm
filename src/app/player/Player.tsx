@@ -14,6 +14,7 @@ import { gainFor, useLoudnessMode, useLoudnessTable } from './loudness.ts';
 import { usePlayback } from './playback.tsx';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { VOLUME_UNITY } from './VolumeControl.tsx';
+import { recordResume } from '../servers/resumeSync.ts';
 import { useEffects } from './effects.ts';
 import { useFxChain, chainRate } from './fxChain.ts';
 import { recordDiag } from '../diag/diagLog.ts';
@@ -1042,6 +1043,19 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         // that only fires while the deck is genuinely advancing.
         lastGoodPos.current = audio.currentTime;
         noteFlowing();
+        // Where you are, for the account rather than this device. Throttled
+        // inside recordResume, and only from the deck that is actually
+        // advancing - so a crossfade's idle deck never reports a position
+        // nobody is listening to.
+        const here = liveRef.current.track;
+        if (here) {
+          void recordResume({
+            path: here.path,
+            position: audio.currentTime,
+            title: here.title,
+            artist: here.artist,
+          });
+        }
         // The crossfade watches the clock from here: the one place the active
         // deck's remaining time is always fresh.
         tickRef.current(audio);
