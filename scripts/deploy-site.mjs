@@ -136,13 +136,43 @@ ssh(
    # of this same tree, and --delete would take it with every site publish -
    # attack.fm/listen would 404 until someone noticed and republished it. The
    # two trees share a document root but not a release clock.
-   sudo rsync -a --delete --exclude 'listen' --exclude 'listen/**' ${STAGE}/ ${REMOTE}/
+   sudo rsync -a --delete --exclude 'listen' --exclude 'listen/**' --exclude 'assets' --exclude 'assets/**' ${STAGE}/ ${REMOTE}/
    sudo chown -R root:root ${REMOTE}
    # Caddy runs as its own user and only needs to read.
    sudo find ${REMOTE} -type d -exec chmod 755 {} +
    sudo find ${REMOTE} -type f -exec chmod 644 {} +
    rm -rf ${STAGE}`,
 );
+
+step('Publishing the shared artwork');
+// These are one shared body of art, not per-library data, so every install
+// reads them from one place. They used to be served by the hub at
+// /api/assets - but matt.attack.fm/api now proxies to the home Mac, which
+// never received them, so every one of them 404ed for everybody. Serving them
+// off the static site fixes that AND removes the last reason for a listener on
+// someone else's server to touch Matt's house at all.
+const ART = resolve(root, 'server/assets/artwork');
+if (existsSync(ART)) {
+  const artStage = `/home/${env.AFM_DEPLOY_USER}/.attackfm-art-stage`;
+  ssh(env, `rm -rf ${artStage} && mkdir -p ${artStage}`);
+  run(
+    'sshpass',
+    ['-e', 'rsync', '-az', '--delete', '-e', 'ssh -o StrictHostKeyChecking=no',
+     `${ART}/`, `${env.AFM_DEPLOY_USER}@${env.AFM_DEPLOY_HOST}:${artStage}/`],
+    { env: { ...process.env, SSHPASS: env.AFM_DEPLOY_PASS } },
+  );
+  ssh(
+    env,
+    `set -e
+     sudo mkdir -p ${REMOTE}/assets
+     sudo rsync -a --delete ${artStage}/ ${REMOTE}/assets/
+     sudo chown -R root:root ${REMOTE}/assets
+     sudo find ${REMOTE}/assets -type d -exec chmod 755 {} +
+     sudo find ${REMOTE}/assets -type f -exec chmod 644 {} +
+     rm -rf ${artStage}`,
+  );
+  ok('artwork published to /assets');
+}
 
 step('Checking it came back');
 const status = spawnSync(
