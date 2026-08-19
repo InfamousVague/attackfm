@@ -225,6 +225,8 @@ export function reportBootOk(): void {
 
 /** The version baked into this build, injected by Vite. */
 declare const __AFM_VERSION__: string;
+/** False only in deliberately pinned test builds. */
+declare const __AFM_UPDATES_ENABLED__: boolean;
 
 /** The version actually running, or null on the embedded bundle. */
 export function runningBundle(): string | null {
@@ -302,6 +304,9 @@ export type UpdateCheckOutcome =
  */
 export async function checkForUpdate(): Promise<UpdateCheckOutcome> {
   if (!isTauri()) return { state: 'unavailable', why: 'Updates apply to the installed app.' };
+  if (!__AFM_UPDATES_ENABLED__) {
+    return { state: 'unavailable', why: 'This test build is pinned and will not update itself.' };
+  }
   const state = await bundleState();
   if (!state) return { state: 'unavailable', why: 'This build cannot swap its frontend.' };
   // Installed on an earlier run and still not running: the banner belongs up

@@ -339,7 +339,15 @@ pub fn spawn(state: Arc<AppState>) {
         loop {
             let did_work = enrich_cycle(&state).await;
             let ai_work = fast_enrich_cycle(&state).await;
-            let refined = refinement_cycle(&state).await;
+            // Keep the two semantic passes genuinely staged across the whole
+            // library. Qwen first builds and normalizes every eligible fast
+            // profile; only once that durable queue is empty may Gemma begin
+            // applying and normalizing refinement patches.
+            let refined = if fast_profiles_pending(&state) {
+                false
+            } else {
+                refinement_cycle(&state).await
+            };
             curate_cycle(&state).await;
             // Then the world outside the library: harvest candidates, listen to
             // a couple, and keep the shelf honest about what is already owned.
@@ -352,6 +360,29 @@ pub fn spawn(state: Arc<AppState>) {
             .await;
         }
     });
+}
+
+fn enrichment_allowlist() -> Option<HashSet<i64>> {
+    std::env::var("AFM_ENRICH_TRACK_IDS")
+        .ok()
+        .map(|raw| {
+            raw.split(',')
+                .filter_map(|id| id.trim().parse::<i64>().ok())
+                .collect::<HashSet<_>>()
+        })
+        .filter(|ids| !ids.is_empty())
+}
+
+fn fast_profiles_pending(state: &AppState) -> bool {
+    let allowlist = enrichment_allowlist();
+    let query_limit = if allowlist.is_some() { i64::MAX } else { 1 };
+    let ids = state
+        .db
+        .tracks_needing_fast_profile(query_limit, now_ms() - AI_ENRICH_TTL_MS);
+    match allowlist {
+        Some(allowed) => ids.into_iter().any(|id| allowed.contains(&id)),
+        None => !ids.is_empty(),
+    }
 }
 
 /// Slowly gives every song a richer musical description. The database query is
@@ -371,14 +402,7 @@ async fn fast_enrich_cycle(state: &Arc<AppState>) -> bool {
     {
         return false;
     }
-    let allowlist = std::env::var("AFM_ENRICH_TRACK_IDS")
-        .ok()
-        .map(|raw| {
-            raw.split(',')
-                .filter_map(|id| id.trim().parse::<i64>().ok())
-                .collect::<HashSet<_>>()
-        })
-        .filter(|ids| !ids.is_empty());
+    let allowlist = enrichment_allowlist();
     let query_limit = if allowlist.is_some() {
         i64::MAX
     } else {
@@ -552,14 +576,7 @@ async fn refinement_cycle(state: &Arc<AppState>) -> bool {
         .filter(|v| !v.trim().is_empty())
         .unwrap_or_else(|| "gemma4:12b".into());
     let client = base.with_chat_model(model);
-    let allowed = std::env::var("AFM_ENRICH_TRACK_IDS")
-        .ok()
-        .map(|raw| {
-            raw.split(',')
-                .filter_map(|id| id.trim().parse::<i64>().ok())
-                .collect::<HashSet<i64>>()
-        })
-        .filter(|ids| !ids.is_empty());
+    let allowed = enrichment_allowlist();
     let limit = if allowed.is_some() { i64::MAX } else { 1 };
     let mut ids = state
         .db
@@ -1373,6 +1390,20 @@ pub async fn feed(
         })
         .collect();
     let (checked, with_bpm, with_vec, total) = state.db.feature_counts();
+    let stale_before = now_ms() - AI_ENRICH_TTL_MS;
+    let (first_done, second_done, second_total, enrichment_total) =
+        state.db.layered_enrichment_counts(stale_before);
+    let enrichment_stage = if fast_profiles_pending(&state) {
+        "first"
+    } else if !state
+        .db
+        .tracks_needing_refinement(1, stale_before)
+        .is_empty()
+    {
+        "second"
+    } else {
+        "complete"
+    };
     let spread = state.db.tempo_spread();
     let status = state.curator.status.lock().await.clone();
     Ok(Json(json!({
@@ -1386,6 +1417,11 @@ pub async fn feed(
             "tempoMin": spread.map(|s| s.0),
             "tempoMedian": spread.map(|s| s.1),
             "tempoMax": spread.map(|s| s.2),
+        },
+        "enrichment": {
+            "stage": enrichment_stage,
+            "firstLayer": { "complete": first_done, "total": enrichment_total },
+            "secondLayer": { "complete": second_done, "total": second_total },
         },
     })))
 }
