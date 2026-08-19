@@ -10,6 +10,7 @@ import type { AnalyserMeter, LoudnessMeter, PlayerRepeat } from '@glacier/react'
 import { isIOS, isMobile } from '../core/platform.ts';
 import { useLibrary } from '../library/library.tsx';
 import { useEqualizer } from './equalizer.tsx';
+import { gainFor, useLoudnessMode, useLoudnessTable } from './loudness.ts';
 import { usePlayback } from './playback.tsx';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { VOLUME_UNITY } from './VolumeControl.tsx';
@@ -628,6 +629,10 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       // Seed the EQ filters with the stored curve, and the graph with the
       // sound settings in force.
       analyserRef.current.setEqGains(eqGainsRef.current);
+      // The graph is built on the first gesture, which is usually mid-track:
+      // without this seed the first song plays unlevelled and only its
+      // successor gets the treatment.
+      analyserRef.current.setTrackGain(trackGainRef.current);
       analyserRef.current.setDynamics(playbackRef.current.nightMode);
       analyserRef.current.setMono(playbackRef.current.mono);
       // Dev-only: the graph on the window, so a driven browser can assert
@@ -934,6 +939,26 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   useEffect(() => {
     analyserRef.current?.setEqGains(eqGains);
   }, [eqGains]);
+
+  /*
+   * Volume levelling. The table is the server's measurements; the gain is
+   * this track's distance from the target, already capped by its own true
+   * peak so a boost cannot clip - see loudness.ts.
+   *
+   * Applied on the meter's own stage rather than by touching the fader, so
+   * the volume control still means what it says and a fade still fades from
+   * wherever the listener left it.
+   */
+  useLoudnessTable(playSession);
+  const loudnessMode = useLoudnessMode();
+  const trackGain = gainFor(track ?? null, libraryTracks);
+  const trackGainRef = useRef(trackGain);
+  trackGainRef.current = trackGain;
+  useEffect(() => {
+    analyserRef.current?.setTrackGain(trackGain);
+    // loudnessMode is not read here - it is already folded into trackGain -
+    // but a mode change with the same track must still re-push.
+  }, [trackGain, loudnessMode, track]);
 
   // The sound settings ride the graph the same way. Before the first gesture
   // there is no graph; ensureMeter seeds it with these on creation.

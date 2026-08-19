@@ -1609,6 +1609,16 @@ interface AnalyserMeter {
      */
     setEqGains(gains: readonly number[]): void;
     /**
+     * Broadband gain in dB for loudness normalisation, applied after the fader.
+     *
+     * This is the ReplayGain stage: the caller works out how far this track sits
+     * from its target and passes the difference, so a quiet master and a crushed
+     * one arrive at the ear at the same level. Clamped to +/-24 dB, glided, and
+     * 0 (unity) by default. The caller owns clipping safety - a boost bigger
+     * than the track's own headroom will still clip at the DAC.
+     */
+    setTrackGain(db: number): void;
+    /**
      * Resumes the underlying AudioContext. A context built outside a user gesture
      * starts suspended, so metering (and, since the graph reaches the speakers,
      * playback itself) stays silent until this is called from within one - the

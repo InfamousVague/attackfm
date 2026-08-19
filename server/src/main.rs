@@ -39,6 +39,7 @@ mod discovery;
 mod dj;
 mod enrichment;
 mod features;
+mod loudness;
 mod friends;
 mod home;
 mod hot;
@@ -430,6 +431,8 @@ async fn main() {
     // The audio analyser: measures each file's loudness and brightness (and a
     // tempo where the curator has none), one polite track at a time.
     features::spawn(state.clone());
+    // Real loudness per track, for playback normalisation - see loudness.rs.
+    loudness::spawn(state.clone());
 
     // The Spotify mirror: keeps watched playlists, albums and saved tracks in
     // step with their local copies.
@@ -626,6 +629,7 @@ async fn main() {
         .route("/api/art/track/{id}", get(stream::art_by_track))
         .route("/api/transcode/{id}", get(stream::transcode))
         .route("/api/fx/nodes", get(fx::nodes))
+        .route("/api/loudness", get(loudness::table))
         .route("/api/fx/presets", get(fx::presets).post(fx::save_preset))
         .route("/api/fx/presets/{id}", axum::routing::delete(fx::delete_preset))
         .route("/api/spotify/status", get(spotify::status))
