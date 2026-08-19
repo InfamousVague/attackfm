@@ -387,79 +387,52 @@ body [class*='_panel_']:has(> .dlPanel) {
 }
 
 /* ── The sound console ──────────────────────────────────────────────────────
-   One popover, four things: the room switcher, a room, and the two controls
-   that act on the whole chain.
+   One popover, three things: a header that switches rooms, the room, and the
+   two controls that act on the whole chain.
 
-   The panel around this owns the scrolling (see .eqPopoverPanel), so nothing
-   in here declares its own scroller. That is deliberate: the console holds a
-   chain list AND a shelf of fifty-five, and nesting three scrollers inside a
-   popover produces a surface where a drag does something different every
-   inch. One scroller, and the two bars worth keeping in reach stick to it. */
+   THE CONSOLE OWNS ITS SCROLLING, not the popover panel around it. That is the
+   fix for a whole family of problems rather than a preference. While the panel
+   scrolled, the header had to be a sticky bar, a sticky bar needs an opaque
+   backdrop to hide the rows sliding under it, and that backdrop is a second
+   dark pane laid over a panel that is already glass - so it read as a block.
+   It also could not cover the panel's own padding (a sticky box cannot rise
+   past its containing block), which left a strip at the top where rows showed
+   through, and it stopped short of the panel's sides for the same reason.
+
+   Scoping the scroll to the body makes all of that go away: nothing ever
+   passes behind the header, so the header needs no material at all. */
 .soundConsole {
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-3);
   min-inline-size: 17rem;
-  /* How far down the shelf's filter bar sits when it sticks: exactly the
-     height of the room switcher above it.
-     SoundConsole overwrites this with the bar's measured height. The fallback
-     below is DERIVED rather than written down, because a hand-picked number is
-     wrong the moment the kit's control or the user's density changes - and the
-     first one was wrong immediately, leaving the search field twelve pixels
-     underneath the tabs. */
-  --fx-tabs-h: calc(
-    var(--glacier-control-height-sm) + 2 * var(--glacier-hairline) + 2 * var(--glacier-space-2)
-  );
+  min-block-size: 0;
 }
 
-/* The room switcher is the whole navigation, so it stays reachable however
-   far down the shelf you are. */
+/* A header, not a bar. No background, no blur, no bleed - there is nothing
+   behind it to hide. */
 .soundConsole__tabs {
-  position: sticky;
-  inset-block-start: 0;
-  z-index: 2;
-  padding-block: var(--glacier-space-2);
-  /* The kit's glass, not a near-opaque surface. `--glacier-surface` at 92% is
-     a black slab in a dark theme, which is what turned this bar into a lid
-     over the artwork instead of a pane in front of it. */
-  background: var(--glacier-glass-regular);
-  backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
+  flex: none;
 }
 
-/* The strip of panel padding ABOVE the pinned bar.
-   A sticky box cannot rise past its containing block, and the containing block
-   starts at the panel's CONTENT box - so the panel's own top padding is a band
-   inside the scrollport that the bar can never reach, and shelf rows scroll
-   through it in plain sight above a bar that is supposedly at the top. This
-   covers it without anyone having to know what that padding is: bleed upward
-   and let the panel's own overflow clip the excess, which is exactly the edge
-   we want to stop at.
-
-   Scoped to the console that IS the panel's content, i.e. the Now Playing
-   sheet's `.eqPopoverPanel > .eqPopover`. The player strip reuses the same
-   panel class for its overflow menu, but there the console sits inside
-   `.morePopover` UNDER a back button - and a band that bleeds upward there
-   covers the way back. The child combinators are what tell the two apart.
-
-   Vertical only: the horizontal padding never has content in it (a scroll
-   moves content up, not sideways), and an inline bleed is scrollable overflow,
-   which put a horizontal scrollbar across the bottom of the popover.
-
-   pointer-events: none regardless, because a decoration that eats clicks is
-   the worse half of the bug this replaced. */
-.eqPopoverPanel > .eqPopover > .soundConsole > .soundConsole__tabs::before {
-  content: '';
-  position: absolute;
-  inset-inline: 0;
-  inset-block-end: 100%;
-  /* Exactly the panel's top padding, so the band is covered and nothing
-     extends past the scrollport. */
-  block-size: var(--fx-pad-y, 0px);
-  background: inherit;
-  backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
-  pointer-events: none;
+.soundConsole__body {
+  flex: 1;
+  min-block-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  overflow-y: auto;
+  /* Capped just below what the panel can hold, so the panel never needs to
+     scroll as well - two nested scrollers in one popover is a surface where a
+     drag does something different depending on where it started. The panel
+     caps at min(70dvh, 34rem); this leaves room for its padding, the header
+     above, and the back button the player strip puts above that. */
+  max-block-size: min(58dvh, 26rem);
+  /* A flick that reaches the end stays here rather than chaining to the page
+     underneath and dismissing the popover on the way. */
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  scrollbar-width: thin;
 }
 
 /* ── A room: half the chain, and the shelf it is built from ────────────────── */
@@ -651,7 +624,9 @@ body [class*='_panel_']:has(> .dlPanel) {
 
 .fxShelf__filters {
   position: sticky;
-  inset-block-start: var(--fx-tabs-h);
+  /* The body's own top: the header is outside the scroller now, so there is
+     no bar above this one to offset against. */
+  inset-block-start: 0;
   z-index: 1;
   display: flex;
   flex-direction: column;
@@ -660,20 +635,6 @@ body [class*='_panel_']:has(> .dlPanel) {
   background: var(--glacier-glass-regular);
   backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
   -webkit-backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
-}
-
-/* Both pinned bars run the full width of the panel, not the width of its
-   CONTENT box - a frosted bar that stops short of the popover's own padding
-   reads as a floating black card with a gap either side of it, and the gap is
-   where the rows underneath show through.
-   The inset is the panel's padding, measured by SoundConsole into --fx-pad-x,
-   because the kit owns that value and it moves with density. Exactly the
-   padding and no more: bleeding further would put the bar outside the
-   scrollport and hang a horizontal scrollbar off the popover. */
-.soundConsole__tabs,
-.fxShelf__filters {
-  margin-inline: calc(var(--fx-pad-x, 0px) * -1);
-  padding-inline: var(--fx-pad-x, 0px);
 }
 
 .fxShelf__search {
