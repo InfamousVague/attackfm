@@ -36,23 +36,6 @@
       "public": true
     },
     {
-      "id": "karaoke",
-      "name": "Karaoke Maker",
-      "version": "0.2.0",
-      "description": "Sing along: a microphone on Now Playing that lifts the vocal out of whatever is playing and puts the words full screen.",
-      "author": "AttackFM",
-      "tags": [
-        "Sound",
-        "Karaoke"
-      ],
-      "entry": "karaoke-0.2.0.js",
-      "api": 1,
-      "bytes": 12600,
-      "sha256": "35d7357ce3c12ba1ec4db728361c781c62f074026ef147724db7e6cdeeb12a21",
-      "requiresServer": true,
-      "public": true
-    },
-    {
       "id": "looper",
       "name": "Looper",
       "version": "0.2.1",

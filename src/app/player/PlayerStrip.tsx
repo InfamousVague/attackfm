@@ -18,6 +18,7 @@ import {
   MonitorSpeaker,
 } from '@glacier/icons';
 import { SoundConsole } from './NowPlayingSheet.tsx';
+import { KaraokeButton } from './KaraokeButton.tsx';
 import { PluginSlot } from '../../plugins/runtime.tsx';
 import { SpinningDisc } from './SpinningDisc.tsx';
 import { BeatWave } from './BeatWave.tsx';
@@ -374,6 +375,9 @@ export function PlayerStrip({
                   Deliberately NOT in the touch branch above, where the sheet
                   already renders it and a second copy would be a duplicate
                   button rather than a second home. */}
+              {/* Karaoke, core, on the desktop strip for the same reason the
+                  slot beside it is here: this is where the song is. */}
+              <KaraokeButton />
               <PluginSlot id="now-playing-actions" />
               {/* The equalizer, playlist filing, and device hand-off fold
                   behind one overflow: five trailing buttons were crowding the
