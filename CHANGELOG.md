@@ -15,9 +15,9 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
-## 0.3.179
+## 0.3.184
 
-- The DJ suggests stations now. Unlike a mix, a station never ends — it keeps going in the lane you picked. You'll find them on the Booth page, named from what you actually listen to, and tapping one just asks the DJ for it
+- The DJ suggests stations now. Unlike a mix, a station never ends — it keeps going in the lane you picked. They're on the Booth page, named from what you actually listen to, and tapping one just asks the DJ for it
 
 ## 0.3.183
 
