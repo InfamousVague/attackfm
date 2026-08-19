@@ -1,5 +1,5 @@
 import { NavBar, NavBarItem } from '@glacier/react';
-import { CircleUserRound, Compass, Disc3, LibraryBig, Settings } from '@glacier/icons';
+import { CircleUserRound, Compass, Disc3, LibraryBig } from '@glacier/icons';
 import type { ReactNode } from 'react';
 import { useAcquire, usePluginPages } from '../../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
@@ -86,8 +86,8 @@ export function PrimaryNav({
       )}
       {/* Downloads is NOT a nav destination. On the phone it is an icon on the
           library page (where the music it is fetching ends up); on the desktop
-          the rail anchors the queue button to its foot, by Settings - see the
-          `end` slot below. A queue you visit occasionally does not deserve a
+          it is the chip above the player strip, and only while something is
+          actually in flight. A queue you visit occasionally does not deserve a
           permanent seat in a bar of four. */}
       {/* No Search station. It was a tab, then a pull-down summons, then an
           icon here - and it is now a bar on Library and Discover themselves,
@@ -121,19 +121,17 @@ export function PrimaryNav({
   );
 
   if (variant === 'rail') {
+    // No foot on the rail. Settings sits in the window's own title bar on
+    // desktop (App.tsx, in the same DESKTOP block that renders this rail), and
+    // a rail cog beside it was the same door twice - the sort of duplicate that
+    // makes people wonder whether the two lead somewhere different. Downloads
+    // has no seat here either: while anything is in flight the chip above the
+    // strip is its door, and an idle queue offers no door at all.
     return (
       <NavBar
         orientation="vertical"
         aria-label="Primary"
         className="appNavRail"
-        end={
-          <div className="appNavRail__foot">
-            {/* Downloads has no seat here: while anything is in flight the
-                chip above the strip is its door, and an idle queue offers no
-                door at all - see DownloadsChip. */}
-            <NavBarItem icon={<Settings size={18} />} label="Settings" onClick={onSettings} />
-          </div>
-        }
       >
         {primaryItems}
       </NavBar>

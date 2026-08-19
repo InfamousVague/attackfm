@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.195
+
+- One settings cog on desktop, not two — the rail's has gone, the title bar's stays
+
 ## 0.3.194
 
 - About lines up again when your server has a long name, and reports the server's real version
