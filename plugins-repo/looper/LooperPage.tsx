@@ -97,6 +97,9 @@ const padFace = (
   userSelect: 'none',
   WebkitUserSelect: 'none',
   WebkitTapHighlightColor: 'transparent',
+  // `none`, not `manipulation`: manipulation still lets the browser take pan
+  // and pinch, which is how a second finger gets swallowed by a scroll.
+  touchAction: 'none',
   opacity: waiting ? 0.65 : 1,
   transition: 'background 140ms ease, box-shadow 140ms ease, opacity 140ms ease',
 });
@@ -126,6 +129,14 @@ export function LooperPage() {
     return Array.from({ length: PAD_COUNT }, emptyLoopPad);
   });
   const [mode, setMode] = useState<'play' | 'edit'>('play');
+  /* How a pad behaves under a finger.
+   *   hold  - sounds while held, stops when let go. The obvious reading of a
+   *           pad, and the default.
+   *   latch - press to start, press again to stop, both on the bar line. What
+   *           a looper is FOR: you cannot hold four loops down with four
+   *           fingers and still work the rest of the page.
+   * Launch stays quantised in both; only the release differs. */
+  const [touch, setTouch] = useState<'hold' | 'latch'>('hold');
   const [editing, setEditing] = useState<number | null>(null);
   const [live, setLive] = useState<Set<number>>(new Set());
   const [waiting, setWaiting] = useState<Set<number>>(new Set());
@@ -368,17 +379,36 @@ export function LooperPage() {
     }
   };
 
-  const hitPad = useCallback(
-    (index: number) => {
+  /** Which pad each live pointer is holding, so two fingers cannot take each
+   *  other's sound away - the same rule the Pads grid needed. */
+  const heldRef = useRef(new Map<number, number>());
+
+  const pressPad = useCallback(
+    (index: number, pointer: number) => {
       if (mode === 'edit') {
         setEditing(index);
         return;
       }
-      // Synchronous: engine.launch builds the graph itself rather than
-      // awaiting an unlock, so a press reaches the audio thread immediately.
-      engine.launchNow(index, pads);
+      heldRef.current.set(pointer, index);
+      // Synchronous: the engine builds its graph rather than awaiting an
+      // unlock, so a press reaches the audio thread in the same task.
+      engine.launchNow(index, pads, touch === 'latch');
     },
-    [engine, mode, pads],
+    [engine, mode, pads, touch],
+  );
+
+  const releasePad = useCallback(
+    (pointer: number) => {
+      const pad = heldRef.current.get(pointer);
+      if (pad === undefined) return;
+      heldRef.current.delete(pointer);
+      if (mode === 'edit' || touch !== 'hold') return;
+      // Another finger still on the same pad keeps it sounding.
+      for (const other of heldRef.current.values()) if (other === pad) return;
+      // Immediately, not at the bar line: "let go" means let go.
+      engine.stop(pad, true);
+    },
+    [engine, mode, touch],
   );
 
   const conf = editing === null ? null : (pads[editing] ?? null);
@@ -425,6 +455,16 @@ export function LooperPage() {
               if (v === 'play') setEditing(null);
             }}
           />
+          <SegmentedControl
+            aria-label="Pad behaviour"
+            size="sm"
+            value={touch}
+            options={[
+              { value: 'hold', label: 'Hold' },
+              { value: 'latch', label: 'Latch' },
+            ]}
+            onValueChange={(v) => setTouch(v as 'hold' | 'latch')}
+          />
           <label style={{ ...rowStyle, gap: 8 }}>
             <Text size="xs" tone="muted">Tempo</Text>
             <Slider aria-label="Tempo" min={60} max={180} step={1} value={bpm}
@@ -435,9 +475,9 @@ export function LooperPage() {
 
         {mode === 'play' && (
           <Text tone="muted" size="xs">
-            {running
-              ? 'Pads join on the next bar — and a pad replaces whatever else its lane was playing.'
-              : 'The first pad you press sets the downbeat; everything after joins in time with it.'}
+            {touch === 'hold'
+              ? 'Hold a pad to play it, let go to stop. It still joins on the next bar, and it replaces whatever else its lane was playing.'
+              : 'Latch: press to start, press again to stop — both on the bar line, so loops can layer while your hands are elsewhere.'}
           </Text>
         )}
         {mode === 'edit' && (
@@ -471,8 +511,18 @@ export function LooperPage() {
                 style={padFace(p.hue, isLoaded, live.has(i), waiting.has(i), editing === i, Math.floor(i / LANES))}
                 onPointerDown={(e) => {
                   e.preventDefault();
-                  hitPad(i);
+                  // Capture, so a finger sliding off the pad still belongs to
+                  // it and the lift lands here rather than on whatever is
+                  // underneath.
+                  try {
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  } catch {
+                    // Some engines refuse capture for a pointer already gone.
+                  }
+                  pressPad(i, e.pointerId);
                 }}
+                onPointerUp={(e) => releasePad(e.pointerId)}
+                onPointerCancel={(e) => releasePad(e.pointerId)}
               >
                 <Text size="xs" style={{ opacity: 0.8, color: 'inherit' }}>{i + 1}</Text>
                 <Text size="xs" style={{ lineHeight: 1.15, color: 'inherit', opacity: isLoaded ? 1 : 0.55 }}>

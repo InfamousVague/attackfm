@@ -273,11 +273,9 @@ export function PadsPage() {
         source: { trackId, stem },
         start: 0,
         end: 1,
-        // Hold, not one-shot. A stem is a WHOLE track - three minutes of
-        // vocal - and a one-shot pad plays it to the end no matter when the
-        // thumb lifts, which reads as "letting go does nothing". Hold is what
-        // anyone expects from a pad carrying something this long; trim it
-        // down to a stab and turn hold off if you want it to fire and forget.
+        // Hold is the default for every pad now (see emptyPad), and it
+        // matters most here: a stem is a WHOLE track, so a one-shot pad would
+        // play three minutes of vocal however briefly it was touched.
         gate: true,
       });
       setLoaded((prev) => new Set(prev).add(index));
@@ -537,6 +535,10 @@ export function PadsPage() {
             </div>
           )}
 
+          <Text size="xs" tone="muted">
+            Pads sound while you hold them and stop when you let go. Turn Hold off on a pad to
+            make it a one-shot instead.
+          </Text>
           <div style={row}>
             <Button variant="ghost" size="sm" disabled={busy} onClick={() => void reloadKit()}>
               Reload kit

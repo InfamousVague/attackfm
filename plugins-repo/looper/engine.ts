@@ -111,10 +111,13 @@ export class LoopEngine {
     if (this.ctx.state !== 'running') void this.ctx.resume().catch(() => {});
   }
 
-  /** The same press, without the await - what the pads actually call. */
-  launchNow(pad: number, pads: LoopPad[]): void {
+  /** The same press, without the await - what the pads actually call.
+   *  `toggle` is false when the finger decides the end (hold mode): a press
+   *  then always means START, because a press on a pad that is still fading
+   *  out from the last release must not read as "stop this again". */
+  launchNow(pad: number, pads: LoopPad[], toggle = true): void {
     this.ensure();
-    void this.launch(pad, pads);
+    void this.launch(pad, pads, toggle);
   }
 
   async unlock(): Promise<void> {
@@ -219,16 +222,17 @@ export class LoopEngine {
    * be a delay. Every pad after that joins on the next bar line, which is the
    * whole feel of the instrument: press it whenever, it arrives in time.
    */
-  async launch(pad: number, pads: LoopPad[]): Promise<void> {
+  async launch(pad: number, pads: LoopPad[], toggle = true): Promise<void> {
     await this.unlock();
     if (!this.ctx) return;
     const conf = pads[pad];
     const buffer = this.buffers.get(pad);
     if (!conf || !buffer) return;
 
-    // Toggle: a lit pad pressed again stops at the bar line rather than
-    // stacking a second copy of itself.
-    if (this.playing.has(pad) || this.pending.has(pad)) {
+    // Latch only: a lit pad pressed again stops at the bar line rather than
+    // stacking a second copy of itself. Under hold, the release is what stops
+    // it, so a press is always a start.
+    if (toggle && (this.playing.has(pad) || this.pending.has(pad))) {
       this.stop(pad, false);
       return;
     }
