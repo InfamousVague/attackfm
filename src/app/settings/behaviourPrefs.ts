@@ -1,3 +1,5 @@
+import { onMeteredConnection } from '../core/network.ts';
+
 /**
  * Switches for work the app does on your behalf.
  *
@@ -123,6 +125,30 @@ export function wifiOnlyDownloads(): boolean {
 
 export function setWifiOnlyDownloads(value: boolean): void {
   set(WIFI_ONLY_KEY, value, true);
+}
+
+/**
+ * Whether something may pull bytes down right now, on its own initiative.
+ *
+ * The one place the switch and the connection are combined, because the switch
+ * shipped guarding only the cache sweep and that was not the whole promise.
+ * The copy under it says "automatic downloads wait for Wi-Fi", and every
+ * unguarded fetch elsewhere in the app makes that sentence false - which is
+ * worse than having no switch, because somebody read it and believed it. Two
+ * were found within an hour of shipping: the Stems room's per-part measuring,
+ * and the Now Playing video clip.
+ *
+ * So it lives here, once, and anything that downloads without being asked
+ * awaits it. ASK AT THE MOMENT OF THE FETCH, not when the screen opens: the
+ * answer changes as somebody walks out of the house, and a value read at mount
+ * is a stale promise by the third song.
+ *
+ * Not for anything a person just asked for out loud. See the header on
+ * `sweepIfIdle` for where that line falls and why it is drawn there.
+ */
+export async function autoDownloadAllowed(): Promise<boolean> {
+  if (!wifiOnlyDownloads()) return true;
+  return !(await onMeteredConnection());
 }
 
 // ── The clip behind Now Playing ─────────────────────────────────────────────

@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.208
+
+- Fixes the Filters and Stems lists losing their styling. The app could end up running one version's code against an older version's stylesheet, and the screens built most recently were the ones with no rules behind them — bare bulleted lists, buttons at their default grey. It now notices the mismatch and puts the right stylesheet back, from the device if it is there and from the update server if it is not
+- "Only download on Wi-Fi" now covers the video clips too. Sitting on Now Playing over mobile data was pulling down a clip for every song that came on, and the deck on Date was fetching them for cards you had not reached yet. On mobile data the blurred cover stands in, exactly as it does for a song with no clip
+
 ## 0.3.207
 
 - "Only download on Wi-Fi" now also covers the Stems tab. Opening it measures each part of the song so the rows can move to their own music, and that measuring is a real download — on mobile data, with the switch on, it now waits
