@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.207
+
+- "Only download on Wi-Fi" now also covers the Stems tab. Opening it measures each part of the song so the rows can move to their own music, and that measuring is a real download — on mobile data, with the switch on, it now waits
+
 ## 0.3.206
 
 - Automatic downloads wait for Wi-Fi now, and that is on by default. The app had been filling the phone's cache over mobile data without asking. Playing a song, keeping one on this device and "Check now" are never held back — those are you asking, and they still work anywhere
