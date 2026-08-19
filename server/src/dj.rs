@@ -604,7 +604,17 @@ pub async fn analyze_seed(
         .unwrap_or_default();
     let enrichment_key = tracks
         .iter()
-        .map(|t| format!("{}:{:.2}", t.ai_genres.join("|"), t.ai_confidence))
+        .map(|t| format!(
+            "{}:{}:{}:{}:{}:{}:{}:{:.2}",
+            t.ai_genres.join("|"),
+            t.ai_specific_tags.join("|"),
+            t.ai_sonic_traits.join("|"),
+            t.ai_production_descriptors.join("|"),
+            t.ai_moods.join("|"),
+            t.ai_vibes.join("|"),
+            t.ai_influences.join("|"),
+            t.ai_confidence,
+        ))
         .collect::<Vec<_>>()
         .join(";");
     let cache_key = format!(
@@ -627,12 +637,16 @@ pub async fn analyze_seed(
                 .map(|track| {
                     let f = feature_by_id.get(&track.id);
                     format!(
-                        "{} — {} | enriched genres: {} | sonic traits: {} | moods: {} | year: {} | bpm: {} | energy: {}",
+                        "{} — {} | enriched genres: {} | specific styles/subgenres: {} | sonic traits: {} | production: {} | moods/vibes: {} / {} | influences: {} | year: {} | bpm: {} | energy: {}",
                         track.artist,
                         track.title,
                         track.ai_genres.join(", "),
+                        track.ai_specific_tags.join(", "),
                         track.ai_sonic_traits.join(", "),
+                        track.ai_production_descriptors.join(", "),
                         track.ai_moods.join(", "),
+                        track.ai_vibes.join(", "),
+                        track.ai_influences.join(", "),
                         track
                             .year
                             .map(|v| v.to_string())
@@ -653,9 +667,11 @@ pub async fn analyze_seed(
             let feature = feature_by_id.get(&track.id);
             let lyrics: String = track.lyrics.chars().take(1800).collect();
             format!(
-            "Analyze what is musically distinctive about this recording and what a listener may want more of. Offer exactly 4 distinct, selectable traits. At least 3 MUST describe the actual sound: groove/rhythm, instrumentation, vocal delivery, production texture, energy, or a specific hybrid of styles. Prefer supported enriched genres over broad file tags. Soundtrack, Films/Games, an album, or a franchise is context and MUST NOT be returned as a genre/style or retrieval query. The DJ note is high-value human direction but not verified fact. Keep labels and queries concise, sensory, and free of proper nouns. Do not name recommended songs.\n\nTitle: {}\nArtist: {}\nAlbum (context only): {}\nFile genre tag (possibly broad or wrong): {}\nEnriched genres/styles: {}\nEnriched sonic traits: {}\nEnriched moods: {}\nEnriched lyrical themes: {}\nEnrichment summary: {}\nEnrichment confidence: {:.2}\nDJ note: {}\nYear: {}\nBPM: {}\nMeasured energy (0-1): {}\nMeasured brightness (0-1): {}\nLyrics excerpt:\n{}",
+            "Analyze what is musically distinctive about this recording and what a listener may want more of. Offer exactly 4 distinct, selectable traits. At least 3 MUST describe the actual sound: groove/rhythm, instrumentation, vocal delivery, production texture, energy, or a specific hybrid of styles. Prefer supported enriched genres and specific styles/subgenres over broad file tags. Soundtrack, Films/Games, an album, or a franchise is context and MUST NOT be returned as a genre/style or retrieval query. The DJ note is high-value human direction but not verified fact. Keep labels and queries concise, sensory, and free of proper nouns. Do not name recommended songs.\n\nTitle: {}\nArtist: {}\nAlbum (context only): {}\nFile genre tag (possibly broad or wrong): {}\nEnriched broad genres: {}\nEnriched specific styles/subgenres: {}\nEnriched sonic traits: {}\nEnriched production/instrumentation: {}\nEnriched moods: {}\nEnriched vibes: {}\nEnriched influences: {}\nEnriched lyrical themes: {}\nEnrichment summary: {}\nEnrichment confidence: {:.2}\nDJ note: {}\nYear: {}\nBPM: {}\nMeasured energy (0-1): {}\nMeasured brightness (0-1): {}\nLyrics excerpt:\n{}",
             track.title, track.artist, track.album, track.genre,
-            track.ai_genres.join(", "), track.ai_sonic_traits.join(", "), track.ai_moods.join(", "),
+            track.ai_genres.join(", "), track.ai_specific_tags.join(", "),
+            track.ai_sonic_traits.join(", "), track.ai_production_descriptors.join(", "),
+            track.ai_moods.join(", "), track.ai_vibes.join(", "), track.ai_influences.join(", "),
             track.ai_lyrical_themes.join(", "), track.ai_summary, track.ai_confidence, dj_note,
             track.year.map(|v| v.to_string()).unwrap_or_else(|| "unknown".into()),
             feature.as_ref().and_then(|f| f.bpm).map(|v| format!("{v:.0}")).unwrap_or_else(|| "unknown".into()),
@@ -1084,18 +1100,22 @@ fn specialized_score(feature: &TrackFeatures, traits: &[DjTrait]) -> f32 {
             }
         }
         if !t.signals.genres.is_empty()
-            && (!feature.ai_genres.is_empty() || !feature.genre.trim().is_empty())
+            && (!feature.ai_genres.is_empty()
+                || !feature.ai_specific_tags.is_empty()
+                || !feature.genre.trim().is_empty())
         {
-            let candidate_genres = if feature.ai_genres.is_empty() {
+            let candidate_genres = if feature.ai_genres.is_empty() && feature.ai_specific_tags.is_empty() {
                 vec![feature.genre.to_lowercase()]
             } else {
-                feature.ai_genres.iter().map(|g| g.to_lowercase()).collect()
+                feature.ai_genres.iter().chain(&feature.ai_specific_tags)
+                    .map(|g| g.to_lowercase()).collect()
             };
             parts.push(
                 if t.signals.genres.iter().any(|g| {
+                    let wanted = normalized_style(g);
                     candidate_genres.iter().any(|candidate| {
-                        candidate.contains(&g.to_lowercase())
-                            || g.to_lowercase().contains(candidate)
+                        let candidate = normalized_style(candidate);
+                        candidate.contains(&wanted) || wanted.contains(&candidate)
                     })
                 }) {
                     1.0
@@ -1114,6 +1134,17 @@ fn specialized_score(feature: &TrackFeatures, traits: &[DjTrait]) -> f32 {
     } else {
         0.5
     }
+}
+
+fn normalized_style(value: &str) -> String {
+    value
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn category_importance(category: &str) -> f32 {
@@ -1205,8 +1236,10 @@ fn heuristic_analysis(
             });
         };
     let preferred_genre = track
-        .ai_genres
-        .first()
+        .ai_specific_tags
+        .iter()
+        .chain(&track.ai_genres)
+        .next()
         .map(String::as_str)
         .filter(|_| track.ai_confidence >= 0.45)
         .unwrap_or(track.genre.as_str());
@@ -1333,6 +1366,7 @@ mod ranking_tests {
             lyric_vec: None,
             genre: "test".into(),
             ai_genres: Vec::new(),
+            ai_specific_tags: Vec::new(),
             ai_sonic_traits: Vec::new(),
             artist: "test".into(),
             energy: Some(energy),
@@ -1374,6 +1408,28 @@ mod ranking_tests {
         assert!(
             (relevance_families + personal_tie_breakers + collaborative - 1.0_f32).abs() < 0.001
         );
+    }
+
+    #[test]
+    fn specific_subgenres_drive_the_explicit_style_signal() {
+        let mut candidate = feature(120.0, 0.6, 0.5, 0.5, 0.5);
+        candidate.genre = "electronic".into();
+        candidate.ai_genres = vec!["electronic".into()];
+        candidate.ai_specific_tags = vec!["future-garage".into()];
+        let direction = DjTrait {
+            id: "future-garage".into(),
+            label: "Future garage".into(),
+            category: "genre_style".into(),
+            description: String::new(),
+            weight: 1.0,
+            confidence: 1.0,
+            query: "future garage".into(),
+            signals: TraitSignals {
+                genres: vec!["future garage".into()],
+                ..Default::default()
+            },
+        };
+        assert_eq!(specialized_score(&candidate, &[direction]), 1.0);
     }
 }
 
