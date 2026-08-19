@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, SeekBar, Switch, Text, useBeat, useLiveLevels } from '@glacier/react';
 import { AudioWaveform, Drum, Guitar, Mic, Piano, Waves } from '@glacier/icons';
 import { useServerSession } from '../servers/serverSession.tsx';
@@ -6,6 +6,128 @@ import { trackIdFromPath } from '../server.ts';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { clearStemDrop, setStemDropped, useStemDrop } from './stemDrop.ts';
 import { useStems } from './stemsReady.ts';
+import { chainRate, useFxChain } from './fxChain.ts';
+import { ENV_HZ, envelopeMeter, loadStemEnvelopes, type StemEnvelopes } from './stemLevels.ts';
+
+/**
+ * The part's own shape across the whole song, thinned to something a bar can
+ * paint.
+ *
+ * Mean rather than peak. Peak was the first attempt and the reason I first
+ * gave for dropping it - that it saturates - turned out to be false when
+ * measured: a decaying hit leaves the bucket near silent between strikes, so
+ * the peak does track how hard a section was played. The real failure is
+ * narrower and worse. Ninety-six buckets over four minutes is two and a half
+ * seconds each, and peak cannot tell a part that HITS in that stretch from one
+ * that SOUNDS THROUGHOUT it, because both touch the same height: measured
+ * side by side, sparse hits and a continuous part of equal loudness draw the
+ * identical full slab. That is precisely the distinction this row exists to
+ * make - drums against strings - so the average is the right reading. It says
+ * how much of the stretch the part was sounding, which also makes a verse the
+ * drums sit out read as a dip.
+ */
+function levelsFrom(env: Float32Array | undefined, buckets = 96): number[] | undefined {
+  if (!env || env.length === 0) return undefined;
+  const per = env.length / buckets;
+  const out: number[] = [];
+  let top = 0;
+  for (let i = 0; i < buckets; i++) {
+    const start = Math.floor(i * per);
+    const end = Math.min(env.length, Math.floor((i + 1) * per));
+    let sum = 0;
+    for (let j = start; j < end; j++) sum += env[j]!;
+    const mean = sum / Math.max(1, end - start);
+    out.push(mean);
+    if (mean > top) top = mean;
+  }
+  // Back up to the bar's full height, or a part that is merely quiet would be
+  // drawn as a part that is barely there.
+  return top > 0 ? out.map((v) => v / top) : out;
+}
+
+/**
+ * One part, and the line under it.
+ *
+ * Its own component purely so it can hold its own `useBeat` - six rows means
+ * six meters, and a hook cannot be called from inside a map over a list whose
+ * length changes with how many parts a track was separated into.
+ */
+function StemPart({
+  part,
+  label,
+  Icon,
+  on,
+  env,
+  fileNow,
+  mixBeat,
+  mixLevels,
+  playing,
+  duration,
+  position,
+  onToggle,
+}: {
+  part: string;
+  label: string;
+  Icon: (props: { size?: number }) => React.ReactNode;
+  on: boolean;
+  env: Float32Array | undefined;
+  fileNow: () => number;
+  mixBeat: Parameters<typeof SeekBar>[0]['beat'];
+  mixLevels: number[];
+  playing: boolean;
+  duration: number;
+  position: number;
+  onToggle: (want: boolean) => void;
+}) {
+  const meter = useMemo(() => envelopeMeter(env, fileNow), [env, fileNow]);
+  // A part that is out of the song is not sounding, so it does not move -
+  // which is the row's whole job, and the one thing a shared meter could
+  // never show.
+  const own = useBeat({
+    meter: meter ?? null,
+    active: !!meter && on && playing,
+    // Where the hits land along the bar. Zero here put every ripple at the
+    // start of the row, which reads as a bar that twitches at its left edge
+    // rather than one deforming under the playhead.
+    at: duration > 0 ? Math.min(1, position / duration) : 0,
+  });
+  const beat = meter ? own : mixBeat;
+  const levels = levelsFrom(env) ?? mixLevels;
+  return (
+    <li className="stemsRoom__part" data-on={on ? 'true' : undefined}>
+      <span className="stemsRoom__glyph">
+        <Icon size={16} />
+      </span>
+      <span className="stemsRoom__name">
+        <Text size="sm">{label}</Text>
+      </span>
+      <Switch aria-label={label} checked={on} onCheckedChange={onToggle} />
+      {/* `inert` rather than a bare `aria-hidden`: this bar is a picture of
+          the part, not a second transport, and hiding it from a screen reader
+          while leaving a slider in the tab order is the worst of both. */}
+      <span className="stemsRoom__pulse" inert>
+        <SeekBar
+          aria-label={label}
+          duration={duration}
+          value={position}
+          size="sm"
+          // The same clothes the bar on the Now Playing screen wears, because
+          // it is the same instrument at a smaller size: the swell carries an
+          // attack where the plain wave only undulated, and the tracer is what
+          // makes a hit read as a hit rather than as a wobble.
+          shape="swell"
+          fill="solid"
+          rail="contrast"
+          tracer
+          tone={on ? 'accent' : 'neutral'}
+          levels={levels}
+          beat={beat}
+          intensity={on ? 2 : 0}
+        />
+      </span>
+    </li>
+  );
+}
 
 /**
  * Stems: the song you are listening to, with parts taken out.
@@ -40,7 +162,7 @@ type State =
   | { kind: 'problem'; why: string };
 
 export function StemsRoom() {
-  const { session } = useServerSession();
+  const { session, settings } = useServerSession();
   const { track, meter, audible, position } = useNowPlayingMotion();
   const drop = useStemDrop();
   const id = track ? trackIdFromPath(track.path) : null;
@@ -108,6 +230,61 @@ export function StemsRoom() {
   const progress = Math.min(1, position / duration);
   const beat = useBeat({ meter, active: moving, at: progress });
   const levels = useLiveLevels({ meter, progress, active: moving });
+
+  /**
+   * The parts, measured one at a time, so each row can move to its own part.
+   *
+   * Gated rather than eager: it is nine megabytes for a whole song (see
+   * stemLevels.ts) and it buys a picture, so it is only spent on a track that
+   * has actually been separated, while this room is open, on a connection
+   * nobody has told us to be careful with. Everything that does not arrive
+   * simply falls back to the mix's beat, which is what every row used before.
+   */
+  const [envelopes, setEnvelopes] = useState<StemEnvelopes>(() => new Map());
+  const measured = useRef<string | null>(null);
+  const partsKey = ready ? state.parts.join(',') : '';
+  useEffect(() => {
+    const path = track?.path ?? null;
+    if (!ready || !path || !session || settings.quality === 'transcode') return;
+    const key = `${path}|${partsKey}`;
+    if (measured.current === key) return;
+    measured.current = key;
+    setEnvelopes(new Map());
+    const stop = new AbortController();
+    void loadStemEnvelopes(track!, session, partsKey.split(','), stop.signal).then((got) => {
+      if (!stop.signal.aborted && got.size > 0) setEnvelopes(got);
+    });
+    return () => stop.abort();
+  }, [ready, track?.path, partsKey, session, settings.quality]);
+
+  /**
+   * Where the song is, in the FILE's seconds, at frame rate.
+   *
+   * Two corrections on one line. The motion source publishes about four times
+   * a second, which is a staircase next to a bar redrawing every frame, so the
+   * gap is carried forward from the last reading. And the envelopes were
+   * measured from the file while `position` counts the bar, which are the same
+   * number only until a speed pedal is on - the trap the scratch tape fell
+   * into, kept out of this one by converting here.
+   */
+  const rate = chainRate(useFxChain());
+  const clock = useRef({ at: 0, stamp: 0, running: false, rate: 1 });
+  useEffect(() => {
+    clock.current = {
+      at: position,
+      stamp: performance.now(),
+      running: audible,
+      rate: Number.isFinite(rate) && rate > 0 ? rate : 1,
+    };
+  }, [position, audible, rate]);
+  const fileNow = useMemo(
+    () => () => {
+      const c = clock.current;
+      const ahead = c.running ? (performance.now() - c.stamp) / 1000 : 0;
+      return (c.at + ahead) * c.rate;
+    },
+    [],
+  );
 
   if (!session) {
     return (
@@ -180,48 +357,23 @@ export function StemsRoom() {
       {state.kind === 'ready' && (
         <>
           <ul className="stemsRoom__parts">
-            {PARTS.filter((p) => available.includes(p.id)).map(({ id: part, label, Icon }) => {
-              const on = !dropped.includes(part);
-              return (
-                <li key={part} className="stemsRoom__part" data-on={on ? 'true' : undefined}>
-                  <span className="stemsRoom__glyph">
-                    <Icon size={16} />
-                  </span>
-                  <span className="stemsRoom__name">
-                    <Text size="sm">{label}</Text>
-                  </span>
-                  <Switch
-                    aria-label={label}
-                    checked={on}
-                    onCheckedChange={(want: boolean) => setStemDropped(id, part, !want)}
-                  />
-                  {/* `inert` rather than a bare `aria-hidden`: this bar is a
-                      picture of the song, not a second transport, and hiding
-                      it from a screen reader while leaving a slider in the tab
-                      order is the worst of both. Inert takes it out of both at
-                      once. The row's control is the switch; the seek that
-                      matters is the one on the sheet behind this panel. */}
-                  <span className="stemsRoom__pulse" inert>
-                    <SeekBar
-                      aria-label={label}
-                      duration={duration}
-                      value={position}
-                      size="sm"
-                      shape="wave"
-                      fill="tonal"
-                      rail="contrast"
-                      tone={on ? 'accent' : 'neutral'}
-                      levels={levels}
-                      beat={beat}
-                      // 0 is the kit's own way to say "hold still" without the
-                      // caller tearing its meter down - so a part that is out
-                      // of the song simply stops moving, in place.
-                      intensity={on ? 1 : 0}
-                    />
-                  </span>
-                </li>
-              );
-            })}
+            {PARTS.filter((p) => available.includes(p.id)).map(({ id: part, label, Icon }) => (
+              <StemPart
+                key={part}
+                part={part}
+                label={label}
+                Icon={Icon}
+                on={!dropped.includes(part)}
+                env={envelopes.get(part)}
+                fileNow={fileNow}
+                mixBeat={beat}
+                mixLevels={levels}
+                playing={audible}
+                duration={duration}
+                position={position}
+                onToggle={(want: boolean) => setStemDropped(id, part, !want)}
+              />
+            ))}
           </ul>
           <div className="stemsRoom__foot">
             <Text tone="muted" size="xs">
