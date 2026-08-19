@@ -432,7 +432,17 @@ body [class*='_panel_']:has(> .dlPanel) {
      underneath and dismissing the popover on the way. */
   overscroll-behavior: contain;
   touch-action: pan-y;
-  scrollbar-width: thin;
+  /* No visible scrollbar, like every other scroller in the app. `thin` was the
+     one outlier here, and it is not merely inconsistent: a thin scrollbar is a
+     request for a CLASSIC one, which takes layout width. The header sits
+     outside this scroller and does not lose that width, so wherever the
+     platform honours the request the body's right edge pulls in and the
+     popover looks padded further on one side than the other. */
+  scrollbar-width: none;
+}
+
+.soundConsole__body::-webkit-scrollbar {
+  display: none;
 }
 
 /* ── A room: half the chain, and the shelf it is built from ────────────────── */
