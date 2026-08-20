@@ -145,21 +145,25 @@ export function PrimaryNav({
   // in the middle for the library, which made the library look like a different
   // KIND of thing from Search and Friends when it is simply another
   // destination - and cost the plate a band of height to overhang into. It is
-  // an ordinary tab now, in its place in the row, lit like any other.
+  // an ordinary tab now, lit like any other.
+  //
+  // LIBRARY LEADS, as it does on the desktop rail above. When the disc stopped
+  // being a disc it stayed where the disc had been, in the middle, which is a
+  // position it only ever held because it was a different shape - so the app's
+  // home sat third behind two places you go less often. The two bars agree on
+  // the order now.
   //
   // Plugin pages do NOT take their own bar seats: they gather behind the one
   // Plugins button in the right group (PluginsBarButton), which cascades them
   // up out of the bar - so the core tabs stay put however many plugins are on.
   return (
     <nav className="appNavBar" aria-label="Primary">
-      {/* No Search seat here either - see the rail above. The bar it was
-          standing in for now lives on Library and Discover themselves, which
-          is a bigger target than this tab was and needs no explaining. */}
+      {/* The library: where the music you own lives, and the app's home. */}
       <BarTab
-        icon={<Disc3 size={22} />}
-        label="Booth"
-        active={tab === 'booth'}
-        onClick={() => onTab('booth')}
+        icon={<LibraryBig size={22} />}
+        label="Library"
+        active={libraryActive}
+        onClick={() => onTab('library')}
       />
       {canDiscover && (
         <BarTab
@@ -169,12 +173,14 @@ export function PrimaryNav({
           onClick={() => onTab('discover')}
         />
       )}
-      {/* The library: where the music you own lives, and the app's home. */}
+      {/* No Search seat here either - see the rail above. The bar it was
+          standing in for now lives on Library and Discover themselves, which
+          is a bigger target than this tab was and needs no explaining. */}
       <BarTab
-        icon={<LibraryBig size={22} />}
-        label="Library"
-        active={libraryActive}
-        onClick={() => onTab('library')}
+        icon={<Disc3 size={22} />}
+        label="Booth"
+        active={tab === 'booth'}
+        onClick={() => onTab('booth')}
       />
       <BarTab
         icon={<CircleUserRound size={22} />}
