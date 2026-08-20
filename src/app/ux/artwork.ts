@@ -12,6 +12,34 @@
 //! hub having to carry and update its own copy. Publish once with
 //! `npm run redeploy -- assets`.
 
+// Brutalist card-background textures, bundled locally (not from the asset
+// server): a fixed deck of 12 that replaces the old per-item hue gradient.
+import tex01 from '../../assets/art/tex/tex-01.webp';
+import tex02 from '../../assets/art/tex/tex-02.webp';
+import tex03 from '../../assets/art/tex/tex-03.webp';
+import tex04 from '../../assets/art/tex/tex-04.webp';
+import tex05 from '../../assets/art/tex/tex-05.webp';
+import tex06 from '../../assets/art/tex/tex-06.webp';
+import tex07 from '../../assets/art/tex/tex-07.webp';
+import tex08 from '../../assets/art/tex/tex-08.webp';
+import tex09 from '../../assets/art/tex/tex-09.webp';
+import tex10 from '../../assets/art/tex/tex-10.webp';
+import tex11 from '../../assets/art/tex/tex-11.webp';
+import tex12 from '../../assets/art/tex/tex-12.webp';
+
+const CARD_TEXTURES = [tex01, tex02, tex03, tex04, tex05, tex06, tex07, tex08, tex09, tex10, tex11, tex12];
+
+/**
+ * A brutalist card-background texture, chosen by the same 0–360 hue hash that
+ * used to pick a card's gradient - so a card keeps one stable texture and a
+ * shelf still reads as varied, now as grit instead of a colour wash. Twelve
+ * 30° buckets map evenly onto the twelve textures.
+ */
+export function cardTexture(hue: number): string {
+  const i = Math.min(CARD_TEXTURES.length - 1, Math.floor(((hue % 360) + 360) % 360 / 30));
+  return CARD_TEXTURES[i]!;
+}
+
 const ASSETS_URL =
   (import.meta.env?.VITE_ASSETS_URL as string | undefined)?.replace(/\/+$/, '') ||
   // The STATIC site, not a hub. This used to point at matt.attack.fm/api/assets,

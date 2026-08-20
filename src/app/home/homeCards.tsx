@@ -2,7 +2,7 @@ import { ScrollArea } from '@glacier/react';
 import { Sparkles } from '@glacier/icons';
 import { useState } from 'react';
 import { mosaicArts, useArtLoad, useCardArt, useTileArt } from '../ux/artLoad.ts';
-import { artworkHue, artworkUrl, mixArtwork } from '../ux/artwork.ts';
+import { artworkHue, artworkUrl, cardTexture, mixArtwork } from '../ux/artwork.ts';
 import type { Track } from '../core/tauri.ts';
 import { AlbumMenu } from '../albumArtist/AlbumMenu.tsx';
 import { TrackMenu } from '../library/TrackMenu.tsx';
@@ -104,6 +104,7 @@ export function MixCover({ tracks, art }: { tracks: Track[]; art?: { src: string
           {
             '--mixHue': `${object.hue}`,
             '--objectArt': `url("${object.src}")`,
+            '--cardTex': `url("${cardTexture(object.hue)}")`,
           } as React.CSSProperties
         }
       >

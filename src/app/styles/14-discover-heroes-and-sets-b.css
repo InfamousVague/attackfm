@@ -97,11 +97,10 @@
 .mixCardCover--object {
   position: relative;
   display: block;
-  background: linear-gradient(
-    140deg,
-    hsl(var(--mixHue, 280) 68% 54%),
-    hsl(calc(var(--mixHue, 280) + 50) 62% 40%)
-  );
+  /* Brutalist texture face: the generated deck of 12 textures replaces the
+     old per-mix hue gradient. Falls back to the page black if the var is
+     missing, so a card is never a blank white box. */
+  background: var(--cardTex) center / cover no-repeat, #0a0a0b;
 }
 
 /* Two passes of the same shot: multiply burns the white ground into the
@@ -110,20 +109,23 @@
 /* Both passes wear the cover's own rounding: the shelves ride the same
    entrance wave as the genre tiles, and a composited layer does not get the
    parent's clip - see .searchGenre__objectArt. */
-.mixCardCover--object img {
-  mix-blend-mode: multiply;
-  border-radius: inherit;
+/* The frosted object and its screen-highlight pass are retired on the
+   brutalist card: the texture IS the face now, with only the title over it. */
+.mixCardCover--object img,
+.mixCardCover--object::after {
+  display: none;
 }
 
-.mixCardCover--object::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: var(--objectArt) center / cover no-repeat;
-  mix-blend-mode: screen;
-  opacity: 0.28;
-  pointer-events: none;
-  border-radius: inherit;
+/* Brutalist library chips (Liked / All songs / On repeat): the transparent
+   brutalist art is the face now, so drop the coloured hue gradient for the
+   page black in every theme, and stop multiplying the art into it. */
+.libChip,
+:root:not([data-theme]) .libChip,
+:root[data-theme='light'] .libChip {
+  background: #0a0a0b;
+}
+.libChip__art {
+  mix-blend-mode: normal;
 }
 
 .mixCardTitle {
