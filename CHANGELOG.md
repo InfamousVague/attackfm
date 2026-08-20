@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.277
+
+- The cover backdrop on a collection page is a third taller, and the top bar is solid again rather than frosted
+
 ## 0.3.276
 
 - On a collection page the top bar is frosted glass over the drifting covers, instead of a solid black strip across them
