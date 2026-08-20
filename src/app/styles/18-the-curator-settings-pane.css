@@ -101,3 +101,23 @@
   color: var(--glacier-text-subtle);
 }
 
+
+/* ── How far the server has got ─────────────────────────────────────────────
+   The bar, its counts, and the line naming what is being taken apart right
+   now. Stacked rather than inline because the "now" line carries a song title,
+   which is the one thing here that can be arbitrarily long. */
+.prefetchProgress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  margin-block-start: var(--glacier-space-2);
+}
+
+/* The spinner sits on the text baseline rather than above it, so a line that
+   wraps does not leave the mark stranded on its own row. */
+.prefetchProgress__now {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  min-inline-size: 0;
+}

@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.235
+
+- Settings shows what your server is doing with the background separation: a bar of how many liked and playlisted songs are apart out of how many there are, and the name of the one being taken apart right now
+
 ## 0.3.234
 
 - The new genre pictures were washing out to white; they carry their tile's colour now. Genres with two names in them — Alternative & Indie, Pop/Rock, Country & Folk — were also showing no picture at all when both halves had one

@@ -86,6 +86,16 @@ impl Working {
         }
     }
 
+    /// Whatever is being separated right now, whichever track it is.
+    ///
+    /// `get` answers "is MY song being worked on", which is the right question
+    /// for somebody waiting on one. This is the other one: "what is the machine
+    /// doing", which is what a progress readout in settings needs - it has no
+    /// particular track in mind and wants to name the one in front of it.
+    pub fn current(&self) -> Option<Progress> {
+        self.inner.lock().ok().and_then(|slot| slot.clone())
+    }
+
     /// The progress for one track, or None when the worker is elsewhere - which
     /// is the answer that tells a client it is QUEUED behind something rather
     /// than being worked on.
@@ -642,6 +652,26 @@ pub async fn prefetch_status(
     auth::require_caller(&state.db, &headers)
         .map_err(|s| (s, "sign in first".to_string()))?;
     let (wanted, done, failed, evicted) = state.db.prefetch_summary();
+    // The honest denominator: every liked-or-playlisted song, and how many of
+    // THOSE are already apart. See Db::prefetch_total for why the queue's own
+    // counts cannot answer this.
+    let (separated, total) = state.db.prefetch_total(MODEL);
+    // What the machine is doing this second, named. A number that only moves
+    // when a whole song finishes looks stuck for the minute each one takes.
+    let running = state.separating.current().map(|p| {
+        let (title, artist) = state
+            .db
+            .track_label(p.track_id)
+            .unwrap_or_else(|| (String::new(), String::new()));
+        json!({
+            "trackId": p.track_id,
+            "title": title,
+            "artist": artist,
+            "fraction": p.fraction,
+            "phase": p.phase,
+            "filed": p.filed,
+        })
+    });
     Ok(Json(json!({
         "enabled": prefetch_wanted(&state),
         // Distinct from `enabled`: a server with no demucs cannot do this at
@@ -652,6 +682,9 @@ pub async fn prefetch_status(
         "done": done,
         "failed": failed,
         "evicted": evicted,
+        "separated": separated,
+        "total": total,
+        "running": running,
         "bytes": state.db.prefetch_bytes(MODEL),
         "budgetBytes": PREFETCH_BUDGET_BYTES,
     })))
