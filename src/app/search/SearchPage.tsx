@@ -24,7 +24,7 @@ import { usePlaylists } from '../playlists/playlists.tsx';
 import { useQueueControls } from '../player/queueControls.tsx';
 import { useRegistry } from '../servers/registrySession.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
-import { artworkUrl, genreArtwork } from '../ux/artwork.ts';
+import { artworkUrl, genreArtwork, isCutoutArt } from '../ux/artwork.ts';
 import { clearSpotifyLink, onSpotifyLink, spotifyWebUrl } from '../servers/deepLink.ts';
 import { openExternal } from '../core/openExternal.ts';
 import { usePluginCommands, useAcquire } from '../../plugins/runtime.tsx';
@@ -885,6 +885,10 @@ export function SearchPage({
                       key={g.name}
                       type="button"
                       className="searchGenre"
+                      // Which of the two picture kinds this tile has. The
+                      // halftone prints its object light, which only works on
+                      // art shot as a cut-out - see isCutoutArt.
+                      data-cutout={isCutoutArt(generated) || undefined}
                       style={hueOf(g.name)}
                       onClick={() => setQuery(`genre:"${g.name}"`)}
                     >

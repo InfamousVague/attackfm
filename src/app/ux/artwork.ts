@@ -157,6 +157,30 @@ const GENRE_ART = new Map<string, string>(
   }),
 );
 
+/**
+ * Slugs whose picture is a dark-ground CUT-OUT rather than a white-ground still.
+ *
+ * The two kinds cannot wear the same treatment, and the difference is not
+ * stylistic - it is arithmetic. The original set is an object photographed on
+ * white, laid over a colour with `multiply`, which burns the white away and
+ * prints the object dark. The halftone card wants the opposite: a dense field
+ * with the object printed LIGHT, which needs `screen` - and screen turns a
+ * white ground into a white card. There is no filter that rescues one into the
+ * other, because on a white ground the object is darker than its background and
+ * every blend that hides the background also hides the object.
+ *
+ * So this is a per-piece switch rather than a flag day. A slug named here gets
+ * the halftone treatment; everything else keeps the old one and looks exactly
+ * as it does today. Add a slug the day its new picture is published, and that
+ * one tile changes.
+ */
+const CUTOUT_ART = new Set<string>([]);
+
+/** Whether a slug's picture is built for the halftone (screened) treatment. */
+export function isCutoutArt(slug: string | null | undefined): boolean {
+  return !!slug && CUTOUT_ART.has(slug);
+}
+
 /** The tile a genre wears, or null when no object stands for it yet. */
 export function genreArtwork(genre: string): string | null {
   return GENRE_ART.get(genreKey(genre)) ?? null;
