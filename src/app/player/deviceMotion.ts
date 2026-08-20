@@ -1,58 +1,30 @@
 /**
  * The phone's own movement, as something the player can listen to.
  *
- * No native plugin: DeviceMotionEvent and DeviceOrientationEvent are web APIs
- * and the app is a webview, so this is the one piece of hardware the frontend
- * can reach on its own. iOS wants permission asked from inside a user gesture
+ * No native plugin: DeviceMotionEvent is a web API and the app is a webview,
+ * so this is the one piece of hardware the frontend can reach on its own. iOS wants permission asked from inside a user gesture
  * (see `askMotionAccess`); Android grants it on a secure origin, which
  * tauri.localhost is.
  *
- * Two different things come out of the same sensor and they are kept apart on
- * purpose:
+ * GESTURES ONLY: acceleration - how hard the phone was just moved - read as
+ * discrete, thresholded events off `devicemotion`, unfiltered, because the
+ * sharpness IS the signal. Shake shuffles, a flick skips.
  *
- *   TILT is orientation - where the phone is pointing - and it is continuous,
- *   smoothed, and only ever used to move something a few pixels. It comes off
- *   deviceorientation, which is already filtered by the OS.
- *
- *   GESTURES are acceleration - how hard the phone was just moved - and they
- *   are discrete, thresholded events. They come off devicemotion, unfiltered,
- *   because the sharpness IS the signal.
+ * There was a second half: TILT, a smoothed `deviceorientation` reading that
+ * leaned the now-playing artwork by a few pixels. It is gone, and the reason is
+ * worth keeping because it is the general rule rather than a fact about that
+ * one effect. A continuous sensor bound to a visual property costs its full
+ * price every frame, forever, whether or not anyone is looking at it - whereas
+ * a gesture costs only when it fires and animates nothing. So motion driving a
+ * CONTROL earns its keep and motion driving decoration does not. Matt asked for
+ * the decorative half removed; if anything ever wants tilt back, it should want
+ * it for something you can act on.
  *
  * Nothing here listens until something asks. A player that holds a sensor open
  * while it is not on screen is paying for a reading nobody reads.
  */
 
-/** Orientation, normalised to roughly -1..1 and rested at 0. */
-export interface Tilt {
-  /** Left/right roll. Negative is tipped left. */
-  x: number;
-  /** Front/back pitch. Negative is tipped away from you. */
-  y: number;
-}
-
 export type MotionGesture = 'shake' | 'flick-left' | 'flick-right';
-
-/**
- * How far the phone has to be tipped to reach the ends of the range.
- *
- * 22 degrees, not 90: this drives a parallax of a few pixels, and a range that
- * needs the phone turned on its side to reach the end of would read as broken
- * rather than subtle. A hand at rest wanders by a couple of degrees, so the
- * useful signal is all in the first twenty.
- */
-const TILT_RANGE_DEG = 22;
-
-/** Below this the reading is hand-tremor and is treated as level. */
-const TILT_DEADZONE = 0.04;
-
-/**
- * How much of the previous reading survives each new one.
- *
- * deviceorientation arrives around 60Hz and is noisy enough that raw values
- * make anything bound to them jitter visibly. High smoothing is affordable
- * because nothing here needs to be responsive - it needs to feel like weight.
- */
-const TILT_SMOOTHING = 0.85;
 
 /** m/s^2 above gravity that counts as a real movement rather than carrying. */
 const SHAKE_THRESHOLD = 14;
@@ -107,11 +79,8 @@ const FLICK_CONFIRM_MS = 260;
 type Listener = (g: MotionGesture) => void;
 
 const gestureListeners = new Set<Listener>();
-const tiltListeners = new Set<(t: Tilt) => void>();
 
 let motionBound = false;
-let orientationBound = false;
-let tilt: Tilt = { x: 0, y: 0 };
 
 /** Recent acceleration magnitudes, for the quiet-lead test. */
 let recent: { t: number; mag: number; x: number }[] = [];
@@ -124,10 +93,6 @@ let runFromRest = false;
 /** A flick recognised but not yet confirmed - see FLICK_CONFIRM_MS. */
 let pending: { dir: MotionGesture; at: number } | null = null;
 let pendingTimer: ReturnType<typeof setTimeout> | null = null;
-
-function clamp(v: number, lo: number, hi: number): number {
-  return v < lo ? lo : v > hi ? hi : v;
-}
 
 function cancelPending(): void {
   pending = null;
@@ -146,22 +111,6 @@ function emit(g: MotionGesture): void {
   reversals = 0;
   runFromRest = false;
   for (const l of gestureListeners) l(g);
-}
-
-function onOrientation(e: DeviceOrientationEvent): void {
-  // gamma is roll, beta is pitch. Either can be null on a device that only
-  // reports some axes, and null is level rather than zero-ish garbage.
-  const roll = typeof e.gamma === 'number' ? e.gamma : 0;
-  const pitch = typeof e.beta === 'number' ? e.beta : 0;
-  const nx = clamp(roll / TILT_RANGE_DEG, -1, 1);
-  const ny = clamp((pitch - 45) / TILT_RANGE_DEG, -1, 1);
-  const x = tilt.x * TILT_SMOOTHING + nx * (1 - TILT_SMOOTHING);
-  const y = tilt.y * TILT_SMOOTHING + ny * (1 - TILT_SMOOTHING);
-  tilt = {
-    x: Math.abs(x) < TILT_DEADZONE ? 0 : x,
-    y: Math.abs(y) < TILT_DEADZONE ? 0 : y,
-  };
-  for (const l of tiltListeners) l(tilt);
 }
 
 /**
@@ -266,20 +215,6 @@ function unbindMotion(): void {
   cancelPending();
 }
 
-function bindOrientation(): void {
-  if (orientationBound || typeof window === 'undefined') return;
-  window.addEventListener('deviceorientation', onOrientation);
-  orientationBound = true;
-}
-
-function unbindOrientation(): void {
-  if (!orientationBound) return;
-  window.removeEventListener('deviceorientation', onOrientation);
-  orientationBound = false;
-  tilt = { x: 0, y: 0 };
-  for (const l of tiltListeners) l(tilt);
-}
-
 /** Listen for shakes and flicks. Returns the unsubscribe. */
 export function subscribeGestures(fn: Listener): () => void {
   gestureListeners.add(fn);
@@ -287,17 +222,6 @@ export function subscribeGestures(fn: Listener): () => void {
   return () => {
     gestureListeners.delete(fn);
     if (gestureListeners.size === 0) unbindMotion();
-  };
-}
-
-/** Listen for tilt. Returns the unsubscribe. */
-export function subscribeTilt(fn: (t: Tilt) => void): () => void {
-  tiltListeners.add(fn);
-  bindOrientation();
-  fn(tilt);
-  return () => {
-    tiltListeners.delete(fn);
-    if (tiltListeners.size === 0) unbindOrientation();
   };
 }
 
