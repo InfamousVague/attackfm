@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.228
+
+- Thirty looks in the workshop now. The newest ten stop being pictures of a thing on a colour: one is a record with its own label, one a cassette with a strip you would write on, one puts the artwork inside the letters of the name, and one is lit by a light that breathes
+
 ## 0.3.227
 
 - The workshop hidden in About has twenty looks in it now instead of ten, and they sit much further apart: printed, brushed, drawn, cut from paper, read off a tube. Still nothing on your actual library has changed — this is the picking, not the choosing
