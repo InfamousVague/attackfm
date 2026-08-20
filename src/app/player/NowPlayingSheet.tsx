@@ -5,7 +5,7 @@ import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { createPortal } from 'react-dom';
 import { ContextMenu, CounterBadge, IconButton, MenuItem, Popover, SeekBar, SegmentedControl, Switch, useBeat, useLiveLevels } from '@glacier/react';
 import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
-import { AudioLines, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Heart, Image as ImageIcon, ListMusic, ListPlus, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Sparkles, Volume2 } from '@glacier/icons';
+import { AudioLines, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Heart, Image as ImageIcon, ListMusic, ListPlus, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Volume2 } from '@glacier/icons';
 import { isMobile } from '../core/platform.ts';
 import { PluginSlot } from '../../plugins/runtime.tsx';
 import { EqPanel } from './EqPanel.tsx';
@@ -118,7 +118,6 @@ export function NowPlayingSheet({
   onScrub,
   commitSeek,
   shuffle,
-  smart,
   cycleShuffle,
   canSkip,
   skipBack,
@@ -177,9 +176,7 @@ export function NowPlayingSheet({
   onScrub: (to: number) => void;
   commitSeek: (to: number) => void;
   shuffle: boolean;
-  /** Smart shuffle: enhancers mixed in. Only meaningful while shuffle is on. */
-  smart: boolean;
-  /** off -> shuffle -> smart shuffle -> off. */
+  /** off -> shuffle -> off. */
   cycleShuffle: () => void;
   canSkip: boolean;
   skipBack: () => void;
@@ -486,21 +483,17 @@ export function NowPlayingSheet({
       )}
 
       <div className="npScreen__transport">
-        {/* Three states in one control: off, shuffle, smart shuffle. The
-            sparkle only appears on the third, because it is the only one that
-            adds anything to the queue - a badge that lit for ordinary shuffle
-            would be decoration promising a feature. */}
+        {/* Two states: off and on. The third - smart shuffle, badged with a
+            sparkle - is parked; see the note in Player.tsx. */}
         <IconButton
           variant="ghost"
-          aria-label={smart ? 'Smart shuffle' : 'Shuffle'}
+          aria-label="Shuffle"
           aria-pressed={shuffle}
           data-on={shuffle || undefined}
-          data-smart={(shuffle && smart) || undefined}
           onClick={cycleShuffle}
         >
           <span className="shuffleGlyph">
             <Shuffle size={20} />
-            {shuffle && smart && <Sparkles className="shuffleGlyph__spark" size={11} />}
           </span>
         </IconButton>
         <IconButton variant="ghost" aria-label="Previous" disabled={!canSkip} onClick={skipBack}>

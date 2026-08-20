@@ -1,4 +1,3 @@
-import { clearEnhancers, nextEnhancer, primeEnhancers } from './smartShuffle.ts';
 import { useDesktopLayout } from '../ux/useDesktopLayout.ts';
 
 import { trackIdFromPath } from '../server.ts';
@@ -137,18 +136,23 @@ export function Player({
   // playback preference does - a player that forgets its own dials every
   // morning reads as broken, not fresh.
   /*
-   * Shuffle has three states now, not two: off, on, and smart.
+   * Shuffle is two states again: off and on.
    *
-   * `shuffle` stays a boolean so every consumer of it - pickNext, the strip,
-   * the sheet, Connect - keeps working untouched; `smart` rides alongside and
-   * only means anything while shuffle is on. Stored as one pref so an old
-   * build reading 'on' still finds shuffle on.
+   * SMART SHUFFLE IS PARKED, not deleted - Matt asked for it out of the app for
+   * now. What it did: a third state on this control that mixed in songs the
+   * server thought belonged in the queue but were not in it. player/smartShuffle.ts
+   * is still here, whole and commented, and bringing it back is this state plus
+   * the three call sites that referenced it.
+   *
+   * 'smart' is still ACCEPTED when reading the stored pref, and lands as plain
+   * shuffle. Anyone who had it on keeps shuffling rather than silently having
+   * shuffle turned off underneath them, and the next write settles the value to
+   * 'on'.
    */
   const [shuffle, setShuffle] = useState(() => {
     const stored = readDeckPref('shuffle');
     return stored === 'on' || stored === 'smart';
   });
-  const [smart, setSmart] = useState(() => readDeckPref('shuffle') === 'smart');
   const [repeat, setRepeat] = useState<PlayerRepeat>(() => {
     const saved = readDeckPref('repeat');
     return saved === 'all' || saved === 'one' ? saved : 'off';
@@ -173,29 +177,11 @@ export function Player({
   const [muted, setMuted] = useState(false);
 
   // Written on change rather than on quit - there is no reliable "on quit".
-  useEffect(
-    () => writeDeckPref('shuffle', shuffle ? (smart ? 'smart' : 'on') : 'off'),
-    [shuffle, smart],
-  );
+  useEffect(() => writeDeckPref('shuffle', shuffle ? 'on' : 'off'), [shuffle]);
 
   // Read by pickNext, which must not re-create itself when the mode flips.
-  const enhanceStep = useRef(0);
-  const smartRef = useRef(smart);
-  smartRef.current = smart;
-
-  /** off -> shuffle -> smart shuffle -> off. One control, three answers. */
-  const cycleShuffle = useCallback(() => {
-    if (!shuffle) {
-      setShuffle(true);
-      setSmart(false);
-    } else if (!smart) {
-      setSmart(true);
-    } else {
-      setShuffle(false);
-      setSmart(false);
-    }
-    enhanceStep.current = 0;
-  }, [shuffle, smart]);
+  /** off -> shuffle -> off. */
+  const cycleShuffle = useCallback(() => setShuffle((on) => !on), []);
   useEffect(() => writeDeckPref('repeat', repeat), [repeat]);
   useEffect(() => {
     if (!isMobile) writeDeckPref('volume', String(Math.round(volume)));
@@ -1047,25 +1033,6 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   }, [track, playSession]);
 
 
-  /*
-   * The enhancer pool follows the queue. Primed on a queue change rather than
-   * at pick time because a track change is the worst possible moment to wait
-   * on a network round trip; by the time shuffle reaches for one it is already
-   * in hand. Cleared whenever the mode is off, so nothing stale survives a
-   * toggle.
-   */
-  useEffect(() => {
-    if (!shuffle || !smart) {
-      clearEnhancers();
-      return;
-    }
-    void primeEnhancers(
-      playSession,
-      queue,
-      (id) => libraryTracks.find((t) => trackIdFromPath(t.path) === id),
-      (path) => trackIdFromPath(path),
-    );
-  }, [shuffle, smart, queue, playSession, libraryTracks]);
   const playSessionRef = useRef(playSession);
   playSessionRef.current = playSession;
   const renewSessionRef = useRef(renewSession);
@@ -1822,7 +1789,8 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
    *
    * Shuffle picks any other track instead of the neighbour - avoiding a
    * back-to-back artist and the recent trail while it has the choice, when
-   * smart shuffle is on. Off the end of the queue, the DJ takes over if asked.
+   * shuffle manners are on. Off the end of the queue, the DJ takes over if
+   * asked.
    */
   const pickNext = (dir: 1 | -1, wrap: boolean): Track | 'rewind' | null => {
     if (!onTrackChange || queue.length === 0 || !track) return null;
@@ -1848,19 +1816,6 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         const recent = new Set(recentRef.current.slice(-8));
         const fresh = pool.filter((i) => !recent.has(queue[i]!.path));
         if (fresh.length > 0) pool = fresh;
-      }
-      /*
-       * Smart shuffle spends an enhancer on every fourth step: a song the
-       * server says belongs in this queue but is not in it. Counted, not
-       * rolled - a coin flip clusters, and two enhancers back to back would
-       * read as the app taking the queue over rather than adding to it.
-       */
-      if (playbackRef.current.smartShuffle && smartRef.current) {
-        const extra = nextEnhancer(enhanceStep.current, new Set(recentRef.current));
-        enhanceStep.current += 1;
-        if (extra) return extra;
-      } else {
-        enhanceStep.current = 0;
       }
       nextIndex = pool[Math.floor(Math.random() * pool.length)]!;
     } else {
@@ -2904,7 +2859,6 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         onSkipBackDisp={onSkipBackDisp}
         onSkipForwardDisp={onSkipForwardDisp}
         shuffle={shuffle}
-        smart={smart}
         setShuffle={setShuffle}
         repeat={repeat}
         setRepeat={setRepeat}
@@ -2968,8 +2922,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
           onScrub={onScrub}
           commitSeek={commitSeek}
           shuffle={shuffle}
-          smart={smart}
-          cycleShuffle={cycleShuffle}
+            cycleShuffle={cycleShuffle}
           canSkip={canSkip}
           skipBack={skipBack}
           skipForward={skipForward}
