@@ -170,10 +170,27 @@ const TWO_COLUMN_FLOOR = 700;
  * there is no app window to measure - which is what the value should be then
  * anyway, since the modal has the whole screen.
  */
-export function useSettingsRoom(open: boolean): number {
-  const [room, setRoom] = useState(() =>
-    typeof window === 'undefined' ? TWO_COLUMN_FLOOR : window.innerWidth,
-  );
+export interface SettingsRoom {
+  /** Pixels of width the modal would actually get. */
+  room: number;
+  /**
+   * Whether something else is holding part of the window - which today means
+   * exactly one thing: Now Playing docked as the right-hand pane.
+   *
+   * Read as a MEASUREMENT rather than by asking the player, because the
+   * property that matters here is not "is the sheet mounted" but "would a
+   * full-screen surface cover something". The shell narrowing is that
+   * property, and it is the same fact the split-view CSS keys on
+   * (`body:has(.npScreen[data-docked]) .appWindow`), so the two cannot drift.
+   */
+  shared: boolean;
+}
+
+export function useSettingsRoom(open: boolean): SettingsRoom {
+  const [state, setState] = useState<SettingsRoom>(() => ({
+    room: typeof window === 'undefined' ? TWO_COLUMN_FLOOR : window.innerWidth,
+    shared: false,
+  }));
 
   useEffect(() => {
     if (!open) return;
@@ -182,7 +199,13 @@ export function useSettingsRoom(open: boolean): number {
     // actually has to be right. A stale node reports the width it had when it
     // was detached, and nothing about that is obviously wrong on screen.
     const shell = document.querySelector('.appWindow');
-    const read = () => setRoom(shell ? shell.getBoundingClientRect().width : window.innerWidth);
+    const read = () => {
+      const width = shell ? shell.getBoundingClientRect().width : window.innerWidth;
+      // A pixel of slack: the shell is sized in a calc() off a vw unit, so it
+      // lands on fractions, and "narrower than the window" has to mean
+      // meaningfully narrower rather than 0.5px of rounding.
+      setState({ room: width, shared: width < window.innerWidth - 1 });
+    };
     read();
     // Docking the player resizes the shell without the WINDOW doing anything -
     // it is a class change, not a resize - so the element is what to watch.
@@ -198,12 +221,22 @@ export function useSettingsRoom(open: boolean): number {
     };
   }, [open]);
 
-  return room;
+  return state;
 }
 
-/** Whether settings has room to stand a rail beside a pane. */
-export function useHasTwoColumnRoom(open: boolean): boolean {
-  return useSettingsRoom(open) >= TWO_COLUMN_FLOOR;
+/**
+ * Whether settings should be a MODAL rather than a full-screen surface.
+ *
+ * Full screen is the normal answer now. The modal survives for exactly one
+ * case: Now Playing docked beside the app, where a full-screen sheet would
+ * cover the player it is standing next to - and only when the app's half is
+ * still wide enough to hold a rail beside a pane. Squeezed below that, one
+ * readable column beats two clipped ones even at the cost of covering the
+ * player, which is the state that started all of this.
+ */
+export function useSettingsIsModal(open: boolean): boolean {
+  const { room, shared } = useSettingsRoom(open);
+  return shared && room >= TWO_COLUMN_FLOOR;
 }
 
 /** One entry in the settings rail: an id, its label, its icon, its pane -
