@@ -1,7 +1,7 @@
 import { Button, SearchField, Text } from '@glacier/react';
 import { useRefreshNonce } from '../nav/pageRefresh.tsx';
-import { Play, Shuffle } from '@glacier/icons';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Heart, Play, Repeat, Shuffle } from '@glacier/icons';
+import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
 import { useLibrary } from './library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { SongTable } from './SongTable.tsx';
@@ -35,14 +35,32 @@ export type SongCollection = 'liked' | 'all' | 'onrepeat' | 'recent';
  *  different one that happens to share a name. */
 const RECENT_LIMIT = 50;
 
+/**
+ * `glyph` is what the collapsed header wears in place of the page's object.
+ *
+ * Only the two collections that were sending a rendered object have one. The
+ * other two sent nothing and still send nothing, deliberately: that header row
+ * is packed to the pixel, and on a phone the lent name is down to about forty
+ * of them before it ellipsises. Giving a mark to a page that never had one buys
+ * an icon by spending half of what is left of the name - "All songs" goes to
+ * "A." - which is a worse trade than the bare name it replaces.
+ */
 const META: Record<
   SongCollection,
-  { kicker: string; title: string; art: EmptyArtName; tone: string; empty: string }
+  {
+    kicker: string;
+    title: string;
+    art: EmptyArtName;
+    glyph?: ComponentType<{ size?: number }>;
+    tone: string;
+    empty: string;
+  }
 > = {
   liked: {
     kicker: 'Your library',
     title: 'Liked songs',
     art: 'liked',
+    glyph: Heart,
     tone: 'songPage--liked',
     empty: 'No liked songs yet. Tap the heart while a song plays and it lands here.',
   },
@@ -57,6 +75,7 @@ const META: Record<
     kicker: 'Your library',
     title: 'On repeat',
     art: 'library',
+    glyph: Repeat,
     tone: 'songPage--repeat',
     empty:
       'Nothing on repeat yet. Play your library for a while and the songs you keep returning to gather here.',
@@ -225,10 +244,12 @@ export function SongPage({
     if (!stuck) return;
     setHeaderActions({
       title: meta.title,
-      // Liked and On repeat wear a real object; the library motif is painted
-      // onto the page background (see EmptyArt) and reads as a smudge at
-      // thumbnail size, so it sends none and the header shows the name alone.
-      art: view === 'liked' ? likedChip : view === 'onrepeat' ? onRepeatChip : null,
+      // A kit glyph where the page used to send its object. Liked and On repeat
+      // sent rendered objects up here and they did not survive the trip: a
+      // photographed valve at 1.4rem is a coloured blob, and reads as a cover
+      // that failed to load rather than as an emblem. A line drawing is built
+      // for this size. The other two collections send nothing, as before.
+      glyph: meta.glyph ?? null,
       play: () => handlers.current.playAll(),
       shuffle: () => handlers.current.shuffleAll(),
       disabled: empty,

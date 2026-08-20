@@ -1,3 +1,4 @@
+import type { ComponentType } from 'react';
 import { useSyncExternalStore } from 'react';
 
 /**
@@ -37,6 +38,22 @@ export interface HeaderActions {
   art?: string | null;
   /** Round for a person, square for a record. */
   artRound?: boolean;
+  /**
+   * A kit glyph instead of a thumbnail, for a page whose mark is a GRAPHIC
+   * rather than a photograph of music.
+   *
+   * A record sleeve, an artist's portrait and a playlist's mosaic all survive
+   * being shrunk to this size, because they are pictures of something and the
+   * something is still legible. A rendered object is not: the Liked valve at
+   * twenty-odd pixels is an orange-pink blob, and the row reads as a picture
+   * failing to load rather than as an emblem. A line drawing is built for this
+   * size and says the same word.
+   *
+   * Passed as the component, not an element: this rides in a store the header
+   * compares by identity, and fresh JSX on every render would be a new value
+   * every time. A module-level icon is stable.
+   */
+  glyph?: ComponentType<{ size?: number }> | null;
   play: () => void;
   shuffle: () => void;
   /** Nothing to play - both controls draw, both are dead. */

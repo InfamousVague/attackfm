@@ -26,12 +26,17 @@ export function HeaderIdent({ tab }: { tab: string }) {
   const [shown, setShown] = useState<string | null>(lentTitle);
   const [shownArt, setShownArt] = useState<string | null>(lent?.art ?? null);
   const [shownRound, setShownRound] = useState(lent?.artRound ?? false);
+  // Held alongside the name for the same reason: the layer fades OUT after the
+  // page has withdrawn its lend, and a glyph read straight from the store
+  // would vanish a frame early and leave the words fading on their own.
+  const [shownGlyph, setShownGlyph] = useState(() => lent?.glyph ?? null);
   useEffect(() => {
     if (!lentTitle) return;
     setShown(lentTitle);
     setShownArt(lent?.art ?? null);
     setShownRound(lent?.artRound ?? false);
-  }, [lentTitle, lent?.art, lent?.artRound]);
+    setShownGlyph(() => lent?.glyph ?? null);
+  }, [lentTitle, lent?.art, lent?.artRound, lent?.glyph]);
 
   return (
     <span className="mobileHeader__ident">
@@ -62,14 +67,23 @@ export function HeaderIdent({ tab }: { tab: string }) {
         {/* The picture rides with the name, from the same lend. Kept in state
             alongside it so it survives the withdrawal and fades out rather
             than blinking away a frame early. */}
-        {shownArt && (
-          <img
-            className="mobileHeader__thumb"
-            data-round={shownRound || undefined}
-            src={shownArt}
-            alt=""
-            aria-hidden
-          />
+        {shownGlyph ? (
+          <span className="mobileHeader__glyph" aria-hidden>
+            {(() => {
+              const Glyph = shownGlyph;
+              return <Glyph size={16} />;
+            })()}
+          </span>
+        ) : (
+          shownArt && (
+            <img
+              className="mobileHeader__thumb"
+              data-round={shownRound || undefined}
+              src={shownArt}
+              alt=""
+              aria-hidden
+            />
+          )
         )}
         <span className="mobileHeader__title">{shown}</span>
       </span>

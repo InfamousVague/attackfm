@@ -20,11 +20,36 @@
 }
 
 /*
+ * The same slot, drawn rather than photographed.
+ *
+ * A collection whose mark is a rendered object sends a kit glyph instead: the
+ * object does not survive being shrunk to 1.4rem, where it reads as a coloured
+ * blob or a cover that failed to load. Deliberately sharing the thumb's exact
+ * geometry - size, gap, flex - because the two alternate in one row, and a
+ * glyph a hair off the thumb's box would shuffle the name sideways every time
+ * you moved between a playlist and Liked.
+ */
+.mobileHeader__glyph {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.4rem;
+  block-size: 1.4rem;
+  margin-inline-end: 0.28rem;
+  color: var(--glacier-accent-text, currentColor);
+}
+
+/*
  * A lent name shares its row with a thumbnail and two controls, where a tab's
  * own name has the row to itself. A hair smaller is what lets "Liked songs"
  * read whole instead of ending in an ellipsis five pixels short.
+ *
+ * The glyph counts for this too: it takes the same width, so the name has the
+ * same room and must give way the same amount.
  */
-.mobileHeader__identLayer:has(.mobileHeader__thumb) .mobileHeader__title {
+.mobileHeader__identLayer:has(.mobileHeader__thumb) .mobileHeader__title,
+.mobileHeader__identLayer:has(.mobileHeader__glyph) .mobileHeader__title {
   font-size: 1rem;
 }
 
