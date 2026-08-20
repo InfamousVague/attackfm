@@ -1,0 +1,259 @@
+import { useMemo, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
+import { IconButton, Text } from '@glacier/react';
+import { Disc3, Heart, ListMusic, Repeat, X } from '@glacier/icons';
+import { useLibrary } from '../library/library.tsx';
+import likedChip from '../../assets/chip-liked.webp';
+import allSongsChip from '../../assets/chip-all-songs.webp';
+import onRepeatChip from '../../assets/chip-on-repeat.webp';
+import djMascot from '../../assets/dj-mascot.webp';
+
+/**
+ * The card lab: ten ways the four library doors could look, side by side.
+ *
+ * These four cards have been redrawn several times - photography, then flat
+ * pastel with kit icons, then photography again tinted to each card's hue - and
+ * every round was argued in words and settled by shipping one and looking at
+ * it. This is the cheaper version of that argument: ten directions on one
+ * screen, on the real objects and the real counts, where they can be compared
+ * rather than imagined.
+ *
+ * ONE markup, ten stylesheets. Every variant renders the identical DOM and the
+ * CSS does all the work, which is the whole point - if a direction needs its
+ * own markup to look good it is not a treatment of these cards, it is a
+ * different component wearing their name, and the comparison would be rigged.
+ */
+
+interface Card {
+  key: string;
+  name: string;
+  sub: string;
+  hue: number;
+  hue2: number;
+  art: string;
+  Icon: typeof Heart;
+  /** The number on its own, for the treatments that lead with it. */
+  stat: string;
+  statLabel: string;
+}
+
+/** The ten directions, in the order they are shown. */
+const STYLES: { id: string; name: string; note: string }[] = [
+  {
+    id: 'editorial',
+    name: 'Editorial',
+    note: 'No picture at all. The name does the work, set large and tight over a hairline rule, with the count as a small caption. Fastest to read of anything here, and the only one that never has to load.',
+  },
+  {
+    id: 'emboss',
+    name: 'Emboss',
+    note: 'One graphite surface for all four, the object pressed into it rather than laid on top - no colour, only light. Quietest option: it lets the artwork below the fold be the loudest thing on the page.',
+  },
+  {
+    id: 'halftone',
+    name: 'Duotone halftone',
+    note: 'The object screened into dots and printed in two inks, the way a cheap sleeve would be. Keeps the objects while dropping the photographic gloss that makes them read as stock imagery.',
+  },
+  {
+    id: 'glass',
+    name: 'Frosted glass',
+    note: 'A panel of frost over a saturated field, the object behind it and slightly out of focus. Sits closest to the rest of the app, which is glass almost everywhere else.',
+  },
+  {
+    id: 'neon',
+    name: 'Neon wire',
+    note: 'Near-black card, the object reduced to a glowing outline. Only as good as the object: the heart and the amp have edges to find, the mirror ball has none and stays a lit blob.',
+  },
+  {
+    id: 'sticker',
+    name: 'Die-cut sticker',
+    note: 'Flat colour, the object cut out with a white keyline and a hard shadow, set down a few degrees off square. The most physical of the ten.',
+  },
+  {
+    id: 'stub',
+    name: 'Label stub',
+    note: 'Utilitarian: mono type, a thin frame, a perforated edge and a block of bars. Treats a collection as an object you file rather than a picture you look at.',
+  },
+  {
+    id: 'stat',
+    name: 'Number first',
+    note: 'The count is the card. Useful when the four doors differ mostly in how much is behind them - and the only direction here that says something new rather than dressing what is already said.',
+  },
+  {
+    id: 'mosaic',
+    name: 'Real covers',
+    note: 'The face is made of sleeves actually in that collection. No illustration to commission and it changes as the library does, but it says nothing at all on an empty library.',
+  },
+  {
+    id: 'aurora',
+    name: 'Aurora',
+    note: 'A soft mesh of colour with the object floating over a long diffuse shadow. The most current-looking, and the most likely to date.',
+  },
+];
+
+export function CardLab({ onClose }: { onClose: () => void }) {
+  const { tracks, favoriteTracks } = useLibrary();
+  const [only, setOnly] = useState<string | null>(null);
+
+  /** Real sleeves for the mosaic direction, so it is judged on real data. */
+  const covers = useMemo(
+    () => tracks.map((t) => t.artwork).filter((a): a is string => !!a).slice(0, 16),
+    [tracks],
+  );
+
+  const cards: Card[] = useMemo(
+    () => [
+      {
+        key: 'liked',
+        name: 'Liked',
+        sub: `${favoriteTracks.length} songs`,
+        hue: 338,
+        hue2: 300,
+        art: likedChip,
+        Icon: Heart,
+        stat: String(favoriteTracks.length),
+        statLabel: 'liked',
+      },
+      {
+        key: 'all',
+        name: 'All songs',
+        sub: `${tracks.length} songs`,
+        hue: 214,
+        hue2: 262,
+        art: allSongsChip,
+        Icon: ListMusic,
+        stat: String(tracks.length),
+        statLabel: 'in your library',
+      },
+      {
+        key: 'repeat',
+        name: 'On repeat',
+        sub: 'Your most played',
+        hue: 145,
+        hue2: 190,
+        art: onRepeatChip,
+        Icon: Repeat,
+        stat: '24',
+        statLabel: 'on repeat',
+      },
+      {
+        key: 'dj',
+        name: 'DJ',
+        sub: 'A live set, from your taste',
+        hue: 265,
+        hue2: 315,
+        art: djMascot,
+        Icon: Disc3,
+        stat: '∞',
+        statLabel: 'never the same twice',
+      },
+    ],
+    [tracks.length, favoriteTracks.length],
+  );
+
+  const shown = only ? STYLES.filter((s) => s.id === only) : STYLES;
+
+  return createPortal(
+    <div className="cardLab" role="dialog" aria-label="Card styles">
+      <header className="cardLab__bar">
+        <div className="cardLab__title">
+          <Text weight="bold">Card styles</Text>
+          <Text tone="muted" size="xs">
+            Ten directions for the four library doors, on your own library
+          </Text>
+        </div>
+        <IconButton variant="ghost" aria-label="Close" onClick={onClose}>
+          <X size={18} />
+        </IconButton>
+      </header>
+
+      <nav className="cardLab__jump" aria-label="Jump to a style">
+        <button
+          type="button"
+          className="cardLab__chip"
+          data-on={only === null || undefined}
+          onClick={() => setOnly(null)}
+        >
+          All ten
+        </button>
+        {STYLES.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            className="cardLab__chip"
+            data-on={only === s.id || undefined}
+            onClick={() => setOnly(s.id)}
+          >
+            {s.name}
+          </button>
+        ))}
+      </nav>
+
+      <div className="cardLab__scroll">
+        {shown.map((style, i) => (
+          <section key={style.id} className="cardLab__style">
+            <div className="cardLab__head">
+              <span className="cardLab__no">{String(STYLES.indexOf(style) + 1).padStart(2, '0')}</span>
+              <div>
+                <Text weight="bold" size="sm">
+                  {style.name}
+                </Text>
+                <p className="cardLab__note">{style.note}</p>
+              </div>
+            </div>
+
+            <div className={`labRow labRow--${style.id}`}>
+              {cards.map((c) => (
+                <div
+                  key={c.key}
+                  className={`labCard labCard--${c.key}`}
+                  style={
+                    {
+                      '--h': c.hue,
+                      '--h2': c.hue2,
+                      '--art': `url("${c.art}")`,
+                    } as CSSProperties
+                  }
+                >
+                  {/* Every piece every variant might want, always present.
+                      The stylesheets choose; nothing is conditionally rendered,
+                      so no direction gets a structural advantage. */}
+                  <span className="labCard__wash" aria-hidden />
+                  {style.id === 'mosaic' && (
+                    <span className="labCard__mosaic" aria-hidden>
+                      {(covers.length ? covers : Array(9).fill(null)).slice(0, 9).map((src, n) =>
+                        src ? (
+                          <img key={n} src={src} alt="" loading="lazy" />
+                        ) : (
+                          <span key={n} className="labCard__mosaicHole" />
+                        ),
+                      )}
+                    </span>
+                  )}
+                  <img className="labCard__art" src={c.art} alt="" loading="lazy" />
+                  <span className="labCard__glyph" aria-hidden>
+                    <c.Icon size={34} strokeWidth={2} />
+                  </span>
+                  <span className="labCard__stat" aria-hidden>
+                    {c.stat}
+                  </span>
+                  <span className="labCard__name">{c.name}</span>
+                  <span className="labCard__sub">
+                    {style.id === 'stat' ? c.statLabel : c.sub}
+                  </span>
+                  <span className="labCard__bars" aria-hidden>
+                    {Array.from({ length: 14 }, (_, n) => (
+                      <i key={n} />
+                    ))}
+                  </span>
+                </div>
+              ))}
+            </div>
+            {i < shown.length - 1 && <hr className="cardLab__rule" />}
+          </section>
+        ))}
+      </div>
+    </div>,
+    document.body,
+  );
+}

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { WhatsNew } from './WhatsNew.tsx';
 import { APP_VERSION, SHELL_VERSION } from '../core/version.ts';
 import wordmark from '../../assets/attack-white.png';
+import { CardLab } from './CardLab.tsx';
 import { openExternal } from '../core/openExternal.ts';
 import { isDesktopApp, isIOS } from '../core/platform.ts';
 import { fetchServerStats, type ServerStats } from '../server.ts';
@@ -27,6 +28,32 @@ const REPO_URL = 'https://github.com/InfamousVague/attackfm';
  * to - the once-a-month pane that answers "what version am I on?" without a
  * trip to the terminal.
  */
+/**
+ * The knock counter, at module scope rather than in a ref.
+ *
+ * A ref was the obvious home and it did not work: the count never got past the
+ * first press, so the run never completed and the door never opened. Whatever
+ * the cause - a second instance of the pane, a ref identity that was not the
+ * one the handler closed over - the fix is to stop making the count depend on
+ * the component's identity at all. There is one About pane and one way in;
+ * the tally belongs to the module, and it survives anything React does to the
+ * tree underneath it.
+ */
+const KNOCKS_WANTED = 7;
+/** A run that stalls is not a run: an idle finger cannot arrive here. */
+const KNOCK_GAP_MS = 900;
+let knocks = 0;
+let lastKnock = 0;
+
+function countKnock(): boolean {
+  const now = Date.now();
+  knocks = now - lastKnock > KNOCK_GAP_MS ? 1 : knocks + 1;
+  lastKnock = now;
+  if (knocks < KNOCKS_WANTED) return false;
+  knocks = 0;
+  return true;
+}
+
 export function AboutSettings() {
   const { session } = useServerSession();
   // The reading that used to be a light in the header on every page.
@@ -146,10 +173,31 @@ export function AboutSettings() {
     },
   ];
 
+  /*
+   * The way into the card lab.
+   *
+   * Seven presses on the wordmark, and only if they come without a long pause
+   * between them - a run that stalls resets, so an idle finger on a scrolling
+   * page cannot arrive here by accident. Hidden rather than listed because it
+   * is a workshop for deciding what the library cards should look like, not a
+   * setting anybody is meant to change.
+   */
+  const [lab, setLab] = useState(false);
+  const knock = () => {
+    if (countKnock()) setLab(true);
+  };
+
   return (
     <div className="prefsBody">
+      {lab && <CardLab onClose={() => setLab(false)} />}
       <div className="aboutHero">
-        <img className="aboutHero__mark" src={wordmark} alt="AttackFM" />
+        <img
+          className="aboutHero__mark"
+          src={wordmark}
+          alt="AttackFM"
+          onClick={knock}
+          draggable={false}
+        />
         <Text tone="muted" size="sm">
           Your music, on your machines. Nothing rented, nothing shared.
         </Text>
