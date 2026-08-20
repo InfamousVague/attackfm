@@ -246,12 +246,26 @@
      to grow into is the space above the first song; the header's content does
      not move, the band of covers under it does.
 
-     Walked to 4.5rem over two asks: 2rem -> 8.25rem for "a third taller"
-     (306px -> 406px), then back to here for "15% smaller" (406px -> 346px,
-     which is -14.8%). Kept as one plain value rather than a calc chain of the
-     two adjustments, so the next change reads the height rather than the
-     history. */
-  padding-block-end: 4.5rem;
+     The height is a MIN-HEIGHT now, not bottom padding, and that is what puts
+     the sleeve, the title and the buttons on the backdrop's bottom edge rather
+     than floating in the middle of it. As padding the extra space sat BELOW
+     the content - the header bottom-aligns its children (`align-items:
+     flex-end`), but only within its content box, and 4.5rem of padding is
+     outside that box. So the content bottom-aligned to a line 72px above the
+     wall's bottom and the gap read as the backdrop overshooting.
+
+     Given as a height instead, the same 346px is inside the content box, the
+     existing flex-end drops everything to the foot of it, and the only thing
+     left underneath is one step of breathing room so the buttons do not touch
+     the first song.
+
+     21.625rem is the height Matt settled on over three asks (306 -> 406 for "a
+     third taller", then -15%). In rem so it tracks the interface-size setting
+     like everything else; the padding-block-start below stays as it was, since
+     its job is unchanged - keep content off the top bar - and it only binds if
+     a header ever grows past this height on its own. */
+  min-block-size: 21.625rem;
+  padding-block-end: var(--glacier-space-4);
   margin-inline: calc(-1 * var(--glacier-space-4));
   padding-inline: var(--glacier-space-4);
   /* Bottom-aligned, not centred (the phone media query centres it): the sleeve
