@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.259
+
+- The playlist results under Discover's "Find a playlist" are seated like the rows in your own playlists now — they light up under the pointer and no longer sit flush against the edge
+
 ## 0.3.258
 
 - Your four big library cards lead with their song count now, by default. The look picker in Settings › Appearance is pared to three: Numbers first, Blurred real art — your own sleeves softened into a field of the card's colours — and Chrome, metal tinted to each card
