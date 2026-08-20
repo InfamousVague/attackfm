@@ -69,6 +69,36 @@ function notesFor(v) {
   return out.join('\n');
 }
 
+/**
+ * What the registry is serving right now, or null if it cannot be asked.
+ *
+ * The LIVE number, deliberately - not main's package.json, not this tree's.
+ * See the guard below for why that distinction is the whole point.
+ */
+async function liveVersion() {
+  try {
+    const res = await fetch('https://registry.attack.fm/v1/app/bundle', {
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    const v = (await res.json())?.version;
+    return typeof v === 'string' ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** -1, 0 or 1, comparing dotted numeric versions. */
+function cmpVersion(a, b) {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d < 0 ? -1 : 1;
+  }
+  return 0;
+}
+
 const rs = readFileSync(join(ROOT, 'src-tauri/src/bundle.rs'), 'utf8');
 const native = Number(rs.match(/NATIVE_GENERATION:\s*u32\s*=\s*(\d+)/)?.[1]);
 if (!Number.isFinite(native)) die('could not read NATIVE_GENERATION from bundle.rs');
@@ -86,6 +116,44 @@ if (notes) {
     `    (A silent update is nearly always a mistake - 0.3.42 went out that way.)`,
   );
 }
+/*
+ * NEVER PUBLISH AT OR BELOW WHAT IS ALREADY LIVE.
+ *
+ * The version this script ships is derived from package.json, and package.json
+ * is a file nobody is obliged to push. Twice in a row a session shipped and
+ * never committed the Release bump, so main sat two versions behind the
+ * registry - and the next session to rebase onto main inherited a stale number,
+ * bumped it, and published UNDER what was already out. A device on the newer
+ * bundle is then told to go backwards, and the notes it carries belong to
+ * whoever last used that number.
+ *
+ * "Rebase onto main first" does not catch this, because main is exactly the
+ * thing that was wrong. The registry is the only source that knows what devices
+ * can actually see, so that is what this compares against.
+ *
+ * Both numbers are printed on every run, not only on refusal: a check that is
+ * silent when healthy teaches nobody what it compares, and the person who hits
+ * it at 3am wants to see the pair rather than just the verdict.
+ *
+ * An unreachable registry does NOT block the ship - the publish itself would
+ * fail moments later anyway, and refusing here would turn a network blip into
+ * a release freeze. It says so out loud instead.
+ */
+const live = await liveVersion();
+if (live === null) {
+  console.log(`    version  ${version} (registry unreachable — publishing unguarded)`);
+} else {
+  console.log(`    version  ${version}   ·   registry has ${live}`);
+  if (cmpVersion(version, live) <= 0) {
+    die(
+      `refusing to publish ${version}: the registry already serves ${live}.\n` +
+        `    package.json here says ${pkg.version}, which is behind what is live —\n` +
+        `    somebody shipped without pushing their Release bump. Set the version\n` +
+        `    above ${live} and add a matching CHANGELOG section, then ship again.`,
+    );
+  }
+}
+
 if (DRY) { ok('dry run — nothing built, nothing published'); process.exit(0); }
 
 if (!KEEP) {
