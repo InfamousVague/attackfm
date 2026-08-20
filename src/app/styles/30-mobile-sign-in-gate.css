@@ -250,3 +250,17 @@
   box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.25);
 }
 
+/* --- Brutalist front door -------------------------------------------------
+   The generated sign-in backdrop replaces the blurred cover wall. It is
+   background-matched to #0A0A0B (no seam), bright up top and calm at the
+   bottom; the darkening gradient keeps the form legible over it. */
+.loginGate {
+  background:
+    linear-gradient(180deg, rgba(10, 10, 11, 0) 40%, #0a0a0b 90%),
+    url('../../assets/art/signin-backdrop.webp') center top / cover no-repeat,
+    #0a0a0b;
+}
+.artWall {
+  display: none;
+}
+
