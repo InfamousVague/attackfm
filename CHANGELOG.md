@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.253
+
+- Your library's four big cards can wear one of six looks now. Settings › Appearance › Card style: the printed halftone they have always been, plus editorial, embossed, frosted glass, neon wire and die-cut sticker. Still tucked behind seven taps on the wordmark in About, if that is how you found it
+
 ## 0.3.252
 
 - Adding a song from Discover can send it straight to your liked songs or a playlist. It downloads, files itself where you asked, and the app opens that list when it lands
