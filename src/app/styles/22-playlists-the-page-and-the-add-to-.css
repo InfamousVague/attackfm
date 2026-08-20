@@ -71,85 +71,80 @@
   mask-composite: intersect;
 }
 
-.coverWall__strip {
-  /*
-   * The sleeve size, set explicitly.
-   *
-   * It was `block-size: 100%` + `aspect-ratio: 1` on the images, leaving the
-   * grid to work the rest out. Measured, that gave 200px covers in a 98px row
-   * - the rows and the max-content width define each other, and the images
-   * won. An explicit cell is not a workaround for that, it is the honest way
-   * to say what this wants: a fixed sleeve, however tall the header is.
-   */
-  --wallCover: 5rem;
+/*
+ * The slab of covers, tilted off-square (the sign-in wall's own trick, see
+ * servers/ArtWall). The tilt plus the columns' vertical drift below is what
+ * reads as a diagonal - Matt's "45deg x/y" is the LOOK of a rotated slab
+ * scrolling, not a 45deg translate.
+ *
+ * Oversized on every side: a rotated rectangle has to be bigger than its own
+ * bounding box or its corners come up empty inside the frame that clips it.
+ * More vertically than horizontally - the columns have to be tall enough to
+ * scroll anyway, and every extra pixel of WIDTH just makes the sleeves bigger.
+ */
+.coverWall__slab {
   position: absolute;
-  /* Hung above and to the leading side of the frame, which clips - so the
-     blur's soft edge falls outside the visible box rather than drawing a pale
-     band along the top. */
-  inset-block: -1.25rem;
-  inset-inline-start: -1.25rem;
-  /*
-   * Two rows, filled COLUMN-first.
-   *
-   * One row of full-height sleeves fits three or four across a phone, which
-   * reads as a couple of big blurry squares rather than a wall. Halving them
-   * doubles the count and it becomes what it is meant to be.
-   *
-   * `grid-auto-flow: column` is doing real work: it is the only fill order
-   * that is deterministic here. A wrapping flex row breaks wherever the width
-   * happens to run out, so the second copy would not line up under the first
-   * and -50% would jump. Filling column-first with an EVEN number of items
-   * puts the duplicate exactly half the columns along, whatever the width.
-   */
-  display: grid;
-  grid-auto-flow: column;
-  /* FOUR rows, sized to fill the header rather than to a fixed height. Two
-     rows of a fixed 5rem could not grow with the header - making the header
-     taller just added black below the wall, because the strip's height was
-     the row count times the cover size and nothing else. Rows share the
-     frame's height now, so the wall is always as tall as the header is; only
-     the COLUMN stays a fixed sleeve width. Cells stop being exactly square,
-     which object-fit absorbs. */
-  grid-template-rows: repeat(4, 1fr);
-  grid-auto-columns: var(--wallCover);
-  inline-size: max-content;
-  /* Blurred and dimmed, but only as far as it can go and still be SLEEVES.
-     The first pass sat at blur 13 / brightness 0.44 and the wall read as
-     mottling - a texture, not the records in the list, which is the whole
-     point of putting them there. The mask does the legibility work behind the
-     title now, so this only has to keep the covers off the type's contrast. */
-  filter: blur(5px) saturate(1.45) brightness(0.62);
-  animation: coverWallDrift 78s linear infinite;
-  /* One promoted layer, moved by the compositor. Named explicitly because the
-     browser cannot infer it from an animation this slow. */
-  will-change: transform;
+  inset: -55% -22%;
+  display: flex;
+  gap: 0;
+  /* Columns take their CONTENT height, not the slab's - stretched to the slab
+     they would be one height while their images summed to another, and the
+     -50% travel (of the box) would no longer land on the duplicate (of the
+     images). Content-height + no gap makes -50% exactly the seam. */
+  align-items: flex-start;
+  transform: rotate(-18deg);
+  transform-origin: center;
+  /* Less blur than the 5px it wore (Matt asked): the sleeves read as records
+     now, not mottling. The mask on .coverWall is what holds the title legible
+     over them, not this - so this only takes the hard edges off. */
+  filter: blur(2.5px) saturate(1.4) brightness(0.6);
 }
 
-.coverWall__strip img {
+.coverWall__col {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  flex: 1 1 0;
+  min-inline-size: 0;
+  /* One promoted layer per column, moved by the compositor. */
+  will-change: transform;
+  animation: coverWallUp var(--wall-dur, 60s) linear infinite;
+}
+
+/* Half the columns run the other way, so the wall drifts rather than marches. */
+.coverWall__col[data-dir='down'] {
+  animation-name: coverWallDown;
+}
+
+.coverWall__col img {
   inline-size: 100%;
-  block-size: 100%;
+  aspect-ratio: 1;
   object-fit: cover;
-  /* No lazy fade here: the wall has no loading state and a cover popping in at
-     full opacity behind a blur is invisible anyway. */
+  display: block;
 }
 
 /*
- * Exactly -50%: the strip carries its covers twice, so at half its own width
- * the second copy stands where the first began and the wrap is not visible.
- * Any other distance needs the strip measured, which would put JavaScript in
- * a loop that currently has none.
+ * Each column carries its covers twice and travels exactly half its own
+ * height, so the second copy arrives where the first began and the loop has no
+ * seam. One 1-D seam per column now, four of them, rather than the strip's one
+ * across - which is why the cover count no longer has to divide by anything.
  */
-@keyframes coverWallDrift {
+@keyframes coverWallUp {
+  to {
+    transform: translateY(-50%);
+  }
+}
+@keyframes coverWallDown {
   from {
-    transform: translate3d(0, 0, 0);
+    transform: translateY(-50%);
   }
   to {
-    transform: translate3d(-50%, 0, 0);
+    transform: translateY(0);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .coverWall__strip {
+  .coverWall__col {
     animation: none;
     /* The covers are the point; standing still they are still a wall. */
   }
