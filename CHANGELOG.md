@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.256
+
+- The app looks for an update as it opens now, installs it, and starts on the new version — instead of interrupting you twenty seconds later with a banner. If anything is slow or offline it opens as normal
+
 ## 0.3.255
 
 - A fresh set of six looks for the library cards, in Settings › Appearance. Real covers builds each door out of your own sleeves; Numbers first leads with the count; and there's Midnight, Risograph, Chrome and the classic Duotone alongside them
