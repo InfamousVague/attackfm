@@ -238,8 +238,17 @@
      `isolation: isolate`, so anything spilling out of it paints OVER the
      static rows below, and blurred covers would land on the first two tracks.
      Padding keeps the wall inside its own box, which is the only place it can
-     be both taller and behind everything. */
-  padding-block-end: 2rem;
+     be both taller and behind everything.
+
+     8.25rem, up from 2rem: Matt asked for a third more backdrop, and the wall
+     is exactly as tall as this header, so a third more header is a third more
+     wall. Measured 306px before and 406px after, which is the +33% asked for
+     to within a pixel. It goes on the BOTTOM because the top is already at the
+     screen's edge - there is no room to grow upward, only downward into the
+     space above the first song. The header's content stays where it was; what
+     grows is the band of covers beneath it, which the mask dissolves into the
+     list. */
+  padding-block-end: 8.25rem;
   margin-inline: calc(-1 * var(--glacier-space-4));
   padding-inline: var(--glacier-space-4);
   /* Bottom-aligned, not centred (the phone media query centres it): the sleeve
@@ -299,35 +308,18 @@
 }
 
 /*
- * The bar is GLASS over the wall - back to it, on Matt's second thought.
+ * The bar is SOLID over the wall.
  *
- * It was glass in 0.3.271, solid in 0.3.272, and glass again here, so the
- * reason it works now and did not then is the part worth writing down: the
- * wall changed underneath it. In 0.3.271 the bar was `--glacier-glass-thin`
- * over a five-pixel blur, which is a faint sheet over an already-vague field -
- * the controls had nothing to sit on. The wall is a fifth of that blur now
- * (2.5px, 0.3.273) and full height, so there is a real picture up there, and a
- * glass bar has something to be glass OVER instead of just being dimmer black.
+ * This bar has now been solid, glass, solid, glass and solid again, so rather
+ * than re-argue it each time: the covers run up behind it either way, and the
+ * only question is whether they show THROUGH it. Matt's settled answer is no.
+ * The chrome stays a fixed black edge and the sleeves pass under it.
  *
- * Two things carry the legibility, and the second is the one that matters:
- *
- *   - `-regular` rather than `-thin`: about 0.6 alpha, a ground you can read a
- *     wordmark on, without the 0.88 of `-thick` which is opaque enough that
- *     nothing shows through and the glass is a lie.
- *
- *   - The backdrop blur. This is what makes glass work over SHARP covers: the
- *     bar blurs what is behind it, so the sleeves soften as they pass under
- *     the chrome regardless of how crisp they are in the open. Turning the
- *     wall's own blur down did not make the bar harder to read, because the
- *     bar does its own.
- *
- * Scoped to `:has(.coverWall)`, so every other page keeps a bar with no
- * background at all - it has never needed one, the app's ground is behind it.
+ * `.mobileHeader` declares no background of its own anywhere else - the app's
+ * ground is behind it - so this rule exists only because the wall arrives.
  */
 .appWindow:has(.coverWall) .mobileHeader {
-  background: var(--glacier-glass-regular);
-  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  background: var(--glacier-bg);
 }
 
 /*
