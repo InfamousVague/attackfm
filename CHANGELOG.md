@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.251
+
+- The Stems tab has levels now, not just on and off. Slide a part — vocals, drums, bass — anywhere between full and gone, so a vocal can sit faint under the rest instead of dropping out entirely
+
 ## 0.3.250
 
 - On a wide screen with the player docked beside your library, drag the player down while nothing is playing and the library takes the whole width back. It returns the moment you play something
