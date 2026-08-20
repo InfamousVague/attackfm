@@ -73,6 +73,10 @@ export function ArtChip({
       <span
         className="statsArtChip__art"
         data-shape={shape}
+        /* A hue is only passed for a piece from the generated set, so it is
+           also the signal that this picture is a black-ground cut-out and has
+           to be screened rather than drawn flat - see StatsPage.css. */
+        data-object={hue != null || undefined}
         style={hue != null ? ({ '--chip-hue': String(hue) } as React.CSSProperties) : undefined}
         aria-hidden
       >

@@ -243,17 +243,20 @@
 }
 
 .searchGenre[data-cutout] .searchGenre__objectArt {
-  /* The box is TALLER than the tile and hangs off both edges of it, which looks
-     wrong written down and is the only way to get the object to a readable
-     size. `contain` fits the whole 1024 square, and these pieces are drawn
-     centred inside generous margin - so a box the size of the tile renders an
-     object about half the height of the tile, floating in its own padding.
-     Oversizing the box spends that margin instead of the object. Pushed
-     further (a box ~170% tall) the taller pieces start losing their ends, so
-     this is the size just short of that. */
-  inset: -20% -4% -20% auto;
-  inline-size: 60%;
-  block-size: 140%;
+  /* The box sits INSIDE the tile now and the objects are still much bigger,
+     because the fix was in the files rather than here. They arrived drawn
+     centred inside generous margin on a 1024 square - which is exactly what
+     was asked for, and it costs twice over on a tile this shape: `contain`
+     fits the whole square, a square in a wide tile is limited by the tile's
+     height, and then the object only occupies part of that square. The margin
+     is trimmed off on the way in now and each piece keeps its NATURAL aspect,
+     so a tall object is limited by the tile's height and a wide one by its
+     width, and either way it is the object that fills the box rather than its
+     own padding. Oversizing the box was the previous answer and it worked by
+     cropping the taller pieces. */
+  inset: 2% 2% 2% auto;
+  inline-size: 58%;
+  block-size: 96%;
   object-fit: contain;
   mix-blend-mode: screen;
   /* DIMMED, not brightened - which is the opposite of what the chips do and the
