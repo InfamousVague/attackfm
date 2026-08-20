@@ -22,6 +22,7 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { useNowPlayingMotion } from '../player/nowPlayingMotion.tsx';
 import { fetchDj, trackIdFromPath } from '../server.ts';
+import { LibChipMosaic, LibChipStat } from '../library/LibChipFace.tsx';
 import type { Track } from '../core/tauri.ts';
 import djMascot from '../../assets/dj-mascot.webp';
 
@@ -214,12 +215,17 @@ export function DjLauncher({
         type="button"
         variant="gradient"
         className="libChip libChip--dj"
-        style={{ '--libChipHue': 265, '--libChipHue2': 315 } as CSSProperties}
+        style={{ '--libChipHue': 265, '--libChipHue2': 315, '--art': `url("${djMascot}")` } as CSSProperties}
         onClick={() => void start()}
         disabled={busy}
         aria-label="Start the DJ"
       >
         <img className="libChip__art" src={djMascot} alt="" loading="lazy" />
+        {/* The DJ has no fixed collection - it wears the whole library's
+            sleeves for Real covers, and an infinity for Numbers first, because
+            the set it spins is never the same twice. */}
+        <LibChipMosaic covers={tracks.map((t) => t.artwork).filter((a): a is string => !!a)} />
+        <LibChipStat value="∞" />
         <span className="libChip__name">DJ</span>
         <span className="libChip__count">
           {busy ? <Spinner size="sm" aria-label="Cueing" /> : 'A live set, from your taste'}

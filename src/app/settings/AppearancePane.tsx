@@ -95,7 +95,10 @@ export function Appearance() {
         {/* The four library doors, dressed six ways. The same six the card lab
             offers - this is the plain door to it, for people who are never
             going to knock seven times on the wordmark. */}
-        <CardStyleSection count={tracks.length} />
+        <CardStyleSection
+          count={tracks.length}
+          covers={tracks.map((t) => t.artwork).filter((a): a is string => !!a)}
+        />
       </div>
       <div className="prefsSection">
         <Label>Size</Label>

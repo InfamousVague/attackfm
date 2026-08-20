@@ -1,6 +1,7 @@
 import { Text } from '@glacier/react';
 import type { CSSProperties } from 'react';
 import { CARD_STYLES, setCardStyle, useCardStyle } from './cardStyle.ts';
+import { LibChipMosaic, LibChipStat } from '../library/LibChipFace.tsx';
 import allSongsChip from '../../assets/chip-all-songs.webp';
 
 /**
@@ -19,7 +20,7 @@ import allSongsChip from '../../assets/chip-all-songs.webp';
  * carries it, because its object is a plain chrome one and every style has to
  * do something visible to it.
  */
-export function CardStylePicker({ count }: { count?: number }) {
+export function CardStylePicker({ count, covers = [] }: { count?: number; covers?: string[] }) {
   const chosen = useCardStyle();
 
   return (
@@ -39,8 +40,17 @@ export function CardStylePicker({ count }: { count?: number }) {
           {/* aria-hidden: the button is already named by the label below it,
               and a screen reader has nothing to gain from "All songs" read out
               six times in a row. */}
-          <span className="libChip libChip--all" style={{ '--libChipHue': 214 } as CSSProperties} aria-hidden="true">
+          <span
+            className="libChip libChip--all"
+            style={{ '--libChipHue': 214, '--art': `url("${allSongsChip}")` } as CSSProperties}
+            aria-hidden="true"
+          >
             <img className="libChip__art" src={allSongsChip} alt="" loading="lazy" />
+            {/* Only the mosaic preview forces its grid to mount, so the other
+                five tiles do not each fetch nine hidden sleeves. The stat bone
+                is cheap text and rides along on every preview. */}
+            <LibChipMosaic covers={covers} force={style.id === 'mosaic'} />
+            <LibChipStat value={String(count ?? 0)} />
             <span className="libChip__name">All songs</span>
             <span className="libChip__count">{count ?? 0} songs</span>
           </span>
@@ -52,13 +62,13 @@ export function CardStylePicker({ count }: { count?: number }) {
 }
 
 /** The picker with its heading and the chosen style's own description. */
-export function CardStyleSection({ count }: { count?: number }) {
+export function CardStyleSection({ count, covers }: { count?: number; covers?: string[] }) {
   const chosen = useCardStyle();
   const note = CARD_STYLES.find((s) => s.id === chosen)?.note;
 
   return (
     <>
-      <CardStylePicker count={count} />
+      <CardStylePicker count={count} covers={covers} />
       <Text tone="muted" size="sm">
         {note}
       </Text>
