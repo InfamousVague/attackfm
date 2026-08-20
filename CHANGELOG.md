@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.272
+
+- A collection's cover wall is twice as tall now: it fills the whole header, running behind the Play and Shuffle buttons and down to the first song
+- The top bar is solid black again rather than glass, and picks up a shadow as you scroll under it
+
 ## 0.3.271
 
 - The album covers behind a collection's title now really do run up behind the top bar, which turns to glass over them. They were stopping in a band underneath it
