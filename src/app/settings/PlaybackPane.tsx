@@ -2,7 +2,13 @@ import { Field, Label, SegmentedControl, Select, Slider, Switch, Text } from '@g
 import { useEffect, useState } from 'react';
 import { fireNativeHaptic, setHapticsPref, useHapticsPref } from '../core/haptics.ts';
 import { usePlayback, type SleepTimer } from '../player/playback.tsx';
-import { nowPlayingVideoEnabled, setNowPlayingVideo } from './behaviourPrefs.ts';
+import {
+  motionGesturesEnabled,
+  nowPlayingVideoEnabled,
+  setMotionGestures,
+  setNowPlayingVideo,
+} from './behaviourPrefs.ts';
+import { askMotionAccess, motionAvailable } from '../player/deviceMotion.ts';
 import {
   loudnessCoverage,
   setLoudnessMode,
@@ -48,6 +54,7 @@ function SleepCountdown({ sleep }: { sleep: SleepTimer }) {
  * player reads, so every control here takes effect mid-song.
  */
 export function PlaybackSettings() {
+  const [motion, setMotion] = useState(motionGesturesEnabled);
   const pb = usePlayback();
   const [video, setVideo] = useState(nowPlayingVideoEnabled);
   const hapticsOn = useHapticsPref();
@@ -178,6 +185,35 @@ export function PlaybackSettings() {
           checked={pb.autoDj}
           onCheckedChange={(on) => pb.update({ autoDj: on })}
         />
+        {motionAvailable() && (
+          <>
+            <Switch
+              label="Shake and flick"
+              checked={motion}
+              onCheckedChange={(on) => {
+                // iOS only grants motion access from inside a real gesture, and
+                // this switch IS one - asking anywhere else is refused with no
+                // prompt shown, which reads as the switch not working.
+                if (on) {
+                  void askMotionAccess().then((ok: boolean) => {
+                    if (!ok) {
+                      setMotionGestures(false);
+                      setMotion(false);
+                    }
+                  });
+                }
+                setMotionGestures(on);
+                setMotion(on);
+              }}
+            />
+            <Text tone="muted" size="sm">
+              On the Now Playing screen: shake to change shuffle, flick left or right to move
+              between songs. Off by default because a gesture that misreads costs you the song you
+              were listening to — walking, running and a pocket are all ignored, but a phone that
+              lives in a bag may still find a way.
+            </Text>
+          </>
+        )}
         <Text tone="muted" size="sm">
           When the queue runs out, keeps playing similar songs from the library instead of stopping.
         </Text>

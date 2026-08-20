@@ -172,3 +172,24 @@ export function nowPlayingVideoEnabled(): boolean {
 export function setNowPlayingVideo(value: boolean): void {
   set(CANVAS_KEY, value, true);
 }
+
+/**
+ * Shake and flick on the Now Playing screen.
+ *
+ * OFF by default, unlike everything else here, and the reason is the failure
+ * mode rather than the feature. A switch that costs battery can be left on by
+ * someone who never notices; a gesture that misfires skips the song they were
+ * listening to, and they will not connect it to a setting they never turned on.
+ * So this one is asked for.
+ *
+ * The tilt that moves the artwork a few pixels is NOT behind this. It cannot
+ * misfire - the worst it can do is move something slightly - and it already
+ * stops for anyone who has asked their system to stop animations.
+ */
+export function motionGesturesEnabled(): boolean {
+  return on('attackfm-motion-gestures', false);
+}
+
+export function setMotionGestures(value: boolean): void {
+  set('attackfm-motion-gestures', value, false);
+}
