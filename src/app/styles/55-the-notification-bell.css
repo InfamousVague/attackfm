@@ -90,11 +90,22 @@
 .notifyPopoverPanel {
   max-inline-size: min(24rem, calc(100vw - 2rem));
   max-block-size: min(70dvh, 34rem);
-  background: color-mix(in srgb, var(--glacier-bg) 98%, transparent);
-  backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
+  /* The kit's own glass, not a near-solid pane wearing a blur.
+     This was `color-mix(in srgb, var(--glacier-bg) 98%, transparent)` - two per
+     cent of transparency, which is nothing to see through, so the
+     backdrop-filter underneath it had no work to do and the panel landed as a
+     flat block beside every other floating surface in the app. The token is
+     0.6 alpha and is what makes the blur visible. Regular rather than thick,
+     for the same reason the lyrics panel picks regular: thick is 0.85 and
+     reads as the opaque thing this is not.
+     The file already used --glacier-glass-regular twice further down, so this
+     was inconsistent with itself as well as with the kit. */
+  background: var(--glacier-glass-regular);
+  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
   border: var(--glacier-hairline) solid var(--glacier-glass-border);
-  box-shadow: var(--glacier-shadow-3);
+  border-radius: var(--glacier-radius-lg);
+  box-shadow: var(--glacier-shadow-5);
   overflow-y: auto;
   overscroll-behavior: contain;
   /* Say plainly that a vertical drag here is a scroll, so the touch is never
