@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.269
+
+- Liked, All songs, On repeat and your playlists open on their cover wall running edge to edge and up behind the top bar now, rather than boxed into a card floating in the middle of the page
+
 ## 0.3.268
 
 - Adding a song you already own to a playlist no longer sits there saying it is downloading. The app knows the difference between "added", "you already had it" and "that did not work"

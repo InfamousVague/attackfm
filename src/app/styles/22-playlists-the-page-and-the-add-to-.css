@@ -198,10 +198,73 @@
 .homePage.songPage {
   gap: var(--glacier-space-3);
 }
-.songPageHead {
-  /* .homePage already insets the page; the header lines up with the shelves'
-     edge rather than padding again, while .librarySongs below bleeds out. */
+/*
+ * The header, edge to edge - not a card floating in the page's margins.
+ *
+ * The cover wall reads as a card only because the page insets it: space-4 down
+ * both sides, space-5 of gap above it, and its own rounded corners. Pulled out
+ * to the window on every side, and up to the top of the scroll where it meets
+ * the title bar, it becomes a BAND the collection sits in rather than a tile
+ * sitting on the page - which is the "in a card, looks silly" this fixes.
+ *
+ * Negative margins do the bleed; the content pads itself back to where every
+ * other row on the page lines up, so only the WALL and its ground reach the
+ * edges - the title, art and buttons keep their column. The header is
+ * `align-items: flex-end`, so the extra height added at the top is all wall
+ * above the title: the band grows UP toward the bar and the title stays put on
+ * its masked ground, no re-tune needed.
+ *
+ * `.songPage`/`.playlistPage` both wear it; Recent and Mix ride the same
+ * `.playlistHead`.
+ *
+ * Gated on `:has(.coverWall)`: CoverWall renders nothing below three distinct
+ * sleeves, and a header with no wall behind it wants none of this - the tall
+ * top and the slide behind the bar would just be empty dark space over a title.
+ * A thin collection keeps the plain inset header it always had (below).
+ */
+.songPageHead:not(:has(.coverWall)),
+.playlistPage .playlistHead:not(:has(.coverWall)) {
   padding-inline: 0;
+}
+.songPageHead:has(.coverWall),
+.playlistPage .playlistHead:has(.coverWall) {
+  margin-inline: calc(-1 * var(--glacier-space-4));
+  padding-inline: var(--glacier-space-4);
+  /* Up past the top of the scroll and BEHIND the title bar: the band runs
+     under the glass, which blurs the covers rather than a dark strip sitting
+     on top of them. The header pads its title clear of the bar so nothing it
+     SAYS lands under the chrome - only the wall does. --app-header-height is
+     the measured bar (its fallback rebuilds it from the safe area, which is
+     valid here because this rule is inside .appWindow where it is declared;
+     env() is the belt-and-braces for anything portalled out). */
+  --spot-bar: var(--app-header-height, calc(var(--app-safe-top, env(safe-area-inset-top, 0px)) + 3.25rem));
+  /* Up to the top of the scroll (which the page below has slid behind the bar),
+     so the wall's top edge is the screen's top edge. */
+  margin-block-start: calc(-1 * var(--glacier-space-5));
+  /* Tall enough that the title, pinned to the header's bottom, clears the bar:
+     all this top space is wall, running up behind the glass. */
+  padding-block-start: calc(var(--spot-bar) + var(--glacier-space-4));
+}
+
+/*
+ * The collection page slides up behind the title bar so the wall runs under
+ * the glass instead of stopping at a dark strip. Only these two pages: they
+ * are the ones whose first child is a full-bleed header built to sit behind
+ * the bar. The bar is `position: relative; z-index: 1`, so it stays painted
+ * over the page the negative margin tucks beneath it, and its backdrop blur
+ * gets the covers to work with.
+ */
+.homePage.songPage:has(.coverWall),
+.homePage.playlistPage:has(.coverWall) {
+  margin-block-start: calc(
+    -1 * var(--app-header-height, calc(var(--app-safe-top, env(safe-area-inset-top, 0px)) + 3.25rem))
+  );
+}
+/* A band meets the window square; only a tile inset from it wants rounded
+   corners. The bottom still dissolves into the rows through the wall's mask. */
+.songPageHead .coverWall,
+.playlistPage .playlistHead .coverWall {
+  border-radius: 0;
 }
 /* The hero cover: painted art filling the 8rem squircle, on a dark ground its
    own margins sit against. */
@@ -230,11 +293,8 @@
   gap: var(--glacier-space-3);
 }
 
-/* .homePage already insets the page; the hero lines up with the rows rather
-   than padding a second time. */
-.playlistPage .playlistHead {
-  padding-inline: 0;
-}
+/* The playlist header's edge-to-edge treatment is shared with the song page's,
+   defined once above (.songPageHead, .playlistPage .playlistHead). */
 
 /* No longer a scroller - just the rows, and the bottom breathing room the
    ScrollArea used to carry. */
