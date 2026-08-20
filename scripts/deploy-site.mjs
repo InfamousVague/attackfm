@@ -136,7 +136,9 @@ ssh(
    # of this same tree, and --delete would take it with every site publish -
    # attack.fm/listen would 404 until someone noticed and republished it. The
    # two trees share a document root but not a release clock.
-   sudo rsync -a --delete --exclude 'listen' --exclude 'listen/**' --exclude 'art' --exclude 'art/**' ${STAGE}/ ${REMOTE}/
+   # deadcatbounce is the same arrangement: a separate game, published by its
+   # own repo's scripts/deploy.mjs, sharing only this document root.
+   sudo rsync -a --delete --exclude 'listen' --exclude 'listen/**' --exclude 'art' --exclude 'art/**' --exclude 'deadcatbounce' --exclude 'deadcatbounce/**' ${STAGE}/ ${REMOTE}/
    sudo chown -R root:root ${REMOTE}
    # Caddy runs as its own user and only needs to read.
    sudo find ${REMOTE} -type d -exec chmod 755 {} +

@@ -9,6 +9,7 @@ import { PluginFence, usePlugins } from '../../plugins/runtime.tsx';
 import type { PluginPlaylistTile } from '../../plugins/types.ts';
 import { playlistPlayedAt, notePlaylistPlayed } from './playlistRecency.ts';
 import { openMix } from '../nav/openMix.ts';
+import { LibChipMosaic, LibChipStat } from '../library/LibChipFace.tsx';
 // The objects made for these four tiles. Their own colours are not used: each
 // is tinted to its card's hue in CSS, so the four read as one set rather than
 // four photographs that happen to sit together.
@@ -157,6 +158,19 @@ export function PlaylistShowcase({
   // is gone simply does not render, and comes back if the file does.
   const byPath = useMemo(() => new Map(tracks.map((t) => [t.path, t] as const)), [tracks]);
 
+  // Real sleeves for the two whole-library doors, for the Real covers style.
+  // On repeat has no list of its own here, so it wears the library's own
+  // covers - a window on the whole shelf, which is what "most played" is a
+  // slice of anyway.
+  const likedCovers = useMemo(
+    () => favoriteTracks.map((t) => t.artwork).filter((a): a is string => !!a),
+    [favoriteTracks],
+  );
+  const allCovers = useMemo(
+    () => tracks.map((t) => t.artwork).filter((a): a is string => !!a),
+    [tracks],
+  );
+
   // Nothing in this strip opens a modal any more. Recent was the last one, and
   // it opens as a full page like Liked and All songs - the three are the same
   // kind of thing (a window on the whole library, in a fixed order, with
@@ -196,20 +210,24 @@ export function PlaylistShowcase({
           <button
             type="button"
             className="libChip libChip--liked"
-            style={{ '--libChipHue': 338, '--libChipHue2': 300 } as CSSProperties}
+            style={{ '--libChipHue': 338, '--libChipHue2': 300, '--art': `url("${likedChip}")` } as CSSProperties}
             onClick={() => onOpenSongs('liked')}
           >
             <img className="libChip__art" src={likedChip} alt="" loading="lazy" />
+            <LibChipMosaic covers={likedCovers} />
+            <LibChipStat value={String(favoriteTracks.length)} />
             <span className="libChip__name">Liked</span>
             <span className="libChip__count">{songCount(favoriteTracks.length)}</span>
           </button>
           <button
             type="button"
             className="libChip libChip--all"
-            style={{ '--libChipHue': 214, '--libChipHue2': 262 } as CSSProperties}
+            style={{ '--libChipHue': 214, '--libChipHue2': 262, '--art': `url("${allSongsChip}")` } as CSSProperties}
             onClick={() => onOpenSongs('all')}
           >
             <img className="libChip__art" src={allSongsChip} alt="" loading="lazy" />
+            <LibChipMosaic covers={allCovers} />
+            <LibChipStat value={String(tracks.length)} />
             <span className="libChip__name">All songs</span>
             <span className="libChip__count">{songCount(tracks.length)}</span>
           </button>
@@ -219,10 +237,11 @@ export function PlaylistShowcase({
           <button
             type="button"
             className="libChip libChip--repeat"
-            style={{ '--libChipHue': 145, '--libChipHue2': 190 } as CSSProperties}
+            style={{ '--libChipHue': 145, '--libChipHue2': 190, '--art': `url("${onRepeatChip}")` } as CSSProperties}
             onClick={() => onOpenSongs('onrepeat')}
           >
             <img className="libChip__art" src={onRepeatChip} alt="" loading="lazy" />
+            <LibChipMosaic covers={allCovers} />
             <span className="libChip__name">On repeat</span>
             <span className="libChip__count">Your most played</span>
           </button>

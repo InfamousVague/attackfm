@@ -2,14 +2,17 @@
 
 /*
  * Five alternative dressings for the four library doors, plus the shipped one
- * which is simply the absence of all of these.
+ * (Duotone halftone) which is simply the absence of all of these.
  *
  * Ported from the card lab (chapter 60), which holds thirty-six directions on
- * its own markup. What makes one shippable is mechanical rather than a matter
- * of taste: it has to work on the REAL card's DOM - a picture, a name, a count
- * and two pseudo-elements - with no element added for its benefit. The lab is
- * allowed extra bones because it is comparing ideas; a setting is not, because
- * every card in the app has to be able to wear it.
+ * its own markup. Two of these six only re-treat the object and so wear the
+ * card's existing bones - a picture, a name, a count and two pseudo-elements:
+ * Duotone (the shipped look) and Risograph. The other three needed the real
+ * card to grow a bone the lab drew for free - Numbers first wants the count on
+ * its own and large, Real covers wants a grid of the collection's own sleeves,
+ * and Midnight is a second halftone. Those bones now live in the card's markup
+ * (`.libChip__stat`, `.libChip__mosaic`), always present and hidden until the
+ * style that uses them is chosen.
  *
  * Three things about the shipped card decide the shape of everything below.
  *
@@ -21,9 +24,11 @@
  *
  * The two pseudo-elements are load-bearing. ::before is the dot screen and
  * ::after is the label's ground, and both are drawn in the card's own hue - so
- * a style that says "this card is graphite" or "this card is black" has to
- * turn them off, or it prints a coloured halftone over its own idea. They go
- * off once at the foot of this file rather than five times.
+ * a style that says "this card is black" has to turn them off or re-purpose
+ * them, or it prints a coloured halftone over its own idea. Each style below
+ * either overrides both (Midnight, Riso), overrides one (Mosaic keeps ::after
+ * as its wash, Chrome keeps ::before as its sweep), or turns them off (Numbers
+ * first). The offs are collected once at the foot of the styles.
  *
  * The object's tint is held in `--chipTint` rather than in `filter`, and these
  * styles set the PROPERTY, never the filter. The reason is the note in
@@ -53,196 +58,256 @@
  * imported last, so the tie the picker branch makes with it resolves here.
  */
 
-/* ---- Editorial: no picture, the name does the work ----------------------- */
-:root[data-card-style='editorial'] .libChip:not(.cardPick *),
-.cardPick[data-card-style='editorial'] .libChip {
-  justify-content: space-between;
-  background: var(--glacier-surface) !important;
-  border: var(--glacier-hairline) solid var(--glacier-border);
-  color: var(--glacier-text) !important;
-}
-:root[data-card-style='editorial'] .libChip__art:not(.cardPick *),
-.cardPick[data-card-style='editorial'] .libChip__art {
+/* ---- The two extra bones, hidden until their style asks for them ---------- */
+/* Duotone (default) and the object-only styles never touch these; the three
+   that do turn them on in their own block. Rendered on every door at all times
+   so switching style stays a change of stylesheet - the mosaic's images are the
+   one thing that mount lazily, gated in LibChipFace, because nine covers a door
+   is not free. */
+.libChip__mosaic,
+.libChip__stat {
   display: none;
 }
-:root[data-card-style='editorial'] .libChip__name:not(.cardPick *),
-.cardPick[data-card-style='editorial'] .libChip__name {
-  font-size: 1.375rem;
+.libChip__hole {
+  background: hsl(var(--libChipHue, 280) 24% 21%);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.07);
+}
+
+/* ---- Numbers first: the count is the card, the object a watermark --------- */
+:root[data-card-style='stat'] .libChip:not(.cardPick *),
+.cardPick[data-card-style='stat'] .libChip {
+  background: linear-gradient(
+    150deg,
+    hsl(var(--libChipHue, 280) 58% 30%),
+    hsl(calc(var(--libChipHue, 280) + 42) 52% 18%)
+  ) !important;
+}
+:root[data-card-style='stat'] .libChip__stat:not(.cardPick *),
+.cardPick[data-card-style='stat'] .libChip__stat {
+  display: block;
+  position: relative;
+  z-index: 4;
+  font-size: 2.4rem;
   font-weight: 800;
-  letter-spacing: -0.035em;
-  line-height: 1.02;
-  /* The shadow was for white type on a saturated field. There is no field. */
-  text-shadow: none;
-  text-wrap: balance;
+  line-height: 0.92;
+  letter-spacing: -0.045em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 0.4);
 }
-:root[data-card-style='editorial'] .libChip__count:not(.cardPick *),
-.cardPick[data-card-style='editorial'] .libChip__count {
-  padding-block-start: 0.5rem;
-  border-block-start: 2px solid hsl(var(--libChipHue, 280) 70% 55%);
-  font-size: 0.6875rem;
-  letter-spacing: 0.09em;
+/* The name becomes the small caption that leads the number rather than the
+   headline - order:-1 lifts it above the figure whatever the DOM order is. */
+:root[data-card-style='stat'] .libChip__name:not(.cardPick *),
+.cardPick[data-card-style='stat'] .libChip__name {
+  order: -1;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  opacity: 0.65;
+  opacity: 0.72;
+}
+:root[data-card-style='stat'] .libChip__count:not(.cardPick *),
+.cardPick[data-card-style='stat'] .libChip__count {
+  font-size: 0.68rem;
+  opacity: 0.6;
+}
+:root[data-card-style='stat'] .libChip__art:not(.cardPick *),
+.cardPick[data-card-style='stat'] .libChip__art {
+  --chipTint: grayscale(1) brightness(2);
+  mix-blend-mode: normal;
+  opacity: 0.16;
 }
 
-/* ---- Emboss: one graphite surface, the object pressed into it ------------ */
-:root[data-card-style='emboss'] .libChip:not(.cardPick *),
-.cardPick[data-card-style='emboss'] .libChip {
-  background: linear-gradient(160deg, #24252a, #17181c) !important;
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.06),
-    0 8px 20px -14px #000;
+/* ---- Real covers: the face is the collection itself ---------------------- */
+:root[data-card-style='mosaic'] .libChip:not(.cardPick *),
+.cardPick[data-card-style='mosaic'] .libChip {
+  background: #101014 !important;
 }
-:root[data-card-style='emboss'] .libChip__art:not(.cardPick *),
-.cardPick[data-card-style='emboss'] .libChip__art {
-  /* Graphite on graphite: the object is close to the colour of the card it is
-     in, and the hairline of light along its top edge is what says it is
-     there at all. */
-  --chipTint: grayscale(1) brightness(0.42) contrast(1.15)
-    drop-shadow(0 1px 0 rgb(255 255 255 / 0.13));
-  /* Screening a dark object onto a dark card would erase it - screen only ever
-     lightens, and this treatment works by the object being DARKER. */
-  mix-blend-mode: normal;
-  opacity: 0.9;
-}
-
-/* ---- Frosted glass: a panel of frost over a saturated field -------------- */
-:root[data-card-style='glass'] .libChip:not(.cardPick *),
-.cardPick[data-card-style='glass'] .libChip {
-  background:
-    radial-gradient(120% 90% at 20% 10%, hsl(var(--libChipHue, 280) 85% 58%), transparent 65%),
-    linear-gradient(
-      150deg,
-      hsl(calc(var(--libChipHue, 280) + 42) 70% 44%),
-      hsl(var(--libChipHue, 280) 60% 22%)
-    ) !important;
-}
-:root[data-card-style='glass'] .libChip__art:not(.cardPick *),
-.cardPick[data-card-style='glass'] .libChip__art {
-  /* Desaturated only. The blur is the FROST's job, and the object is behind
-     it - giving the object its own blur as well stacked two of them on one
-     thing, and the chrome objects went from out-of-focus to simply absent. */
-  --chipTint: saturate(0.75);
-  mix-blend-mode: normal;
-  opacity: 0.95;
-}
-/*
- * The frost.
- *
- * The lab draws this as its own element; here it is the label ground, taken
- * over rather than added to. That is the port rather than a shortcut: ::after
- * is already a full-bleed layer sitting above the object and below the words,
- * which is exactly where a sheet of frost goes - it only has to stop being a
- * gradient that starts 38% down and start being glass over the whole card.
- */
-:root[data-card-style='glass'] .libChip:not(.cardPick *)::after,
-.cardPick[data-card-style='glass'] .libChip::after {
+:root[data-card-style='mosaic'] .libChip__mosaic:not(.cardPick *),
+.cardPick[data-card-style='mosaic'] .libChip__mosaic {
+  display: grid;
+  position: absolute;
   inset: 0;
-  background: linear-gradient(160deg, rgb(255 255 255 / 0.16), rgb(255 255 255 / 0.03));
-  /* 3px, not the lab's 6. A card is a fifth the height of a lab tile and the
-     blur does not scale with it - at 6 the objects stopped being out of focus
-     and became stains, which is a different picture from the one this is. */
-  backdrop-filter: blur(3px) saturate(1.1);
-  -webkit-backdrop-filter: blur(3px) saturate(1.1);
+  z-index: 1;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 1px;
+  border-radius: inherit;
+  overflow: hidden;
+}
+:root[data-card-style='mosaic'] .libChip__mosaic img:not(.cardPick *),
+:root[data-card-style='mosaic'] .libChip__hole:not(.cardPick *),
+.cardPick[data-card-style='mosaic'] .libChip__mosaic img,
+.cardPick[data-card-style='mosaic'] .libChip__hole {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+:root[data-card-style='mosaic'] .libChip__art:not(.cardPick *),
+.cardPick[data-card-style='mosaic'] .libChip__art {
+  display: none;
+}
+/* The label's ground, taken over from the shipped ::after: a dark wash from the
+   foot so the name reads over whatever sleeves land under it. */
+:root[data-card-style='mosaic'] .libChip:not(.cardPick *)::after,
+.cardPick[data-card-style='mosaic'] .libChip::after {
+  inset: 0;
+  z-index: 2;
+  background: linear-gradient(
+    to top,
+    hsl(var(--libChipHue, 280) 45% 8% / 0.95) 12%,
+    hsl(var(--libChipHue, 280) 45% 8% / 0.35) 55%,
+    transparent
+  );
 }
 
-/* ---- Neon wire: near-black, the object as a glowing outline -------------- */
-:root[data-card-style='neon'] .libChip:not(.cardPick *),
-.cardPick[data-card-style='neon'] .libChip {
-  background: #0a0a0c !important;
-  border: 1px solid hsl(var(--libChipHue, 280) 80% 46% / 0.5);
-  box-shadow: inset 0 0 34px -12px hsl(var(--libChipHue, 280) 90% 55% / 0.55);
+/* ---- Midnight halftone: the shipped screen, printed hot on black --------- */
+:root[data-card-style='midnight'] .libChip:not(.cardPick *),
+.cardPick[data-card-style='midnight'] .libChip {
+  background: #08080b !important;
+  border: 1px solid hsl(var(--libChipHue, 280) 90% 50% / 0.32);
 }
-:root[data-card-style='neon'] .libChip__art:not(.cardPick *),
-.cardPick[data-card-style='neon'] .libChip__art {
-  /* The same opening move as the shipped tint - flatten to grey, then re-tint
-     from the 40 degrees sepia lands on - run far past it. Contrast at 9 throws
-     the midtones away, so what survives is the object's edge and nothing else.
-     The blend is left alone: a wire on black wants to ADD light, which is what
-     the shipped `screen` already does. */
-  --chipTint: grayscale(1) brightness(1.45) contrast(9) sepia(1)
-    hue-rotate(calc((var(--libChipHue, 280) - 40) * 1deg)) saturate(6)
-    drop-shadow(0 0 8px hsl(var(--libChipHue, 280) 95% 60% / 0.75));
-  opacity: 0.92;
-}
-
-/* ---- Die-cut sticker: flat colour, a keyline, set off square ------------- */
-:root[data-card-style='sticker'] .libChip:not(.cardPick *),
-.cardPick[data-card-style='sticker'] .libChip {
-  background: hsl(var(--libChipHue, 280) 72% 52%) !important;
-}
-:root[data-card-style='sticker'] .libChip__art:not(.cardPick *),
-.cardPick[data-card-style='sticker'] .libChip__art {
-  /* No tint at all: a sticker is a printed cutout of the thing, in the thing's
-     own colours. Four shadows make the keyline rather than an outline, because
-     an outline follows the BOX and a die cut follows the object. */
-  --chipTint: drop-shadow(1.5px 0 0 #fff) drop-shadow(-1.5px 0 0 #fff)
-    drop-shadow(0 1.5px 0 #fff) drop-shadow(0 -1.5px 0 #fff)
-    drop-shadow(3px 5px 4px rgb(0 0 0 / 0.35));
-  mix-blend-mode: normal;
+:root[data-card-style='midnight'] .libChip__art:not(.cardPick *),
+.cardPick[data-card-style='midnight'] .libChip__art {
+  --chipTint: grayscale(1) contrast(1.5) brightness(1.15) sepia(1)
+    hue-rotate(calc((var(--libChipHue, 280) - 40) * 1deg)) saturate(7);
+  mix-blend-mode: screen;
   opacity: 1;
 }
+/* The same 5px screen as the shipped card, dots in the card's own black so the
+   lit ink is eaten in a regular grid rather than knocked out in white. */
+:root[data-card-style='midnight'] .libChip:not(.cardPick *)::before,
+.cardPick[data-card-style='midnight'] .libChip::before {
+  opacity: 0.8;
+  background-image: radial-gradient(#08080b 37%, transparent 39%);
+  background-size: 5px 5px;
+}
+:root[data-card-style='midnight'] .libChip:not(.cardPick *)::after,
+.cardPick[data-card-style='midnight'] .libChip::after {
+  inset-block-start: 42%;
+  background: linear-gradient(to top, #08080b 20%, rgb(8 8 11 / 0.6) 58%, transparent);
+}
+:root[data-card-style='midnight'] .libChip__count:not(.cardPick *),
+.cardPick[data-card-style='midnight'] .libChip__count {
+  color: hsl(var(--libChipHue, 280) 92% 72%);
+  opacity: 1;
+}
+
+/* ---- Risograph: two inks, printed a few points out of register ----------- */
+:root[data-card-style='riso'] .libChip:not(.cardPick *),
+.cardPick[data-card-style='riso'] .libChip {
+  background: #efe9dc !important;
+}
+:root[data-card-style='riso'] .libChip__art:not(.cardPick *),
+.cardPick[data-card-style='riso'] .libChip__art {
+  --chipTint: grayscale(1) contrast(1.7) brightness(0.95) sepia(1)
+    hue-rotate(calc((var(--libChipHue, 280) - 40) * 1deg)) saturate(4.2);
+  mix-blend-mode: multiply;
+  opacity: 0.88;
+  z-index: 2;
+}
 /*
- * The words, on a card that has nothing behind them.
+ * The ghost, on ::before (which the shipped card spends on the dot screen).
  *
- * Every other style here either darkens the card under the label (the shipped
- * ::after) or is dark to begin with. Sticker is the one that is neither: flat
- * bright colour, with a full-strength object crossing the text - and putting
- * a gradient back under the words is exactly the thing a flat card is not. So
- * the type carries its own ground instead, which is what a sticker's type does
- * anyway.
+ * The same object printed again, offset a few pixels in the partner ink and
+ * under the true one. It leans on `--art`, the object's own URL, which the four
+ * doors now set alongside their hue - the misregistration is the whole look, so
+ * there is nothing to draw it from but the picture itself.
  */
-:root[data-card-style='sticker'] .libChip__name:not(.cardPick *),
-:root[data-card-style='sticker'] .libChip__count:not(.cardPick *),
-.cardPick[data-card-style='sticker'] .libChip__name,
-.cardPick[data-card-style='sticker'] .libChip__count {
-  text-shadow:
-    0 1px 3px rgb(0 0 0 / 0.5),
-    0 0 2px rgb(0 0 0 / 0.45);
+:root[data-card-style='riso'] .libChip:not(.cardPick *)::before,
+.cardPick[data-card-style='riso'] .libChip::before {
+  inset-block: 0;
+  inset-inline-start: auto;
+  inset-inline-end: -8%;
+  inline-size: 74%;
+  z-index: 1;
+  opacity: 0.55;
+  transform: translate(-5px, 4px);
+  background-image: var(--art);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  filter: grayscale(1) contrast(1.7) sepia(1)
+    hue-rotate(calc((var(--libChipHue, 280) + 40) * 1deg)) saturate(4);
+  mix-blend-mode: multiply;
+}
+/* Paper tooth over the whole card, on ::after - riso's type is dark on cream
+   and wants no label ground, so ::after is free to carry the grain. */
+:root[data-card-style='riso'] .libChip:not(.cardPick *)::after,
+.cardPick[data-card-style='riso'] .libChip::after {
+  inset: 0;
+  inset-block-start: 0;
+  z-index: 3;
+  opacity: 0.5;
+  mix-blend-mode: multiply;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url%28%23g%29' opacity='0.55'/%3E%3C/svg%3E");
+}
+:root[data-card-style='riso'] .libChip__name:not(.cardPick *),
+.cardPick[data-card-style='riso'] .libChip__name {
+  z-index: 4;
+  color: #1a1a1d;
+  font-weight: 800;
+  text-shadow: none;
+}
+:root[data-card-style='riso'] .libChip__count:not(.cardPick *),
+.cardPick[data-card-style='riso'] .libChip__count {
+  z-index: 4;
+  color: #1a1a1d;
+  opacity: 0.66;
+  text-shadow: none;
+}
+
+/* ---- Chrome dark: gunmetal with one lit edge and a slow sweep ------------- */
+:root[data-card-style='chromeDark'] .libChip:not(.cardPick *),
+.cardPick[data-card-style='chromeDark'] .libChip {
+  background:
+    repeating-linear-gradient(96deg, rgb(255 255 255 / 0.03) 0 1px, transparent 1px 4px),
+    linear-gradient(
+      102deg,
+      #16181c,
+      #34383f 21%,
+      #1a1c21 37%,
+      #4b515a 52%,
+      #1f2228 67%,
+      #393e46 81%,
+      #121417
+    ) !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.26);
+}
+:root[data-card-style='chromeDark'] .libChip__art:not(.cardPick *),
+.cardPick[data-card-style='chromeDark'] .libChip__art {
+  --chipTint: grayscale(1) contrast(1.4) brightness(1.1)
+    drop-shadow(0 2px 4px rgb(0 0 0 / 0.65));
+  mix-blend-mode: normal;
+}
+/* The specular band, on ::before - one bright diagonal across the plate. */
+:root[data-card-style='chromeDark'] .libChip:not(.cardPick *)::before,
+.cardPick[data-card-style='chromeDark'] .libChip::before {
+  opacity: 1;
+  background: linear-gradient(104deg, transparent 42%, rgb(255 255 255 / 0.11) 50%, transparent 58%);
+}
+:root[data-card-style='chromeDark'] .libChip__name:not(.cardPick *),
+.cardPick[data-card-style='chromeDark'] .libChip__name {
+  color: #eef1f6;
 }
 
 /*
- * The tilt, for the two chips that have none of their own.
+ * The pseudo-elements the styles above do not use.
  *
- * All songs and Liked are already set down by hand a few degrees each way
- * (06-the-dock-contract-b), and that IS the sticker idea, so they are left
- * alone - a blanket rotation here would be heavier than theirs and would
- * flatten the pair to one angle. Only the two that sit square get one.
+ * Numbers first is a plain gradient with no screen and no label ground; Real
+ * covers draws its own ground on ::after but wants no dot screen over the
+ * sleeves; Chrome carries its sweep on ::before but wants no coloured ground
+ * under its type. The rest (Midnight, Riso) re-purpose both and so are absent
+ * here. Duotone - the default, no attribute - keeps both.
  */
-:root[data-card-style='sticker'] .libChip--dj .libChip__art:not(.cardPick *),
-:root[data-card-style='sticker'] .libChip--repeat .libChip__art:not(.cardPick *),
-.cardPick[data-card-style='sticker'] .libChip--dj .libChip__art,
-.cardPick[data-card-style='sticker'] .libChip--repeat .libChip__art {
-  transform: rotate(-5deg);
-}
-
-/*
- * The halftone belongs to the shipped look alone.
- *
- * ::before is a white dot screen knocked out over the whole card and ::after
- * is a gradient of the card's hue behind the words. Both are the printed
- * treatment; left in place they put a coloured halftone over graphite, over
- * black, over a plain editorial surface. Glass is missing from the ::after
- * half on purpose - it does not remove that layer, it wears it.
- */
-:root[data-card-style='editorial'] .libChip:not(.cardPick *)::before,
-:root[data-card-style='emboss'] .libChip:not(.cardPick *)::before,
-:root[data-card-style='glass'] .libChip:not(.cardPick *)::before,
-:root[data-card-style='neon'] .libChip:not(.cardPick *)::before,
-:root[data-card-style='sticker'] .libChip:not(.cardPick *)::before,
-:root[data-card-style='editorial'] .libChip:not(.cardPick *)::after,
-:root[data-card-style='emboss'] .libChip:not(.cardPick *)::after,
-:root[data-card-style='neon'] .libChip:not(.cardPick *)::after,
-:root[data-card-style='sticker'] .libChip:not(.cardPick *)::after,
-.cardPick[data-card-style='editorial'] .libChip::before,
-.cardPick[data-card-style='emboss'] .libChip::before,
-.cardPick[data-card-style='glass'] .libChip::before,
-.cardPick[data-card-style='neon'] .libChip::before,
-.cardPick[data-card-style='sticker'] .libChip::before,
-.cardPick[data-card-style='editorial'] .libChip::after,
-.cardPick[data-card-style='emboss'] .libChip::after,
-.cardPick[data-card-style='neon'] .libChip::after,
-.cardPick[data-card-style='sticker'] .libChip::after {
+:root[data-card-style='stat'] .libChip:not(.cardPick *)::before,
+:root[data-card-style='mosaic'] .libChip:not(.cardPick *)::before,
+:root[data-card-style='stat'] .libChip:not(.cardPick *)::after,
+:root[data-card-style='chromeDark'] .libChip:not(.cardPick *)::after,
+.cardPick[data-card-style='stat'] .libChip::before,
+.cardPick[data-card-style='mosaic'] .libChip::before,
+.cardPick[data-card-style='stat'] .libChip::after,
+.cardPick[data-card-style='chromeDark'] .libChip::after {
   display: none;
 }
 
@@ -253,9 +318,9 @@
  *
  * Real cards rather than drawn swatches, because the whole difficulty of
  * choosing between these is that they are the same four objects treated six
- * ways - a swatch of the GROUND would make Emboss and Neon nearly the same
- * grey rectangle, when what separates them is entirely what happens to the
- * object sitting on it.
+ * ways - a swatch of the GROUND would make several of them near enough the
+ * same dark rectangle, when what separates them is entirely what happens to
+ * the object sitting on it.
  */
 .cardPicks {
   display: grid;
@@ -296,11 +361,11 @@
   pointer-events: none;
 }
 
-/* Editorial sets its name at 1.375rem, which is right on a real tile and far
-   too big on a preview a third the width. Scaled here rather than in the style
-   itself, so the style stays one description of one look. */
-.cardPick[data-card-style='editorial'] .libChip__name {
-  font-size: 1rem;
+/* Numbers first sets its figure at 2.4rem, which is right on a real tile and a
+   touch loud on a preview a third the width. Scaled here rather than in the
+   style itself, so the style stays one description of one look. */
+.cardPick[data-card-style='stat'] .libChip__stat {
+  font-size: 1.75rem;
 }
 
 .cardPick__name {

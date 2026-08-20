@@ -382,7 +382,7 @@ export function CardLab({ onClose }: { onClose: () => void }) {
               </p>
             </div>
           </div>
-          <CardStylePicker count={tracks.length} />
+          <CardStylePicker count={tracks.length} covers={covers} />
         </section>
         <hr className="cardLab__rule" />
 
