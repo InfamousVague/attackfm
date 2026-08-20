@@ -1,6 +1,6 @@
 import { SearchEntry } from '../../app/search/SearchEntry.tsx';
 import { Button, Modal, ScrollArea, SearchField, Spinner, Text } from '@glacier/react';
-import { Check, Compass, ListMusic, Music, Play, Plus, Sparkles } from '@glacier/icons';
+import { Check, Compass, ListMusic, ListPlus, Music, Play, Plus, Sparkles } from '@glacier/icons';
 import { searchPlaylists, type PlaylistResult } from '../../app/server.ts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRippleWave } from '../../app/ux/rippleWave.ts';
@@ -21,6 +21,8 @@ import { EmptyArt } from '../../app/ux/EmptyArt.tsx';
 import { TrackMenu } from '../../app/library/TrackMenu.tsx';
 import type { AcquireTarget, PluginPageProps } from '../types.ts';
 import { IMPORTER_PLUGIN_ID, useAcquire } from '../runtime.tsx';
+import { planFiling, type FileDestination } from '../../app/downloads/filePlan.ts';
+import { ChooseDestination } from '../../app/playlists/ChooseDestination.tsx';
 import { useDownloadsOptional } from '../importsBridge.ts';
 import { usePendingPlay, placeholderTrack } from '../../app/player/pendingPlay.tsx';
 import { CatalogArtistPage } from './CatalogArtistPage.tsx';
@@ -148,6 +150,7 @@ function SuggestionCard({
   canAdd,
   progress,
   onAdd,
+  onAddTo,
   onOpen,
 }: {
   item: Suggestion;
@@ -155,6 +158,8 @@ function SuggestionCard({
   canAdd: boolean;
   progress: string | null;
   onAdd: () => void;
+  /** Ask where it should go first. Absent where there is nowhere to put it. */
+  onAddTo?: (() => void) | undefined;
   onOpen: () => void;
 }) {
   return (
@@ -181,7 +186,23 @@ function SuggestionCard({
         <span className="suggestCardTitle">{item.title}</span>
         <span className="suggestCardBlurb">{item.blurb}</span>
       </button>
-      <AddButton item={item} state={state} canAdd={canAdd} progress={progress} onAdd={onAdd} />
+      <span className="suggestAddPair">
+        <AddButton item={item} state={state} canAdd={canAdd} progress={progress} onAdd={onAdd} />
+        {/* Add is still one tap into the library. This is the second question -
+            where does it go - kept beside it rather than replacing it, so the
+            common case does not grow a dialog. */}
+        {canAdd && state === 'idle' && onAddTo && (
+          <button
+            type="button"
+            className="suggestAddTo"
+            onClick={onAddTo}
+            aria-label={`Add ${item.title} to a playlist`}
+            title="Add to…"
+          >
+            <ListPlus size={15} />
+          </button>
+        )}
+      </span>
     </div>
   );
 }
@@ -281,6 +302,8 @@ export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
   // Cards tapped this session, for the instant before the queue reports the
   // job; the queue's own word (stateFrom) always wins once it has one.
   const [tapped, setTapped] = useState<Record<string, AddState>>({});
+  /** The suggestion whose destination is being chosen, or null. */
+  const [filingTo, setFilingTo] = useState<Suggestion | null>(null);
   const [preview, setPreview] = useState<Suggestion | null>(null);
   // The charts are the same for every account on the hub, so they sit under a
   // closed lid below everything personal - present for an empty library, out
@@ -435,13 +458,24 @@ export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
     return [...counts.values()].sort((a, b) => b.n - a.n).slice(0, 20);
   }, [libraryTracks]);
 
-  const add = (item: Suggestion) => {
+  /**
+   * Add a song, and optionally say where it belongs.
+   *
+   * The destination is recorded against the JOB rather than acted on here,
+   * because nothing can be filed yet: the download has not happened, and even
+   * once it has, the library has to index and sync before a path exists to put
+   * in a playlist. useFilePlan owns the other end - see the note there.
+   */
+  const add = (item: Suggestion, dest?: FileDestination) => {
     if (!downloads) return;
     const job = jobFor(downloads.jobs, item);
     if (job && job.state !== 'error') return;
     setTapped((prev) => ({ ...prev, [item.id]: 'adding' }));
     void Promise.resolve(downloads.enqueue(item.url))
-      .then(() => setTapped((prev) => ({ ...prev, [item.id]: 'added' })))
+      .then((queued) => {
+        if (dest) planFiling(queued.id, dest, item.title);
+        setTapped((prev) => ({ ...prev, [item.id]: 'added' }));
+      })
       .catch(() => {
         // Let the user try again rather than stranding the button.
         setTapped((prev) => {
@@ -596,8 +630,8 @@ export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
         });
       });
   };
-  const onAddSuggestion = (item: Suggestion) => {
-    if (canImport(suggestionTarget(item))) add(item);
+  const onAddSuggestion = (item: Suggestion, dest?: FileDestination) => {
+    if (canImport(suggestionTarget(item))) add(item, dest);
     else acquire.acquire(suggestionTarget(item));
   };
 
@@ -844,6 +878,7 @@ export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
                       canAdd={d.canAdd}
                       progress={d.progress}
                       onAdd={() => onAddSuggestion(item)}
+                      onAddTo={() => setFilingTo(item)}
                       onOpen={() => setPreview(item)}
                     />
                   );
@@ -870,6 +905,15 @@ export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
             </Button>
           )}
         </div>
+      )}
+
+      {filingTo && (
+        <ChooseDestination
+          open
+          title={`${filingTo.title} — ${filingTo.blurb}`}
+          onClose={() => setFilingTo(null)}
+          onChoose={(dest) => onAddSuggestion(filingTo, dest ?? undefined)}
+        />
       )}
 
       {/* A set, read in full: owned rows play right now (the row IS the

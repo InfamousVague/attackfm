@@ -260,6 +260,17 @@ export interface PluginPageProps {
   onPlay: (track: Track, queue?: Track[]) => void;
   /** Open an artist's page, stacked inside the current tab. */
   onOpenArtist: (artist: string) => void;
+  /**
+   * Open one of the library's own collections.
+   *
+   * Both optional, and both additive: a page written before these existed
+   * compiles and runs unchanged, and a host that does not pass them leaves a
+   * page to fall back rather than crash. Added so a plugin that puts a song
+   * INTO a collection can then take you to it - which is the difference
+   * between "added" and "added, here it is".
+   */
+  onOpenPlaylist?: ((id: string) => void) | undefined;
+  onOpenSongs?: ((collection: 'liked' | 'all' | 'onrepeat' | 'recent') => void) | undefined;
 }
 
 /**

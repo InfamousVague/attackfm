@@ -571,3 +571,125 @@
   }
 }
 
+
+/* ---- Where a song being downloaded should land ---------------------------
+   Asked before the song exists, so it lists DESTINATIONS rather than offering
+   the add-to-playlist panel next door, which needs a Track it cannot have yet.
+   Rows borrow the settings list's shape - a tinted chip, a label - because it
+   is the same act: pick one of a short list of places. */
+.chooseDest {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.chooseDest__what {
+  padding-block-end: var(--glacier-space-2);
+  border-block-end: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  margin-block-end: var(--glacier-space-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chooseDest__row {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2);
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.chooseDest__row:hover,
+.chooseDest__row:focus-visible {
+  background: var(--glacier-surface);
+}
+
+.chooseDest__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  inline-size: 1.85rem;
+  block-size: 1.85rem;
+  border-radius: 0.55rem;
+  color: #fff;
+  background: oklch(0.55 0.03 250);
+}
+
+.chooseDest__icon[data-tint='pink'] {
+  background: oklch(0.63 0.23 8);
+}
+
+.chooseDest__label {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chooseDest__new {
+  padding: var(--glacier-space-1) var(--glacier-space-2);
+}
+
+.chooseDest__field {
+  inline-size: 100%;
+  padding: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text);
+  font: inherit;
+}
+
+/* The way out that is not a destination, set apart from the list so it does
+   not read as a fourth place to put things. */
+.chooseDest__plain {
+  margin-block-start: var(--glacier-space-2);
+  padding: var(--glacier-space-2);
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  background: none;
+  color: var(--glacier-text-muted);
+  font: inherit;
+  font-size: var(--glacier-font-size-sm);
+  cursor: pointer;
+}
+
+.chooseDest__plain:hover {
+  color: var(--glacier-text);
+}
+
+/* Add, and beside it the smaller "where does it go" - a pair, so the common
+   one-tap add does not grow a dialog. */
+.suggestAddPair {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+}
+
+.suggestAddTo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border-radius: var(--glacier-radius-md);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  background: none;
+  color: var(--glacier-text-muted);
+  cursor: pointer;
+}
+
+.suggestAddTo:hover {
+  color: var(--glacier-text);
+  background: var(--glacier-surface);
+}

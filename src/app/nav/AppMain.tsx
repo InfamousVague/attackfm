@@ -184,7 +184,7 @@ export function AppMain({
         // Liked or every song, opened full - the library's own views as a page.
         <SongPage view={detail.view} onPlay={onPlay} onOpenArtist={onOpenArtist} />
       ) : activePage ? (
-        activePage.render({ onPlay, onOpenArtist })
+        activePage.render({ onPlay, onOpenArtist, onOpenPlaylist, onOpenSongs })
       ) : tab === 'library' ? (
         // Library: what you HAVE - the shelves and the full song table.
         <LibraryView
