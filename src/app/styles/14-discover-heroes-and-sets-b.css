@@ -170,12 +170,48 @@
      338 wraps to 33, so the one card that should be pinkest ran out into
      brown. Four numbers, each picked to stay in a neighbour worth having.
      The fallback keeps anything that only sets one hue working. */
-  background: linear-gradient(
-    140deg,
-    hsl(var(--libChipHue, 280) 62% 52%),
-    hsl(var(--libChipHue2, calc(var(--libChipHue, 280) + 50)) 58% 34%)
-  ) !important;
+  /* A PRINTED ground, not a shaded one: one dense flat colour with a dot screen
+     knocked out of it in white (see ::before). Flat on purpose - a gradient and
+     a screen are two textures arguing, and the screen is the one carrying the
+     idea. --libChipHue2 is left alone rather than deleted; the mix cards below
+     still run a two-stop ground and still want its partner colour. */
+  background: hsl(var(--libChipHue, 280) 84% 34%) !important;
   color: #fff !important;
+  /* The blend modes below have to compose against the chip and nothing else. */
+  isolation: isolate;
+}
+
+/* The screen. Over everything the chip draws, under everything it says. */
+.libChip::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: 0.5;
+  background-image: radial-gradient(hsl(var(--libChipHue, 280) 40% 96%) 33%, transparent 35%);
+  background-size: 5px 5px;
+}
+
+/* The label's ground, in the chip's own colour rather than in black - black
+   over a printed field reads as a photograph with a gradient laid on it, which
+   is the thing this treatment gets away from. */
+.libChip::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 38%;
+  inset-inline: 0;
+  inset-block-end: 0;
+  z-index: 3;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(
+    to top,
+    hsl(var(--libChipHue, 280) 84% 26% / 0.95) 16%,
+    hsl(var(--libChipHue, 280) 84% 28% / 0.45) 56%,
+    transparent
+  );
 }
 
 /* THE DJ CHIP IS A KIT BUTTON, the other three are plain buttons - and the kit
@@ -200,19 +236,31 @@
   /* Held as a property because `filter` does not merge: the two chips that
      need a drop-shadow (26-the-dj) have to restate the whole chain, and a
      second copy of these numbers is a second place to forget to change them. */
-  --chipTint: grayscale(1) sepia(1) hue-rotate(calc((var(--libChipHue, 280) - 40) * 1deg))
-    saturate(2.2) brightness(1.06);
+  --chipTint: grayscale(1) brightness(1.45) contrast(1.7) sepia(1)
+    hue-rotate(calc((var(--libChipHue, 280) - 40) * 1deg)) saturate(2.4);
   filter: var(--chipTint);
-  /* Normal for all four now. The multiply was there so an object tinted itself
-     INTO the gradient it sat on; the tint does that deliberately instead, and
-     multiplying on top of it only darkens what has already been matched. */
-  mix-blend-mode: normal;
+  /* SCREENED, so the object prints light through the knocked-out dots instead
+     of sitting on them. This is the half of the treatment the Browse tiles on
+     the search page cannot have yet: it needs art cut out on a dark ground, and
+     these four already are - the served genre stills are shot on white and a
+     screen would turn those tiles white. Same reason .libChip--liked's note in
+     06 is now out of date rather than a warning: a dark ground and a screen
+     were sent back when the OBJECT was a neon rework nobody had asked for; the
+     ground and the blend were never the thing that was wrong. */
+  mix-blend-mode: screen;
+  z-index: 1;
 }
 
-/* Light text over a saturated gradient wants its shadow back - it was turned
-   off when the ground was a pale pastel. */
+/* Light text over a saturated field wants its shadow back - it was turned off
+   when the ground was a pale pastel. Both lines sit above the screen and the
+   label ground; nothing prints over a word. */
 .libChip__name {
   text-shadow: 0 1px 2px rgb(0 0 0 / 0.45);
+}
+
+.libChip__name,
+.libChip__count {
+  z-index: 4;
 }
 
 .mixCardTitle {
