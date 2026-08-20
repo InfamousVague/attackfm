@@ -15,7 +15,7 @@ export const PANE_KEYWORDS: Record<string, string> = {
   playback: 'crossfade gapless sleep timer equalizer eq bands pause style shuffle repeat quality volume',
   server: 'server connect sign in url mirror network invite join host latency devices speakers where you listen seat',
   storage: 'cache offline downloads space disk limit pins clear wifi wi-fi mobile data cellular',
-  notifications: 'push alerts recap weekly interrupt',
+  notifications: 'push alerts recap weekly interrupt bell notifications news downloads finished',
   plugins: 'plugin extension import spotify buy discover sources',
   about: 'version update check whats new shell licenses github',
   handbook:

@@ -1,0 +1,291 @@
+import { useEffect, useState } from 'react';
+import { Button, CounterBadge, IconButton, Popover, Text } from '@glacier/react';
+import { Bell, Trash2 } from '@glacier/icons';
+import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
+import { noticeGlyph } from './kinds.ts';
+import { clearNotices, markAllRead, msOf, useNotices, useUnreadKinds, useUnreadNotices } from './notices.ts';
+import { useHasDownloadQueue } from '../../plugins/runtime/pluginHooks.tsx';
+
+/**
+ * The bell, and the news behind it.
+ *
+ * It sits in the one piece of chrome every page shares, so "the notifications"
+ * is a place rather than a thing you have to be looking at the right screen to
+ * catch. That is the whole argument for it: the app's only completion signal
+ * used to be a pill that appeared over whatever you were doing for three
+ * seconds and then never existed again.
+ *
+ * The panel holds two different tenses and says so in its layout. WHAT IS
+ * HAPPENING NOW sits at the top - the work in flight, which is where the
+ * floating chip's sentence went, and which is live rather than remembered.
+ * WHAT HAPPENED sits below it, newest first, and persists.
+ */
+export function NotifyBell({
+  iconSize = 16,
+  onOpenDownloads,
+}: {
+  /** 16 in the desktop title bar, 18 in the mobile header - the house sizes. */
+  iconSize?: number;
+  onOpenDownloads: () => void;
+}) {
+  const items = useNotices();
+  const unread = useUnreadNotices();
+  const kinds = useUnreadKinds();
+  const dl = useDownloadsOptional();
+  // The same predicate the Downloads PAGE is gated on, not `dl !== null`:
+  // another plugin can contribute a queue without owning this bridge, and
+  // the page renders for it too.
+  const hasQueue = useHasDownloadQueue();
+  const active = dl?.active ?? [];
+  const [open, setOpen] = useState(false);
+
+  /**
+   * Which rows were new when the panel opened.
+   *
+   * Opening marks everything read, because a count that survives being looked
+   * at is a count nobody trusts. But the ROWS keep their mark until the panel
+   * closes, so the thing you opened the bell to find is still pointed at while
+   * you are reading it.
+   */
+  const [fresh, setFresh] = useState<ReadonlySet<string>>(() => new Set());
+
+  useEffect(() => {
+    if (!open) {
+      setFresh(new Set());
+      return;
+    }
+    setFresh(new Set(items.filter((n) => !n.read).map((n) => n.id)));
+    markAllRead();
+    // items is deliberately absent: this must run when the panel OPENS, not
+    // every time a row lands while it is open - the second would keep
+    // re-marking and repaint the dots under the reader's eyes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // One number across every sized job; jobs that do not know their total
+  // (a single track, or one still enumerating) ride along without skewing it.
+  // This arithmetic came from the chip that used to float above the transport.
+  const sized = active.filter((j) => (j.total ?? 0) > 0);
+  const done = sized.reduce((sum, j) => sum + j.completed, 0);
+  const total = sized.reduce((sum, j) => sum + (j.total ?? 0), 0);
+  const pct = total > 0 ? Math.round((done / total) * 100) : null;
+
+  const label =
+    active.length > 0
+      ? `Notifications — ${active.length} downloading`
+      : unread > 0
+        ? `Notifications — ${unread} new`
+        : 'Notifications';
+
+  return (
+    <Popover
+      placement="bottom-end"
+      // The kit's panel paints NOTHING - no background, no blur, no shadow -
+      // so a panel that does not dress itself opens as floating text over the
+      // page. The class goes on the kit's own panel (the eqPopoverPanel /
+      // morePopoverPanel idiom) because that is the element that has the
+      // rounding and the padding to paint into.
+      className="notifyPopoverPanel"
+      aria-label="Notifications"
+      open={open}
+      onOpenChange={setOpen}
+      trigger={
+        <IconButton
+          className="notifyBell"
+          // Drives the swing below. `undefined` rather than false so the
+          // attribute is absent entirely when nothing is in flight.
+          data-busy={active.length > 0 || undefined}
+          variant="ghost"
+          size="sm"
+          aria-label={label}
+        >
+          <Bell size={iconSize} />
+          {unread > 0 && (
+            <CounterBadge
+              className="notifyBell__badge"
+              count={unread}
+              max={99}
+              size="sm"
+              // A failure you have not seen is the one thing here worth a
+              // different colour - the same convention the ⋮ badge uses.
+              tone={kinds.has('failed') ? 'danger' : 'accent'}
+            />
+          )}
+        </IconButton>
+      }
+    >
+      <div className="notifyPanel">
+        <div className="notifyPanel__head">
+          <span className="notifyPanel__title">
+            <Bell size={14} /> Notifications
+          </span>
+          {items.length > 0 && (
+            <IconButton
+              variant="ghost"
+              size="sm"
+              aria-label="Clear notifications"
+              title="Clear"
+              onClick={() => clearNotices()}
+            >
+              <Trash2 size={15} />
+            </IconButton>
+          )}
+        </div>
+
+        {active.length > 0 && (
+          <div className="notifyLive">
+            <Text tone="muted" size="xs" className="notifyLive__head">
+              {`${active.length} downloading${pct !== null ? ` · ${pct}%` : ''}`}
+            </Text>
+            {active.map((job) => (
+              <div key={job.id} className="notifyLive__row">
+                <span className="notifyLive__name">{job.title || 'That link'}</span>
+                {(job.total ?? 0) > 0 && (
+                  <span className="notifyLive__count">
+                    {job.completed}/{job.total}
+                  </span>
+                )}
+                <span
+                  className="notifyLive__bar"
+                  style={{
+                    // Width only, no colour: the rail is painted in CSS from
+                    // the accent ramp, so a chain of these stays on theme.
+                    ['--notify-progress' as string]:
+                      (job.total ?? 0) > 0
+                        ? `${Math.round((job.completed / (job.total ?? 1)) * 100)}%`
+                        : '0%',
+                  }}
+                  aria-hidden
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {items.length === 0 ? (
+          <div className="notifyPanel__empty">
+            <span className="notifyPanel__emptyGlyph" aria-hidden>
+              <Bell size={18} />
+            </span>
+            <Text tone="muted" size="sm">
+              Nothing new. Downloads and news land here.
+            </Text>
+          </div>
+        ) : (
+          <ul className="notifyList">
+            {/* Newest first. The ring itself stays in arrival order so that
+                dropping the eldest is a cheap slice; the reversal is the
+                reader's order, not the store's. */}
+            {[...items].reverse().map((n) => (
+              <NoticeRow
+                key={n.id}
+                notice={n}
+                unseen={fresh.has(n.id)}
+                // A row kept from a time when the importer was installed must
+                // not still look pressable once it is gone: the page is gated
+                // on the same flag, so the press would land on nothing.
+                canOpen={hasQueue}
+                onOpen={() => {
+                  setOpen(false);
+                  if (n.door === 'downloads') onOpenDownloads();
+                }}
+              />
+            ))}
+          </ul>
+        )}
+
+        {hasQueue && (
+          /* Load-bearing, not a convenience: removing the floating chip removed
+             the only Downloads door a desktop BROWSER has, since the library's
+             own action row is gated on the desktop app rather than the desktop
+             layout. */
+          <div className="notifyPanel__more">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setOpen(false);
+                onOpenDownloads();
+              }}
+            >
+              Open downloads
+            </Button>
+          </div>
+        )}
+      </div>
+    </Popover>
+  );
+}
+
+function NoticeRow({
+  notice,
+  unseen,
+  canOpen,
+  onOpen,
+}: {
+  canOpen: boolean;
+  notice: { id: string; at: number; kind: string; title: string; body: string; art: string | null; door: 'downloads' | null };
+  unseen: boolean;
+  onOpen: () => void;
+}) {
+  const Glyph = noticeGlyph(notice.kind);
+  const pressable = notice.door !== null && canOpen;
+  return (
+    <li>
+      <div
+        className="notifyRow"
+        data-kind={notice.kind}
+        data-unread={unseen || undefined}
+        // A row with nowhere to go is not a button. Making it one would promise
+        // a destination that does not exist.
+        role={pressable ? 'button' : undefined}
+        tabIndex={pressable ? 0 : undefined}
+        onClick={pressable ? onOpen : undefined}
+        onKeyDown={
+          pressable
+            ? (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onOpen();
+                }
+              }
+            : undefined
+        }
+      >
+        <span className="notifyRow__art">
+          {notice.art ? (
+            <img src={notice.art} alt="" loading="lazy" />
+          ) : (
+            <Glyph size={15} />
+          )}
+        </span>
+        <span className="notifyRow__text">
+          <span className="notifyRow__title">{notice.title}</span>
+          <span className="notifyRow__body">{notice.body}</span>
+        </span>
+        <span className="notifyRow__when">{agoOf(notice.at)}</span>
+      </div>
+    </li>
+  );
+}
+
+/**
+ * "3 min" — how long ago, in the fewest characters that stay true.
+ *
+ * The house has two of these already (the friends list, the storage pane) and
+ * they disagree about their units, so this is a third rather than a shared
+ * module nobody asked for. The seconds-versus-milliseconds decode is NOT one of
+ * its opinions though - that lives in notices.ts, once, because a second copy
+ * of it is how the watcher came to be comparing a seconds timestamp against a
+ * millisecond duration and silently dropping every arrival.
+ */
+function agoOf(at: number): string {
+  const secs = Math.max(0, Math.round((Date.now() - msOf(at)) / 1000));
+  if (secs < 60) return 'now';
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins} min`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.round(hours / 24);
+  return `${days}d`;
+}

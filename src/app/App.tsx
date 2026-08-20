@@ -33,7 +33,8 @@ import { useSwipeBack } from './nav/useSwipeBack.ts';
 import { useSystemBack } from './nav/systemBack.ts';
 import { installTapHaptics, useHapticsPref } from './core/haptics.ts';
 import { installOverlayGuard } from './core/overlayGuard.ts';
-import { DownloadsChip } from './downloads/DownloadsChip.tsx';
+import { DownloadNotices } from './notify/DownloadNotices.tsx';
+import { NotifyBell } from './notify/NotifyBell.tsx';
 import { CarPlayBridge } from './player/CarPlayBridge.tsx';
 import { installSheetDismiss } from './player/playerDismiss.ts';
 import { ConnectPlayRouter, PlayerHost } from './player/PlayerHost.tsx';
@@ -510,6 +511,11 @@ export function App() {
                         the heading they act on, so the chrome's end slot is the
                         network light and settings. */}
                     <NetworkDot onManage={() => openSettings('server')} />
+                    {/* The news, on the one piece of chrome every page shares -
+                        which is what makes "the notifications" a place rather
+                        than something you had to be on the right screen to
+                        catch. */}
+                    <NotifyBell iconSize={16} onOpenDownloads={() => goTab('downloads')} />
                     <IconButton
                       variant="ghost"
                       size="sm"
@@ -566,6 +572,11 @@ export function App() {
                 <span className="mobileHeader__actions">
                   <HeaderActionButtons />
                   <NetworkDot onManage={() => openSettings('server')} />
+                  {/* After the lent buttons, not before: the collection header
+                      slides Play and Shuffle in and out of this slot, and a
+                      bell placed ahead of them would shift sideways every time
+                      a page scrolled. Last means it never moves. */}
+                  <NotifyBell iconSize={18} onOpenDownloads={() => goTab('downloads')} />
                 </span>
               </header>
             )}
@@ -675,9 +686,12 @@ export function App() {
               autoplay={autoplay}
               hidden={dateOpen || djOpen}
             />
-            {/* The import queue's one door: floats above the strip while
-                work is in flight or needs a hand, gone when idle. */}
-            <DownloadsChip open={() => goTab('downloads')} current={tab === 'downloads'} />
+            {/* Turns the import queue into surfaces: a quick line at the top
+                when work starts, a row behind the bell when it lands. Renders
+                nothing itself - it sits here, inside the plugin providers and
+                the toast provider, because that is where both halves are
+                reachable. */}
+            <DownloadNotices />
             {/* Music Date, fullscreen: over everything, chrome gone - no nav
                 bar, no player strip, just the introductions. A floating
                 chevron (and the system back) is the way out. */}

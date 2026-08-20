@@ -6,7 +6,6 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { useHaptics, useToast } from '@glacier/react';
 import { useLibrary } from '@attackfm/app/library';
 import { useServerSession } from '@attackfm/app/serverSession';
 import {
@@ -49,12 +48,6 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
 function ServerDownloads({ children }: { children: ReactNode }) {
   const { session } = useServerSession();
   const { rescan } = useLibrary();
-  const haptic = useHaptics();
-  const hapticRef = useRef(haptic);
-  hapticRef.current = haptic;
-  const { toast } = useToast();
-  const toastRef = useRef(toast);
-  toastRef.current = toast;
   const [jobs, setJobs] = useState<MusicImportJob[]>([]);
   const rescanRef = useRef(rescan);
   rescanRef.current = rescan;
@@ -70,11 +63,16 @@ function ServerDownloads({ children }: { children: ReactNode }) {
     seeded.current = true;
     doneIds.current = new Set(done);
     if (isFresh) {
-      // The download you queued minutes ago just landed: worth a real
-      // fanfare in the hand AND a line on screen - this fires from a
-      // background poll, so without the toast the buzz points at nothing.
-      hapticRef.current('success');
-      toastRef.current({ tone: 'success', message: 'Import finished - added to your library.' });
+      // The app's own watcher (notify/DownloadNotices) owns what a landing
+      // LOOKS like now - the bell, the buzz, the row that is still there
+      // tomorrow. A toast was the wrong shape for it: this fires from a
+      // background poll minutes after you asked, so it covered whatever you
+      // had moved on to in order to announce something that is now simply a
+      // row in your library.
+      //
+      // What is left here is the provider's actual business: finishing an
+      // import bumps the catalog, and nudging a rescan means the new songs are
+      // there when you go looking rather than at the next heartbeat.
       void rescanRef.current();
     }
     if (sessionRef.current) void settlePendingSyncs(sessionRef.current, next);
