@@ -1,3 +1,4 @@
+import { cardTexture } from '../ux/artwork.ts';
 import { mosaicArts, useTileArt } from '../ux/artLoad.ts';
 import { Button, ContextMenu, Input, Modal, MenuItem, Text } from '@glacier/react';
 import { History, ListMusic, Plus, Trash2 } from '@glacier/icons';
@@ -209,7 +210,7 @@ export function PlaylistShowcase({
           <button
             type="button"
             className="libChip libChip--liked"
-            style={{ '--libChipHue': 338 } as CSSProperties}
+            style={{ '--libChipHue': 338, '--cardTex': `url("${cardTexture(338)}")` } as CSSProperties}
             onClick={() => onOpenSongs('liked')}
           >
             <img className="libChip__art" src={likedChip} alt="" loading="lazy" />
@@ -219,7 +220,7 @@ export function PlaylistShowcase({
           <button
             type="button"
             className="libChip libChip--all"
-            style={{ '--libChipHue': 214 } as CSSProperties}
+            style={{ '--libChipHue': 214, '--cardTex': `url("${cardTexture(214)}")` } as CSSProperties}
             onClick={() => onOpenSongs('all')}
           >
             <img className="libChip__art" src={allSongsChip} alt="" loading="lazy" />
@@ -232,7 +233,7 @@ export function PlaylistShowcase({
           <button
             type="button"
             className="libChip libChip--repeat"
-            style={{ '--libChipHue': 145 } as CSSProperties}
+            style={{ '--libChipHue': 145, '--cardTex': `url("${cardTexture(145)}")` } as CSSProperties}
             onClick={() => onOpenSongs('onrepeat')}
           >
             <img className="libChip__art" src={onRepeatChip} alt="" loading="lazy" />

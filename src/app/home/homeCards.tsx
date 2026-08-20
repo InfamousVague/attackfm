@@ -88,12 +88,27 @@ export function ArtistCard({ name, cover, onOpen }: { name: string; cover: strin
  *  texture stand in, chosen by the mix's own hue so it stays stable. */
 export function MixCover({ tracks, art }: { tracks: Track[]; art?: { src: string; hue: number } | null }) {
   const arts = mosaicArts(tracks.map((t) => t.artwork));
-  const { loaded, hostRef } = useTileArt(arts.length < 4 ? [] : arts);
-  // Album art from the songs inside wins whenever four distinct covers exist -
-  // the whole point: a mix wears its music, not a generated stand-in.
-  if (arts.length >= 4) {
+  const { loaded, hostRef } = useTileArt(arts);
+  /*
+   * Album art from the songs inside wins whenever there is ANY - the whole
+   * point: a mix wears its music, not a generated stand-in.
+   *
+   * Any, rather than a full four. Requiring four meant a mix drawn from two
+   * records showed a texture and no album art at all, while holding the very
+   * covers it was made of - and a short mix is exactly the one whose two or
+   * three sleeves say most about it. The count drives the layout instead: one
+   * fills the frame, two split it, three give the first the tall half.
+   */
+  if (arts.length > 0) {
     return (
-      <div ref={hostRef} className="mixCardCover" aria-hidden data-tile-pop="" data-tile-loading={!loaded || undefined}>
+      <div
+        ref={hostRef}
+        className="mixCardCover"
+        data-covers={arts.length}
+        aria-hidden
+        data-tile-pop=""
+        data-tile-loading={!loaded || undefined}
+      >
         {arts.map((a, i) => (
           <img key={i} src={a} alt="" loading="lazy" />
         ))}
