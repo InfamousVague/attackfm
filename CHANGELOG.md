@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.260
+
+- The now playing artwork no longer leans about when you tilt the phone. It was costing a redraw every frame on the busiest screen in the app, which is what made the animations there feel heavy. Shake to shuffle and flick to skip are untouched
+
 ## 0.3.259
 
 - The playlist results under Discover's "Find a playlist" are seated like the rows in your own playlists now — they light up under the pointer and no longer sit flush against the edge
