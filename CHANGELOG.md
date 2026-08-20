@@ -19,6 +19,10 @@ and where that library came from is not the app's story to tell.
 
 - Adding a song you already own to a playlist no longer sits there saying it is downloading. The app knows the difference between "added", "you already had it" and "that did not work"
 
+## 0.3.267
+
+- The Spotify preview card shows the exact song you tapped now — Spotify's own player with its sleeve, its artist and a 30-second preview — instead of a best guess pulled from your own library. Like and Add to playlist sit right beneath it
+
 ## 0.3.266
 
 - Adding a song from Discover to a playlist worked only for songs you did not already have. One you owned went nowhere and said nothing; it is filed straight away now

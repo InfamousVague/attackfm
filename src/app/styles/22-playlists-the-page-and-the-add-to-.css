@@ -851,46 +851,16 @@
   text-align: center;
 }
 
-.spotPreview__head {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-3);
-}
-
-.spotPreview__art {
-  flex: none;
-  inline-size: 4.5rem;
-  block-size: 4.5rem;
-  border-radius: var(--glacier-radius-md);
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--glacier-surface);
-  color: var(--glacier-text-muted);
-  box-shadow: 0 6px 18px -12px rgb(0 0 0 / 0.6);
-}
-
-.spotPreview__art img {
-  inline-size: 100%;
-  block-size: 100%;
-  object-fit: cover;
+/* Spotify's own embed player: the exact record, its art, its artist and a
+   30-second preview, drawn by Spotify. 152px is the height its track player
+   wants; the radius matches the sleeve corners it paints inside. */
+.spotPreview__embed {
   display: block;
-}
-
-.spotPreview__meta {
-  min-inline-size: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
-}
-
-.spotPreview__title,
-.spotPreview__artist {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-inline-size: 100%;
+  inline-size: 100%;
+  block-size: 152px;
+  border: 0;
+  border-radius: 12px;
+  color-scheme: normal;
 }
 
 .spotPreview__actions {
