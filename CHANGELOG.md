@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.257
+
+- You can choose the quality your phone downloads at — Lossless, 256k, 128k or 96k — in Downloads & space. At 128k the same space holds about seven times the music, and the hint tells you roughly how many hours that is
+- It applies to songs you keep by hand as well as automatic downloads, and songs already on the phone are brought over a few dozen at a time. Songs already smaller than your choice are left as they are rather than being re-encoded into something worse
+
 ## 0.3.256
 
 - The app looks for an update as it opens now, installs it, and starts on the new version — instead of interrupting you twenty seconds later with a banner. If anything is slow or offline it opens as normal

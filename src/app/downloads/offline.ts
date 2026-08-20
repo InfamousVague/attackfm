@@ -126,9 +126,18 @@ setOfflineAudioResolver(offlineSource);
  * Keep a track. `url` is the same stream URL playback would have used, so a
  * pin costs exactly one ordinary read of your own server.
  */
-export async function pinTrack(track: Track, url: string): Promise<boolean> {
+export async function pinTrack(
+  track: Track,
+  url: string,
+  opts?: {
+    /** Overrides the codec-derived name. The cache uses it to record quality. */
+    ext?: string;
+    /** Reject a body that came back implausibly short. 0 disables the check. */
+    minBytes?: number;
+  },
+): Promise<boolean> {
   if (!isTauri() || held.has(track.path)) return held.has(track.path);
-  const ext = (track.codec || '').replace(/[^a-z0-9]/gi, '') || 'audio';
+  const ext = opts?.ext ?? ((track.codec || '').replace(/[^a-z0-9]/gi, '') || 'audio');
   // Deliberately NOT the swallowing tauriCall(): the Rust side names its failures
   // ("server answered 401", "fetch failed: ...") and this is the one command
   // whose failure somebody is standing there trying to diagnose. Swallowing
@@ -136,9 +145,27 @@ export async function pinTrack(track: Track, url: string): Promise<boolean> {
   const { invoke } = await import('@tauri-apps/api/core');
   const entry = (await invoke('offline_pin', { key: track.path, url, ext })) as OfflineEntry | null;
   if (!entry) return false;
+  // A transcode arrives with no Content-Length, and the Rust side only refuses a
+  // download of exactly zero bytes - so an encoder that died mid-song hands back
+  // a short but perfectly well-formed file, which is then renamed into place and
+  // counted as held for good. Undone here rather than kept, and thrown rather
+  // than returned false, so the sweep's retry loop treats it as the transient
+  // failure it usually is.
+  if (opts?.minBytes && entry.bytes < opts.minBytes) {
+    await tauriCall('offline_unpin', { key: track.path });
+    throw new Error(`download stopped early (${entry.bytes} bytes)`);
+  }
   held.set(entry.key, entry.path);
   announce();
   return true;
+}
+
+/** The quality a held file is holding, or null if it is not held. */
+export function heldQuality(path: string): number | null {
+  const file = held.get(path);
+  if (file === undefined) return null;
+  const m = /\.aac(\d+)$/.exec(file);
+  return m ? Number(m[1]) : 0;
 }
 
 export async function unpinTrack(path: string): Promise<void> {

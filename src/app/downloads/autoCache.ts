@@ -10,8 +10,11 @@ export {
   denyKey,
   DEFAULT_LIMIT_BYTES,
   LIMIT_CHOICES,
+  QUALITY_CHOICES,
   cacheLimitBytes,
+  cacheQualityKbps,
   setCacheLimitBytes,
+  setCacheQualityKbps,
   onCacheChange,
   autoCachedKeys,
 } from '../cache/cacheStore.ts';

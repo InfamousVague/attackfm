@@ -23,11 +23,23 @@
 //! or an OS reclaim cannot leave it believing in files that are gone.
 
 import { rememberArt } from './artCache.ts';
-import { artSized, artUrl, loadCachedIndex, remotePath, streamUrl, trackIdFromPath, type RemoteTrack, type ServerSession } from '../server.ts';
+import { artSized, artUrl, loadCachedIndex, remotePath, streamUrl, trackIdFromPath, transcodeUrl, type RemoteTrack, type ServerSession } from '../server.ts';
 import { heldPath, offlineEntries, offlineSpace, pinTrack, unpinTrack } from '../downloads/offline.ts';
 import { pickSource } from '../servers/mirrors.ts';
 import { isTauri, type Track } from '../core/tauri.ts';
-import { DENY_KEY, cacheLimitBytes, deniedKeys, notifyCacheChange, pinnedKeys, readLedger, writeLedger } from './cacheStore.ts';
+import {
+  DENY_KEY,
+  appliedQualityKbps,
+  cacheLimitBytes,
+  cacheQualityKbps,
+  deniedKeys,
+  notifyCacheChange,
+  pinnedKeys,
+  readLedger,
+  rememberAppliedQuality,
+  writeLedger,
+} from './cacheStore.ts';
+import { estimateBytes, extFor, qualityOfPath, wantedQuality } from './cacheQuality.ts';
 import { rankHotness } from './cacheHotness.ts';
 import { persistManifest, setManifest, setManifestState, writeReport } from './cacheManifest.ts';
 
@@ -58,6 +70,11 @@ export interface SweepResult {
  * trade. Extra workers drain off live when a song starts mid-sweep.
  */
 const CONCURRENCY_IDLE = 6;
+/* Six at once is right for six file reads. It is not right for six simultaneous
+   real-time ffmpeg encodes on a Mac in somebody's house, which is what the
+   transcode path actually asks for - and with no byte ranges to resume from,
+   every retry pays for the whole encode a second time. */
+const CONCURRENCY_TRANSCODE = 3;
 const CONCURRENCY_PLAYING = 2;
 
 let playbackAudible = false;
@@ -223,6 +240,10 @@ export async function sweepCache(
     return { bytes: 0, downloaded: 0, evicted, pinnedBytes };
   }
 
+  // Read once per sweep so every decision in this pass agrees about it, even
+  // if somebody moves the slider while it runs.
+  const kbps = cacheQualityKbps();
+  const idleLanes = kbps === 0 ? CONCURRENCY_IDLE : CONCURRENCY_TRANSCODE;
   const { keys: ranked, liked = 0 } = await rankHotness(session);
   // A song deleted by hand stays deleted: denied keys never re-enter the plan.
   const denied = deniedKeys();
@@ -250,7 +271,27 @@ export async function sweepCache(
       continue;
     }
     known.set(key, remote);
-    sizes.set(key, remote.sizeBytes || ASSUMED_BYTES);
+    /*
+     * What this song will actually take up on this disk, which is not the same
+     * question as what it would take up if it were fetched fresh.
+     *
+     * A file already held is held at whatever quality it was fetched at, and
+     * requalify converts only a few dozen per sweep - so budgeting the whole
+     * library at the NEW estimate while thousands of lossless files sit on the
+     * disk lets the cache overshoot its limit by a large multiple, for as long
+     * as the conversion takes. The user sets 15GB and the folder keeps growing.
+     *
+     * So: a held file costs its real measured bytes, an unheld one costs the
+     * estimate. As requalify works through them the real numbers fall and the
+     * budget frees up on its own, with no separate reconciliation to get wrong.
+     */
+    const onDiskBytes = bytesOf.get(key);
+    sizes.set(
+      key,
+      onDiskBytes !== undefined
+        ? onDiskBytes
+        : estimateBytes(remote, wantedQuality(remote, kbps), ASSUMED_BYTES),
+    );
   }
 
   const plan = planCache({
@@ -273,7 +314,7 @@ export async function sweepCache(
       title: remote.title,
       artist: remote.artist,
       art: remote.artId ? artUrl(session, remote.artId, remote.id) : null,
-      bytes: remote.sizeBytes || 0,
+      bytes: estimateBytes(remote, wantedQuality(remote, kbps), ASSUMED_BYTES),
       state: heldPath(key) ? ('done' as const) : ('waiting' as const),
     };
   }));
@@ -290,6 +331,134 @@ export async function sweepCache(
   writeLedger(ledger);
 
   const missing = [...want.entries()].filter(([key]) => !heldPath(key));
+
+  /*
+   * A stale fragment must not be resumed into a file of a different quality.
+   *
+   * `offline_pin` names its fragment `<hex>.part` with no extension in it, so an
+   * abandoned 128k encode leaves a fragment indistinguishable from an abandoned
+   * lossless download. The next attempt sees bytes already there and sends
+   * `Range: bytes=N-`.
+   *
+   * Only ONE direction is dangerous, and it is worth being exact about which.
+   * The transcode endpoint ignores Range and answers 200, which the Rust side
+   * correctly reads as "not resumable" and truncates - so lossless-to-lossy and
+   * lossy-to-lossy are safe by the server's own behaviour. But the ORIGINAL file
+   * endpoint honours Range with a 206, so going BACK to lossless over a lossy
+   * fragment appends FLAC bytes to an AAC head and produces a file that passes
+   * every check this code can make and is garbage.
+   *
+   * Done lazily, inside the worker, rather than as a pass over `missing` up
+   * front: `offline_unpin` reads the whole directory on every call, so clearing
+   * a few thousand keys eagerly is quadratic and stalls the sweep before a
+   * single byte moves. Here it costs one directory read per song actually
+   * attempted, and no song is attempted without it.
+   *
+   * This narrows the window rather than closing it. The structural fix is to put
+   * the extension in the fragment's name - two lines in offline.rs, needing a
+   * native build - and until that ships this must not be leaned on for a
+   * fragment left behind by a sweep killed mid-change.
+   */
+  const applied = appliedQualityKbps();
+  /*
+   * Has the setting moved since the last sweep? That is all this says; whether a
+   * given song is at risk is decided per song, at the download.
+   *
+   * Keying the whole thing on `kbps === 0` was too narrow and missed a real
+   * case: the up-convert guard means a track's wanted quality can be 0 while the
+   * SETTING is 128 - a 128k MP3 under a 128k setting keeps its original file. If
+   * that track had an AAC fragment left from an earlier 256k setting, it would
+   * be fetched from the Range-honouring original endpoint with the guard
+   * switched off, which is the exact corruption this exists to prevent.
+   */
+  const settingChanged = applied !== null && applied !== kbps;
+  /*
+   * Recorded HERE, before a single byte moves, and this placement is the whole
+   * point of it.
+   *
+   * It used to be written at the end of a completed pass, which sounds careful
+   * and is exactly backwards: the marker's job is to say what quality the
+   * fragments ON DISK were written at, and fragments are left behind precisely
+   * by passes that DID NOT finish. A sweep killed mid-encode - the app
+   * backgrounded and reaped, the webview reloaded - left the marker still
+   * reading lossless while lossy fragments sat on disk, so a later switch back
+   * to lossless saw applied === 0, skipped the clear, resumed with a Range the
+   * original endpoint honours, and appended FLAC onto an AAC head. That file
+   * then passes every check this code can make: non-zero, renamed into place,
+   * ledgered, and preferred over the network by `offlineSource` for good.
+   *
+   * The old `!options.signal?.aborted` condition was dead in any case - neither
+   * caller passes a signal - so the interruption it guarded against was never
+   * the kind that actually happens.
+   */
+  rememberAppliedQuality(kbps);
+
+  /*
+   * Songs already held at the wrong quality, a few dozen per sweep.
+   *
+   * Without this, changing the setting does nothing to the gigabytes already on
+   * the phone - which is the whole reason somebody changed it. The sweep's
+   * held-check is only "does a file exist for this key", so a lossless copy
+   * satisfies a 128k setting forever.
+   *
+   * Rate-limited rather than done in one pass. Switching to a lossy setting
+   * makes the same budget hold roughly seven times more songs, and every one of
+   * them is a real-time encode on a machine in somebody's house. Forty a sweep
+   * turns a thundering herd into something that finishes over a day of ordinary
+   * check-ins.
+   *
+   * Coldest first: the tail is nearest eviction anyway, so re-fetching it is the
+   * cheapest work available, and the songs most likely to be reached for keep
+   * the copy they already have for longest.
+   *
+   * Hand-pinned songs cannot appear here: `planCache` skips anything on disk it
+   * does not own, so `want` never contains one. A pin is a stated request for a
+   * SONG, and rewriting it to satisfy a later setting is not this code's
+   * business.
+   *
+   * Unpin BEFORE fetching, which costs a brief window where the song is not
+   * offline. Fetching first is worse: `offline_pin` is keyed by extension, so it
+   * would leave TWO files for one key, `offline_list` would return it twice, the
+   * usage bar would double-count it, and directory order would decide which one
+   * plays. The window is self-healing - the next sweep finds the song in
+   * `missing` and fetches it.
+   */
+  const REQUALIFY_PER_SWEEP = 40;
+  const requalify: [string, RemoteTrack][] = [];
+  for (const [key, remote] of want) {
+    const file = heldPath(key);
+    if (!file) continue;
+    if (qualityOfPath(file) !== wantedQuality(remote, kbps)) requalify.push([key, remote]);
+  }
+  const toRequalify = requalify.reverse().slice(0, REQUALIFY_PER_SWEEP);
+  /*
+   * Marked now, deleted one at a time in the worker - NOT deleted here.
+   *
+   * Deleting all forty up front assumes the replacements are obtainable, and
+   * when that assumption is wrong it is catastrophic rather than merely wrong. A
+   * hub with no ffmpeg answers 503 to every transcode; the forty songs are then
+   * gone from the disk with nothing to put back, the next sweep takes forty
+   * more, and the offline library drains at eighty songs an hour while the
+   * receipt says only that some downloads failed. A mirror without the route,
+   * or an older hub that 404s, does exactly the same.
+   *
+   * Unpinning inside the worker instead costs one song per failure rather than
+   * forty, and `lossyRefused` below stops even that after the first refusal.
+   */
+  const requalifying = new Set(toRequalify.map(([key]) => key));
+  missing.push(...toRequalify);
+
+  /*
+   * Set when the server proves it cannot re-encode at all - a 503 from a box
+   * with no ffmpeg, or a 404 from one too old to have the route.
+   *
+   * Once that is known, converting anything further is not just futile, it is
+   * destructive: every requalify would delete a good file to replace it with a
+   * refusal. So the rest of the pass leaves held files alone and fetches what is
+   * still missing at lossless, which is the quality that box can actually serve.
+   */
+  let lossyRefused = false;
+
   let done = 0;
   let downloaded = 0;
   let failed = 0;
@@ -309,7 +478,46 @@ export async function sweepCache(
       // filling the cache is the one job where that choice matters most.
       const via = pickSource(session, remote.id);
       const from = via ? { ...session, url: via.url, streamToken: via.streamToken } : session;
-      const url = streamUrl(from, via ? via.trackId : remote.id);
+      const rowId = via ? via.trackId : remote.id;
+      // Lossless is the original file, byte-ranged and resumable. Anything else
+      // is a live encode: no length, no ranges, and it costs the box a core for
+      // the length of the song.
+      //
+      // fx/fx2/drop are passed as an explicit null rather than omitted, and that
+      // is deliberate. The PLAYER's resolver folds the effects rack into this
+      // same URL, and a cached file that had a rack baked into it would be a
+      // file `offlineSource` then refuses to serve the moment the rack changes -
+      // paid for, held, and unreachable. Naming them here says the omission is a
+      // decision rather than something nobody thought about.
+      // A box that has already refused one re-encode will refuse them all, so
+      // the rest of the pass asks for what it can actually serve.
+      const quality = lossyRefused ? 0 : wantedQuality(remote, kbps);
+      const url =
+        quality === 0
+          ? streamUrl(from, rowId)
+          : transcodeUrl(from, rowId, quality, 0, null, null, null);
+
+      // A song being converted is deleted HERE, immediately before its own
+      // replacement is fetched, so a refusal costs one file rather than forty.
+      // Skipped once the server has refused: there is nothing to replace it
+      // with, and the copy on disk is better than no copy at all.
+      if (requalifying.has(key)) {
+        if (lossyRefused) {
+          setManifestState(key, 'done');
+          continue;
+        }
+        // `pinnedKeys` is re-asked rather than taken from the snapshot at the
+        // top of the sweep: keep a song by hand while the pass is running and it
+        // becomes a stated request mid-flight. Converting it would delete the
+        // file and, through `unmarkPinned`, the record that it was asked for.
+        // Requalify is the cache tidying its own copies, and this one stopped
+        // being one of those.
+        if (pinnedKeys().has(key)) {
+          setManifestState(key, 'done');
+          continue;
+        }
+        await unpinTrack(key);
+      }
       setManifestState(key, 'downloading');
       let host = '';
       try {
@@ -331,6 +539,27 @@ export async function sweepCache(
        * 45-second stall watchdog, sized for the biggest lossless file on the
        * slowest honest link.
        */
+      /*
+       * See clearStaleFragment above: only when returning to lossless, and only
+       * for songs this sweep is about to fetch.
+       *
+       * `heldPath` is re-asked HERE rather than trusted from when `missing` was
+       * built. That list is a snapshot, and a sweep runs for minutes: keep a
+       * song by hand while one is in flight and it is now held, complete, and
+       * still sitting in this list. `unpinTrack` deletes every file matching the
+       * key AND calls `unmarkPinned`, so acting on the stale answer would delete
+       * the song somebody just asked to keep and erase the mark that says they
+       * asked. Re-checking costs a map lookup.
+       *
+       * Skipping is also correct rather than merely safe: a complete file means
+       * `offline_pin` would early-return anyway, so there is no download for a
+       * fragment to corrupt.
+       */
+      // `quality === 0` is the whole risk: it is the only path that goes to the
+      // original endpoint, and the original endpoint is the only one that
+      // honours a Range. A transcode answers 200 and truncates, which is safe.
+      if (settingChanged && quality === 0 && !heldPath(key)) await unpinTrack(key);
+
       let ok = false;
       let lastReason = '';
       for (let attempt = 0; attempt < 3 && !ok; attempt += 1) {
@@ -341,7 +570,40 @@ export async function sweepCache(
         }
         try {
           ok = await Promise.race([
-            pinTrack(toTrackish(remote), url),
+            pinTrack(toTrackish(remote), url, {
+              ext: extFor(remote, quality),
+              /*
+               * The Rust side only rejects a ZERO-byte download, so an ffmpeg
+               * that dies a minute in hands back a well-formed truncated file,
+               * which is renamed into place and marked done for good. A
+               * transcode carries no Content-Length, so the estimate is the
+               * only yardstick there is.
+               *
+               * HALF, and the number is measured rather than picked. Encoding
+               * 30s sources at 128k and comparing against this estimate:
+               * dense stereo 99.1%, MONO 99.1%, speech-like 99.1% - the
+               * encoder is effectively constant-rate for anything with real
+               * content in it, so a floor anywhere below ~0.9 never fires on
+               * ordinary music. What does come in under is pathological
+               * material: a quiet pure tone landed at 26% and digital silence
+               * at 3%.
+               *
+               * Which is the trade this makes, stated plainly: a track that is
+               * mostly silence will fail this check and show as a failed tile
+               * with a reason, three retries and then a red square. That is
+               * the lesser harm. The alternative is a file cut off halfway
+               * through, renamed into place, ledgered as done, and preferred
+               * over the network forever - invisible, permanent, and
+               * indistinguishable from the song just ending.
+               *
+               * Skipped entirely when the track has no duration, because then
+               * the estimate is a guess about a guess.
+               */
+              minBytes:
+                quality !== 0 && remote.duration
+                  ? Math.floor(estimateBytes(remote, quality, ASSUMED_BYTES) * 0.5)
+                  : 0,
+            }),
             new Promise<never>((_, reject) =>
               window.setTimeout(() => reject(new Error('gave up after 6 minutes')), 6 * 60 * 1000),
             ),
@@ -350,7 +612,18 @@ export async function sweepCache(
         } catch (err: unknown) {
           const msg = String(err).replace(/^Error:\s*/, '').slice(0, 90);
           lastReason = `${host}: ${msg}`;
-          if (/server answered 4/.test(msg)) break;
+          // A refusal is not weather. 4xx is the existing case; 503 joins it
+          // because that is precisely what a box with no ffmpeg answers to
+          // every single transcode request, and retrying it twice more per
+          // song turns one missing binary into three thousand pointless
+          // round trips. 500 stays retryable - that one really can be weather.
+          if (/server answered (4|503)/.test(msg)) {
+            // 503 is a box with no ffmpeg; 404 is one with no such route. Either
+            // way the re-encoder is not there, and every later song in this pass
+            // would meet the same wall.
+            if (quality !== 0 && /server answered (503|404)/.test(msg)) lossyRefused = true;
+            break;
+          }
         }
       }
       if (ok) {
@@ -380,7 +653,7 @@ export async function sweepCache(
   };
   await Promise.all(
     Array.from(
-      { length: playbackAudible ? CONCURRENCY_PLAYING : CONCURRENCY_IDLE },
+      { length: playbackAudible ? CONCURRENCY_PLAYING : idleLanes },
       async (_, lane) => {
         // Staggered starts: six connects in the same instant through the same
         // relay is how "error sending request" happens on an otherwise fine

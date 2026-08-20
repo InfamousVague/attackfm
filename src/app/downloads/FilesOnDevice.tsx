@@ -14,6 +14,7 @@ import { offlineEntries, onOfflineChange, unpinTrack, type OfflineEntry } from '
 import { autoCachedKeys, denyKey, onCacheChange } from './autoCache.ts';
 import { artSized, loadCachedIndex, remotePath, toTrack } from '../server.ts';
 import { isTauri, type Track } from '../core/tauri.ts';
+import { qualityLabel, qualityOfPath } from '../cache/cacheQuality.ts';
 import { formatBytes } from '../ux/format.ts';
 import { usePlayNowOptional } from '../player/playNow.tsx';
 
@@ -44,6 +45,9 @@ interface Row {
   bytes: number;
   track: Track | null;
   auto: boolean;
+  /** The file on disk. Its extension is the record of what quality it holds.
+   *  Optional because the test fixture has no real folder behind it. */
+  file?: string;
 }
 
 /** What a delete is about to take, for the confirm dialog. */
@@ -130,6 +134,7 @@ export function FilesOnDevice() {
       bytes: e.bytes,
       track: resolve(e.key),
       auto: owned.has(e.key),
+      file: e.path,
     }));
   }, [entries, byPath, owned, fixture]);
 
@@ -191,6 +196,12 @@ export function FilesOnDevice() {
           <span className="deviceFiles__meta">
             {formatBytes(row.bytes)}
             {row.auto ? ' · automatic' : ' · kept'}
+            {/* The only place the quality of a specific file is visible. Worth
+                showing because a held file always beats the setting at playback:
+                change the setting and these songs keep what they have until the
+                cache works through them, and without this there is nothing to
+                read that explains why. */}
+            {row.file ? ` · ${qualityLabel(qualityOfPath(row.file))}` : ''}
           </span>
         </span>
       ),

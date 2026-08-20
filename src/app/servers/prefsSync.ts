@@ -72,6 +72,10 @@ export const SYNCED_KEYS = [
  * - `attackfm-cache-limit`, `attackfm-autocache*`, `attackfm-cache-deny`: how
  *   much of a particular disk to spend. One device's storage decision must not
  *   become another's.
+ * - `attackfm-cache-quality`: same reason, and more sharply. It answers "what
+ *   should this device's disk be spent on", and a laptop with a terabyte has no
+ *   business inheriting the answer a phone gave. Absence from SYNCED_KEYS is the
+ *   whole mechanism - there is nothing to switch off.
  * - `attackfm-device-id`, `attackfm-device-name`: the things that tell devices
  *   APART. Syncing them would merge every device into one.
  * - `attackfm-server-session`, `attackfm-registry-session`: credentials.
