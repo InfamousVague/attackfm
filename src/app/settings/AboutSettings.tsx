@@ -1,4 +1,4 @@
-import { Button, Pill, Text } from '@glacier/react';
+import { Button, Pill, StatusDot, Text } from '@glacier/react';
 import { Cloud, ExternalLink, Laptop, Music, RefreshCw, Smartphone } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { WhatsNew } from './WhatsNew.tsx';
@@ -10,6 +10,7 @@ import { fetchServerStats, type ServerStats } from '../server.ts';
 import { uptimeLabel } from '../servers/serverFormat.ts';
 import { useLibrary } from '../library/library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
+import { useNetworkHealth } from '../servers/NetworkDot.tsx';
 import { isTauri } from '../core/tauri.ts';
 import {
   applyStagedBundle,
@@ -28,6 +29,8 @@ const REPO_URL = 'https://github.com/InfamousVague/attackfm';
  */
 export function AboutSettings() {
   const { session } = useServerSession();
+  // The reading that used to be a light in the header on every page.
+  const net = useNetworkHealth();
   const { tracks } = useLibrary();
   const [stats, setStats] = useState<ServerStats | null>(null);
 
@@ -106,6 +109,29 @@ export function AboutSettings() {
               stats ? `v${stats.version}` : null,
               stats ? `up ${uptimeLabel(stats.uptimeSecs)}` : null,
               session.url.replace(/^https?:\/\//, ''),
+            ]
+              .filter(Boolean)
+              .join(' · '),
+          },
+        ]
+      : []),
+    // Directly under the server it describes, because it is a fact ABOUT that
+    // server rather than a separate subject. This is the whole of what the
+    // header dot used to say, in the place somebody goes to ask.
+    ...(net
+      ? [
+          {
+            id: 'connection',
+            icon: <StatusDot tone={net.tone} pulse={net.ok === true} size="sm" />,
+            label: 'Connection',
+            value: [
+              net.label,
+              net.mirrors > 0
+                ? `${net.mirrors} ${net.mirrors === 1 ? 'mirror' : 'mirrors'} standing by`
+                : null,
+              net.otherDevices > 0
+                ? `${net.otherDevices} other ${net.otherDevices === 1 ? 'device' : 'devices'}`
+                : null,
             ]
               .filter(Boolean)
               .join(' · '),

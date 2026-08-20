@@ -13,7 +13,6 @@ import { PluginHookScope } from '../plugins/runtime.tsx';
 import { isDesktopApp } from './core/platform.ts';
 import { useDesktopLayout } from './ux/useDesktopLayout.ts';
 import type { Track } from './core/tauri.ts';
-import { NetworkDot } from './servers/NetworkDot.tsx';
 import { SettingsModal } from './settings/SettingsModal.tsx';
 import { SearchPage } from './search/SearchPage.tsx';
 import { onSpotifyLink } from './servers/deepLink.ts';
@@ -187,13 +186,12 @@ export function App() {
   );
 
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // Which pane Settings should open ON, when a surface aims it - the network
-  // dot's Manage lands on Servers; a plain open starts wherever it was.
+  // Which pane Settings should open ON, when a surface aims it. Nothing aims it
+  // at present: the network dot's "Manage network" was the only caller, and the
+  // dot has moved into About. The seam stays because the modal still takes the
+  // prop and honours it - the next surface that wants to land somewhere
+  // specific needs a setter, not a mechanism.
   const [settingsPane, setSettingsPane] = useState<string | null>(null);
-  const openSettings = (pane: string | null = null) => {
-    setSettingsPane(pane);
-    setSettingsOpen(true);
-  };
   // A system back swipe closes Settings before it touches the page history.
   useSystemBack(settingsOpen, () => setSettingsOpen(false));
   // The app-wide tap tick, bound to the Settings switch. Mounted only while the
@@ -525,7 +523,6 @@ export function App() {
                     {/* Plugin actions have moved to the pages themselves, beside
                         the heading they act on, so the chrome's end slot is the
                         network light and settings. */}
-                    <NetworkDot onManage={() => openSettings('server')} />
                     {/* The news, on the one piece of chrome every page shares -
                         which is what makes "the notifications" a place rather
                         than something you had to be on the right screen to
@@ -586,7 +583,6 @@ export function App() {
                     row is already taller with its trailing half empty. */}
                 <span className="mobileHeader__actions">
                   <HeaderActionButtons />
-                  <NetworkDot onManage={() => openSettings('server')} />
                   {/* After the lent buttons, not before: the collection header
                       slides Play and Shuffle in and out of this slot, and a
                       bell placed ahead of them would shift sideways every time
