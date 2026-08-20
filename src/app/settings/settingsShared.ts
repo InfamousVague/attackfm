@@ -1,5 +1,5 @@
 import { accentOptions } from '@glacier/tokens';
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { BRAND_ACCENTS } from './brandAccents.ts';
 import type { ThemePreference } from './themePresets.ts';
 
@@ -144,6 +144,67 @@ export function paneMatches(section: SettingsSection, query: string): boolean {
 // treatment now requires the screen to actually be narrow; a wide touch
 // screen gets the desktop modal, rail and all.
 export const MOBILE_QUERY = '(pointer: coarse) and (max-width: 699px), (max-width: 540px)';
+
+/**
+ * Below this many pixels of ACTUAL room, settings shows one thing at a time.
+ *
+ * Matched to MOBILE_QUERY's 699 on purpose: the phone and a squeezed window are
+ * the same problem - not enough width for a rail beside a pane - and answering
+ * them at two different numbers would mean two layouts to keep honest.
+ */
+const TWO_COLUMN_FLOOR = 700;
+
+/**
+ * How much width the settings modal actually has, which is NOT the viewport.
+ *
+ * The kit collapses its own rail at `@media (max-width: 40rem)`, and every
+ * media query asks the window. That is the wrong question here: when Now
+ * Playing docks, `.appWindow` shrinks to `calc(100% - var(--np-dock-width))`
+ * and the modal is centred in what is left - so on a tablet the window stays
+ * comfortably past every breakpoint while the modal itself is squeezed to
+ * around half of it. The rail and the pane both got drawn, into a box with room
+ * for neither: a search field reading "Find a settir", theme cards cut off at
+ * the seam.
+ *
+ * So measure the box rather than the screen. Falls back to the viewport when
+ * there is no app window to measure - which is what the value should be then
+ * anyway, since the modal has the whole screen.
+ */
+export function useSettingsRoom(open: boolean): number {
+  const [room, setRoom] = useState(() =>
+    typeof window === 'undefined' ? TWO_COLUMN_FLOOR : window.innerWidth,
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    // Resolved on every open rather than once for the life of the component:
+    // the element can be replaced, and this is also the moment the answer
+    // actually has to be right. A stale node reports the width it had when it
+    // was detached, and nothing about that is obviously wrong on screen.
+    const shell = document.querySelector('.appWindow');
+    const read = () => setRoom(shell ? shell.getBoundingClientRect().width : window.innerWidth);
+    read();
+    // Docking the player resizes the shell without the WINDOW doing anything -
+    // it is a class change, not a resize - so the element is what to watch.
+    // The window listener stays for the case where there is no shell to watch,
+    // and as a second path in throttled webviews, where ResizeObserver delivery
+    // rides the rendering steps and a backgrounded view may not run them.
+    const ro = shell ? new ResizeObserver(read) : null;
+    ro?.observe(shell!);
+    window.addEventListener('resize', read);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener('resize', read);
+    };
+  }, [open]);
+
+  return room;
+}
+
+/** Whether settings has room to stand a rail beside a pane. */
+export function useHasTwoColumnRoom(open: boolean): boolean {
+  return useSettingsRoom(open) >= TWO_COLUMN_FLOOR;
+}
 
 /** One entry in the settings rail: an id, its label, its icon, its pane -
  * plus what the phone's drill-in list needs: a one-line reading of the
