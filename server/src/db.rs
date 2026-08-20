@@ -5366,6 +5366,55 @@ impl Db {
     }
 
     /// (wanted, done, failed, evicted), for the readout.
+    /// Every song this is ultimately trying to separate: liked or playlisted,
+    /// not deleted.
+    ///
+    /// The counts in `prefetch_summary` are the QUEUE's view - what has been
+    /// enqueued so far - and the queue is filled a batch at a time, so on a big
+    /// library "wanted" is a few dozen however much is really left. That reads
+    /// as nearly finished while thousands wait. This is the denominator that
+    /// makes the readout honest.
+    pub fn prefetch_total(&self, model: &str) -> (i64, i64) {
+        let conn = self.lock();
+        let total: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM tracks t
+                  WHERE t.deleted = 0
+                    AND (EXISTS (SELECT 1 FROM favorites f WHERE f.track_id = t.id)
+                      OR EXISTS (SELECT 1 FROM playlist_tracks pt WHERE pt.track_id = t.id))",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        // Separated is counted against the SAME set, not against every stem on
+        // disk: a song separated because somebody asked for it, and which is
+        // neither liked nor in a list, is not progress toward this job.
+        let separated: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM tracks t
+                  WHERE t.deleted = 0
+                    AND (EXISTS (SELECT 1 FROM favorites f WHERE f.track_id = t.id)
+                      OR EXISTS (SELECT 1 FROM playlist_tracks pt WHERE pt.track_id = t.id))
+                    AND EXISTS (SELECT 1 FROM track_stems s
+                                 WHERE s.track_id = t.id AND s.model = ?1)",
+                params![model],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        (separated, total)
+    }
+
+    /// A track's title and artist, for naming the one being worked on.
+    pub fn track_label(&self, track_id: i64) -> Option<(String, String)> {
+        self.lock()
+            .query_row(
+                "SELECT title, artist FROM tracks WHERE id = ?1",
+                params![track_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .ok()
+    }
+
     pub fn prefetch_summary(&self) -> (i64, i64, i64, i64) {
         let conn = self.lock();
         let n = |state: &str| -> i64 {
@@ -6332,6 +6381,67 @@ mod stem_prefetch_brakes {
             )
             .unwrap();
         id
+    }
+
+    /// Puts a track in the library and into a playlist, without liking it.
+    fn playlisted_track(db: &super::Db, rel: &str) -> i64 {
+        let user = db.create_user(&format!("p{rel}"), "x", false).unwrap();
+        db.lock()
+            .execute(
+                "INSERT INTO tracks (rel_path, title, artist, album_artist, album, deleted, added_at, rev)
+                 VALUES (?1, 't', 'a', 'a', 'al', 0, 1, 1)",
+                super::params![rel],
+            )
+            .unwrap();
+        let id: i64 = db
+            .lock()
+            .query_row("SELECT id FROM tracks WHERE rel_path = ?1", super::params![rel], |r| r.get(0))
+            .unwrap();
+        let pl = db.create_playlist(user, "list").unwrap();
+        db.set_playlist_tracks(pl, &[id]).unwrap();
+        id
+    }
+
+    /// The readout's denominator counts the JOB, not the disk.
+    ///
+    /// It would be easy to answer this with "how many stems exist", and it would
+    /// be wrong in both directions: a song separated because somebody asked for
+    /// it, which is neither liked nor listed, is not progress toward this; and a
+    /// liked song counts whether or not the queue has reached it yet.
+    #[test]
+    fn the_total_counts_the_job_rather_than_the_disk() {
+        let db = db("total");
+        let liked = liked_track(&db, "liked.flac");
+        let listed = playlisted_track(&db, "listed.flac");
+
+        let (done, total) = db.prefetch_total("m");
+        assert_eq!(total, 2, "liked and playlisted are both in the job");
+        assert_eq!(done, 0, "nothing separated yet");
+
+        // Separating the liked one moves the numerator only.
+        db.save_stem_at(liked, "vocals", "m", "a/vocals.flac", 10, super::now_ms()).unwrap();
+        let (done, total) = db.prefetch_total("m");
+        assert_eq!((done, total), (1, 2), "one of two apart");
+
+        // A song nobody liked or listed, separated on request, is NOT progress -
+        // it inflates neither half.
+        db.lock()
+            .execute(
+                "INSERT INTO tracks (rel_path, title, artist, album_artist, album, deleted, added_at, rev)
+                 VALUES ('stray.flac', 't', 'a', 'a', 'al', 0, 1, 1)",
+                [],
+            )
+            .unwrap();
+        let stray: i64 = db
+            .lock()
+            .query_row("SELECT id FROM tracks WHERE rel_path = 'stray.flac'", [], |r| r.get(0))
+            .unwrap();
+        db.save_stem_at(stray, "vocals", "m", "b/vocals.flac", 10, super::now_ms()).unwrap();
+        assert_eq!(db.prefetch_total("m"), (1, 2), "a song outside the job changes neither half");
+
+        // And a different model shares no credit: the numerator is per-model.
+        assert_eq!(db.prefetch_total("other").0, 0, "another model has separated none of them");
+        let _ = listed;
     }
 
     #[test]
