@@ -40,6 +40,7 @@ import { MobileSettings } from './MobileSettings.tsx';
 import {
   accentLabel,
   MOBILE_QUERY,
+  useHasTwoColumnRoom,
   paneMatches,
   THEME_COPY,
   type SettingsSection,
@@ -273,10 +274,54 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
     setTab(id);
   };
 
+  /*
+   * The rail wears the touch list's rows.
+   *
+   * The two surfaces were showing the same sections in two different languages:
+   * a full-screen list of tinted chips over a live one-line reading of each
+   * section, and a rail of small grey glyphs and a bare word. Same settings,
+   * same order, same data - `summary` and `tint` have been on every section all
+   * along and only one surface was reading them.
+   *
+   * Done by handing the kit a rich `label` rather than by building a rail of
+   * our own: TabbedModalSection.label is a ReactNode, so the row can carry the
+   * chip and the summary while the kit keeps the parts worth keeping - roving
+   * focus, the active state, and the id matching that drives the pane.
+   *
+   * The classes are the touch list's own, not copies of them. A second set of
+   * chip tints would be a second place to change a colour.
+   */
+  const railSections = shown.map((s) => ({
+    ...s,
+    // The chip carries the glyph now, so the kit's own icon slot stays empty -
+    // handing it the icon as well would print it twice.
+    icon: undefined,
+    label: (
+      <span className="settingsRail__row">
+        {s.icon ? (
+          <span className="settingsScreen__rowIcon" data-tint={s.tint ?? 'slate'}>
+            {s.icon}
+          </span>
+        ) : null}
+        <span className="settingsScreen__rowText">
+          <span className="settingsScreen__rowLabel">{s.label}</span>
+          {s.summary && <span className="settingsScreen__rowSummary">{s.summary}</span>}
+        </span>
+      </span>
+    ),
+  }));
+
   // On touch the rail-beside-a-pane collapses to a drill-in: a full-screen list
   // of sections that pushes into the chosen pane, a back arrow returning to it.
+  //
+  // And now also whenever the modal has too little ROOM for two columns, which
+  // is a different question from how wide the screen is - see useSettingsRoom.
+  // A pointer user with the player docked lands here too, and should: one
+  // readable column beats two clipped ones, and the two surfaces wear the same
+  // rows now, so crossing between them is not a change of language.
   const mobile = useMediaQuery(MOBILE_QUERY);
-  if (mobile) {
+  const roomForTwo = useHasTwoColumnRoom(open);
+  if (mobile || !roomForTwo) {
     return <MobileSettings open={open} onClose={onClose} sections={sections} initialId={pane ?? null} />;
   }
 
@@ -301,7 +346,7 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       // The rail and the pane read as one surface here, so the line between them
       // is dropped.
       divider={false}
-      sections={shown}
+      sections={railSections}
     />
   );
 }

@@ -131,6 +131,50 @@
   color: var(--glacier-text-muted);
 }
 
+/* ---- The rail, wearing the touch list's rows ------------------------------
+   The row itself; everything inside it is the touch list's own classes, so a
+   chip colour or a summary's type is set in one place for both surfaces. The
+   kit's rail button supplies the seat, the hit area and the active state - this
+   only has to lay the chip beside the two lines. */
+.settingsRail__row {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  inline-size: 100%;
+  min-inline-size: 0;
+  text-align: start;
+}
+
+/* The rail is narrower than the full-screen list, so the summary is allowed to
+   end early rather than force the rail wider. */
+.settingsRail__row .settingsScreen__rowSummary {
+  max-inline-size: 100%;
+}
+
+/* And the rail gets some of that width back. The kit lays the modal out at
+   `12rem minmax(0, 1fr)`, which is the right measure for a glyph and a word and
+   too tight for a chip over two lines - "Downloads & space" and "How it all
+   works, in 28 pages" both ended in an ellipsis at that width.
+   Reached through :has() on the panel that holds the settings title rather than
+   by naming the kit's hashed class, which changes whenever the kit is rebuilt.
+   The same idiom the downloads panel already uses. */
+body [class*='_panel_']:has(.settingsTitleRow) [class*='_layout_'] {
+  grid-template-columns: 15.5rem minmax(0, 1fr);
+}
+
+/* The kit holds a rail label to one line and clips it, which is right for a
+   word and wrong for a stack of two. */
+body [class*='_panel_']:has(.settingsTitleRow) [class*='_railLabel_'] {
+  overflow: visible;
+  white-space: normal;
+}
+
+/* The kit centres its rail labels and holds them to one line, which is right
+   for a word and wrong for two stacked ones. */
+.settingsRail__row .settingsScreen__rowText {
+  align-items: flex-start;
+}
+
 /* The drilled-in pane: the section's own controls, scrolling under the header. */
 .settingsScreen__pane {
   flex: 1;
