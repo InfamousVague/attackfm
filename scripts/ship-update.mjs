@@ -154,6 +154,77 @@ if (live === null) {
   }
 }
 
+/**
+ * Refuse to build from a tree that is not level with origin/main.
+ *
+ * The registry guard above stops the version NUMBER going backwards. This stops
+ * the CODE going backwards, which is the same accident wearing a version bump
+ * and is invisible to every check made after the fact.
+ *
+ * Both directions are real and both happened on 2026-08-20:
+ *
+ * BEHIND - main has commits this tree lacks. The bundle is built without them,
+ * so a HIGHER version publishes with LESS code in it, and every device already
+ * on the older version loses whatever was dropped. That is how 0.3.239 went out
+ * carrying a CSS fix but not the playlist syncing that 0.3.238 had shipped
+ * twenty minutes earlier. Nothing downstream can catch it: the sha matches the
+ * builder's own build, their markers are present, the version went up, and the
+ * changelog is a clean union. "Newer" is not "superset".
+ *
+ * AHEAD - this tree has commits not on main. The bundle carries code main
+ * cannot reproduce, so the release is unauditable, and the next session to build
+ * from main silently drops it. The specific way this bites: a push is REJECTED
+ * as non-fast-forward and the build runs anyway in the same command, leaving the
+ * work unpushed for as long as the ship takes.
+ *
+ * Being level is cheap to restore (pull, or push) and is the only state in which
+ * the bundle and main agree about what this release contains.
+ *
+ * Like the registry check, this does NOT block when it cannot get an answer -
+ * no git, no origin, no network. A release freeze caused by a fetch timeout is
+ * worse than the failure being prevented, so it says so and carries on. And it
+ * prints the comparison on every run rather than only on refusal.
+ */
+const git = (...args) => {
+  const r = spawnSync('git', args, { encoding: 'utf8', timeout: 20_000 });
+  return r.status === 0 ? r.stdout.trim() : null;
+};
+
+if (git('rev-parse', '--git-dir') === null) {
+  console.log('    tree     not a git checkout — skipping the level-with-main check');
+} else {
+  // A failed fetch is not fatal; the counts below are then measured against
+  // whatever origin/main was last known to be, which is still worth having.
+  const fetched = git('fetch', '--quiet', 'origin', 'main') !== null;
+  const head = git('rev-parse', '--short', 'HEAD');
+  const ahead = git('rev-list', '--count', 'origin/main..HEAD');
+  const behind = git('rev-list', '--count', 'HEAD..origin/main');
+
+  if (ahead === null || behind === null) {
+    console.log('    tree     could not compare against origin/main — publishing unguarded');
+  } else {
+    const stale = fetched ? '' : ' (offline — origin/main may be stale)';
+    console.log(`    tree     ${head}   ·   ${ahead} ahead / ${behind} behind origin/main${stale}`);
+
+    if (Number(behind) > 0) {
+      die(
+        `refusing to build ${version}: origin/main has ${behind} commit(s) this tree does not.\n` +
+          `    The bundle would publish a higher version with LESS code than what is\n` +
+          `    already live, and every device on the current version would lose it.\n` +
+          `    Run ${'`'}git pull --rebase${'`'} and ship again.`,
+      );
+    }
+    if (Number(ahead) > 0) {
+      die(
+        `refusing to build ${version}: this tree has ${ahead} commit(s) not on origin/main.\n` +
+          `    The bundle would carry code main cannot reproduce, and the next session\n` +
+          `    to build from main would drop it. Push first — and if the push is\n` +
+          `    REJECTED, stop and pull rather than building anyway.`,
+      );
+    }
+  }
+}
+
 if (DRY) { ok('dry run — nothing built, nothing published'); process.exit(0); }
 
 if (!KEEP) {
