@@ -204,10 +204,37 @@ Studio product photograph of a crescent moon with a soft halo around its outer e
 
 ## Publishing one
 
-1. Save as `server/assets/artwork/<slug>.jpg`, square, 1024 x 1024.
-2. `npm run redeploy -- assets`
+1. Flatten onto BLACK and save as `server/assets/artwork/<slug>-c.jpg`, square,
+   1024 x 1024:
+
+   ```sh
+   magick in.png -background black -alpha remove -alpha off \
+     -resize 1024x1024 -quality 92 -strip server/assets/artwork/<slug>-c.jpg
+   ```
+
+2. `npm run site:deploy`
 3. Add `'<slug>'` to `CUTOUT_ART` in `src/app/ux/artwork.ts`.
 4. `npm run ship`
+
+Three things in there are easy to get wrong.
+
+**The `-c` suffix.** A cut-out is published ALONGSIDE the old still, not over
+it. An install running an older bundle knows nothing about `CUTOUT_ART`, asks
+for the plain slug, and multiplies whatever it gets over a gradient - hand it a
+black-ground picture and the whole card goes black. `artworkUrl` appends `-c`
+only for slugs in the set, so old and new clients each get the file they were
+built for and neither has to wait for the other.
+
+**Flattening onto black, explicitly.** These export with an alpha channel, and
+JPEG has none. Every converter defaults to flattening transparency onto WHITE,
+and white under `screen` is an entirely white card. Nothing warns you; the file
+just looks fine in Preview.
+
+**`site:deploy`, not `redeploy -- assets`.** `attack.fm/art` is served by the
+marketing site, and `npm run site:deploy` is what rsyncs
+`server/assets/artwork/` there. `redeploy -- assets` publishes to
+`/opt/attackfm/data/assets` on the VPS, which nothing has read since the asset
+URL moved off `matt.attack.fm/api`.
 
 Step 3 is what actually changes the card, and this is the safe order: an
 unreferenced file breaks nothing, a referenced missing file is a card with a

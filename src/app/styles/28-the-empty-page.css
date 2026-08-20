@@ -243,10 +243,25 @@
 }
 
 .searchGenre[data-cutout] .searchGenre__objectArt {
+  /* The box is TALLER than the tile and hangs off both edges of it, which looks
+     wrong written down and is the only way to get the object to a readable
+     size. `contain` fits the whole 1024 square, and these pieces are drawn
+     centred inside generous margin - so a box the size of the tile renders an
+     object about half the height of the tile, floating in its own padding.
+     Oversizing the box spends that margin instead of the object. Pushed
+     further (a box ~170% tall) the taller pieces start losing their ends, so
+     this is the size just short of that. */
+  inset: -20% -4% -20% auto;
+  inline-size: 60%;
+  block-size: 140%;
   object-fit: contain;
   mix-blend-mode: screen;
-  filter: grayscale(1) brightness(1.45) contrast(1.7) sepia(1)
-    hue-rotate(calc((var(--searchTileHue, 280) - 40) * 1deg)) saturate(2.4);
+  /* Barely pushed at all, where the chips are pushed hard. Those objects are
+     neon and chrome with real contrast in them; these are frosted glass lit
+     from inside, already sitting near white, and 1.45/1.7 flattened every one
+     of them into a solid white cut-out with no modelling left. */
+  filter: grayscale(1) brightness(1.02) contrast(1.2) sepia(1)
+    hue-rotate(calc((var(--searchTileHue, 280) - 40) * 1deg)) saturate(2.3);
 }
 
 /* The label's own ground, in the tile's colour rather than in black: black
