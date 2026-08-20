@@ -693,6 +693,17 @@ button.statsArtChip:hover {
   border-radius: var(--glacier-radius-full);
 }
 
+/* A generated object is a cut-out on black: drawn flat it is a black square
+   where the top genre should be. Screened, the ground falls away and the
+   object prints over the chip's own gradient. */
+.statsArtChip__art[data-object] img {
+  object-fit: contain;
+  padding: 14%;
+  mix-blend-mode: screen;
+  filter: grayscale(1) brightness(0.7) contrast(1.1) sepia(1)
+    hue-rotate(calc((var(--chip-hue, 210) - 40) * 1deg)) saturate(2.4);
+}
+
 .statsArtChip__art img {
   inline-size: 100%;
   block-size: 100%;

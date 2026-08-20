@@ -318,6 +318,19 @@ body:has(.npScreen[data-docked]) .djToast {
   object-fit: cover;
 }
 
+/* The genre tile on a row wears the same printed object as the Browse wall, and
+   for the same reason it has to be screened: these pictures are cut-outs on a
+   black ground, and `cover` with no blend draws that ground - a black square
+   sitting where a genre used to be. Small enough here that the dot screen would
+   only be noise, so it takes the object and the field and leaves the dots. */
+.searchRow__glyph[data-shape='tile'] img {
+  object-fit: contain;
+  padding: 12%;
+  mix-blend-mode: screen;
+  filter: grayscale(1) brightness(0.68) contrast(1.1) sepia(1)
+    hue-rotate(calc((var(--searchTileHue, 280) - 40) * 1deg)) saturate(2.6);
+}
+
 /* Two by two, and gracefully fewer: one cover fills the square, two split it
    down the middle, three leave the fourth cell empty rather than stretching. */
 .searchMosaic {
