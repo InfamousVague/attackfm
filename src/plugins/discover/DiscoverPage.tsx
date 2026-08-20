@@ -84,44 +84,6 @@ function jobFor(jobs: readonly MusicImportJob[] | undefined, item: Suggestion): 
   return jobs.find((j) => j.url.includes(bare)) ?? null;
 }
 
-/**
- * The one line under "Discover" that says where the picks stand.
- *
- * The machine asks for a SONG, never for patience: counts in songs, no
- * percentages, no talk of confidence, and no engine nouns (harvest, adoption,
- * embeddings all stay in Settings). It only ever states something true of this
- * moment, so it can be read at a glance and then ignored.
- */
-function warmthLine(
-  warmth: {
-    progress: { pool: number; listened: number };
-    taste: { heard: number; needed: number } | null;
-  } | null,
-  discoveries: Discovery[] | null,
-): string {
-  // Picks on screen: say what they were drawn from, not what is missing.
-  if (discoveries && discoveries.length >= 3) {
-    const measured = warmth?.progress.listened ?? 0;
-    return measured > 0
-      ? `Picked from ${measured} songs measured against what you play.`
-      : 'Picked from your library and what you play.';
-  }
-  // An older server that does not report the gate: no ask to make honestly.
-  if (!warmth?.taste) return 'Find music beyond your library and add it in a tap.';
-  const { heard, needed } = warmth.taste;
-  if (heard <= 0) {
-    return `Nothing to go on yet. Play ${needed} songs and this page starts picking.`;
-  }
-  if (heard < needed) {
-    const left = needed - heard;
-    return `${heard} of ${needed} songs. ${left === 1 ? 'One more' : `${left} more`} and this page starts picking.`;
-  }
-  // Past the gate, still thin: the server is out looking.
-  return warmth.progress.pool > 0
-    ? `Your server is listening to ${warmth.progress.listened} of ${warmth.progress.pool} songs it found for you.`
-    : 'Your server is out looking — the first picks land in a few minutes.';
-}
-
 /** What the queue says about this suggestion. An errored job reads as idle:
  *  the Add button doubles as the retry. */
 function stateFrom(job: MusicImportJob | null, tapped: AddState | undefined): AddState {
@@ -319,12 +281,6 @@ export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
   // Cards tapped this session, for the instant before the queue reports the
   // job; the queue's own word (stateFrom) always wins once it has one.
   const [tapped, setTapped] = useState<Record<string, AddState>>({});
-  // How warm the AI is on this listener: the pool it has measured, and how far
-  // along the taste gate they are. Null until the first answer.
-  const [warmth, setWarmth] = useState<{
-    progress: { pool: number; listened: number };
-    taste: { heard: number; needed: number } | null;
-  } | null>(null);
   const [preview, setPreview] = useState<Suggestion | null>(null);
   // The charts are the same for every account on the hub, so they sit under a
   // closed lid below everything personal - present for an empty library, out
@@ -377,10 +333,6 @@ export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
     try {
       const feed = await fetchDiscoveries(s);
       setDiscoveries(feed.items);
-      // Kept, not discarded: how far along the taste model is and how much of
-      // the pool has been measured is what lets the page ASK for listening in
-      // real numbers instead of showing an apology.
-      setWarmth({ progress: feed.progress, taste: feed.taste ?? null });
     } catch {
       setDiscoveries((prev) => prev ?? []);
     }
@@ -679,18 +631,6 @@ export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
       {/* Same bar as Library. Discover is where you look for what you do NOT
           have, so the prompt says so - the page it opens searches both. */}
       <SearchEntry placeholder="Search for music to add" />
-      <header className="discoverHead">
-        <span className="discoverHead__glyph" aria-hidden>
-          <Compass size={22} />
-        </span>
-        <div className="discoverHead__text">
-          <h1 className="discoverHead__title">Discover</h1>
-          {/* One true sentence about where the picks stand, in songs rather
-              than percentages - and never both an ask and a full page. */}
-          <p className="discoverHead__blurb">{warmthLine(warmth, discoveries)}</p>
-        </div>
-      </header>
-
       {/* What the AI made FROM your library: mixes whose every track you
           already own, so they play the instant you tap them. They lead the
           personal half of the page because they are the only thing here that

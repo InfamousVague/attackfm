@@ -1,5 +1,5 @@
 import { Button } from '@glacier/react';
-import { ChevronLeft, Play, Shuffle } from '@glacier/icons';
+import { ChevronLeft, Compass, Play, Shuffle } from '@glacier/icons';
 import { useEffect, useRef, useState } from 'react';
 import { useHeaderActions, type HeaderActions } from './headerActions.ts';
 import wordmark from '../../assets/attack-white.png';
@@ -46,6 +46,14 @@ export function HeaderIdent({ tab }: { tab: string }) {
           <span className="mobileHeader__title">Profile</span>
         ) : tab === 'booth' ? (
           <span className="mobileHeader__title">The Booth</span>
+        ) : tab === 'discover' ? (
+          /* Named like every other tab rather than wearing the wordmark. The
+             compass comes with it because Discover is the one destination whose
+             name does not say what it holds - Library and Downloads do. */
+          <span className="mobileHeader__title mobileHeader__title--glyphed">
+            <Compass size={17} aria-hidden />
+            Discover
+          </span>
         ) : (
           <img className="mobileHeader__logo" src={wordmark} alt={APP_NAME} />
         )}

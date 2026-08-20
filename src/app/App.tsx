@@ -6,7 +6,7 @@
 // (current/queue) and the queue verbs stay HERE - they close over live state
 // through refs and everything else threads off them.
 import { IconButton, TitleBar } from '@glacier/react';
-import { ChevronLeft, ChevronRight, RefreshCw, Search, Settings } from '@glacier/icons';
+import { ChevronLeft, ChevronRight, Compass, RefreshCw, Search, Settings } from '@glacier/icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NowPlayingBackdrop } from './player/NowPlayingBackdrop.tsx';
 import { PluginHookScope } from '../plugins/runtime.tsx';
@@ -491,14 +491,29 @@ export function App() {
                         <ChevronRight size={18} />
                       </IconButton>
                     </span>
-                    <img
-                      className="titleBarLogo"
-                      src={wordmark}
-                      alt={APP_NAME}
-                      // Carries the attribute itself so pressing the logo still
-                      // drags the window rather than dead-zoning the bar.
-                      data-tauri-drag-region
-                    />
+                    {tab === 'discover' ? (
+                      /* Discover names itself here instead of wearing the
+                         wordmark. The page below used to carry a heading of its
+                         own under the search field, which meant the top of the
+                         window said what APP you were in while the page said
+                         where you were - two claims on the same glance. This is
+                         the one that answers the question people actually have.
+                         The compass comes along because "Discover" is the only
+                         tab whose name does not describe what it holds. */
+                      <span className="titleBarWhere" data-tauri-drag-region>
+                        <Compass size={17} aria-hidden />
+                        Discover
+                      </span>
+                    ) : (
+                      <img
+                        className="titleBarLogo"
+                        src={wordmark}
+                        alt={APP_NAME}
+                        // Carries the attribute itself so pressing the logo still
+                        // drags the window rather than dead-zoning the bar.
+                        data-tauri-drag-region
+                      />
+                    )}
                   </>
                 }
                 // Search now lives on the pages themselves (Home, Library, and
