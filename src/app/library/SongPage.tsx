@@ -6,7 +6,7 @@ import { useLibrary } from './library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { SongTable } from './SongTable.tsx';
 import { setHeaderActions } from '../nav/headerActions.ts';
-import { EmptyArt, HeroArt, type EmptyArtName } from '../ux/EmptyArt.tsx';
+import { EmptyArt, HeroArt, type HeroArtName } from '../ux/EmptyArt.tsx';
 import { fetchHome, trackIdFromPath } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
 import { formatTotal } from '../ux/format.ts';
@@ -50,7 +50,7 @@ const META: Record<
   {
     kicker: string;
     title: string;
-    art: EmptyArtName;
+    art: HeroArtName;
     glyph?: ComponentType<{ size?: number }>;
     tone: string;
     empty: string;
