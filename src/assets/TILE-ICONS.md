@@ -64,23 +64,29 @@ somebody scanning the grid needs to know it means "what I played lately".
 > Thick and blunt, filling its square — a mark made with a brush, not a thin
 > cross.
 
-## Shipped
+## Tried, and put back
 
-Both are in: `tile-recent.webp` and `tile-add.webp`, generated from the prompts
-above and wired into `src/app/playlists/PlaylistShowcase.tsx`. What was done to
-them between the generator and the repo, in case the next pair needs the same:
+The two objects below were generated, wired in and shipped in 0.3.215 — and
+reverted in 0.3.216, because on the tiles they read worse than the line glyphs
+they replaced. Matt's call after seeing them in place, which is the only place
+that question can be answered.
 
-- **Trimmed to the object's own alpha bounds and re-padded square.** The
-  generator left uneven margin, and the CSS sizes by the FRAME, so an off-centre
-  object sits off-centre on the tile no matter what the sizing rule says.
-- **Resized 816 → 512** to match the chip art, and **converted PNG → WebP**:
-  956 KB and 780 KB became 100 KB and 53 KB. That matters more than it looks —
-  the OTA bundle inlines assets as data URIs, so a megabyte of PNG costs about
-  1.4 MB of base64 on every device that updates.
+Worth writing down rather than just deleting, because the reasoning is not
+obvious from the pictures: these two tiles are CONTROLS, not content. Recent
+opens a view and New Playlist opens a dialog. The library chips beside them are
+destinations and the playlist tiles are records, so both of those earn a face —
+but a control that wears one starts competing with the things it sits among. A
+thin outline mark is quieter, and quiet is correct for a button.
 
-The prompts below the line are kept as the record of what made them.
+`tile-recent.webp` and `tile-add.webp` stay in the repo, unimported. They cost
+nothing — vite only bundles what is imported, and the built app.js carries zero
+references to either — so they are here if the question is ever reopened.
 
-## How they were wired
+The prompts below still hold for anything that genuinely wants a brutalist
+object, and the notes on what the generator's output needs on arrival (trim,
+re-centre, resize, WebP) apply to any of them.
+
+## How they were wired (now reverted)
 
 Both were plain `<div className="tileSquircle …">` wrappers holding a lucide
 component — `History size={24}` at Recent and `Plus size={24}` at New Playlist.

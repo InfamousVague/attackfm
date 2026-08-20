@@ -1,7 +1,7 @@
 import { cardTexture } from '../ux/artwork.ts';
 import { mosaicArts, useTileArt } from '../ux/artLoad.ts';
 import { Button, ContextMenu, Input, Modal, MenuItem, Text } from '@glacier/react';
-import { ListMusic, Trash2 } from '@glacier/icons';
+import { History, ListMusic, Plus, Trash2 } from '@glacier/icons';
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { useLibrary } from '../library/library.tsx';
 import { DjLauncher } from '../booth/DjLauncher.tsx';
@@ -13,8 +13,6 @@ import { playlistPlayedAt, notePlaylistPlayed } from './playlistRecency.ts';
 import likedChip from '../../assets/chip-liked.png';
 import allSongsChip from '../../assets/chip-all-songs.png';
 import onRepeatChip from '../../assets/chip-on-repeat.png';
-import recentTile from '../../assets/tile-recent.webp';
-import addTile from '../../assets/tile-add.webp';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -142,29 +140,26 @@ export function PlaylistShowcase({
 }: {
   onPlay: (track: Track, queue: Track[]) => void;
   /** Opens one of the user's own lists as a full page - where it can be
-   *  reordered, renamed and deleted. Recent stays a modal: it is a window on
-   *  the library, with no order of its own to edit. */
+   *  reordered, renamed and deleted. That editing is what separates it from the
+   *  library-wide views below, which have no order of their own to change. */
   onOpenPlaylist: (id: string) => void;
-  /** Opens a library-wide song page - Liked, or every song - full rather than
-   *  in a sheet. These two are the collection's own big views, so they lead the
-   *  grid as hero tiles instead of glyph squircles. */
+  /** Opens a library-wide song page - Liked, all songs, on repeat, or the
+   *  newest arrivals - full rather than in a sheet. They are the collection's
+   *  own big views: a fixed order, nothing to edit, and the same frame each. */
   onOpenSongs: (view: import('../library/SongPage.tsx').SongCollection) => void;
   /** Opens an artist's page from a modal row's artist line. */
   onOpenArtist?: (artist: string) => void;
 }) {
   const { tracks, favoriteTracks } = useLibrary();
-  const { playlists, create, remove, removeTrack } = usePlaylists();
+  // removeTrack went with the strip's modal - shedding a row was only ever
+  // offered there, and Recent never offered it at all.
+  const { playlists, create, remove } = usePlaylists();
   const { enabled } = usePlugins();
-  // 'liked' | 'recent' | a user playlist's id.
-  const [open, setOpen] = useState<string | null>(null);
   // The New Playlist dialog: null closed, otherwise the name being typed.
   const [draftName, setDraftName] = useState<string | null>(null);
   // The playlist a delete is being confirmed for. Deleting a list is not
   // undoable, so the menu asks before the store hears about it.
   const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null);
-
-  // Recent stands in as the most recently added until play history is tracked.
-  const recent = useMemo(() => [...tracks].sort((a, b) => b.addedAt - a.addedAt).slice(0, 50), [tracks]);
 
   // Tiles the plugins bring, trailing the app's own in registration order.
   const pluginTiles = enabled.flatMap((p) => (p.playlistTiles ?? []).map((tile) => ({ plugin: p, tile })));
@@ -173,11 +168,11 @@ export function PlaylistShowcase({
   // is gone simply does not render, and comes back if the file does.
   const byPath = useMemo(() => new Map(tracks.map((t) => [t.path, t] as const)), [tracks]);
 
-  // The strip's modal now serves only Recent - a window on the library, with no
-  // order to edit. Liked and every-song open as full PAGES instead (the hero
-  // tiles below), and a user's own list opens as a page it can reorder.
-  const current: { title: string; tracks: Track[]; empty: string } | null =
-    open === 'recent' ? { title: 'Recent', tracks: recent, empty: 'Nothing here yet.' } : null;
+  // Nothing in this strip opens a modal any more. Recent was the last one, and
+  // it opens as a full page like Liked and All songs - the three are the same
+  // kind of thing (a window on the whole library, in a fixed order, with
+  // nothing to edit), so they earn the same frame. A user's own list still
+  // opens as a page it can reorder; that is a different job.
 
   const createDraft = (event: FormEvent) => {
     event.preventDefault();
@@ -256,14 +251,11 @@ export function PlaylistShowcase({
             <Tile
               name="Recent"
               cover={
-                /* A torn-paper clock rather than a line glyph. The tile stays
-                   aria-hidden: its accessible name is the label underneath, so
-                   the picture must not announce itself twice. */
                 <div className="tileSquircle tileRecent" aria-hidden>
-                  <img className="tileObjectArt" src={recentTile} alt="" loading="lazy" />
+                  <History size={24} />
                 </div>
               }
-              onOpen={() => setOpen('recent')}
+              onOpen={() => onOpenSongs('recent')}
             />
             {/* Freshest first: the last edit (the server's stamp) or the
                 last listen (this device's own memory), whichever is newer -
@@ -294,7 +286,7 @@ export function PlaylistShowcase({
               name="New Playlist"
               cover={
                 <div className="tileSquircle tileAdd" aria-hidden>
-                  <img className="tileObjectArt" src={addTile} alt="" loading="lazy" />
+                  <Plus size={24} />
                 </div>
               }
               onOpen={() => setDraftName('')}
@@ -338,27 +330,6 @@ export function PlaylistShowcase({
         </Modal>
       )}
 
-      {current && (
-        <PlaylistModal
-          open={open !== null}
-          onClose={() => setOpen(null)}
-          title={current.title}
-          tracks={current.tracks}
-          emptyLabel={current.empty}
-          onOpenArtist={
-            onOpenArtist &&
-            ((artist) => {
-              // Close the sheet first so the artist page is not buried under it.
-              setOpen(null);
-              onOpenArtist(artist);
-            })
-          }
-          // The open view is the queue: a row plays on through the rest. Neither
-          // Liked nor Recent sheds rows here - the heart already edits Liked,
-          // and Recent is a window on the library rather than a list.
-          onPlay={(t) => onPlay(t, current.tracks)}
-        />
-      )}
       {/* Naming a new playlist: one field, and the name is the commitment -
           an empty submit still creates, as "New Playlist". */}
       <Modal open={draftName !== null} onClose={() => setDraftName(null)} title="New Playlist" size="sm">

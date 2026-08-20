@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.216
+
+- Recent and New Playlist go back to their plain marks. They were given torn-paper faces last version and read better as the quiet outlines they were — they are buttons, and the artwork beside them belongs to the things you open
+- Recent opens as a full page now, like Liked and All songs, instead of a sheet over the library. Same frame, same Play and Shuffle, and nothing to reorder — it is a window on what arrived lately, not a list you arrange
+
 ## 0.3.215
 
 - Recent and New Playlist have proper faces now — a torn clock and a torn paper cross, in the same hand as the Liked and All songs artwork — instead of the thin outline marks they were wearing beside them

@@ -28,7 +28,12 @@ import likedChip from '../../assets/chip-liked.png';
  * is a WINDOW on the library, filtered.
  */
 
-export type SongCollection = 'liked' | 'all' | 'onrepeat';
+export type SongCollection = 'liked' | 'all' | 'onrepeat' | 'recent';
+
+/** How many newest arrivals Recent shows. The same fifty the tile's modal
+ *  carried, kept so the page is the same list in a bigger frame rather than a
+ *  different one that happens to share a name. */
+const RECENT_LIMIT = 50;
 
 const META: Record<
   SongCollection,
@@ -55,6 +60,13 @@ const META: Record<
     tone: 'songPage--repeat',
     empty:
       'Nothing on repeat yet. Play your library for a while and the songs you keep returning to gather here.',
+  },
+  recent: {
+    kicker: 'Your library',
+    title: 'Recently added',
+    art: 'library',
+    tone: 'songPage--repeat',
+    empty: 'Nothing here yet. Songs appear as they land in your library, newest first.',
   },
 };
 
@@ -108,7 +120,23 @@ export function SongPage({
     }
     return heavyIds.map((id) => byId.get(id)).filter((t): t is Track => t !== undefined);
   }, [heavyIds, tracks]);
-  const listTracks = view === 'liked' ? favoriteTracks : view === 'onrepeat' ? onRepeat : allNewest;
+  /*
+   * Recent is the newest arrivals, capped.
+   *
+   * It shares `allNewest`'s sort rather than computing its own, because it IS
+   * that list - just the head of it. The cap is what makes it a different
+   * answer from All songs: fifty is a page you can read to the bottom, which is
+   * the whole point of asking "what turned up lately".
+   */
+  const recent = useMemo(() => allNewest.slice(0, RECENT_LIMIT), [allNewest]);
+  const listTracks =
+    view === 'liked'
+      ? favoriteTracks
+      : view === 'onrepeat'
+        ? onRepeat
+        : view === 'recent'
+          ? recent
+          : allNewest;
 
   /*
    * Filtering the table, as opposed to searching the library.
