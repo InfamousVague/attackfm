@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.215
+
+- Recent and New Playlist have proper faces now — a torn clock and a torn paper cross, in the same hand as the Liked and All songs artwork — instead of the thin outline marks they were wearing beside them
+
 ## 0.3.214
 
 - A mix wears the actual albums inside it. Four songs off one record used to draw that one sleeve four times over, because the covers were being compared by a web address that carries the song's id — so the same picture never matched itself. Every mosaic in the app was doing it: playlists, search, the artist page, the Booth's mixes
