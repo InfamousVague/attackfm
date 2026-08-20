@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.279
+
+- On a collection page the artwork, title and buttons now sit along the bottom of the drifting cover backdrop instead of floating in the middle of it
+
 ## 0.3.278
 
 - The cover backdrop on a collection page is a little shorter, so you reach the first song sooner
