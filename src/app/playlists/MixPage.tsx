@@ -78,7 +78,19 @@ export function MixPage({
   };
 
   return (
-    <div className="playlistPage">
+    /*
+     * The same three classes the playlist page and the Liked page wear, and
+     * all three are load-bearing rather than decoration.
+     *
+     * `.homePage` is the one that matters: it IS the scroller (flex:1,
+     * min-height:0, overflow-y:auto), it carries the page's inset, and its
+     * padding-block-end is what holds the last row clear of the player bar and
+     * the nav. Wearing only `.playlistPage`, this page had none of the three -
+     * it ran edge to edge, it would not scroll, and the last song sat behind
+     * the now-playing bar. `.homePage.playlistPage` is a compound rule too, so
+     * the tighter gap between hero and rows never applied either.
+     */
+    <div className="homePage libraryPage playlistPage">
       <header className="playlistHead">
         <div className="playlistHead__cover">
           {covers.length >= 4 ? (
@@ -125,7 +137,7 @@ export function MixPage({
       </header>
 
       {tracks.length === 0 ? (
-        <div className="emptyState">
+        <div className="playlistEmpty emptyState emptyState--tall">
           <EmptyArt name="search" />
           <Text tone="muted">{emptyLabel ?? 'This mix came up empty.'}</Text>
         </div>
