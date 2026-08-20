@@ -304,8 +304,17 @@
   border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
 }
 
+/* A fixed square, so the labels line up whatever is in the slot.
+   It used to size to its contents, which was invisible while every row held a
+   16px lucide glyph - and then the Connection row arrived carrying a StatusDot,
+   which is 8px, and pulled its label eight pixels left of every other one. The
+   column is the thing that has to be constant here, not the mark inside it. */
 .aboutRow__icon {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1rem;
+  block-size: 1rem;
   color: var(--glacier-text-muted);
   flex: none;
 }
