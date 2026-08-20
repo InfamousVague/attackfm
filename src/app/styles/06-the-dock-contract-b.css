@@ -284,34 +284,22 @@
   justify-content: center;
 }
 
-/* The artwork leans with the phone.
-   --tiltX / --tiltY come off the device's orientation (player/deviceMotion.ts)
-   and run -1..1; the distance a full lean is worth is decided HERE so the
-   sensor only has to report which way the phone is pointing. Ten pixels: enough
-   that the art reads as sitting IN the screen rather than printed on it, small
-   enough that nobody notices it as an effect. A phone at rest reads exactly
-   zero - the sensor deadzones its own noise - so this costs nothing when the
-   phone is on a table.
-   Both custom properties default to 0, so a device with no sensor, a desktop,
-   and anyone whose system asks for less motion all get a still picture without
-   a branch. */
-.npScreen__coverTarget {
-  transform: translate3d(
-    calc(var(--tiltX, 0) * 10px),
-    calc(var(--tiltY, 0) * 10px),
-    0
-  );
-  /* Long enough to lag the hand a little, which is what reads as weight; short
-     enough not to feel like the picture is on a spring. */
-  transition: transform 220ms var(--glacier-ease-out);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .npScreen__coverTarget {
-    transform: none;
-    transition: none;
-  }
-}
+/*
+ * The artwork used to lean with the phone - a ten-pixel parallax off
+ * `deviceorientation`, sitting on a 220ms transition.
+ *
+ * Removed because it was expensive in a way the effect could not pay for. The
+ * sensor reports at about 60Hz; each reading wrote two custom properties, and
+ * this rule turned every one of them into a fresh 220ms transition on a target
+ * that had already moved by the time it started. So the compositor was never
+ * finishing an animation, only ever restarting one, on the one screen that is
+ * simultaneously running the beat pulse and the backdrop - which is what made
+ * the whole sheet feel heavy. Matt asked for it gone.
+ *
+ * What stays is motion as a CONTROL: shake to shuffle, flick to skip. Those
+ * come off `devicemotion`, are thresholded and discrete rather than continuous,
+ * and animate nothing.
+ */
 
 /* The art chooser wraps EITHER the flat cover or the turning CD, and is the
    square box both fill. Sizing the square here (not on the art) is what keeps

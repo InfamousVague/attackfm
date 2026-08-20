@@ -33,7 +33,7 @@ import {
   type ArtView,
 } from './deckShared.ts';
 import { soundChangesLabel, useSoundChanges } from './soundChanges.ts';
-import { subscribeGestures, subscribeTilt } from './deviceMotion.ts';
+import { subscribeGestures } from './deviceMotion.ts';
 import { motionGesturesEnabled } from '../settings/behaviourPrefs.ts';
 import npPlaceholderArt from '../../assets/attack-wave.png';
 import type { Track } from '../core/tauri.ts';
@@ -207,24 +207,17 @@ export function NowPlayingSheet({
    * is: a gesture that works from the library page is a gesture that fires in a
    * pocket, and a listener that never unbinds is a reading nobody reads.
    */
-  const artRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    // Tilt moves the artwork a few pixels and nothing else, so it needs no
-    // permission and no switch - but it does stop for anyone who has asked
-    // their system to stop things moving, because it is animation.
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    return subscribeTilt(({ x, y }) => {
-      const el = artRef.current;
-      if (!el) return;
-      // Written as custom properties rather than a transform so the stylesheet
-      // decides how far a full tilt actually moves anything - and can decide
-      // differently for a phone and a docked pane - while this only reports
-      // which way the phone is pointing.
-      el.style.setProperty('--tiltX', x.toFixed(3));
-      el.style.setProperty('--tiltY', y.toFixed(3));
-    });
-  }, []);
-
+  /*
+   * The artwork used to lean with the phone, off `deviceorientation`. Gone:
+   * a 60Hz sensor writing two custom properties per reading, into a rule that
+   * restarted a 220ms transition each time, on the busiest screen in the app.
+   * See the note where that rule was, in 06-the-dock-contract-b.
+   *
+   * Motion as a CONTROL stays, below. That is the distinction Matt drew and it
+   * is the right one: a discrete, thresholded gesture that does something you
+   * asked for costs nothing per frame, and decorative continuous motion costs
+   * every frame whether or not anyone is looking at it.
+   */
   useEffect(() => {
     if (!motionGesturesEnabled()) return;
     return subscribeGestures((g) => {
@@ -428,7 +421,7 @@ export function NowPlayingSheet({
           vanishes when a video shows up is a broken promise. Anyone who
           prefers the clip unobstructed picks Hidden - the third face. */}
       {artView !== 'hidden' && (
-      <div className="npScreen__art" ref={artRef}>
+      <div className="npScreen__art">
         {/* The hero art follows the same artView the mini-strip does, so the
             choice is one setting in two places. A press (long-press on
             touch) opens the chooser. */}
