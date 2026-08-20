@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.242
+
+- On a folding phone the player no longer takes half the screen for a song you did not choose. It waits until you have played something, and it steps aside for Music Date and the DJ instead of standing on top of them
+- Menus, the pull-to-refresh mark and the DJ's messages stay in the app's half of an unfolded screen rather than sliding under the player
+- Curator mixes and the lists plugins add open as a page now, drawn exactly like your own playlists, with Add in place of Play and Shuffle — it saves you a copy you can edit, and the original keeps updating on its own
+
 ## 0.3.241
 
 - The library is the first stop on the bar at the bottom of the screen now, instead of sitting third behind the Booth and Discover
