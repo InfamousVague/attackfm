@@ -34,10 +34,33 @@ body:has(.npScreen[data-docked]) div[class*='_viewport_1nbns_'] {
   inset-inline-end: var(--np-dock-width);
 }
 
+/*
+ * Everything FIXED has to be told, one by one, and this list is the whole
+ * contract.
+ *
+ * The dock reserves its column by shrinking .appWindow, which works for
+ * anything laid out inside it and does nothing at all for anything positioned
+ * against the viewport. A fixed element does not know the app got narrower, so
+ * it keeps its old width and the right end of it disappears under the player -
+ * or, worse, it centres itself on a viewport whose right half is somebody
+ * else's, and lands visibly off-centre in the pane it belongs to.
+ *
+ * The four below the originals were each doing one of those: the nav overflow
+ * scrim covered the player it was not dimming, its menu measured itself
+ * against the wrong box, and the pull mark and the DJ's toast both centre on
+ * `inset-inline: 0` and so sat to the right of the room they speak for.
+ *
+ * Anything fixed that is added later belongs here too. `grep -l "position: fixed"`
+ * over the chapters is the whole audit.
+ */
 body:has(.npScreen[data-docked]) .settingsScreen,
 body:has(.npScreen[data-docked]) .searchSummon,
 body:has(.npScreen[data-docked]) .summonPull,
-body:has(.npScreen[data-docked]) .djLayer {
+body:has(.npScreen[data-docked]) .djLayer,
+body:has(.npScreen[data-docked]) .appNavMore__scrim,
+body:has(.npScreen[data-docked]) .appNavMore__menu,
+body:has(.npScreen[data-docked]) .pullMark,
+body:has(.npScreen[data-docked]) .djToast {
   inset-inline-end: var(--np-dock-width);
 }
 

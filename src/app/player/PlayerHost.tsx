@@ -26,6 +26,7 @@ export function PlayerHost({
   onQueueChange,
   onOpenArtist,
   autoplay,
+  deckEngaged = false,
   hidden = false,
 }: {
   current: Track | null;
@@ -35,6 +36,9 @@ export function PlayerHost({
   /** The Now Playing sheet's artist line opens the artist page through here. */
   onOpenArtist: (artist: string) => void;
   autoplay: boolean;
+  /** Whether anyone has picked a song yet, as against the launch seed having
+   *  loaded one. Only the split view reads it; see App. */
+  deckEngaged?: boolean;
   /** Date mode's floor: the strip hides (and the page below reclaims its
    *  space) while the deck itself stays mounted - tearing the Player down
    *  would take the audio graph, the scrub state and the session's seed with
@@ -80,6 +84,12 @@ export function PlayerHost({
         onOpenArtist={onOpenArtist}
         // Nothing this device chose to play, so nothing to start.
         autoplay={current ? autoplay : false}
+        deckEngaged={deckEngaged}
+        // Date and the DJ take the whole screen. The strip below is hidden by
+        // `hidden` on the wrapper, but the docked sheet PORTALS to the body -
+        // so without this it kept standing in the right half, on top of a
+        // surface whose whole point is that nothing else is on screen.
+        chromeHidden={hidden}
         // The docked sheet may only stand for THIS device's deck. While the
         // strip mirrors a remote the sheet's own clock and transport are
         // honestly empty - it was never reachable in that state before the

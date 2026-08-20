@@ -230,6 +230,22 @@ export function App() {
   // False until the user picks something themselves: the launch seed loads
   // the deck without dropping the needle.
   const [autoplay, setAutoplay] = useState(false);
+  /**
+   * Whether the deck is THIS SESSION'S rather than the launch seed's.
+   *
+   * `autoplay` cannot answer this - it means "should the track just handed
+   * over start", and playPending sets it back to false for a song still
+   * downloading. This is the different question of whether anybody has picked
+   * anything yet, and the split view is what needs it: the seed puts a song on
+   * the deck at every launch without dropping the needle, so on a fold the app
+   * opened having given half the screen to a Now Playing nobody asked for,
+   * showing a paused song they had not chosen.
+   *
+   * Sticky on purpose. Pausing is not un-picking, and a dock that collapsed
+   * whenever the music stopped would move the whole layout under the reader's
+   * hands - a worse fault than the one it fixes.
+   */
+  const [deckEngaged, setDeckEngaged] = useState(false);
   // The import job the current placeholder waits on while a tapped remote song
   // downloads (see pendingPlay.tsx). Null when nothing is downloading.
   const [pendingJobId, setPendingJobId] = useState<string | null>(null);
@@ -268,6 +284,7 @@ export function App() {
         : (stateRef.current.detail?.kind ?? stateRef.current.tab),
     );
     setAutoplay(true);
+    setDeckEngaged(true);
     setCurrent((prev) => (prev === track ? { ...track } : track));
     setQueue(context ?? [track]);
   }, []);
@@ -279,6 +296,8 @@ export function App() {
   // the real track finally plays.
   const playPending = (placeholder: Track, jobId: string) => {
     setAutoplay(false);
+    // A tapped song still downloading IS a pick; only the needle waits.
+    setDeckEngaged(true);
     setCurrent(placeholder);
     setQueue([placeholder]);
     setPendingJobId(jobId);
@@ -695,6 +714,7 @@ export function App() {
               onQueueChange={setQueue}
               onOpenArtist={go}
               autoplay={autoplay}
+              deckEngaged={deckEngaged}
               hidden={dateOpen || djOpen}
             />
             {/* Turns the import queue into surfaces: a quick line at the top

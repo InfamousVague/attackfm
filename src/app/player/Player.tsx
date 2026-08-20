@@ -85,6 +85,8 @@ export function Player({
   onOpenArtist,
   autoplay = true,
   deckOwned = true,
+  deckEngaged = false,
+  chromeHidden = false,
 }: {
   track: Track | null;
   /** The tracks around the current one, in played order. Empty means no list. */
@@ -108,6 +110,12 @@ export function Player({
    * was never holding it; see becomeActive in usePlayerConnect.
    */
   deckOwned?: boolean;
+  /** Whether anyone has picked a song this session. The split view refuses to
+   *  open for the launch seed alone; see App's own note. */
+  deckEngaged?: boolean;
+  /** A full-screen surface (Date, the DJ) owns the display. The strip is
+   *  hidden by the host, but the sheet portals out of it and must be told. */
+  chromeHidden?: boolean;
   /**
    * Whether a newly handed track starts playing once loaded. Off for the
    * launch seed - the app opens with a song on the deck, not blaring - and
@@ -316,7 +324,7 @@ export function Player({
    */
   const deskShape = useDesktopLayout();
   const sheetShape = mobileControls || deskShape;
-  const npDocked = sheetShape && npWide && deckOwned;
+  const npDocked = sheetShape && npWide && deckOwned && deckEngaged && !chromeHidden;
   // The overflow popover state now lives in PlayerStrip.
   // The song being filed into a playlist, or null when that sheet is shut.
   const [filing, setFiling] = useState<Track | null>(null);
@@ -2918,7 +2926,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
           on any shape wide enough to hold one - extracted whole into
           NowPlayingSheet (which portals itself to the body). It reuses every
           handler the strip does, so the two never diverge. */}
-      {sheetShape && (npOpen || npDocked) && (
+      {sheetShape && !chromeHidden && (npOpen || npDocked) && (
         <NowPlayingSheet
           npOpen={npOpen}
           npDocked={npDocked}
