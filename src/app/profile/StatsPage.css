@@ -481,18 +481,25 @@ button.statsRow__name:hover {
   align-items: center;
   gap: var(--glacier-space-2);
   padding: var(--glacier-space-2) var(--glacier-space-3);
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border: none;
   border-radius: var(--glacier-radius-lg);
-  background: var(--glacier-surface-sunken);
-  color: inherit;
+  /* The search-page genre treatment, brought to the library header: each card
+     wears its own stable hue (--searchTileHue, set per card via hueOf), and the
+     icon carries the same tone. */
+  background: linear-gradient(
+    140deg,
+    hsl(var(--searchTileHue, 280) 62% 48%),
+    hsl(calc(var(--searchTileHue, 280) + 42) 56% 32%)
+  );
+  color: #fff;
   font: inherit;
   text-align: start;
   cursor: pointer;
-  transition: background var(--glacier-duration-fast) var(--glacier-ease-out);
+  transition: filter var(--glacier-duration-fast) var(--glacier-ease-out);
 }
 
 .statsMini:hover {
-  background: var(--glacier-surface-hover, var(--glacier-surface));
+  filter: brightness(1.07);
 }
 
 .statsMini__icon {
@@ -503,8 +510,10 @@ button.statsRow__name:hover {
   inline-size: 2rem;
   block-size: 2rem;
   border-radius: 34%;
-  background: var(--glacier-accent-soft);
-  color: var(--glacier-accent-text);
+  /* A light chip so the glyph, in the card's own hue tone, reads over the
+     coloured ground. */
+  background: rgba(255, 255, 255, 0.92);
+  color: hsl(var(--searchTileHue, 280) 58% 42%);
 }
 
 .statsMini__body {
@@ -524,7 +533,7 @@ button.statsRow__name:hover {
 
 .statsMini__label {
   font-size: var(--glacier-font-size-xs);
-  color: var(--glacier-text-muted);
+  color: rgba(255, 255, 255, 0.82);
 }
 
 /* --- friends this week ----------------------------------------------------
