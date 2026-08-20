@@ -250,17 +250,15 @@
   box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.25);
 }
 
-/* --- Brutalist front door -------------------------------------------------
-   The generated sign-in backdrop replaces the blurred cover wall. It is
-   background-matched to #0A0A0B (no seam), bright up top and calm at the
-   bottom; the darkening gradient keeps the form legible over it. */
-.loginGate {
-  background:
-    linear-gradient(180deg, rgba(10, 10, 11, 0) 40%, #0a0a0b 90%),
-    url('../../assets/art/signin-backdrop.webp') center top / cover no-repeat,
-    #0a0a0b;
-}
-.artWall {
-  display: none;
-}
+/* --- The front door is the cover wall --------------------------------------
+   A generated backdrop stood here for a while and it was a handsome picture,
+   but it was A picture: the same one every time, on a screen whose whole
+   promise is that the music is yours. The wall says that without a sentence -
+   real covers, drifting, blurred back until they are texture. It is also what
+   attack.fm wears, so the site and the app's first screen read as one thing
+   rather than two designs that happen to share a logo.
+
+   Nothing is re-declared here. The wall, the veil and the layering above are
+   the original treatment; this block exists only to record why the picture
+   that briefly replaced them is gone. */
 

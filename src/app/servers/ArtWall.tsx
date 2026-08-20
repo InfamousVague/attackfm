@@ -21,7 +21,14 @@ import { useMemo } from 'react';
 // assets - a lazy glob would fetch them one by one over a connection the gate
 // cannot assume it has.
 const COVERS = Object.entries(
-  import.meta.glob<string>('../assets/wall/*.jpg', { eager: true, query: '?url', import: 'default' }),
+  // src/assets/wall, from src/app/servers - TWO levels up, not one. It was one
+  // when this file sat in src/app, and the move that folded the flat app folder
+  // into rooms carried the path along unchanged. A glob that matches nothing
+  // is not an error: it returns {}, so COVERS went empty, the component
+  // returned null, and the wall simply stopped existing with no sign that
+  // anything had broken. That silence is why a generated picture was later put
+  // in its place - the front door looked like it had never had a wall.
+  import.meta.glob<string>('../../assets/wall/*.jpg', { eager: true, query: '?url', import: 'default' }),
 )
   .sort(([a], [b]) => a.localeCompare(b))
   .map(([, url]) => url);
