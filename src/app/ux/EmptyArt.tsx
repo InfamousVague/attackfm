@@ -2,18 +2,14 @@ import { useState, type CSSProperties } from 'react';
 import { artworkHue, artworkUrl, emptyArtwork } from './artwork.ts';
 import discoveryDark from '../../assets/empty/discovery-dark.png';
 import discoveryLight from '../../assets/empty/discovery-light.png';
-import downloadsDark from '../../assets/empty/downloads-dark.png';
-import downloadsLight from '../../assets/empty/downloads-light.png';
+import downloadsSolo from '../../assets/empty/downloads.webp';
 import friendsDark from '../../assets/empty/friends-dark.png';
 import friendsLight from '../../assets/empty/friends-light.png';
 import libraryDark from '../../assets/empty/library-dark.png';
 import libraryLight from '../../assets/empty/library-light.png';
-import likedDark from '../../assets/empty/liked-dark.png';
-import likedLight from '../../assets/empty/liked-light.png';
-import playlistDark from '../../assets/empty/playlist-dark.png';
-import playlistLight from '../../assets/empty/playlist-light.png';
-import searchDark from '../../assets/empty/search-dark.png';
-import searchLight from '../../assets/empty/search-light.png';
+import likedSolo from '../../assets/empty/liked.webp';
+import playlistSolo from '../../assets/empty/playlist.webp';
+import searchSolo from '../../assets/empty/search.webp';
 
 /**
  * The spot illustration each empty state opens on, so a page with nothing in it
@@ -33,15 +29,34 @@ export type EmptyArtName =
   | 'playlist'
   | 'search';
 
-const ART: Record<EmptyArtName, { light: string; dark: string }> = {
+/**
+ * A motif is either a PAINTED PAIR or a SOLO object.
+ *
+ * A painted pair is a picture with the page's background baked into it, one per
+ * theme, which is why it needs two files and a CSS swap. A solo is a cut-out on
+ * transparency: there is no background to match, so one file is right in both
+ * themes and a second would be the same image twice.
+ *
+ * The distinction is not cosmetic - it decides whether the radial mask applies.
+ * That mask exists to dissolve a painted image's residual box into the page; run
+ * over a cut-out it fades the edges of the OBJECT instead, which on a wide one
+ * (the sequencer is better than two to one) eats the ends.
+ */
+type Motif = { light: string; dark: string } | { solo: string };
+
+const ART: Record<EmptyArtName, Motif> = {
   discovery: { light: discoveryLight, dark: discoveryDark },
-  downloads: { light: downloadsLight, dark: downloadsDark },
+  downloads: { solo: downloadsSolo },
   friends: { light: friendsLight, dark: friendsDark },
   library: { light: libraryLight, dark: libraryDark },
-  liked: { light: likedLight, dark: likedDark },
-  playlist: { light: playlistLight, dark: playlistDark },
-  search: { light: searchLight, dark: searchDark },
+  liked: { solo: likedSolo },
+  playlist: { solo: playlistSolo },
+  search: { solo: searchSolo },
 };
+
+function isSolo(m: Motif): m is { solo: string } {
+  return 'solo' in m;
+}
 
 /**
  * The same painted light/dark pair, but worn as a HERO that fills its box
@@ -54,8 +69,14 @@ export function HeroArt({ name, className }: { name: EmptyArtName; className?: s
   const art = ART[name];
   return (
     <div className={className ? `heroArt ${className}` : 'heroArt'} aria-hidden="true">
-      <img className="heroArt__img heroArt__img--light" src={art.light} alt="" loading="lazy" />
-      <img className="heroArt__img heroArt__img--dark" src={art.dark} alt="" loading="lazy" />
+      {isSolo(art) ? (
+        <img className="heroArt__img heroArt__img--solo" src={art.solo} alt="" loading="lazy" />
+      ) : (
+        <>
+          <img className="heroArt__img heroArt__img--light" src={art.light} alt="" loading="lazy" />
+          <img className="heroArt__img heroArt__img--dark" src={art.dark} alt="" loading="lazy" />
+        </>
+      )}
     </div>
   );
 }
@@ -83,6 +104,8 @@ export function EmptyArt({ name, className }: { name: EmptyArtName; className?: 
           loading="lazy"
           onError={() => setFailed(true)}
         />
+      ) : isSolo(art) ? (
+        <img className="emptyArt__img emptyArt__img--solo" src={art.solo} alt="" loading="lazy" />
       ) : (
         <>
           <img className="emptyArt__img emptyArt__img--light" src={art.light} alt="" loading="lazy" />
