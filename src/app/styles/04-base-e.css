@@ -90,18 +90,18 @@ body:has(.npScreen[data-docked]) .appNavScrim {
      ordinary tab there is no privileged cell left to reserve one for. */
   display: flex;
   align-items: center;
-  /* space-between, and no inline padding: the outer two tabs sit against the
-     plate's own ends rather than being held off them.
-     space-evenly gave every gap the same width INCLUDING the two at the ends,
-     so the bar carried three separate insets on each side - the plate's
-     padding, the end share, and the tab's own seat padding - and the row read
-     as narrower than the plate holding it. Matt asked for the ends closed up.
+  /* space-between, over the plate's own padding.
+     space-evenly was giving the two END gaps the same width as the gaps
+     between tabs, so the row sat inside its plate by that much again on top of
+     the padding below - the outer tabs looked held off the ends. Only the
+     distribution changed; the padding is the plate's inset and stays, so the
+     end tabs sit on the same margin the plate keeps everywhere else.
      The gap stays as a floor: with space-between it is only consulted when
      there is no free space left to distribute, which is the narrow-phone case
      where the tabs would otherwise touch. */
   justify-content: space-between;
   gap: var(--glacier-space-1);
-  padding-inline: 0;
+  padding-inline: var(--glacier-space-2);
   /* The chin's corners take a wider sweep than the top's: down at the screen's
      edge the phone is already curving away, and a corner that opens out to meet
      it reads as one continuous bottom rather than a card set on top of one. */
