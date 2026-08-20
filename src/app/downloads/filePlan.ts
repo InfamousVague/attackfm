@@ -28,6 +28,24 @@ export type FileDestination =
   | { kind: 'liked' }
   | { kind: 'playlist'; id: string; name: string };
 
+/**
+ * How a plan ended.
+ *
+ * Three, and the middle one is why this type exists at all. A plan that cannot
+ * be kept used to be dropped in silence, which left every surface that started
+ * one still showing the optimistic thing it said at the tap - "downloading
+ * now" over a song that was already yours and was never going to arrive.
+ */
+export type FileOutcome =
+  /** The songs are in the destination. The only outcome worth navigating to. */
+  | 'filed'
+  /** Nothing to add: the library already held every song the job would have
+   *  brought, so the import skipped them all and indexed nothing. */
+  | 'already-yours'
+  /** It cannot be filed, and never will be: the job failed, was cancelled, or
+   *  came from a transport that reports no track ids to join a path with. */
+  | 'unfiled';
+
 export interface FilePlan {
   jobId: string;
   dest: FileDestination;
@@ -60,6 +78,27 @@ function write(plans: FilePlan[]): void {
 }
 
 const listeners = new Set<() => void>();
+const outcomeListeners = new Set<(plan: FilePlan, outcome: FileOutcome) => void>();
+
+/**
+ * Told when a plan ends, however it ends.
+ *
+ * Separate from the plan list's own change notification because the audience is
+ * different: the list is for whoever is filing, and this is for whoever ASKED.
+ * A card that started a plan is usually not the component that completes it -
+ * often not even mounted by then - so it needs a channel it can pick up on
+ * rather than a callback it has to be holding.
+ */
+export function subscribeOutcomes(
+  fn: (plan: FilePlan, outcome: FileOutcome) => void,
+): () => void {
+  outcomeListeners.add(fn);
+  return () => outcomeListeners.delete(fn);
+}
+
+export function reportOutcome(plan: FilePlan, outcome: FileOutcome): void {
+  for (const fn of outcomeListeners) fn(plan, outcome);
+}
 let snapshot: FilePlan[] = typeof localStorage === 'undefined' ? [] : read();
 
 function commit(next: FilePlan[]): void {
