@@ -95,51 +95,6 @@
   text-decoration: underline;
 }
 
-/* ── The import queue's one door ────────────────────────────────────────────
-   A pill floating just above the strip (or where the strip would stand),
-   trailing edge, above the content and the strip's own plane but under the
-   nav card. It rides the same reservation vars the pages pad by, so it
-   follows the strip up and down - dismissal included - for free. */
-.downloadsChip {
-  position: absolute;
-  inset-inline-end: calc(var(--glacier-space-3) + var(--app-safe-right));
-  inset-block-end: calc(
-    var(--app-player-height, 0rem) + var(--app-nav-height, 0px) + var(--glacier-space-2)
-  );
-  z-index: 3;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--glacier-space-2);
-  padding: var(--glacier-space-1) var(--glacier-space-3);
-  border: 1px solid var(--glacier-border-subtle);
-  border-radius: var(--glacier-radius-full);
-  background: var(--glacier-glass-regular);
-  backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
-  box-shadow: var(--glacier-shadow-2);
-  color: var(--glacier-text);
-  font: inherit;
-  font-size: var(--glacier-font-size-sm);
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-  animation: playerRise var(--app-player-rise) var(--glacier-ease-out);
-}
-
-.downloadsChip:hover {
-  border-color: var(--glacier-border);
-}
-
-.downloadsChip:focus-visible {
-  outline: 2px solid var(--glacier-focus-ring);
-  outline-offset: 2px;
-}
-
-/* Work stopped wrong: the pill turns the app's danger voice, not a novel one. */
-.downloadsChip[data-tone='failed'] {
-  color: var(--glacier-danger-solid);
-  border-color: var(--glacier-danger-border);
-}
-
 /* ── Filtering the table, not searching the library ─────────────────────────
    Sits between the hero and the rows it narrows. Aligned to the table's own
    inline edge rather than the page's, so it reads as belonging to the list

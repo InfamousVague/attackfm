@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.210
+
+- A bell at the top of every page, holding what happened while you were somewhere else: music that finished downloading, and downloads that did not. It waits until you read it, and it is still there tomorrow
+- A download finishing no longer throws a pill over whatever you were doing. Starting one says so briefly at the top of the screen instead — that is the half worth interrupting you for, because it is the half you just asked for
+- The floating "3 downloading" pill has gone. What it was telling you now sits inside the bell, above the list, while work is in flight
+- Notices appear at the top of the screen now rather than over the transport and the navigation, which is where they had been landing
+
 ## 0.3.209
 
 - A bolder look on the way in. The sign-in screen drops the frosted wall of blurred covers for artwork that sits flush on the black, and the DJ gets a new face to match. Same ATTACK mark, same type — just a harder-edged backdrop behind them

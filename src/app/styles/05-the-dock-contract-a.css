@@ -353,3 +353,47 @@ html[data-platform='android'] .appWindow {
   );
 }
 
+
+/* ── Toasts arrive at the top ───────────────────────────────────────────────
+
+   The kit anchors its one toast slot to the BOTTOM (._item_1nbns_13 sets
+   inset-block-end: --glacier-space-6, centred by auto inline margins), and the
+   bottom of this app is where the transport and the nav island live. The toast
+   viewport sits at z-index 200 over an app whose highest layer is 70, so every
+   toast landed ON the controls - and on a phone it covered the player it was
+   often talking about.
+
+   Up here it sits under the header and over nothing. This also makes the split
+   the request asked for legible: a quick line at the top is the app answering
+   you, and the bell below the same header is where things that finished wait.
+
+   Written against the ITEM rather than the viewport, so it composes with the
+   docked rule above - that one moves the viewport's inline end, this one only
+   touches the block axis, and a top-anchored toast re-centres inside the app's
+   pane on the split for free.
+
+   --app-header-height is published by App's ResizeObserver and ALREADY carries
+   the notch, because the measured header pads itself by --app-safe-top. Adding
+   a safe-area inset here would count it twice.
+
+   THE FALLBACK IS DOUBLY DEFENDED, and it has to be. The desktop shape never
+   mounts .mobileHeader, so nothing ever publishes --app-header-height there and
+   the fallback is the live path rather than a first-frame stopgap. And this
+   element is portalled to document.body by the kit's ToastProvider, so it is
+   NOT inside .appWindow - which is the only place --app-safe-top is declared.
+   A bare var(--app-safe-top) is therefore invalid at computed-value time here,
+   which poisons the whole calc(), collapses inset-block-start to auto, and -
+   with inset-block-end also auto - drops every toast to y=0, on top of the
+   title bar and the traffic-light gutter. env() is the same defended form the
+   DJ's own portalled toast uses at 26-the-dj.css:60.
+
+   The hashed selector pins the current kit build - the same bargain the rule
+   above makes. A kit rebuild re-hashes it and toasts return to the bottom:
+   nothing breaks, it just reads wrong until the hash is re-pinned. */
+div[class*='_viewport_1nbns_'] > div[class*='_item_1nbns_'] {
+  inset-block-end: auto;
+  inset-block-start: calc(
+    var(--app-header-height, calc(var(--app-safe-top, env(safe-area-inset-top, 0px)) + 3.25rem)) +
+      var(--glacier-space-2)
+  );
+}

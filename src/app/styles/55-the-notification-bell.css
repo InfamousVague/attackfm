@@ -1,0 +1,331 @@
+/* ── The bell, and the news behind it ───────────────────────────────────────
+   Downloads used to announce themselves with a pill floating over the
+   transport: present while work was in flight, gone the moment it finished,
+   and so the only surface that ever said "this landed" was one that had
+   already left by the time you looked. The bell is the opposite deal - it is
+   always in the same place, it counts, and what it holds is still there
+   tomorrow. */
+
+/* An IconButton clips its own overflow, so a badge hung off its corner needs
+   the seat spelled out. The same two lines .dlTrigger already carries. */
+.notifyBell {
+  position: relative;
+  overflow: visible;
+}
+
+.notifyBell__badge {
+  position: absolute;
+  inset-block-start: -0.15rem;
+  inset-inline-end: -0.15rem;
+  pointer-events: none;
+}
+
+/* Work in flight, said without a number - the chip's whole job, on a control
+   that was going to be there anyway.
+
+   TRANSFORM ONLY, never opacity. An animation frozen at its first frame is
+   exactly what a throttled or backgrounded webview produces, and a glyph
+   frozen at opacity 0 is a bell that has vanished. Frozen at rotate(0) it is
+   simply a bell. */
+@keyframes notifyBellSwing {
+  0%,
+  70%,
+  100% {
+    transform: rotate(0deg);
+  }
+  78% {
+    transform: rotate(9deg);
+  }
+  86% {
+    transform: rotate(-7deg);
+  }
+  94% {
+    transform: rotate(3deg);
+  }
+}
+
+.notifyBell[data-busy] svg {
+  animation: notifyBellSwing 2.4s var(--glacier-ease-out) infinite;
+  transform-origin: 50% 15%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notifyBell[data-busy] svg {
+    animation: none;
+  }
+}
+
+/* The panel itself, on the KIT's element rather than our inner one - the same
+   split .eqPopoverPanel and .morePopoverPanel already make, and for the same
+   reason: the kit's panel owns the rounding and the padding, so it is the only
+   thing that can paint to the corners.
+
+   IT HAS TO PAINT. The kit's Popover draws no background, no blur and no
+   shadow of its own (its three classes are positioner, panel and triggerWrap,
+   and none of them carries a surface), so a panel that does not dress itself
+   opens as text floating over the page - which is exactly what this one did
+   first: the library's shelves read straight through the notifications.
+
+   Firmer than glass, following .morePopoverPanel's reasoning: this opens over
+   the busiest part of the app, and a list of small type over album art is the
+   case where a see-through backing stops being a material and starts being a
+   legibility bug.
+
+   Anything that can outgrow the screen has to scroll INSIDE itself. Without
+   `overscroll-behavior` a drag that reaches the end chains to the page, the
+   popover reads that as a press outside itself, and it shuts halfway through
+   the list you were reading. */
+.notifyPopoverPanel {
+  max-inline-size: min(24rem, calc(100vw - 2rem));
+  max-block-size: min(70dvh, 34rem);
+  background: color-mix(in srgb, var(--glacier-bg) 92%, transparent);
+  backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-md)) saturate(var(--glacier-glass-saturate));
+  border: var(--glacier-hairline) solid var(--glacier-glass-border);
+  box-shadow: var(--glacier-shadow-3);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Say plainly that a vertical drag here is a scroll, so the touch is never
+     claimed by anything else mid-gesture. */
+  touch-action: pan-y;
+}
+
+/* The content stack inside it. Geometry only - the panel above is the surface. */
+.notifyPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.notifyPanel__head {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding-block-end: var(--glacier-space-2);
+  border-block-end: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.notifyPanel__title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  font-size: var(--glacier-font-size-sm);
+  font-weight: var(--glacier-font-weight-bold);
+}
+
+/* Pushes the clear control to the trailing edge without a spacer element.
+   Anchored to the TITLE, which is always present, rather than to :last-child -
+   the clear button only renders when there is something to clear, so on the
+   empty panel (first run, and straight after pressing Clear) the title itself
+   became :last-child, took the auto margin, and sat against the right edge. */
+.notifyPanel__head > .notifyPanel__title {
+  margin-inline-end: auto;
+}
+
+.notifyPanel__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-5) var(--glacier-space-3);
+  text-align: center;
+}
+
+.notifyPanel__emptyGlyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-glass-thin);
+  color: var(--glacier-text-muted);
+}
+
+.notifyPanel__more {
+  display: flex;
+  justify-content: center;
+  padding-block-start: var(--glacier-space-2);
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+/* ── What is happening right now ───────────────────────────────────────────
+   The live half, above the remembered half, because they are different tenses
+   and a list that mixes them reads as one wrong list. This is where the
+   floating chip's sentence went. */
+.notifyLive {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  padding: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-sm);
+  background: var(--glacier-glass-thin);
+}
+
+.notifyLive__head {
+  font-variant-numeric: tabular-nums;
+}
+
+.notifyLive__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0 var(--glacier-space-2);
+  align-items: baseline;
+  font-size: var(--glacier-font-size-xs);
+}
+
+.notifyLive__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notifyLive__count {
+  color: var(--glacier-text-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The rail spans both columns on its own line. Painted from the accent ramp
+   rather than a literal, so it follows whichever accent is set. */
+.notifyLive__bar {
+  grid-column: 1 / -1;
+  block-size: 2px;
+  margin-block-start: var(--glacier-space-1);
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-glass-regular);
+  overflow: hidden;
+}
+
+.notifyLive__bar::before {
+  content: '';
+  display: block;
+  block-size: 100%;
+  inline-size: var(--notify-progress, 0%);
+  border-radius: inherit;
+  background: var(--glacier-accent-9);
+  transition: inline-size 240ms var(--glacier-ease-out);
+}
+
+/* ── What happened ─────────────────────────────────────────────────────────
+   Modelled on .diagRow, which is the house's other "list of things that
+   happened" and already settles the grid, the tabular time and the hairline. */
+.notifyList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.notifyRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--glacier-space-2);
+  align-items: center;
+  padding: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-sm);
+  background: var(--glacier-glass-thin);
+  text-align: start;
+}
+
+.notifyRow[role='button'] {
+  cursor: pointer;
+}
+
+.notifyRow[role='button']:hover {
+  background: var(--glacier-glass-regular);
+}
+
+.notifyRow[role='button']:focus-visible {
+  outline: 2px solid var(--glacier-focus-ring);
+  outline-offset: 2px;
+}
+
+/* Unread is a mark on the row, not a colour change to it: the whole list is
+   already the same weight, and re-tinting half of it turns a list into two
+   lists. The dot is the smallest thing that answers "which of these is the
+   one I came for". */
+.notifyRow[data-unread] {
+  position: relative;
+}
+
+.notifyRow[data-unread]::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 0.55rem;
+  inset-inline-end: 0.5rem;
+  inline-size: 0.375rem;
+  block-size: 0.375rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-9);
+}
+
+/* --glacier-danger-9 does not exist in this kit; the ramp stops at the named
+   roles. Checked rather than assumed, because an undefined custom property
+   here renders NOTHING and the dot would simply have been invisible on exactly
+   the rows that most need one. `-solid` is the fill the deleted chip used for
+   the same meaning. */
+.notifyRow[data-kind='failed'][data-unread]::after {
+  background: var(--glacier-danger-solid);
+}
+
+.notifyRow__art {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2rem;
+  block-size: 2rem;
+  border-radius: var(--glacier-radius-sm);
+  background: var(--glacier-glass-regular);
+  color: var(--glacier-text-muted);
+  overflow: hidden;
+  flex: none;
+}
+
+.notifyRow__art img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.notifyRow[data-kind='failed'] .notifyRow__art {
+  color: var(--glacier-danger-text, var(--glacier-text-muted));
+}
+
+.notifyRow__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-inline-size: 0;
+}
+
+.notifyRow__title {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: var(--glacier-font-weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Two lines, then stop. A server error pasted into a body would otherwise set
+   the height of the whole panel. */
+.notifyRow__body {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  color: var(--glacier-text-muted);
+  font-size: var(--glacier-font-size-xs);
+}
+
+.notifyRow__when {
+  align-self: start;
+  color: var(--glacier-text-subtle);
+  font-size: var(--glacier-font-size-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  /* Clear of the unread dot in the same corner. */
+  padding-inline-end: var(--glacier-space-2);
+}

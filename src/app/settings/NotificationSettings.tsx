@@ -1,3 +1,6 @@
+// The same table the bell reads, so the switch list and the notification
+// that arrives can never describe one kind in two vocabularies.
+import { NOTICE_COPY as COPY, NOTICE_ORDER as ORDER } from '../notify/kinds.ts';
 import { Label, Switch, Text } from '@glacier/react';
 import { useCallback, useEffect, useState } from 'react';
 import { fetchPushPrefs, setPushPref } from '../server.ts';
@@ -17,37 +20,6 @@ import { pushDeviceToken } from '../core/notifications.ts';
  * falls back to its own id rather than vanishing.
  */
 
-const COPY: Record<string, { label: string; hint: string }> = {
-  drops: {
-    label: 'New music',
-    hint: 'When something you asked for finishes landing in the library.',
-  },
-  curated: {
-    label: 'Curator playlists',
-    hint: 'When your curator has built something new to hear.',
-  },
-  dates: {
-    label: 'Waiting to meet you',
-    hint: 'When songs the collector found are queued up for a date.',
-  },
-  digest: {
-    label: 'While you were away',
-    hint: 'Every few days: what landed in the library, and who it was by.',
-  },
-  recap: {
-    label: 'Your week in music',
-    hint: 'Once a week: what you played, for how long, and the name that ran through it.',
-  },
-  friends: {
-    label: 'Friend requests',
-    hint: 'When somebody asks to be friends.',
-  },
-};
-
-/** The order they read in: the ones about music first, the periodic ones next,
- *  people last. Anything the server knows and this list does not lands after
- *  them rather than being dropped. */
-const ORDER = ['drops', 'curated', 'dates', 'digest', 'recap', 'friends'];
 
 export function NotificationSettings() {
   const { session } = useServerSession();
