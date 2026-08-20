@@ -5,6 +5,61 @@
 
 const LEDGER_KEY = 'attackfm-autocache';
 export const DENY_KEY = 'attackfm-cache-deny';
+const PIN_KEY = 'attackfm-cache-pins';
+
+/**
+ * Songs the listener kept on the device deliberately.
+ *
+ * Recorded, rather than deduced. "Kept by hand" used to mean "on the disk but
+ * not in the ledger", which is not a fact about the song at all - it is a fact
+ * about what this browser profile happens to remember. The ledger lives in
+ * localStorage while the files live on disk, so the two can part company
+ * wholesale: a webview that clears its site data under storage pressure, a
+ * reinstall, a bundle booting from a different origin. When they part, every
+ * automatically cached song is re-labelled as one the listener chose, the
+ * pane reports gigabytes they never asked for, and - worse than the label -
+ * the planner stops evicting any of it, because it only ever evicts what the
+ * ledger owns. The cache stalls at whatever size it had reached.
+ *
+ * A positive record cannot make that mistake. Absence now means "this cache's,
+ * record lost" rather than "the listener's", which is both the likelier truth
+ * and the recoverable one: a wrongly-adopted file is re-pinned in a tap, where
+ * a wrongly-protected one silently wedges the cache forever.
+ */
+export function pinnedKeys(): Set<string> {
+  try {
+    const raw = localStorage.getItem(PIN_KEY);
+    return raw ? new Set(Object.keys(JSON.parse(raw) as Record<string, number>)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+export function markPinned(key: string): void {
+  try {
+    const raw = localStorage.getItem(PIN_KEY);
+    const all = raw ? (JSON.parse(raw) as Record<string, number>) : {};
+    all[key] = Date.now();
+    localStorage.setItem(PIN_KEY, JSON.stringify(all));
+  } catch {
+    // The file is still held; it will simply be managed as an ordinary
+    // cached song rather than protected - the safe direction to fail.
+  }
+  for (const fn of listeners) fn();
+}
+
+export function unmarkPinned(key: string): void {
+  try {
+    const raw = localStorage.getItem(PIN_KEY);
+    if (!raw) return;
+    const all = JSON.parse(raw) as Record<string, number>;
+    delete all[key];
+    localStorage.setItem(PIN_KEY, JSON.stringify(all));
+  } catch {
+    // Nothing to do: a stale mark only protects a song from eviction.
+  }
+  for (const fn of listeners) fn();
+}
 
 /**
  * Songs the listener deleted from the device by hand.
