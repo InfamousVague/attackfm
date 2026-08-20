@@ -912,6 +912,28 @@ body [class*='_panel_']:has(> .dlPanel) {
 /* A tab label and its count. Inline-flex so the badge sits on the text's
    baseline row rather than stretching the segment, and a small gap so the
    number reads as attached to the word rather than as part of it. */
+/* The console's button, when the sound is not the record any more.
+   An IconButton clips its own overflow, so a badge hung off the corner needs
+   the seat spelled out - the same two lines .notifyBell carries. */
+.soundTrigger {
+  position: relative;
+  overflow: visible;
+}
+
+.soundTrigger__badge {
+  position: absolute;
+  inset-block-start: -0.15rem;
+  inset-inline-end: -0.15rem;
+  pointer-events: none;
+}
+
+/* Inside the ⋮ menu the badge sits after the label rather than over the glyph:
+   the row is a line of text, and a number floating on its icon reads as part of
+   the icon rather than as a count of what is behind the row. */
+.moreMenuItem__badge {
+  margin-inline-start: auto;
+}
+
 .soundConsole__tab {
   display: inline-flex;
   align-items: center;

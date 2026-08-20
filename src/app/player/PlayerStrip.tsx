@@ -1,6 +1,7 @@
 import { useState, type Dispatch, type MutableRefObject, type ReactNode, type SetStateAction } from 'react';
 import {
   ContextMenu,
+  CounterBadge,
   IconButton,
   PlayerBar,
   Popover,
@@ -18,6 +19,7 @@ import {
   MonitorSpeaker,
 } from '@glacier/icons';
 import { SoundConsole } from './NowPlayingSheet.tsx';
+import { soundChangesLabel, useSoundChanges } from './soundChanges.ts';
 import { PluginSlot } from '../../plugins/runtime.tsx';
 import { SpinningDisc } from './SpinningDisc.tsx';
 import { BeatWave } from './BeatWave.tsx';
@@ -155,6 +157,10 @@ export function PlayerStrip({
   // and each pick swaps the panel in behind a back row. Controlled, so every
   // open starts back at the chooser rather than wherever the last visit left
   // off.
+  // The badge on ⋮ and on the Equalizer row behind it. Same number on both:
+  // the row alone would need the menu open to be read, which is the state the
+  // badge exists to save you from opening.
+  const changes = useSoundChanges();
   const [moreOpen, setMoreOpen] = useState(false);
   // 'lyrics' and 'volume' are the phone's views; 'devices' is the desktop's -
   // one state serves both because only one trailing branch renders at a time.
@@ -389,8 +395,26 @@ export function PlayerStrip({
                   if (open) setMoreView('menu');
                 }}
                 trigger={
-                  <IconButton variant="ghost" size="sm" aria-label="Player options">
+                  <IconButton
+                    className="soundTrigger"
+                    variant="ghost"
+                    size="sm"
+                    aria-label={
+                      changes.total > 0
+                        ? `Player options — ${soundChangesLabel(changes).replace('Sound — ', '')}`
+                        : 'Player options'
+                    }
+                  >
                     <EllipsisVertical size={18} />
+                    {changes.total > 0 && (
+                      <CounterBadge
+                        className="soundTrigger__badge"
+                        count={changes.total}
+                        max={99}
+                        size="sm"
+                        tone="accent"
+                      />
+                    )}
                   </IconButton>
                 }
               >
@@ -404,6 +428,15 @@ export function PlayerStrip({
                       >
                         <AudioLines size={16} />
                         Equalizer
+                        {changes.total > 0 && (
+                          <CounterBadge
+                            className="moreMenuItem__badge"
+                            count={changes.total}
+                            max={99}
+                            size="sm"
+                            tone="accent"
+                          />
+                        )}
                       </button>
                       {/* Filing the song that is playing, without going to
                           find its row in the table first. The dialog wants the
