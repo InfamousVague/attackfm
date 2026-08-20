@@ -23,6 +23,7 @@ import type { AcquireTarget, PluginPageProps } from '../types.ts';
 import { IMPORTER_PLUGIN_ID, useAcquire } from '../runtime.tsx';
 import { planFiling, type FileDestination } from '../../app/downloads/filePlan.ts';
 import { ChooseDestination } from '../../app/playlists/ChooseDestination.tsx';
+import { usePlaylists } from '../../app/playlists/playlists.tsx';
 import { useDownloadsOptional } from '../importsBridge.ts';
 import { usePendingPlay, placeholderTrack } from '../../app/player/pendingPlay.tsx';
 import { CatalogArtistPage } from './CatalogArtistPage.tsx';
@@ -275,7 +276,12 @@ function SetMosaic({ covers, size }: { covers: string[]; size?: 'hero' }) {
 // onOpenArtist: that opens the LIBRARY's artist page, and on Discover an artist
 // means their catalogue - the discography you can add from - so every artist row
 // here stacks a CatalogArtistPage instead.
-export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
+export function DiscoverPage({
+  onPlay,
+  onOpenArtist,
+  onOpenPlaylist,
+  onOpenSongs,
+}: PluginPageProps) {
   // The same entrance the Library wears: cards wave in as they meet the
   // view, each landing with a soft tick.
   // State-carried on purpose: this page swaps its whole content out for the
@@ -286,8 +292,9 @@ export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
   const { session } = useServerSession();
   const downloads = useDownloadsOptional();
   const acquire = useAcquire();
-  const { tracks: libraryTracks, forYou } = useLibrary();
+  const { tracks: libraryTracks, forYou, isFavorite, toggleFavorite } = useLibrary();
   const owned = useOwned();
+  const { addTrack } = usePlaylists();
   // Tapping a not-yet-owned song opens Now Playing on it, downloading, and plays
   // it when the import lands (see pendingPlay.tsx). The catalogue sub-page below
   // still uses playWhenAdded; the feed and open sets arm this instead.
@@ -467,6 +474,25 @@ export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
    * in a playlist. useFilePlan owns the other end - see the note there.
    */
   const add = (item: Suggestion, dest?: FileDestination) => {
+    /*
+     * A single song you ALREADY OWN is filed here and now, with no job at all.
+     *
+     * Without this it is a silent no-op, which is the worst shape available: the
+     * importer skips what the library already has, a skipped job downloads
+     * nothing, a job that downloaded nothing reports no trackIds - and
+     * useFilePlan correctly drops a plan it can never join to a path. So the tap
+     * enqueued, completed, filed nothing, and said nothing.
+     *
+     * Only for a single track. A suggestion is often a whole playlist or album,
+     * and "do I own this" is not one question about those.
+     */
+    if (dest && item.kind === 'track') {
+      const mine = owned.find(item.blurb, item.title);
+      if (mine) {
+        fileOwned(mine, dest);
+        return;
+      }
+    }
     if (!downloads) return;
     const job = jobFor(downloads.jobs, item);
     if (job && job.state !== 'error') return;
@@ -601,6 +627,20 @@ export function DiscoverPage({ onPlay, onOpenArtist }: PluginPageProps) {
     if (job?.state === 'queued' || job?.state === 'downloading') return 'adding';
     return discTapped[d.id] ?? 'idle';
   };
+  /** File a song the library already holds, and go where it went. The same two
+   *  operations useFilePlan performs when a download finally lands - including
+   *  the isFavorite guard, because toggleFavorite is a TOGGLE and filing an
+   *  already-liked song into Liked would un-like it. */
+  const fileOwned = (track: Track, dest: FileDestination) => {
+    if (dest.kind === 'liked') {
+      if (!isFavorite(track.path)) toggleFavorite(track.path);
+      onOpenSongs?.('liked');
+    } else {
+      addTrack(dest.id, track.path);
+      onOpenPlaylist?.(dest.id);
+    }
+  };
+
   /** Add an AI pick: straight to the queue (and armed for autoplay) when the
    *  importer can take it, else the chooser. */
   const addDiscovery = (d: Discovery) => {
