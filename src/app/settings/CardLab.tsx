@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { IconButton, Text } from '@glacier/react';
 import { Disc3, Heart, ListMusic, Repeat, X } from '@glacier/icons';
 import { useLibrary } from '../library/library.tsx';
+import { CardStylePicker } from './CardStylePicker.tsx';
 import likedChip from '../../assets/chip-liked.webp';
 import allSongsChip from '../../assets/chip-all-songs.webp';
 import onRepeatChip from '../../assets/chip-on-repeat.webp';
@@ -364,6 +365,27 @@ export function CardLab({ onClose }: { onClose: () => void }) {
       </nav>
 
       <div className="cardLab__scroll">
+        {/* The six that ship, and the only part of this screen that CHANGES
+            anything. Everything below is a workshop - directions drawn on the
+            lab's own markup so they can be compared, most of them once. These
+            six are drawn on the real card, because picking one applies it. */}
+        <section className="cardLab__style cardLab__pick">
+          <div className="cardLab__head">
+            <span className="cardLab__no">--</span>
+            <div>
+              <Text weight="bold" size="sm">
+                The six we ship
+              </Text>
+              <p className="cardLab__note">
+                Pick one and the library wears it. The rest of this screen is the workshop
+                they came out of.
+              </p>
+            </div>
+          </div>
+          <CardStylePicker count={tracks.length} />
+        </section>
+        <hr className="cardLab__rule" />
+
         {shown.map((style, i) => (
           <section key={style.id} className="cardLab__style">
             <div className="cardLab__head">

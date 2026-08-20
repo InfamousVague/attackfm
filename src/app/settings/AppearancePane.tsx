@@ -5,6 +5,8 @@ import { clampScale, UI_SCALES, useAppearance } from './appearance.tsx';
 import { ThemeSelector } from './ThemeSelector.tsx';
 import { getThemePreset, THEME_PRESETS } from './themePresets.ts';
 import { THEME_COPY } from './settingsShared.ts';
+import { CardStyleSection } from './CardStylePicker.tsx';
+import { useLibrary } from '../library/library.tsx';
 
 /**
  * The appearance controls: the theme, accent, and spacing pulled from the
@@ -12,6 +14,8 @@ import { THEME_COPY } from './settingsShared.ts';
  */
 export function Appearance() {
   const { theme, accent, density, scale, update } = useAppearance();
+  // Only for the preview's count line, so the sample card says something true.
+  const { tracks } = useLibrary();
 
   // The neutral themes wear the brand accent, so their preview cards should too
   // rather than the kit's blue. Paint the brand pink over the accent swatches of
@@ -85,6 +89,13 @@ export function Appearance() {
             />
           ))}
         </div>
+      </div>
+      <div className="prefsSection">
+        <Label>Card style</Label>
+        {/* The four library doors, dressed six ways. The same six the card lab
+            offers - this is the plain door to it, for people who are never
+            going to knock seven times on the wordmark. */}
+        <CardStyleSection count={tracks.length} />
       </div>
       <div className="prefsSection">
         <Label>Size</Label>

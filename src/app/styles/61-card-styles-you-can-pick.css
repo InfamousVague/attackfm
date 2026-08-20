@@ -1,0 +1,310 @@
+/* --- the card styles you can pick ----------------------------------------- */
+
+/*
+ * Five alternative dressings for the four library doors, plus the shipped one
+ * which is simply the absence of all of these.
+ *
+ * Ported from the card lab (chapter 60), which holds thirty-six directions on
+ * its own markup. What makes one shippable is mechanical rather than a matter
+ * of taste: it has to work on the REAL card's DOM - a picture, a name, a count
+ * and two pseudo-elements - with no element added for its benefit. The lab is
+ * allowed extra bones because it is comparing ideas; a setting is not, because
+ * every card in the app has to be able to wear it.
+ *
+ * Three things about the shipped card decide the shape of everything below.
+ *
+ * The ground is `!important` (14-discover-heroes-and-sets-b), because it has
+ * to beat the per-chip gradients in files imported after it. An important
+ * declaration is only ever beaten by another important one, so every ground
+ * here carries the flag too - not as emphasis, but as the only way into the
+ * comparison at all.
+ *
+ * The two pseudo-elements are load-bearing. ::before is the dot screen and
+ * ::after is the label's ground, and both are drawn in the card's own hue - so
+ * a style that says "this card is graphite" or "this card is black" has to
+ * turn them off, or it prints a coloured halftone over its own idea. They go
+ * off once at the foot of this file rather than five times.
+ *
+ * The object's tint is held in `--chipTint` rather than in `filter`, and these
+ * styles set the PROPERTY, never the filter. The reason is the note in
+ * 26-the-dj: `filter` does not merge, so the DJ and On repeat chips restate
+ * the whole chain to add their drop-shadow. Setting `filter` here would win
+ * over both and take their shadows with it; setting the property they are
+ * built from re-tints all four and leaves the two with shadows still shadowed.
+ */
+
+/*
+ * Why every rule below has two selectors.
+ *
+ * The choice lives on the document element, so `:root[data-card-style]` is the
+ * real one. But the picker has to show all six AT ONCE, and a preview card is
+ * a descendant of that same root - so with only the root selector, whichever
+ * style is currently chosen would paint itself over all six previews and the
+ * one you were about to pick would be the one you could not see.
+ *
+ * So the root branch stops at the picker's edge and the picker carries its own
+ * attribute. Inside `.cardPick` exactly one branch can match, which is what
+ * makes the default previewable at all: "no attribute" means the plain shipped
+ * rules show through, with nothing here restating them.
+ *
+ * `:not(.cardPick *)` costs one class of specificity, putting the root branch
+ * at 0-4-0 and the picker branch at 0-3-0. Both clear the heaviest shipped
+ * rule (`:root[data-theme='light'] .libChip`, 0-3-0), and this chapter is
+ * imported last, so the tie the picker branch makes with it resolves here.
+ */
+
+/* ---- Editorial: no picture, the name does the work ----------------------- */
+:root[data-card-style='editorial'] .libChip:not(.cardPick *),
+.cardPick[data-card-style='editorial'] .libChip {
+  justify-content: space-between;
+  background: var(--glacier-surface) !important;
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  color: var(--glacier-text) !important;
+}
+:root[data-card-style='editorial'] .libChip__art:not(.cardPick *),
+.cardPick[data-card-style='editorial'] .libChip__art {
+  display: none;
+}
+:root[data-card-style='editorial'] .libChip__name:not(.cardPick *),
+.cardPick[data-card-style='editorial'] .libChip__name {
+  font-size: 1.375rem;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.02;
+  /* The shadow was for white type on a saturated field. There is no field. */
+  text-shadow: none;
+  text-wrap: balance;
+}
+:root[data-card-style='editorial'] .libChip__count:not(.cardPick *),
+.cardPick[data-card-style='editorial'] .libChip__count {
+  padding-block-start: 0.5rem;
+  border-block-start: 2px solid hsl(var(--libChipHue, 280) 70% 55%);
+  font-size: 0.6875rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  opacity: 0.65;
+}
+
+/* ---- Emboss: one graphite surface, the object pressed into it ------------ */
+:root[data-card-style='emboss'] .libChip:not(.cardPick *),
+.cardPick[data-card-style='emboss'] .libChip {
+  background: linear-gradient(160deg, #24252a, #17181c) !important;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.06),
+    0 8px 20px -14px #000;
+}
+:root[data-card-style='emboss'] .libChip__art:not(.cardPick *),
+.cardPick[data-card-style='emboss'] .libChip__art {
+  /* Graphite on graphite: the object is close to the colour of the card it is
+     in, and the hairline of light along its top edge is what says it is
+     there at all. */
+  --chipTint: grayscale(1) brightness(0.42) contrast(1.15)
+    drop-shadow(0 1px 0 rgb(255 255 255 / 0.13));
+  /* Screening a dark object onto a dark card would erase it - screen only ever
+     lightens, and this treatment works by the object being DARKER. */
+  mix-blend-mode: normal;
+  opacity: 0.9;
+}
+
+/* ---- Frosted glass: a panel of frost over a saturated field -------------- */
+:root[data-card-style='glass'] .libChip:not(.cardPick *),
+.cardPick[data-card-style='glass'] .libChip {
+  background:
+    radial-gradient(120% 90% at 20% 10%, hsl(var(--libChipHue, 280) 85% 58%), transparent 65%),
+    linear-gradient(
+      150deg,
+      hsl(calc(var(--libChipHue, 280) + 42) 70% 44%),
+      hsl(var(--libChipHue, 280) 60% 22%)
+    ) !important;
+}
+:root[data-card-style='glass'] .libChip__art:not(.cardPick *),
+.cardPick[data-card-style='glass'] .libChip__art {
+  /* Desaturated only. The blur is the FROST's job, and the object is behind
+     it - giving the object its own blur as well stacked two of them on one
+     thing, and the chrome objects went from out-of-focus to simply absent. */
+  --chipTint: saturate(0.75);
+  mix-blend-mode: normal;
+  opacity: 0.95;
+}
+/*
+ * The frost.
+ *
+ * The lab draws this as its own element; here it is the label ground, taken
+ * over rather than added to. That is the port rather than a shortcut: ::after
+ * is already a full-bleed layer sitting above the object and below the words,
+ * which is exactly where a sheet of frost goes - it only has to stop being a
+ * gradient that starts 38% down and start being glass over the whole card.
+ */
+:root[data-card-style='glass'] .libChip:not(.cardPick *)::after,
+.cardPick[data-card-style='glass'] .libChip::after {
+  inset: 0;
+  background: linear-gradient(160deg, rgb(255 255 255 / 0.16), rgb(255 255 255 / 0.03));
+  /* 3px, not the lab's 6. A card is a fifth the height of a lab tile and the
+     blur does not scale with it - at 6 the objects stopped being out of focus
+     and became stains, which is a different picture from the one this is. */
+  backdrop-filter: blur(3px) saturate(1.1);
+  -webkit-backdrop-filter: blur(3px) saturate(1.1);
+}
+
+/* ---- Neon wire: near-black, the object as a glowing outline -------------- */
+:root[data-card-style='neon'] .libChip:not(.cardPick *),
+.cardPick[data-card-style='neon'] .libChip {
+  background: #0a0a0c !important;
+  border: 1px solid hsl(var(--libChipHue, 280) 80% 46% / 0.5);
+  box-shadow: inset 0 0 34px -12px hsl(var(--libChipHue, 280) 90% 55% / 0.55);
+}
+:root[data-card-style='neon'] .libChip__art:not(.cardPick *),
+.cardPick[data-card-style='neon'] .libChip__art {
+  /* The same opening move as the shipped tint - flatten to grey, then re-tint
+     from the 40 degrees sepia lands on - run far past it. Contrast at 9 throws
+     the midtones away, so what survives is the object's edge and nothing else.
+     The blend is left alone: a wire on black wants to ADD light, which is what
+     the shipped `screen` already does. */
+  --chipTint: grayscale(1) brightness(1.45) contrast(9) sepia(1)
+    hue-rotate(calc((var(--libChipHue, 280) - 40) * 1deg)) saturate(6)
+    drop-shadow(0 0 8px hsl(var(--libChipHue, 280) 95% 60% / 0.75));
+  opacity: 0.92;
+}
+
+/* ---- Die-cut sticker: flat colour, a keyline, set off square ------------- */
+:root[data-card-style='sticker'] .libChip:not(.cardPick *),
+.cardPick[data-card-style='sticker'] .libChip {
+  background: hsl(var(--libChipHue, 280) 72% 52%) !important;
+}
+:root[data-card-style='sticker'] .libChip__art:not(.cardPick *),
+.cardPick[data-card-style='sticker'] .libChip__art {
+  /* No tint at all: a sticker is a printed cutout of the thing, in the thing's
+     own colours. Four shadows make the keyline rather than an outline, because
+     an outline follows the BOX and a die cut follows the object. */
+  --chipTint: drop-shadow(1.5px 0 0 #fff) drop-shadow(-1.5px 0 0 #fff)
+    drop-shadow(0 1.5px 0 #fff) drop-shadow(0 -1.5px 0 #fff)
+    drop-shadow(3px 5px 4px rgb(0 0 0 / 0.35));
+  mix-blend-mode: normal;
+  opacity: 1;
+}
+/*
+ * The words, on a card that has nothing behind them.
+ *
+ * Every other style here either darkens the card under the label (the shipped
+ * ::after) or is dark to begin with. Sticker is the one that is neither: flat
+ * bright colour, with a full-strength object crossing the text - and putting
+ * a gradient back under the words is exactly the thing a flat card is not. So
+ * the type carries its own ground instead, which is what a sticker's type does
+ * anyway.
+ */
+:root[data-card-style='sticker'] .libChip__name:not(.cardPick *),
+:root[data-card-style='sticker'] .libChip__count:not(.cardPick *),
+.cardPick[data-card-style='sticker'] .libChip__name,
+.cardPick[data-card-style='sticker'] .libChip__count {
+  text-shadow:
+    0 1px 3px rgb(0 0 0 / 0.5),
+    0 0 2px rgb(0 0 0 / 0.45);
+}
+
+/*
+ * The tilt, for the two chips that have none of their own.
+ *
+ * All songs and Liked are already set down by hand a few degrees each way
+ * (06-the-dock-contract-b), and that IS the sticker idea, so they are left
+ * alone - a blanket rotation here would be heavier than theirs and would
+ * flatten the pair to one angle. Only the two that sit square get one.
+ */
+:root[data-card-style='sticker'] .libChip--dj .libChip__art:not(.cardPick *),
+:root[data-card-style='sticker'] .libChip--repeat .libChip__art:not(.cardPick *),
+.cardPick[data-card-style='sticker'] .libChip--dj .libChip__art,
+.cardPick[data-card-style='sticker'] .libChip--repeat .libChip__art {
+  transform: rotate(-5deg);
+}
+
+/*
+ * The halftone belongs to the shipped look alone.
+ *
+ * ::before is a white dot screen knocked out over the whole card and ::after
+ * is a gradient of the card's hue behind the words. Both are the printed
+ * treatment; left in place they put a coloured halftone over graphite, over
+ * black, over a plain editorial surface. Glass is missing from the ::after
+ * half on purpose - it does not remove that layer, it wears it.
+ */
+:root[data-card-style='editorial'] .libChip:not(.cardPick *)::before,
+:root[data-card-style='emboss'] .libChip:not(.cardPick *)::before,
+:root[data-card-style='glass'] .libChip:not(.cardPick *)::before,
+:root[data-card-style='neon'] .libChip:not(.cardPick *)::before,
+:root[data-card-style='sticker'] .libChip:not(.cardPick *)::before,
+:root[data-card-style='editorial'] .libChip:not(.cardPick *)::after,
+:root[data-card-style='emboss'] .libChip:not(.cardPick *)::after,
+:root[data-card-style='neon'] .libChip:not(.cardPick *)::after,
+:root[data-card-style='sticker'] .libChip:not(.cardPick *)::after,
+.cardPick[data-card-style='editorial'] .libChip::before,
+.cardPick[data-card-style='emboss'] .libChip::before,
+.cardPick[data-card-style='glass'] .libChip::before,
+.cardPick[data-card-style='neon'] .libChip::before,
+.cardPick[data-card-style='sticker'] .libChip::before,
+.cardPick[data-card-style='editorial'] .libChip::after,
+.cardPick[data-card-style='emboss'] .libChip::after,
+.cardPick[data-card-style='neon'] .libChip::after,
+.cardPick[data-card-style='sticker'] .libChip::after {
+  display: none;
+}
+
+/* ---- The picker ---------------------------------------------------------- */
+
+/*
+ * Six real cards, each wearing one of the styles, in the settings pane.
+ *
+ * Real cards rather than drawn swatches, because the whole difficulty of
+ * choosing between these is that they are the same four objects treated six
+ * ways - a swatch of the GROUND would make Emboss and Neon nearly the same
+ * grey rectangle, when what separates them is entirely what happens to the
+ * object sitting on it.
+ */
+.cardPicks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--glacier-space-2);
+}
+
+@media (min-width: 30rem) {
+  .cardPicks {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.cardPick {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4375rem;
+  padding: 0.3125rem;
+  border: var(--glacier-hairline) solid transparent;
+  border-radius: calc(var(--glacier-radius-md) + 0.3125rem);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.cardPick[data-selected] {
+  border-color: var(--glacier-accent-solid);
+  background: var(--glacier-accent-soft);
+}
+
+/* The preview is a picture of a card, not a card: the whole tile is the
+   control, so the chip inside must not eat the press or answer the pointer. */
+.cardPick .libChip {
+  min-block-size: 4.5rem;
+  padding: var(--glacier-space-2);
+  pointer-events: none;
+}
+
+/* Editorial sets its name at 1.375rem, which is right on a real tile and far
+   too big on a preview a third the width. Scaled here rather than in the style
+   itself, so the style stays one description of one look. */
+.cardPick[data-card-style='editorial'] .libChip__name {
+  font-size: 1rem;
+}
+
+.cardPick__name {
+  padding-inline: 0.125rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
