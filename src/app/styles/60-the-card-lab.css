@@ -1,0 +1,513 @@
+/* ---- The card lab -------------------------------------------------------
+   Ten treatments of the four library doors, one markup between them.
+
+   Every variant gets the identical DOM: a wash, an object, a glyph, a stat, a
+   name, a sub and a row of bars. Each stylesheet below turns on the pieces it
+   wants and hides the rest. That constraint is the point - a direction that
+   cannot be reached by styling this markup is not a treatment of these cards,
+   and comparing it to the others would be comparing two different components.
+
+   Read as: the shell, then the shared card, then ten blocks. */
+
+.cardLab {
+  position: fixed;
+  inset: 0;
+  z-index: 3400;
+  display: flex;
+  flex-direction: column;
+  background: var(--glacier-bg, #0b0b0d);
+  color: var(--glacier-text);
+}
+
+.cardLab__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: max(14px, env(safe-area-inset-top)) 16px 12px;
+  border-block-end: var(--glacier-hairline) solid var(--glacier-border);
+}
+
+.cardLab__title {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.cardLab__jump {
+  display: flex;
+  gap: 6px;
+  padding: 10px 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-block-end: var(--glacier-hairline) solid var(--glacier-border);
+}
+.cardLab__jump::-webkit-scrollbar {
+  display: none;
+}
+
+.cardLab__chip {
+  flex: none;
+  appearance: none;
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  background: transparent;
+  color: var(--glacier-text-muted);
+  border-radius: 999px;
+  padding: 4px 11px;
+  font-size: var(--glacier-font-size-xs);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cardLab__chip[data-on] {
+  background: var(--glacier-accent-solid);
+  border-color: transparent;
+  color: #fff;
+}
+
+.cardLab__scroll {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+  padding: 18px 16px max(28px, env(safe-area-inset-bottom));
+}
+
+.cardLab__style {
+  margin-block-end: 22px;
+}
+
+.cardLab__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-block-end: 12px;
+}
+
+/* The number is the one place numbering is honest here: these ARE an ordered
+   list of options somebody is going to refer to by number out loud. */
+.cardLab__no {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--glacier-text-subtle);
+  padding-block-start: 2px;
+}
+
+.cardLab__note {
+  margin: 2px 0 0;
+  max-inline-size: 62ch;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--glacier-text-muted);
+}
+
+.cardLab__rule {
+  border: 0;
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border);
+  margin: 22px 0 0;
+}
+
+/* ---- the shared card ---------------------------------------------------- */
+
+.labRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (min-width: 900px) {
+  .labRow {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.labCard {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  min-block-size: 104px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  isolation: isolate;
+  background: hsl(var(--h) 40% 16%);
+  color: #fff;
+}
+
+/* Everything optional starts off. Each block below opts its pieces back in,
+   so a variant can never inherit a piece it did not ask for. */
+.labCard__art,
+.labCard__glyph,
+.labCard__stat,
+.labCard__wash,
+.labCard__bars,
+.labCard__mosaic {
+  display: none;
+}
+
+.labCard__name {
+  position: relative;
+  z-index: 3;
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+.labCard__sub {
+  position: relative;
+  z-index: 3;
+  font-size: 0.75rem;
+  opacity: 0.75;
+}
+
+/* ---- 01 editorial ------------------------------------------------------- */
+/* No picture. The name is the card, and the rule is the only ornament. */
+.labRow--editorial .labCard {
+  background: var(--glacier-surface);
+  color: var(--glacier-text);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  justify-content: space-between;
+  min-block-size: 118px;
+}
+.labRow--editorial .labCard__name {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.02;
+  text-wrap: balance;
+}
+.labRow--editorial .labCard__sub {
+  padding-block-start: 8px;
+  border-block-start: 2px solid hsl(var(--h) 70% 55%);
+  font-size: 0.6875rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  opacity: 0.65;
+}
+
+/* ---- 02 emboss ---------------------------------------------------------- */
+/* One surface for all four; the object pressed in rather than laid on. No hue
+   at all - the only colour is the light. */
+.labRow--emboss .labCard {
+  background: linear-gradient(160deg, #24252a, #17181c);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 8px 20px -14px #000;
+}
+.labRow--emboss .labCard__art {
+  display: block;
+  position: absolute;
+  inset-block: 6%;
+  inset-inline-end: -6%;
+  inline-size: 62%;
+  object-fit: contain;
+  z-index: 1;
+  /* Flattened to the card's own material, then lit from above: the object is
+     the same graphite as the surface and only the shadow tells you it is
+     there. */
+  filter: grayscale(1) brightness(0.42) contrast(1.15)
+    drop-shadow(0 1px 0 rgb(255 255 255 / 0.13));
+  opacity: 0.9;
+}
+
+/* ---- 03 duotone halftone ------------------------------------------------ */
+/* Two inks and a dot screen, the way a cheap sleeve is printed. The dots are a
+   repeating gradient laid over the object and masked to it, so the screen sits
+   on the ink rather than over the whole card. */
+.labRow--halftone .labCard {
+  background: hsl(var(--h) 68% 88%);
+  color: hsl(var(--h) 65% 16%);
+}
+.labRow--halftone .labCard__art {
+  display: block;
+  position: absolute;
+  inset-block: 4%;
+  inset-inline-end: -8%;
+  inline-size: 66%;
+  object-fit: contain;
+  z-index: 1;
+  filter: grayscale(1) contrast(2.1) brightness(0.85)
+    sepia(1) hue-rotate(calc((var(--h) - 40) * 1deg)) saturate(3.4);
+  mix-blend-mode: multiply;
+}
+.labRow--halftone .labCard__wash {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0.34;
+  background-image: radial-gradient(hsl(var(--h) 70% 22%) 34%, transparent 36%);
+  background-size: 5px 5px;
+  mix-blend-mode: multiply;
+}
+.labRow--halftone .labCard__sub {
+  opacity: 0.72;
+  font-weight: 600;
+}
+
+/* ---- 04 frosted glass --------------------------------------------------- */
+/* A pane of frost over a saturated field, the object behind it. Closest to the
+   material the rest of the app already uses. */
+.labRow--glass .labCard {
+  background:
+    radial-gradient(120% 90% at 20% 10%, hsl(var(--h) 85% 58%), transparent 65%),
+    linear-gradient(150deg, hsl(var(--h2) 70% 44%), hsl(var(--h) 60% 22%));
+}
+.labRow--glass .labCard__art {
+  display: block;
+  position: absolute;
+  inset-block: 8%;
+  inset-inline-end: -4%;
+  inline-size: 58%;
+  object-fit: contain;
+  z-index: 1;
+  filter: saturate(0.7) blur(1px);
+  opacity: 0.85;
+}
+.labRow--glass .labCard__wash {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(160deg, rgb(255 255 255 / 0.16), rgb(255 255 255 / 0.03));
+  backdrop-filter: blur(7px) saturate(1.1);
+  -webkit-backdrop-filter: blur(7px) saturate(1.1);
+  border-block-start: 1px solid rgb(255 255 255 / 0.22);
+}
+
+/* ---- 05 neon wire ------------------------------------------------------- */
+/* Near-black, the object reduced to a lit outline. Built from the same photo:
+   luminance pushed to an edge, then coloured. */
+.labRow--neon .labCard {
+  background: #0a0a0c;
+  border: 1px solid hsl(var(--h) 80% 46% / 0.5);
+  box-shadow: inset 0 0 34px -12px hsl(var(--h) 90% 55% / 0.55);
+}
+.labRow--neon .labCard__art {
+  display: block;
+  position: absolute;
+  inset-block: 8%;
+  inset-inline-end: -4%;
+  inline-size: 58%;
+  object-fit: contain;
+  z-index: 1;
+  filter: grayscale(1) brightness(1.45) contrast(9)
+    sepia(1) hue-rotate(calc((var(--h) - 40) * 1deg)) saturate(6)
+    drop-shadow(0 0 8px hsl(var(--h) 95% 60% / 0.75));
+  mix-blend-mode: screen;
+  opacity: 0.92;
+}
+.labRow--neon .labCard::after,
+.labRow--halftone .labCard::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 40%;
+  inset-inline: 0;
+  inset-block-end: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.labRow--neon .labCard::after {
+  background: linear-gradient(to top, #0a0a0c 18%, rgb(10 10 12 / 0.6) 55%, transparent);
+}
+.labRow--halftone .labCard::after {
+  background: linear-gradient(
+    to top,
+    hsl(var(--h) 68% 88% / 0.92) 16%,
+    hsl(var(--h) 68% 88% / 0.5) 58%,
+    transparent
+  );
+}
+
+.labRow--neon .labCard__name {
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  color: hsl(var(--h) 90% 76%);
+}
+
+/* ---- 06 die-cut sticker ------------------------------------------------- */
+/* Flat ink, the object cut out with a keyline and set down off-square. */
+.labRow--sticker .labCard {
+  background: hsl(var(--h) 72% 56%);
+}
+.labRow--sticker .labCard__art {
+  display: block;
+  position: absolute;
+  inset-block: 10%;
+  inset-inline-end: -2%;
+  inline-size: 54%;
+  object-fit: contain;
+  z-index: 1;
+  transform: rotate(-7deg);
+  /* The keyline: four offset white shadows read as a cut edge without needing
+     an outlined copy of the artwork. */
+  filter: drop-shadow(2px 0 0 #fff) drop-shadow(-2px 0 0 #fff)
+    drop-shadow(0 2px 0 #fff) drop-shadow(0 -2px 0 #fff)
+    drop-shadow(3px 6px 0 rgb(0 0 0 / 0.28));
+}
+.labRow--sticker .labCard__name {
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+/* ---- 07 label stub ------------------------------------------------------ */
+/* Filed, not framed: mono type, a perforated edge, a block of bars. */
+.labRow--stub .labCard {
+  background: #f4f1e8;
+  color: #17171a;
+  border-radius: 6px;
+  border: 1px solid #17171a;
+  padding-inline-start: 22px;
+  font-family: var(--glacier-font-mono, ui-monospace, monospace);
+}
+/* The perforation: a dotted column down the leading edge. */
+.labRow--stub .labCard__wash {
+  display: block;
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 11px;
+  inline-size: 2px;
+  z-index: 2;
+  background-image: linear-gradient(#17171a 52%, transparent 0);
+  background-size: 2px 7px;
+  opacity: 0.55;
+}
+.labRow--stub .labCard__bars {
+  display: flex;
+  position: absolute;
+  inset-inline-end: 12px;
+  inset-block-start: 12px;
+  gap: 2px;
+  z-index: 3;
+  align-items: flex-end;
+  block-size: 26px;
+}
+.labRow--stub .labCard__bars i {
+  inline-size: 2px;
+  block-size: 100%;
+  background: #17171a;
+}
+.labRow--stub .labCard__bars i:nth-child(3n) {
+  inline-size: 4px;
+}
+.labRow--stub .labCard__bars i:nth-child(4n) {
+  block-size: 62%;
+}
+.labRow--stub .labCard__name {
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.labRow--stub .labCard__sub {
+  font-size: 0.6875rem;
+  opacity: 0.7;
+}
+
+/* ---- 08 number first ---------------------------------------------------- */
+/* The count is the card; the object is a watermark behind it. */
+.labRow--stat .labCard {
+  background: linear-gradient(150deg, hsl(var(--h) 58% 30%), hsl(var(--h2) 52% 18%));
+  justify-content: flex-end;
+}
+.labRow--stat .labCard__stat {
+  display: block;
+  position: relative;
+  z-index: 3;
+  font-size: 2.6rem;
+  font-weight: 800;
+  line-height: 0.92;
+  letter-spacing: -0.045em;
+  font-variant-numeric: tabular-nums;
+  margin-block-end: 2px;
+}
+.labRow--stat .labCard__art {
+  display: block;
+  position: absolute;
+  inset-block: 2%;
+  inset-inline-end: -14%;
+  inline-size: 58%;
+  object-fit: contain;
+  z-index: 1;
+  opacity: 0.17;
+  filter: grayscale(1) brightness(2);
+}
+.labRow--stat .labCard__name {
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.72;
+  order: -1;
+}
+.labRow--stat .labCard__sub {
+  font-size: 0.6875rem;
+  opacity: 0.6;
+}
+
+/* ---- 09 real covers ----------------------------------------------------- */
+/* The face is the collection itself. Nothing to draw, and nothing to show on
+   an empty library - the holes are the honest failure state, not a bug. */
+.labRow--mosaic .labCard {
+  background: #101014;
+}
+.labRow--mosaic .labCard__mosaic {
+  display: grid;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 1px;
+}
+.labRow--mosaic .labCard__mosaic img,
+.labRow--mosaic .labCard__mosaicHole {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  display: block;
+}
+.labRow--mosaic .labCard__mosaicHole {
+  background: hsl(var(--h) 24% 21%);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.07);
+}
+.labRow--mosaic .labCard__wash {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: linear-gradient(
+    to top,
+    hsl(var(--h) 45% 8% / 0.95) 12%,
+    hsl(var(--h) 45% 8% / 0.35) 55%,
+    transparent
+  );
+}
+
+/* ---- 10 aurora ---------------------------------------------------------- */
+/* Soft mesh, the object floating over a long diffuse shadow. */
+.labRow--aurora .labCard {
+  background:
+    radial-gradient(75% 90% at 12% 8%, hsl(var(--h) 90% 62% / 0.95), transparent 60%),
+    radial-gradient(70% 80% at 92% 30%, hsl(var(--h2) 88% 58% / 0.9), transparent 62%),
+    radial-gradient(90% 80% at 60% 108%, hsl(calc(var(--h) - 30) 70% 42% / 0.85), transparent 70%),
+    #0d0d11;
+}
+.labRow--aurora .labCard__art {
+  display: block;
+  position: absolute;
+  inset-block: 9%;
+  inset-inline-end: -3%;
+  inline-size: 56%;
+  object-fit: contain;
+  z-index: 1;
+  filter: drop-shadow(0 14px 18px rgb(0 0 0 / 0.45));
+}
+.labRow--aurora .labCard__name {
+  text-shadow: 0 1px 10px rgb(0 0 0 / 0.35);
+}
+
+/* The lab is a comparison surface, and a row of cards sliding about while you
+   are trying to compare them is noise. */
+@media (prefers-reduced-motion: reduce) {
+  .labCard {
+    transition: none;
+  }
+}

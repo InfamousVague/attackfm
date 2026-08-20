@@ -279,6 +279,12 @@
 }
 
 .aboutHero__mark {
+  /* The mark is the way into the card lab - seven presses. Deliberately gives
+     no sign of it: a cursor change would be a label, and the point of a knock
+     is that you have to know. These two only stop the browser treating it as a
+     draggable image, which is what a run of quick presses otherwise becomes. */
+  -webkit-user-drag: none;
+  user-select: none;
   inline-size: 9rem;
   max-inline-size: 60%;
 }
