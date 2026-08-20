@@ -1,6 +1,6 @@
 import { mosaicArts, useTileArt } from '../ux/artLoad.ts';
 import { Button, ContextMenu, Input, Modal, MenuItem, Text } from '@glacier/react';
-import { Heart, History, ListMusic, Plus, Repeat, Trash2 } from '@glacier/icons';
+import { History, ListMusic, Plus, Trash2 } from '@glacier/icons';
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { useLibrary } from '../library/library.tsx';
 import { DjLauncher } from '../booth/DjLauncher.tsx';
@@ -9,6 +9,12 @@ import { PluginFence, usePlugins } from '../../plugins/runtime.tsx';
 import type { PluginPlaylistTile } from '../../plugins/types.ts';
 import { PlaylistModal } from './PlaylistModal.tsx';
 import { playlistPlayedAt, notePlaylistPlayed } from './playlistRecency.ts';
+// The objects made for these four tiles. Their own colours are not used: each
+// is tinted to its card's hue in CSS, so the four read as one set rather than
+// four photographs that happen to sit together.
+import likedChip from '../../assets/chip-liked.webp';
+import allSongsChip from '../../assets/chip-all-songs.webp';
+import onRepeatChip from '../../assets/chip-on-repeat.webp';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -203,24 +209,20 @@ export function PlaylistShowcase({
           <button
             type="button"
             className="libChip libChip--liked"
-            style={{ '--libChipHue': 338 } as CSSProperties}
+            style={{ '--libChipHue': 338, '--libChipHue2': 300 } as CSSProperties}
             onClick={() => onOpenSongs('liked')}
           >
-            <span className="libChip__icon" aria-hidden>
-              <Heart size={48} strokeWidth={2.25} />
-            </span>
+            <img className="libChip__art" src={likedChip} alt="" loading="lazy" />
             <span className="libChip__name">Liked</span>
             <span className="libChip__count">{songCount(favoriteTracks.length)}</span>
           </button>
           <button
             type="button"
             className="libChip libChip--all"
-            style={{ '--libChipHue': 214 } as CSSProperties}
+            style={{ '--libChipHue': 214, '--libChipHue2': 262 } as CSSProperties}
             onClick={() => onOpenSongs('all')}
           >
-            <span className="libChip__icon" aria-hidden>
-              <ListMusic size={48} strokeWidth={2.25} />
-            </span>
+            <img className="libChip__art" src={allSongsChip} alt="" loading="lazy" />
             <span className="libChip__name">All songs</span>
             <span className="libChip__count">{songCount(tracks.length)}</span>
           </button>
@@ -230,12 +232,10 @@ export function PlaylistShowcase({
           <button
             type="button"
             className="libChip libChip--repeat"
-            style={{ '--libChipHue': 145 } as CSSProperties}
+            style={{ '--libChipHue': 145, '--libChipHue2': 190 } as CSSProperties}
             onClick={() => onOpenSongs('onrepeat')}
           >
-            <span className="libChip__icon" aria-hidden>
-              <Repeat size={48} strokeWidth={2.25} />
-            </span>
+            <img className="libChip__art" src={onRepeatChip} alt="" loading="lazy" />
             <span className="libChip__name">On repeat</span>
             <span className="libChip__count">Your most played</span>
           </button>
