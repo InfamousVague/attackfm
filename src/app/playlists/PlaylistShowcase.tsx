@@ -7,8 +7,8 @@ import { DjLauncher } from '../booth/DjLauncher.tsx';
 import { usePlaylists } from './playlists.tsx';
 import { PluginFence, usePlugins } from '../../plugins/runtime.tsx';
 import type { PluginPlaylistTile } from '../../plugins/types.ts';
-import { PlaylistModal } from './PlaylistModal.tsx';
 import { playlistPlayedAt, notePlaylistPlayed } from './playlistRecency.ts';
+import { openMix } from '../nav/openMix.ts';
 // The objects made for these four tiles. Their own colours are not used: each
 // is tinted to its card's hue in CSS, so the four read as one set rather than
 // four photographs that happen to sit together.
@@ -99,27 +99,14 @@ function Tile({
  * count change inside a shared component. Owns its own modal so nothing
  * threads through the showcase's open-state union.
  */
-function PluginTile({ tile, onPlay }: { tile: PluginPlaylistTile; onPlay: (track: Track, queue: Track[]) => void }) {
+function PluginTile({ tile }: { tile: PluginPlaylistTile }) {
   // Bound to a use-named local so the call reads as the hook it is.
   const usePlaylist = tile.usePlaylist;
   const { name, cover, tracks, emptyLabel } = usePlaylist();
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <Tile name={name} cover={cover} onOpen={() => setOpen(true)} />
-      {open && (
-        <PlaylistModal
-          open
-          onClose={() => setOpen(false)}
-          title={name}
-          tracks={[...tracks]}
-          emptyLabel={emptyLabel}
-          // The tile's playlist is the queue: opening a row plays on through it.
-          onPlay={(t) => onPlay(t, [...tracks])}
-        />
-      )}
-    </>
-  );
+  // Opens as a PAGE now, like every other list: the sheet that used to
+  // preview it was a second way of drawing a playlist, and it could not show
+  // a running order or sit in the back stack the way a page does.
+  return <Tile name={name} cover={cover} onOpen={() => openMix(name, [...tracks], emptyLabel)} />;
 }
 
 /** "1 song" / "12 songs" - the line the Browse tiles use, so a chip built to
@@ -298,7 +285,7 @@ export function PlaylistShowcase({
                 tile looks like. */}
             {pluginTiles.map(({ plugin, tile }) => (
               <PluginFence key={`${plugin.id}:${tile.id}`} pluginId={plugin.id}>
-                <PluginTile tile={tile} onPlay={onPlay} />
+                <PluginTile tile={tile} />
               </PluginFence>
             ))}
         </div>

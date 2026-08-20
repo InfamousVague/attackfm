@@ -2,12 +2,12 @@ import { Button, Pill, SearchField, Text } from '@glacier/react';
 import { ChartNoAxesColumn, SlidersHorizontal } from '@glacier/icons';
 import { useMemo, useRef, useState } from 'react';
 import { useLibrary } from './library.tsx';
+import { openMix } from '../nav/openMix.ts';
 import { useRippleWave } from '../ux/rippleWave.ts';
 import { usePlaylists } from '../playlists/playlists.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { filterTracks } from '../search/trackSearch.ts';
 import { ShelfSkeleton } from '../ux/ShelfSkeleton.tsx';
-import { PlaylistModal } from '../playlists/PlaylistModal.tsx';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
 import { isMusicImportLink } from '../../plugins/importsBridge.ts';
 import { usePlugins } from '../../plugins/runtime.tsx';
@@ -21,7 +21,6 @@ import {
   TrackCard,
   greetingFor,
   mixArt,
-  type ResolvedMix,
 } from '../home/homeCards.tsx';
 import { useHomeFeed } from '../home/useHomeFeed.ts';
 
@@ -79,7 +78,6 @@ export function HomePage({
   const showCurator = section === 'curator' || section === 'all';
   const showHistory = section === 'history' || section === 'all';
   const { tracks, favoriteTracks } = useLibrary();
-  const { create: createPlaylist } = usePlaylists();
   const { session } = useServerSession();
   // The entrance wave, when this page stands alone; embedded, the Library
   // page's own observer covers these shelves (first registration wins).
@@ -103,7 +101,6 @@ export function HomePage({
     anySkeleton,
   } = useHomeFeed(tracks, session);
 
-  const [openMix, setOpenMix] = useState<ResolvedMix | null>(null);
   // The home search filters the local library in place: while it holds a query
   // the shelves stand aside and the matches take the page.
   const [query, setQuery] = useState('');
@@ -181,7 +178,7 @@ export function HomePage({
       ) : (
       <Shelf title="Made from your library" count={madeForYou.length}>
         {madeForYou.map(({ mix, curated: fromCurator }) => (
-          <button key={mix.id} type="button" className="mixCard" onClick={() => setOpenMix(mix)}>
+          <button key={mix.id} type="button" className="mixCard" onClick={() => openMix(mix.title, mix.tracks, 'This mix came up empty.')}>
             {/* No AI badge any more: these live on Discover now, which is the
                 AI's own page end to end, so a pill on every card said nothing
                 the heading did not already say. */}
@@ -332,31 +329,6 @@ export function HomePage({
         </>
       )}
 
-      {openMix && (
-        <PlaylistModal
-          open
-          onClose={() => setOpenMix(null)}
-          title={openMix.title}
-          tracks={openMix.tracks}
-          emptyLabel="This mix came up empty."
-          emptyArt="search"
-          // Fork-on-edit: the curator's list stays the curator's and keeps
-          // regenerating; saving takes a frozen copy that is yours to edit.
-          onSaveCopy={() => {
-            void createPlaylist(
-              openMix.title,
-              openMix.tracks.map((t) => t.path),
-            );
-            setOpenMix(null);
-          }}
-          onPlay={(t) => onPlay(t, openMix.tracks)}
-          onOpenArtist={(artist) => {
-            // Close the sheet first so the artist page is not buried under it.
-            setOpenMix(null);
-            onOpenArtist(artist);
-          }}
-        />
-      )}
     </div>
   );
 }
