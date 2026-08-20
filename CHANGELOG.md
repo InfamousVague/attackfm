@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.227
+
+- The workshop hidden in About has twenty looks in it now instead of ten, and they sit much further apart: printed, brushed, drawn, cut from paper, read off a tube. Still nothing on your actual library has changed — this is the picking, not the choosing
+
 ## 0.3.226
 
 - Nothing on screen has changed yet. There is a workshop hidden in About where the four cards at the top of your library — Liked, All songs, On repeat, DJ — are laid out in ten different looks against your own songs and counts. Whichever one wins will arrive here properly
