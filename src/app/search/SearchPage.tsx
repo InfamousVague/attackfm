@@ -25,7 +25,7 @@ import { useQueueControls } from '../player/queueControls.tsx';
 import { useRegistry } from '../servers/registrySession.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { artworkUrl, genreArtwork, isCutoutArt } from '../ux/artwork.ts';
-import { clearSpotifyLink, onSpotifyLink, spotifyWebUrl } from '../servers/deepLink.ts';
+import { spotifyWebUrl } from '../servers/deepLink.ts';
 import { openExternal } from '../core/openExternal.ts';
 import { usePluginCommands, useAcquire } from '../../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
@@ -139,25 +139,12 @@ export function SearchPage({
   const recents = useSearchRecents();
   const [query, setQuery] = useState('');
   /*
-   * A Spotify link the phone handed us instead of handing it to Spotify.
-   *
-   * Dropped into the field rather than given a page of its own, because the
-   * field ALREADY knows what to do with one: a pasted link is claimed by the
-   * acquire plugin and the page becomes that link's actions - the record, its
-   * art, and Add. Inventing a second surface for the same errand would mean
-   * two things to keep working and one of them rarely seen.
-   *
-   * Taken once. A link is an errand, not a state, and replaying it every time
-   * this page mounts would re-open the importer long after the fact.
+   * A Spotify link the phone handed us now opens its own preview card
+   * (<SpotifyPreview />), not this field - so a tapped song lands on the record
+   * and its actions rather than in a search box. A link TYPED or PASTED here
+   * still works: `spotifyWeb` below reads it straight off the query, which is a
+   * different path from the deep-link arrival and stays.
    */
-  useEffect(
-    () =>
-      onSpotifyLink((url) => {
-        setQuery(url);
-        clearSpotifyLink();
-      }),
-    [],
-  );
   const [filter, setFilter] = useState<Filter>('all');
   /*
    * Scope and kind are different questions, so they are different state. The
