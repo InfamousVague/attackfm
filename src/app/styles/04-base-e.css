@@ -78,7 +78,9 @@ body:has(.npScreen[data-docked]) .appNavScrim {
      strip, so the card contours to the bottom of the glass rather than floating
      above it. Held --app-nav-inset off the physical edge, which the bottom
      corners' wider radius then runs concentric with. */
-  inset-block-end: var(--app-nav-inset);
+  /* Plus the lift, which is zero unless the platform has a system bar down
+     here worth getting out of the way of - see 05-the-dock-contract-a. */
+  inset-block-end: calc(var(--app-nav-inset) + var(--app-nav-lift, 0px));
   z-index: 4;
   /* Border-box, so the tabs centre in the island band and the chin is padding
      below them rather than height stolen from them. */

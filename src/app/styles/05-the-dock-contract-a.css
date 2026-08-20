@@ -198,18 +198,34 @@ body:has(.npScreen[data-docked]) .djToast {
   --app-nav-label-size: 0.5625rem;
 }
 
-/* Android's screen corners are not ours to contour to - the webview sits
-   inside the system's own insets, and the concentric sweep tuned to an
-   iPhone's glass reads as extra rounding. The chin keeps its height (the
-   gesture bar still wants covering); only the corners come back to the same
-   radius the card's top wears. */
+/*
+ * Android: the card lifts clear of the gesture bar instead of draping over it.
+ *
+ * This block existed already and had never run - nothing set `data-platform`
+ * until `core/platform.ts` began publishing it, so every Android build has
+ * been wearing the iPhone rules. Its reasoning was wrong too, and worth
+ * correcting rather than deleting: it said "Android's webview already sits
+ * above the system's gesture strip". It does not. `MainActivity.onCreate`
+ * calls `enableEdgeToEdge()` and the theme paints the navigation bar
+ * transparent, so the webview runs UNDERNEATH the strip - which is exactly why
+ * the card was sitting on Matt's gesture pill.
+ *
+ * An iPhone drapes: the card reaches the glass and its chin covers the home
+ * indicator, because the indicator is a thin line over content and that reads
+ * as one continuous bottom. Android's bar is a control surface of its own, so
+ * the card gets out of its way instead - lifted by the whole inset, with the
+ * chin down to the same breathing room the top has, since there is no longer
+ * anything to drape over.
+ *
+ * The bottom corners match the top now for the same reason. Their wider sweep
+ * was concentric with the SCREEN's curve, which only means something on a card
+ * that reaches the screen's edge; on one floating above the gesture bar it is
+ * just a mismatched pair.
+ */
 html[data-platform='android'] .appWindow {
-  --app-nav-chin-radius: var(--glacier-radius-2xl, 1.75rem);
-  /* And no safe-area chin at all: Android's webview already sits above the
-     system's gesture strip, so the drape an iPhone needs would just be dead
-     card. The bottom keeps exactly the top's breathing room instead - the
-     tab row floats centred in an even frame. */
+  --app-nav-lift: var(--app-safe-bottom);
   --app-nav-chin: var(--app-nav-pad-top);
+  --app-nav-chin-radius: var(--glacier-radius-xl, 1.375rem);
 }
 
 .appWindow:has(.appNavBar) {
@@ -219,7 +235,7 @@ html[data-platform='android'] .appWindow {
      this, so nothing tucks under the card or the raised button. */
   --app-nav-height: calc(
     var(--app-nav-overhang) + var(--app-nav-island-height) + var(--app-nav-chin) +
-      var(--app-nav-inset) + var(--app-nav-pad-top)
+      var(--app-nav-inset) + var(--app-nav-pad-top) + var(--app-nav-lift, 0px)
   );
 }
 
