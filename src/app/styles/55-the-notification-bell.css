@@ -55,62 +55,30 @@
   }
 }
 
-/* The panel itself, on the KIT's element rather than our inner one - the same
-   split .eqPopoverPanel and .morePopoverPanel already make, and for the same
-   reason: the kit's panel owns the rounding and the padding, so it is the only
-   thing that can paint to the corners.
+/* The notifications sheet: the SAME surface as the equalizer, and for the same
+   reason - the kit paints it.
 
-   IT HAS TO PAINT. The kit's Popover draws no background, no blur and no
-   shadow of its own (its three classes are positioner, panel and triggerWrap,
-   and none of them carries a surface), so a panel that does not dress itself
-   opens as text floating over the page - which is exactly what this one did
-   first: the library's shelves read straight through the notifications.
+   This used to dress itself: glass-regular, a 32px backdrop blur, a hairline
+   border and shadow-5, all on top of the kit's own ArrowGlass, which already
+   paints glass-thick at 0.85 alpha under the same blur. Two panes, and the pair
+   composited to roughly 0.94 alpha with two blurs, two borders and two shadows.
+   That is why this one popover read as a dark slab while every other floating
+   surface in the app read as frosted glass.
 
-   NEARLY OPAQUE, and that is a decision rather than a default. This opens
-   straight down over the home shelves, which are now full-bleed brutalist
-   textures - torn paper, halftone, grain, hard shapes - rather than the smooth
-   mid-lightness gradients they were when this panel was first dressed. At 92%
-   the chips underneath read straight through it: "Liked" and "All songs" sat
-   inside the notification list like rows of it. Small type over high-frequency
-   art is where a see-through backing stops being a material and starts being a
-   legibility bug, and it has to hold over ANY of the twelve textures rather
-   than over the average one.
+   The long argument that used to sit here - that the panel must be NEARLY
+   OPAQUE or the brutalist shelves read straight through it - was answering a
+   question nobody was really asking. The kit's glass-thick is already the
+   app-wide answer to legibility over busy art, and it is what the equalizer,
+   the lyrics panel and the overflow menu all sit on. Being the odd one out was
+   never buying legibility the others lacked; it was just heavier.
 
-   The blur cannot be leaned on to save it. The kit animates the positioner's
-   opacity on open, and an ancestor below opacity 1 forms a backdrop root -
-   everything inside samples THAT rather than the page - so for the whole of
-   the entry the backdrop-filter is filtering nothing. It stays because it
-   earns its keep once the panel settles, but the background carries legibility
-   on its own.
-
-   Anything that can outgrow the screen has to scroll INSIDE itself. Without
-   `overscroll-behavior` a drag that reaches the end chains to the page, the
-   popover reads that as a press outside itself, and it shuts halfway through
-   the list you were reading. */
+   So: geometry and gesture only, exactly like .eqPopoverPanel. The scroll and
+   overscroll contract now comes from .popoverSheet, which both wear. */
 .notifyPopoverPanel {
+  /* Narrower than the EQ's 30rem: this is a list of short rows, and the kit's
+     own 24rem cap is the right width for reading them. The width is the only
+     thing that differs from the equalizer's sheet. */
   max-inline-size: min(24rem, calc(100vw - 2rem));
-  max-block-size: min(70dvh, 34rem);
-  /* The kit's own glass, not a near-solid pane wearing a blur.
-     This was `color-mix(in srgb, var(--glacier-bg) 98%, transparent)` - two per
-     cent of transparency, which is nothing to see through, so the
-     backdrop-filter underneath it had no work to do and the panel landed as a
-     flat block beside every other floating surface in the app. The token is
-     0.6 alpha and is what makes the blur visible. Regular rather than thick,
-     for the same reason the lyrics panel picks regular: thick is 0.85 and
-     reads as the opaque thing this is not.
-     The file already used --glacier-glass-regular twice further down, so this
-     was inconsistent with itself as well as with the kit. */
-  background: var(--glacier-glass-regular);
-  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
-  border: var(--glacier-hairline) solid var(--glacier-glass-border);
-  border-radius: var(--glacier-radius-lg);
-  box-shadow: var(--glacier-shadow-5);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  /* Say plainly that a vertical drag here is a scroll, so the touch is never
-     claimed by anything else mid-gesture. */
-  touch-action: pan-y;
 }
 
 /* The content stack inside it. Geometry only - the panel above is the surface. */

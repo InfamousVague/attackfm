@@ -543,7 +543,7 @@ export function NowPlayingSheet({
         <Popover
           placement="top"
           aria-label="Equalizer"
-          className="eqPopoverPanel"
+          className="popoverSheet eqPopoverPanel"
           /* The badge is the only thing outside the console that says the sound
              has been moved. Everything the rooms count is behind this one
              button, so with it shut a dropped vocal or a filter left on
