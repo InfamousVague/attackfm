@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.249
+
+- Empty pages show a large icon instead of an illustration — and the app downloads about 2.8MB less on every update, because those pictures travelled inside it
+- On an unfolded phone with nothing playing, Settings opens as a list beside its pane instead of one column you drill into
+
 ## 0.3.248
 
 - The artwork on Now Playing leans a little as you tilt the phone, so it sits in the screen rather than on it
