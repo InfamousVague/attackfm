@@ -654,3 +654,143 @@ which is the specific failure the brutalist deck has.
 **scatter**
 
 > Discrete points of neon light in a black smoke-filled room: sparks, dust motes and tiny glowing tube fragments in magenta, cyan and violet, each with a soft bloom halo, a few throwing long anamorphic flares. Clustered thickly along the top, drifting apart through the middle, only occasional faint embers in the lower reaches.
+
+---
+
+# The hi-fi set
+
+Drawn from the app's own subject rather than from art history, which is the
+argument for it: a music app's textures can be made of the machines that play
+music. It also fits the hard constraint better than most of the twenty above,
+and for a reason worth stating — **a valve's glow is already a small hot point
+in a large dark chassis.** The shape the chips need is the shape this material
+naturally has, so nothing has to be dimmed into submission.
+
+One rule from the shared brief is relaxed here, deliberately. "No recognisable
+objects" would leave no hi-fi at all, so these are written as **macro**: close
+enough that they read as surface and light rather than as a photograph of an
+amplifier. If a prompt starts producing a product shot, push it closer in — the
+failure mode is a picture of a thing, and the fix is always more magnification.
+
+Everything else still applies: dark overall, lower-left quiet, incident upper-
+left and along the top, composed for the middle band.
+
+
+## 21. Valve glow
+
+*The one direction the constraint was already made for: a tube's light is a small hot point inside a large dark chassis, so the incident sits high and warm and the rest stays black glass and shadow without any dimming.*
+
+
+**field**
+
+> Macro across a dense bank of vacuum tubes seen end-on in an unlit chassis: smoked glass envelopes, grey mica spacers and dark plate structures filling the frame, each holding one small amber filament point. Even distribution, no focal point, most of the surface deep charcoal and reflected black, the heat glow reading as scattered embers rather than lamps.
+
+
+**sweep**
+
+> A row of output valves receding diagonally from upper left to lower right, shot wide open so only the near glass is sharp. Their filaments make a chain of warm amber flares that dim and blur along the run, dying to unlit glass before the far corner. Black chassis, faint blue getter flash on the shoulders, deep shadow beneath.
+
+
+**burst**
+
+> One power valve close in at the top-left corner, filament flaring hard orange through smoked glass, its halo bleeding into the surrounding dark and gone by the middle of the frame. Fine dust on the envelope catching the light, a cold blue getter mirror at the crown, the rest of the chassis unlit black with a single soft chrome reflection.
+
+
+**strata**
+
+> Horizontal ranks of valve crowns across a rack, seen from slightly above: bands of glass tops and ceramic bases stacked in uneven weights, the upper rows lit amber from within and each lower band falling further into unlit shadow. Warm filament light pooling along the top of each row, black steel between.
+
+
+**scatter**
+
+> Filament points and heater glows scattered irregularly through darkness at varied focal depths, dense and sharp across the top, thinning to a few blurred amber specks below. Between them, smoked glass, mica and the cold blue smear of getter flashing. Mostly black, the light reading as embers in a dark cabinet rather than as lamps.
+
+
+## 22. Machined metal
+
+*Anodised charcoal rather than bright aluminium, and lit by a single raking light so the grain is read by where the highlight ISN'T - the metal stays dark and only the tooling catches anything.*
+
+
+**field**
+
+> Extreme macro of a brushed anodised faceplate in gun-charcoal: fine unidirectional grain running edge to edge, raked by a low light so each groove holds a thread of cool highlight and a deeper shadow. Even across the frame with no focal point, a faint iridescent sheen where the anodising thickens, no bright fields anywhere.
+
+
+**sweep**
+
+> A broad turned-finish arc sweeping from upper left to lower right across dark machined aluminium: concentric lathe rings catching a raking light where they enter, the specular thread narrowing and breaking up as the arc travels until only faint tool marks remain. Charcoal anodising, micro-burrs at the cut edges, black shadow beneath.
+
+
+**burst**
+
+> Raking light striking a knurled corner at the top-left: a diamond-cut grip pattern flaring with hard cool highlights on each peak, the pattern shallowing and losing its light within a third of the frame. Beyond it, flat bead-blasted charcoal, one chamfered edge holding a thin bright line, the rest unlit.
+
+
+**strata**
+
+> Stacked heatsink fins and faceplate edges seen nearly end-on: horizontal bands of extruded charcoal aluminium in uneven depths, each catching a narrow cool highlight along its upper lip and dropping to black in the channel behind. Upper bands crisper and brighter, lower ones softening into shadow, fine machining chatter throughout.
+
+
+**scatter**
+
+> Bead-blasted dark alloy with hardware strewn across it at varied scale: countersunk screw heads, hex sockets, small drilled ports and rivets, crowded and catching cool light near the top, thinning to a few dim fixings below. Matte charcoal ground, faint circular tool swirl, no polished fields.
+
+
+## 23. Piano gloss
+
+*The lacquer is treated as a black mirror in an almost dark room, so what you see is mostly depth - one or two restrained specular events high in the frame and an enormous quiet reflection below them.*
+
+
+**field**
+
+> Deep piano-black lacquer photographed as a mirror in a nearly dark room: an all-over field of soft, barely-there reflections - the ghost of a ceiling, a dim doorway - stretched and blurred beyond recognition. Fine polishing swirl and a scatter of micro-scratches catching what little light there is. Enormously deep, almost entirely black.
+
+
+**sweep**
+
+> A single specular streak crossing high-gloss black lacquer from upper left toward lower right: bright and hard-edged where it enters, drawing out into a soft smear and vanishing before the far corner. Beneath it the lacquer holds a dim inverted reflection of the same streak. Polishing swirl visible only in the highlight, elsewhere pure depth.
+
+
+**burst**
+
+> A light source blooming in the top-left of a black lacquered cabinet: a tight specular core with a soft halo and a short flare, its reflection sinking away into the gloss and gone by the middle of the frame. Dust motes on the surface catching the edge of it. The rest is unbroken black with a faint warm cast.
+
+
+**strata**
+
+> Horizontal reflected bands lying across black piano lacquer - the smeared image of a lit rack of equipment, or a window's slats - stacked in uneven weights and softened almost to abstraction by the gloss. Brighter, sharper bands high in the frame, dissolving into flat depth lower down. Fine swirl marks catching light between them.
+
+
+**scatter**
+
+> High-gloss black lacquer under a single low light: dust, lint and fine swirl scratches scattered across the surface, each catching a small hard specular point. Dense and bright across the upper area, thinning to almost nothing below. Between the marks, black so deep it reads as space rather than as a surface.
+
+
+## 24. Meters and lamps
+
+*Backlighting rather than front lighting: the scales are lit from behind so the illuminated area is a small warm window in a black fascia, and the needles and lamps supply the incident without any broad bright field.*
+
+
+**field**
+
+> Macro across a wall of VU meter faces in a dark fascia: cream printed scales lit dimly from behind, their arcs, tick marks and red overload sections repeating at varied angles and sizes so no rhythm sets in. Glass covers holding faint reflections, black bezels between them, the whole surface low and warm rather than lit.
+
+
+**sweep**
+
+> A single meter needle's arc swung from upper left toward lower right, its illuminated scale glowing warm amber behind it and falling into shadow as the arc travels. The needle a thin hard line, its tip catching a bright point; the printed graduations blurring out past the lit zone. Black bezel and glass reflections elsewhere.
+
+
+**burst**
+
+> One backlit dial window flaring at the top-left corner: warm amber light behind a cream scale, the printed arc and numerals abstracted into pure marks, the glow spilling onto the surrounding fascia and dying by the middle of the frame. A needle crossing it, a red sector at its edge, everything beyond in unlit black.
+
+
+**strata**
+
+> Stacked meter and indicator windows across a dark rack face: horizontal bands of backlit scale, each a different height and warmth, separated by wide black bezels and thin chrome trim. The upper windows brighter and more detailed, lower ones dim or unlit entirely, glass catching a faint raking reflection along each row.
+
+
+**scatter**
+
+> Small indicator lamps and pilot LEDs scattered across a black fascia at varied focal depths: warm amber, a few cool green and red points, some sharp and some thrown out of focus into soft discs. Dense across the top, thinning to isolated points below. Between them, matte black panel and faint silkscreen ghosting.
