@@ -29,6 +29,7 @@ import { formatClock, formatTotal } from '../ux/format.ts';
 import { shuffled } from '../ux/shuffle.ts';
 import { RowArt } from './RowArt.tsx';
 import { usePlaylists } from './playlists.tsx';
+import { CoverWall } from './CoverWall.tsx';
 import { notePlaylistPlayed } from './playlistRecency.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
 import { TrackMenu } from '../library/TrackMenu.tsx';
@@ -231,6 +232,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
   return (
     <div className="homePage libraryPage playlistPage" ref={pageRef}>
       <header className="playlistHead">
+        <CoverWall artworks={rows.map((r) => r.track.artwork)} />
         <div className="playlistHead__cover" aria-hidden>
           {covers.length >= 4 ? (
             <div

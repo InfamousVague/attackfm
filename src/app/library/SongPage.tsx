@@ -13,6 +13,8 @@ import { formatTotal } from '../ux/format.ts';
 import { shuffled } from '../ux/shuffle.ts';
 import onRepeatChip from '../../assets/chip-on-repeat.webp';
 import likedChip from '../../assets/chip-liked.webp';
+import allSongsChip from '../../assets/chip-all-songs.webp';
+import { CoverWall } from '../playlists/CoverWall.tsx';
 
 /**
  * A whole collection of songs, opened as its own page - the fullscreen answer
@@ -264,6 +266,7 @@ export function SongPage({
           rides the header itself (see the effect above, and .mobileHeader__ident)
           and the page gets those three rems back for songs. */}
       <header className="playlistHead songPageHead">
+        <CoverWall artworks={shown.map((t) => t.artwork)} />
         <div className="playlistHead__cover" aria-hidden>
           <div className="tileSquircle playlistHead__mosaic songPageHero">
             {view === 'onrepeat' ? (
@@ -275,6 +278,15 @@ export function SongPage({
                  crimson - one heart for Liked everywhere, by request. */
               <span className="songPageHero__repeat songPageHero--liked" aria-hidden>
                 <img src={likedChip} alt="" />
+              </span>
+            ) : view === 'all' ? (
+              /* The record stack from the All songs chip, on its own blue.
+                 It was opening on the painted library illustration instead -
+                 a different picture from the card you press to get here, when
+                 its two neighbours both open on the object they wear. The door
+                 and the room behind it should be the same thing. */
+              <span className="songPageHero__repeat songPageHero--all" aria-hidden>
+                <img src={allSongsChip} alt="" />
               </span>
             ) : (
               <HeroArt name={meta.art} />

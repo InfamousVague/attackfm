@@ -37,6 +37,14 @@
   background: linear-gradient(140deg, hsl(338 62% 44%), hsl(20 56% 32%));
 }
 
+/* All songs' hero: same frame, the blue its chip wears. The second stop is the
+   chip's own --libChipHue2 (262) rather than a fixed offset from 214 - see the
+   note in 14-discover-heroes: these four are chosen colours, not a generated
+   ramp, and the arithmetic betrays them at the edges. */
+.songPageHero--all {
+  background: linear-gradient(140deg, hsl(214 62% 44%), hsl(262 56% 32%));
+}
+
 .songPageHero__repeat img {
   inline-size: 100%;
   block-size: 100%;

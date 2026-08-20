@@ -248,11 +248,20 @@ export function useTileArt(urls: readonly (string | null)[]): {
  * repeats. Fixing that needs the scanner to hash the picture, which is a bigger
  * job than this one.
  */
-export function mosaicArts(artworks: readonly (string | null)[], take = 4): string[] {
+export function mosaicArts(
+  artworks: readonly (string | null)[],
+  take = 4,
+  /**
+   * Which variant to ask for. 640 is right for a mosaic tile you look AT; the
+   * cover wall behind a header is blurred to nothing and wants 160, or it
+   * fetches a dozen full-size covers to throw most of their pixels away.
+   */
+  px: 160 | 640 = 640,
+): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   for (const a of artworks) {
-    const sized = artSized(a, 640);
+    const sized = artSized(a, px);
     if (!sized) continue;
     const id = artIdentity(sized);
     if (seen.has(id)) continue;

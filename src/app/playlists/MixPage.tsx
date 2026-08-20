@@ -6,6 +6,7 @@ import { formatClock, formatTotal } from '../ux/format.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
 import { TrackMenu } from '../library/TrackMenu.tsx';
 import { RowArt } from './RowArt.tsx';
+import { CoverWall } from './CoverWall.tsx';
 import { usePlaylists } from './playlists.tsx';
 import type { Track } from '../core/tauri.ts';
 
@@ -92,6 +93,7 @@ export function MixPage({
      */
     <div className="homePage libraryPage playlistPage">
       <header className="playlistHead">
+        <CoverWall artworks={tracks.map((t) => t.artwork)} />
         <div className="playlistHead__cover">
           {covers.length >= 4 ? (
             <div
