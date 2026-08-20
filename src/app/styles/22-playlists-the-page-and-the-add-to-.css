@@ -240,15 +240,18 @@
      Padding keeps the wall inside its own box, which is the only place it can
      be both taller and behind everything.
 
-     8.25rem, up from 2rem: Matt asked for a third more backdrop, and the wall
-     is exactly as tall as this header, so a third more header is a third more
-     wall. Measured 306px before and 406px after, which is the +33% asked for
-     to within a pixel. It goes on the BOTTOM because the top is already at the
-     screen's edge - there is no room to grow upward, only downward into the
-     space above the first song. The header's content stays where it was; what
-     grows is the band of covers beneath it, which the mask dissolves into the
-     list. */
-  padding-block-end: 8.25rem;
+     This one number is the backdrop's height, because the wall is `inset: 0`
+     of this header - there is no separate wall height to turn. It goes on the
+     BOTTOM because the top is already at the screen's edge, so the only room
+     to grow into is the space above the first song; the header's content does
+     not move, the band of covers under it does.
+
+     Walked to 4.5rem over two asks: 2rem -> 8.25rem for "a third taller"
+     (306px -> 406px), then back to here for "15% smaller" (406px -> 346px,
+     which is -14.8%). Kept as one plain value rather than a calc chain of the
+     two adjustments, so the next change reads the height rather than the
+     history. */
+  padding-block-end: 4.5rem;
   margin-inline: calc(-1 * var(--glacier-space-4));
   padding-inline: var(--glacier-space-4);
   /* Bottom-aligned, not centred (the phone media query centres it): the sleeve
