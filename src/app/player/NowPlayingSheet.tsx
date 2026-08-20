@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { installSheetDismiss } from './playerDismiss.ts';
 import { fireNativeHaptic } from '../core/haptics.ts';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
@@ -33,6 +33,8 @@ import {
   type ArtView,
 } from './deckShared.ts';
 import { soundChangesLabel, useSoundChanges } from './soundChanges.ts';
+import { subscribeGestures, subscribeTilt } from './deviceMotion.ts';
+import { motionGesturesEnabled } from '../settings/behaviourPrefs.ts';
 import npPlaceholderArt from '../../assets/attack-wave.png';
 import type { Track } from '../core/tauri.ts';
 
@@ -192,6 +194,40 @@ export function NowPlayingSheet({
   onTrackChange?: (track: Track) => void;
   setFiling: (track: Track | null) => void;
 }) {
+  /*
+   * The phone's own movement, on the one screen where it means anything.
+   *
+   * Bound HERE rather than app-wide so the sensor is only open while this sheet
+   * is: a gesture that works from the library page is a gesture that fires in a
+   * pocket, and a listener that never unbinds is a reading nobody reads.
+   */
+  const artRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    // Tilt moves the artwork a few pixels and nothing else, so it needs no
+    // permission and no switch - but it does stop for anyone who has asked
+    // their system to stop things moving, because it is animation.
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    return subscribeTilt(({ x, y }) => {
+      const el = artRef.current;
+      if (!el) return;
+      // Written as custom properties rather than a transform so the stylesheet
+      // decides how far a full tilt actually moves anything - and can decide
+      // differently for a phone and a docked pane - while this only reports
+      // which way the phone is pointing.
+      el.style.setProperty('--tiltX', x.toFixed(3));
+      el.style.setProperty('--tiltY', y.toFixed(3));
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!motionGesturesEnabled()) return;
+    return subscribeGestures((g) => {
+      if (g === 'shake') cycleShuffle();
+      else if (g === 'flick-right') skipForward();
+      else if (g === 'flick-left') skipBack();
+    });
+  }, [cycleShuffle, skipForward, skipBack]);
+
   // How far the sound has been moved from the record, for the badge on the
   // console's button. Read here rather than inside the console because the
   // whole point is that it shows while the console is SHUT.
@@ -367,7 +403,7 @@ export function NowPlayingSheet({
           vanishes when a video shows up is a broken promise. Anyone who
           prefers the clip unobstructed picks Hidden - the third face. */}
       {artView !== 'hidden' && (
-      <div className="npScreen__art">
+      <div className="npScreen__art" ref={artRef}>
         {/* The hero art follows the same artView the mini-strip does, so the
             choice is one setting in two places. A press (long-press on
             touch) opens the chooser. */}
