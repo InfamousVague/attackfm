@@ -79,3 +79,70 @@
   inline-size: 100%;
 }
 
+
+/* ---- The moment before the app ------------------------------------------
+   Shown only while a launch-time update check is running, and only in the
+   installed app - see settings/LaunchUpdate.tsx. Painted in the app's own dark
+   ground rather than left transparent: this is the first thing drawn after the
+   boot loader, so there is nothing behind it to show through. */
+.launchGate {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--glacier-space-4);
+  padding: var(--glacier-space-6);
+  background: var(--glacier-bg, #0b0b0d);
+  color: var(--glacier-text, #eceaf0);
+}
+
+.launchGate__mark {
+  inline-size: 9rem;
+  max-inline-size: 55%;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* An indeterminate bar rather than a percentage: the check is a request whose
+   length nobody knows, and a progress bar that invents a number is a bar that
+   sticks at 90%. */
+.launchGate__bar {
+  inline-size: min(14rem, 60%);
+  block-size: 3px;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface-sunken, #1a1a20);
+  overflow: hidden;
+}
+
+.launchGate__barFill {
+  display: block;
+  inline-size: 40%;
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--glacier-accent-solid, #e0245e);
+  animation: launchGateSweep 1.1s var(--glacier-ease-in-out, ease-in-out) infinite;
+}
+
+@keyframes launchGateSweep {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(310%); }
+}
+
+.launchGate__say {
+  margin: 0;
+  font-size: var(--glacier-font-size-sm, 0.875rem);
+  color: var(--glacier-text-muted, #98959f);
+}
+
+/* Reduced motion still needs to say "working", so the bar stops sweeping and
+   sits still rather than disappearing - a frozen empty rail reads as stuck. */
+@media (prefers-reduced-motion: reduce) {
+  .launchGate__barFill {
+    animation: none;
+    inline-size: 100%;
+    opacity: 0.5;
+  }
+}
