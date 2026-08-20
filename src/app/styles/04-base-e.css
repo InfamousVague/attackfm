@@ -163,7 +163,7 @@ body:has(.npScreen[data-docked]) .appNavScrim {
    * into the edge the way an app icon's does, and the radius below becomes
    * how much of the side it eats rather than an arc bolted on.
    *
-   * The radius is generous for the same reason: a squircle with a timid
+   * The radius is generous for the same reason: a superellipse with a timid
    * radius is indistinguishable from the rectangle it replaced.
    *
    * Progressive on purpose - Chromium draws the superellipse (so Android and
@@ -171,21 +171,43 @@ body:has(.npScreen[data-docked]) .appNavScrim {
    * rectangle - so the fallback radius below is generous too, deep enough to
    * read app-icon-soft even as plain arcs on a 3.4rem square.
    */
-  border-radius: 1.15rem;
+  border-radius: 1.4rem;
   background: none;
   cursor: pointer;
   color: var(--glacier-text-subtle);
   transition: background-color 0.16s var(--glacier-ease-out, ease), color 0.15s ease;
 }
 
-/* The generous radius belongs to the squircle and must not outlive it: a
-   superellipse needs a big corner or it reads as the rectangle it replaced,
-   but that same share under plain border-radius is four fat arcs. Chromium
-   takes both lines; WebKit keeps the modest rounded square above. */
-@supports (corner-shape: squircle) {
+/*
+ * The corner, softened. Matt: the nav buttons are too sharp next to the plate
+ * they sit in.
+ *
+ * The surprise on measuring it was WHICH way round the two branches read. A
+ * `squircle` is superellipse(4), and at that exponent the sides stay straight
+ * almost into the corner - so on Chromium the tab was rendering SHARPER than
+ * the plain rounded rectangle WebKit was falling back to, even though its
+ * radius was the larger of the two. Raising 45% to 50% barely moves it,
+ * because the exponent and not the radius is what was holding the corner
+ * square.
+ *
+ * So the exponent comes down instead. superellipse(2.5) is most of the way to
+ * a circular arc (2 would BE one) while still easing curvature into the edge
+ * rather than splicing an arc onto it, which is the reason this is not just a
+ * border-radius. Against the plate's own 1.75rem it now reads as the same
+ * family of corner.
+ *
+ * The fallback moved too - 1.15rem to 1.4rem - so iOS lands in the same place
+ * rather than being the one platform left sharp.
+ *
+ * The generous radius still belongs to the superellipse and must not outlive
+ * it: that share under a plain border-radius is four fat arcs. Guarded on the
+ * exact function used rather than on the `squircle` keyword, so the test is
+ * the thing being relied on.
+ */
+@supports (corner-shape: superellipse(2.5)) {
   .appNavBarTab {
-    border-radius: 45%;
-    corner-shape: squircle;
+    border-radius: 50%;
+    corner-shape: superellipse(2.5);
   }
 }
 
