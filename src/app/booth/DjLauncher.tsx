@@ -22,7 +22,7 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { useNowPlayingMotion } from '../player/nowPlayingMotion.tsx';
 import { fetchDj, trackIdFromPath } from '../server.ts';
-import { cardTexture } from '../ux/artwork.ts';
+import djBg from '../../assets/art/tex/chip-bg-dj.webp';
 import type { Track } from '../core/tauri.ts';
 import djMascot from '../../assets/dj-mascot.png';
 
@@ -215,10 +215,9 @@ export function DjLauncher({
         type="button"
         variant="gradient"
         className="libChip libChip--dj"
-        // Its hue is declared in CSS (26-the-dj.css) rather than inline like
-        // the other three chips, so the texture is picked from that same
-        // number here to keep the two from drifting apart.
-        style={{ '--cardTex': `url("${cardTexture(265)}")` } as CSSProperties}
+        // Its own background, like its three neighbours. The valve is the
+        // warmest of the four and the DJ is the one tile that performs.
+        style={{ '--cardTex': `url("${djBg}")` } as CSSProperties}
         onClick={() => void start()}
         disabled={busy}
         aria-label="Start the DJ"

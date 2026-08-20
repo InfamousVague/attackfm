@@ -1,4 +1,3 @@
-import { cardTexture } from '../ux/artwork.ts';
 import { mosaicArts, useTileArt } from '../ux/artLoad.ts';
 import { Button, ContextMenu, Input, Modal, MenuItem, Text } from '@glacier/react';
 import { History, ListMusic, Plus, Trash2 } from '@glacier/icons';
@@ -13,6 +12,12 @@ import { playlistPlayedAt, notePlaylistPlayed } from './playlistRecency.ts';
 import likedChip from '../../assets/chip-liked.png';
 import allSongsChip from '../../assets/chip-all-songs.png';
 import onRepeatChip from '../../assets/chip-on-repeat.png';
+// Each chip now has ITS OWN background rather than one picked out of the
+// shared twelve by hue. These four were made for these four tiles, so the
+// hue lottery has nothing left to decide.
+import likedBg from '../../assets/art/tex/chip-bg-liked.webp';
+import allSongsBg from '../../assets/art/tex/chip-bg-all.webp';
+import onRepeatBg from '../../assets/art/tex/chip-bg-repeat.webp';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -207,7 +212,7 @@ export function PlaylistShowcase({
           <button
             type="button"
             className="libChip libChip--liked"
-            style={{ '--libChipHue': 338, '--cardTex': `url("${cardTexture(338)}")` } as CSSProperties}
+            style={{ '--libChipHue': 338, '--cardTex': `url("${likedBg}")` } as CSSProperties}
             onClick={() => onOpenSongs('liked')}
           >
             <img className="libChip__art" src={likedChip} alt="" loading="lazy" />
@@ -217,7 +222,7 @@ export function PlaylistShowcase({
           <button
             type="button"
             className="libChip libChip--all"
-            style={{ '--libChipHue': 214, '--cardTex': `url("${cardTexture(214)}")` } as CSSProperties}
+            style={{ '--libChipHue': 214, '--cardTex': `url("${allSongsBg}")` } as CSSProperties}
             onClick={() => onOpenSongs('all')}
           >
             <img className="libChip__art" src={allSongsChip} alt="" loading="lazy" />
@@ -230,7 +235,7 @@ export function PlaylistShowcase({
           <button
             type="button"
             className="libChip libChip--repeat"
-            style={{ '--libChipHue': 145, '--cardTex': `url("${cardTexture(145)}")` } as CSSProperties}
+            style={{ '--libChipHue': 145, '--cardTex': `url("${onRepeatBg}")` } as CSSProperties}
             onClick={() => onOpenSongs('onrepeat')}
           >
             <img className="libChip__art" src={onRepeatChip} alt="" loading="lazy" />
