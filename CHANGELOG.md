@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.262
+
+- The bottom bar's five tabs now span the whole width of it, instead of sitting in from each end with dead space either side
+
 ## 0.3.261
 
 - Opening a mix from Discover now scrolls, sits in from the edges, and stops above the player instead of having its last few songs sliced off behind it. It is the same page your own playlists and liked songs open in
