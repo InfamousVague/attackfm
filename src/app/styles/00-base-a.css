@@ -340,6 +340,29 @@ img {
   text-overflow: ellipsis;
 }
 
+/* A tab whose name carries a glyph. The icon sits ON the baseline of the word
+   rather than in a plate beside it: this is a header line, not a page heading,
+   and a filled tile at this size reads as a button somebody can press. */
+/* The title bar naming a place instead of the app. Sized to sit where the
+   wordmark sat - same optical weight, same baseline - so the bar does not
+   change shape as you move between tabs. */
+.titleBarWhere {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  color: var(--glacier-text);
+}
+
+.mobileHeader__title--glyphed {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) .mobileHeader__logo {
     filter: invert(1);
