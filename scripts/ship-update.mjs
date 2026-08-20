@@ -17,6 +17,7 @@ import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
+import { bootCheck } from './boot-check.mjs';
 
 const ROOT = process.cwd();
 const DRY = process.argv.includes('--dry');
@@ -287,6 +288,44 @@ const files = ['app.js', 'app.css'].map((name) => {
   return { name, path, bytes, sha256: createHash('sha256').update(bytes).digest('hex') };
 });
 for (const f of files) console.log(`    ${f.name}  ${(f.bytes.length / 1024).toFixed(0)} KB  ${f.sha256.slice(0, 12)}…`);
+
+/*
+ * Does it start?
+ *
+ * The last check that looks at the bundle from the outside has just passed,
+ * and every check above it passed on 0.3.252 and 0.3.253 too - both of which
+ * reached phones as a black screen. Nothing here had ever RUN the thing, so
+ * an app that cannot boot and one that can were the same release to this
+ * script. This loads it in a real browser and asks whether anything appeared.
+ *
+ * Before the upload, deliberately. A check that runs after would only be able
+ * to tell you what is already on Matt's phone.
+ */
+step('Booting the bundle');
+// A malfunctioning guard must never be able to stop a good release: if the
+// check itself falls over - no browser, a port already taken, a CDP change -
+// that is this script's problem and not the bundle's, so it degrades to a
+// warning exactly as a missing browser does. Only a bundle that demonstrably
+// renders nothing is allowed to stop a ship.
+const boot = await bootCheck(join(ROOT, 'dist')).catch((err) => ({
+  skipped: `the check itself failed to run (${String(err).slice(0, 90)})`,
+}));
+if (boot.skipped) {
+  console.log(`    \x1b[33m!\x1b[0m skipped — ${boot.skipped}`);
+} else if (!boot.ok) {
+  die(
+    `the bundle does not start — this would be a black screen on every device.\n` +
+      `    #root has ${boot.rootChildren} children after load.\n` +
+      (boot.errors.length
+        ? boot.errors.map((x) => `    ${x}`).join('\n')
+        : '    (nothing was thrown — React rendered nothing without complaining)'),
+  );
+} else {
+  ok(`it starts — “${boot.text.slice(0, 60)}…”`);
+  // Noise from having no server to talk to is expected and is not a failure;
+  // it is printed because a real fault often shows up here first.
+  if (boot.errors.length) for (const x of boot.errors) console.log(`    \x1b[33m!\x1b[0m ${x}`);
+}
 
 const e = env();
 const host = e.AFM_DEPLOY_HOST, user = e.AFM_DEPLOY_USER;
