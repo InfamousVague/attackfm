@@ -51,7 +51,7 @@
    * Down: gone by the bottom edge, so the wall dissolves into the rows instead
    * of stopping on a line.
    */
-  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%),
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 82%, transparent 100%),
     linear-gradient(
       to right,
       rgb(0 0 0 / 0.34) 0%,
@@ -60,7 +60,7 @@
       rgb(0 0 0 / 0.55) 100%
     );
   -webkit-mask-composite: source-in;
-  mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%),
+  mask-image: linear-gradient(to bottom, #000 0%, #000 82%, transparent 100%),
     linear-gradient(
       to right,
       rgb(0 0 0 / 0.34) 0%,
@@ -86,7 +86,7 @@
   /* Hung above and to the leading side of the frame, which clips - so the
      blur's soft edge falls outside the visible box rather than drawing a pale
      band along the top. */
-  inset-block-start: -1.25rem;
+  inset-block: -1.25rem;
   inset-inline-start: -1.25rem;
   /*
    * Two rows, filled COLUMN-first.
@@ -103,7 +103,14 @@
    */
   display: grid;
   grid-auto-flow: column;
-  grid-template-rows: repeat(2, var(--wallCover));
+  /* FOUR rows, sized to fill the header rather than to a fixed height. Two
+     rows of a fixed 5rem could not grow with the header - making the header
+     taller just added black below the wall, because the strip's height was
+     the row count times the cover size and nothing else. Rows share the
+     frame's height now, so the wall is always as tall as the header is; only
+     the COLUMN stays a fixed sleeve width. Cells stop being exactly square,
+     which object-fit absorbs. */
+  grid-template-rows: repeat(4, 1fr);
   grid-auto-columns: var(--wallCover);
   inline-size: max-content;
   /* Blurred and dimmed, but only as far as it can go and still be SLEEVES.
@@ -228,6 +235,16 @@
 }
 .songPageHead:has(.coverWall),
 .playlistPage .playlistHead:has(.coverWall) {
+  /* The wall is `inset: 0` of this header, so the header's height IS the
+     wall's height - and Matt wants roughly twice what it had, running behind
+     the Play and Shuffle buttons and down to the first song rather than
+     petering out under the sleeve. Grown from the BOTTOM, as padding, rather
+     than by letting the wall overflow: the header is `position: relative` with
+     `isolation: isolate`, so anything spilling out of it paints OVER the
+     static rows below, and blurred covers would land on the first two tracks.
+     Padding keeps the wall inside its own box, which is the only place it can
+     be both taller and behind everything. */
+  padding-block-end: 2rem;
   margin-inline: calc(-1 * var(--glacier-space-4));
   padding-inline: var(--glacier-space-4);
   /* Bottom-aligned, not centred (the phone media query centres it): the sleeve
@@ -287,19 +304,38 @@
 }
 
 /*
- * The bar, now that there is something behind it.
+ * The bar stays SOLID over the wall, and the wall runs under it anyway.
  *
- * `.mobileHeader` has never had a background - it did not need one, because
- * the app's own ground was behind it. With the wall running up underneath, its
- * back/forward, title and bell would be sitting directly on album art. So it
- * becomes glass, and only when there is a wall to be glass OVER: the same
- * tokens the nav plate wears, so the two pieces of chrome are the same
- * material rather than two guesses at one.
+ * It was glass for one release, which let the covers show through - Matt sent
+ * it back. Solid is the right call and not only taste: the bar carries
+ * back/forward, the wordmark and the bell, and glass puts all three on top of
+ * whatever cover happens to be sliding past. The wall still travels the whole
+ * way up; it is simply occluded, so scrolling shows sleeves passing UNDER a
+ * fixed black bar rather than the bar dissolving into them.
+ *
+ * `.mobileHeader` has never declared a background - the app's ground was
+ * always behind it - so this is the first time it has needed one.
  */
 .appWindow:has(.coverWall) .mobileHeader {
-  background: var(--glacier-glass-thin);
-  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  background: var(--glacier-bg);
+}
+
+/*
+ * The scrim becomes the bar's shadow.
+ *
+ * `.appTopScrim` (29-registry-account-setup-friends) already fades in over the
+ * first 56px of scroll, and already sits inside `.appContent`. But the slide
+ * moved `.appContent` up to the screen's top edge, so the scrim now starts
+ * BEHIND the solid bar where nothing can see it. Pushing it down by the bar's
+ * own height puts it exactly under the bar's bottom edge, which is where a
+ * shadow goes - and it keeps the existing scroll behaviour rather than adding
+ * a second listener for the same fact.
+ */
+.appContent:has(.coverWall) .appTopScrim {
+  inset-block-start: var(
+    --app-header-height,
+    calc(var(--app-safe-top, env(safe-area-inset-top, 0px)) + 3.25rem)
+  );
 }
 /* A band meets the window square; only a tile inset from it wants rounded
    corners. The bottom still dissolves into the rows through the wall's mask. */

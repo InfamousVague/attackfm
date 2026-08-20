@@ -33,10 +33,16 @@ import { mosaicArts } from '../ux/artLoad.ts';
  * How many sleeves the wall carries.
  *
  * Enough that a full playlist does not visibly repeat within a pass, few
- * enough that a three-song list is not the same cover fourteen times. They are
+ * enough that a three-song list is not the same cover sixteen times. They are
  * deduped by picture, so this is a ceiling and not a promise.
+ *
+ * SIXTEEN, and it has to stay a multiple of the row count. The strip fills
+ * column-first, so the duplicate only begins on a column boundary - which is
+ * what makes the -50% travel seamless - when the covers divide evenly into
+ * rows. At four rows, fourteen would put the second copy half a column along
+ * and the loop would visibly jump once a pass.
  */
-const WALL_COVERS = 14;
+const WALL_COVERS = 16;
 
 /** Below this there is no wall to be had - one sleeve tiled is wallpaper. */
 const WALL_MINIMUM = 3;
