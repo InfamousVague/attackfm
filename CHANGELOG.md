@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.211
+
+- The home shelves trade their coloured gradient cards for bold brutalist textures — torn paper, halftone and grain in the app's pink and white, a different one per mix so a shelf still reads as varied. The Liked / All songs / On repeat chips lose their gradient too, and the DJ gets a new hand-inked face. Same ATTACK mark and type throughout
+
 ## 0.3.210
 
 - A bell at the top of every page, holding what happened while you were somewhere else: music that finished downloading, and downloads that did not. It waits until you read it, and it is still there tomorrow
