@@ -15,14 +15,13 @@
 //! offers itself when signed into a server with something to play.
 
 import { Button, IconButton, Spinner } from '@glacier/react';
-import { Flame, Lightbulb, MoonStar, Play, Sparkles, Waves, X } from '@glacier/icons';
+import { Disc3, Flame, Lightbulb, MoonStar, Play, Sparkles, Waves, X } from '@glacier/icons';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { useNowPlayingMotion } from '../player/nowPlayingMotion.tsx';
 import { fetchDj, trackIdFromPath } from '../server.ts';
-import djBg from '../../assets/art/tex/chip-bg-dj.webp';
 import type { Track } from '../core/tauri.ts';
 import djMascot from '../../assets/dj-mascot.webp';
 
@@ -215,14 +214,14 @@ export function DjLauncher({
         type="button"
         variant="gradient"
         className="libChip libChip--dj"
-        // Its own background, like its three neighbours. The valve is the
-        // warmest of the four and the DJ is the one tile that performs.
-        style={{ '--cardTex': `url("${djBg}")` } as CSSProperties}
+        style={{ '--libChipHue': 265 } as CSSProperties}
         onClick={() => void start()}
         disabled={busy}
         aria-label="Start the DJ"
       >
-        <img className="libChip__art" src={djMascot} alt="" loading="lazy" />
+        <span className="libChip__icon" aria-hidden>
+          <Disc3 size={48} strokeWidth={2.25} />
+        </span>
         <span className="libChip__name">DJ</span>
         <span className="libChip__count">
           {busy ? <Spinner size="sm" aria-label="Cueing" /> : 'A live set, from your taste'}
