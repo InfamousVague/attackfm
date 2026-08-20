@@ -410,13 +410,29 @@
 .discoverPl__rows {
   display: flex;
   flex-direction: column;
+  /* A hair of negative inline margin so the rows' own padding below lines the
+     TEXT up with the heading above them rather than indenting the whole list.
+     The plate is meant to extend past the words, not to move them. */
+  margin-inline: calc(-1 * var(--glacier-space-2));
 }
 
+/* Seated like a row in the playlists view, because it is the same thing: a
+   list of playlists you are choosing between. It had `padding: space-1 0` -
+   vertical only - so the artwork sat hard against the content edge with no
+   gutter of its own, and there was no plate at all, which is the difference
+   you feel before you can name it next to the real list. Radius, hover and
+   inline padding all come from .playlistRows > li. */
 .discoverPlRow {
   display: flex;
   align-items: center;
   gap: var(--glacier-space-3);
-  padding: var(--glacier-space-1) 0;
+  padding: var(--glacier-space-1) var(--glacier-space-2);
+  border: var(--glacier-hairline) solid transparent;
+  border-radius: var(--glacier-radius-md);
+}
+
+.discoverPlRow:hover {
+  background: var(--glacier-hover);
 }
 
 .discoverPlRow__art {
