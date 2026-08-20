@@ -152,16 +152,30 @@
 
    Black stays underneath as the ground the texture sits on, and the texture is
    dimmed: it is a backing for a bold object and a name, not the subject. */
-/* Pastel + kit icon (Matt asked for it): the hi-fi photography goes, replaced
-   by a soft solid in each card's own section hue with a big kit icon in a
-   saturated shade of the same tone. !important because the per-chip gradients
-   live in files imported after this one (05-the-dock-contract-a, 26-the-dj). */
+/* The objects, on a gradient, tinted to their own card (Matt asked for it).
+   The flat pastel and the kit icons go. What comes back is the photographed
+   object each tile was made for - but not wearing its own colour: every one is
+   forced into its card's hue, so four separate photographs read as one set
+   instead of four warm-amber objects on four different grounds.
+
+   !important because the per-chip gradients live in files imported after this
+   one (05-the-dock-contract-a, 26-the-dj). */
 .libChip,
 :root:not([data-theme]) .libChip,
 :root[data-theme='light'] .libChip {
-  background: hsl(var(--libChipHue, 280) 60% 85%) !important;
-  background-image: none !important;
-  color: hsl(var(--libChipHue, 280) 46% 22%) !important;
+  /* Two stops: the card's hue, then a named partner it runs down into.
+     The partner is SET PER CARD rather than computed as "n degrees along".
+     A fixed offset is what a generated palette wants; these are four chosen
+     colours, and the arithmetic betrays them at the edges - +55 from Liked's
+     338 wraps to 33, so the one card that should be pinkest ran out into
+     brown. Four numbers, each picked to stay in a neighbour worth having.
+     The fallback keeps anything that only sets one hue working. */
+  background: linear-gradient(
+    140deg,
+    hsl(var(--libChipHue, 280) 62% 52%),
+    hsl(var(--libChipHue2, calc(var(--libChipHue, 280) + 50)) 58% 34%)
+  ) !important;
+  color: #fff !important;
 }
 
 /* THE DJ CHIP IS A KIT BUTTON, the other three are plain buttons - and the kit
@@ -173,30 +187,32 @@
   align-items: stretch;
 }
 
-/* The big kit icon, worn as the tile's face on the trailing side, tilted like
-   the objects it replaces, in a saturated shade of the card's own hue. */
-.libChip__icon {
-  position: absolute;
-  inset-block: 0;
-  inset-inline-end: 7%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: hsl(var(--libChipHue, 280) 62% 40%);
-  opacity: 0.85;
-  pointer-events: none;
+/* The object, tinted to the card.
+   Rotating each object's own hue would not do it: the valve is amber and the
+   record stack is very nearly colourless chrome, so the same rotation moves one
+   a long way and the other not at all. Flattening to grey and re-tinting starts
+   every object from the same place, so all four land on their card's hue
+   whatever colour they arrived in - and the luminance survives, which is the
+   part that makes them read as objects rather than silhouettes.
+
+   sepia lands around 40 degrees; the rotation is measured from there. */
+.libChip__art {
+  /* Held as a property because `filter` does not merge: the two chips that
+     need a drop-shadow (26-the-dj) have to restate the whole chain, and a
+     second copy of these numbers is a second place to forget to change them. */
+  --chipTint: grayscale(1) sepia(1) hue-rotate(calc((var(--libChipHue, 280) - 40) * 1deg))
+    saturate(2.2) brightness(1.06);
+  filter: var(--chipTint);
+  /* Normal for all four now. The multiply was there so an object tinted itself
+     INTO the gradient it sat on; the tint does that deliberately instead, and
+     multiplying on top of it only darkens what has already been matched. */
+  mix-blend-mode: normal;
 }
 
-.libChip__icon svg {
-  inline-size: 3.25rem;
-  block-size: 3.25rem;
-  transform: rotate(-8deg);
-}
-
-/* Name and count are dark text on the pastel now, so the drop shadow that
-   carried them over the photography is off. */
+/* Light text over a saturated gradient wants its shadow back - it was turned
+   off when the ground was a pale pastel. */
 .libChip__name {
-  text-shadow: none;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.45);
 }
 
 .mixCardTitle {

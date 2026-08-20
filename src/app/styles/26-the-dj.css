@@ -1,11 +1,13 @@
 /* ---- The DJ ------------------------------------------------------------- */
 
 /* On repeat wears the drawn loop rather than a font glyph, and like the DJ's
-   frosted figure it would vanish under the row's multiply - normal, seated
-   with a breath of shadow. */
+   frosted figure it wants a breath of shadow under it.
+   The tint comes first and is not restated: `filter` replaces rather than
+   merges, so a bare drop-shadow here would drop the hue match these two chips
+   need as much as their neighbours. See --chipTint in 14-discover-heroes. */
 .libChip--repeat .libChip__art {
   mix-blend-mode: normal;
-  filter: drop-shadow(0 4px 10px rgb(0 0 0 / 0.35));
+  filter: var(--chipTint) drop-shadow(0 4px 10px rgb(0 0 0 / 0.35));
 }
 
 /* The On repeat page's hero: the same mark on the same green, standing in for
@@ -42,7 +44,7 @@
 
 .libChip--dj .libChip__art {
   mix-blend-mode: normal;
-  filter: drop-shadow(0 4px 10px rgb(0 0 0 / 0.35));
+  filter: var(--chipTint) drop-shadow(0 4px 10px rgb(0 0 0 / 0.35));
 }
 
 .libChip--dj:disabled {
