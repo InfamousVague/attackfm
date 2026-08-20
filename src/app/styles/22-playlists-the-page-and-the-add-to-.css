@@ -299,20 +299,35 @@
 }
 
 /*
- * The bar stays SOLID over the wall, and the wall runs under it anyway.
+ * The bar is GLASS over the wall - back to it, on Matt's second thought.
  *
- * It was glass for one release, which let the covers show through - Matt sent
- * it back. Solid is the right call and not only taste: the bar carries
- * back/forward, the wordmark and the bell, and glass puts all three on top of
- * whatever cover happens to be sliding past. The wall still travels the whole
- * way up; it is simply occluded, so scrolling shows sleeves passing UNDER a
- * fixed black bar rather than the bar dissolving into them.
+ * It was glass in 0.3.271, solid in 0.3.272, and glass again here, so the
+ * reason it works now and did not then is the part worth writing down: the
+ * wall changed underneath it. In 0.3.271 the bar was `--glacier-glass-thin`
+ * over a five-pixel blur, which is a faint sheet over an already-vague field -
+ * the controls had nothing to sit on. The wall is a fifth of that blur now
+ * (2.5px, 0.3.273) and full height, so there is a real picture up there, and a
+ * glass bar has something to be glass OVER instead of just being dimmer black.
  *
- * `.mobileHeader` has never declared a background - the app's ground was
- * always behind it - so this is the first time it has needed one.
+ * Two things carry the legibility, and the second is the one that matters:
+ *
+ *   - `-regular` rather than `-thin`: about 0.6 alpha, a ground you can read a
+ *     wordmark on, without the 0.88 of `-thick` which is opaque enough that
+ *     nothing shows through and the glass is a lie.
+ *
+ *   - The backdrop blur. This is what makes glass work over SHARP covers: the
+ *     bar blurs what is behind it, so the sleeves soften as they pass under
+ *     the chrome regardless of how crisp they are in the open. Turning the
+ *     wall's own blur down did not make the bar harder to read, because the
+ *     bar does its own.
+ *
+ * Scoped to `:has(.coverWall)`, so every other page keeps a bar with no
+ * background at all - it has never needed one, the app's ground is behind it.
  */
 .appWindow:has(.coverWall) .mobileHeader {
-  background: var(--glacier-bg);
+  background: var(--glacier-glass-regular);
+  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
 }
 
 /*
