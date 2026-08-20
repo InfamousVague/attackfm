@@ -102,10 +102,12 @@ body:has(.npScreen[data-docked]) .appNavScrim {
   justify-content: space-between;
   gap: var(--glacier-space-1);
   padding-inline: var(--glacier-space-2);
-  /* The chin's corners take a wider sweep than the top's: down at the screen's
-     edge the phone is already curving away, and a corner that opens out to meet
-     it reads as one continuous bottom rather than a card set on top of one. */
-  border-radius: var(--glacier-radius-2xl, 1.75rem) var(--glacier-radius-2xl, 1.75rem)
+  /* Top corners take the More menu's radius (radius-xl), so the plate that
+     opens FROM this bar and the bar itself share a corner. The chin's corners
+     keep their wider sweep: down at the screen's edge the phone is already
+     curving away, and a corner that opens out to meet it reads as one
+     continuous bottom rather than a card set on top of one. */
+  border-radius: var(--glacier-radius-xl, 1.375rem) var(--glacier-radius-xl, 1.375rem)
     var(--app-nav-chin-radius) var(--app-nav-chin-radius);
   /* The card: a near-opaque frosted panel, a hairline edge, and a real shadow
      so it reads as lifted off the content that scrolls behind it. */

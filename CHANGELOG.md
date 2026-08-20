@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.274
+
+- The bottom nav bar and the player bar above it wear the same rounded corner the More menu does now, so the three read as one set rather than three slightly different roundings stacked up
+
 ## 0.3.273
 
 - The covers behind Liked, All songs, On repeat and your playlists are sharper now and drift on a diagonal, the way the sign-in wall does, instead of sliding flat and sideways under a heavy blur
