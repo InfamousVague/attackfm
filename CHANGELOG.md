@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.219
+
+- The four cards at the top of your library have their objects: a heart-shaped valve for Liked, a jukebox's record stack for All songs, chrome arrows for On repeat, and a mirrored helmet for the DJ
+
 ## 0.3.218
 
 - On a phone, the now-playing bar and the tab bar below it now share a corner. The player's was tighter than the nav's, which read as two cards that had not been drawn together
