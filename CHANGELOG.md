@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.220
+
+- The three cards under your week's listening — the streak, the songs, the artists — each take a colour of their own now, with the little icon in the same tone, the way the genres wear their colours on Search
+
 ## 0.3.219
 
 - The four cards at the top of your library have their objects: a heart-shaped valve for Liked, a jukebox's record stack for All songs, chrome arrows for On repeat, and a mirrored helmet for the DJ

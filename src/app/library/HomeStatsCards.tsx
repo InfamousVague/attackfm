@@ -3,6 +3,7 @@ import { ChartNoAxesColumn, Flame, Music, User } from '@glacier/icons';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { fetchStatsSummary, fmtMinutes, type StatsSummary } from '../profile/stats.ts';
+import { hueOf } from '../search/searchModel.tsx';
 import '../profile/StatsPage.css';
 
 /**
@@ -83,7 +84,7 @@ export function HomeStatsCards({ onOpenStats }: { onOpenStats: () => void }) {
 
 function Mini({ icon, value, label }: { icon: ReactNode; value: string; label: string }) {
   return (
-    <div className="statsMini">
+    <div className="statsMini" style={hueOf(label)}>
       <span className="statsMini__icon" aria-hidden>
         {icon}
       </span>
