@@ -11,6 +11,7 @@ import '@glacier/tokens/css/tokens.css';
 import '@glacier/react/styles.css';
 import './app/app.css';
 import { App } from './app/App.tsx';
+import { LaunchUpdate } from './app/settings/LaunchUpdate.tsx';
 import { runColdStartMaintenance } from './app/core/coldStart.ts';
 import { initDeepLinks } from './app/servers/deepLink.ts';
 import { hydrateOffline } from './app/downloads/offline.ts';
@@ -50,6 +51,13 @@ void initDeepLinks();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    {/* Outside App on purpose: the gate has to be able to reload before any
+        provider has opened a socket, started a scan or restored a queue. Wrap
+        it the other way and the app has already begun the work the reload is
+        about to throw away. In a browser tab it renders its children and
+        nothing else. */}
+    <LaunchUpdate>
+      <App />
+    </LaunchUpdate>
   </StrictMode>,
 );
