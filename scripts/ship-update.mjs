@@ -184,6 +184,22 @@ if (live === null) {
  * no git, no origin, no network. A release freeze caused by a fetch timeout is
  * worse than the failure being prevented, so it says so and carries on. And it
  * prints the comparison on every run rather than only on refusal.
+ *
+ * TESTING THIS GIVES A FALSE PASS THE OBVIOUS WAY. Stepping back a commit to
+ * make the tree "behind" also steps back to a commit that PREDATES this guard,
+ * so nothing fires, no `tree` line prints, and the silence reads exactly like a
+ * pass. Two people hit that before getting a real result. Either restore this
+ * file over the older checkout (`git checkout <guard-commit> -- <this file>`)
+ * and raise package.json above the live version so the registry check does not
+ * refuse first, or stage the case properly: clone, commit, `git update-ref
+ * refs/remotes/origin/main`, move HEAD back, then break the remote URL so the
+ * fetch below cannot quietly undo the staging. Whichever route, the proof that
+ * the test was real is the `tree ... N ahead / N behind` line appearing at all.
+ *
+ * Never use `git reset --hard` to unwind a probe commit in the shared checkout -
+ * it takes every other session's uncommitted work with it, and has already
+ * destroyed a load-bearing uncommitted change here once. `git update-ref
+ * refs/heads/<branch> HEAD~1 HEAD` moves the branch and leaves the tree alone.
  */
 const git = (...args) => {
   const r = spawnSync('git', args, { encoding: 'utf8', timeout: 20_000 });
