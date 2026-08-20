@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.241
+
+- The library is the first stop on the bar at the bottom of the screen now, instead of sitting third behind the Booth and Discover
+
 ## 0.3.240
 
 - Your playlists come with you now — every song in every playlist is kept on the phone, right behind the ones you liked, so a list plays through with no signal at all
