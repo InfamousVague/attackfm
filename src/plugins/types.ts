@@ -120,9 +120,9 @@ export interface AcquireHandler {
 
 /**
  * A playlist tile for the showcase strip. A data contract rather than a
- * component: the showcase renders it with its own Tile and PlaylistModal and
- * wires play-through, so a plugin says what the playlist IS, not what a tile
- * looks like.
+ * component: the showcase renders it with its own Tile, and opening one pushes
+ * a mix PAGE - the same rendering a playlist gets - so a plugin says what the
+ * playlist IS, not what a tile looks like or how a list should be drawn.
  */
 export interface PluginPlaylistTile {
   /** Unique within the plugin. */

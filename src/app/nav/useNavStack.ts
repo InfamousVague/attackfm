@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { onSystemBack } from './systemBack.ts';
 import type { Detail, SongCollection } from './AppMain.tsx';
+import type { Track } from '../core/tauri.ts';
 
 // Page history as a stack with a cursor, so back and forward move through
 // the places visited rather than just toggling. A place is a primary tab
@@ -97,6 +98,12 @@ export function useNavStack({
     (id: string) => push({ tab: live.current.tab, detail: { kind: 'playlist', id } }),
     [push],
   );
+  /** A mix - somebody else's list - stacked the same way a playlist is. */
+  const goMix = useCallback(
+    (title: string, tracks: Track[], emptyLabel?: string) =>
+      push({ tab: live.current.tab, detail: { kind: 'mix', title, tracks, emptyLabel } }),
+    [push],
+  );
   /** A whole-collection song page - Liked or every song - stacked the same way.
    *  The library's own views, opened full instead of in a sheet. */
   const goSongs = useCallback(
@@ -180,6 +187,7 @@ export function useNavStack({
     go,
     goAlbum,
     goPlaylist,
+    goMix,
     goSongs,
     closeDetail,
     goTab,

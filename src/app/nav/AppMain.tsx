@@ -10,6 +10,7 @@ import { UpdateBanner } from '../settings/UpdateBanner.tsx';
 import { AlbumPage } from '../albumArtist/AlbumPage.tsx';
 import { ArtistPage } from '../albumArtist/ArtistPage.tsx';
 import { PlaylistPage } from '../playlists/PlaylistPage.tsx';
+import { MixPage } from '../playlists/MixPage.tsx';
 import { SongPage, type SongCollection } from '../library/SongPage.tsx';
 import { LibraryView } from '../library/LibraryView.tsx';
 import { DiscoverPage } from '../../plugins/discover/DiscoverPage.tsx';
@@ -33,6 +34,14 @@ export type Detail =
   | { kind: 'artist'; artist: string }
   | { kind: 'album'; album: string; artist: string }
   | { kind: 'playlist'; id: string }
+  /**
+   * A list somebody else made - a curator mix, a plugin's tile - opened as a
+   * page. It carries its tracks rather than an id because it HAS no id: these
+   * lists are computed, not stored, which is the whole reason they used to
+   * open in a modal instead of routing anywhere. The stack is in memory only,
+   * so carrying them costs nothing.
+   */
+  | { kind: 'mix'; title: string; tracks: Track[]; emptyLabel?: string }
   | { kind: 'songs'; view: SongCollection };
 
 /**
@@ -161,6 +170,15 @@ export function AppMain({
           onPlay={onPlay}
           onOpenArtist={onOpenArtist}
           onGone={onCloseDetail}
+        />
+      ) : detail?.kind === 'mix' ? (
+        <MixPage
+          title={detail.title}
+          tracks={detail.tracks}
+          emptyLabel={detail.emptyLabel}
+          onPlay={onPlay}
+          onOpenArtist={onOpenArtist}
+          onOpenPlaylist={onOpenPlaylist}
         />
       ) : detail?.kind === 'songs' ? (
         // Liked or every song, opened full - the library's own views as a page.

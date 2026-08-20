@@ -41,6 +41,7 @@ import { IndexingStatus } from './nav/IndexingStatus.tsx';
 import { PrimaryNav } from './nav/PrimaryNav.tsx';
 import { APP_NAME, HeaderActionButtons, HeaderIdent } from './nav/HeaderChrome.tsx';
 import { AppMain } from './nav/AppMain.tsx';
+import { setMixOpener } from './nav/openMix.ts';
 import { useNavStack } from './nav/useNavStack.ts';
 import { useSearchSummon } from './nav/useSearchSummon.ts';
 import { PageRefreshProvider } from './nav/pageRefresh.tsx';
@@ -360,6 +361,7 @@ export function App() {
     go,
     goAlbum,
     goPlaylist,
+    goMix,
     goSongs,
     closeDetail,
     goTab,
@@ -371,6 +373,15 @@ export function App() {
     openSearch: () => setSearchOpen(true),
     closeProfileRoom: () => setProfileRoom(null),
   });
+
+  // The one nav stack, lent to the surfaces that cannot be handed it: mix
+  // cards live on Discover and in the booth, both rendered beside this stack
+  // rather than inside anything holding it. Same channel headerActions uses,
+  // for the same reason.
+  useEffect(() => {
+    setMixOpener(goMix);
+    return () => setMixOpener(null);
+  }, [goMix]);
   stateRef.current = { searchOpen, detail: detail as { kind?: string } | null, tab };
   // The phone's edge-swipe back: a drag in from the left walks the same stack
   // the header arrows do, with the page following the thumb. Touch-only and
