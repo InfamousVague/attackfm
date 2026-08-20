@@ -143,10 +143,22 @@ export function transcodeUrl(
   // The hi-fi chain rides the same way: typed node parameters as JSON, which
   // the server clamps and compiles (fx.rs). Same reasoning, wider vocabulary.
   const with_fx2 = fx2 ? `&fx2=${encodeURIComponent(fx2)}` : '';
-  // Parts to leave out, by name. The server matches them against its own
-  // registry and discards anything else, so this never becomes a filter.
-  const with_drop = drop ? `&drop=${encodeURIComponent(drop)}` : '';
-  return `${session.url}/api/transcode/${trackId}?t=${encodeURIComponent(session.streamToken)}&bitrate=${bitrate}${at}${with_fx}${with_fx2}${with_drop}`;
+  // Per-part levels, as `name:gain` pairs the server matches against its own
+  // registry (anything else discarded, so this never becomes a filter). Sent as
+  // `lvl` now that a part can sit faint rather than only out.
+  const with_lvl = drop ? `&lvl=${encodeURIComponent(drop)}` : '';
+  // Also send the fully-out parts (gain 0) as the OLD `drop`, so a server that
+  // predates per-part levels still silences what should be silent. A faint part
+  // plays full on such a server until it updates; nothing that should be gone is
+  // heard. A current server prefers `lvl` and ignores this.
+  const outNames = (drop ?? '')
+    .split(',')
+    .map((pair) => pair.split(':'))
+    .filter((p) => p.length === 2 && Number(p[1]) <= 0)
+    .map((p) => p[0])
+    .join(',');
+  const with_drop = outNames ? `&drop=${encodeURIComponent(outNames)}` : '';
+  return `${session.url}/api/transcode/${trackId}?t=${encodeURIComponent(session.streamToken)}&bitrate=${bitrate}${at}${with_fx}${with_fx2}${with_lvl}${with_drop}`;
 }
 
 export function artUrl(session: ServerSession, artId: string, trackId: number): string {

@@ -493,21 +493,25 @@ pub async fn transcode(
     // out of the song in the sound console, and honoured only when the track has
     // actually been separated - otherwise this is an ordinary transcode of an
     // ordinary file, which is what a song nobody has pulled apart should be.
-    let dropped = crate::stems::parse_drop(params.get("drop"));
-    let kept = crate::stems::kept_stem_paths(&state, id, &dropped);
+    // Per-part levels, so a stem can sit FAINT rather than only in or out.
+    // Prefer explicit `lvl`; fall back to the old `drop` (a dropped part is a
+    // level of 0) so a client that has not OTA-updated still works.
+    let levels = crate::stems::parse_levels(params.get("lvl"))
+        .or_else(|| crate::stems::levels_from_drop(params.get("drop")));
+    let inputs = crate::stems::leveled_stem_inputs(&state, id, levels.as_deref());
 
     let mut command = tokio::process::Command::new("ffmpeg");
     // -ss before -i seeks by keyframe index instead of decoding up to the
     // point, which is the difference between instant and a minute. With several
     // inputs it has to be repeated: it applies to the NEXT input only, and one
     // unseeked stem would play the top of the song under all the others.
-    if kept.is_empty() {
+    if inputs.is_empty() {
         if seek > 0.0 {
             command.arg("-ss").arg(format!("{seek:.3}"));
         }
         command.arg("-i").arg(&path).args(["-map", "0:a:0"]);
     } else {
-        for stem in &kept {
+        for (stem, _gain) in &inputs {
             if seek > 0.0 {
                 command.arg("-ss").arg(format!("{seek:.3}"));
             }
@@ -527,20 +531,29 @@ pub async fn transcode(
         (None, Some(r)) => Some(r),
         (None, None) => None,
     };
-    if kept.is_empty() {
+    if inputs.is_empty() {
         if let Some(chain) = af {
             command.args(["-af", &chain]);
         }
     } else {
-        // Summing the parts back together, with the effects after them. The
-        // parts were separated FROM one mix, so adding them up is meant to
-        // reconstruct it: `normalize=0` because normalising would divide each by
-        // the count and hand back something several decibels quiet. The limiter
-        // catches the rare sum that overshoots.
+        // Each part at its own gain, then summed, with the effects after. volume
+        // runs BEFORE the mix so a part turned down to a whisper is quiet in the
+        // sum rather than divided out of it. The parts were separated FROM one
+        // mix, so adding them back reconstructs it: `normalize=0` because
+        // normalising would divide each by the count and hand back something
+        // several decibels quiet. The limiter catches the rare sum that
+        // overshoots.
         //
         // -filter_complex rather than -af because there is more than one input,
         // and the two cannot both describe the same output.
-        let mut fc = format!("amix=inputs={}:normalize=0", kept.len());
+        let mut fc = String::new();
+        for (i, (_p, gain)) in inputs.iter().enumerate() {
+            fc.push_str(&format!("[{i}:a]volume={gain:.3}[s{i}];"));
+        }
+        for i in 0..inputs.len() {
+            fc.push_str(&format!("[s{i}]"));
+        }
+        fc.push_str(&format!("amix=inputs={}:normalize=0", inputs.len()));
         if let Some(chain) = af {
             fc.push(',');
             fc.push_str(&chain);

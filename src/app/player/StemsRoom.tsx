@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, SeekBar, Switch, Text, useBeat, useLiveLevels } from '@glacier/react';
+import { Button, SeekBar, Slider, Text, useBeat, useLiveLevels } from '@glacier/react';
 import { AudioWaveform, Drum, Guitar, Mic, Piano, Waves } from '@glacier/icons';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { trackIdFromPath } from '../server.ts';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
-import { clearStemDrop, noteStemsFor, setStemDropped, useStemDrop } from './stemDrop.ts';
+import { clearStemDrop, noteStemsFor, setStemLevel, useStemDrop } from './stemDrop.ts';
 import { useStems } from './stemsReady.ts';
 import { chainRate, useFxChain } from './fxChain.ts';
 import { ENV_HZ, envelopeMeter, loadStemEnvelopes, type StemEnvelopes } from './stemLevels.ts';
@@ -57,7 +57,7 @@ function StemPart({
   part,
   label,
   Icon,
-  on,
+  gain,
   env,
   fileNow,
   mixBeat,
@@ -65,12 +65,12 @@ function StemPart({
   playing,
   duration,
   position,
-  onToggle,
+  onLevel,
 }: {
   part: string;
   label: string;
   Icon: (props: { size?: number }) => React.ReactNode;
-  on: boolean;
+  gain: number;
   env: Float32Array | undefined;
   fileNow: () => number;
   mixBeat: Parameters<typeof SeekBar>[0]['beat'];
@@ -78,8 +78,11 @@ function StemPart({
   playing: boolean;
   duration: number;
   position: number;
-  onToggle: (want: boolean) => void;
+  onLevel: (gain: number) => void;
 }) {
+  // A part turned down to nothing is "off" for the meter and the row's still
+  // look; the fader still shows exactly how far down it is.
+  const on = gain > 0;
   const meter = useMemo(() => envelopeMeter(env, fileNow), [env, fileNow]);
   // A part that is out of the song is not sounding, so it does not move -
   // which is the row's whole job, and the one thing a shared meter could
@@ -102,7 +105,14 @@ function StemPart({
       <span className="stemsRoom__name">
         <Text size="sm">{label}</Text>
       </span>
-      <Switch aria-label={label} checked={on} onCheckedChange={onToggle} />
+      <Slider
+        className="stemsRoom__fader"
+        aria-label={`${label} level`}
+        min={0}
+        max={100}
+        value={Math.round(gain * 100)}
+        onValueChange={(v) => onLevel(v / 100)}
+      />
       {/* `inert` rather than a bare `aria-hidden`: this bar is a picture of
           the part, not a second transport, and hiding it from a screen reader
           while leaving a slider in the tab order is the worst of both. */}
@@ -332,7 +342,7 @@ export function StemsRoom() {
     );
   }
 
-  const dropped = drop.parts;
+  const dropped = Object.keys(drop.gains).filter((p) => (drop.gains[p] ?? 1) <= 0);
   const available = state.kind === 'ready' ? state.parts : [];
 
   return (
@@ -394,7 +404,7 @@ export function StemsRoom() {
                 part={part}
                 label={label}
                 Icon={Icon}
-                on={!dropped.includes(part)}
+                gain={drop.gains[part] ?? 1}
                 env={envelopes.get(part)}
                 fileNow={fileNow}
                 mixBeat={beat}
@@ -402,7 +412,7 @@ export function StemsRoom() {
                 playing={audible}
                 duration={duration}
                 position={position}
-                onToggle={(want: boolean) => setStemDropped(part, !want)}
+                onLevel={(g: number) => setStemLevel(part, g)}
               />
             ))}
           </ul>
@@ -429,5 +439,5 @@ export function useStemsOut(): number {
   const drop = useStemDrop();
   const { track } = useNowPlayingMotion();
   const id = track ? trackIdFromPath(track.path) : null;
-  return drop.parts.length;
+  return Object.values(drop.gains).filter((g) => g < 1).length;
 }

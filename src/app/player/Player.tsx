@@ -624,7 +624,14 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
    * re-render that rebuilds an identical list is not a change.
    */
   const dropState = useStemDrop();
-  const drop = dropState.parts.join(',');
+  // A stable key of the part levels, so a change of any fader re-resolves the
+  // URL exactly as a change of drop used to. Sorted so insertion order never
+  // reads as a change.
+  const drop = Object.entries(dropState.gains)
+    .filter(([, g]) => g < 1)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([n, g]) => `${n}:${g.toFixed(2)}`)
+    .join(',');
   const rackWas = useRef(rack);
   const chainWas = useRef(chain);
   const dropWas = useRef(drop);
