@@ -9,16 +9,16 @@ import onRepeatChip from '../../assets/chip-on-repeat.webp';
 import djMascot from '../../assets/dj-mascot.webp';
 
 /**
- * The card lab: thirty ways the four library doors could look, side by side.
+ * The card lab: every way the four library doors could look, side by side.
  *
  * These four cards have been redrawn several times - photography, then flat
  * pastel with kit icons, then photography again tinted to each card's hue - and
  * every round was argued in words and settled by shipping one and looking at
- * it. This is the cheaper version of that argument: ten directions on one
+ * it. This is the cheaper version of that argument: every direction on one
  * screen, on the real objects and the real counts, where they can be compared
  * rather than imagined.
  *
- * ONE markup, thirty stylesheets. Every variant renders the identical DOM and
+ * ONE markup, one stylesheet block each. Every variant renders identical DOM and
  * the CSS does all the work, which is the whole point - if a direction needs
  * its own markup to look good it is not a treatment of these cards, it is a
  * different component wearing their name, and the comparison would be rigged.
@@ -29,6 +29,10 @@ import djMascot from '../../assets/dj-mascot.webp';
  * axes the first twenty never used at all - the card as an object rather than
  * a picture of one, the name as the window rather than the caption, the bars
  * as the whole face, and one that is only itself while it is moving.
+ *
+ * After that, variations rather than new directions: a direction that is nearly
+ * right is worth three attempts at the thing that is wrong with it, and those
+ * carry a `family` so they can be put on screen beside their parent.
  */
 
 interface Card {
@@ -44,8 +48,14 @@ interface Card {
   statLabel: string;
 }
 
-/** The thirty directions, in the order they are shown. */
-const STYLES: { id: string; name: string; note: string }[] = [
+/**
+ * The directions, in the order they are shown.
+ *
+ * `family` groups a direction with its variations so they can be put on screen
+ * together. Judging "is this too pale" one card at a time does not work - the
+ * answer only exists next to the alternative.
+ */
+const STYLES: { id: string; name: string; note: string; family?: string }[] = [
   {
     id: 'editorial',
     name: 'Editorial',
@@ -58,6 +68,7 @@ const STYLES: { id: string; name: string; note: string }[] = [
   },
   {
     id: 'halftone',
+    family: 'halftones',
     name: 'Duotone halftone',
     note: 'The object screened into dots and printed in two inks, the way a cheap sleeve would be. Keeps the objects while dropping the photographic gloss that makes them read as stock imagery.',
   },
@@ -98,6 +109,7 @@ const STYLES: { id: string; name: string; note: string }[] = [
   },
   {
     id: 'midnight',
+    family: 'halftones',
     name: 'Midnight halftone',
     note: 'The same dot screen printed the other way round: hot ink on near-black instead of dark ink on cream. Keeps the print texture but loses the pastel, and the objects light up instead of sitting flat.',
   },
@@ -108,6 +120,7 @@ const STYLES: { id: string; name: string; note: string }[] = [
   },
   {
     id: 'chrome',
+    family: 'chromes',
     name: 'Chrome',
     note: 'Brushed metal for all four, the object polished into the plate with one specular sweep across it. Heavy, and the only direction here that would look wrong on a light theme.',
   },
@@ -196,6 +209,42 @@ const STYLES: { id: string; name: string; note: string }[] = [
     name: 'Pulse',
     note: 'The only one that is not a still picture: the light behind the object breathes, each card out of step with its neighbours. Judge it moving - and note that it holds still for anyone who has asked their system to stop animations.',
   },
+  {
+    id: 'halftoneRich',
+    family: 'halftones',
+    name: 'Halftone: rich stock',
+    note: 'The same print, run on properly coloured stock instead of tinted paper. 03 sits at 88% lightness, which is why everything on it goes chalky; this drops the ground to 62% and darkens the ink to match, and the colour arrives without touching the dots.',
+  },
+  {
+    id: 'halftoneHot',
+    family: 'halftones',
+    name: 'Halftone: hot inks',
+    note: 'Paper goes back to plain cream and all the colour moves into the ink - two of them, at full chroma, on a coarser screen. The most like an actual two-colour print of anything here, and the furthest from pastel without going dark.',
+  },
+  {
+    id: 'halftoneRev',
+    family: 'halftones',
+    name: 'Halftone: reversed',
+    note: 'A dense field of colour with the screen knocked out of it in white, the object printed light. Not the same as Midnight: that one glows on black, this one stays a flat printed thing and keeps its weight in a bright room.',
+  },
+  {
+    id: 'chromeLiquid',
+    family: 'chromes',
+    name: 'Chrome: liquid',
+    note: 'Mirror rather than brushed - the bright band at the top is sky, the dark one across the middle is horizon. No brush texture at all, so it reads wetter and much less like a machined panel.',
+  },
+  {
+    id: 'chromeAnodised',
+    family: 'chromes',
+    name: 'Chrome: anodised',
+    note: 'The same plate taking each card\'s hue, the way anodised metal does: rose for Liked, blue steel for All songs. Fixes the one real complaint about 13, which is that four identical grey cards throw away the colour coding the rest of the app relies on.',
+  },
+  {
+    id: 'chromeDark',
+    family: 'chromes',
+    name: 'Chrome: dark',
+    note: 'Gunmetal, with one lit edge along the top and the sweep pulled right back. Sits quietly next to the rest of the app where 13 shouts, at the cost of most of what makes metal read as metal.',
+  },
 ];
 
 export function CardLab({ onClose }: { onClose: () => void }) {
@@ -258,7 +307,14 @@ export function CardLab({ onClose }: { onClose: () => void }) {
     [tracks.length, favoriteTracks.length],
   );
 
-  const shown = only ? STYLES.filter((s) => s.id === only) : STYLES;
+  const shown = only ? STYLES.filter((s) => s.id === only || s.family === only) : STYLES;
+
+  /** Families that have more than one member, in first-appearance order. */
+  const families = useMemo(() => {
+    const seen: string[] = [];
+    for (const s of STYLES) if (s.family && !seen.includes(s.family)) seen.push(s.family);
+    return seen;
+  }, []);
 
   return createPortal(
     <div className="cardLab" role="dialog" aria-label="Card styles">
@@ -266,7 +322,7 @@ export function CardLab({ onClose }: { onClose: () => void }) {
         <div className="cardLab__title">
           <Text weight="bold">Card styles</Text>
           <Text tone="muted" size="xs">
-            Thirty directions for the four library doors, on your own library
+            {STYLES.length} directions for the four library doors, on your own library
           </Text>
         </div>
         <IconButton variant="ghost" aria-label="Close" onClick={onClose}>
@@ -281,8 +337,19 @@ export function CardLab({ onClose }: { onClose: () => void }) {
           data-on={only === null || undefined}
           onClick={() => setOnly(null)}
         >
-          All thirty
+          All {STYLES.length}
         </button>
+        {families.map((f) => (
+          <button
+            key={f}
+            type="button"
+            className="cardLab__chip"
+            data-on={only === f || undefined}
+            onClick={() => setOnly(f)}
+          >
+            Every {f.slice(0, -1)}
+          </button>
+        ))}
         {STYLES.map((s) => (
           <button
             key={s.id}
