@@ -47,6 +47,7 @@ import { useSearchSummon } from './nav/useSearchSummon.ts';
 import { PageRefreshProvider } from './nav/pageRefresh.tsx';
 import { useLibrary } from './library/library.tsx';
 import { AppProviders } from './nav/AppProviders.tsx';
+import { useFilePlan } from './downloads/useFilePlan.ts';
 import wordmark from '../assets/attack-white.png';
 
 // Window chrome only makes sense where there is a window to decorate: a desktop
@@ -372,6 +373,20 @@ export function App() {
     openDate: () => setDateOpen(true),
     openSearch: () => setSearchOpen(true),
     closeProfileRoom: () => setProfileRoom(null),
+  });
+
+  /*
+   * A song added from Discover, filed where it was asked to go and then shown.
+   *
+   * Mounted HERE, not on Discover, because a download outlives the page that
+   * started it - you add something and walk off, and the import lands with that
+   * page long unmounted. Standing this beside the nav stack is also what lets
+   * it finish the job: filing the song is half of it, and taking you to the
+   * list is the half that needs somewhere to navigate from.
+   */
+  useFilePlan((plan) => {
+    if (plan.dest.kind === 'liked') goSongs('liked');
+    else goPlaylist(plan.dest.id);
   });
 
   // The one nav stack, lent to the surfaces that cannot be handed it: mix
