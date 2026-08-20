@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.243
+
+- Settings shows one thing at a time when the window is too narrow to hold the list beside the pane — no more search field and theme cards cut off at the edge with the player docked
+- The list down the side of Settings now reads like the full-screen one: each section wears its own coloured icon and says what it is currently set to
+
 ## 0.3.242
 
 - On a folding phone the player no longer takes half the screen for a song you did not choose. It waits until you have played something, and it steps aside for Music Date and the DJ instead of standing on top of them
