@@ -80,12 +80,17 @@ export function NotifyBell({
   return (
     <Popover
       placement="bottom-end"
-      // The kit's panel paints NOTHING - no background, no blur, no shadow -
-      // so a panel that does not dress itself opens as floating text over the
-      // page. The class goes on the kit's own panel (the eqPopoverPanel /
-      // morePopoverPanel idiom) because that is the element that has the
-      // rounding and the padding to paint into.
-      className="notifyPopoverPanel"
+      // The same two classes the equalizer wears, so this sheet IS that sheet:
+      // .popoverSheet carries the scroll and gesture contract every popover
+      // shares, and .notifyPopoverPanel carries the one thing that differs here,
+      // its width.
+      //
+      // Neither paints, and that is the point. The kit's panel element is
+      // transparent on its own, which once read as "dress it yourself" - but the
+      // kit paints the surface from an ArrowGlass SIBLING of the panel, so a
+      // panel that dresses itself lays a second pane over the first. Doing that
+      // is what made this one popover a dark slab among frosted ones.
+      className="popoverSheet notifyPopoverPanel"
       aria-label="Notifications"
       open={open}
       onOpenChange={setOpen}

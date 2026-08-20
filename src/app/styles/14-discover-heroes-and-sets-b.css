@@ -428,6 +428,41 @@
   color: var(--glacier-text);
 }
 
+/* ── The house popover sheet ─────────────────────────────────────────
+   Geometry and gesture ONLY. Every popover in the app shares this, and what it
+   deliberately does not do is paint.
+
+   THE KIT ALREADY PAINTS THE SURFACE, which is worth stating plainly because
+   this codebase has believed otherwise in two places. The kit's panel element
+   really does paint nothing - inspect it on its own and it is transparent,
+   which is where the belief comes from - but the panel is not the whole
+   popover. The kit renders an ArrowGlass element as the panel's SIBLING inside
+   the positioner (`._host_ayduc_4`), sized from the positioner and clipped to a
+   rounded rect with the tip, and THAT carries the shadow, the glass and the
+   outline. Measured: `._glass_ayduc_23` is --glacier-glass-thick at 0.85 alpha
+   under `blur(32px) saturate(1.8)`.
+
+   So a panel that dresses itself is not fixing a bare surface, it is laying a
+   SECOND pane over the kit's: two backgrounds, two blurs, two borders, two
+   shadows. The notifications panel did exactly that and landed at roughly 0.94
+   combined alpha - a dark slab standing out against every other popover in the
+   app. If a sheet ever looks too heavy, check this first.
+
+   `overscroll-behavior-y`, not the shorthand: containing the cross axis of a
+   single-axis scroller swallows the drag outright, and it looks exactly like a
+   touch-action bug when it does. */
+.popoverSheet {
+  /* Anything that can outgrow the screen has to scroll INSIDE itself. A panel
+     that overflows the viewport cannot be scrolled from within, so the drag
+     that goes looking for the rest of it lands on the PAGE - which the popover
+     correctly reads as a press outside itself and closes on. That is why
+     scrolling the presets used to shut the equalizer. */
+  max-block-size: min(70dvh, 34rem);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+}
+
 /* The kit's Popover panel caps at 24rem, too narrow for eight EQ bands; widen it
    here (still clamped to the window) so the curve and bands are not pinched. */
 .eqPopoverPanel {
@@ -439,21 +474,8 @@
      an inset that differs left to right is the kind of thing you feel before
      you can name it. */
   padding: var(--glacier-space-3);
-  /* And a height, which is what was missing. The kit's preset row wraps, so a
-     rack with a decent number of presets grew taller than the screen - and a
-     panel that overflows the viewport cannot be scrolled from the inside, so
-     the drag that went looking for the rest of it landed on the PAGE, which
-     the popover correctly read as a press outside itself and closed on. That
-     is why scrolling the presets shut the equalizer.
-     Capped and scrolled internally, the gesture stays in the panel. */
-  max-block-size: min(70dvh, 34rem);
-  overflow-y: auto;
-  /* A flick that reaches the end stays here rather than chaining to the page
-     underneath and dismissing on the way. */
-  overscroll-behavior: contain;
-  /* Say plainly that a vertical drag on this panel is a scroll, so the touch
-     is never claimed by anything else mid-gesture. */
-  touch-action: pan-y;
+  /* Height, scrolling and the gesture contract come from .popoverSheet above;
+     what stays here is only what makes the EQ different from the other sheets. */
 }
 
 /* The volume popover: one fader and its reading, so the panel is only as wide

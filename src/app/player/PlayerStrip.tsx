@@ -376,7 +376,7 @@ export function PlayerStrip({
               <Popover
                 placement="top-end"
                 aria-label="Player options"
-                className="eqPopoverPanel"
+                className="popoverSheet eqPopoverPanel"
                 open={moreOpen}
                 onOpenChange={(open) => {
                   setMoreOpen(open);
