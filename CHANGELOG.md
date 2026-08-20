@@ -15,19 +15,20 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.248
+
+- The artwork on Now Playing leans a little as you tilt the phone, so it sits in the screen rather than on it
+- New in Playback: shake to change shuffle, flick left or right to move between songs. Off until you turn it on, and it ignores walking, running and a pocket
+
 ## 0.3.247
 
 - The notifications panel is the same frosted glass as the sound console now. It had been painting a second pane on top of the app's own, which is what made it the one dark slab among a set of matching panels
 - The settings list scrolls. On a short window the bottom of it — About, Diagnostics, the handbook — could not be reached at all
+
 ## 0.3.246
 
 - Storage tells the truth about what you kept. Songs you saved by hand are recorded when you save them, instead of being guessed at from what the app still remembered — which is why it could report gigabytes of songs you never chose
 - Those songs go back under the cache's management too, so it can free space again instead of sitting at whatever size it had reached
-
-## 0.3.246
-
-- The artwork on Now Playing leans a little as you tilt the phone, so it sits in the screen rather than on it
-- New in Playback: shake to change shuffle, flick left or right to move between songs. Off until you turn it on, and it ignores walking, running and a pocket
 
 ## 0.3.245
 
