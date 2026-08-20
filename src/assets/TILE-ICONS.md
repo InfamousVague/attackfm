@@ -64,12 +64,27 @@ somebody scanning the grid needs to know it means "what I played lately".
 > Thick and blunt, filling its square — a mark made with a brush, not a thin
 > cross.
 
-## Wiring them in
+## Shipped
 
-Both are plain `<div className="tileSquircle …">` wrappers holding a lucide
-component, in `src/app/playlists/PlaylistShowcase.tsx` — `History size={24}` at
-the Recent tile and `Plus size={24}` at the New Playlist tile. Swap each glyph
-for an `<img>` the way the chips do:
+Both are in: `tile-recent.webp` and `tile-add.webp`, generated from the prompts
+above and wired into `src/app/playlists/PlaylistShowcase.tsx`. What was done to
+them between the generator and the repo, in case the next pair needs the same:
+
+- **Trimmed to the object's own alpha bounds and re-padded square.** The
+  generator left uneven margin, and the CSS sizes by the FRAME, so an off-centre
+  object sits off-centre on the tile no matter what the sizing rule says.
+- **Resized 816 → 512** to match the chip art, and **converted PNG → WebP**:
+  956 KB and 780 KB became 100 KB and 53 KB. That matters more than it looks —
+  the OTA bundle inlines assets as data URIs, so a megabyte of PNG costs about
+  1.4 MB of base64 on every device that updates.
+
+The prompts below the line are kept as the record of what made them.
+
+## How they were wired
+
+Both were plain `<div className="tileSquircle …">` wrappers holding a lucide
+component — `History size={24}` at Recent and `Plus size={24}` at New Playlist.
+Each glyph became an `<img>`, the way the chips do:
 
 ```tsx
 <div className="tileSquircle tileRecent" aria-hidden>

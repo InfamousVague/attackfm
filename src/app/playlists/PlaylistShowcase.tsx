@@ -1,7 +1,7 @@
 import { cardTexture } from '../ux/artwork.ts';
 import { mosaicArts, useTileArt } from '../ux/artLoad.ts';
 import { Button, ContextMenu, Input, Modal, MenuItem, Text } from '@glacier/react';
-import { History, ListMusic, Plus, Trash2 } from '@glacier/icons';
+import { ListMusic, Trash2 } from '@glacier/icons';
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { useLibrary } from '../library/library.tsx';
 import { DjLauncher } from '../booth/DjLauncher.tsx';
@@ -13,6 +13,8 @@ import { playlistPlayedAt, notePlaylistPlayed } from './playlistRecency.ts';
 import likedChip from '../../assets/chip-liked.png';
 import allSongsChip from '../../assets/chip-all-songs.png';
 import onRepeatChip from '../../assets/chip-on-repeat.png';
+import recentTile from '../../assets/tile-recent.webp';
+import addTile from '../../assets/tile-add.webp';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -254,8 +256,11 @@ export function PlaylistShowcase({
             <Tile
               name="Recent"
               cover={
+                /* A torn-paper clock rather than a line glyph. The tile stays
+                   aria-hidden: its accessible name is the label underneath, so
+                   the picture must not announce itself twice. */
                 <div className="tileSquircle tileRecent" aria-hidden>
-                  <History size={24} />
+                  <img className="tileObjectArt" src={recentTile} alt="" loading="lazy" />
                 </div>
               }
               onOpen={() => setOpen('recent')}
@@ -289,7 +294,7 @@ export function PlaylistShowcase({
               name="New Playlist"
               cover={
                 <div className="tileSquircle tileAdd" aria-hidden>
-                  <Plus size={24} />
+                  <img className="tileObjectArt" src={addTile} alt="" loading="lazy" />
                 </div>
               }
               onOpen={() => setDraftName('')}
