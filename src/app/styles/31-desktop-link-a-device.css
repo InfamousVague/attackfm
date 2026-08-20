@@ -46,94 +46,30 @@
   max-inline-size: 24rem;
 }
 
-/* Empty-state spot art. A light/dark pair per motif, each painted on the exact
-   page-background hex so it melts into the page. Which one shows is pure CSS,
-   mirroring appearance.tsx: system (no data-theme) follows prefers-color-scheme,
-   an explicit data-theme overrides it. */
+/* Empty-state art: a large glyph, for now.
+ *
+ * What was here was a light/dark pair per motif painted on the exact page
+ * background, plus a radial mask to dissolve any residual box into the page,
+ * plus a served variant the main library could substitute. All of that existed
+ * to make a PICTURE sit invisibly on a page; a glyph has no box to hide and no
+ * background to match, so the whole apparatus goes with the images. */
 .emptyArt {
   display: flex;
   justify-content: center;
   margin-inline: auto;
-  inline-size: min(60%, 15rem);
-  max-inline-size: 15rem;
+  color: var(--glacier-text-muted);
   pointer-events: none;
   user-select: none;
 }
-.emptyArt__img {
-  display: none;
-  inline-size: 100%;
-  block-size: auto;
-  aspect-ratio: 1 / 1;
-  object-fit: contain;
-  /* Every motif is centred well inside its square, so fading the outer ring to
-     transparent dissolves any residual box - a per-image background that isn't
-     a pixel-exact match for the page - into the real page colour underneath. */
-  -webkit-mask-image: radial-gradient(circle at center, #000 68%, transparent 100%);
-  mask-image: radial-gradient(circle at center, #000 68%, transparent 100%);
-}
-/* A cut-out object, shown in both themes and never masked.
-   No theme swap: there is no baked-in background to match, so one file is
-   right on either page colour. No radial mask either - that exists to dissolve
-   a PAINTED image's residual box into the page, and over a cut-out it fades
-   the object's own edges instead, which on a wide one eats the ends. And no
-   forced square: these are trimmed to their subject, so letterboxing a two-to-
-   one sequencer into a square would shrink it to fit space it does not need. */
-.emptyArt__img--solo {
-  display: block;
-  aspect-ratio: auto;
-  -webkit-mask-image: none;
-  mask-image: none;
+
+/* One number, next to the spacing it has to live in. Large enough to hold the
+   top of an empty page without becoming the illustration it replaced. */
+.emptyArt svg {
+  inline-size: 4rem;
+  block-size: 4rem;
+  stroke-width: 1.25;
 }
 
-/* System preset: no data-theme attribute — follow the OS scheme. */
-:root:not([data-theme]) .emptyArt__img--light {
-  display: block;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) .emptyArt__img--light {
-    display: none;
-  }
-  :root:not([data-theme]) .emptyArt__img--dark {
-    display: block;
-  }
-}
-/* Explicit choice wins over the OS scheme. */
-:root[data-theme='light'] .emptyArt__img--light {
-  display: block;
-}
-:root[data-theme='dark'] .emptyArt__img--dark {
-  display: block;
-}
-
-/* The served object, worn as a card on a bold ground: the shot's white
-   multiplies away into the gradient beneath, so an empty page opens on a
-   frosted object floating in colour rather than a white square. The wrapper
-   owns the gradient; the image only has to burn its ground off. */
-.emptyArt:has(.emptyArt__img--served) {
-  border-radius: var(--glacier-radius-xl, 1rem);
-  overflow: hidden;
-  background: linear-gradient(
-    140deg,
-    hsl(var(--emptyArtHue, 320) 62% 52%),
-    hsl(calc(var(--emptyArtHue, 320) + 55) 58% 34%)
-  );
-}
-
-.emptyArt__img--served {
-  display: block;
-  -webkit-mask-image: none;
-  mask-image: none;
-  object-fit: cover;
-  mix-blend-mode: multiply;
-  border-radius: inherit;
-}
-
-/* ---- Hero art -----------------------------------------------------------
-
-   The same painted light/dark pair EmptyArt draws, but worn as a HERO that
-   FILLS its box (a tile, a page cover) rather than a spot dissolved into the
-   page: no dissolve mask, no server swap, object-fit cover edge to edge. The
-   parent must be positioned and clip (e.g. .tileSquircle, .songPageHero). */
 .heroArt {
   position: absolute;
   inset: 0;
@@ -165,8 +101,10 @@
   object-fit: contain;
 }
 
-/* Theme selection mirrors .emptyArt__img exactly: no data-theme follows the OS,
-   an explicit data-theme wins - so the picture never drifts from its surface. */
+/* Theme selection: no data-theme follows the OS, an explicit data-theme wins -
+   so the picture never drifts from the surface it is painted onto. (The empty
+   states used to do this too; they are glyphs now and have no pair to pick
+   between.) */
 :root:not([data-theme]) .heroArt__img--light {
   display: block;
 }
