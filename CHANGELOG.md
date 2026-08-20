@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.237
+
+- The sound button now carries a count of everything you have changed — effects, parts left out, a set EQ — so a vocal you dropped two songs ago is not a silent surprise
+
 ## 0.3.236
 
 - The pictures on the genre tiles were sitting small in the middle of them; they fill the tile properly now. A genre shown next to a search result had lost its picture entirely, as had the top genre on your stats
