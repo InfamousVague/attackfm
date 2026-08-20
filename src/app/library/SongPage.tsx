@@ -11,8 +11,8 @@ import { fetchHome, trackIdFromPath } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
 import { formatTotal } from '../ux/format.ts';
 import { shuffled } from '../ux/shuffle.ts';
-import onRepeatChip from '../../assets/chip-on-repeat.png';
-import likedChip from '../../assets/chip-liked.png';
+import onRepeatChip from '../../assets/chip-on-repeat.webp';
+import likedChip from '../../assets/chip-liked.webp';
 
 /**
  * A whole collection of songs, opened as its own page - the fullscreen answer

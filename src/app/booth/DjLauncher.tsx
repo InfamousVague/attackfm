@@ -24,7 +24,7 @@ import { useNowPlayingMotion } from '../player/nowPlayingMotion.tsx';
 import { fetchDj, trackIdFromPath } from '../server.ts';
 import djBg from '../../assets/art/tex/chip-bg-dj.webp';
 import type { Track } from '../core/tauri.ts';
-import djMascot from '../../assets/dj-mascot.png';
+import djMascot from '../../assets/dj-mascot.webp';
 
 /** How long a line hangs around uninvited. Long enough to read twice; the X
  *  is for everyone who read it once. */
