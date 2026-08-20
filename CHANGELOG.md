@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.213
+
+- A mix wears its music again. The home shelves show the album art of the songs inside — the four-cover mosaic, the same face a playlist wears — instead of a stand-in. The brutalist textures stay as the fallback for a mix too small to fill the square
+
 ## 0.3.212
 
 - The notifications panel reads properly over the new home artwork. It was letting the shelves behind it show through, so "Liked" and "All songs" sat in among the notifications like rows of the list

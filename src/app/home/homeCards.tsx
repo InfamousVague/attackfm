@@ -82,58 +82,33 @@ export function ArtistCard({ name, cover, onOpen }: { name: string; cover: strin
   );
 }
 
-/** A mix's cover: the generated object its name earns (a decade, a mood, a
- *  genre - or the curator's own faces for AI-made lists), else the 2x2
- *  mosaic of its first artworks, glyph fallback. */
+/** A mix's cover: the album art of the songs inside, exactly like a playlist's
+ *  face - the 2x2 mosaic of the first four distinct covers. Only when there is
+ *  no album art to show (fewer than four distinct covers) does the brutalist
+ *  texture stand in, chosen by the mix's own hue so it stays stable. */
 export function MixCover({ tracks, art }: { tracks: Track[]; art?: { src: string; hue: number } | null }) {
-  // A served object that fails to arrive (old server, missing piece) steps
-  // the cover back down to the mosaic rather than leaving a broken image.
-  const [dead, setDead] = useState(false);
-  const object = !dead && art ? art : null;
   const arts = mosaicArts(tracks.map((t) => t.artwork));
-  // Under four covers the glyph stands in, and a glyph never loads - the tile
-  // hook watches exactly the urls the grid below will draw.
-  const { loaded, hostRef } = useTileArt(object || arts.length < 4 ? [] : arts);
-  const served = useArtLoad(object?.src ?? null, '');
-  if (object) {
+  const { loaded, hostRef } = useTileArt(arts.length < 4 ? [] : arts);
+  // Album art from the songs inside wins whenever four distinct covers exist -
+  // the whole point: a mix wears its music, not a generated stand-in.
+  if (arts.length >= 4) {
     return (
-      <div
-        className="mixCardCover mixCardCover--object"
-        aria-hidden
-        style={
-          {
-            '--mixHue': `${object.hue}`,
-            '--objectArt': `url("${object.src}")`,
-            '--cardTex': `url("${cardTexture(object.hue)}")`,
-          } as React.CSSProperties
-        }
-      >
-        <img
-          {...served}
-          src={object.src}
-          alt=""
-          loading="lazy"
-          onError={() => {
-            served.onError();
-            setDead(true);
-          }}
-        />
+      <div ref={hostRef} className="mixCardCover" aria-hidden data-tile-pop="" data-tile-loading={!loaded || undefined}>
+        {arts.map((a, i) => (
+          <img key={i} src={a} alt="" loading="lazy" />
+        ))}
       </div>
     );
   }
-  if (arts.length < 4) {
-    return (
-      <div className="mixCardCover mixCardCover--glyph" aria-hidden>
-        <Sparkles size={28} />
-      </div>
-    );
-  }
+  // Nothing to mosaic: the brutalist texture is the fallback (retiring the old
+  // glyph and the generated object). Keyed on the mix's hue so it never shuffles.
+  const hue = art?.hue ?? artworkHue(tracks[0]?.path ?? 'mix');
   return (
-    <div ref={hostRef} className="mixCardCover" aria-hidden data-tile-pop="" data-tile-loading={!loaded || undefined}>
-      {arts.map((art, i) => (
-        <img key={i} src={art} alt="" loading="lazy" />
-      ))}
-    </div>
+    <div
+      className="mixCardCover mixCardCover--object"
+      aria-hidden
+      style={{ '--cardTex': `url("${cardTexture(hue)}")` } as React.CSSProperties}
+    />
   );
 }
 
