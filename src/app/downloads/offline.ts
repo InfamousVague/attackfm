@@ -16,6 +16,7 @@ import { fxChainOn } from '../player/fxChain.ts';
 import { stemDropParam } from '../player/stemDrop.ts';
 import { trackIdFromPath } from '../server.ts';
 import { isTauri, setOfflineAudioResolver, tauriCall, type Track } from '../core/tauri.ts';
+import { unmarkPinned } from '../cache/cacheStore.ts';
 
 /** Library path -> absolute file path on this device. */
 let held = new Map<string, string>();
@@ -143,6 +144,10 @@ export async function pinTrack(track: Track, url: string): Promise<boolean> {
 export async function unpinTrack(path: string): Promise<void> {
   await tauriCall('offline_unpin', { key: path });
   held.delete(path);
+  // Whatever removed it, the deliberate-keep mark goes with the file. Here
+  // rather than at the call sites so no route can leave one behind: a mark
+  // outliving its song protects nothing and hides a byte from the count.
+  unmarkPinned(path);
   announce();
 }
 

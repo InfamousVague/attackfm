@@ -27,7 +27,7 @@ import { artSized, artUrl, loadCachedIndex, remotePath, streamUrl, trackIdFromPa
 import { heldPath, offlineEntries, offlineSpace, pinTrack, unpinTrack } from '../downloads/offline.ts';
 import { pickSource } from '../servers/mirrors.ts';
 import { isTauri, type Track } from '../core/tauri.ts';
-import { DENY_KEY, cacheLimitBytes, deniedKeys, notifyCacheChange, readLedger, writeLedger } from './cacheStore.ts';
+import { DENY_KEY, cacheLimitBytes, deniedKeys, notifyCacheChange, pinnedKeys, readLedger, writeLedger } from './cacheStore.ts';
 import { rankHotness } from './cacheHotness.ts';
 import { persistManifest, setManifest, setManifestState, writeReport } from './cacheManifest.ts';
 
@@ -169,7 +169,29 @@ export async function sweepCache(
     if (!diskKeys.has(key)) delete ledger[key];
   }
 
-  const pinnedBytes = onDisk.filter((e) => !(e.key in ledger)).reduce((n, e) => n + e.bytes, 0);
+  /*
+   * ADOPT what nobody claims.
+   *
+   * Reconciling used to run one way: forget ledger entries whose file is gone.
+   * The other direction was left undone, and it is the one that bites - a file
+   * on disk that the ledger does not know about was silently treated as the
+   * listener's own, because "kept by hand" was defined as "not ours" rather
+   * than recorded. The ledger is localStorage and the files are disk, so one
+   * cleared webview store re-labels the entire cache and, since the planner
+   * only evicts what the ledger owns, stops it evicting anything ever again.
+   *
+   * Now the pins are recorded, so absence is answerable: not ours AND not
+   * pinned means ours with the record lost. Take it back. The cache resumes
+   * managing it, the pane stops reporting gigabytes nobody chose, and the
+   * worst case - a genuine pin whose mark was lost along with the ledger -
+   * costs a tap to re-pin, against a cache that otherwise wedges for good.
+   */
+  const pins = pinnedKeys();
+  for (const e of onDisk) {
+    if (!(e.key in ledger) && !pins.has(e.key)) ledger[e.key] = Date.now();
+  }
+
+  const pinnedBytes = onDisk.filter((e) => pins.has(e.key)).reduce((n, e) => n + e.bytes, 0);
   const bytesOf = new Map(onDisk.map((e) => [e.key, e.bytes] as const));
 
   // Turned off: give back everything this cache owns, and nothing else.
@@ -400,16 +422,18 @@ export async function sweepCache(
     bytes: ours.reduce((n, e) => n + e.bytes, 0),
     downloaded,
     evicted,
-    pinnedBytes: after.filter((e) => !(e.key in readLedger())).reduce((n, e) => n + e.bytes, 0),
+    pinnedBytes: after.filter((e) => pinnedKeys().has(e.key)).reduce((n, e) => n + e.bytes, 0),
   };
 }
 
 /** What the cache is holding right now, without changing anything. */
 export async function cacheUsage(): Promise<{ bytes: number; count: number; pinnedBytes: number; pinnedCount: number }> {
   const entries = await offlineEntries();
-  const ledger = readLedger();
-  const ours = entries.filter((e) => e.key in ledger);
-  const pins = entries.filter((e) => !(e.key in ledger));
+  const marked = pinnedKeys();
+  // Everything not deliberately kept is this cache's, whether or not the
+  // ledger still remembers it - see the adoption note in sweepCache.
+  const ours = entries.filter((e) => !marked.has(e.key));
+  const pins = entries.filter((e) => marked.has(e.key));
   return {
     bytes: ours.reduce((n, e) => n + e.bytes, 0),
     count: ours.length,

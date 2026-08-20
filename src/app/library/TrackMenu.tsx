@@ -15,6 +15,7 @@ import { AddToPlaylistDialog } from '../playlists/AddToPlaylist.tsx';
 import { WrongSongModal } from './WrongSongModal.tsx';
 import { useQueueControls } from '../player/queueControls.tsx';
 import { isHeld, onOfflineChange, pinTrack, unpinTrack } from '../downloads/offline.ts';
+import { markPinned } from '../cache/cacheStore.ts';
 import { useRadioOptional } from '../player/radio.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { streamUrl, trackIdFromPath } from '../server.ts';
@@ -86,7 +87,10 @@ export function TrackMenu({
     if (!session || trackId === null || keeping) return;
     setKeeping(true);
     try {
-      await pinTrack(track, streamUrl(session, trackId));
+      // Recorded as a deliberate keep, which is the whole difference between
+      // this and the same file arriving from a sweep. Only on success: a mark
+      // for a download that failed would protect a song that is not there.
+      if (await pinTrack(track, streamUrl(session, trackId))) markPinned(track.path);
     } finally {
       setKeeping(false);
     }
