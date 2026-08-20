@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.223
+
+- The four cards at the top of your library wear their objects again, each on a gradient in its own colour, with the object tinted to match — the valve, the record stack, the loop and the DJ read as one set now rather than four separate photographs
+
 ## 0.3.222
 
 - The four cards at the top of your library — Liked, All songs, On repeat and DJ — trade their photographed objects for a cleaner look: a soft pastel in each card's own colour, with a big plain icon to match. A heart, a list, the repeat arrows, a record
