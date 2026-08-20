@@ -40,7 +40,7 @@ import { MobileSettings } from './MobileSettings.tsx';
 import {
   accentLabel,
   MOBILE_QUERY,
-  useHasTwoColumnRoom,
+  useSettingsIsModal,
   paneMatches,
   THEME_COPY,
   type SettingsSection,
@@ -311,17 +311,28 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
     ),
   }));
 
-  // On touch the rail-beside-a-pane collapses to a drill-in: a full-screen list
-  // of sections that pushes into the chosen pane, a back arrow returning to it.
-  //
-  // And now also whenever the modal has too little ROOM for two columns, which
-  // is a different question from how wide the screen is - see useSettingsRoom.
-  // A pointer user with the player docked lands here too, and should: one
-  // readable column beats two clipped ones, and the two surfaces wear the same
-  // rows now, so crossing between them is not a change of language.
+  /*
+   * Full screen is what settings normally is now.
+   *
+   * It was a floating modal on any pointer device and a full-screen sheet on
+   * touch, which made the desktop the odd one out for no reason anybody using
+   * it would name: settings is a place you go, not something you glance at over
+   * the page, and the page behind it was doing nothing but showing through.
+   *
+   * The modal survives for ONE case - Now Playing docked as the right pane,
+   * where going full screen would cover the player it is standing beside - and
+   * even then only while the app's half is wide enough to hold a rail beside a
+   * pane. Squeezed below that, one readable column wins even at the cost of
+   * covering the player, which is the case that started this.
+   *
+   * MOBILE_QUERY is still consulted, though nothing docks on a phone and it
+   * should never be the deciding vote. It stays because a coarse pointer on a
+   * small screen wants the sheet whatever the measurement says, and a
+   * measurement that has not landed yet should not flash a modal at a phone.
+   */
   const mobile = useMediaQuery(MOBILE_QUERY);
-  const roomForTwo = useHasTwoColumnRoom(open);
-  if (mobile || !roomForTwo) {
+  const asModal = useSettingsIsModal(open);
+  if (mobile || !asModal) {
     return <MobileSettings open={open} onClose={onClose} sections={sections} initialId={pane ?? null} />;
   }
 
