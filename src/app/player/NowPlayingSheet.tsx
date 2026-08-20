@@ -32,6 +32,7 @@ import {
   formatClock,
   type ArtView,
 } from './deckShared.ts';
+import { soundChangesLabel, useSoundChanges } from './soundChanges.ts';
 import npPlaceholderArt from '../../assets/attack-wave.png';
 import type { Track } from '../core/tauri.ts';
 
@@ -194,6 +195,10 @@ export function NowPlayingSheet({
   onTrackChange?: (track: Track) => void;
   setFiling: (track: Track | null) => void;
 }) {
+  // How far the sound has been moved from the record, for the badge on the
+  // console's button. Read here rather than inside the console because the
+  // whole point is that it shows while the console is SHUT.
+  const changes = useSoundChanges();
   // Subscribed HERE rather than handed down - same reasoning as the strip:
   // whichever component calls useBeat re-renders per animation frame, and it
   // should be the surface drawing the pulse, not the whole deck core.
@@ -546,9 +551,26 @@ export function NowPlayingSheet({
           placement="top"
           aria-label="Equalizer"
           className="eqPopoverPanel"
+          /* The badge is the only thing outside the console that says the sound
+             has been moved. Everything the rooms count is behind this one
+             button, so with it shut a dropped vocal or a filter left on
+             yesterday was silent in both senses. */
           trigger={
-            <IconButton variant="ghost" aria-label="Equalizer">
+            <IconButton
+              className="soundTrigger"
+              variant="ghost"
+              aria-label={soundChangesLabel(changes)}
+            >
               <AudioLines size={20} />
+              {changes.total > 0 && (
+                <CounterBadge
+                  className="soundTrigger__badge"
+                  count={changes.total}
+                  max={99}
+                  size="sm"
+                  tone="accent"
+                />
+              )}
             </IconButton>
           }
         >
