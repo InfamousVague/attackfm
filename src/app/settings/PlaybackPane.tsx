@@ -159,10 +159,11 @@ export function PlaybackSettings() {
       </div>
       <div className="prefsSection">
         <Label>Queue</Label>
-        {/* Renamed, not re-scoped: this has always been about shuffle's
-            MANNERS, and "Smart shuffle" now names the third state of the
-            shuffle button itself - two different things could not keep one
-            label. */}
+        {/* Shuffle's MANNERS, which is all this has ever been - the field is
+            called smartShuffle for historical reasons and is not the parked
+            "Smart shuffle" mode, which was the shuffle button's third state.
+            This one stays: it costs nothing, needs no server, and turning it
+            off is a worse shuffle rather than a missing feature. */}
         <Switch
           label="Shuffle manners"
           checked={pb.smartShuffle}
@@ -170,8 +171,7 @@ export function PlaybackSettings() {
         />
         <Text tone="muted" size="sm">
           Shuffle avoids playing the same artist twice in a row, and steers around songs it just
-          played. Smart shuffle — the sparkled shuffle button — also mixes in songs the DJ thinks
-          belong in what you are playing.
+          played.
         </Text>
         <Switch
           label="Auto DJ"

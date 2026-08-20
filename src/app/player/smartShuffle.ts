@@ -5,6 +5,18 @@ import { request } from '../api/http.ts';
 /**
  * Smart shuffle: the queue keeps going, and the library keeps offering.
  *
+ * PARKED. Matt asked for this out of the app for now, so nothing imports this
+ * module - it is kept whole rather than deleted because the reason was "for
+ * now" and the work here is the part that would be tedious to rebuild: the
+ * fetch-once-per-queue pool, the one-in-four spend, and the degrade-to-plain
+ * paths for no session, no server, an old server and a short queue.
+ *
+ * To bring it back: restore the `smart` state and the cycle's third step in
+ * player/Player.tsx (the note there says where), re-add the prime/clear effect
+ * on queue change, and put the enhancer spend back in pickNext. The badge that
+ * marked the mode lived in styles/09-summoned-search.css and is described in
+ * the comment that replaced it.
+ *
  * Ordinary shuffle can only ever return songs already in front of you, so a
  * list you have heard through stays a list you have heard through. Smart
  * shuffle asks the server what ELSE belongs in this queue - the same taste
