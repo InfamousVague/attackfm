@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.245
+
+- Settings opens as a full screen now rather than a panel floating over the page — except when the player is docked beside it, where it stays a panel so the player is not covered
+
 ## 0.3.244
 
 - Smart shuffle is gone for now. The shuffle button is off and on again, and shuffle still avoids the same artist twice running and steers around what it just played
