@@ -1,79 +1,62 @@
 /* --- the card styles you can pick ----------------------------------------- */
 
 /*
- * Five alternative dressings for the four library doors, plus the shipped one
- * (Duotone halftone) which is simply the absence of all of these.
+ * Three dressings for the four library doors: Numbers first (the shipped
+ * default), Blurred real art, and Chrome.
  *
  * Ported from the card lab (chapter 60), which holds thirty-six directions on
- * its own markup. Two of these six only re-treat the object and so wear the
- * card's existing bones - a picture, a name, a count and two pseudo-elements:
- * Duotone (the shipped look) and Risograph. The other three needed the real
- * card to grow a bone the lab drew for free - Numbers first wants the count on
- * its own and large, Real covers wants a grid of the collection's own sleeves,
- * and Midnight is a second halftone. Those bones now live in the card's markup
- * (`.libChip__stat`, `.libChip__mosaic`), always present and hidden until the
- * style that uses them is chosen.
+ * its own markup. All three lean on a bone the plain card does not have - the
+ * count on its own (`.libChip__stat`) or a grid of the collection's own sleeves
+ * (`.libChip__mosaic`) - so, unlike the old printed default, NONE of them is
+ * "no attribute". Every door always carries a `data-card-style`, Numbers first
+ * included; there is no plain `.libChip` state left to fall back to, and the
+ * base printed halftone in chapter 14 is now only what shows for the instant
+ * before this file and the applied attribute take over.
  *
- * Three things about the shipped card decide the shape of everything below.
+ * Two things about the base card still decide the shape of what is below.
  *
- * The ground is `!important` (14-discover-heroes-and-sets-b), because it has
- * to beat the per-chip gradients in files imported after it. An important
+ * The ground is `!important` (14-discover-heroes-and-sets-b), because it has to
+ * beat the per-chip gradients in files imported after it. An important
  * declaration is only ever beaten by another important one, so every ground
- * here carries the flag too - not as emphasis, but as the only way into the
- * comparison at all.
- *
- * The two pseudo-elements are load-bearing. ::before is the dot screen and
- * ::after is the label's ground, and both are drawn in the card's own hue - so
- * a style that says "this card is black" has to turn them off or re-purpose
- * them, or it prints a coloured halftone over its own idea. Each style below
- * either overrides both (Midnight, Riso), overrides one (Mosaic keeps ::after
- * as its wash, Chrome keeps ::before as its sweep), or turns them off (Numbers
- * first). The offs are collected once at the foot of the styles.
+ * here carries the flag too.
  *
  * The object's tint is held in `--chipTint` rather than in `filter`, and these
  * styles set the PROPERTY, never the filter. The reason is the note in
- * 26-the-dj: `filter` does not merge, so the DJ and On repeat chips restate
- * the whole chain to add their drop-shadow. Setting `filter` here would win
- * over both and take their shadows with it; setting the property they are
- * built from re-tints all four and leaves the two with shadows still shadowed.
+ * 26-the-dj: `filter` does not merge, so the DJ and On repeat chips restate the
+ * whole chain to add their drop-shadow. Setting `filter` here would win over
+ * both and take their shadows with it; setting the property they are built from
+ * re-tints all four and leaves the two with shadows still shadowed.
  */
 
 /*
  * Why every rule below has two selectors.
  *
  * The choice lives on the document element, so `:root[data-card-style]` is the
- * real one. But the picker has to show all six AT ONCE, and a preview card is
+ * real one. But the picker has to show all three AT ONCE, and a preview card is
  * a descendant of that same root - so with only the root selector, whichever
- * style is currently chosen would paint itself over all six previews and the
+ * style is currently chosen would paint itself over all three previews and the
  * one you were about to pick would be the one you could not see.
  *
  * So the root branch stops at the picker's edge and the picker carries its own
- * attribute. Inside `.cardPick` exactly one branch can match, which is what
- * makes the default previewable at all: "no attribute" means the plain shipped
- * rules show through, with nothing here restating them.
- *
- * `:not(.cardPick *)` costs one class of specificity, putting the root branch
- * at 0-4-0 and the picker branch at 0-3-0. Both clear the heaviest shipped
- * rule (`:root[data-theme='light'] .libChip`, 0-3-0), and this chapter is
- * imported last, so the tie the picker branch makes with it resolves here.
+ * attribute. `:not(.cardPick *)` costs one class of specificity, putting the
+ * root branch at 0-4-0 and the picker branch at 0-3-0. Both clear the heaviest
+ * shipped rule (`:root[data-theme='light'] .libChip`, 0-3-0), and this chapter
+ * is imported last, so the tie the picker branch makes with it resolves here.
  */
 
 /* ---- The two extra bones, hidden until their style asks for them ---------- */
-/* Duotone (default) and the object-only styles never touch these; the three
-   that do turn them on in their own block. Rendered on every door at all times
-   so switching style stays a change of stylesheet - the mosaic's images are the
-   one thing that mount lazily, gated in LibChipFace, because nine covers a door
-   is not free. */
+/* Rendered on every door at all times so switching style stays a change of
+   stylesheet - the mosaic's images are the one thing that mount lazily, gated
+   in LibChipFace, because nine covers a door is not free. */
 .libChip__mosaic,
 .libChip__stat {
   display: none;
 }
 .libChip__hole {
   background: hsl(var(--libChipHue, 280) 24% 21%);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.07);
 }
 
-/* ---- Numbers first: the count is the card, the object a watermark --------- */
+/* ---- Numbers first (default): the count is the card ---------------------- */
 :root[data-card-style='stat'] .libChip:not(.cardPick *),
 .cardPick[data-card-style='stat'] .libChip {
   background: linear-gradient(
@@ -117,11 +100,14 @@
   opacity: 0.16;
 }
 
-/* ---- Real covers: the face is the collection itself ---------------------- */
+/* ---- Blurred real art: the collection's sleeves, softened to a field ----- */
 :root[data-card-style='mosaic'] .libChip:not(.cardPick *),
 .cardPick[data-card-style='mosaic'] .libChip {
   background: #101014 !important;
 }
+/* gap:0 and the blur below turn nine sharp squares into one continuous wash of
+   the library's real colours; the slight scale pushes the blur's soft edges
+   past the card so the corners stay filled rather than fading to the ground. */
 :root[data-card-style='mosaic'] .libChip__mosaic:not(.cardPick *),
 .cardPick[data-card-style='mosaic'] .libChip__mosaic {
   display: grid;
@@ -130,9 +116,10 @@
   z-index: 1;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
-  gap: 1px;
+  gap: 0;
   border-radius: inherit;
-  overflow: hidden;
+  transform: scale(1.14);
+  transform-origin: center;
 }
 :root[data-card-style='mosaic'] .libChip__mosaic img:not(.cardPick *),
 :root[data-card-style='mosaic'] .libChip__hole:not(.cardPick *),
@@ -142,185 +129,97 @@
   inline-size: 100%;
   block-size: 100%;
   object-fit: cover;
+  filter: blur(14px) saturate(1.35) brightness(0.92);
 }
 :root[data-card-style='mosaic'] .libChip__art:not(.cardPick *),
 .cardPick[data-card-style='mosaic'] .libChip__art {
   display: none;
 }
 /* The label's ground, taken over from the shipped ::after: a dark wash from the
-   foot so the name reads over whatever sleeves land under it. */
+   foot so the name reads over whatever colours land under it. */
 :root[data-card-style='mosaic'] .libChip:not(.cardPick *)::after,
 .cardPick[data-card-style='mosaic'] .libChip::after {
   inset: 0;
   z-index: 2;
   background: linear-gradient(
     to top,
-    hsl(var(--libChipHue, 280) 45% 8% / 0.95) 12%,
-    hsl(var(--libChipHue, 280) 45% 8% / 0.35) 55%,
+    hsl(var(--libChipHue, 280) 45% 8% / 0.9) 10%,
+    hsl(var(--libChipHue, 280) 45% 8% / 0.3) 55%,
     transparent
   );
 }
 
-/* ---- Midnight halftone: the shipped screen, printed hot on black --------- */
-:root[data-card-style='midnight'] .libChip:not(.cardPick *),
-.cardPick[data-card-style='midnight'] .libChip {
-  background: #08080b !important;
-  border: 1px solid hsl(var(--libChipHue, 280) 90% 50% / 0.32);
-}
-:root[data-card-style='midnight'] .libChip__art:not(.cardPick *),
-.cardPick[data-card-style='midnight'] .libChip__art {
-  --chipTint: grayscale(1) contrast(1.5) brightness(1.15) sepia(1)
-    hue-rotate(calc((var(--libChipHue, 280) - 40) * 1deg)) saturate(7);
-  mix-blend-mode: screen;
-  opacity: 1;
-}
-/* The same 5px screen as the shipped card, dots in the card's own black so the
-   lit ink is eaten in a regular grid rather than knocked out in white. */
-:root[data-card-style='midnight'] .libChip:not(.cardPick *)::before,
-.cardPick[data-card-style='midnight'] .libChip::before {
-  opacity: 0.8;
-  background-image: radial-gradient(#08080b 37%, transparent 39%);
-  background-size: 5px 5px;
-}
-:root[data-card-style='midnight'] .libChip:not(.cardPick *)::after,
-.cardPick[data-card-style='midnight'] .libChip::after {
-  inset-block-start: 42%;
-  background: linear-gradient(to top, #08080b 20%, rgb(8 8 11 / 0.6) 58%, transparent);
-}
-:root[data-card-style='midnight'] .libChip__count:not(.cardPick *),
-.cardPick[data-card-style='midnight'] .libChip__count {
-  color: hsl(var(--libChipHue, 280) 92% 72%);
-  opacity: 1;
-}
-
-/* ---- Risograph: two inks, printed a few points out of register ----------- */
-:root[data-card-style='riso'] .libChip:not(.cardPick *),
-.cardPick[data-card-style='riso'] .libChip {
-  background: #efe9dc !important;
-}
-:root[data-card-style='riso'] .libChip__art:not(.cardPick *),
-.cardPick[data-card-style='riso'] .libChip__art {
-  --chipTint: grayscale(1) contrast(1.7) brightness(0.95) sepia(1)
-    hue-rotate(calc((var(--libChipHue, 280) - 40) * 1deg)) saturate(4.2);
-  mix-blend-mode: multiply;
-  opacity: 0.88;
-  z-index: 2;
-}
-/*
- * The ghost, on ::before (which the shipped card spends on the dot screen).
- *
- * The same object printed again, offset a few pixels in the partner ink and
- * under the true one. It leans on `--art`, the object's own URL, which the four
- * doors now set alongside their hue - the misregistration is the whole look, so
- * there is nothing to draw it from but the picture itself.
- */
-:root[data-card-style='riso'] .libChip:not(.cardPick *)::before,
-.cardPick[data-card-style='riso'] .libChip::before {
-  inset-block: 0;
-  inset-inline-start: auto;
-  inset-inline-end: -8%;
-  inline-size: 74%;
-  z-index: 1;
-  opacity: 0.55;
-  transform: translate(-5px, 4px);
-  background-image: var(--art);
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: contain;
-  filter: grayscale(1) contrast(1.7) sepia(1)
-    hue-rotate(calc((var(--libChipHue, 280) + 40) * 1deg)) saturate(4);
-  mix-blend-mode: multiply;
-}
-/* Paper tooth over the whole card, on ::after - riso's type is dark on cream
-   and wants no label ground, so ::after is free to carry the grain. */
-:root[data-card-style='riso'] .libChip:not(.cardPick *)::after,
-.cardPick[data-card-style='riso'] .libChip::after {
-  inset: 0;
-  inset-block-start: 0;
-  z-index: 3;
-  opacity: 0.5;
-  mix-blend-mode: multiply;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url%28%23g%29' opacity='0.55'/%3E%3C/svg%3E");
-}
-:root[data-card-style='riso'] .libChip__name:not(.cardPick *),
-.cardPick[data-card-style='riso'] .libChip__name {
-  z-index: 4;
-  color: #1a1a1d;
-  font-weight: 800;
-  text-shadow: none;
-}
-:root[data-card-style='riso'] .libChip__count:not(.cardPick *),
-.cardPick[data-card-style='riso'] .libChip__count {
-  z-index: 4;
-  color: #1a1a1d;
-  opacity: 0.66;
-  text-shadow: none;
-}
-
-/* ---- Chrome dark: gunmetal with one lit edge and a slow sweep ------------- */
-:root[data-card-style='chromeDark'] .libChip:not(.cardPick *),
-.cardPick[data-card-style='chromeDark'] .libChip {
+/* ---- Chrome: anodised metal that takes each card's colour ---------------- */
+:root[data-card-style='chrome'] .libChip:not(.cardPick *),
+.cardPick[data-card-style='chrome'] .libChip {
   background:
-    repeating-linear-gradient(96deg, rgb(255 255 255 / 0.03) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(98deg, rgb(255 255 255 / 0.05) 0 1px, transparent 1px 3px),
     linear-gradient(
-      102deg,
-      #16181c,
-      #34383f 21%,
-      #1a1c21 37%,
-      #4b515a 52%,
-      #1f2228 67%,
-      #393e46 81%,
-      #121417
+      100deg,
+      hsl(var(--libChipHue, 280) 32% 17%),
+      hsl(var(--libChipHue, 280) 48% 56%) 18%,
+      hsl(var(--libChipHue, 280) 34% 25%) 31%,
+      hsl(var(--libChipHue2, calc(var(--libChipHue, 280) + 42)) 52% 70%) 47%,
+      hsl(var(--libChipHue, 280) 38% 28%) 61%,
+      hsl(var(--libChipHue2, calc(var(--libChipHue, 280) + 42)) 46% 58%) 78%,
+      hsl(var(--libChipHue, 280) 30% 18%)
     ) !important;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.26);
+  border: 1px solid hsl(var(--libChipHue, 280) 40% 62% / 0.35);
 }
-:root[data-card-style='chromeDark'] .libChip__art:not(.cardPick *),
-.cardPick[data-card-style='chromeDark'] .libChip__art {
-  --chipTint: grayscale(1) contrast(1.4) brightness(1.1)
-    drop-shadow(0 2px 4px rgb(0 0 0 / 0.65));
+:root[data-card-style='chrome'] .libChip__art:not(.cardPick *),
+.cardPick[data-card-style='chrome'] .libChip__art {
+  /* A LITTLE of the metal's colour, not a tint: too much and the object stops
+     sitting ON the plate and becomes part of it. */
+  --chipTint: grayscale(1) contrast(1.3) brightness(1.28) sepia(0.45)
+    hue-rotate(calc((var(--libChipHue, 280) - 40) * 1deg)) saturate(1.6)
+    drop-shadow(0 2px 3px rgb(0 0 0 / 0.5));
   mix-blend-mode: normal;
 }
 /* The specular band, on ::before - one bright diagonal across the plate. */
-:root[data-card-style='chromeDark'] .libChip:not(.cardPick *)::before,
-.cardPick[data-card-style='chromeDark'] .libChip::before {
+:root[data-card-style='chrome'] .libChip:not(.cardPick *)::before,
+.cardPick[data-card-style='chrome'] .libChip::before {
   opacity: 1;
-  background: linear-gradient(104deg, transparent 42%, rgb(255 255 255 / 0.11) 50%, transparent 58%);
+  background: linear-gradient(104deg, transparent 36%, rgb(255 255 255 / 0.3) 50%, transparent 64%);
 }
-:root[data-card-style='chromeDark'] .libChip__name:not(.cardPick *),
-.cardPick[data-card-style='chromeDark'] .libChip__name {
-  color: #eef1f6;
+:root[data-card-style='chrome'] .libChip__name:not(.cardPick *),
+.cardPick[data-card-style='chrome'] .libChip__name {
+  color: #fff;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
+}
+:root[data-card-style='chrome'] .libChip__count:not(.cardPick *),
+.cardPick[data-card-style='chrome'] .libChip__count {
+  color: #f2f5fa;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.55);
 }
 
 /*
  * The pseudo-elements the styles above do not use.
  *
- * Numbers first is a plain gradient with no screen and no label ground; Real
- * covers draws its own ground on ::after but wants no dot screen over the
- * sleeves; Chrome carries its sweep on ::before but wants no coloured ground
- * under its type. The rest (Midnight, Riso) re-purpose both and so are absent
- * here. Duotone - the default, no attribute - keeps both.
+ * Numbers first is a plain gradient with no screen and no label ground; Blurred
+ * real art draws its own ground on ::after but wants no dot screen over the
+ * field; Chrome carries its sweep on ::before but wants no coloured ground
+ * under its type.
  */
 :root[data-card-style='stat'] .libChip:not(.cardPick *)::before,
 :root[data-card-style='mosaic'] .libChip:not(.cardPick *)::before,
 :root[data-card-style='stat'] .libChip:not(.cardPick *)::after,
-:root[data-card-style='chromeDark'] .libChip:not(.cardPick *)::after,
+:root[data-card-style='chrome'] .libChip:not(.cardPick *)::after,
 .cardPick[data-card-style='stat'] .libChip::before,
 .cardPick[data-card-style='mosaic'] .libChip::before,
 .cardPick[data-card-style='stat'] .libChip::after,
-.cardPick[data-card-style='chromeDark'] .libChip::after {
+.cardPick[data-card-style='chrome'] .libChip::after {
   display: none;
 }
 
 /* ---- The picker ---------------------------------------------------------- */
 
 /*
- * Six real cards, each wearing one of the styles, in the settings pane.
+ * Three real cards, each wearing one of the styles, in the settings pane.
  *
  * Real cards rather than drawn swatches, because the whole difficulty of
- * choosing between these is that they are the same four objects treated six
- * ways - a swatch of the GROUND would make several of them near enough the
- * same dark rectangle, when what separates them is entirely what happens to
- * the object sitting on it.
+ * choosing between these is that they are the same four objects treated three
+ * ways - a swatch of the GROUND alone would not tell you what happens to the
+ * object sitting on it.
  */
 .cardPicks {
   display: grid;

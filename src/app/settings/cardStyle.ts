@@ -5,54 +5,39 @@ import { useSyncExternalStore } from 'react';
  *
  * The card lab (seven presses on the wordmark in About) has thirty-six
  * directions in it, which is what a workshop is for: they exist to be compared
- * and argued over, most of them once. These six are the ones the app ships -
- * the set Matt picked out of the lab. Four of them (Numbers first, Real covers,
- * Midnight, Chrome) needed the real cards to grow the bones they lean on - a
- * count on its own, a grid of the collection's own sleeves - which is why they
- * lived in the lab until now; the two that only re-treat the object (Duotone,
- * Risograph) always could have shipped.
+ * and argued over, most of them once. These three are the ones the app ships -
+ * the set Matt settled on. All three lean on bones the plain card does not have
+ * - a count on its own, a grid of the collection's own sleeves - so unlike the
+ * old printed default, the shipped look is NOT "no attribute": every one of
+ * these is a real `data-card-style` value with its own stylesheet, and Numbers
+ * first is simply the one applied when nothing has been chosen.
  *
  * Applied as `data-card-style` on the document element, the way the theme is,
  * so the whole set is CSS. Nothing re-renders when it changes; the cards are
  * already on screen and simply put on different clothes.
  */
-export type CardStyle = 'halftone' | 'stat' | 'mosaic' | 'midnight' | 'riso' | 'chromeDark';
+export type CardStyle = 'stat' | 'mosaic' | 'chrome';
 
 export const CARD_STYLES: { id: CardStyle; name: string; note: string }[] = [
   {
-    id: 'halftone',
-    name: 'Duotone halftone',
-    note: 'One flat printed colour with a dot screen knocked out of it, the object screened through in two inks. The look the app ships with.',
-  },
-  {
     id: 'stat',
     name: 'Numbers first',
-    note: 'The count is the card, set large, with the object dropped to a watermark behind it. The doors that are really a number - Liked, All songs - lead with it.',
+    note: 'The count is the card, set large, with the object dropped to a watermark behind it. The doors that are really a number - Liked, All songs - lead with it. The look the app ships with.',
   },
   {
     id: 'mosaic',
-    name: 'Real covers',
-    note: 'The face is made of the sleeves actually in that collection, so it changes as your library does. A thin library shows the gaps - that is the honest state, not a fault.',
+    name: 'Blurred real art',
+    note: 'The collection\'s own sleeves, blurred into a soft field of its real colours rather than laid out sharp. It changes as your library does; a thin library simply shows fewer colours.',
   },
   {
-    id: 'midnight',
-    name: 'Midnight halftone',
-    note: 'The same dot screen printed the other way round: hot ink on near-black instead of dark ink on cream. The objects light up instead of sitting flat.',
-  },
-  {
-    id: 'riso',
-    name: 'Risograph',
-    note: 'Two inks printed slightly out of register on rough paper, the way a risograph misses. The misregistration is the whole look.',
-  },
-  {
-    id: 'chromeDark',
-    name: 'Chrome dark',
-    note: 'Gunmetal, with one lit edge along the top and a slow specular sweep across the plate. Sits quietly next to the rest of the app.',
+    id: 'chrome',
+    name: 'Chrome',
+    note: 'Anodised metal that takes each card\'s own colour - rose for Liked, blue steel for All songs - with a slow specular sweep across the plate.',
   },
 ];
 
 const KEY = 'attackfm-card-style';
-const DEFAULT: CardStyle = 'halftone';
+const DEFAULT: CardStyle = 'stat';
 
 function isStyle(v: unknown): v is CardStyle {
   return typeof v === 'string' && CARD_STYLES.some((s) => s.id === v);
@@ -73,19 +58,18 @@ const listeners = new Set<() => void>();
 /**
  * Put the choice on the document.
  *
- * The default writes NO attribute rather than `data-card-style="halftone"`. The
- * shipped look is what the plain `.libChip` rules already say, so an attribute
- * for it would mean every one of those rules needing a matching selector to
- * stay winning - and the first rule anybody forgot would only break for people
- * who had never opened the setting.
+ * The attribute is ALWAYS written, default included. The old default (Duotone)
+ * was the plain `.libChip` rules, so writing nothing was how it showed; every
+ * shipped style now reskins the card instead, Numbers first among them, so
+ * there is no "plain" state to fall back to - a missing attribute would leave
+ * the base printed halftone showing, which is no longer an option anyone can
+ * pick.
  *
  * Set before React mounts, from the module body, so the cards are never drawn
- * once in the shipped look and then repainted.
+ * once in the base look and then repainted.
  */
 function apply(style: CardStyle): void {
-  const root = document.documentElement;
-  if (style === DEFAULT) root.removeAttribute('data-card-style');
-  else root.setAttribute('data-card-style', style);
+  document.documentElement.setAttribute('data-card-style', style);
 }
 
 apply(current);
