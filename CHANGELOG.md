@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.264
+
+- Playlists, mixes and your song pages now open on a slow-drifting wall of their own album covers, so a list looks like the music in it before you have read a word
+- All songs finally opens on the record stack from its card, the way Liked and On repeat already opened on theirs
+- The bottom bar's buttons have a softer corner, closer to the bar they sit in
+
 ## 0.3.263
 
 - The bottom bar's tabs keep the plate's margin at each end again. The last update took it off along with the dead space it was meant to remove
