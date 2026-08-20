@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.217
+
+- Liked, All songs, On repeat and DJ wear real hi-fi photography now — a lacquer highlight, a machined edge, a lit VU meter, a glowing valve. One picture made for each tile, instead of a texture drawn at random from a shared set
+
 ## 0.3.216
 
 - Recent and New Playlist go back to their plain marks. They were given torn-paper faces last version and read better as the quiet outlines they were — they are buttons, and the artwork beside them belongs to the things you open
