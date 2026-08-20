@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.209
+
+- A bolder look on the way in. The sign-in screen drops the frosted wall of blurred covers for artwork that sits flush on the black, and the DJ gets a new face to match. Same ATTACK mark, same type — just a harder-edged backdrop behind them
+
 ## 0.3.208
 
 - Fixes the Filters and Stems lists losing their styling. The app could end up running one version's code against an older version's stylesheet, and the screens built most recently were the ones with no rules behind them — bare bulleted lists, buttons at their default grey. It now notices the mismatch and puts the right stylesheet back, from the device if it is there and from the update server if it is not
