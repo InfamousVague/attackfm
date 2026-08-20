@@ -238,6 +238,32 @@ html[data-platform='android'] .appWindow {
  * popovers and menus. Only the two moving states below declare one, and
  * neither can be open while one of them holds.
  */
+/*
+ * The player plate wears the nav's corner.
+ *
+ * The kit's floating bar comes with radius-lg, 16px, which is exactly what the
+ * desktop nav plate wears - so on a computer the two already agree and this
+ * rule deliberately does not fire there. The phone's bar is the odd one: its
+ * top corners take radius-2xl, 28px, because down at the screen's edge it is
+ * running concentric with the glass. That left two cards stacked at the bottom
+ * of a phone with visibly different corners, the player's tighter than the nav
+ * an inch below it.
+ *
+ * Measured rather than read off the stylesheets, which is how the numbers
+ * above are known: the kit's radius lives in a hashed module and the nav's is
+ * a four-value shorthand built from a variable, so both only resolve in a real
+ * document.
+ *
+ * Keyed on which nav is on screen rather than on a width, because that is the
+ * same thing the app itself keys on - a narrow desktop window gets the phone's
+ * bar, and should get the phone's corner with it. All four corners, not just
+ * the top two: the player is a free plate with all of them showing, and the
+ * nav's top pair is what the eye actually compares it against.
+ */
+body:has(.appNavBar) .playerBarShell > * {
+  border-radius: var(--glacier-radius-2xl, 1.75rem);
+}
+
 .playerBarShell {
   transition:
     transform var(--player-ease, var(--glacier-duration-normal)) var(--glacier-ease-out),
