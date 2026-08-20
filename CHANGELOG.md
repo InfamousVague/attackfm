@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.232
+
+- On repeat and the DJ did not get the new printed look yesterday even though their neighbours did. They have it now
+
 ## 0.3.231
 
 - Liked, All songs, On repeat and the DJ are printed now: one deep colour with a fine screen of dots lifted out of it in white, and the object glowing through rather than sitting on top
