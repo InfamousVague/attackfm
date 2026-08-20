@@ -3,7 +3,16 @@ import { trackIdFromPath } from '../api/library.ts';
 import { useLibrary } from '../library/library.tsx';
 import { usePlaylists } from '../playlists/playlists.tsx';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
-import { forgetPlan, markFiled, plansSnapshot, subscribePlans, type FilePlan } from './filePlan.ts';
+import {
+  forgetPlan,
+  markFiled,
+  plansSnapshot,
+  reportOutcome,
+  subscribePlans,
+  type FileOutcome,
+  type FilePlan,
+} from './filePlan.ts';
+import { silentLanding } from '../notify/downloadPlan.ts';
 
 /**
  * Files finished downloads where they were asked to go, then says so.
@@ -22,7 +31,7 @@ import { forgetPlan, markFiled, plansSnapshot, subscribePlans, type FilePlan } f
  * stays owed until the two can be joined, and every library change is a fresh
  * chance to join them.
  */
-export function useFilePlan(onArrive: (plan: FilePlan) => void): void {
+export function useFilePlan(onArrive: (plan: FilePlan, outcome: FileOutcome) => void): void {
   const plans = useSyncExternalStore(subscribePlans, plansSnapshot, plansSnapshot);
   const downloads = useDownloadsOptional();
   const { tracks, isFavorite, toggleFavorite } = useLibrary();
@@ -37,6 +46,13 @@ export function useFilePlan(onArrive: (plan: FilePlan) => void): void {
     if (plans.length === 0) return;
     const jobs = downloads?.jobs ?? [];
 
+    /** Drop a plan that cannot be kept, and say so rather than going quiet. */
+    const end = (plan: FilePlan, outcome: FileOutcome) => {
+      forgetPlan(plan.jobId);
+      arrive.current(plan, outcome);
+      reportOutcome(plan, outcome);
+    };
+
     for (const plan of plans) {
       if (plan.filed) continue;
       const job = jobs.find((j) => j.id === plan.jobId);
@@ -44,24 +60,36 @@ export function useFilePlan(onArrive: (plan: FilePlan) => void): void {
       // The job is gone from the list entirely - cancelled, or old enough to
       // have been swept. Nothing is owed and nothing can be recovered.
       if (!job) {
-        forgetPlan(plan.jobId);
+        end(plan, 'unfiled');
         continue;
       }
       if (job.state === 'error') {
         // The song never arrived. Dropping the plan rather than keeping it is
         // the honest choice: a retry makes a NEW job, and this one's promise
         // cannot be kept by it.
-        forgetPlan(plan.jobId);
+        end(plan, 'unfiled');
         continue;
       }
       if (job.state !== 'done') continue;
 
       const ids = job.trackIds ?? [];
       if (ids.length === 0) {
-        // A transport that does not report ids - the local desktop engine, or
-        // an older server. There is nothing to join on, so the song lands in
-        // the library and the plan is dropped rather than waiting forever.
-        forgetPlan(plan.jobId);
+        /*
+         * Two very different things arrive here and they must not be reported
+         * the same way.
+         *
+         * ALREADY YOURS: the importer skips what the library already holds, so
+         * a job for songs you own downloads nothing, indexes nothing, and comes
+         * back with no ids. `silentLanding` is that exact shape - no files, a
+         * skip count - and it is the case a surface most needs told about,
+         * because the alternative is a card still promising a download that
+         * finished before it started.
+         *
+         * NOT INDEXABLE: the local desktop engine and older servers report no
+         * ids at all. Nothing can be joined to a path, so nothing can be filed,
+         * and the honest word for that is not "already yours".
+         */
+        end(plan, silentLanding(job) ? 'already-yours' : 'unfiled');
         continue;
       }
 
@@ -85,7 +113,8 @@ export function useFilePlan(onArrive: (plan: FilePlan) => void): void {
       }
 
       markFiled(plan.jobId);
-      arrive.current(plan);
+      arrive.current(plan, 'filed');
+      reportOutcome(plan, 'filed');
       // One arrival per pass: two songs landing together should not race two
       // navigations, and the next will be picked up on the following change.
       break;

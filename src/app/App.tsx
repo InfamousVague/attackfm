@@ -48,7 +48,7 @@ import { PageRefreshProvider } from './nav/pageRefresh.tsx';
 import { useLibrary } from './library/library.tsx';
 import { AppProviders } from './nav/AppProviders.tsx';
 import { useFilePlan } from './downloads/useFilePlan.ts';
-import type { FilePlan } from './downloads/filePlan.ts';
+import type { FileOutcome, FilePlan } from './downloads/filePlan.ts';
 import wordmark from '../assets/attack-white.png';
 
 // Window chrome only makes sense where there is a window to decorate: a desktop
@@ -101,7 +101,11 @@ function RefreshBridge({ into }: { into: React.MutableRefObject<() => Promise<vo
  * which React answers by rendering nothing at all - a black screen on launch,
  * with the whole app behind it.
  */
-function FilePlanBridge({ onArrive }: { onArrive: (plan: FilePlan) => void }) {
+function FilePlanBridge({
+  onArrive,
+}: {
+  onArrive: (plan: FilePlan, outcome: FileOutcome) => void;
+}) {
   useFilePlan(onArrive);
   return null;
 }
@@ -467,7 +471,11 @@ export function App() {
       <RefreshBridge into={libraryRefresh} />
       {/* Inside the provider, for the reason spelled out on the component. */}
       <FilePlanBridge
-        onArrive={(plan) => {
+        onArrive={(plan, outcome) => {
+          // Only a real filing earns a navigation. Taking somebody to a
+          // playlist the song did not go into is worse than saying nothing -
+          // the surface that ASKED says what happened, off subscribeOutcomes.
+          if (outcome !== 'filed') return;
           if (plan.dest.kind === 'liked') goSongs('liked');
           else goPlaylist(plan.dest.id);
         }}
