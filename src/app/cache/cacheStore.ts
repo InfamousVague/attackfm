@@ -126,6 +126,82 @@ export function setCacheLimitBytes(bytes: number): void {
   for (const fn of listeners) fn();
 }
 
+/* ── Download quality ────────────────────────────────────────────────────────
+   What this device WRITES TO DISK, as a kbps number, where 0 means "the
+   original file, byte for byte".
+
+   Separate from the streaming setting (`attackfm-server-quality`, in the
+   Servers pane) because the two answer different questions. Streaming quality
+   is about the minutes you are listening to right now on whatever connection
+   you are on; this is about what a finite phone disk should be spent on. Wanting
+   lossless through headphones at home and 128k for the eight hundred songs kept
+   for the tube is not a contradiction.
+
+   Device-scoped, deliberately: it is not in prefsSync's SYNCED_KEYS because the
+   thing it manages is one phone's disk, and a laptop with a terabyte has no
+   business inheriting a phone's answer.
+
+   The choices stop at 256 because that is where the encoder does. `-c:a aac` is
+   ffmpeg's native LC encoder; measured against 30s of pink noise it returns
+   ~223kbps for a requested 256, ~225 for 320 and ~227 for 512 - so anything
+   above 256 costs the same bytes as 256 while still being lossy. Offering 320
+   would be selling a number the file does not contain. 96 is the floor rather
+   than the server's 64 because this encoder has no HE-AAC/SBR, and 64k LC
+   stereo is not music. */
+const QUALITY_KEY = 'attackfm-cache-quality';
+
+/** 0 is lossless - the original file. The rest are AAC bitrates in kbps. */
+export const QUALITY_CHOICES = [0, 256, 128, 96] as const;
+
+export function cacheQualityKbps(): number {
+  try {
+    const raw = localStorage.getItem(QUALITY_KEY);
+    if (raw !== null) {
+      const n = Number(raw);
+      // Anything unrecognised degrades to lossless, which is what every
+      // device did before this setting existed.
+      if (QUALITY_CHOICES.includes(n as (typeof QUALITY_CHOICES)[number])) return n;
+    }
+  } catch {
+    // Fall through to lossless.
+  }
+  return 0;
+}
+
+export function setCacheQualityKbps(kbps: number): void {
+  try {
+    localStorage.setItem(QUALITY_KEY, String(kbps));
+  } catch {
+    // Applies for this run regardless.
+  }
+  for (const fn of listeners) fn();
+}
+
+/* The quality the last completed sweep actually downloaded at. Compared against
+   the current setting to know that a change has happened since, which is what
+   makes the one-off fragment clear in cacheSweep possible: a half-finished
+   `.part` from the old quality must not be resumed into a file of the new one. */
+const APPLIED_KEY = 'attackfm-cache-quality-applied';
+
+export function appliedQualityKbps(): number | null {
+  try {
+    const raw = localStorage.getItem(APPLIED_KEY);
+    if (raw === null) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+export function rememberAppliedQuality(kbps: number): void {
+  try {
+    localStorage.setItem(APPLIED_KEY, String(kbps));
+  } catch {
+    // Only costs a redundant fragment clear next sweep.
+  }
+}
+
 const listeners = new Set<() => void>();
 
 export function onCacheChange(fn: () => void): () => void {

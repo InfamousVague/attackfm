@@ -1,4 +1,4 @@
-import { Button, Label, SegmentedBar, Slider, Switch, Text } from '@glacier/react';
+import { Button, Field, Label, SegmentedBar, SegmentedControl, Slider, Switch, Text } from '@glacier/react';
 import { artSized } from '../server.ts';
 import { useCallback, useEffect, useState } from 'react';
 import { useServerSession } from '../servers/serverSession.tsx';
@@ -11,8 +11,11 @@ import {
   resetFailedManifest,
   lastSweep,
   LIMIT_CHOICES,
+  QUALITY_CHOICES,
+  cacheQualityKbps,
   onCacheChange,
   setCacheLimitBytes,
+  setCacheQualityKbps,
   sweepCache,
 } from './autoCache.ts';
 import { offlineSpace, onOfflineChange } from './offline.ts';
@@ -67,6 +70,33 @@ function sinceLabel(at: number): string {
  * fails to protect you is worse than one that admits it cannot, because you
  * would go on believing it worked.
  */
+/**
+ * What this quality actually buys, in hours rather than in kilobits.
+ *
+ * A bitrate means nothing to most people and the size of a disk means little
+ * more, but "about 37 hours" and "about 260 hours" is a choice anybody can make.
+ * Both halves are said: what changes now, and what happens to the songs already
+ * on the phone, because a setting that silently leaves fifteen gigabytes alone
+ * is one somebody will think is broken.
+ *
+ * 929 kbps is a measured FLAC average rather than a guess - it is what 44.1kHz
+ * stereo lossless comes out at across ordinary music. The AAC figures are the
+ * requested rate plus ADTS framing.
+ */
+function qualityHint(kbps: number, limitBytes: number): string {
+  const perHourBytes = ((kbps === 0 ? 929 : kbps * 1.03) * 1000 * 3600) / 8;
+  const hours = limitBytes > 0 ? Math.round(limitBytes / perHourBytes) : 0;
+  const holds = limitBytes > 0 ? ` At this size that is roughly ${hours} hours of music.` : '';
+  if (kbps === 0) {
+    return `The original file, byte for byte — the same bits the server holds.${holds}`;
+  }
+  return (
+    `Re-encoded to ${kbps}k AAC as it downloads, which is a fraction of the size and costs the ` +
+    `server a moment's work per song.${holds} Songs already on this device are brought over a few ` +
+    `dozen at a time as the cache checks in; songs you kept by hand are left as they are.`
+  );
+}
+
 function wifiOnlyText(on: boolean, network: NetworkKind): string {
   if (!on) {
     return 'Automatic downloads use whatever connection is here, mobile data included. Downloads only happen while the app is open.';
@@ -95,6 +125,7 @@ export function StorageOverview() {
   const [report, setReport] = useState(lastSweep);
   const [plan, setPlan] = useState(sweepManifest);
   const [wifiOnly, setWifiOnly] = useState(wifiOnlyDownloads);
+  const [kbps, setKbps] = useState(cacheQualityKbps);
   // What this device is on right now, so the row can say whether the switch is
   // currently holding anything back rather than only what it would do.
   const [network, setNetwork] = useState<NetworkKind>(networkKindNow);
@@ -261,6 +292,26 @@ export function StorageOverview() {
           recently — kept on the phone so they play instantly and without the hub. Liked songs and
           playlists come first; the rest rotates out as it goes cold or as newer songs need the room.
         </Text>
+        {/* Above the budget rather than below it, because this is what decides
+            what a gigabyte holds: at 128k the same slider keeps about seven
+            times the songs. Answering "how good" before "how much" means the
+            number under the slider is already true when you read it. */}
+        <Field label="Download quality" hint={qualityHint(kbps, limit)}>
+          <SegmentedControl
+            aria-label="Download quality"
+            value={String(kbps)}
+            onValueChange={(next: string) => {
+              const n = Number(next);
+              setKbps(n);
+              setCacheQualityKbps(n);
+            }}
+            options={QUALITY_CHOICES.map((q) => ({
+              value: String(q),
+              label: q === 0 ? 'Lossless' : `${q}k`,
+            }))}
+          />
+        </Field>
+
         {/* The slider runs over the curated stops, not raw gigabytes: a linear
             0-100 rail would cram the sizes people actually pick - 2 to 15 GB -
             into its first sixth. One detent per stop, Off at the left edge. */}

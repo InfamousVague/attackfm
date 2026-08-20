@@ -15,10 +15,11 @@ import { AddToPlaylistDialog } from '../playlists/AddToPlaylist.tsx';
 import { WrongSongModal } from './WrongSongModal.tsx';
 import { useQueueControls } from '../player/queueControls.tsx';
 import { isHeld, onOfflineChange, pinTrack, unpinTrack } from '../downloads/offline.ts';
-import { markPinned } from '../cache/cacheStore.ts';
+import { cacheQualityKbps, markPinned } from '../cache/cacheStore.ts';
+import { estimateBytes, extFor, wantedQuality } from '../cache/cacheQuality.ts';
 import { useRadioOptional } from '../player/radio.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
-import { streamUrl, trackIdFromPath } from '../server.ts';
+import { streamUrl, trackIdFromPath, transcodeUrl } from '../server.ts';
 import { isTauri, type Track } from '../core/tauri.ts';
 import { DjTraitSheet } from '../booth/DjTraitSheet.tsx';
 
@@ -87,10 +88,57 @@ export function TrackMenu({
     if (!session || trackId === null || keeping) return;
     setKeeping(true);
     try {
+      // A hand-kept song obeys the download-quality setting like any other.
+      // Both statements are honoured rather than one overruling the other: the
+      // setting says what this device writes to disk, the keep says which song.
+      // What a pin does NOT do is follow a later change to the setting - the
+      // sweep requalifies its own files, but rewriting a song somebody asked
+      // for by name is not the setting's business.
+      const quality = wantedQuality(track, cacheQualityKbps());
+      const url =
+        quality === 0
+          ? streamUrl(session, trackId)
+          : transcodeUrl(session, trackId, quality, 0, null, null, null);
+      /*
+       * Throw away any half-finished fragment before a LOSSLESS pin.
+       *
+       * `offline_pin` names its fragment `<hex>.part` with no quality in it, and
+       * the original-file endpoint honours a Range. So a stalled 128k encode
+       * followed by a lossless keep resumes with `Range: bytes=N-`, gets a 206,
+       * and appends FLAC onto an AAC head. `minBytes` cannot catch it - the
+       * result is LARGER than the estimate, not smaller.
+       *
+       * This matters more here than in the sweep, because a hand pin is the one
+       * copy that never heals itself: `markPinned` puts the key outside the
+       * cache's ownership, and `planCache`, requalify and eviction all skip
+       * anything on disk they do not own. A corrupt pin is served to the player
+       * ahead of the network forever.
+       *
+       * Deliberately NOT gated on the setting having changed, the way the sweep
+       * is. That marker is written per sweep, and a pinned key never appears in
+       * a sweep's plan - so a sweep running after the change would clear the
+       * marker without ever touching this fragment, disarming the guard on
+       * precisely the case it exists for.
+       *
+       * `!isHeld` keeps the rule that a COMPLETE file is never deleted. The cost
+       * is one directory read on a tap somebody made on purpose, and the loss is
+       * resume for hand pins, which the structural fix (the extension in the
+       * fragment's name, in offline.rs) would give back.
+       */
+      if (quality === 0 && !isHeld(track.path)) await unpinTrack(track.path);
       // Recorded as a deliberate keep, which is the whole difference between
       // this and the same file arriving from a sweep. Only on success: a mark
       // for a download that failed would protect a song that is not there.
-      if (await pinTrack(track, streamUrl(session, trackId))) markPinned(track.path);
+      const kept = await pinTrack(track, url, {
+        ext: extFor(track, quality),
+        // Same reasoning as the sweep: a transcode has no length to check, and
+        // the Rust side only refuses a download of exactly zero bytes.
+        minBytes:
+          quality !== 0 && track.duration
+            ? Math.floor(estimateBytes(track, quality, 0) * 0.5)
+            : 0,
+      });
+      if (kept) markPinned(track.path);
     } finally {
       setKeeping(false);
     }
