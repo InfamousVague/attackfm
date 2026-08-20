@@ -256,12 +256,28 @@
   block-size: 140%;
   object-fit: contain;
   mix-blend-mode: screen;
-  /* Barely pushed at all, where the chips are pushed hard. Those objects are
-     neon and chrome with real contrast in them; these are frosted glass lit
-     from inside, already sitting near white, and 1.45/1.7 flattened every one
-     of them into a solid white cut-out with no modelling left. */
-  filter: grayscale(1) brightness(1.02) contrast(1.2) sepia(1)
-    hue-rotate(calc((var(--searchTileHue, 280) - 40) * 1deg)) saturate(2.3);
+  /* DIMMED, not brightened - which is the opposite of what the chips do and the
+     opposite of what it looks like it should do.
+     screen(a, b) = 1 - (1-a)(1-b), so a source anywhere near white lands at
+     white no matter what is underneath it. These objects are frosted glass lit
+     from inside: they arrive near white, so screening them at full strength
+     clipped every one of them to a flat white cut-out AND threw away the tint,
+     because there is nothing left of a hue at value 1. Taking them down to 0.62
+     first is what leaves the card's colour visible through the glass and the
+     modelling intact.
+     Inverting instead does not work, and is worth recording because it is the
+     obvious thing to reach for: it turns the black ground white, and a white
+     ground under screen is a bright rectangle sitting on the tile. */
+  filter: grayscale(1) brightness(0.62) contrast(1.1) sepia(1)
+    hue-rotate(calc((var(--searchTileHue, 280) - 40) * 1deg)) saturate(2.6);
+}
+
+/* The screen eases off where a frosted object is printing through it. At the
+   full 0.5 the dots and the glass were competing for the same soft mid-tones
+   and both lost; the chips keep 0.5 because neon and chrome cut straight
+   through it. */
+.searchGenre[data-cutout]::before {
+  opacity: 0.38;
 }
 
 /* The label's own ground, in the tile's colour rather than in black: black

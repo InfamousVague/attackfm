@@ -165,6 +165,39 @@ const GENRE_ART = new Map<string, string>(
     disco: 'genre-dance',
     country: 'genre-country',
     folk: 'genre-country',
+    americana: 'genre-country',
+    bluegrass: 'genre-country',
+    // The harmonica is as much a blues object as a country one.
+    blues: 'genre-country',
+    // Funk and soul are one shelf, and the tape reel is the soul object.
+    funk: 'genre-rnb',
+    motown: 'genre-rnb',
+    // The violin stands for anything written down.
+    soundtrack: 'genre-classical',
+    soundtracks: 'genre-classical',
+    score: 'genre-classical',
+    opera: 'genre-classical',
+    orchestral: 'genre-classical',
+    // Rooms off the same corridor as the ones already here.
+    grunge: 'genre-rock',
+    emo: 'genre-rock',
+    hardrock: 'genre-rock',
+    postrock: 'genre-rock',
+    psychedelic: 'genre-rock',
+    shoegaze: 'genre-indie',
+    lofi: 'genre-ambient',
+    chillout: 'genre-ambient',
+    trap: 'genre-hiphop',
+    drill: 'genre-hiphop',
+    grime: 'genre-hiphop',
+    dubstep: 'genre-electronic',
+    dnb: 'genre-electronic',
+    drumandbass: 'genre-electronic',
+    drumnbass: 'genre-electronic',
+    drumbass: 'genre-electronic',
+    breakbeat: 'genre-electronic',
+    garage: 'genre-electronic',
+    synthwave: 'genre-electronic',
   }),
 );
 
@@ -212,9 +245,42 @@ export function isCutoutArt(slug: string | null | undefined): boolean {
   return !!slug && CUTOUT_ART.has(slug);
 }
 
-/** The tile a genre wears, or null when no object stands for it yet. */
+/**
+ * The tile a genre wears, or null when no object stands for it yet.
+ *
+ * The whole name first, then its WORDS. Libraries label things compounds -
+ * "Alternative & Indie", "Dance/Electronic", "Pop/Rock", "Country & Folk" - and
+ * matching only the whole string meant every one of those came back with
+ * nothing, on a shelf where its two halves both have an object sitting ready.
+ * The table shows how that was being handled: `hiphoprap`, `rnbsoul`,
+ * `indierock`, `heavymetal` are all whole compounds someone hit and pasted in
+ * one at a time, which fixes the compound in front of you and none of the
+ * others. A compound name is two genres with punctuation between them, and
+ * either half is a true answer.
+ *
+ * mixArtwork already reads mix TITLES this way; this is the same rule finally
+ * applied to the names too.
+ */
 export function genreArtwork(genre: string): string | null {
-  return GENRE_ART.get(genreKey(genre)) ?? null;
+  const whole = GENRE_ART.get(genreKey(genre));
+  if (whole) return whole;
+
+  const words = genre.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+
+  // PAIRS before single words, because several genres are two words that only
+  // mean something joined: "hip hop" and "lo fi" find nothing one word at a
+  // time, and "post rock" would land on rock either way but for the wrong
+  // reason. A pair is the more specific answer wherever both match.
+  for (let i = 0; i < words.length - 1; i += 1) {
+    const art = GENRE_ART.get(genreKey(words[i]! + words[i + 1]!));
+    if (art) return art;
+  }
+
+  for (const word of words) {
+    const art = GENRE_ART.get(genreKey(word));
+    if (art) return art;
+  }
+  return null;
 }
 
 /** The five curator covers, dealt by mix id so one mix keeps one face. */
