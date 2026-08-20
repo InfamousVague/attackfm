@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.221
+
+- The sign-in screen wears a wall of album art again — blurred and drifting behind the form, the same treatment attack.fm has. It had quietly stopped showing months ago
+- Empty pages get new objects: a patch-cable heart where you have liked nothing, a step sequencer for an empty playlist, a tonearm at rest when a search finds nothing, a spindle of blank discs when nothing is downloaded
+
 ## 0.3.220
 
 - The three cards under your week's listening — the streak, the songs, the artists — each take a colour of their own now, with the little icon in the same tone, the way the genres wear their colours on Search
