@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.212
+
+- The notifications panel reads properly over the new home artwork. It was letting the shelves behind it show through, so "Liked" and "All songs" sat in among the notifications like rows of the list
+
 ## 0.3.211
 
 - The home shelves trade their coloured gradient cards for bold brutalist textures — torn paper, halftone and grain in the app's pink and white, a different one per mix so a shelf still reads as varied. The Liked / All songs / On repeat chips lose their gradient too, and the DJ gets a new hand-inked face. Same ATTACK mark and type throughout
