@@ -49,9 +49,20 @@ const ASSETS_URL =
   // house for no reason. Plain files on the marketing domain are neither.
   'https://attack.fm/art';
 
-/** A served asset's URL. Unauthenticated, cacheable, plain JPEG. */
+/**
+ * A served asset's URL. Unauthenticated, cacheable, plain JPEG.
+ *
+ * A slug with a cut-out has TWO files published, and this picks between them.
+ * That is not tidiness - it is the only way to change the art without breaking
+ * the app as it stands on a phone that has not updated yet. An install running
+ * yesterday's bundle multiplies whatever it is given over a gradient, and the
+ * cut-outs are black-ground: multiplied, a black ground turns the whole card
+ * black. It also knows nothing about CUTOUT_ART, so it asks for the plain slug
+ * and keeps getting the white-ground still it was built for. Both files stay
+ * published; neither has to wait for the other.
+ */
 export function artworkUrl(slug: string): string {
-  return `${ASSETS_URL}/${slug}.jpg`;
+  return `${ASSETS_URL}/${slug}${CUTOUT_ART.has(slug) ? '-c' : ''}.jpg`;
 }
 
 /** "Hip-Hop" / "hip hop" / "R&B" → one comparable key. */
@@ -174,7 +185,27 @@ const GENRE_ART = new Map<string, string>(
  * as it does today. Add a slug the day its new picture is published, and that
  * one tile changes.
  */
-const CUTOUT_ART = new Set<string>([]);
+const CUTOUT_ART = new Set<string>([
+  'genre-ambient',
+  'genre-anime',
+  'genre-classical',
+  'genre-country',
+  'genre-dance',
+  'genre-electronic',
+  'genre-hiphop',
+  'genre-indie',
+  'genre-jazz',
+  'genre-jpop',
+  'genre-metal',
+  'genre-pop',
+  'genre-rnb',
+  'genre-rock',
+  'genre-singer-songwriter',
+  'mood-chill',
+  'mood-energy',
+  'mood-focus',
+  'mood-late-night',
+]);
 
 /** Whether a slug's picture is built for the halftone (screened) treatment. */
 export function isCutoutArt(slug: string | null | undefined): boolean {
