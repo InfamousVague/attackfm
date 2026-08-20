@@ -32,7 +32,7 @@ import { useJamOptional } from './jam.tsx';
 import { useSystemBack } from '../nav/systemBack.ts';
 import { usePlayerDismiss } from './playerDismiss.ts';
 import { subscribeDeckHold } from './deckHold.ts';
-import { stemDropFollowsTrack, useStemDrop } from './stemDrop.ts';
+import { stemDropOnTrack, useStemDrop } from './stemDrop.ts';
 import { initDockWave } from './dockWave.ts';
 import { useMediaQuery } from '../ux/useMediaQuery.ts';
 import { REDUCED_MOTION_QUERY } from '../ux/useReducedMotion.ts';
@@ -598,17 +598,6 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
    * turning speed on re-lengths the bar immediately instead of waiting for the
    * reload to report new metadata.
    */
-  /**
-   * Parts taken out belong to the song they were taken out of.
-   *
-   * A drop cannot outlive its track: it only means anything on a song that has
-   * been separated, so carrying it forward would be silently inert across most
-   * of a library and then surprising on the one track where it still applied.
-   */
-  useEffect(() => {
-    stemDropFollowsTrack(track ? trackIdFromPath(track.path) : null);
-  }, [track]);
-
   const rateRef = useRef(1);
   useEffect(() => {
     rateRef.current = chainRate(chain);
@@ -621,7 +610,8 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
    * getting a mechanism of their own. `parts.join` rather than the array, so a
    * re-render that rebuilds an identical list is not a change.
    */
-  const drop = useStemDrop().parts.join(',');
+  const dropState = useStemDrop();
+  const drop = dropState.parts.join(',');
   const rackWas = useRef(rack);
   const chainWas = useRef(chain);
   const dropWas = useRef(drop);
@@ -672,6 +662,28 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     return () => window.clearTimeout(recolourTimer.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the rack and chain are the triggers; resumeInPlace is redefined every render
   }, [rack, chain, drop]);
+
+  /*
+   * The drop just started applying to the song already playing.
+   *
+   * A carried drop cannot reach a new song through the coalesced path above:
+   * that one compares VALUES, and the parts did not change - what changed is
+   * that we learned this song has parts to drop. It is also the exact case the
+   * track guard there exists to suppress, since it always arrives moments after
+   * a track change. So it gets its own door, and the revision only ever moves
+   * when the answer is yes and something is actually dropped (see stemDrop.ts),
+   * which is precisely when the URL in the element is now wrong.
+   */
+  const appliedWas = useRef(dropState.revision);
+  useEffect(() => {
+    const before = appliedWas.current;
+    appliedWas.current = dropState.revision;
+    if (before === dropState.revision) return;
+    if (!liveRef.current.track || !isRemotePath(liveRef.current.track.path)) return;
+    resumeCount.current = 0;
+    void resumeInPlace();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resumeInPlace is redefined every render
+  }, [dropState.revision]);
 
   /** Arm the ladder. Idempotent: an episode already running keeps its timer. */
   const noteStall = () => {
@@ -1013,6 +1025,19 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   // repeat-one restarts it, so every spin is logged. Server only - local
   // listening has no account to write history against.
   const { session: playSession, renew: renewSession } = useServerSession();
+
+  /**
+   * Does the drop apply to this song?
+   *
+   * A drop carries from song to song - see stemDrop.ts - so what changes on a
+   * new track is not the drop but whether it APPLIES. This asks, once per song
+   * and only while something is actually dropped; the answer decides whether
+   * the stream URL carries `drop` at all.
+   */
+  useEffect(() => {
+    stemDropOnTrack(playSession, track ? trackIdFromPath(track.path) : null);
+  }, [track, playSession]);
+
 
   /*
    * The enhancer pool follows the queue. Primed on a queue change rather than

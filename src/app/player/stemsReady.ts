@@ -194,6 +194,16 @@ function message(err: unknown): string {
 }
 
 export interface StemsView {
+  /**
+   * The track this view describes.
+   *
+   * Present because a view outlives the song it was about by one render: the
+   * hook's `id` changes the instant the track does, while `state` still holds
+   * the last song's answer until the effect resolves. A reader that acted on
+   * (new id, old state) would file one song's answer under another's - which is
+   * exactly how a song with no parts came to be treated as having them.
+   */
+  for: number | null;
   state: 'idle' | 'checking' | 'making' | 'ready' | 'problem';
   stems: string[];
   progress: StemProgress | null;
@@ -216,6 +226,7 @@ export function useStems(path: string | null, opts: { make?: boolean } = {}): St
   const { session } = useServerSession();
   const id = path ? trackIdFromPath(path) : null;
   const [view, setView] = useState<StemsView>(() => blank());
+  const [settled, setSettled] = useState<number | null>(null);
   const [attempt, setAttempt] = useState(0);
   const wanted = opts.make === true;
 
@@ -225,6 +236,7 @@ export function useStems(path: string | null, opts: { make?: boolean } = {}): St
       return;
     }
     const control = new AbortController();
+    setSettled(null);
     setView({ ...blank(), state: 'checking' });
 
     void ensureStems(session, id, {
@@ -234,6 +246,7 @@ export function useStems(path: string | null, opts: { make?: boolean } = {}): St
         setView((v) => ({ ...v, state: p.phase === 'asking' ? 'checking' : 'making', progress: p })),
     }).then((out) => {
       if (control.signal.aborted) return;
+      setSettled(id);
       if (out.ok) {
         setView({ ...blank(), state: 'ready', stems: out.stems });
       } else if (out.reason === 'aborted') {
@@ -253,9 +266,9 @@ export function useStems(path: string | null, opts: { make?: boolean } = {}): St
     return () => control.abort();
   }, [session, id, wanted, attempt]);
 
-  return { ...view, make: () => setAttempt((n) => n + 1) };
+  return { ...view, for: view.state === 'idle' && id !== settled ? null : settled, make: () => setAttempt((n) => n + 1) };
 }
 
 function blank(): StemsView {
-  return { state: 'idle', stems: [], progress: null, problem: '', noSeparator: false, make: () => {} };
+  return { for: null, state: 'idle', stems: [], progress: null, problem: '', noSeparator: false, make: () => {} };
 }

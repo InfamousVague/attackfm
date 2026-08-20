@@ -4,7 +4,7 @@ import { AudioWaveform, Drum, Guitar, Mic, Piano, Waves } from '@glacier/icons';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { trackIdFromPath } from '../server.ts';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
-import { clearStemDrop, setStemDropped, useStemDrop } from './stemDrop.ts';
+import { clearStemDrop, noteStemsFor, setStemDropped, useStemDrop } from './stemDrop.ts';
 import { useStems } from './stemsReady.ts';
 import { chainRate, useFxChain } from './fxChain.ts';
 import { ENV_HZ, envelopeMeter, loadStemEnvelopes, type StemEnvelopes } from './stemLevels.ts';
@@ -206,6 +206,24 @@ export function StemsRoom() {
     }
   }, [stems.state, stems.progress, stems.stems, stems.problem]);
 
+  /*
+   * Hand what this room learned to the drop store.
+   *
+   * The room has just asked whether this song has parts; the player asks the
+   * same question on every track change while a drop is set. Telling the store
+   * here means separating a song makes the drop apply to it immediately, rather
+   * than on the next visit after a second round trip - and it is the one path
+   * where the answer flips from no to yes while somebody is watching.
+   */
+  useEffect(() => {
+    // Only once the view is about THIS song. On the render where the track
+    // changes, `id` is already the new one and `state` still holds the last
+    // one's answer - recording then files one song's answer under another's.
+    if (id === null || stems.for !== id) return;
+    if (state.kind === 'ready') noteStemsFor(id, true);
+    else if (state.kind === 'none') noteStemsFor(id, false);
+  }, [id, state.kind, stems.for]);
+
   /**
    * A line under each part that moves with the song.
    *
@@ -314,7 +332,7 @@ export function StemsRoom() {
     );
   }
 
-  const dropped = drop.trackId === id ? drop.parts : [];
+  const dropped = drop.parts;
   const available = state.kind === 'ready' ? state.parts : [];
 
   return (
@@ -384,7 +402,7 @@ export function StemsRoom() {
                 playing={audible}
                 duration={duration}
                 position={position}
-                onToggle={(want: boolean) => setStemDropped(id, part, !want)}
+                onToggle={(want: boolean) => setStemDropped(part, !want)}
               />
             ))}
           </ul>
@@ -411,5 +429,5 @@ export function useStemsOut(): number {
   const drop = useStemDrop();
   const { track } = useNowPlayingMotion();
   const id = track ? trackIdFromPath(track.path) : null;
-  return id !== null && drop.trackId === id ? drop.parts.length : 0;
+  return drop.parts.length;
 }
