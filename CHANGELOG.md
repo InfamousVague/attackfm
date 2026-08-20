@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.234
+
+- The new genre pictures were washing out to white; they carry their tile's colour now. Genres with two names in them — Alternative & Indie, Pop/Rock, Country & Folk — were also showing no picture at all when both halves had one
+
 ## 0.3.233
 
 - The genre and mood tiles have their own artwork now — nineteen objects in frosted glass, lit from inside, printing through the dot screen instead of sitting behind it
