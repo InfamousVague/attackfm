@@ -173,23 +173,11 @@ const TWO_COLUMN_FLOOR = 700;
 export interface SettingsRoom {
   /** Pixels of width the modal would actually get. */
   room: number;
-  /**
-   * Whether something else is holding part of the window - which today means
-   * exactly one thing: Now Playing docked as the right-hand pane.
-   *
-   * Read as a MEASUREMENT rather than by asking the player, because the
-   * property that matters here is not "is the sheet mounted" but "would a
-   * full-screen surface cover something". The shell narrowing is that
-   * property, and it is the same fact the split-view CSS keys on
-   * (`body:has(.npScreen[data-docked]) .appWindow`), so the two cannot drift.
-   */
-  shared: boolean;
 }
 
 export function useSettingsRoom(open: boolean): SettingsRoom {
   const [state, setState] = useState<SettingsRoom>(() => ({
     room: typeof window === 'undefined' ? TWO_COLUMN_FLOOR : window.innerWidth,
-    shared: false,
   }));
 
   useEffect(() => {
@@ -201,10 +189,7 @@ export function useSettingsRoom(open: boolean): SettingsRoom {
     const shell = document.querySelector('.appWindow');
     const read = () => {
       const width = shell ? shell.getBoundingClientRect().width : window.innerWidth;
-      // A pixel of slack: the shell is sized in a calc() off a vw unit, so it
-      // lands on fractions, and "narrower than the window" has to mean
-      // meaningfully narrower rather than 0.5px of rounding.
-      setState({ room: width, shared: width < window.innerWidth - 1 });
+      setState({ room: width });
     };
     read();
     // Docking the player resizes the shell without the WINDOW doing anything -
@@ -225,18 +210,28 @@ export function useSettingsRoom(open: boolean): SettingsRoom {
 }
 
 /**
- * Whether settings should be a MODAL rather than a full-screen surface.
+ * Whether settings should stand as a RAIL BESIDE A PANE rather than as a
+ * full-screen list you drill into.
  *
- * Full screen is the normal answer now. The modal survives for exactly one
- * case: Now Playing docked beside the app, where a full-screen sheet would
- * cover the player it is standing next to - and only when the app's half is
- * still wide enough to hold a rail beside a pane. Squeezed below that, one
- * readable column beats two clipped ones even at the cost of covering the
- * player, which is the state that started all of this.
+ * The question is only ever "is there room for two columns", and it used to
+ * ask something else as well: whether the app's shell was SHARED - that is,
+ * whether Now Playing was docked beside it. Two columns needed both.
+ *
+ * Which had it exactly backwards in the case that matters. Sharing the screen
+ * with the player is when there is LESS room, not more, so an unfolded phone
+ * with nothing playing - the widest, emptiest state the app has - fell through
+ * to the phone's drill-in list and gave a thousand points of width to one
+ * column of rows. The dock was never the reason for two columns; it was one
+ * situation in which two columns still happened to fit.
+ *
+ * So: room, and nothing else. A folded phone is under the floor and gets the
+ * list, which is right for a thumb. Squeezed below the floor by a dock, the
+ * same - one readable column beats two clipped ones, which is the trade the
+ * floor exists to make.
  */
 export function useSettingsIsModal(open: boolean): boolean {
-  const { room, shared } = useSettingsRoom(open);
-  return shared && room >= TWO_COLUMN_FLOOR;
+  const { room } = useSettingsRoom(open);
+  return room >= TWO_COLUMN_FLOOR;
 }
 
 /** One entry in the settings rail: an id, its label, its icon, its pane -
