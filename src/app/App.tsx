@@ -48,6 +48,7 @@ import { PageRefreshProvider } from './nav/pageRefresh.tsx';
 import { useLibrary } from './library/library.tsx';
 import { AppProviders } from './nav/AppProviders.tsx';
 import { useFilePlan } from './downloads/useFilePlan.ts';
+import type { FilePlan } from './downloads/filePlan.ts';
 import wordmark from '../assets/attack-white.png';
 
 // Window chrome only makes sense where there is a window to decorate: a desktop
@@ -81,6 +82,27 @@ function RefreshBridge({ into }: { into: React.MutableRefObject<() => Promise<vo
       await rescan();
     };
   }, [rescan, into]);
+  return null;
+}
+
+/**
+ * A song added from Discover, filed where it was asked to go and then shown.
+ *
+ * Mounted beside the nav stack rather than on Discover, because a download
+ * outlives the page that started it - you add something and walk off, and the
+ * import lands with that page long unmounted. Filing the song is half the job;
+ * taking you to the list is the half that needs somewhere to navigate from.
+ *
+ * A BRIDGE rather than a call in App's own body, for the same reason
+ * RefreshBridge and CarPlayBridge are: `useFilePlan` reaches for `useLibrary`,
+ * App is what RENDERS the LibraryProvider, and a hook cannot read a context its
+ * own component provides. Calling it from App threw
+ * "useLibrary must be used within a LibraryProvider" the moment the app booted,
+ * which React answers by rendering nothing at all - a black screen on launch,
+ * with the whole app behind it.
+ */
+function FilePlanBridge({ onArrive }: { onArrive: (plan: FilePlan) => void }) {
+  useFilePlan(onArrive);
   return null;
 }
 
@@ -375,20 +397,6 @@ export function App() {
     closeProfileRoom: () => setProfileRoom(null),
   });
 
-  /*
-   * A song added from Discover, filed where it was asked to go and then shown.
-   *
-   * Mounted HERE, not on Discover, because a download outlives the page that
-   * started it - you add something and walk off, and the import lands with that
-   * page long unmounted. Standing this beside the nav stack is also what lets
-   * it finish the job: filing the song is half of it, and taking you to the
-   * list is the half that needs somewhere to navigate from.
-   */
-  useFilePlan((plan) => {
-    if (plan.dest.kind === 'liked') goSongs('liked');
-    else goPlaylist(plan.dest.id);
-  });
-
   // The one nav stack, lent to the surfaces that cannot be handed it: mix
   // cards live on Discover and in the booth, both rendered beside this stack
   // rather than inside anything holding it. Same channel headerActions uses,
@@ -463,6 +471,13 @@ export function App() {
           ref keeps its inert initial value, and a pull-to-refresh awaits a
           function that does nothing - which is exactly what it was doing. */}
       <RefreshBridge into={libraryRefresh} />
+      {/* Inside the provider, for the reason spelled out on the component. */}
+      <FilePlanBridge
+        onArrive={(plan) => {
+          if (plan.dest.kind === 'liked') goSongs('liked');
+          else goPlaylist(plan.dest.id);
+        }}
+      />
             {/* Every bottom clearance in the app is spent from
                 --app-player-height, and app.css collapses that one variable to
                 0 when no strip is mounted, which gives the lists their rows
