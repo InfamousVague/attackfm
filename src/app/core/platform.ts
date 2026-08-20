@@ -51,6 +51,23 @@ export const isIOS = /iPhone|iPod|iPad/i.test(userAgent()) || (isMobile && /Maci
 /** True on Android, in the app or the browser. */
 export const isAndroid = /Android/i.test(userAgent());
 
+/*
+ * Publish the platform to CSS.
+ *
+ * `html[data-platform='android']` has been sitting in the dock contract
+ * (05-the-dock-contract-a) since it was written, and NOTHING has ever set the
+ * attribute - so the whole Android branch of the nav has never once applied.
+ * A stylesheet cannot sniff a user agent, so this is the only side that can
+ * answer it, and the fact is already computed here.
+ *
+ * From the module body rather than an effect: the chrome is positioned by
+ * these rules on the first paint, and a platform arriving one render later
+ * would move the nav after it was already on screen.
+ */
+if (typeof document !== 'undefined') {
+  document.documentElement.dataset.platform = isAndroid ? 'android' : isIOS ? 'ios' : 'desktop';
+}
+
 /**
  * True only for a real desktop window: something with a frame to decorate and
  * a title bar worth drawing. This is what the window chrome should key on.
