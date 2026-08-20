@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.250
+
+- On a wide screen with the player docked beside your library, drag the player down while nothing is playing and the library takes the whole width back. It returns the moment you play something
+
 ## 0.3.249
 
 - Empty pages show a large icon instead of an illustration — and the app downloads about 2.8MB less on every update, because those pictures travelled inside it
