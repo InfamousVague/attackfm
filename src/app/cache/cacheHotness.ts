@@ -1,7 +1,14 @@
 //! The ranking signal: which songs are most likely to be wanted next, and the
 //! Date-deck hint that the page publishes for the sweep to act on.
 
-import { fetchHome, fetchRemoteFavorites, remotePath, trackIdFromPath, type ServerSession } from '../server.ts';
+import {
+  fetchHome,
+  fetchRemoteFavorites,
+  fetchRemotePlaylists,
+  remotePath,
+  trackIdFromPath,
+  type ServerSession,
+} from '../server.ts';
 
 // --- what is worth holding -------------------------------------------------
 
@@ -106,6 +113,37 @@ export async function rankHotness(session: ServerSession): Promise<Hotness> {
     // IS the difference between "you have no liked songs" and "we could not
     // ask", so it leaves -1 behind rather than nothing.
     liked = -1;
+  }
+
+  // Everything in a playlist, just under liked.
+  //
+  // A playlist is a stated wish in the same way a like is - somebody put that
+  // song there on purpose - so it belongs with the permanent residents rather
+  // than with the guesses. UNDER liked rather than level with it because a like
+  // is about the song and a playlist is often about an occasion; when the budget
+  // runs out, the song you love is the one that should stay.
+  //
+  // Fetched rather than read from the playlists context, because this runs from
+  // the sweep rather than from a component - which also means a phone that has
+  // never opened the playlists page still holds them.
+  //
+  // Deliberately flat: every track in every list scores the same. Ranking lists
+  // against each other would need a signal nobody has stated, and position
+  // within a list says nothing about how much it is wanted.
+  //
+  // Collected into a Set FIRST because bump() accumulates, and being on two
+  // playlists is one signal recorded twice rather than two signals agreeing. Add
+  // it per list and a song on two of them scores 1400, which would put it above
+  // liked and quietly invert the whole order this block just claimed to keep.
+  try {
+    const lists = await fetchRemotePlaylists(session);
+    const listed = new Set<number>();
+    for (const list of lists) {
+      for (const id of list.tracks) listed.add(id);
+    }
+    for (const id of listed) bump(id, 700, 'in a playlist');
+  } catch {
+    // Same as the others: one fewer input, not a failure.
   }
 
   try {

@@ -205,6 +205,17 @@ export function StorageOverview() {
                 ? ` · ${report.skippedUnknown} not in this device's index yet`
                 : ''}
             </Text>
+            {/* Said on its own line rather than left to the note, because the
+                note leads with failures when there are any - and a full budget
+                is exactly the case where nothing failed and songs are missing
+                anyway. Names the remedy: this is the one shortfall on this
+                screen the slider directly below actually fixes. */}
+            {(report.budgetShort ?? 0) > 0 && (
+              <Text size="xs" tone="subtle">
+                {report.budgetShort} more {report.budgetShort === 1 ? 'song is' : 'songs are'} wanted
+                than this much space holds — raise the limit below to keep {report.budgetShort === 1 ? 'it' : 'them'} too.
+              </Text>
+            )}
             {/* The note leads with the commonest failure; when the sweep hit
                 MORE than one kind, the rest are listed so a mirror failing
                 differently from the primary is two lines, not a mystery. */}
@@ -246,9 +257,9 @@ export function StorageOverview() {
       <div className="prefsSection">
         <Label>Automatic downloads</Label>
         <Text size="sm" tone="muted">
-          Liked songs, what you have on repeat, and what you played recently — kept on the phone so
-          they play instantly and without the hub. Songs rotate out as they go cold or as newer ones
-          need the room.
+          Liked songs, everything in your playlists, what you have on repeat, and what you played
+          recently — kept on the phone so they play instantly and without the hub. Liked songs and
+          playlists come first; the rest rotates out as it goes cold or as newer songs need the room.
         </Text>
         {/* The slider runs over the curated stops, not raw gigabytes: a linear
             0-100 rail would cram the sizes people actually pick - 2 to 15 GB -

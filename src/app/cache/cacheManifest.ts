@@ -88,6 +88,16 @@ export interface SweepReport {
   /** Ranked songs this server's index could not name or size, so they were
    *  never candidates - a stale index shows up here rather than nowhere. */
   skippedUnknown: number;
+  /**
+   * Wanted, sizable, and left out anyway because the budget ran out.
+   *
+   * The difference between "your playlists are on your phone" and "as much of
+   * them as fits" - which is otherwise indistinguishable from the outside, since
+   * a budget too small to hold everything just produces a smaller number with no
+   * explanation attached. Zero is the meaningful value: it means the ranked set
+   * fit whole.
+   */
+  budgetShort?: number;
   liked: number;
   limitBytes: number;
 }
