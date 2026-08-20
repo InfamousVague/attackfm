@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.252
+
+- Adding a song from Discover can send it straight to your liked songs or a playlist. It downloads, files itself where you asked, and the app opens that list when it lands
+
 ## 0.3.251
 
 - The Stems tab has levels now, not just on and off. Slide a part — vocals, drums, bass — anywhere between full and gone, so a vocal can sit faint under the rest instead of dropping out entirely
