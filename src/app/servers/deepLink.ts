@@ -68,6 +68,25 @@ export function spotifyWebUrl(url: string): string | null {
   return link;
 }
 
+/**
+ * The link as Spotify's own embed player.
+ *
+ * `open.spotify.com/embed/<kind>/<id>` is a public, CORS-open endpoint (unlike
+ * the full embed PAGE, which the app cannot fetch) that renders the EXACT
+ * record the id names - its real sleeve, its real artist, and a 30-second
+ * preview button - drawn by Spotify. It is how the preview card shows the right
+ * song at all: resolving the link against the server's own search returned
+ * fuzzy, library-biased matches and could show a different record entirely.
+ */
+export function spotifyEmbedUrl(url: string): string | null {
+  const web = spotifyWebUrl(url);
+  if (!web) return null;
+  const m = web.match(
+    /^https:\/\/open\.spotify\.com\/(track|album|artist|playlist)\/([A-Za-z0-9]+)/i,
+  );
+  return m ? `https://open.spotify.com/embed/${m[1]!.toLowerCase()}/${m[2]}` : null;
+}
+
 let pending: string | null = null;
 const subscribers = new Set<(code: string) => void>();
 let pendingLink: string | null = null;

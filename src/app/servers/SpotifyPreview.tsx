@@ -1,9 +1,7 @@
-import { Button, Modal, Spinner, Text } from '@glacier/react';
-import { Check, ExternalLink, Heart, ListPlus, Music } from '@glacier/icons';
+import { Button, Modal, Text } from '@glacier/react';
+import { Check, ExternalLink, Heart, ListPlus } from '@glacier/icons';
 import { useEffect, useState } from 'react';
-import { clearSpotifyLink, onSpotifyLink, spotifyWebUrl } from './deepLink.ts';
-import { searchCatalog, type SearchResult } from '../server.ts';
-import { useServerSession } from './serverSession.tsx';
+import { clearSpotifyLink, onSpotifyLink, spotifyEmbedUrl, spotifyWebUrl } from './deepLink.ts';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import { planFiling, type FileDestination } from '../downloads/filePlan.ts';
 import { ChooseDestination } from '../playlists/ChooseDestination.tsx';
@@ -13,37 +11,34 @@ import { openExternal } from '../core/openExternal.ts';
  * A Spotify link, previewed.
  *
  * The phone can be told to open Spotify links here (see deepLink.ts). Before,
- * that dropped you into Search with the URL typed in - honest, but a search box
- * is a strange thing to land on when you tapped a song. This is the card you
- * meant: the record itself, its art, and the two things you actually came to do
- * - keep it, or file it - without the library in the way.
+ * that dropped you into Search with the URL typed in - a strange place to land
+ * when you tapped a song. This is the card you meant.
  *
- * A record rather than the raw link, because the link is an id and nothing
- * else. The server resolves it against the same catalogue Search uses (it can
- * read Spotify), so what you see is the real title, artist and sleeve - matched
- * on YOUR server, which is also the thing that will download it.
+ * The record itself comes from Spotify, not from us. An earlier version resolved
+ * the link against the SERVER's catalogue search, which returned fuzzy matches
+ * biased toward the library and could show a completely different song. A link
+ * is an id, and an id RESOLVES where a search only guesses - so the preview is
+ * Spotify's own embed player for that id: the exact sleeve, the exact artist,
+ * and a 30-second preview, drawn by Spotify from a public endpoint that needs
+ * no sign-in. `open.spotify.com/embed/<kind>/<id>` frames anywhere by design.
  *
- * The song is not in the library yet, so Like and Add cannot touch a Track:
- * they start the download and RECORD where it should land (planFiling), and
- * useFilePlan files it and walks you there when it arrives - the exact path a
- * song added from Discover takes.
+ * Only the two things you came to do are ours. Like and Add cannot touch a
+ * Track - the song is not downloaded yet - so they hand the ORIGINAL link to
+ * the importer (which resolves the same id to a real download) and record where
+ * it should land (planFiling); useFilePlan files it and walks you there when it
+ * arrives, the exact path a song added from Discover takes.
  *
- * Mounted inside the providers (it needs the session, the downloads bridge and
- * the playlists), and it owns its own open state off the link store, so nothing
- * upstream has to thread it.
+ * Mounted inside the providers (it needs the downloads bridge and the
+ * playlists), and it owns its own open state off the link store.
  */
 
-type Resolved =
-  | { state: 'loading' }
-  | { state: 'ready'; result: SearchResult }
-  | { state: 'empty' }
-  | { state: 'error' };
-
 export function SpotifyPreview() {
-  const { session } = useServerSession();
   const downloads = useDownloadsOptional();
   const [link, setLink] = useState<string | null>(null);
-  const [res, setRes] = useState<Resolved>({ state: 'loading' });
+  // The exact title, from Spotify's oEmbed (CORS-open). Only for naming the
+  // download's toast and the ChooseDestination sheet - the visible record is
+  // the iframe's job. Absent is fine; it falls back to a neutral label.
+  const [title, setTitle] = useState<string | null>(null);
   const [choosing, setChoosing] = useState(false);
   // What the last action filed it into, so the card can say so rather than
   // sitting there as if nothing happened - the download runs unwatched.
@@ -56,170 +51,110 @@ export function SpotifyPreview() {
       onSpotifyLink((url) => {
         setLink(url);
         setFiled(undefined);
+        setTitle(null);
         clearSpotifyLink();
       }),
     [],
   );
 
-  // Resolve the link to a record. Re-runs if the session arrives after the link
-  // (a cold launch straight from the tap can beat the sign-in restore).
+  // The exact name, for the toast. oEmbed is the one Spotify endpoint the app
+  // CAN read cross-origin; the embed page that carries artist and duration is
+  // not, which is why the artist lives in the iframe and not our own markup.
   useEffect(() => {
-    if (!link) return;
-    if (!session) {
-      setRes({ state: 'error' });
-      return;
-    }
-    setRes({ state: 'loading' });
+    const web = link ? spotifyWebUrl(link) : null;
+    if (!web) return;
     const ctrl = new AbortController();
-    searchCatalog(session, link, ctrl.signal)
-      .then((rows) => {
-        const track = rows.find((r) => r.kind === 'track') ?? rows[0];
-        setRes(track ? { state: 'ready', result: track } : { state: 'empty' });
+    fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(web)}`, { signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { title?: string } | null) => {
+        if (d?.title) setTitle(d.title);
       })
       .catch(() => {
-        if (!ctrl.signal.aborted) setRes({ state: 'error' });
+        // No name is a fine outcome - the iframe still shows the record.
       });
     return () => ctrl.abort();
-  }, [link, session]);
+  }, [link]);
 
   const close = () => setLink(null);
 
   /** Start the download and record where it belongs. `null` is "just my
    *  library" - the file lands, unfiled, which is what Add did before plans. */
   const file = (dest: FileDestination | null) => {
-    if (res.state !== 'ready' || !downloads) return;
-    const { result } = res;
-    void Promise.resolve(downloads.enqueue(result.url)).then((job) => {
-      if (dest) planFiling(job.id, dest, result.title);
+    if (!downloads || !link) return;
+    void Promise.resolve(downloads.enqueue(link)).then((job) => {
+      if (dest) planFiling(job.id, dest, title ?? 'This song');
     });
     setFiled(dest);
   };
 
-  const webUrl = link ? spotifyWebUrl(link) : null;
-  const canAdd = res.state === 'ready' && !!downloads;
+  const embed = link ? spotifyEmbedUrl(link) : null;
+  const web = link ? spotifyWebUrl(link) : null;
 
   return (
     <>
       <Modal open={link !== null} onClose={close} title="From Spotify" size="sm">
         <div className="spotPreview">
-          {res.state === 'loading' && (
+          {embed ? (
+            <iframe
+              className="spotPreview__embed"
+              src={embed}
+              title="Spotify preview"
+              loading="lazy"
+              allow="encrypted-media; clipboard-write"
+            />
+          ) : (
             <div className="spotPreview__pending">
-              <Spinner size="sm" aria-label="Looking it up" />
               <Text tone="muted" size="sm">
-                Finding this on your server…
+                This does not look like a track, album or playlist link.
               </Text>
             </div>
           )}
 
-          {res.state === 'error' && (
-            <div className="spotPreview__pending">
-              <Text tone="muted" size="sm">
-                {session
-                  ? 'Could not reach your server to look this up.'
-                  : 'Sign in to your server to preview and add this.'}
+          {filed !== undefined ? (
+            <div className="spotPreview__done">
+              <span className="spotPreview__check" aria-hidden>
+                <Check size={16} />
+              </span>
+              <Text size="sm">
+                {filed === null
+                  ? 'Added to your library — downloading now'
+                  : filed.kind === 'liked'
+                    ? 'Liked — downloading now'
+                    : `Added to ${filed.name} — downloading now`}
               </Text>
-              {webUrl && (
-                <Button variant="ghost" size="sm" onClick={() => void openExternal(webUrl)}>
+            </div>
+          ) : (
+            <div className="spotPreview__actions">
+              <Button variant="solid" fullWidth disabled={!downloads} onClick={() => file({ kind: 'liked' })}>
+                <Heart size={16} />
+                Like
+              </Button>
+              <Button variant="outline" fullWidth disabled={!downloads} onClick={() => setChoosing(true)}>
+                <ListPlus size={16} />
+                Add to playlist
+              </Button>
+              {web && (
+                <Button variant="ghost" size="sm" onClick={() => void openExternal(web)}>
                   <ExternalLink size={15} />
                   Open in Spotify
                 </Button>
               )}
-            </div>
-          )}
-
-          {res.state === 'empty' && (
-            <div className="spotPreview__pending">
-              <Text tone="muted" size="sm">
-                Your server's sources don't have this one.
-              </Text>
-              {webUrl && (
-                <Button variant="ghost" size="sm" onClick={() => void openExternal(webUrl)}>
-                  <ExternalLink size={15} />
-                  Open in Spotify
-                </Button>
+              {!downloads && (
+                <Text tone="muted" size="xs" className="spotPreview__hint">
+                  Sign in to a server that can download to Like or add this.
+                </Text>
               )}
             </div>
-          )}
-
-          {res.state === 'ready' && (
-            <>
-              <div className="spotPreview__head">
-                <div className="spotPreview__art" aria-hidden>
-                  {res.result.cover ? (
-                    <img src={res.result.cover} alt="" loading="lazy" />
-                  ) : (
-                    <Music size={40} />
-                  )}
-                </div>
-                <div className="spotPreview__meta">
-                  <Text weight="bold" className="spotPreview__title">
-                    {res.result.title}
-                  </Text>
-                  <Text tone="muted" size="sm" className="spotPreview__artist">
-                    {res.result.subtitle}
-                  </Text>
-                </div>
-              </div>
-
-              {filed !== undefined ? (
-                <div className="spotPreview__done">
-                  <span className="spotPreview__check" aria-hidden>
-                    <Check size={16} />
-                  </span>
-                  <Text size="sm">
-                    {filed === null
-                      ? 'Added to your library — downloading now'
-                      : filed.kind === 'liked'
-                        ? 'Liked — downloading now'
-                        : `Added to ${filed.name} — downloading now`}
-                  </Text>
-                </div>
-              ) : (
-                <div className="spotPreview__actions">
-                  <Button
-                    variant="solid"
-                    fullWidth
-                    disabled={!canAdd}
-                    onClick={() => file({ kind: 'liked' })}
-                  >
-                    <Heart size={16} />
-                    Like
-                  </Button>
-                  <Button
-                    variant="outline"
-                    fullWidth
-                    disabled={!canAdd}
-                    onClick={() => setChoosing(true)}
-                  >
-                    <ListPlus size={16} />
-                    Add to playlist
-                  </Button>
-                  {webUrl && (
-                    <Button variant="ghost" size="sm" onClick={() => void openExternal(webUrl)}>
-                      <ExternalLink size={15} />
-                      Open in Spotify
-                    </Button>
-                  )}
-                  {!downloads && (
-                    <Text tone="muted" size="xs" className="spotPreview__hint">
-                      Adding needs the music importer and a server that can download.
-                    </Text>
-                  )}
-                </div>
-              )}
-            </>
           )}
         </div>
       </Modal>
 
-      {res.state === 'ready' && (
-        <ChooseDestination
-          open={choosing}
-          title={res.result.title}
-          onClose={() => setChoosing(false)}
-          onChoose={(dest) => file(dest)}
-        />
-      )}
+      <ChooseDestination
+        open={choosing}
+        title={title ?? 'This song'}
+        onClose={() => setChoosing(false)}
+        onChoose={(dest) => file(dest)}
+      />
     </>
   );
 }
