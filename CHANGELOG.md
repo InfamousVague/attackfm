@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.270
+
+- The cover on Liked, All songs, On repeat and your playlists is bigger now and sits low in the header, level with the title and buttons, rather than small and floating high in the band
+
 ## 0.3.269
 
 - Liked, All songs, On repeat and your playlists open on their cover wall running edge to edge and up behind the top bar now, rather than boxed into a card floating in the middle of the page

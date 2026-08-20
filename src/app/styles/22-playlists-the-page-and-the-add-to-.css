@@ -230,6 +230,10 @@
 .playlistPage .playlistHead:has(.coverWall) {
   margin-inline: calc(-1 * var(--glacier-space-4));
   padding-inline: var(--glacier-space-4);
+  /* Bottom-aligned, not centred (the phone media query centres it): the sleeve
+     and the title share a baseline low in the band, so a bigger sleeve grows
+     UP into the wall rather than pushing the title around. */
+  align-items: flex-end;
   /* Up past the top of the scroll and BEHIND the title bar: the band runs
      under the glass, which blurs the covers rather than a dark strip sitting
      on top of them. The header pads its title clear of the bar so nothing it
@@ -265,6 +269,15 @@
 .songPageHead .coverWall,
 .playlistPage .playlistHead .coverWall {
   border-radius: 0;
+}
+/* The sleeve, bigger on the full-bleed header than the phone media query's
+   5.5rem - the wall is now the whole top of the page and the sleeve is its
+   subject, so it earns the room. Overrides that media query (0-3-0 beats its
+   0-1-0), on both the mosaic tile and the liked/all hero. */
+.songPageHead:has(.coverWall) .playlistHead__mosaic,
+.playlistPage .playlistHead:has(.coverWall) .playlistHead__mosaic {
+  inline-size: 8.5rem;
+  block-size: 8.5rem;
 }
 /* The hero cover: painted art filling the 8rem squircle, on a dark ground its
    own margins sit against. */
