@@ -22,7 +22,7 @@ and where that library came from is not the app's story to tell.
 ## 0.3.219
 
 - The four cards at the top of your library have their objects: a heart-shaped valve for Liked, a jukebox's record stack for All songs, chrome arrows for On repeat, and a mirrored helmet for the DJ
-- Discover says its own name at the top, with a compass beside it, where the ATTACK wordmark used to sit — and the page below no longer repeats the heading
+- Discover says its own name at the top, with a compass beside it, where the ATTACK wordmark used to sit — and the page below no longer repeats the heading, or explains itself before the first cover
 
 ## 0.3.218
 
