@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.230
+
+- The genre tiles under Search are printed now rather than shaded: one deep colour with a fine dot screen lifted out of it in white. The pictures on them are the old ones for the moment and are the quiet part of it; new ones are being drawn to suit
+
 ## 0.3.229
 
 - Six more looks in the workshop, and a way to see a look next to its alternatives instead of one at a time. Three of them are the printed one done properly — the old one was mixing its ink onto paper too pale to hold a colour
