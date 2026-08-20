@@ -258,11 +258,48 @@
  * over the page the negative margin tucks beneath it, and its backdrop blur
  * gets the covers to work with.
  */
-.homePage.songPage:has(.coverWall),
-.homePage.playlistPage:has(.coverWall) {
+/*
+ * The slide belongs on .appContent, NOT on the page.
+ *
+ * It was on `.homePage`, and it moved the wall's BOX to the top of the screen
+ * without moving the wall. `.appContent` is `overflow: hidden`
+ * (05-the-dock-contract-a), so pulling a page up inside it does not carry the
+ * page under the bar - it feeds the top of the page into a clip. Measured on
+ * 0.3.270: the wall's box top sat at 0 while its PAINTED top was 83, exactly
+ * the header's height, which is why the bar stayed a black strip with the
+ * covers starting underneath it.
+ *
+ * Moving the same pull onto the clipping box itself moves the clip with it.
+ * `.appContent` then starts at the screen's top edge and stops cutting, and
+ * because it is `flex: 1` its bottom does not move - the negative margin is
+ * absorbed by the flex sizing, so the player and nav clearance below is
+ * untouched.
+ *
+ * Content does not shift either: the page loses a -header and the header's own
+ * `padding-block-start: spot-bar + space-4` is unchanged, so everything the
+ * header says stays exactly where 0.3.270 put it. Only the wall moves - up,
+ * into the band it was always meant to fill.
+ */
+.appContent:has(.coverWall) {
   margin-block-start: calc(
     -1 * var(--app-header-height, calc(var(--app-safe-top, env(safe-area-inset-top, 0px)) + 3.25rem))
   );
+}
+
+/*
+ * The bar, now that there is something behind it.
+ *
+ * `.mobileHeader` has never had a background - it did not need one, because
+ * the app's own ground was behind it. With the wall running up underneath, its
+ * back/forward, title and bell would be sitting directly on album art. So it
+ * becomes glass, and only when there is a wall to be glass OVER: the same
+ * tokens the nav plate wears, so the two pieces of chrome are the same
+ * material rather than two guesses at one.
+ */
+.appWindow:has(.coverWall) .mobileHeader {
+  background: var(--glacier-glass-thin);
+  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
 }
 /* A band meets the window square; only a tile inset from it wants rounded
    corners. The bottom still dissolves into the rows through the wall's mask. */
