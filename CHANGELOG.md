@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.224
+
+- Scroll down in Liked songs or On repeat and the name that takes over the top bar now carries a small heart or loop, instead of a shrunken photograph that read as a cover failing to load
+
 ## 0.3.223
 
 - The four cards at the top of your library wear their objects again, each on a gradient in its own colour, with the object tinted to match — the valve, the record stack, the loop and the DJ read as one set now rather than four separate photographs
