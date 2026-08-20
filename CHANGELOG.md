@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.233
+
+- The genre and mood tiles have their own artwork now — nineteen objects in frosted glass, lit from inside, printing through the dot screen instead of sitting behind it
+
 ## 0.3.232
 
 - On repeat and the DJ did not get the new printed look yesterday even though their neighbours did. They have it now
