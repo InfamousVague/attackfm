@@ -15,7 +15,7 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
-## 0.3.267
+## 0.3.266
 
 - Adding a song from Discover to a playlist worked only for songs you did not already have. One you owned went nowhere and said nothing; it is filed straight away now
 
