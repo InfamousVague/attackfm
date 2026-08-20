@@ -82,6 +82,7 @@ export function npArtMenuItems(artView: ArtView, chooseArtView: (next: ArtView) 
 export function NowPlayingSheet({
   npOpen,
   npDocked,
+  onUndock,
   npDimmed,
   setNpDimmed,
   pokeNpDim,
@@ -137,6 +138,11 @@ export function NowPlayingSheet({
 }: {
   npOpen: boolean;
   npDocked: boolean;
+  /**
+   * Fold the split back into one room. Present only while the dock is showing
+   * and nothing is playing - see the note on the drag below.
+   */
+  onUndock?: (() => void) | undefined;
   npDimmed: boolean;
   setNpDimmed: (next: boolean) => void;
   pokeNpDim: () => void;
@@ -257,12 +263,31 @@ export function NowPlayingSheet({
       return installSheetDismiss(node, {
         onDismiss: () => {
           fireNativeHaptic('light');
+          /*
+           * Docked, the same drag folds the split back into one room.
+           *
+           * It already existed here and landed nowhere: setNpOpen(false) closes
+           * a sheet that was OPENED, and a docked one is mounted by the dock
+           * rather than by npOpen, so pushing it down did nothing at all.
+           *
+           * Only while nothing is playing, and that gate is the whole design
+           * rather than caution. The dock is deliberately sticky - see
+           * deckEngaged in App - because a split that collapsed every time the
+           * music stopped would move the layout under someone's hands. What was
+           * missing was a way to ASK, and a drag on the thing you want gone is
+           * that ask. With music playing the pane is doing its job and the
+           * gesture stays inert.
+           */
+          if (npDocked) {
+            onUndock?.();
+            return;
+          }
           setNpOpen(false);
           setNpLyrics(false);
         },
       });
     },
-    [setNpOpen, setNpLyrics],
+    [setNpOpen, setNpLyrics, npDocked, onUndock],
   );
 
   const [readyCanvas, setReadyCanvas] = useState<string | null>(null);

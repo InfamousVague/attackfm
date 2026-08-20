@@ -310,7 +310,26 @@ export function Player({
    */
   const deskShape = useDesktopLayout();
   const sheetShape = mobileControls || deskShape;
-  const npDocked = sheetShape && npWide && deckOwned && deckEngaged && !chromeHidden;
+  /*
+   * The dock, folded away by hand.
+   *
+   * deckEngaged is sticky for a good reason - pausing is not un-picking, and a
+   * split that collapsed whenever the music stopped would move the whole layout
+   * under the reader - but that left NO way to get the width back for someone
+   * who has finished listening and wants to read their library across the whole
+   * screen. This is that way, and it is asked for rather than inferred: a drag
+   * down on the docked pane, and only while nothing is playing.
+   *
+   * Cleared the moment anything plays again, so it is a dismissal of THIS quiet
+   * spell rather than a preference to be remembered. Playing a song is the
+   * clearest possible statement that the player should be back.
+   */
+  const [dockDismissed, setDockDismissed] = useState(false);
+  const npDocked =
+    sheetShape && npWide && deckOwned && deckEngaged && !chromeHidden && !dockDismissed;
+  useEffect(() => {
+    if (playing) setDockDismissed(false);
+  }, [playing]);
   // The overflow popover state now lives in PlayerStrip.
   // The song being filed into a playlist, or null when that sheet is shut.
   const [filing, setFiling] = useState<Track | null>(null);
@@ -2884,6 +2903,9 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         <NowPlayingSheet
           npOpen={npOpen}
           npDocked={npDocked}
+          // Present only while the pane is idle: a drag while the music plays
+          // is not a request to move the layout.
+          onUndock={npDocked && !playing ? () => setDockDismissed(true) : undefined}
           npDimmed={npDimmed}
           setNpDimmed={setNpDimmed}
           pokeNpDim={pokeNpDim}
