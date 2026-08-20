@@ -60,7 +60,7 @@ import {
 } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
 import { formatBytes } from '../ux/format.ts';
-import djMascot from '../../assets/dj-mascot.png';
+import djMascot from '../../assets/dj-mascot.webp';
 
 /** A glyph for each trait category the analyzer can emit - the icon system
  *  that lets a trait chip say what KIND of observation it is at a glance. */

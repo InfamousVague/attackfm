@@ -9,9 +9,9 @@ import { PluginFence, usePlugins } from '../../plugins/runtime.tsx';
 import type { PluginPlaylistTile } from '../../plugins/types.ts';
 import { PlaylistModal } from './PlaylistModal.tsx';
 import { playlistPlayedAt, notePlaylistPlayed } from './playlistRecency.ts';
-import likedChip from '../../assets/chip-liked.png';
-import allSongsChip from '../../assets/chip-all-songs.png';
-import onRepeatChip from '../../assets/chip-on-repeat.png';
+import likedChip from '../../assets/chip-liked.webp';
+import allSongsChip from '../../assets/chip-all-songs.webp';
+import onRepeatChip from '../../assets/chip-on-repeat.webp';
 // Each chip now has ITS OWN background rather than one picked out of the
 // shared twelve by hue. These four were made for these four tiles, so the
 // hue lottery has nothing left to decide.

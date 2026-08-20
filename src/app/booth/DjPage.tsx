@@ -8,7 +8,7 @@ import { artSized } from '../server.ts';
 import { useDjChat, useDjPlay, DJ_AUTHOR, type DjEmbed, type DjMessage } from './djChat.tsx';
 import { TrackMenu } from '../library/TrackMenu.tsx';
 import type { Track } from '../core/tauri.ts';
-import djMascot from '../../assets/dj-mascot.png';
+import djMascot from '../../assets/dj-mascot.webp';
 import { fetchDjStations, type DjStation } from '../api/dj.ts';
 
 /**
