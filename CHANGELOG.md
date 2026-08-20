@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.214
+
+- A mix wears the actual albums inside it. Four songs off one record used to draw that one sleeve four times over, because the covers were being compared by a web address that carries the song's id — so the same picture never matched itself. Every mosaic in the app was doing it: playlists, search, the artist page, the Booth's mixes
+- And a mix made of one, two or three records now shows those, instead of falling back to a texture while holding the very covers it was made of
+- Liked, All songs, On repeat and DJ have their backing again. They had been left on the page's own black, which meant they stopped reading as tiles at all and the four objects appeared to float in the margin
+- The DJ tile's name sits left, with its neighbours', instead of centred
+
 ## 0.3.213
 
 - A mix wears its music again. The home shelves show the album art of the songs inside — the four-cover mosaic, the same face a playlist wears — instead of a stand-in. The brutalist textures stay as the fallback for a mix too small to fill the square

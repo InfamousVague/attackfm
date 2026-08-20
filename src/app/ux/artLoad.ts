@@ -230,12 +230,52 @@ export function useTileArt(urls: readonly (string | null)[]): {
 
 /** The 640px variants of a track list's first distinct covers - what the
  *  mosaic hooks and tiles feed on. */
+/**
+ * One cover per ALBUM, in track order, up to `take`.
+ *
+ * The dedupe is by the art's identity rather than by the URL string, and that
+ * distinction was silently doing nothing for years. A server art URL is
+ * `/api/art/{sha}?t={streamToken}&track={trackId}` - the sha IS the album,
+ * because the server content-addresses the image bytes, but the trailing
+ * `track` differs for every song. Comparing whole URLs therefore never matched,
+ * so four songs off one record produced four different strings for the same
+ * picture and every mosaic in the app drew that one sleeve four times over: the
+ * playlist faces, the search tiles, the artist page, the Booth's mixes. The
+ * comment promising otherwise had been wrong since the token was added.
+ *
+ * Local files cannot be folded this way and are not: each track's cover is its
+ * own `blob:` URL with no shared identity to compare, so a local album still
+ * repeats. Fixing that needs the scanner to hash the picture, which is a bigger
+ * job than this one.
+ */
 export function mosaicArts(artworks: readonly (string | null)[], take = 4): string[] {
   const out: string[] = [];
+  const seen = new Set<string>();
   for (const a of artworks) {
     const sized = artSized(a, 640);
-    if (sized && !out.includes(sized)) out.push(sized);
+    if (!sized) continue;
+    const id = artIdentity(sized);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(sized);
     if (out.length >= take) break;
   }
   return out;
+}
+
+/**
+ * What makes two art URLs the same picture.
+ *
+ * Origin and path only: the query carries a stream token and an inert track id,
+ * neither of which changes what is drawn. Anything unparseable - a `blob:`, a
+ * data URI - is compared whole, which is the honest answer for a URL that
+ * carries no shared identity.
+ */
+function artIdentity(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.origin}${u.pathname}`;
+  } catch {
+    return url;
+  }
 }
