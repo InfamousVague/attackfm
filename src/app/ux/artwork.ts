@@ -198,13 +198,23 @@ export function mixArtwork(
   return null;
 }
 
-/** The empty states the set covers; the rest keep their painted pairs. */
+/**
+ * The empty states the SERVED set covers; the rest use what the app ships.
+ *
+ * Four came off this list when their art was replaced by cut-out objects. The
+ * served treatment is built for the frosted set: a white-ground photograph laid
+ * over a coloured gradient with `mix-blend-mode: multiply`, so the white burns
+ * away and the object appears to float. That trick needs the white. Run over a
+ * cut-out it multiplies the object itself against the gradient - a red cable
+ * and gold jacks come out muddy - and the transparency it was supposed to be
+ * showing was never the problem.
+ *
+ * The four are NOT deleted from server/assets/artwork. Older app versions still
+ * hold these slugs and will keep asking for them, and a published asset that
+ * stops answering is an empty state with no picture on somebody's phone.
+ */
 const EMPTY_ART: Record<string, string> = {
   library: 'empty-library',
-  search: 'empty-search',
-  playlist: 'empty-playlist',
-  liked: 'empty-liked',
-  downloads: 'empty-downloads',
 };
 
 export function emptyArtwork(name: string): string | null {

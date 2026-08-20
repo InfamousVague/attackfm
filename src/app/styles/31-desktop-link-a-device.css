@@ -71,6 +71,20 @@
   -webkit-mask-image: radial-gradient(circle at center, #000 68%, transparent 100%);
   mask-image: radial-gradient(circle at center, #000 68%, transparent 100%);
 }
+/* A cut-out object, shown in both themes and never masked.
+   No theme swap: there is no baked-in background to match, so one file is
+   right on either page colour. No radial mask either - that exists to dissolve
+   a PAINTED image's residual box into the page, and over a cut-out it fades
+   the object's own edges instead, which on a wide one eats the ends. And no
+   forced square: these are trimmed to their subject, so letterboxing a two-to-
+   one sequencer into a square would shrink it to fit space it does not need. */
+.emptyArt__img--solo {
+  display: block;
+  aspect-ratio: auto;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
 /* System preset: no data-theme attribute — follow the OS scheme. */
 :root:not([data-theme]) .emptyArt__img--light {
   display: block;
@@ -142,6 +156,15 @@
   block-size: 100%;
   object-fit: cover;
 }
+/* A cut-out worn as a hero. `contain`, not `cover`: a painted pair is a full
+   picture and cropping it to the tile is the point, but an object on
+   transparency has nothing outside itself to lose - cover would crop the
+   subject rather than its surroundings. */
+.heroArt__img--solo {
+  display: block;
+  object-fit: contain;
+}
+
 /* Theme selection mirrors .emptyArt__img exactly: no data-theme follows the OS,
    an explicit data-theme wins - so the picture never drifts from its surface. */
 :root:not([data-theme]) .heroArt__img--light {
