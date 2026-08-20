@@ -15,7 +15,7 @@ import { useDesktopLayout } from './ux/useDesktopLayout.ts';
 import type { Track } from './core/tauri.ts';
 import { SettingsModal } from './settings/SettingsModal.tsx';
 import { SearchPage } from './search/SearchPage.tsx';
-import { onSpotifyLink } from './servers/deepLink.ts';
+import { SpotifyPreview } from './servers/SpotifyPreview.tsx';
 import { markPlaySurface } from './player/listens.ts';
 import { onOpenSearchPage, type OpenSearch } from './search/SearchEntry.tsx';
 import { installShelfPan } from './ux/shelfPan.ts';
@@ -170,14 +170,8 @@ export function App() {
     setRefreshNonce((n) => n + 1);
     await libraryRefresh.current();
   });
-  /*
-   * A Spotify link opens the search overlay, where the field claims it.
-   *
-   * Only the opening happens here - SearchPage takes the URL itself, so the
-   * link does not have to be threaded through this component to reach the one
-   * field that knows what it is.
-   */
-  useEffect(() => onSpotifyLink(() => setSearchOpen(true)), [setSearchOpen]);
+  // A Spotify link the phone opened here pops its own preview card now, mounted
+  // as <SpotifyPreview /> inside the providers below - not the search overlay.
 
   // The search bars on Library and Discover. An event rather than a prop
   // because Discover is a plugin page - see SearchEntry.tsx.
@@ -478,6 +472,10 @@ export function App() {
           else goPlaylist(plan.dest.id);
         }}
       />
+      {/* A Spotify link the phone was told to open here pops its own card -
+          the record, its art, Like and Add - rather than dropping into Search.
+          Inside the providers because it downloads and files like Discover. */}
+      <SpotifyPreview />
             {/* Every bottom clearance in the app is spent from
                 --app-player-height, and app.css collapses that one variable to
                 0 when no strip is mounted, which gives the lists their rows

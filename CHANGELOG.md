@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.265
+
+- Open a Spotify link in AttackFM and it pops a preview card now — the song with its artwork, and a tap to Like it or add it to a playlist — instead of dropping you into the search box. (Set which links open here in your phone's app settings.)
+
 ## 0.3.264
 
 - Playlists, mixes and your song pages now open on a slow-drifting wall of their own album covers, so a list looks like the music in it before you have read a word
