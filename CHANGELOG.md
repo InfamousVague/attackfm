@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.236
+
+- The pictures on the genre tiles were sitting small in the middle of them; they fill the tile properly now. A genre shown next to a search result had lost its picture entirely, as had the top genre on your stats
+
 ## 0.3.235
 
 - Settings shows what your server is doing with the background separation: a bar of how many liked and playlisted songs are apart out of how many there are, and the name of the one being taken apart right now
