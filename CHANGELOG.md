@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.222
+
+- The four cards at the top of your library — Liked, All songs, On repeat and DJ — trade their photographed objects for a cleaner look: a soft pastel in each card's own colour, with a big plain icon to match. A heart, a list, the repeat arrows, a record
+
 ## 0.3.221
 
 - The sign-in screen wears a wall of album art again — blurred and drifting behind the form, the same treatment attack.fm has. It had quietly stopped showing months ago

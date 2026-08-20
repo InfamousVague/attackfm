@@ -152,21 +152,16 @@
 
    Black stays underneath as the ground the texture sits on, and the texture is
    dimmed: it is a backing for a bold object and a name, not the subject. */
+/* Pastel + kit icon (Matt asked for it): the hi-fi photography goes, replaced
+   by a soft solid in each card's own section hue with a big kit icon in a
+   saturated shade of the same tone. !important because the per-chip gradients
+   live in files imported after this one (05-the-dock-contract-a, 26-the-dj). */
 .libChip,
 :root:not([data-theme]) .libChip,
 :root[data-theme='light'] .libChip {
-  background-color: #0a0a0b;
-  /* Two layers, not a pseudo-element: the wash keeps a name readable over the
-     loudest of the twelve textures rather than only over the quiet ones, and
-     putting it in the background stack means it can never come between the
-     chip and its own art or words the way an absolutely-positioned ::before
-     would. The `none` fallback is load-bearing - an undefined custom property
-     is invalid at computed-value time and would drop this whole declaration,
-     wash included, leaving the flat black this is here to fix. */
-  background-image: linear-gradient(140deg, rgb(0 0 0 / 0.35), rgb(0 0 0 / 0.72)),
-    var(--cardTex, none);
-  background-size: cover;
-  background-position: center;
+  background: hsl(var(--libChipHue, 280) 60% 85%) !important;
+  background-image: none !important;
+  color: hsl(var(--libChipHue, 280) 46% 22%) !important;
 }
 
 /* THE DJ CHIP IS A KIT BUTTON, the other three are plain buttons - and the kit
@@ -178,8 +173,30 @@
   align-items: stretch;
 }
 
-.libChip__art {
-  mix-blend-mode: normal;
+/* The big kit icon, worn as the tile's face on the trailing side, tilted like
+   the objects it replaces, in a saturated shade of the card's own hue. */
+.libChip__icon {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 7%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: hsl(var(--libChipHue, 280) 62% 40%);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.libChip__icon svg {
+  inline-size: 3.25rem;
+  block-size: 3.25rem;
+  transform: rotate(-8deg);
+}
+
+/* Name and count are dark text on the pastel now, so the drop shadow that
+   carried them over the photography is off. */
+.libChip__name {
+  text-shadow: none;
 }
 
 .mixCardTitle {
