@@ -1031,6 +1031,17 @@ body [class*='_panel_']:has(> .dlPanel) {
   min-inline-size: 0;
 }
 
+/* The level fader sits where the on/off switch used to - the top row's trailing
+   cell - now that a part can sit anywhere between full and out. Explicit area
+   so it lands there regardless of child order; a fixed width so the faders line
+   up down the list rather than each sizing to its own thumb. */
+.stemsRoom__fader {
+  grid-area: switch;
+  inline-size: 7rem;
+  max-inline-size: 42vw;
+  justify-self: end;
+}
+
 .stemsRoom__foot {
   display: flex;
   align-items: center;

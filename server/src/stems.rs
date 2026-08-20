@@ -982,6 +982,70 @@ pub fn parse_drop(raw: Option<&String>) -> Vec<String> {
         .collect()
 }
 
+/// Per-stem playback gains, as `(name, gain)` pairs. Wire form is `name:gain`
+/// comma-separated - `vocals:0.2,drums:0` - so a part can sit FAINT rather than
+/// only in or out. The name is filtered to the registry (nothing a caller
+/// writes reaches an ffmpeg arg) and the gain clamped to [0, 1]; a stem absent
+/// from the list plays at full. `None` when nothing parseable was asked for.
+pub fn parse_levels(raw: Option<&String>) -> Option<Vec<(String, f32)>> {
+    let raw = raw?;
+    let mut out = Vec::new();
+    for pair in raw.split(',') {
+        let mut it = pair.splitn(2, ':');
+        let name = it.next().unwrap_or("").trim();
+        let Some(gain) = it.next() else { continue };
+        if !STEMS.contains(&name) {
+            continue;
+        }
+        let Ok(g) = gain.trim().parse::<f32>() else { continue };
+        if !g.is_finite() {
+            continue;
+        }
+        out.push((name.to_string(), g.clamp(0.0, 1.0)));
+    }
+    (!out.is_empty()).then_some(out)
+}
+
+/// The old `drop` param expressed as levels: every dropped part at gain 0, so
+/// one code path serves both a client that sends `lvl` and one that has not yet
+/// updated and still sends `drop`.
+pub fn levels_from_drop(raw: Option<&String>) -> Option<Vec<(String, f32)>> {
+    let dropped = parse_drop(raw);
+    (!dropped.is_empty()).then(|| dropped.into_iter().map(|s| (s, 0.0)).collect())
+}
+
+/// For a separated track, the `(stem file, gain)` list to mix: every stem that
+/// exists on disk, at the gain the levels ask for (default 1.0 when unlisted),
+/// with a fully-silent stem left out entirely so it costs no decode.
+///
+/// Empty when nothing is actually attenuated (all gains are full) or the track
+/// has no stems - the caller then transcodes the original file, which IS the
+/// mix, rather than paying six decodes to reconstruct something identical.
+pub fn leveled_stem_inputs(
+    state: &AppState,
+    track_id: i64,
+    levels: Option<&[(String, f32)]>,
+) -> Vec<(PathBuf, f32)> {
+    let Some(levels) = levels else { return Vec::new() };
+    if levels.iter().all(|(_, g)| *g >= 0.999) {
+        return Vec::new();
+    }
+    let root = stem_root(state);
+    let mut out = Vec::new();
+    for stem in STEMS {
+        let gain = levels.iter().find(|(n, _)| n == stem).map(|(_, g)| *g).unwrap_or(1.0);
+        if gain <= 0.001 {
+            continue;
+        }
+        let Some(rel) = state.db.stem_path(track_id, stem, MODEL) else { continue };
+        let path = root.join(rel);
+        if path.is_file() {
+            out.push((path, gain));
+        }
+    }
+    out
+}
+
 /// `GET /api/stems/{track}/mix?t=<streamToken>&drop=vocals`
 ///
 /// The track with a part taken out, as one stream - which is karaoke when the

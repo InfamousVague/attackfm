@@ -29,7 +29,12 @@ import type { ServerSession } from '../api/http.ts';
  */
 
 export interface StemDrop {
-  parts: string[];
+  /**
+   * Per-part gain, 0 (fully out) to 1 (full). A part absent from the map plays
+   * at full - which is what lets a part sit FAINT rather than only in or out:
+   * `{ vocals: 0.2 }` is vocals at a whisper under everything else.
+   */
+  gains: Record<string, number>;
   /**
    * Bumped when we LEARN a song has parts, so a player holding a drop knows to
    * re-resolve its URL. The drop itself did not change - what changed is
@@ -39,7 +44,12 @@ export interface StemDrop {
   revision: number;
 }
 
-let state: StemDrop = { parts: [], revision: 0 };
+let state: StemDrop = { gains: {}, revision: 0 };
+
+/** True while any part is turned below full. */
+function anyMoved(): boolean {
+  return Object.values(state.gains).some((g) => g < 1);
+}
 
 /**
  * Which tracks have parts, as far as we know.
@@ -71,26 +81,43 @@ export function stemDrop(): StemDrop {
  * stream - to achieve exactly nothing.
  */
 export function stemDropParam(trackId: number | null): string | null {
-  if (trackId === null || state.parts.length === 0) return null;
-  return applies.get(trackId) === true ? state.parts.join(',') : null;
+  if (trackId === null || !anyMoved()) return null;
+  if (applies.get(trackId) !== true) return null;
+  // `name:gain` pairs for the parts turned below full - the server's `lvl`.
+  return Object.entries(state.gains)
+    .filter(([, g]) => g < 1)
+    .map(([name, g]) => `${name}:${g.toFixed(2)}`)
+    .join(',');
+}
+
+/** A part's current gain, 0..1 - full when it has never been touched. */
+export function stemGain(part: string): number {
+  return state.gains[part] ?? 1;
 }
 
 export function isStemDropped(part: string): boolean {
-  return state.parts.includes(part);
+  return (state.gains[part] ?? 1) <= 0;
 }
 
-/** Take a part out, or put it back. Applies to every song that has parts. */
+/** Set a part's level, 0 (out) to 1 (full). Applies to every song that has
+ *  parts. Full removes it from the map, so "everything at full" is empty. */
+export function setStemLevel(part: string, gain: number): void {
+  const g = Math.max(0, Math.min(1, gain));
+  const gains = { ...state.gains };
+  if (g >= 1) delete gains[part];
+  else gains[part] = g;
+  commit({ ...state, gains });
+}
+
+/** Take a part fully out, or put it back to full. */
 export function setStemDropped(part: string, dropped: boolean): void {
-  const parts = dropped
-    ? [...new Set([...state.parts, part])]
-    : state.parts.filter((p) => p !== part);
-  commit({ ...state, parts });
+  setStemLevel(part, dropped ? 0 : 1);
 }
 
-/** Put everything back. */
+/** Put everything back to full. */
 export function clearStemDrop(): void {
-  if (state.parts.length === 0) return;
-  commit({ ...state, parts: [] });
+  if (Object.keys(state.gains).length === 0) return;
+  commit({ ...state, gains: {} });
 }
 
 /** Record what we know, for the resolver and for the next visit to this song. */
@@ -99,7 +126,7 @@ export function noteStemsFor(trackId: number, has: boolean): void {
   applies.set(trackId, has);
   // Only a YES changes anything anyone can hear, and only while a drop is set.
   // Publishing a "no" would reload a song to arrive at the URL it already has.
-  if (has && before !== true && state.parts.length > 0) {
+  if (has && before !== true && anyMoved()) {
     commit({ ...state, revision: state.revision + 1 });
   }
 }
@@ -117,7 +144,7 @@ export function stemsKnownFor(trackId: number): boolean | undefined {
  */
 export function stemDropOnTrack(session: ServerSession | null, trackId: number | null): void {
   if (!session || trackId === null) return;
-  if (state.parts.length === 0) return;
+  if (!anyMoved()) return;
   if (applies.has(trackId) || asking.has(trackId)) return;
   asking.add(trackId);
   void stemStatus(session, trackId)
