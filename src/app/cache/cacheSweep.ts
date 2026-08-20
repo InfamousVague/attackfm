@@ -2,10 +2,10 @@
 //!
 //! The offline vault (offline.ts) is deliberate - you pin a song, it stays.
 //! This is the other half: nobody chooses, the phone just quietly holds what
-//! it can work out you will reach for. Liked songs first, then what is
-//! actually on repeat, then what was played recently. On a hub that lives in a
-//! house rather than a datacentre, that turns "the wifi is bad" and "I left"
-//! into non-events for the music that matters most.
+//! it can work out you will reach for. Liked songs first, then everything in a
+//! playlist, then what is actually on repeat, then what was played recently. On
+//! a hub that lives in a house rather than a datacentre, that turns "the wifi
+//! is bad" and "I left" into non-events for the music that matters most.
 //!
 //! TWO RULES SHAPE EVERYTHING HERE.
 //!
@@ -239,6 +239,8 @@ export async function sweepCache(
     limitBytes: limit,
   });
   const want = new Map(plan.keep.map((key) => [key, known.get(key)!] as const));
+  // Everything the ranking asked for that the budget could not seat.
+  const budgetShort = Math.max(0, known.size - plan.keep.length);
 
   // The plan, published before a byte moves: already-held songs are done on
   // arrival, the rest wait their turn.
@@ -380,6 +382,8 @@ export async function sweepCache(
       }
       if (skippedUnknown > 0 && downloaded === 0)
         return 'Waiting for this device to finish syncing the library';
+      if (budgetShort > 0)
+        return `${ours.length} kept — ${budgetShort} more would not fit in the space allowed`;
       return `${ours.length} kept on this device`;
     })(),
     kept: ours.length,
@@ -387,6 +391,7 @@ export async function sweepCache(
     failReasons: [...failReasons.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
       .map(([reason, n]) => ({ reason, n })),
     skippedUnknown,
+    budgetShort,
     liked,
     limitBytes: limit,
   });
