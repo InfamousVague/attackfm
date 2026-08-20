@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.275
+
+- On Android the bottom bar now sits clear above the system gesture bar instead of resting on it
+
 ## 0.3.274
 
 - The bottom nav bar and the player bar above it wear the same rounded corner the More menu does now, so the three read as one set rather than three slightly different roundings stacked up
