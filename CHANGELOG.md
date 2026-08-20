@@ -24,6 +24,11 @@ and where that library came from is not the app's story to tell.
 - Storage tells the truth about what you kept. Songs you saved by hand are recorded when you save them, instead of being guessed at from what the app still remembered — which is why it could report gigabytes of songs you never chose
 - Those songs go back under the cache's management too, so it can free space again instead of sitting at whatever size it had reached
 
+## 0.3.246
+
+- The artwork on Now Playing leans a little as you tilt the phone, so it sits in the screen rather than on it
+- New in Playback: shake to change shuffle, flick left or right to move between songs. Off until you turn it on, and it ignores walking, running and a pocket
+
 ## 0.3.245
 
 - Settings opens as a full screen now rather than a panel floating over the page — except when the player is docked beside it, where it stays a panel so the player is not covered
