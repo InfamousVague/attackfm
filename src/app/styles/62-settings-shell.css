@@ -1,0 +1,766 @@
+/*
+ * The settings SHELL, gathered from four chunks whose names had nothing to do
+ * with settings (07/08/11 dock-and-date files and a 24 that was ALL settings
+ * under a catalogue-page name). Styling settings used to mean editing four
+ * scattered files; now it means this one and 63 (the pane kit).
+ *
+ * The blocks keep their original relative order, verbatim, because cascade
+ * order is behavior: nothing outside these files targets a settings selector
+ * (audited by grep), so moving them later as one unit changes nothing.
+ */
+
+/* ── Mobile settings ────────────────────────────────────────────────────────
+   The touch settings surface: a full-screen sheet that opens on the section
+   list and pushes into a pane. Portalled to the body like Now Playing, so the
+   env() insets stand in for the out-of-scope --app-safe-* vars. */
+.settingsScreen {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  padding: calc(env(safe-area-inset-top, 0px) + var(--glacier-space-3))
+    var(--glacier-space-4)
+    calc(env(safe-area-inset-bottom, 0px) + var(--glacier-space-4));
+  gap: var(--glacier-space-3);
+  background: var(--glacier-bg);
+  color: var(--glacier-text);
+  animation: npRise 0.28s var(--glacier-ease-out);
+}
+
+/* A pane drilled into slides in from the right; the list it replaced was the
+   home the back arrow returns to. */
+.settingsScreen[data-view='detail'] .settingsScreen__pane {
+  animation: settingsPush 0.24s var(--glacier-ease-out);
+}
+
+@keyframes settingsPush {
+  from {
+    transform: translateX(12%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.settingsScreen__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+  flex: none;
+}
+
+
+/* The back and close targets: round, thumb-sized, ghosted until pressed. */
+.settingsScreen__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  border: none;
+  border-radius: var(--glacier-radius-full);
+  background: transparent;
+  color: var(--glacier-text);
+  cursor: pointer;
+}
+
+.settingsScreen__icon:active {
+  background: var(--glacier-surface-hover, rgba(128, 128, 128, 0.16));
+}
+
+.settingsScreen__title {
+  flex: 1;
+  min-inline-size: 0;
+  font-size: var(--glacier-font-size-lg);
+  font-weight: 650;
+  text-align: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Balances the single icon on the other end so the title stays centred. */
+.settingsScreen__headSpacer {
+  inline-size: 2.5rem;
+  flex: none;
+}
+
+/* The section list - the "sidebar", stacked as full-width rows on touch. */
+.settingsScreen__list {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  -webkit-overflow-scrolling: touch;
+}
+
+/* The hunt-killers at the top of the list: the field, then the recent chips. */
+.settingsScreen__search {
+  flex: none;
+  margin-block-end: var(--glacier-space-2);
+}
+
+.settingsScreen__recents {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+  margin-block-end: var(--glacier-space-2);
+}
+
+.settingsScreen__recentChip {
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 600;
+  color: var(--glacier-accent-text);
+  background: color-mix(in oklab, var(--glacier-accent-solid) 14%, transparent);
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+}
+
+.settingsScreen__none {
+  padding: var(--glacier-space-3) var(--glacier-space-2);
+}
+
+
+/* Desktop: the search rides the TabbedModal's title row. */
+.settingsTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-4);
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.settingsTitleRow__search {
+  inline-size: min(16rem, 50%);
+}
+
+/* ── The settings rail scrolls ──────────────────────────────────────────────
+   With the sections it has on a short window, the bottom of the rail could not
+   be reached at all. Not a touch or a gesture problem: nothing in the chain was
+   scrollable, so there was no scroller for the drag to land in.
+
+   Why. The kit's modal panel is `display: block` with a definite max-block-size
+   and `overflow-y: hidden`. A block does not bound its child's height, so the
+   tab layout inside takes its full intrinsic height - the height of its tallest
+   column, which is the rail - and everything past the panel's edge is clipped
+   away. Measured at a 560px-tall window: panel clientHeight 497 against
+   scrollHeight 725, the last tab 171px below the viewport, nothing to scroll.
+
+   Three rules, all load-bearing:
+     1. the panel becomes a column, so its children CAN be bounded by it;
+     2. the layout takes the leftover height and is allowed to shrink -
+        `min-block-size: 0`, without which a grid or flex child refuses to go
+        below its content height and the clipping comes straight back;
+     3. the rail scrolls itself.
+
+   Reached through `:has(.settingsTitleRow)`, the same idiom the two rules above
+   already use, rather than by naming the kit's hashed classes or by threading a
+   className prop through the modal.
+
+   `overscroll-behavior-y`, NOT the shorthand: containing the cross axis of a
+   single-axis scroller swallows the drag outright, and it looks exactly like a
+   touch-action bug when it does. */
+body [class*='_panel_']:has(.settingsTitleRow) {
+  display: flex;
+  flex-direction: column;
+}
+
+body [class*='_panel_']:has(.settingsTitleRow) [class*='_layout_'] {
+  flex: 1 1 auto;
+  min-block-size: 0;
+}
+
+body [class*='_panel_']:has(.settingsTitleRow) [class*='_rail_'] {
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  /* No visible scrollbar, like every other scroller in the app - and a classic
+     one would take layout width off a rail sized to its labels. */
+  scrollbar-width: none;
+}
+
+body [class*='_panel_']:has(.settingsTitleRow) [class*='_rail_']::-webkit-scrollbar {
+  display: none;
+}
+
+/* Nothing in the list may shrink to fit it.
+   A flex column that scrolls will still compress its items first - shrinking
+   is a flex item's default - so with more sections than fit, the groups gave
+   up their height instead of overflowing: every row squashed, the last ones
+   clipped by the group's own `overflow: hidden`, and no scrollbar, because
+   the content never actually exceeded the box. Holding the natural height is
+   what turns `overflow-y: auto` above from decoration into a scroll. */
+.settingsScreen__list > * {
+  flex: none;
+}
+
+.settingsScreen__row {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  inline-size: 100%;
+  padding: var(--glacier-space-3) var(--glacier-space-3);
+  border: none;
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+  color: var(--glacier-text);
+  font: inherit;
+  font-weight: 550;
+  text-align: start;
+  cursor: pointer;
+}
+
+.settingsScreen__row:active {
+  background: var(--glacier-surface-hover, rgba(128, 128, 128, 0.16));
+}
+
+.settingsScreen__rowIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: var(--glacier-text-muted);
+}
+
+.settingsScreen__rowLabel {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.settingsScreen__rowChevron {
+  flex: none;
+  color: var(--glacier-text-muted);
+}
+
+/* ---- The rail, wearing the touch list's rows ------------------------------
+   The row itself; everything inside it is the touch list's own classes, so a
+   chip colour or a summary's type is set in one place for both surfaces. The
+   kit's rail button supplies the seat, the hit area and the active state - this
+   only has to lay the chip beside the two lines. */
+.settingsRail__row {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  inline-size: 100%;
+  min-inline-size: 0;
+  text-align: start;
+}
+
+/* A cluster's name, carried by its first row (the kit renders a flat rail, so
+   there is nowhere BETWEEN items for a caption to live). The kit's selected
+   pill would wrap the caption along with the row it names - so the caption is
+   pushed up and out of the button's box: the button keeps its seat, the words
+   hang above it in the run's gap. */
+.settingsRail__item {
+  display: flex;
+  flex-direction: column;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.settingsRail__groupLabel {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--glacier-text-muted);
+  /* Fixed height, not line-box height: the pill-clipping rule below has to
+     name this same measurement, and two derivations of one number drift. */
+  block-size: 1rem;
+  display: flex;
+  align-items: flex-end;
+  margin-block-start: var(--glacier-space-3);
+  margin-block-end: var(--glacier-space-1);
+}
+
+/* The first cluster's caption needs no run-gap above it. */
+[role='tab']:first-child .settingsRail__groupLabel {
+  margin-block-start: 0;
+}
+
+/* The kit's selected pill is an absolutely-positioned indicator filling the
+   whole tab (inset: 0) - which, on a tab carrying a cluster caption, washes
+   the caption in accent along with the row it names: select Library and
+   "YOUR STUFF" lights up. Start the pill below the caption instead. Same
+   kit-hash idiom as the overrides above; if the kit changes shape the worst
+   case is the caption riding inside the pill again, which is where it began. */
+body [class*='_panel_']:has(.settingsTitleRow)
+  [role='tab']:has(.settingsRail__groupLabel)
+  [class*='_indicator_'] {
+  inset-block-start: calc(1rem + var(--glacier-space-3) + var(--glacier-space-2));
+}
+
+body [class*='_panel_']:has(.settingsTitleRow)
+  [role='tab']:first-child:has(.settingsRail__groupLabel)
+  [class*='_indicator_'] {
+  inset-block-start: calc(1rem + var(--glacier-space-2));
+}
+
+/* The rail is narrower than the full-screen list, so the summary is allowed to
+   end early rather than force the rail wider. */
+.settingsRail__row .settingsScreen__rowSummary {
+  max-inline-size: 100%;
+}
+
+/* And the rail gets some of that width back. The kit lays the modal out at
+   `12rem minmax(0, 1fr)`, which is the right measure for a glyph and a word and
+   too tight for a chip over two lines - "Downloads & space" and "How it all
+   works, in 28 pages" both ended in an ellipsis at that width.
+   Reached through :has() on the panel that holds the settings title rather than
+   by naming the kit's hashed class, which changes whenever the kit is rebuilt.
+   The same idiom the downloads panel already uses. */
+body [class*='_panel_']:has(.settingsTitleRow) [class*='_layout_'] {
+  grid-template-columns: 15.5rem minmax(0, 1fr);
+}
+
+/* The kit holds a rail label to one line and clips it, which is right for a
+   word and wrong for a stack of two. */
+body [class*='_panel_']:has(.settingsTitleRow) [class*='_railLabel_'] {
+  overflow: visible;
+  white-space: normal;
+}
+
+/* The kit centres its rail labels and holds them to one line, which is right
+   for a word and wrong for two stacked ones. */
+.settingsRail__row .settingsScreen__rowText {
+  align-items: flex-start;
+}
+
+/* The drilled-in pane: the section's own controls, scrolling under the header. */
+.settingsScreen__pane {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-inline: var(--glacier-space-1);
+}
+
+
+/* ── Settings revamp ─────────────────────────────────────────────────────── */
+
+/* The touch list's clusters: consecutive rows of one group share a card, the
+   iOS-settings shape, with hairlines between the rows inside. */
+.settingsScreen__group {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+  overflow: hidden;
+}
+
+.settingsScreen__group + .settingsScreen__group {
+  margin-block-start: var(--glacier-space-3);
+}
+
+/* A cluster is a named group card: the caption plus the card it names. The
+   caption only shows while browsing - a search flattens to one bare card. */
+.settingsScreen__cluster {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.settingsScreen__cluster + .settingsScreen__cluster {
+  margin-block-start: var(--glacier-space-3);
+}
+
+.settingsScreen__groupLabel {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--glacier-text-muted);
+  padding-inline: var(--glacier-space-2);
+}
+
+.settingsScreen__group .settingsScreen__row {
+  border-radius: 0;
+  background: transparent;
+}
+
+.settingsScreen__group .settingsScreen__row:active {
+  background: var(--glacier-surface-hover, rgba(128, 128, 128, 0.16));
+}
+
+.settingsScreen__group .settingsScreen__row + .settingsScreen__row {
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+/* The tinted icon chip each row wears: a small squircle in the section's own
+   colour family, glyph in white. Fixed colours, tuned to read on both themes. */
+.settingsScreen__rowIcon[data-tint] {
+  inline-size: 1.85rem;
+  block-size: 1.85rem;
+  border-radius: 0.55rem;
+  color: #fff;
+}
+
+.settingsScreen__rowIcon[data-tint] svg {
+  inline-size: 1.05rem;
+  block-size: 1.05rem;
+}
+
+.settingsScreen__rowIcon[data-tint='pink'] { background: oklch(0.63 0.23 8); }
+.settingsScreen__rowIcon[data-tint='blue'] { background: oklch(0.58 0.18 250); }
+.settingsScreen__rowIcon[data-tint='green'] { background: oklch(0.6 0.15 160); }
+.settingsScreen__rowIcon[data-tint='orange'] { background: oklch(0.68 0.17 60); }
+.settingsScreen__rowIcon[data-tint='purple'] { background: oklch(0.58 0.2 300); }
+.settingsScreen__rowIcon[data-tint='slate'] { background: oklch(0.55 0.03 250); }
+
+/* Label over the live one-line reading of the section's state. */
+.settingsScreen__rowText {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.settingsScreen__rowText .settingsScreen__rowLabel {
+  flex: none;
+}
+
+.settingsScreen__rowSummary {
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--glacier-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The stat tiles Settings uses (the library in General, the server board):
+   a responsive grid of the kit's own micro-cards. */
+.libraryStats,
+.serverStats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: var(--glacier-space-2);
+}
+
+/* The server hero: glyph, name+status, and who is signed in - one glance. */
+/*
+ * The server's identity line.
+ *
+ * It was one wrapping flex row - glyph, name+host, then who you are signed in
+ * as - so on a phone the account chip took width off the middle and both the
+ * name and the hostname broke mid-word: "AttackFM" over "(home)", "headless-"
+ * over "mac.tail83699e.ts.net". A hostname split across two lines is the one
+ * thing on this card you might need to read out loud.
+ *
+ * A two-column grid instead: the glyph keeps its column, the name and host get
+ * the whole of the other one, and WHO drops to its own row underneath rather
+ * than competing for the same line. Nothing truncates - a server you cannot
+ * name is not better than a tall card.
+ */
+.serverHero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--glacier-space-2) var(--glacier-space-3);
+}
+
+/* Its own row, full width, so the identity above is never squeezed by it. */
+.serverHero__who {
+  grid-column: 1 / -1;
+}
+
+.serverHero__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  flex: none;
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-accent-soft, var(--glacier-surface-sunken));
+  color: var(--glacier-accent-solid);
+}
+
+.serverHero__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.serverHero__name {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  /* The version pill rides beside the name and drops below it rather than
+     forcing the name to break to make room. */
+  flex-wrap: wrap;
+}
+
+.serverHero__status {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  min-inline-size: 0;
+}
+
+/* With the row to itself a hostname fits on one line at 375px; if a longer one
+   ever does not, it breaks between the dotted parts rather than mid-label. */
+.serverHero__status > * {
+  min-inline-size: 0;
+  overflow-wrap: break-word;
+}
+
+.serverHero__who {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.serverHero__whoText {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+/* The disk readout: heading row, then the segmented meter. */
+.serverDisk {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface);
+}
+
+.serverDisk__head {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  color: var(--glacier-text-muted);
+}
+
+.serverDisk__free {
+  margin-inline-start: auto;
+}
+
+/* Account rows: avatar, name (+owner pill), actions on the trailing edge. */
+.userRows {
+  display: flex;
+  flex-direction: column;
+}
+
+.userRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2) 0;
+}
+
+.userRow + .userRow {
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.userRow__name {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.userRow__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  flex: none;
+}
+
+/* The add-a-listener drawer: an inset form under the rows. */
+.userAdd {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface);
+}
+
+/* This device's identity card on the Devices pane. */
+.deviceIdentity {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+.deviceIdentity__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  flex: none;
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-accent-soft, var(--glacier-surface-sunken));
+  color: var(--glacier-accent-solid);
+}
+
+.deviceIdentity__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.deviceIdentity__status {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+/* The rename field and its save button on one line. */
+.deviceRename {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+
+.deviceRename > :first-child {
+  flex: 1;
+}
+
+/* About: the wordmark hero, then icon-led rows. */
+.aboutHero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-4) 0 var(--glacier-space-2);
+  text-align: center;
+}
+
+.aboutHero__mark {
+  /* The mark is chrome, not content: these stop the browser offering it as a
+     draggable image or letting a stray swipe lasso it the way it would a
+     paragraph. It used to be the way into the card lab, seven presses on it,
+     and these two kept that run of presses from turning into a drag - the lab
+     is gone but a wordmark you can peel off the page is still wrong. */
+  -webkit-user-drag: none;
+  user-select: none;
+  inline-size: 9rem;
+  max-inline-size: 60%;
+}
+
+/* The wordmark is white-on-transparent; on a light theme it vanished entirely.
+   Same recipe as .mobileHeader__logo (00-base-a.css) - the one place this was
+   already solved. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .aboutHero__mark {
+    filter: invert(1);
+  }
+}
+
+:root[data-theme='light'] .aboutHero__mark {
+  filter: invert(1);
+}
+
+:root[data-theme='dark'] .aboutHero__mark {
+  filter: none;
+}
+
+.aboutHero__pills {
+  display: flex;
+  gap: var(--glacier-space-2);
+}
+
+.aboutRows {
+  display: flex;
+  flex-direction: column;
+}
+
+.aboutRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2) 0;
+}
+
+.aboutRow + .aboutRow {
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+/* A fixed square, so the labels line up whatever is in the slot.
+   It used to size to its contents, which was invisible while every row held a
+   16px lucide glyph - and then the Connection row arrived carrying a StatusDot,
+   which is 8px, and pulled its label eight pixels left of every other one. The
+   column is the thing that has to be constant here, not the mark inside it. */
+.aboutRow__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1rem;
+  block-size: 1rem;
+  color: var(--glacier-text-muted);
+  flex: none;
+}
+
+/* A fixed column, not a minimum one.
+   Three of these labels are ours and short; the fourth is whatever the listener
+   named their server, and "AttackFM (home)" is half as long again as the rest -
+   which pushed its own row's value out of line with every other row and made
+   the column look broken rather than the name look long. Fixed and truncated,
+   the column reads as a column; the full name is on the element for anyone who
+   hovers, and it is on the Servers screen in full besides. */
+.aboutRow__label {
+  font-weight: 550;
+  flex: none;
+  inline-size: 7rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.aboutRow__value {
+  color: var(--glacier-text-muted);
+  font-size: 0.875rem;
+  /* Takes what the label leaves, rather than being sized by its own text: a
+     long URL should wrap inside the row, not decide how wide the row is. */
+  flex: 1;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The kit's StatTile sizes its value for dashboards twice this width; inside
+   the settings grids the number must fit a ~9rem tile beside its icon, so the
+   value steps down (and the body may actually flex into the spare room). The
+   attribute match rides the hashed module class - contained to these grids. */
+.libraryStats > *,
+.serverStats > * {
+  /* Icon above the number rather than beside it: at these tile widths a value
+     like "6.5 GB" cannot clip when it has the whole tile to itself. */
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--glacier-space-2);
+}
+
+.libraryStats [class*='_body_'],
+.serverStats [class*='_body_'] {
+  flex: none;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.libraryStats [class*='_value_'],
+.serverStats [class*='_value_'] {
+  font-size: 1.35rem;
+}

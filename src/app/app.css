@@ -28,7 +28,6 @@
 @import './styles/21-the-downloads-page.css';
 @import './styles/22-playlists-the-page-and-the-add-to-.css';
 @import './styles/23-a-catalogue-artists-page-discover-a.css';
-@import './styles/24-a-catalogue-artists-page-discover-b.css';
 @import './styles/25-a-catalogue-artists-page-discover-c.css';
 @import './styles/26-the-dj.css';
 @import './styles/27-the-top-result.css';
@@ -61,4 +60,5 @@
 @import './styles/54-the-diagnostics-log.css';
 @import './styles/55-the-notification-bell.css';
 @import './styles/61-card-styles-you-can-pick.css';
+@import './styles/62-settings-shell.css';
 @import './styles/63-settings-panes.css';
