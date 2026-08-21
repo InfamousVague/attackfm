@@ -26,6 +26,8 @@ mod carplay;
 
 // Nearby listeners over Multipeer - discovery only, opt-in, foreground.
 mod nearby;
+// The AirPlay route picker - the one door iOS offers to speaker choice.
+mod airplay;
 
 // Your own library, held on the device for offline play. Not the import
 // engine - see offline.rs's header for why that distinction is load-bearing.
@@ -208,6 +210,8 @@ fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'stat
         nearby::nearby_start,
         nearby::nearby_stop,
         nearby::nearby_peers,
+        airplay::airplay_supported,
+        airplay::airplay_show,
     ]
 }
 
@@ -252,5 +256,7 @@ fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'stat
         nearby::nearby_start,
         nearby::nearby_stop,
         nearby::nearby_peers,
+        airplay::airplay_supported,
+        airplay::airplay_show,
     ]
 }

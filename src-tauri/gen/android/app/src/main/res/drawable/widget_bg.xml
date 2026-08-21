@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The widget's plate: the app's own near-black, rounded like the nav island.
+     A solid colour rather than a theme attribute because RemoteViews render in
+     the LAUNCHER's process, where the app's theme does not exist. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+  <solid android:color="#EE101014" />
+  <corners android:radius="24dp" />
+</shape>

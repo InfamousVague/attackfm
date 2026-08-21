@@ -120,6 +120,20 @@
           on. A media session alone is invisible to the car - it only looks at
           apps that answer android.media.browse.MediaBrowserService.
         -->
+        <!-- Now playing on the home screen. Exported because the LAUNCHER is
+             what sends APPWIDGET_UPDATE - an unexported receiver draws once at
+             placement and then never hears from the system again. -->
+        <receiver
+            android:name=".NowPlayingWidget"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_now_playing_info" />
+        </receiver>
+
         <service
             android:name=".PlaybackService"
             android:foregroundServiceType="mediaPlayback|dataSync"
