@@ -1,4 +1,5 @@
 import { Button, Pill, StatusDot, Text } from '@glacier/react';
+import { PaneSection, SettingRow, SettingsFootnote } from './kit/settingsKit.tsx';
 import { Cloud, ExternalLink, Laptop, Music, RefreshCw, Smartphone } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { WhatsNew } from './WhatsNew.tsx';
@@ -211,75 +212,68 @@ export function AboutSettings() {
         </div>
       </div>
 
-      <div className="prefsSection">
-        <div className="aboutRows">
-          {rows.map((row) => (
-            <div key={row.id} className="aboutRow">
-              <span className="aboutRow__icon" aria-hidden="true">
-                {row.icon}
-              </span>
-              {/* The label can be a server's own name, which truncates in a
-                  fixed column - so the full one stays reachable here. */}
-              <span className="aboutRow__label" title={row.label}>
-                {row.label}
-              </span>
-              <span className="aboutRow__value">{row.value}</span>
-            </div>
-          ))}
+      <PaneSection title="This build">
+        {rows.map((row) => (
+          <SettingRow
+            key={row.id}
+            icon={<span className="aboutRow__icon" aria-hidden="true">{row.icon}</span>}
+            label={row.label}
+            value={row.value}
+          />
+        ))}
+        <div className="setk-row">
+          <div className="prefsActions">
+            <Button variant="outline" size="sm" onClick={() => void openExternal(REPO_URL)}>
+              Source on GitHub <ExternalLink size={12} />
+            </Button>
+          </div>
         </div>
-        <div className="prefsActions">
-          <Button variant="outline" size="sm" onClick={() => void openExternal(REPO_URL)}>
-            Source on GitHub <ExternalLink size={12} />
-          </Button>
-        </div>
-      </div>
+      </PaneSection>
 
       {/* Updates, out loud. The automatic check still runs on its own clock;
           this is the hand on the handle - and the place a failure finally has
           to explain itself instead of leaving the device silently stale. */}
       {isTauri() && (
-        <div className="prefsSection">
-          <div className="aboutRows">
-            <div className="aboutRow">
-              <span className="aboutRow__icon" aria-hidden="true">
-                <RefreshCw size={16} />
-              </span>
-              <span className="aboutRow__label">Updates</span>
-              <span className="aboutRow__value">
-                {staged ? `v${staged} is ready — restart to apply` : 'from attack.fm'}
-              </span>
-            </div>
-          </div>
-          {outcome && !staged && (
-            <Text tone={outcome.state === 'error' ? 'danger' : 'muted'} size="sm">
-              {outcome.state === 'current'
-                ? `You're on the latest (v${outcome.version}).`
-                : outcome.state === 'staged'
-                  ? `v${outcome.version} downloaded.`
-                  : outcome.why}
-            </Text>
-          )}
-          <div className="prefsActions">
-            {staged ? (
-              <Button variant="solid" size="sm" onClick={() => applyStagedBundle()}>
-                Restart and update
-              </Button>
-            ) : (
-              <Button variant="outline" size="sm" onClick={() => void check()} disabled={checking}>
-                <RefreshCw size={12} /> {checking ? 'Checking…' : 'Check for updates'}
-              </Button>
-            )}
-          </div>
-        </div>
+        <PaneSection
+          title="Updates"
+          footer={
+            outcome && !staged ? (
+              <Text tone={outcome.state === 'error' ? 'danger' : 'muted'} size="sm">
+                {outcome.state === 'current'
+                  ? `You're on the latest (v${outcome.version}).`
+                  : outcome.state === 'staged'
+                    ? `v${outcome.version} downloaded.`
+                    : outcome.why}
+              </Text>
+            ) : undefined
+          }
+        >
+          <SettingRow
+            icon={<span className="aboutRow__icon" aria-hidden="true"><RefreshCw size={16} /></span>}
+            label="Updates"
+            hint={staged ? `v${staged} is ready — restart to apply` : 'from attack.fm'}
+            control={
+              staged ? (
+                <Button variant="solid" size="sm" onClick={() => applyStagedBundle()}>
+                  Restart and update
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => void check()} disabled={checking}>
+                  <RefreshCw size={12} /> {checking ? 'Checking…' : 'Check for updates'}
+                </Button>
+              )
+            }
+          />
+        </PaneSection>
       )}
 
       {/* The release history the update banner only ever showed one page of. */}
       <WhatsNew />
 
-      <Text tone="subtle" size="xs">
-        Lyrics from LRCLIB · album art lookups via the iTunes Search API. All of it
-        optional, all of it switchable in these settings.
-      </Text>
+      <SettingsFootnote>
+        Lyrics from LRCLIB · album art lookups via the iTunes Search API. All of it optional, all
+        of it switchable in these settings.
+      </SettingsFootnote>
     </div>
   );
 }

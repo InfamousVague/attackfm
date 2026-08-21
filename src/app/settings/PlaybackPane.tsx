@@ -1,21 +1,15 @@
-import { Field, Label, SegmentedControl, Select, Slider, Switch, Text } from '@glacier/react';
+import { SegmentedControl, Switch, Text } from '@glacier/react';
 import { StemProgress, usePrefetchStatus } from '../servers/BackgroundWork.tsx';
 import { useEffect, useState } from 'react';
-import { fireNativeHaptic, setHapticsPref, useHapticsPref } from '../core/haptics.ts';
 import { usePlayback, type SleepTimer } from '../player/playback.tsx';
-import {
-  motionGesturesEnabled,
-  nowPlayingVideoEnabled,
-  setMotionGestures,
-  setNowPlayingVideo,
-} from './behaviourPrefs.ts';
-import { askMotionAccess, motionAvailable } from '../player/deviceMotion.ts';
+import { useServerSession } from '../servers/serverSession.tsx';
 import {
   loudnessCoverage,
   setLoudnessMode,
   useLoudnessMode,
   type LoudnessMode,
 } from '../player/loudness.ts';
+import { PaneSection, SettingRow, SettingSliderRow } from './kit/settingsKit.tsx';
 
 /** The sleep timer's countdown, ticking once a second while one is armed. */
 function SleepCountdown({ sleep }: { sleep: SleepTimer }) {
@@ -31,34 +25,33 @@ function SleepCountdown({ sleep }: { sleep: SleepTimer }) {
     return () => window.clearInterval(interval);
   }, [running]);
   if (sleep === null) return null;
-  if (sleep === 'end-of-track') {
-    return (
-      <Text tone="muted" size="sm">
-        Playback stops when the current track ends.
-      </Text>
-    );
-  }
+  if (sleep === 'end-of-track') return <>Playback stops when the current track ends.</>;
   const remaining = Math.max(0, sleep.at - now);
   const minutes = Math.floor(remaining / 60_000);
   const seconds = Math.floor((remaining % 60_000) / 1000);
   return (
-    <Text tone="muted" size="sm">
+    <>
       Playback stops in {minutes}:{String(seconds).padStart(2, '0')}.
-    </Text>
+    </>
   );
 }
 
 /**
- * The playback behaviours: how songs hand over to each other, what shuffle
- * avoids, what a pause sounds like, how the sound is shaped, and when the
- * music should put itself to bed. All of it lives in the playback context the
+ * The playback behaviours: how songs hand over to each other, what they cost
+ * to stream, what shuffle avoids, how the sound is shaped, and when the music
+ * should put itself to bed. All of it lives in the playback context the
  * player reads, so every control here takes effect mid-song.
+ *
+ * What LEFT this pane is as deliberate as what is in it: the lyric header,
+ * the Now Playing clips, haptics and the motion gestures are all about how
+ * the app looks and feels rather than how music plays, and live under
+ * Appearance now. Streaming quality moved IN from the server dashboard,
+ * because "how much data does listening cost me" is a listener's playback
+ * question, not a fact about the box.
  */
 export function PlaybackSettings() {
-  const [motion, setMotion] = useState(motionGesturesEnabled);
   const pb = usePlayback();
-  const [video, setVideo] = useState(nowPlayingVideoEnabled);
-  const hapticsOn = useHapticsPref();
+  const { session, settings, updateSettings } = useServerSession();
 
   const sleepValue =
     pb.sleep === null ? 'off' : pb.sleep === 'end-of-track' ? 'end' : String(pb.sleep.minutes);
@@ -76,8 +69,17 @@ export function PlaybackSettings() {
 
   return (
     <div className="prefsBody">
-      <div className="prefsSection">
-        <Field
+      <PaneSection
+        title="Loudness"
+        footer={
+          levelling !== 'off'
+            ? measured === 0
+              ? 'Your server is still measuring. Songs it has not reached yet play unlevelled.'
+              : `${measured.toLocaleString()} songs measured. A song is never boosted past the point where it would distort.`
+            : undefined
+        }
+      >
+        <SettingRow
           label="Volume levelling"
           hint={
             levelling === 'off'
@@ -86,226 +88,187 @@ export function PlaybackSettings() {
                 ? 'Records play at a steady level, and the quiet track on an album stays quiet.'
                 : 'Every song plays at the same level — best for shuffling.'
           }
-        >
-          <SegmentedControl
-            aria-label="Volume levelling"
-            fullWidth
-            value={levelling}
-            options={[
-              { value: 'off', label: 'Off' },
-              { value: 'track', label: 'Per song' },
-              { value: 'album', label: 'Per album' },
-            ]}
-            onValueChange={(v) => setLoudnessMode(v as LoudnessMode)}
-          />
-          {levelling !== 'off' && (
-            <Text tone="muted" size="sm">
-              {measured === 0
-                ? 'Your server is still measuring. Songs it has not reached yet play unlevelled.'
-                : `${measured.toLocaleString()} songs measured. A song is never boosted past the point where it would distort.`}
-            </Text>
-          )}
-        </Field>
-      </div>
-      <div className="prefsSection">
-        <Field
+          layout="stacked"
+          control={
+            <SegmentedControl
+              aria-label="Volume levelling"
+              fullWidth
+              value={levelling}
+              options={[
+                { value: 'off', label: 'Off' },
+                { value: 'track', label: 'Per song' },
+                { value: 'album', label: 'Per album' },
+              ]}
+              onValueChange={(v) => setLoudnessMode(v as LoudnessMode)}
+            />
+          }
+        />
+      </PaneSection>
+
+      <PaneSection title="Between songs">
+        <SettingSliderRow
           label="Crossfade"
           hint="Blends the end of one song into the start of the next. Automatic changes only - skips stay immediate."
-        >
-          <div className="prefsSliderRow">
-            <Slider
-              aria-label="Crossfade length"
-              min={0}
-              max={12}
-              step={1}
-              value={pb.crossfade}
-              onValueChange={(next) => pb.update({ crossfade: next })}
+          min={0}
+          max={12}
+          step={1}
+          value={pb.crossfade}
+          valueLabel={pb.crossfade === 0 ? 'Off' : `${pb.crossfade}s`}
+          onChange={(next) => pb.update({ crossfade: next })}
+        />
+        <SettingRow
+          label="Pause"
+          hint="What pressing pause sounds like."
+          layout="stacked"
+          control={
+            <SegmentedControl
+              aria-label="Pause style"
+              fullWidth
+              value={pb.pauseStyle}
+              onValueChange={(next) => pb.update({ pauseStyle: next as typeof pb.pauseStyle })}
+              options={[
+                { value: 'turntable', label: 'Turntable' },
+                { value: 'fade', label: 'Fade' },
+                { value: 'instant', label: 'Cut' },
+              ]}
             />
-            <Text size="sm" tone="muted" mono className="prefsSliderValue">
-              {pb.crossfade === 0 ? 'Off' : `${pb.crossfade}s`}
-            </Text>
-          </div>
-        </Field>
-      </div>
-      <div className="prefsSection">
-        <Field label="Pause" hint="What pressing pause sounds like.">
-          <SegmentedControl
-            aria-label="Pause style"
-            // The section stretches the control to the pane's width already,
-            // so the segments must split that width rather than pack left.
-            fullWidth
-            value={pb.pauseStyle}
-            onValueChange={(next) => pb.update({ pauseStyle: next as typeof pb.pauseStyle })}
-            options={[
-              { value: 'turntable', label: 'Turntable' },
-              { value: 'fade', label: 'Fade' },
-              { value: 'instant', label: 'Cut' },
-            ]}
+          }
+        />
+      </PaneSection>
+
+      {/* Moved in from the server dashboard: what listening costs is a
+          listener's question. The STATE stays server-side through the same
+          session settings - this row is a view over it, never a second
+          store - so the dashboard losing the control changed nothing about
+          where the choice lives. */}
+      <PaneSection title="Streaming">
+        <SettingRow
+          id="streaming-quality"
+          label="Streaming quality"
+          hint={
+            !session
+              ? undefined
+              : settings.quality === 'lossless'
+                ? 'Sends the original file, byte for byte. No re-encoding, and no work for the server.'
+                : 'Re-encodes on the fly to save data. Costs the server a CPU core per listener.'
+          }
+          disabledReason={session ? undefined : 'Needs a server'}
+          layout="stacked"
+          control={
+            <SegmentedControl
+              aria-label="Streaming quality"
+              fullWidth
+              value={settings.quality}
+              onValueChange={(next) => updateSettings({ quality: next as 'lossless' | 'transcode' })}
+              options={[
+                { value: 'lossless', label: 'Lossless' },
+                { value: 'transcode', label: 'Data saver' },
+              ]}
+            />
+          }
+        />
+        {session && settings.quality === 'transcode' && (
+          <SettingSliderRow
+            label="Bitrate"
+            min={96}
+            max={320}
+            step={32}
+            value={settings.bitrate}
+            valueLabel={`${settings.bitrate}k`}
+            onChange={(next) => updateSettings({ bitrate: next })}
           />
-        </Field>
-      </div>
-      <div className="prefsSection">
-        <Field
-          label="Lyrics in the header"
-          hint="How the song's words are spelled across the artwork behind the header, when the track has synced lyrics. Random draws a new one each song."
-        >
-          <Select
-            aria-label="Header lyrics"
-            fullWidth
-            value={pb.lyricWay}
-            onValueChange={(next) => pb.update({ lyricWay: next as typeof pb.lyricWay })}
-            options={[
-              { value: 'off', label: 'Off' },
-              { value: 'random', label: 'Random each song' },
-              { value: 'scatter', label: 'Scatter — words drift and dissolve' },
-              { value: 'typewriter', label: 'Typewriter — typed in the corner' },
-              { value: 'poster', label: 'Poster — fills the header, packed' },
-              { value: 'stack', label: 'Stack — a column of capitals' },
-            ]}
-          />
-        </Field>
-      </div>
-      <div className="prefsSection">
-        <Label>Queue</Label>
+        )}
+      </PaneSection>
+
+      <PaneSection title="Queue">
         {/* Shuffle's MANNERS, which is all this has ever been - the field is
             called smartShuffle for historical reasons and is not the parked
             "Smart shuffle" mode, which was the shuffle button's third state.
             This one stays: it costs nothing, needs no server, and turning it
             off is a worse shuffle rather than a missing feature. */}
-        <Switch
+        <SettingRow
           label="Shuffle manners"
-          checked={pb.smartShuffle}
-          onCheckedChange={(on) => pb.update({ smartShuffle: on })}
-        />
-        <Text tone="muted" size="sm">
-          Shuffle avoids playing the same artist twice in a row, and steers around songs it just
-          played.
-        </Text>
-        <Switch
-          label="Auto DJ"
-          checked={pb.autoDj}
-          onCheckedChange={(on) => pb.update({ autoDj: on })}
-        />
-        <Text tone="muted" size="sm">
-          When the queue runs out, keeps playing similar songs from the library instead of stopping.
-        </Text>
-        {motionAvailable() && (
-          <>
+          hint="Shuffle avoids playing the same artist twice in a row, and steers around songs it just played."
+          control={
             <Switch
-              label="Shake and flick"
-              checked={motion}
-              onCheckedChange={(on) => {
-                // iOS only grants motion access from inside a real gesture, and
-                // this switch IS one - asking anywhere else is refused with no
-                // prompt shown, which reads as the switch not working.
-                if (on) {
-                  void askMotionAccess().then((ok: boolean) => {
-                    if (!ok) {
-                      setMotionGestures(false);
-                      setMotion(false);
-                    }
-                  });
-                }
-                setMotionGestures(on);
-                setMotion(on);
-              }}
+              aria-label="Shuffle manners"
+              checked={pb.smartShuffle}
+              onCheckedChange={(on) => pb.update({ smartShuffle: on })}
             />
-            <Text tone="muted" size="sm">
-              On the Now Playing screen: shake to change shuffle, flick left or right to move
-              between songs. Off by default because a gesture that misreads costs you the song you
-              were listening to — walking, running and a pocket are all ignored, but a phone that
-              lives in a bag may still find a way.
-            </Text>
-          </>
-        )}
-      </div>
-      <div className="prefsSection">
-        <Label>Sound</Label>
-        <Switch
-          label="Night mode"
-          checked={pb.nightMode}
-          onCheckedChange={(on) => pb.update({ nightMode: on })}
+          }
         />
-        <Text tone="muted" size="sm">
-          Evens out loud and quiet passages, for listening at low volume without riding the fader.
-        </Text>
-        <Switch label="Mono" checked={pb.mono} onCheckedChange={(on) => pb.update({ mono: on })} />
-        <Text tone="muted" size="sm">
-          Plays the same signal to both ears - for single-earbud listening, or hearing comfort.
-        </Text>
-        <Switch
-          label="Volume boost range"
-          checked={pb.volumeBoost}
-          onCheckedChange={(on) => pb.update({ volumeBoost: on })}
+        <SettingRow
+          label="Auto DJ"
+          hint="When the queue runs out, keeps playing similar songs from the library instead of stopping."
+          control={
+            <Switch
+              aria-label="Auto DJ"
+              checked={pb.autoDj}
+              onCheckedChange={(on) => pb.update({ autoDj: on })}
+            />
+          }
         />
-        <Text tone="muted" size="sm">
-          Lets the fader push past 100% for quiet recordings. Off caps it at unity - kinder to
-          ears and speakers.
-        </Text>
-      </div>
-      <div className="prefsSection">
-        <Label>Taking songs apart</Label>
-        <StemsReadout />
-      </div>
+      </PaneSection>
 
-      <div className="prefsSection">
-        <Label>Feel</Label>
-        <Switch
-          label="Haptics"
-          checked={hapticsOn}
-          onCheckedChange={(on) => {
-            setHapticsPref(on);
-            // A goodbye you can feel; nothing when turning ON from off,
-            // because the provider has not re-enabled yet this frame.
-            if (on) window.setTimeout(() => fireNativeHaptic('light'), 50);
-          }}
+      <PaneSection title="Sound" footer={<StemsReadout />}>
+        <SettingRow
+          label="Night mode"
+          hint="Evens out loud and quiet passages, for listening at low volume without riding the fader."
+          control={
+            <Switch
+              aria-label="Night mode"
+              checked={pb.nightMode}
+              onCheckedChange={(on) => pb.update({ nightMode: on })}
+            />
+          }
         />
-        <Text tone="muted" size="sm">
-          Ticks from the Taptic Engine as you tap, play, and spin the disc. Only things you
-          actually press answer - scrolling and loading stay silent.
-        </Text>
-      </div>
-      {/* "Save listening history" moved to Privacy, with the other switches
-          about what leaves the device. Its copy here said "Off, nothing is
-          written anywhere", which was not true: the player was also sending
-          your position to registry.attack.fm on a twenty-second timer, gated
-          by nothing. Both switches sit together now, where that claim can be
-          read against the row that contradicted it. */}
-      <div className="prefsSection" data-setting="now-playing-video">
-        <Label>Now Playing</Label>
-        <Switch
-          label="Video clips on Now Playing"
-          checked={video}
-          onCheckedChange={(on: boolean) => {
-            setNowPlayingVideo(on);
-            setVideo(on);
-          }}
+        <SettingRow
+          label="Mono"
+          hint="Plays the same signal to both ears - for single-earbud listening, or hearing comfort."
+          control={
+            <Switch aria-label="Mono" checked={pb.mono} onCheckedChange={(on) => pb.update({ mono: on })} />
+          }
         />
-        <Text tone="muted" size="sm">
-          Plays the song&rsquo;s short looping clip behind the full player. Each new song
-          pulls down a few megabytes of video, and your server asks Spotify for it by
-          song title. Off leaves the blurred cover.
-        </Text>
-      </div>
-      <div className="prefsSection">
-        <Field label="Sleep timer" hint="Fades out and pauses when the time is up. Cleared on relaunch.">
-          <SegmentedControl
-            aria-label="Sleep timer"
-            fullWidth
-            value={sleepValue}
-            onValueChange={setSleepChoice}
-            options={[
-              { value: 'off', label: 'Off' },
-              { value: '15', label: '15m' },
-              { value: '30', label: '30m' },
-              { value: '45', label: '45m' },
-              { value: '60', label: '1h' },
-              { value: 'end', label: 'Track end' },
-            ]}
-          />
-        </Field>
-        <SleepCountdown sleep={pb.sleep} />
-      </div>
+        <SettingRow
+          label="Volume boost range"
+          hint="Lets the fader push past 100% for quiet recordings. Off caps it at unity - kinder to ears and speakers."
+          control={
+            <Switch
+              aria-label="Volume boost range"
+              checked={pb.volumeBoost}
+              onCheckedChange={(on) => pb.update({ volumeBoost: on })}
+            />
+          }
+        />
+      </PaneSection>
+
+      <PaneSection
+        title="Sleep"
+        tone="session"
+        footer={<SleepCountdown sleep={pb.sleep} />}
+      >
+        <SettingRow
+          label="Sleep timer"
+          hint="Fades out and pauses when the time is up. Cleared on relaunch."
+          layout="stacked"
+          control={
+            <SegmentedControl
+              aria-label="Sleep timer"
+              fullWidth
+              value={sleepValue}
+              onValueChange={setSleepChoice}
+              options={[
+                { value: 'off', label: 'Off' },
+                { value: '15', label: '15m' },
+                { value: '30', label: '30m' },
+                { value: '45', label: '45m' },
+                { value: '60', label: '1h' },
+                { value: 'end', label: 'Track end' },
+              ]}
+            />
+          }
+        />
+      </PaneSection>
     </div>
   );
 }
@@ -319,28 +282,29 @@ export function PlaybackSettings() {
  * something. But "how much of my music can I pull apart yet" is a listener's
  * question about their own library, and nobody looking for that opens Servers.
  * The status endpoint asks only for a signed-in caller, so this needs no
- * privileges of its own.
+ * privileges of its own. It rides as the Sound group's footer now: a status
+ * readout attached to the group it describes, not a row pretending to be a
+ * setting.
  *
- * Renders nothing at all when the server has no separation tools, when it is not
- * doing this, or when there is no server - an empty progress bar answering a
- * question nobody asked is worse than the absence.
+ * Renders nothing beyond one sentence when the server has no separation tools -
+ * an empty progress bar answering a question nobody asked is worse than the
+ * absence.
  */
 function StemsReadout() {
   const state = usePrefetchStatus();
   if (!state || !state.available) {
     return (
-      <Text tone="muted" size="sm">
-        This server does not take songs apart, so the Stems tab and the Pads work
-        on whatever you play as you play it.
-      </Text>
+      <>
+        This server does not take songs apart, so the Stems tab and the Pads work on whatever you
+        play as you play it.
+      </>
     );
   }
   return (
     <>
       <Text tone="muted" size="sm">
-        Songs you have liked or put in a playlist are pulled apart on the server
-        ahead of time, so the Stems tab and the Pads open straight away instead of
-        after a wait.
+        Songs you have liked or put in a playlist are pulled apart on the server ahead of time, so
+        the Stems tab and the Pads open straight away instead of after a wait.
       </Text>
       <StemProgress state={state} />
     </>

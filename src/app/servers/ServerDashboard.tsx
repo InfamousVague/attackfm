@@ -2,12 +2,9 @@ import {
   Avatar,
   Banner,
   Button,
-  Field,
   Meter,
   Pill,
   ProgressBar,
-  SegmentedControl,
-  Slider,
   StatTile,
   StatusDot,
   Text,
@@ -33,12 +30,11 @@ import { useServerSession } from './serverSession.tsx';
 import { gbLabel, uptimeLabel } from './serverFormat.ts';
 import { UsersSection } from './ServerUsers.tsx';
 import { BackgroundWork } from './BackgroundWork.tsx';
-import { UploadSection } from './ServerUpload.tsx';
 
 /** The signed-in status board: who and where, the numbers, the disk, and the
  * controls - a dashboard, not a form. */
 export function Connected() {
-  const { session, settings, updateSettings, disconnect } = useServerSession();
+  const { session, disconnect } = useServerSession();
   const { tracks, indexing, rescan, error } = useLibrary();
   const [status, setStatus] = useState<ScanStatus | null>(null);
   const [stats, setStats] = useState<ServerStats | null>(null);
@@ -240,43 +236,9 @@ export function Connected() {
       {session.isAdmin && <BackgroundWork />}
       {session.isAdmin && <UsersSection />}
 
-      <div className="prefsSection">
-        <Field
-          label="Streaming quality"
-          hint={
-            settings.quality === 'lossless'
-              ? 'Sends the original file, byte for byte. No re-encoding, and no work for the server.'
-              : 'Re-encodes on the fly to save data. Costs the server a CPU core per listener.'
-          }
-        >
-          <SegmentedControl
-            aria-label="Streaming quality"
-            value={settings.quality}
-            onValueChange={(next) => updateSettings({ quality: next as 'lossless' | 'transcode' })}
-            options={[
-              { value: 'lossless', label: 'Lossless' },
-              { value: 'transcode', label: 'Data saver' },
-            ]}
-          />
-        </Field>
-        {settings.quality === 'transcode' && (
-          <div className="prefsSliderRow">
-            <Slider
-              aria-label="Bitrate"
-              min={96}
-              max={320}
-              step={32}
-              value={settings.bitrate}
-              onValueChange={(next) => updateSettings({ bitrate: next })}
-            />
-            <Text size="sm" tone="muted" mono className="prefsSliderValue">
-              {settings.bitrate}k
-            </Text>
-          </div>
-        )}
-      </div>
-
-      <UploadSection />
+      {/* Streaming quality moved to Playback and the uploader to the Library
+          pane: one is a listener's playback question, the other is something
+          you do to your library. The dashboard is left describing the BOX. */}
     </div>
   );
 }

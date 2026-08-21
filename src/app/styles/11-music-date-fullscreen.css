@@ -195,6 +195,56 @@ body [class*='_panel_']:has(.settingsTitleRow) [class*='_rail_']::-webkit-scroll
   text-align: start;
 }
 
+/* A cluster's name, carried by its first row (the kit renders a flat rail, so
+   there is nowhere BETWEEN items for a caption to live). The kit's selected
+   pill would wrap the caption along with the row it names - so the caption is
+   pushed up and out of the button's box: the button keeps its seat, the words
+   hang above it in the run's gap. */
+.settingsRail__item {
+  display: flex;
+  flex-direction: column;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.settingsRail__groupLabel {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--glacier-text-muted);
+  /* Fixed height, not line-box height: the pill-clipping rule below has to
+     name this same measurement, and two derivations of one number drift. */
+  block-size: 1rem;
+  display: flex;
+  align-items: flex-end;
+  margin-block-start: var(--glacier-space-3);
+  margin-block-end: var(--glacier-space-1);
+}
+
+/* The first cluster's caption needs no run-gap above it. */
+[role='tab']:first-child .settingsRail__groupLabel {
+  margin-block-start: 0;
+}
+
+/* The kit's selected pill is an absolutely-positioned indicator filling the
+   whole tab (inset: 0) - which, on a tab carrying a cluster caption, washes
+   the caption in accent along with the row it names: select Library and
+   "YOUR STUFF" lights up. Start the pill below the caption instead. Same
+   kit-hash idiom as the overrides above; if the kit changes shape the worst
+   case is the caption riding inside the pill again, which is where it began. */
+body [class*='_panel_']:has(.settingsTitleRow)
+  [role='tab']:has(.settingsRail__groupLabel)
+  [class*='_indicator_'] {
+  inset-block-start: calc(1rem + var(--glacier-space-3) + var(--glacier-space-2));
+}
+
+body [class*='_panel_']:has(.settingsTitleRow)
+  [role='tab']:first-child:has(.settingsRail__groupLabel)
+  [class*='_indicator_'] {
+  inset-block-start: calc(1rem + var(--glacier-space-2));
+}
+
 /* The rail is narrower than the full-screen list, so the summary is allowed to
    end early rather than force the rail wider. */
 .settingsRail__row .settingsScreen__rowSummary {
