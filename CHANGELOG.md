@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.308
+
+- The ATTACK wordmark is big now — leading the About page, and filling the screen the app shows while it checks for an update as it opens
+
 ## 0.3.307
 
 - The Numbers first cards have their colour back. They were running about two thirds darker than every other card style, which read as switched off rather than as dark — the DJ card worst of all, since violet at that lightness is nearly black

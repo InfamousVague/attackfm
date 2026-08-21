@@ -657,8 +657,11 @@ body [class*='_panel_']:has(.settingsTitleRow) [class*='_railLabel_'] {
      is gone but a wordmark you can peel off the page is still wrong. */
   -webkit-user-drag: none;
   user-select: none;
-  inline-size: 9rem;
-  max-inline-size: 60%;
+  /* Big: the wordmark is the masthead of the About page, so it leads at size
+     rather than sitting as a small chrome mark. Capped as a fraction of the
+     pane so it never runs to the edges on a wide split. */
+  inline-size: 18rem;
+  max-inline-size: 78%;
 }
 
 /* The wordmark is white-on-transparent; on a light theme it vanished entirely.
