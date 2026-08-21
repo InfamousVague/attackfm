@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.285
+
+- Playlists can go in folders. Open one, use its ⋮ menu to file it, and the shelf groups them underneath your loose playlists
+
 ## 0.3.284
 
 - You can see how far the server has got through taking your songs apart, in Playback. It was only ever visible under Servers, and only to an admin — which is not where you would look for something about your own library
