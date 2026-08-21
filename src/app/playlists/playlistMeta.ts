@@ -143,10 +143,3 @@ export function forgetMeta(key: string): void {
   delete store[key];
   commit(store);
 }
-
-/** Every folder in use, in the order a person would expect to read them. */
-export function foldersInUse(): string[] {
-  const seen = new Set<string>();
-  for (const m of Object.values(snapshot)) if (m.folder) seen.add(m.folder);
-  return [...seen].sort((a, b) => a.localeCompare(b));
-}

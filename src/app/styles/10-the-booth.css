@@ -498,14 +498,6 @@
   background: color-mix(in srgb, var(--glacier-border-strong) 55%, transparent);
 }
 
-.boothEnrichment__fill {
-  display: block;
-  block-size: 100%;
-  border-radius: inherit;
-  background: var(--glacier-accent-solid);
-  transition: inline-size 300ms var(--glacier-ease-out);
-}
-
 /* The crates: the curator's shelf re-laid as a grid - every mix visible by
    scrolling the one column, no sideways gesture to learn. */
 .boothMixes {

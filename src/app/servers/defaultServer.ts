@@ -16,6 +16,3 @@ const configured = (import.meta.env?.VITE_DEFAULT_SERVER as string | undefined)?
 
 /** The address to offer first, or '' when this build has no opinion. */
 export const DEFAULT_SERVER = configured.replace(/\/+$/, '');
-
-/** True when this build was made to point at one particular server. */
-export const hasDefaultServer = DEFAULT_SERVER.length > 0;

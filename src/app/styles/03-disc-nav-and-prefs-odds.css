@@ -236,22 +236,6 @@
 
 /* A slider and its reading on one line: the slider takes the room, the value
    holds a fixed box so "Off" becoming "12s" never nudges the thumb. */
-.prefsSliderRow {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-3);
-}
-
-.prefsSliderRow > :first-child {
-  flex: 1;
-}
-
-.prefsSliderValue {
-  min-inline-size: 3ch;
-  text-align: end;
-  font-variant-numeric: tabular-nums;
-}
-
 /* The buttons under a settings control, laid out in a row. */
 .prefsActions {
   display: flex;

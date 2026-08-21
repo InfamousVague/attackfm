@@ -57,8 +57,6 @@ export interface Plan {
   landed: number;
 }
 
-export const EMPTY_PLAN: Plan = { started: [], notices: [], landed: 0 };
-
 /**
  * A finished job that put nothing new on the shelf.
  *

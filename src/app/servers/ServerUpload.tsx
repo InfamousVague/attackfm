@@ -1,4 +1,4 @@
-import { Banner, Button, Label, ProgressBar, Text } from '@glacier/react';
+import { Banner, Button, Label, ProgressBar, Switch, Text } from '@glacier/react';
 import { Upload } from '@glacier/icons';
 import { useState } from 'react';
 import { uploadFile } from '../server.ts';
@@ -6,6 +6,8 @@ import { useLibrary } from '../library/library.tsx';
 import { useLibrarySync } from '../library/librarySync.tsx';
 import { useServerSession } from './serverSession.tsx';
 import { isTauri } from '../core/tauri.ts';
+import { autoUploadEnabled, setAutoUpload } from '../settings/behaviourPrefs.ts';
+import { SettingRow } from '../settings/kit/settingsKit.tsx';
 
 /**
  * Sending music up to the server.
@@ -119,7 +121,18 @@ export function UploadSection() {
  */
 function FolderSyncRow() {
   const { status, syncNow } = useLibrarySync();
+  const { session } = useServerSession();
   const running = status.state === 'checking' || status.state === 'uploading';
+  /*
+   * The standing arrangement's OWN switch. librarySync has consulted this
+   * pref on every run all along (librarySync.tsx:279), but its writer -
+   * setAutoUpload - had no UI anywhere: the toggle was lost in a past
+   * settings shuffle, leaving a setting that could be read and never
+   * changed. Admin defaults on, guests off, exactly as the pref's own
+   * default logic says.
+   */
+  const isAdmin = session?.isAdmin === true;
+  const [auto, setAuto] = useState(() => autoUploadEnabled(session?.url ?? null, isAdmin));
 
   const line =
     status.state === 'checking'
@@ -136,6 +149,22 @@ function FolderSyncRow() {
 
   return (
     <>
+      {session && (
+        <SettingRow
+          label="Send new music automatically"
+          hint="Anything that lands in this machine's music folder goes up to the server on its own - on connect, and after every finished download."
+          control={
+            <Switch
+              aria-label="Send new music automatically"
+              checked={auto}
+              onCheckedChange={(on) => {
+                setAutoUpload(session.url, isAdmin, on);
+                setAuto(on);
+              }}
+            />
+          }
+        />
+      )}
       <Text tone={status.state === 'error' ? 'danger' : 'muted'} size="sm">
         {line}
       </Text>

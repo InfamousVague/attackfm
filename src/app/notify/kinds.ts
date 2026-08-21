@@ -41,27 +41,10 @@ export const NOTICE_COPY: Record<string, { label: string; hint: string }> = {
   },
 };
 
-/**
- * Kinds raised in-app only, which is why they are not in the table above: the
- * settings pane lists what the SERVER can send you, and offering a switch for
- * something no server will ever push would be a promise to nobody.
- *
- * `failed` has no push twin on purpose. The server never tells you a download
- * broke, because the answer to a broken download is a retry button on a page,
- * and that is not something to wake a phone for.
- */
-export const LOCAL_KINDS = ['failed'] as const;
-
 /** The order they read in: the ones about music first, the periodic ones next,
  *  people last. Anything the server knows and this list does not lands after
  *  them rather than being dropped. */
 export const NOTICE_ORDER = ['drops', 'curated', 'dates', 'digest', 'recap', 'friends'];
-
-/** The label for a kind, falling back to the kind itself. */
-export function noticeLabel(kind: string): string {
-  if (kind === 'failed') return 'Download failed';
-  return NOTICE_COPY[kind]?.label ?? kind;
-}
 
 /**
  * The glyph a row wears when it has no artwork of its own.

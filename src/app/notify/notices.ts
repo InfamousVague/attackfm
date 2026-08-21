@@ -304,17 +304,6 @@ export function useUnreadKinds(): ReadonlySet<string> {
   return useSyncExternalStore(subscribeNotices, unreadKinds, getNoKinds);
 }
 
-/**
- * A watcher that also wants to be told, without re-rendering on every change.
- * Used by the panel to mark things read on open.
- */
-export function useNoticeActions(): { markAllRead: () => void; clear: () => void } {
-  return {
-    markAllRead: useCallback(() => markAllRead(), []),
-    clear: useCallback(() => clearNotices(), []),
-  };
-}
-
 // Server snapshots. Stable references, for the same identity reason as EMPTY.
 const NO_KINDS: ReadonlySet<string> = new Set();
 function getEmpty(): readonly Notice[] {

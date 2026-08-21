@@ -22,8 +22,8 @@
 //! and is reconciled against the folder on every sweep, so a restore, a wipe
 //! or an OS reclaim cannot leave it believing in files that are gone.
 
-import { rememberArt } from './artCache.ts';
-import { ensureCanvas } from './canvasCache.ts';
+import { clearArtCache, rememberArt } from './artCache.ts';
+import { clearCanvasCache, ensureCanvas } from './canvasCache.ts';
 import { artSized, artUrl, fetchCanvas, loadCachedIndex, remotePath, streamUrl, trackIdFromPath, transcodeUrl, type RemoteTrack, type ServerSession } from '../server.ts';
 import { heldPath, offlineEntries, offlineSpace, pinTrack, unpinTrack } from '../downloads/offline.ts';
 import { pickSource } from '../servers/mirrors.ts';
@@ -870,15 +870,22 @@ export async function cacheUsage(): Promise<{ bytes: number; count: number; pinn
 
 /** Drop everything the cache owns, leaving pins alone - and the denials with
  *  it: clearing the cache is a fresh start, and a fresh start includes the
- *  songs you once told it to stop bringing back. */
+ *  songs you once told it to stop bringing back. The presentation goes too:
+ *  covers, clips and the canvas-lookup memo all exist to dress the songs
+ *  this is deleting, and clearArtCache/clearCanvasCache had sat unwired
+ *  since they were written - "Clear cache" was quietly keeping megabytes of
+ *  art for songs it had just thrown away. */
 export async function clearCache(): Promise<void> {
   const ledger = readLedger();
   for (const key of Object.keys(ledger)) await unpinTrack(key);
   writeLedger({});
   try {
     localStorage.removeItem(DENY_KEY);
+    localStorage.removeItem(CANVAS_KNOWN_KEY);
   } catch {
     // A denial that survives a clear is only a song that stays deleted.
   }
+  await clearArtCache();
+  await clearCanvasCache();
   notifyCacheChange();
 }

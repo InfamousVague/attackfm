@@ -14,7 +14,7 @@ import type { Track } from '../core/tauri.ts';
 
 /** Names fold before they are compared: two spellings of one name must never
  *  become two artists, or two half-empty albums. */
-export function fold(name: string): string {
+export function nameFold(name: string): string {
   return name.trim().toLowerCase();
 }
 
@@ -28,8 +28,8 @@ export function fold(name: string): string {
  * album) is not lost the other way.
  */
 export function isBy(track: Track, artist: string): boolean {
-  const want = fold(artist);
-  return fold(track.artist) === want || fold(track.albumArtist ?? '') === want;
+  const want = nameFold(artist);
+  return nameFold(track.artist) === want || nameFold(track.albumArtist ?? '') === want;
 }
 
 /**
@@ -59,7 +59,7 @@ export function groupAlbums(tracks: Track[]): AlbumGroup[] {
   const byAlbum = new Map<string, AlbumGroup>();
   for (const track of tracks) {
     const name = track.album || 'Unknown album';
-    const key = fold(name);
+    const key = nameFold(name);
     const existing = byAlbum.get(key);
     if (!existing) byAlbum.set(key, { name, artwork: track.artwork, list: [track] });
     else {
@@ -77,7 +77,7 @@ export function groupAlbums(tracks: Track[]): AlbumGroup[] {
  * whichever song happened to sort first.
  */
 export function albumCredit(list: Track[]): string {
-  const names = new Set(list.map((t) => fold(t.albumArtist || t.artist)).filter(Boolean));
+  const names = new Set(list.map((t) => nameFold(t.albumArtist || t.artist)).filter(Boolean));
   if (names.size === 1) {
     const first = list[0];
     return (first?.albumArtist || first?.artist) ?? '';
