@@ -58,7 +58,9 @@ tauri-plugin-decorum = "1"
 # the process - no AVFAudio bindings crate needed.
 [target.'cfg(target_os = "ios")'.dependencies]
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSString"] }
+# NSURL + NSNumber carry the backup exclusion on the offline and bundle
+# directories (nobackup.rs); NSString is the path in.
+objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSValue", "NSError"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

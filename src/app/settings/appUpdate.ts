@@ -262,30 +262,6 @@ export async function settleBootWager(): Promise<boolean> {
   }
 }
 
-/**
- * Stake the wager again on the bundle already running.
- *
- * The boot loader stakes once and `reportBootOk` settles once, which was a
- * clean pair until something had to ask `bundle_state` a question BEFORE the
- * app was up. `bundle_state` is not a reader - it takes any pending wager as
- * proof of a boot that never finished and quarantines that version, deleting
- * the directory the asking bundle is running out of. The launch gate did
- * exactly this, so every cold start of a downloaded bundle destroyed itself
- * mid-flight and every check afterwards answered "failed to boot here before".
- *
- * So the gate settles first and stakes again on the way out, and the wager
- * still ends where it always did - in the provider that only mounts once the
- * app is genuinely working. A bundle that comes up far enough to ask about
- * updates and then throws is still caught, which is the whole point of the
- * mechanism and the thing a simple "settle it earlier" fix would have thrown
- * away.
- */
-export async function restakeBootWager(): Promise<void> {
-  const version = runningBundle();
-  if (!version) return;
-  await tauriCall('bundle_begin_boot', { version });
-}
-
 /** The version baked into this build, injected by Vite. */
 declare const __AFM_VERSION__: string;
 /** False only in deliberately pinned test builds. */
@@ -458,5 +434,14 @@ declare global {
   interface Window {
     /** Written by the boot loader in index.html; null on the embedded bundle. */
     __afmBundleVersion?: string | null;
+    /**
+     * What the binary underneath can do, also from the boot loader.
+     *
+     * Absent means an older binary, whose index.html predates this and never
+     * set it - which is the only signal the frontend gets about which native
+     * contract it is running on, and the reason the launch check can tell
+     * whether it is safe to ask `bundle_state` before the app has mounted.
+     */
+    __afmNativeGeneration?: number;
   }
 }

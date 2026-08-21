@@ -47,7 +47,14 @@
         // Removed before it runs; re-added below on whichever path we take.
         moduleTag.remove();
 
-        function run(js, css, version) {
+        // What the binary underneath can do. The launch-time update check is
+        // only safe from generation 2, where `bundle_state` stopped being able
+        // to quarantine the bundle asking it - so the frontend has to be able
+        // to tell, and an older binary ships an older copy of this file that
+        // never sets it. Absent therefore means "assume the worst", which is
+        // exactly right.
+        function run(js, css, version, generation) {
+          window.__afmNativeGeneration = generation || 0;
           if (css) {
             var link = document.createElement('link');
             link.rel = 'stylesheet';
@@ -83,7 +90,7 @@
 
         var core = window.__TAURI__ && window.__TAURI__.core;
         if (!core || !core.invoke) {
-          run(embeddedJs, null, null);
+          run(embeddedJs, null, null, 0);
           return;
         }
 
@@ -93,36 +100,50 @@
         var guard = setTimeout(function () {
           if (settled) return;
           settled = true;
-          run(embeddedJs, null, null);
+          run(embeddedJs, null, null, 0);
         }, 1000);
 
+        // ONE call, not two. This used to ask `bundle_state` and then
+        // `bundle_begin_boot`, which meant a window between "the last wager was
+        // judged" and "this one is placed" that any other caller could land in
+        // - and `bundle_state` was itself destructive, so any of them could
+        // quarantine the bundle about to run. `bundle_claim_boot` does both
+        // halves under one lock and is the only thing that can quarantine
+        // anything. Five over-the-air versions were spent trying to sequence
+        // around the old shape from up here; it could not be done.
+        //
+        // Older binaries have no such command and answer with an error, which
+        // lands in the catch below and boots embedded - correct, and no worse
+        // than they already were.
         core
-          .invoke('bundle_state')
+          .invoke('bundle_claim_boot')
           .then(function (state) {
             if (settled) return;
+            settled = true;
+            clearTimeout(guard);
+            // The generation belongs to the BINARY, not to whichever frontend
+            // ends up running - so it is reported even when falling back to
+            // embedded. Passing 0 here would tell a perfectly capable build
+            // that it was an old one, and switch off the launch check on every
+            // device that happens to be running its embedded bundle.
+            var gen = state && state.nativeGeneration;
             if (!state || !state.dir || !state.active) {
-              settled = true;
-              clearTimeout(guard);
-              run(embeddedJs, null, null);
+              run(embeddedJs, null, null, gen);
               return;
             }
             var dir = state.dir;
-            return core.invoke('bundle_begin_boot', { version: state.active }).then(function () {
-              if (settled) return;
-              settled = true;
-              clearTimeout(guard);
-              run(
-                core.convertFileSrc(dir + '/app.js'),
-                core.convertFileSrc(dir + '/app.css'),
-                state.active
-              );
-            });
+            run(
+              core.convertFileSrc(dir + '/app.js'),
+              core.convertFileSrc(dir + '/app.css'),
+              state.active,
+              gen
+            );
           })
           .catch(function () {
             if (settled) return;
             settled = true;
             clearTimeout(guard);
-            run(embeddedJs, null, null);
+            run(embeddedJs, null, null, 0);
           });
       })();
     </script>

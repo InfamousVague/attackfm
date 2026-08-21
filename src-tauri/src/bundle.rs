@@ -32,14 +32,60 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use tauri::Manager;
+
+/// Serialises every read-modify-write of state.json.
+///
+/// There was nothing here, and three commands - `bundle_state`,
+/// `bundle_begin_boot`, `bundle_boot_ok` - each read the whole file, changed
+/// one field and wrote it back. Two of those overlapping loses whichever wrote
+/// first, and the one that mattered was a settle being overwritten by a stale
+/// read: the wager stayed standing, the next reader called it a failed boot,
+/// and a perfectly good bundle was deleted. Five over-the-air versions were
+/// spent trying to sequence around that from JavaScript, which cannot see the
+/// interleaving, let alone control it.
+///
+/// A process-wide lock rather than a file lock: there is one process, and the
+/// critical sections are three lines of synchronous IO. Nothing awaits while
+/// holding it.
+static STATE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn state_lock() -> &'static Mutex<()> {
+    STATE_LOCK.get_or_init(|| Mutex::new(()))
+}
 
 /// What this binary's Tauri commands amount to. A published bundle names the
 /// generation it was built against; anything higher than this cannot run here.
 ///
 /// BUMP THIS whenever a command is added, removed or changes shape - it is the
 /// one guard between an old APK and a bundle that expects a newer one.
-pub const NATIVE_GENERATION: u32 = 1;
+/// What a PUBLISHED BUNDLE requires of the binary running it.
+///
+/// Not the same number as `NATIVE_GENERATION`, and conflating them is a way to
+/// lock every device in the field out of every future update at once. That
+/// constant says what this binary PROVIDES; this one says what the frontend
+/// being shipped over the air actually NEEDS. A bundle stamped with a
+/// generation higher than a device's binary is refused outright - which is
+/// correct when the frontend genuinely calls a command that is not there, and
+/// a catastrophe when it merely happens to have been built from the same
+/// checkout as a native change it does not use.
+///
+/// Generation 2 added `bundle_claim_boot` and made `bundle_state` a pure read,
+/// and the frontend takes advantage of both - but only when the boot loader
+/// reports a generation-2 binary underneath (see `__afmNativeGeneration`), and
+/// degrades to exactly its old behaviour otherwise. So it still requires 1.
+///
+/// BUMP THIS only when the shipped frontend cannot function on the older
+/// binary at all, having first checked that it truly cannot rather than merely
+/// prefers not to.
+pub const BUNDLE_REQUIRES: u32 = 1;
+
+pub const NATIVE_GENERATION: u32 = 2;
+//                                    ^ 2: `bundle_state` no longer consumes the
+// boot wager, and `bundle_claim_boot` was added to do that one job atomically.
+// A bundle built against generation 2 may rely on both; generation 1 binaries
+// still answer every older command exactly as before.
 
 #[derive(Serialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
@@ -72,6 +118,10 @@ fn root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("no app data dir: {e}"))?
         .join("bundles");
     std::fs::create_dir_all(&base).map_err(|e| format!("cannot create {}: {e}", base.display()))?;
+    // Downloaded frontends are re-fetchable by definition; they have no place
+    // in somebody's iCloud backup. Cheap and idempotent, so it rides on the
+    // create rather than needing a separate startup step.
+    crate::nobackup::exclude(&base);
     Ok(base)
 }
 
@@ -131,13 +181,24 @@ fn safe_name(name: &str) -> Result<String, String> {
     }
 }
 
-/// `bundle_state` - what is active, pending and refused.
+/// `bundle_state` - what is active, pending and refused. **A pure read.**
 ///
-/// Called once at boot BEFORE anything is injected, and it is where rule 3 is
-/// settled: a `pending` found here means the last launch never reported a
-/// successful mount, so that version is quarantined on the spot.
+/// It used to be the place rule 3 was settled: a `pending` found here was
+/// taken as a failed boot and quarantined on the spot. That made the most
+/// innocuous-looking call in the API destructive, and every caller a hazard -
+/// the settings pane asking what version is running, the update check asking
+/// what is refused, `bundle_install` asking for its own return value - each
+/// one able to delete the bundle it was asked from if it happened to land
+/// while a wager was outstanding. It did, repeatedly, and it was not
+/// diagnosable from the frontend.
+///
+/// The quarantine decision now belongs to `bundle_claim_boot` alone, which
+/// makes it once per launch, atomically, at the only moment the answer is
+/// knowable. This one just reports.
 #[tauri::command]
 pub async fn bundle_state(app: tauri::AppHandle) -> Result<BundleState, String> {
+    let _guard = state_lock().lock();
+    #[allow(unused_mut)]
     let mut stored = read_stored(&app);
 
     // A pinned diagnostic build must not be shadowed by an OTA bundle left by
@@ -151,19 +212,7 @@ pub async fn bundle_state(app: tauri::AppHandle) -> Result<BundleState, String> 
         write_stored(&app, &stored)?;
     }
 
-    if let Some(failed) = stored.pending.take() {
-        // It was written before the boot and never cleared: the bundle did not
-        // come up. Refuse it for good and fall back.
-        if !stored.quarantined.contains(&failed) {
-            stored.quarantined.push(failed.clone());
-        }
-        if stored.active.as_deref() == Some(failed.as_str()) {
-            stored.active = None;
-        }
-        let _ = std::fs::remove_dir_all(root(&app)?.join(&failed));
-        write_stored(&app, &stored)?;
-    }
-
+    let pending = stored.pending.clone();
     let dir = stored
         .active
         .as_ref()
@@ -179,16 +228,103 @@ pub async fn bundle_state(app: tauri::AppHandle) -> Result<BundleState, String> 
         .filter(|p| p.join("app.js").exists() && p.join("app.css").exists())
         .map(|p| p.to_string_lossy().into_owned());
 
-    // An active pointer whose files have gone (an OS reclaim, a wipe) is not an
-    // error - it is simply the embedded bundle again.
-    if dir.is_none() && stored.active.is_some() {
+    // An active pointer whose files have gone (an OS reclaim, a wipe) reads as
+    // the embedded bundle again - but that is REPORTED, not written. A pure
+    // read stays pure; `bundle_claim_boot` tidies the pointer at the next boot.
+    let active = if dir.is_some() { stored.active.clone() } else { None };
+
+    Ok(BundleState {
+        active,
+        // Reported honestly now. It used to be hardcoded to None because this
+        // function had just eaten it, which meant nothing could ever observe an
+        // outstanding wager - including the code trying to work out why bundles
+        // were disappearing.
+        pending,
+        quarantined: stored.quarantined,
+        native_generation: NATIVE_GENERATION,
+        dir,
+    })
+}
+
+/// `bundle_claim_boot` - settle the last launch's wager and stake this one, in
+/// a single step that nothing can interleave with.
+///
+/// THE ONE DESTRUCTIVE OPERATION IN THIS FILE, and the whole point of it being
+/// one. Deciding "the previous boot failed" and "this boot is starting" are two
+/// halves of the same thought, and they were two commands with a gap between
+/// them that other callers kept falling into. Now the boot loader asks once,
+/// gets back everything it needs to run something, and no other code path can
+/// quarantine anything.
+///
+/// Order matters and is deliberate: judge the OLD wager first, then choose what
+/// to run from what survives, then stake. A version quarantined here is
+/// therefore never the version being staked.
+#[tauri::command]
+pub async fn bundle_claim_boot(app: tauri::AppHandle) -> Result<BundleState, String> {
+    let _guard = state_lock().lock();
+    let mut stored = read_stored(&app);
+    let mut dirty = false;
+
+    #[cfg(feature = "pinned-build")]
+    if stored.active.is_some() || stored.pending.is_some() {
         stored.active = None;
+        stored.pending = None;
+        write_stored(&app, &stored)?;
+        return Ok(BundleState {
+            active: None,
+            pending: None,
+            quarantined: stored.quarantined,
+            native_generation: NATIVE_GENERATION,
+            dir: None,
+        });
+    }
+
+    // 1. The previous launch. A wager still standing means whatever ran last
+    //    never reported a mount, so refuse it for good and take the pointer
+    //    off it. This is rule 3, and this is now the only place it happens.
+    if let Some(failed) = stored.pending.take() {
+        if !stored.quarantined.contains(&failed) {
+            stored.quarantined.push(failed.clone());
+        }
+        if stored.active.as_deref() == Some(failed.as_str()) {
+            stored.active = None;
+        }
+        let _ = std::fs::remove_dir_all(root(&app)?.join(&failed));
+        dirty = true;
+    }
+
+    // 2. What is left to run, if anything. BOTH files, for the reason given on
+    //    bundle_state's own resolution: a bundle missing either half is two
+    //    halves of different versions, which is worse than being a version
+    //    behind, so it falls back whole.
+    let dir = stored
+        .active
+        .as_ref()
+        .and_then(|v| root(&app).ok().map(|r| r.join(v)))
+        .filter(|p| p.join("app.js").exists() && p.join("app.css").exists())
+        .map(|p| p.to_string_lossy().into_owned());
+    if dir.is_none() && stored.active.is_some() {
+        // The files have gone - an OS reclaim, a wipe, or the quarantine above.
+        stored.active = None;
+        dirty = true;
+    }
+
+    // 3. Stake the new one, but only if there is actually something to run.
+    //    Staking on the embedded bundle would be betting on a boot that has no
+    //    directory to lose, and the next launch would quarantine a version
+    //    number that never came from here.
+    if let Some(active) = stored.active.clone() {
+        stored.pending = Some(active);
+        dirty = true;
+    }
+
+    if dirty {
         write_stored(&app, &stored)?;
     }
 
     Ok(BundleState {
         active: stored.active.clone(),
-        pending: None,
+        pending: stored.pending.clone(),
         quarantined: stored.quarantined,
         native_generation: NATIVE_GENERATION,
         dir,
@@ -199,6 +335,7 @@ pub async fn bundle_state(app: tauri::AppHandle) -> Result<BundleState, String> 
 #[tauri::command]
 pub async fn bundle_begin_boot(app: tauri::AppHandle, version: String) -> Result<(), String> {
     let version = safe_version(&version)?;
+    let _guard = state_lock().lock();
     let mut stored = read_stored(&app);
     stored.pending = Some(version);
     write_stored(&app, &stored)
@@ -207,6 +344,7 @@ pub async fn bundle_begin_boot(app: tauri::AppHandle, version: String) -> Result
 /// `bundle_boot_ok` - settle it: the frontend mounted.
 #[tauri::command]
 pub async fn bundle_boot_ok(app: tauri::AppHandle) -> Result<(), String> {
+    let _guard = state_lock().lock();
     let mut stored = read_stored(&app);
     stored.pending = None;
     write_stored(&app, &stored)
@@ -291,10 +429,16 @@ pub async fn bundle_install(
         let _ = std::fs::remove_dir_all(&target);
         std::fs::rename(&staging, &target).map_err(|e| format!("could not place bundle: {e}"))?;
 
-        let mut stored = read_stored(&app);
-        let previous = stored.active.clone();
-        stored.active = Some(version.clone());
-        write_stored(&app, &stored)?;
+        // Scoped, because `bundle_state` below takes the same lock and this
+        // must not still be holding it. Nothing awaits inside.
+        let previous = {
+            let _guard = state_lock().lock();
+            let mut stored = read_stored(&app);
+            let previous = stored.active.clone();
+            stored.active = Some(version.clone());
+            write_stored(&app, &stored)?;
+            previous
+        };
 
         // One generation back is kept: it is what a rollback returns to without a
         // download. Anything older is just disk.
@@ -304,6 +448,9 @@ pub async fn bundle_install(
             prune_except(&base, &[version.as_str()]);
         }
 
+        // Safe to ask now, in a way it was not before: this reports, and no
+        // longer decides. An install used to be able to quarantine the bundle
+        // that asked for it, on its way to telling it the install worked.
         bundle_state(app).await
     }
 }
@@ -311,10 +458,16 @@ pub async fn bundle_install(
 /// `bundle_revert` - go back to the embedded bundle deliberately.
 #[tauri::command]
 pub async fn bundle_revert(app: tauri::AppHandle) -> Result<BundleState, String> {
-    let mut stored = read_stored(&app);
-    stored.active = None;
-    stored.pending = None;
-    write_stored(&app, &stored)?;
+    {
+        let _guard = state_lock().lock();
+        let mut stored = read_stored(&app);
+        stored.active = None;
+        // The wager goes with it. Reverting is a deliberate choice, not a boot
+        // that failed, and leaving the bet standing would have the next launch
+        // quarantine a version nobody rejected.
+        stored.pending = None;
+        write_stored(&app, &stored)?;
+    }
     bundle_state(app).await
 }
 
