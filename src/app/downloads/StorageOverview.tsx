@@ -179,6 +179,29 @@ export function StorageOverview() {
   // deliberately not an entry, but its bytes are real.
   const debris = Math.max(0, (space?.heldBytes ?? listed) - listed);
   const total = listed + debris;
+  /*
+   * The empty share of the bar - what the cache could still take before it
+   * starts evicting.
+   *
+   * Measured against the BUDGET, not against the phone's disk, and the choice
+   * matters. The phone's free space is already stated in words above ("N free
+   * on the phone"), and drawn as a bar it would be almost all of it - a few
+   * gigabytes of music against a couple of hundred reads as a sliver and says
+   * nothing. The budget is the number this pane is actually about: it is the
+   * legend's own denominator ("Automatic - X of 15 GB"), it is what the slider
+   * underneath sets, and it is the thing that decides when a song gets thrown
+   * away. So the bar answers "how full is the allowance", and the gray is the
+   * room left in it.
+   *
+   * `max(limit, total)` rather than `limit`, because songs kept by hand are
+   * deliberately NOT budgeted (see cacheSweep - budgeting pins would shrink
+   * the cache every time you kept something). Enough pins can therefore put
+   * the total past the limit, and the denominator has to follow or the
+   * segments would sum past 100%. When that happens the gray is simply zero,
+   * which is the honest picture: nothing spare.
+   */
+  const capacity = Math.max(limit, total);
+  const empty = Math.max(0, capacity - total);
   const count = (usage?.count ?? 0) + (usage?.pinnedCount ?? 0);
 
   return (
@@ -195,12 +218,20 @@ export function StorageOverview() {
         {total > 0 ? (
           <>
             <SegmentedBar
+              className="storageBreak__bar"
               size="md"
               rounded
               data={[
                 { value: usage?.bytes ?? 0, tone: 'accent', label: 'Downloaded automatically' },
                 { value: usage?.pinnedBytes ?? 0, tone: 'success', label: 'Kept by hand' },
-                { value: debris, tone: 'neutral', label: 'Still downloading' },
+                /* Debris moves off `neutral` so the gray can have it. The kit
+                   offers five tones and only one of them is a gray, so the
+                   empty share and the unfinished downloads cannot both wear
+                   it and stay tellable apart. Warning is the better fit for
+                   debris anyway - a part-downloaded file is a state worth
+                   noticing, where empty space is the absence of one. */
+                { value: debris, tone: 'warning', label: 'Still downloading' },
+                { value: empty, tone: 'neutral', label: 'Free' },
               ]}
               aria-label="What is using the space"
             />
@@ -215,8 +246,13 @@ export function StorageOverview() {
                 Kept by hand · {formatBytes(usage?.pinnedBytes ?? 0)}
               </span>
               {debris > 0 && (
-                <span className="storageBreak__key" data-tone="neutral">
+                <span className="storageBreak__key" data-tone="warning">
                   Still downloading · {formatBytes(debris)}
+                </span>
+              )}
+              {empty > 0 && (
+                <span className="storageBreak__key" data-tone="neutral">
+                  Free · {formatBytes(empty)}
                 </span>
               )}
             </div>
