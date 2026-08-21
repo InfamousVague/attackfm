@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.305
+
+- Segmented toggles divide their space equally now, everywhere — each segment used to take its own label's width, which read as a lopsided control wherever two labels differed in length
+
 ## 0.3.304
 
 - The storage bar in Downloads & space now shows the room left in grey, so you can see how full the cache is rather than only what is in it
