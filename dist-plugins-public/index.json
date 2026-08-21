@@ -3,56 +3,6 @@
   "name": "AttackFM plugins",
   "plugins": [
     {
-      "id": "album-filler",
-      "name": "Album filler",
-      "version": "0.1.0",
-      "description": "Finds the records you own most of and offers you the songs that are missing.",
-      "author": "AttackFM",
-      "tags": [
-        "Library",
-        "Downloads"
-      ],
-      "entry": "album-filler-0.1.0.js",
-      "api": 1,
-      "bytes": 6202,
-      "sha256": "a4061fd28a0ab6bc61c6de2ab2cbbc35ba53e8771a784339329c0bb4e539df3c",
-      "requiresServer": true,
-      "public": true
-    },
-    {
-      "id": "eq-rack",
-      "name": "EQ rack",
-      "version": "0.1.0",
-      "description": "A preset rack for the equalizer: save your own curves, flip between A and B, and land any of them in one tap.",
-      "author": "AttackFM",
-      "tags": [
-        "Sound",
-        "Equalizer"
-      ],
-      "entry": "eq-rack-0.1.0.js",
-      "api": 1,
-      "bytes": 5741,
-      "sha256": "25b040d045c4216b450079681a949ed3c2a1af83eefab1ec456cf7edd44bf4c9",
-      "public": true
-    },
-    {
-      "id": "looper",
-      "name": "Looper",
-      "version": "0.2.1",
-      "description": "Sample any song into sixteen coloured pads, cut on its own beat, and play the pieces in time with each other.",
-      "author": "AttackFM",
-      "tags": [
-        "Sound",
-        "Instrument"
-      ],
-      "entry": "looper-0.2.1.js",
-      "api": 1,
-      "bytes": 22308,
-      "sha256": "3e53b928bc9fc6f6bdbab4acd94d5ea29766496b97815b3c55ecb325a3f722e3",
-      "requiresServer": true,
-      "public": true
-    },
-    {
       "id": "pedals",
       "name": "Pedals",
       "version": "0.3.4",

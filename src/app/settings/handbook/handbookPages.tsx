@@ -854,14 +854,14 @@ export const myPlugin: Plugin = {
             verifies app.js holds no `from './…'` sequences, and a doc string
             wearing one reads as a broken bundle to that check. */}
         <Code>{`// plugin.json
-{ "id": "eq-rack", "name": "EQ rack",
-  "version": "0.1.0", "entry": "plugin.ts",
+{ "id": "pedals", "name": "Pedals",
+  "version": "0.3.4", "entry": "plugin.ts",
   "public": true }
 
 // plugin.ts - imports the Plugin object
 // from the index module beside it, then:
 export function createPlugin() {
-  return eqRack;
+  return pedals;
 }`}</Code>
         <P>
           <code>public: true</code> is what puts a build into the official
