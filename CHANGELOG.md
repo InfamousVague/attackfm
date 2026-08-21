@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.319
+
+- Updates open to the app again instead of a black screen. Installing one left the app repairing a stylesheet that was never broken — throwing away the working one and rewriting the page while it was still being drawn. Closing and reopening was the only way through, and it is not needed any more
+
 ## 0.3.318
 
 - A Local AI page for whoever hosts the server. Point it at your model endpoint, name a model for each job, check the endpoint answers, see what each function has cost and what the curator has been doing — and hand any of it back to the server's own configuration when you would rather set it there
