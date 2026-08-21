@@ -335,6 +335,7 @@ export function StorageOverview() {
         <Field label="Download quality" hint={qualityHint(kbps, limit)}>
           <SegmentedControl
             aria-label="Download quality"
+            fullWidth
             value={String(kbps)}
             onValueChange={(next: string) => {
               const n = Number(next);

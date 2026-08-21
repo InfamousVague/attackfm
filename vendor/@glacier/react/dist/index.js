@@ -23035,7 +23035,7 @@ function OG({
     )
   ] });
 }
-const oR = "_root_6og9h_1", sR = "_fullWidth_6og9h_13", iR = "_segment_6og9h_20", rR = "_label_6og9h_24", lR = "_disabled_6og9h_41", dR = "_nativeInput_6og9h_45", cR = "_thumb_6og9h_57", uR = "_segmentSkeleton_6og9h_68", hR = "_sm_6og9h_113", pR = "_md_6og9h_120", mR = "_lg_6og9h_127", Fn = {
+const oR = "_root_wa189_1", sR = "_fullWidth_wa189_21", iR = "_segment_wa189_29", rR = "_label_wa189_33", lR = "_disabled_wa189_50", dR = "_nativeInput_wa189_54", cR = "_thumb_wa189_66", uR = "_segmentSkeleton_wa189_77", hR = "_sm_wa189_122", pR = "_md_wa189_129", mR = "_lg_wa189_136", Fn = {
   root: oR,
   fullWidth: sR,
   segment: iR,
