@@ -8,12 +8,11 @@ import { PaneSection, SettingRow } from './kit/settingsKit.tsx';
 
 /**
  * The Library pane (the section id stays `general` - ids are the contract
- * recency and deep links hold). What used to be a junk drawer - a tour
- * button, library stats, the folder, your account - now has one job: YOUR
- * MUSIC. What it amounts to, where it comes from, and how more of it gets in.
- * The tour lives on the Handbook's cover with the other "learn the app"
- * material; the account went to Account & devices with the rest of the
- * identity.
+ * recency and deep links hold). What used to be a junk drawer - library stats,
+ * the folder, your account - now has one job: YOUR MUSIC. What it amounts to,
+ * where it comes from, and how more of it gets in. The account went to Account
+ * & devices with the rest of the identity, and the Handbook carries the "learn
+ * the app" material.
  */
 export function General() {
   const { source, musicDir, loading, isDefault, choose, reset, tracks } = useLibrary();

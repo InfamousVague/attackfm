@@ -42,8 +42,6 @@ import { PrimaryNav } from './nav/PrimaryNav.tsx';
 import { APP_NAME, HeaderActionButtons, HeaderIdent } from './nav/HeaderChrome.tsx';
 import { AppMain } from './nav/AppMain.tsx';
 import { setMixOpener } from './nav/openMix.ts';
-import { setTourHost } from './tour/tourControl.ts';
-import { TourHost } from './tour/TourHost.tsx';
 import { useNavStack } from './nav/useNavStack.ts';
 import { useSearchSummon } from './nav/useSearchSummon.ts';
 import { PageRefreshProvider } from './nav/pageRefresh.tsx';
@@ -406,14 +404,6 @@ export function App() {
     return () => setMixOpener(null);
   }, [goMix]);
 
-  // The tour drives two things only this component owns: which tab is showing,
-  // and whether the settings modal is up. Same module-singleton channel as the
-  // mix opener above, for the same reason - the tour is started from inside
-  // settings and drawn beside the nav stack, neither of which can reach here.
-  useEffect(() => {
-    setTourHost({ goTab, closeSettings: () => setSettingsOpen(false) });
-    return () => setTourHost(null);
-  }, [goTab]);
   stateRef.current = { searchOpen, detail: detail as { kind?: string } | null, tab };
   // The phone's edge-swipe back: a drag in from the left walks the same stack
   // the header arrows do, with the page following the thumb. Touch-only and
@@ -866,9 +856,6 @@ export function App() {
               </div>
               </>
             )}
-            {/* Above the app, below nothing: the spotlight portals itself, so
-                this only decides when it exists, not where it draws. */}
-            <TourHost />
             <SettingsModal
               open={settingsOpen}
               onClose={() => {

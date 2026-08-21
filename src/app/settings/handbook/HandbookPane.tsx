@@ -1,11 +1,10 @@
-import { Button, IconButton, Menu, MenuItem } from '@glacier/react';
-import { ChevronLeft, ChevronRight, Compass, TableOfContents } from '@glacier/icons';
+import { IconButton, Menu, MenuItem } from '@glacier/react';
+import { ChevronLeft, ChevronRight, TableOfContents } from '@glacier/icons';
 import { useEffect, useRef, useState } from 'react';
 import {
   HANDBOOK_CHAPTERS,
   HANDBOOK_PAGES,
 } from './handbookPages.tsx';
-import { startTour } from '../../tour/tourControl.ts';
 
 /** The reader's place, kept across sessions - a manual that forgets where you
  *  were is a manual read once. */
@@ -176,20 +175,6 @@ export function HandbookPane() {
           <span className="handbook__kicker">{page.chapter}</span>
           <h3 className="handbook__title">{page.title}</h3>
           <div className="handbook__prose">{page.body}</div>
-          {index === 0 && (
-            <div className="handbook__tour">
-              {/* The way back into the guided tour, moved from General: it
-                  runs once by itself on a first launch and never again, so
-                  without a door it is a thing you could only see by accident.
-                  Its door belongs on the handbook's cover, beside the rest of
-                  "learn the app". Starting it closes settings and walks the
-                  app itself - see tourControl. */}
-              <Button variant="soft" size="sm" onClick={startTour}>
-                <Compass size={15} />
-                Take the tour
-              </Button>
-            </div>
-          )}
           {index === 0 && (
             <nav className="handbook__toc" aria-label="Contents">
               {HANDBOOK_CHAPTERS.filter((c) => c.start > 0).map((c) => (
