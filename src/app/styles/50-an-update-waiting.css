@@ -106,6 +106,22 @@
   -webkit-user-drag: none;
 }
 
+/* White-on-transparent wordmark, invisible on a light theme without this.
+   Same recipe as .mobileHeader__logo (00-base-a.css). */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .launchGate__mark {
+    filter: invert(1);
+  }
+}
+
+:root[data-theme='light'] .launchGate__mark {
+  filter: invert(1);
+}
+
+:root[data-theme='dark'] .launchGate__mark {
+  filter: none;
+}
+
 /* An indeterminate bar rather than a percentage: the check is a request whose
    length nobody knows, and a progress bar that invents a number is a bar that
    sticks at 90%. */

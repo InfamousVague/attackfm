@@ -186,6 +186,9 @@ export function PlaybackSettings() {
           checked={pb.autoDj}
           onCheckedChange={(on) => pb.update({ autoDj: on })}
         />
+        <Text tone="muted" size="sm">
+          When the queue runs out, keeps playing similar songs from the library instead of stopping.
+        </Text>
         {motionAvailable() && (
           <>
             <Switch
@@ -215,9 +218,6 @@ export function PlaybackSettings() {
             </Text>
           </>
         )}
-        <Text tone="muted" size="sm">
-          When the queue runs out, keeps playing similar songs from the library instead of stopping.
-        </Text>
       </div>
       <div className="prefsSection">
         <Label>Sound</Label>

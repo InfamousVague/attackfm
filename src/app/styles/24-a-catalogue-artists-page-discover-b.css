@@ -289,6 +289,23 @@
   max-inline-size: 60%;
 }
 
+/* The wordmark is white-on-transparent; on a light theme it vanished entirely.
+   Same recipe as .mobileHeader__logo (00-base-a.css) - the one place this was
+   already solved. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .aboutHero__mark {
+    filter: invert(1);
+  }
+}
+
+:root[data-theme='light'] .aboutHero__mark {
+  filter: invert(1);
+}
+
+:root[data-theme='dark'] .aboutHero__mark {
+  filter: none;
+}
+
 .aboutHero__pills {
   display: flex;
   gap: var(--glacier-space-2);

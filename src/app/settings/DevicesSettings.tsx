@@ -41,9 +41,9 @@ export function DevicesSettings() {
       <div className="prefsBody">
         <div className="prefsSection">
           <Text tone="muted" size="sm">
-            Devices appear here once you are connected to a server — AttackFM
+            Devices appear here once you are signed into a server — AttackFM
             Connect links every signed-in device so any of them can control, or
-            take over, what is playing. Connect one under Server.
+            take over, what is playing. Sign in under Servers first.
           </Text>
         </div>
       </div>
