@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.291
+
+- Songs kept on this device now bring their look with them: the cache sweep also stores their covers (both sizes) and the Canvas clips for the hottest songs, so an offline library stops drawing grey squares and still moves
+
 ## 0.3.290
 
 - Your playlists appear in the car. Android Auto's browse list now carries every playlist beside Liked, All songs and Shuffle, and a tap plays it in its own order
