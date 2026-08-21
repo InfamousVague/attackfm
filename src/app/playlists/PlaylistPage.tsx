@@ -34,6 +34,7 @@ import { fetchPlaylistSuggestions, remotePath } from '../server.ts';
 import { formatClock, formatTotal } from '../ux/format.ts';
 import { shuffled } from '../ux/shuffle.ts';
 import { RowArt } from './RowArt.tsx';
+import { RowMain } from './RowMain.tsx';
 import { usePlaylists } from './playlists.tsx';
 import { CoverWall } from './CoverWall.tsx';
 import { notePlaylistPlayed } from './playlistRecency.ts';
@@ -499,17 +500,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                 found.map((row) => (
                   <TrackMenu key={row.id} track={row.track} className="playlistRowMenu">
                     <div className="playlistRow">
-                      <button
-                        type="button"
-                        className="playlistRow__main"
-                        onClick={() => onPlay(row.track, listTracks)}
-                      >
-                        <RowArt artwork={row.track.artwork} />
-                        <span className="playlistRow__text">
-                          <span className="songTitle">{row.track.title}</span>
-                          <span className="songArtist">{row.track.artist}</span>
-                        </span>
-                      </button>
+                      <RowMain track={row.track} onPlay={() => onPlay(row.track, listTracks)} onOpenArtist={onOpenArtist} />
                     </div>
                   </TrackMenu>
                 ))
@@ -527,17 +518,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                  playlist as it is on a shelf. */
               <TrackMenu track={row.track} className="playlistRowMenu">
               <div className="playlistRow">
-                <button
-                  type="button"
-                  className="playlistRow__main"
-                  onClick={() => onPlay(row.track, listTracks)}
-                >
-                  <RowArt artwork={row.track.artwork} />
-                  <span className="playlistRow__text">
-                    <span className="songTitle">{row.track.title}</span>
-                    <span className="songArtist">{row.track.artist}</span>
-                  </span>
-                </button>
+                <RowMain track={row.track} onPlay={() => onPlay(row.track, listTracks)} onOpenArtist={onOpenArtist} />
                 {/* Siblings of the row button, not nested inside it: a button
                     within a button is not a thing the browser will honour. */}
                 <button
@@ -583,17 +564,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
             <ul className="playlistSuggest__list">
               {suggestions.map((t) => (
                 <li key={t.path} className="playlistRow playlistSuggest__row">
-                  <button
-                    type="button"
-                    className="playlistRow__main"
-                    onClick={() => onPlay(t, [t, ...listTracks])}
-                  >
-                    <RowArt artwork={t.artwork} />
-                    <span className="playlistRow__text">
-                      <span className="songTitle">{t.title}</span>
-                      <span className="songArtist">{t.artist}</span>
-                    </span>
-                  </button>
+                  <RowMain track={t} onPlay={() => onPlay(t, [t, ...listTracks])} onOpenArtist={onOpenArtist} />
                   <button
                     type="button"
                     className="songArtist songArtistLink playlistRow__artist"

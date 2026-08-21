@@ -6,6 +6,7 @@ import {
 } from '@glacier/react';
 import { Clock } from '@glacier/icons';
 import { useMemo, useState, type ReactNode } from 'react';
+import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { useLibrary } from './library.tsx';
 import { hasLocalLibrary } from '../core/platform.ts';
 import { useDockedSheet, useNarrowViewport } from '../ux/useNarrowViewport.ts';
@@ -20,6 +21,12 @@ const DATE_FORMAT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'n
 
 // The order the table opens in: newest additions first.
 const DEFAULT_SORT: DataGridSort = { columnKey: 'addedAt', direction: 'desc' };
+
+/** From wherever a press lands in the grid, the title cell's menu wrapper on
+ *  the same row - the one element per row that actually wears the menu. */
+function rowMenuTarget(from: Element): Element | null {
+  return from.closest('tr')?.querySelector('.songTitleMenuTarget') ?? null;
+}
 
 /** The shared song menu, for a cell that only knows its row. A row whose
  *  track has just left the library (a sync delta mid-render) simply draws
@@ -151,6 +158,9 @@ export function SongTable({
 }) {
   const library = useLibrary();
   const tracks = tracksProp ?? library.tracks;
+  // Hold anywhere on a row - or right-click anywhere on it - and the row's
+  // menu opens; the release does not also play the song.
+  const hold = useHoldToMenu(rowMenuTarget);
 
   // The sort is lifted out of the grid (controlled) for one reason: the play
   // queue has to be the rows as displayed, and only the sort says what that
@@ -207,9 +217,13 @@ export function SongTable({
         //
         // Auto here is not a fallback, it is the correct answer: with the two
         // wide columns gone there is nothing left to starve the title.
-        col.key === 'title' && narrow
-          ? { ...col, width: undefined }
-          : col.key === 'index' && plays
+        //
+        // (The width is handed over INSIDE the title branch below, not as a
+        // branch of its own ahead of it - a first branch that returned the
+        // bare column for "narrow" won the ternary, and the phone got a title
+        // cell with no menu and no artist link. That was the bug: holding a
+        // song on the phone did nothing, because there was nothing to hold.)
+        col.key === 'index' && plays
           ? {
               ...col,
               header: 'Plays',
@@ -223,6 +237,7 @@ export function SongTable({
           : col.key === 'title'
           ? {
               ...col,
+              width: narrow ? undefined : col.width,
               render: (row) => (
                 <SongTitleMenu track={byPath.get(row.id as string) ?? null}>
                   <div className="songTitleCell">
@@ -292,6 +307,7 @@ export function SongTable({
     <>
     <DataGrid
       aria-label="Songs"
+      {...hold}
       className={flow ? 'songTable songTable--flow' : 'songTable'}
       columns={columns}
       data={rows}

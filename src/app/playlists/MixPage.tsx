@@ -6,6 +6,7 @@ import { formatClock, formatTotal } from '../ux/format.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
 import { TrackMenu } from '../library/TrackMenu.tsx';
 import { RowArt } from './RowArt.tsx';
+import { RowMain } from './RowMain.tsx';
 import { CoverWall } from './CoverWall.tsx';
 import { usePlaylists } from './playlists.tsx';
 import type { Track } from '../core/tauri.ts';
@@ -154,17 +155,7 @@ export function MixPage({
                  is on a shelf. */
               <TrackMenu key={`${track.path}-${i}`} track={track} className="playlistRowMenu">
                 <div className="playlistRow">
-                  <button
-                    type="button"
-                    className="playlistRow__main"
-                    onClick={() => onPlay(track, tracks)}
-                  >
-                    <RowArt artwork={track.artwork} />
-                    <span className="playlistRow__text">
-                      <span className="songTitle">{track.title}</span>
-                      <span className="songArtist">{track.artist}</span>
-                    </span>
-                  </button>
+                  <RowMain track={track} onPlay={() => onPlay(track, tracks)} onOpenArtist={onOpenArtist} />
                   {/* A sibling of the row button, never nested inside it. */}
                   <button
                     type="button"
