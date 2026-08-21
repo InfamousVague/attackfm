@@ -7,7 +7,7 @@ import {
   useLiveLevels,
   type AnalyserMeter,
 } from '@glacier/react';
-import { Heart, Play, X } from '@glacier/icons';
+import { Heart, Play, Undo2, X } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from '../library/library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
@@ -33,6 +33,17 @@ import { CardFace } from './DateCardFace.tsx';
 import { loadAudioUrl, type Track } from '../core/tauri.ts';
 import { fireNativeHaptic } from '../core/haptics.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
+
+/** How many verdicts can be walked back. */
+const UNDO_DEPTH = 10;
+
+/** A decision, and what it actually changed - see the note on `undos`. */
+interface Verdict {
+  track: Track;
+  dir: 'left' | 'right';
+  /** Whether THIS swipe is what favourited the song, rather than finding it so. */
+  favorited: boolean;
+}
 
 /**
  * Date mode: the collector's auditions, met one at a time.
@@ -125,6 +136,22 @@ export function DatePage() {
   const [refill, setRefill] = useState<'asking' | 'asked' | 'failed' | null>(null);
   const askedFor = useRef<string>('');
   const [gone, setGone] = useState<Set<string>>(() => new Set());
+
+  /*
+   * The last few verdicts, so one can be taken back.
+   *
+   * `favorited` is the field that matters and the one a naive undo gets wrong.
+   * A right swipe only calls toggleFavorite when the song was NOT already a
+   * favourite - so undoing by toggling again would un-favourite a song that was
+   * yours before this deck ever showed it to you. Recording what the swipe
+   * actually CHANGED, rather than what it was, is the difference between
+   * reversing a decision and destroying one.
+   *
+   * A stack rather than one slot, because misreading two cards in a row is not
+   * rarer than misreading one. Capped because the deck is finite and a session
+   * that walked back forty cards has stopped being an undo.
+   */
+  const [undos, setUndos] = useState<Verdict[]>([]);
 
   const deck = useMemo(() => {
     const passed = passedRef.current;
@@ -450,10 +477,14 @@ export function DatePage() {
 
   const verdict = useCallback(
     (track: Track, dir: 'left' | 'right') => {
+      let favorited = false;
       if (dir === 'right') {
         fireNativeHaptic('success');
         // The heart is the adoption - the same verb as everywhere else.
-        if (!isFavorite(track.path)) toggleFavorite(track.path);
+        if (!isFavorite(track.path)) {
+          toggleFavorite(track.path);
+          favorited = true;
+        }
         const id = trackIdFromPath(track.path);
         if (id !== null) sessionKept.current.push(id);
       } else {
@@ -469,6 +500,7 @@ export function DatePage() {
       // card is interactive at once) and the sound (so its play() carries the
       // gesture's autoplay permission). Only the fling animation waits.
       setGone((prev) => new Set(prev).add(track.path));
+      setUndos((prev) => [...prev, { track, dir, favorited }].slice(-UNDO_DEPTH));
       setOutgoing({ track, dir });
       window.clearTimeout(flingTimer.current);
       flingTimer.current = window.setTimeout(() => setOutgoing(null), FLING_MS);
@@ -477,6 +509,54 @@ export function DatePage() {
     },
     [deck, isFavorite, toggleFavorite, speak],
   );
+
+  /**
+   * Take back the last verdict.
+   *
+   * Every filter the deck applies has to be reversed or the card stays hidden,
+   * which is the whole difficulty: `gone` is only one of three. A kept song is
+   * excluded by `isFavorite`, a passed one by the PERSISTED pass list, and both
+   * outlive this component - the pass list is written to storage and survives a
+   * relaunch. Removing it from `gone` alone would look like undo doing nothing.
+   *
+   * The session logs are trimmed too. They are what dateDone reports at the end,
+   * and a verdict that was taken back should not reach the server as one that
+   * stood - the point of the undo is that it never happened.
+   */
+  const undo = useCallback(() => {
+    const last = undos[undos.length - 1];
+    if (!last) return;
+    fireNativeHaptic('light');
+    setUndos((prev) => prev.slice(0, -1));
+
+    const id = trackIdFromPath(last.track.path);
+    if (last.dir === 'right') {
+      // Only if this swipe is what set it. A song that was already a favourite
+      // stays one - undoing a decision must not undo an older, different one.
+      if (last.favorited && isFavorite(last.track.path)) toggleFavorite(last.track.path);
+      if (id !== null) {
+        const at = sessionKept.current.lastIndexOf(id);
+        if (at !== -1) sessionKept.current.splice(at, 1);
+      }
+    } else if (id !== null) {
+      passedRef.current.delete(id);
+      writePassed(passedRef.current);
+      const at = sessionPassed.current.lastIndexOf(id);
+      if (at !== -1) sessionPassed.current.splice(at, 1);
+    }
+
+    setGone((prev) => {
+      const next = new Set(prev);
+      next.delete(last.track.path);
+      return next;
+    });
+    // The fling is mid-flight if this lands quickly; cancel it rather than let
+    // it clear a card that has come back.
+    window.clearTimeout(flingTimer.current);
+    setOutgoing(null);
+    setDrag(null);
+    speak(last.track);
+  }, [undos, isFavorite, toggleFavorite, speak]);
 
   // --- the swipe -------------------------------------------------------------
 
@@ -603,6 +683,22 @@ export function DatePage() {
           </div>
 
           <div className="dateActions">
+            {/* Between Pass and Keep, and smaller than both: it undoes either,
+                so it belongs to neither side, and it is the one control here
+                that should never be the easiest thing to hit by accident. */}
+            <IconButton
+              variant="ghost"
+              className="dateActions__btn dateActions__btn--undo"
+              aria-label={
+                undos.length > 0
+                  ? `Undo ${undos[undos.length - 1]!.dir === 'right' ? 'keeping' : 'passing on'} ${undos[undos.length - 1]!.track.title}`
+                  : 'Nothing to undo'
+              }
+              disabled={undos.length === 0}
+              onClick={undo}
+            >
+              <Undo2 size={20} />
+            </IconButton>
             <IconButton
               variant="outline"
               className="dateActions__btn dateActions__btn--pass"
