@@ -13,6 +13,7 @@ import { rememberProfile } from './household.ts';
 import { rememberServer } from './servers.ts';
 import { pickSource, startMirrorHeartbeat } from './mirrors.ts';
 import { startServerSync } from './serverSync.ts';
+import { useRegistryOptional } from './registrySession.tsx';
 import { startCacheSweeps } from '../downloads/autoCache.ts';
 import { checkForBundle, reclaimEmbeddedIfNewer, reportBootOk, stagedBundle } from '../settings/appUpdate.ts';
 import {
@@ -282,9 +283,21 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
     return startMirrorHeartbeat(session);
   }, [session]);
 
-  // And the account learns where this device listens, so the next device does
-  // not have to be told again. Addresses only - see serverSync.ts.
-  useEffect(() => startServerSync(session), [session]);
+  /*
+   * And the account learns where this device listens, so the next device does
+   * not have to be told again. Addresses only - see serverSync.ts.
+   *
+   * Keyed on the REGISTRY TOKEN as well as the session, and that is the whole
+   * repair: the push needs an identity to push to, and it used to re-run only
+   * when the server session changed. Sign into a server first and make the
+   * account second - which is a path the front door itself offers ("sign into
+   * a server directly") - and the push ran once against no token, returned
+   * empty-handed, and never fired again. The account then knew about no
+   * servers at all, so a new phone signing into that same account was handed
+   * nothing and asked for an invite to a server it already belonged to.
+   */
+  const registryToken = useRegistryOptional()?.session?.token ?? null;
+  useEffect(() => startServerSync(session), [session, registryToken]);
 
   // And the device quietly keeps hold of what this listener actually plays.
   useEffect(() => {

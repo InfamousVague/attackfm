@@ -184,6 +184,72 @@
   margin-top: 4px;
 }
 
+/* The servers the account already belongs to, offered on a fresh device
+   before it asks for an invite to somewhere it is already a member. Cards
+   rather than a list: this is the primary action of the step, and on the one
+   screen where a listener has nothing else to do it should look like it. */
+.loginGate__servers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.loginGate__server {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  inline-size: 100%;
+  padding: var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-glass-regular);
+  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  border: var(--glacier-hairline) solid var(--glacier-glass-border);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.loginGate__server:active {
+  transform: scale(0.99);
+}
+
+.loginGate__server:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.loginGate__serverIcon {
+  display: grid;
+  place-items: center;
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  flex: none;
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-solid);
+}
+
+.loginGate__serverBody {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-inline-size: 0;
+}
+
+.loginGate__serverName {
+  font-weight: 600;
+}
+
+.loginGate__serverMeta {
+  font-size: 0.8rem;
+  color: var(--glacier-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* The secondary ways off an onboarding step - sign into a server directly, or
    skip - sat under the main action, quiet, side by side. */
 .loginGate__alts {

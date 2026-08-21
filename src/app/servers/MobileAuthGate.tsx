@@ -1,13 +1,16 @@
 import { Banner, Button, Field, Input, Text } from '@glacier/react';
 import { ArrowLeft, Cloud, KeyRound, QrCode, User } from '@glacier/icons';
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
+  enterServer,
   fetchServerInfo,
   normalizeServerUrl,
   pairClaim,
   register,
   type ServerInfo,
 } from '../server.ts';
+import { fetchSavedServers } from './serverSync.ts';
+import type { Membership } from './registry.ts';
 import { DEFAULT_SERVER } from './defaultServer.ts';
 import { useServerSession } from './serverSession.tsx';
 import { useRegistry } from './registrySession.tsx';
@@ -92,13 +95,21 @@ export function MobileAuthGate({ children }: { children: ReactNode }) {
   if (!registry) {
     return <OnboardAccount onConnectServer={() => setConnecting(true)} onSkip={skip} />;
   }
-  // Has an identity, no library yet → get one.
+  // Has an identity, no library yet → the account already knows which servers
+  // this person belongs to, so ask IT before asking them.
   return <OnboardServer onConnectServer={() => setConnecting(true)} onSkip={skip} />;
 }
 
 /**
- * Step one: create (or sign into) a central AttackFM account. The first thing
+ * Step one: sign into (or create) a central AttackFM account. The first thing
  * the app asks, because everything else hangs off having an identity.
+ *
+ * SIGN IN is the default face, not sign up. A front door is opened far more
+ * often by someone who already lives there - every reinstall, every new
+ * phone, every returning listener - and only once, ever, by someone who does
+ * not. Leading with the form that creates a SECOND account for a person who
+ * already has one is how a returning listener ends up locked out of their own
+ * servers with a handle they did not mean to register.
  */
 function OnboardAccount({
   onConnectServer,
@@ -108,12 +119,16 @@ function OnboardAccount({
   onSkip: () => void;
 }) {
   const { apply } = useRegistry();
-  const [mode, setMode] = useState<'create' | 'signin'>('create');
+  const [mode, setMode] = useState<'create' | 'signin'>('signin');
   const [handle, setHandle] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const ready = handle.trim().length >= 3 && password.length >= 8 && !busy;
+  // The 8-character floor is a rule about CHOOSING a password; applying it to
+  // sign-in would refuse to submit a shorter one that already exists and is
+  // correct, with a disabled button and no explanation.
+  const ready =
+    handle.trim().length >= 3 && password.length >= (mode === 'create' ? 8 : 1) && !busy;
 
   const go = async (e: FormEvent) => {
     e.preventDefault();
@@ -208,20 +223,117 @@ function OnboardServer({
   onConnectServer: () => void;
   onSkip: () => void;
 }) {
+  const { session: registry } = useRegistry();
+  const { applySession } = useServerSession();
+  /*
+   * The servers this ACCOUNT belongs to, from whichever device signed into
+   * them. This is what makes a new phone not a fresh start: the account has
+   * held the addresses all along (serverSync.ts), and membership is re-proved
+   * through the registry rather than re-typed, so arriving here with a saved
+   * server means one tap - or none.
+   *
+   * Only the addresses ever travelled; the token this mints is this device's
+   * own. That is the security shape the whole design rests on, and it is also
+   * why this can be automatic: entering is not replaying a stored credential,
+   * it is proving membership again.
+   */
+  const [saved, setSaved] = useState<Membership[] | null>(null);
+  const [entering, setEntering] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  // Set once the single-server auto-entry has had its go, so a failure lands
+  // on the list instead of retrying forever.
+  const tried = useRef(false);
+
+  const enter = useCallback(
+    async (url: string) => {
+      if (!registry) return;
+      setEntering(url);
+      setError(null);
+      try {
+        applySession(await enterServer(url, registry.token));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'That server did not let us in.');
+        setEntering(null);
+      }
+    },
+    [registry, applySession],
+  );
+
+  useEffect(() => {
+    let live = true;
+    void fetchSavedServers().then((list) => {
+      if (!live) return;
+      setSaved(list);
+      // Exactly one server on the account: there is nothing to choose between,
+      // so choosing is just a tap in the way. Several, and the list stands.
+      if (list.length === 1 && !tried.current) {
+        tried.current = true;
+        void enter(list[0]!.serverUrl);
+      }
+    });
+    return () => {
+      live = false;
+    };
+  }, [enter]);
+
+  const only = saved?.length === 1;
+  const looking = saved === null || (only && entering !== null);
+
   return (
     <div className="loginGate">
       <ArtWall />
       <div className="loginGate__hero">
         <img className="loginGate__mark" src={wordmark} alt="AttackFM" />
         <Text className="loginGate__tag" tone="muted">
-          Now find some music. Join a server you were invited to, or run your own.
+          {looking
+            ? 'Finding the servers on your account…'
+            : saved && saved.length > 0
+              ? 'Your account already listens here. Pick one to carry on.'
+              : 'Now find some music. Join a server you were invited to, or run your own.'}
         </Text>
       </div>
       <div className="loginGate__form">
-        <JoinServer />
-        <Text tone="subtle" size="sm">
-          No invite yet? Ask a friend who runs a server to send you one, then open their link here.
-        </Text>
+        {error && <Banner tone="danger">{error}</Banner>}
+        {saved && saved.length > 0 && !looking && (
+          <div className="loginGate__servers">
+            {saved.map((m) => (
+              <button
+                key={m.serverUrl}
+                type="button"
+                className="loginGate__server"
+                disabled={entering !== null}
+                onClick={() => void enter(m.serverUrl)}
+              >
+                <span className="loginGate__serverIcon" aria-hidden>
+                  <Cloud size={18} />
+                </span>
+                <span className="loginGate__serverBody">
+                  <span className="loginGate__serverName">
+                    {m.serverName || m.serverUrl.replace(/^https?:\/\//, '')}
+                  </span>
+                  <span className="loginGate__serverMeta">
+                    {entering === m.serverUrl
+                      ? 'Signing in…'
+                      : m.serverName
+                        ? m.serverUrl.replace(/^https?:\/\//, '')
+                        : m.role === 'owner'
+                          ? 'Your server'
+                          : 'You are a member'}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+        {!looking && (!saved || saved.length === 0) && (
+          <>
+            <JoinServer />
+            <Text tone="subtle" size="sm">
+              No invite yet? Ask a friend who runs a server to send you one, then open their link
+              here.
+            </Text>
+          </>
+        )}
       </div>
       <div className="loginGate__alts">
         <Button variant="ghost" size="sm" onClick={onConnectServer}>

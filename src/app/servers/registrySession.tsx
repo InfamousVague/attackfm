@@ -105,3 +105,9 @@ export function useRegistry(): RegistrySessionValue {
   if (!v) throw new Error('useRegistry must be used within a RegistrySessionProvider');
   return v;
 }
+
+/** The identity where there may not be one - for trees that legitimately
+ *  render without the provider (the same shape as useJamOptional). */
+export function useRegistryOptional(): RegistrySessionValue | null {
+  return useContext(Ctx);
+}
