@@ -158,13 +158,20 @@ export function TopScrim({ resetKey }: { resetKey: string }) {
     if (!node || !host) return;
     // The SAME scroll progress the scrim rides is published as a CSS variable,
     // so the collection page's top bar can fade its own black back in off it:
-    // the scrim is the shadow UNDER the bar, --app-top-scroll is the bar. It
-    // goes on the app window, an ancestor of both the scroller and the bar
-    // (which are siblings), rather than on either one.
-    const win = host.closest('.appWindow') as HTMLElement | null;
+    // the scrim is the shadow UNDER the bar, --app-top-scroll is the bar.
+    //
+    // It goes on the BAR ELEMENT itself, not on .appWindow. A custom property
+    // is inherited, so writing it to an app-wide ancestor on every scroll frame
+    // asks the engine to recompute inherited style for the whole subtree at the
+    // one moment that cannot afford it - the same shape as the accelerometer
+    // parallax pulled out in 0.3.260. The bar is the only reader, so writing to
+    // the bar invalidates one element. Found once here (a sibling of the
+    // scroller under the same window) and cached; the effect re-runs per page.
+    const win = host.closest('.appWindow');
+    const bar = win?.querySelector<HTMLElement>('.mobileHeader') ?? null;
     const set = (p: number) => {
       node.style.opacity = String(p);
-      win?.style.setProperty('--app-top-scroll', String(p));
+      bar?.style.setProperty('--app-top-scroll', String(p));
     };
     // A fresh page mounts parked at the top; start invisible.
     set(0);
