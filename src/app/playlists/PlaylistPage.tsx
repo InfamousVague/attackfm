@@ -19,10 +19,11 @@ import {
   Trash2,
   X,
 } from '@glacier/icons';
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from 'react';
 import { useRefreshNonce } from '../nav/pageRefresh.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
+import { metaFor, metaKey, setMeta, subscribeMeta } from './playlistMeta.ts';
 import { mosaicArts, useArtLoad, useTileArt } from '../ux/artLoad.ts';
 import { fetchPlaylistSuggestions, remotePath } from '../server.ts';
 import { formatClock, formatTotal } from '../ux/format.ts';
@@ -69,6 +70,9 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
   const playlist = playlists.find((p) => p.id === id);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  /** The description being edited, or null when it is only being read. */
+  const [describing, setDescribing] = useState<string | null>(null);
+
 
   // Deleted from another device while open here: the heartbeat drops it from
   // the list and the page steps back rather than rendering against nothing.
@@ -87,6 +91,16 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
   // request it just made, forever, which is exactly what it did at first.
   const memberKey = playlist?.paths.join(',') ?? '';
   const playlistId = playlist?.id;
+
+  // Decoration lives beside the playlist rather than in it - see playlistMeta.
+  // Subscribed rather than read once, because another device can edit it and
+  // the prefs sync writes the same store underneath this page.
+  const key = metaKey(session?.url, playlistId ?? '');
+  const meta = useSyncExternalStore(
+    subscribeMeta,
+    () => metaFor(key),
+    () => metaFor(key),
+  );
   useEffect(() => {
     if (!session || !playlistId) return;
     const ctrl = new AbortController();
@@ -265,6 +279,54 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
             {rows.length} {rows.length === 1 ? 'song' : 'songs'}
             {totalSeconds > 0 ? ` · ${formatTotal(totalSeconds)}` : ''}
           </Text>
+
+          {/* The description, read in place and edited in place. A field that
+              is only reachable through a menu is a field nobody fills in, so
+              the empty state is itself the invitation - and it is quiet enough
+              that a playlist which does not want one does not look unfinished. */}
+          {describing === null ? (
+            <button
+              type="button"
+              className="playlistHead__about"
+              data-empty={!meta.description || undefined}
+              onClick={() => setDescribing(meta.description ?? '')}
+            >
+              {meta.description || 'Add a description'}
+            </button>
+          ) : (
+            <form
+              className="playlistHead__aboutEdit"
+              onSubmit={(e) => {
+                e.preventDefault();
+                setMeta(key, { description: describing.trim() });
+                setDescribing(null);
+              }}
+            >
+              <textarea
+                className="playlistHead__aboutField"
+                value={describing}
+                onChange={(e) => setDescribing(e.target.value)}
+                onBlur={() => {
+                  setMeta(key, { description: describing.trim() });
+                  setDescribing(null);
+                }}
+                onKeyDown={(e) => {
+                  // Enter commits, Escape abandons. Shift+Enter is a new line,
+                  // because a description is prose and sometimes wants two.
+                  if (e.key === 'Escape') setDescribing(null);
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    e.currentTarget.blur();
+                  }
+                }}
+                placeholder="What is this playlist for?"
+                aria-label="Playlist description"
+                rows={2}
+                maxLength={300}
+                autoFocus
+              />
+            </form>
+          )}
 
           <div className="playlistHead__actions">
             <Button variant="solid" size="sm" onClick={playAll} disabled={rows.length === 0}>
