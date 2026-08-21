@@ -19,5 +19,9 @@
 <dict>
 	<key>com.apple.developer.carplay-audio</key>
 	<true/>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.mattssoftware.attackfm</string>
+	</array>
 </dict>
 </plist>

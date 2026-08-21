@@ -25,6 +25,10 @@ mod native {
         fn afm_carplay_set_library(json: *const c_char);
         fn afm_carplay_set_now_playing(json: *const c_char);
         fn afm_set_idle_timer_disabled(disabled: i32);
+        // The home-screen widget's feed (widgetPublish.swift): the SAME
+        // payload the CarPlay center gets, so the springboard can never
+        // disagree with the car or the lock screen about what is on.
+        fn afm_widget_publish(json: *const c_char);
     }
 
     // The handle events ride out on. A OnceLock because the CarPlay scene can
@@ -45,6 +49,7 @@ mod native {
     pub fn push_now_playing(payload: &str) {
         if let Ok(json) = CString::new(payload) {
             unsafe { afm_carplay_set_now_playing(json.as_ptr()) };
+            unsafe { afm_widget_publish(json.as_ptr()) };
         }
     }
 
