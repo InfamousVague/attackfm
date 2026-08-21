@@ -12,12 +12,24 @@ import {
   createRemotePlaylist,
   deleteRemotePlaylist,
   fetchRemotePlaylists,
+  playlistCoverUrl,
   remotePath,
+  removePlaylistCover,
   trackIdFromPath,
   updateRemotePlaylist,
+  uploadPlaylistCover,
   type RemotePlaylist,
   type ServerSession,
 } from '../server.ts';
+import {
+  forgetMeta,
+  metaFor,
+  metaKey,
+  metaSnapshot,
+  setMeta as setStoredMeta,
+  subscribeMeta,
+} from './playlistMeta.ts';
+import { useSyncExternalStore } from 'react';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { readFeedCache, writeFeedCache } from '../library/feedCache.ts';
 
@@ -34,6 +46,12 @@ export interface Playlist {
   name: string;
   paths: string[];
   createdAt: number;
+  /** What it is for. '' when nobody has said. */
+  description: string;
+  /** The folder it files under. '' when loose at the top. */
+  folder: string;
+  /** A display-ready cover image URL, or null for the song mosaic. */
+  coverUrl: string | null;
 }
 
 interface PlaylistsContextValue {
@@ -52,6 +70,20 @@ interface PlaylistsContextValue {
   removeTrack: (id: string, path: string) => void;
   /** Sets the whole running order - what a drag in the playlist page commits. */
   reorder: (id: string, paths: readonly string[]) => void;
+  /**
+   * Change a playlist's decoration - description, folder - a field at a time.
+   * Where it lands depends on the library: a new server holds it in the
+   * playlist's own row, an old one falls back to this device's meta store, and
+   * a local library keeps it on the stored object. Callers never know which.
+   */
+  setMeta: (id: string, patch: { description?: string; folder?: string }) => void;
+  /**
+   * Replace (or, with null, remove) a playlist's cover image. Absent when this
+   * library has nowhere to keep one - a local library, or a server from before
+   * covers existed - so the UI hides the option instead of offering a write
+   * that would go nowhere.
+   */
+  setCover?: (id: string, image: Blob | null) => Promise<void>;
 }
 
 const PlaylistsContext = createContext<PlaylistsContextValue | null>(null);
@@ -86,13 +118,25 @@ function readStored(): Playlist[] {
     const raw = localStorage.getItem(STORAGE_KEY);
     const parsed = raw ? (JSON.parse(raw) as unknown) : [];
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (p): p is Playlist =>
-        typeof p === 'object' &&
-        p !== null &&
-        typeof (p as Playlist).id === 'string' &&
-        typeof (p as Playlist).name === 'string' &&
-        Array.isArray((p as Playlist).paths),
+    return (
+      parsed
+        .filter(
+          (p): p is Playlist =>
+            typeof p === 'object' &&
+            p !== null &&
+            typeof (p as Playlist).id === 'string' &&
+            typeof (p as Playlist).name === 'string' &&
+            Array.isArray((p as Playlist).paths),
+        )
+        // Objects written before decoration existed lack the fields; every
+        // reader wants strings, so they are filled here rather than checked
+        // at fifty call sites.
+        .map((p) => ({
+          ...p,
+          description: typeof p.description === 'string' ? p.description : '',
+          folder: typeof p.folder === 'string' ? p.folder : '',
+          coverUrl: null,
+        }))
     );
   } catch {
     return [];
@@ -101,6 +145,28 @@ function readStored(): Playlist[] {
 
 function LocalPlaylists({ children }: { children: ReactNode }) {
   const [playlists, setPlaylists] = useState<Playlist[]>(readStored);
+
+  /*
+   * Decoration written before 0.3.286 lived in the device meta store rather
+   * than on the playlist objects. Fold it in once and delete it there: two
+   * stores that can disagree about one description is how a device shows
+   * yesterday's text forever.
+   */
+  useEffect(() => {
+    setPlaylists((prev) =>
+      prev.map((p) => {
+        const key = metaKey(null, p.id);
+        const old = metaFor(key);
+        if (!old.description && !old.folder) return p;
+        forgetMeta(key);
+        return {
+          ...p,
+          description: p.description || old.description || '',
+          folder: p.folder || old.folder || '',
+        };
+      }),
+    );
+  }, []);
 
   useEffect(() => {
     try {
@@ -118,7 +184,15 @@ function LocalPlaylists({ children }: { children: ReactNode }) {
         const trimmed = name.trim() || 'New Playlist';
         setPlaylists((prev) => [
           ...prev,
-          { id, name: trimmed, paths: [...new Set(paths)], createdAt: Date.now() },
+          {
+            id,
+            name: trimmed,
+            paths: [...new Set(paths)],
+            createdAt: Date.now(),
+            description: '',
+            folder: '',
+            coverUrl: null,
+          },
         ]);
         return Promise.resolve(id);
       },
@@ -140,6 +214,21 @@ function LocalPlaylists({ children }: { children: ReactNode }) {
         ),
       reorder: (id: string, paths: readonly string[]) =>
         setPlaylists((prev) => prev.map((p) => (p.id === id ? { ...p, paths: [...paths] } : p))),
+      setMeta: (id: string, patch: { description?: string; folder?: string }) =>
+        setPlaylists((prev) =>
+          prev.map((p) =>
+            p.id === id
+              ? {
+                  ...p,
+                  description:
+                    patch.description !== undefined ? patch.description.trim() : p.description,
+                  folder: patch.folder !== undefined ? patch.folder.trim() : p.folder,
+                }
+              : p,
+          ),
+        ),
+      // No setCover: a local library has nowhere to keep an image, and
+      // offering the option would be a button that cannot work.
     }),
     [playlists],
   );
@@ -174,6 +263,57 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
     }
   }, [session]);
 
+  /*
+   * Move decoration written before the server could hold it (0.3.282-285, the
+   * device meta store) into the playlist rows, then delete it from the store.
+   *
+   * Runs off every fetch rather than once behind a flag, because deletion IS
+   * the flag: a migrated entry is gone, so the second pass finds nothing and
+   * does nothing. That also makes a failed PUT self-healing - the entry
+   * survives to be retried on the next heartbeat.
+   *
+   * The server's copy always wins a disagreement. A non-empty server field
+   * means someone has already edited it where everyone can see it, and the
+   * device store's version is by definition older - so it is dropped, not
+   * merged. Only an EMPTY server field is filled from the store.
+   */
+  const migrating = useRef(false);
+  useEffect(() => {
+    if (migrating.current) return;
+    const prefix = `${session.url}#`;
+    const entries = Object.entries(metaSnapshot()).filter(([k]) => k.startsWith(prefix));
+    if (entries.length === 0) return;
+    // An old server never sends the fields; nothing can be migrated into it.
+    if (!remote.some((p) => p.description !== undefined)) return;
+    migrating.current = true;
+    void (async () => {
+      try {
+        for (const [key, old] of entries) {
+          const id = Number(key.slice(prefix.length));
+          const target = remote.find((p) => p.id === id);
+          if (!target || target.description === undefined) {
+            // Deleted playlist (or one this fetch missed): nothing to carry.
+            if (!target) forgetMeta(key);
+            continue;
+          }
+          const patch: { description?: string; folder?: string } = {};
+          if (old.description && !target.description) patch.description = old.description;
+          if (old.folder && !target.folder) patch.folder = old.folder;
+          if (Object.keys(patch).length > 0) {
+            await updateRemotePlaylist(session, id, patch);
+          }
+          forgetMeta(key);
+        }
+        await refresh();
+      } catch {
+        // Unreachable server mid-walk: what migrated is deleted, what did not
+        // is still in the store, and the next heartbeat picks it back up.
+      } finally {
+        migrating.current = false;
+      }
+    })();
+  }, [remote, session, refresh]);
+
   // Fetched on connect and then on the same half-minute heartbeat the library
   // runs: a playlist made on the phone shows up on the desktop without either
   // device asking.
@@ -196,13 +336,30 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
     [refresh],
   );
 
+  /*
+   * The device meta store, subscribed so decoration edits re-render this
+   * provider. It matters on exactly one path: a server from before the
+   * decoration columns, whose responses carry no `description` field at all.
+   * There, reads fall back to what 0.3.282-285 wrote on this device, and
+   * writes keep landing there - the feature keeps working, un-shared, until
+   * the hub is updated. `undefined` versus `''` is how the two servers are
+   * told apart: absent means "never heard of it", empty means "none".
+   */
+  const metaRev = useSyncExternalStore(subscribeMeta, metaSnapshot, metaSnapshot);
+
   const value = useMemo<PlaylistsContextValue>(() => {
-    const playlists: Playlist[] = remote.map((p) => ({
-      id: String(p.id),
-      name: p.name,
-      paths: p.tracks.map((id) => remotePath(id)),
-      createdAt: p.updatedAt,
-    }));
+    const playlists: Playlist[] = remote.map((p) => {
+      const fallback = p.description === undefined ? metaFor(metaKey(session.url, String(p.id))) : null;
+      return {
+        id: String(p.id),
+        name: p.name,
+        paths: p.tracks.map((id) => remotePath(id)),
+        createdAt: p.updatedAt,
+        description: p.description ?? fallback?.description ?? '',
+        folder: p.folder ?? fallback?.folder ?? '',
+        coverUrl: p.cover ? playlistCoverUrl(session, p.id, p.updatedAt) : null,
+      };
+    });
 
     const byId = (id: string) => remote.find((p) => String(p.id) === id);
 
@@ -272,8 +429,37 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
           () => updateRemotePlaylist(session, target.id, { tracks }),
         );
       },
+      setMeta: (id: string, patch: { description?: string; folder?: string }) => {
+        const target = byId(id);
+        if (!target) return;
+        const clean = {
+          ...(patch.description !== undefined ? { description: patch.description.trim() } : {}),
+          ...(patch.folder !== undefined ? { folder: patch.folder.trim() } : {}),
+        };
+        if (target.description === undefined) {
+          // Old server: keep writing where 0.3.282 wrote, so the edit is not
+          // lost into a PUT the server would silently ignore.
+          setStoredMeta(metaKey(session.url, id), clean);
+          return;
+        }
+        mutate(
+          remote.map((p) => (p.id === target.id ? { ...p, ...clean } : p)),
+          () => updateRemotePlaylist(session, target.id, clean),
+        );
+      },
+      setCover: async (id: string, image: Blob | null) => {
+        const target = byId(id);
+        if (!target) return;
+        // Not optimistic, unlike everything else here: there is nothing honest
+        // to show until the server has the bytes, and the refetch behind it is
+        // what carries the new updatedAt that busts the image URL.
+        if (image) await uploadPlaylistCover(session, target.id, image);
+        else await removePlaylistCover(session, target.id);
+        editSeq.current += 1;
+        await refresh();
+      },
     };
-  }, [remote, session, mutate, refresh]);
+  }, [remote, session, mutate, refresh, metaRev]);
 
   return <PlaylistsContext.Provider value={value}>{children}</PlaylistsContext.Provider>;
 }

@@ -1,12 +1,10 @@
 import { mosaicArts, useTileArt } from '../ux/artLoad.ts';
 import { Button, ContextMenu, Input, Modal, MenuItem, Text } from '@glacier/react';
 import { FolderClosed, History, ListMusic, Plus, Trash2 } from '@glacier/icons';
-import { useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { useLibrary } from '../library/library.tsx';
 import { DjLauncher } from '../booth/DjLauncher.tsx';
 import { usePlaylists } from './playlists.tsx';
-import { useServerSession } from '../servers/serverSession.tsx';
-import { metaFor, metaKey, metaSnapshot, subscribeMeta } from './playlistMeta.ts';
 import { PluginFence, usePlugins } from '../../plugins/runtime.tsx';
 import type { PluginPlaylistTile } from '../../plugins/types.ts';
 import { playlistPlayedAt, notePlaylistPlayed } from './playlistRecency.ts';
@@ -146,10 +144,6 @@ export function PlaylistShowcase({
   // removeTrack went with the strip's modal - shedding a row was only ever
   // offered there, and Recent never offered it at all.
   const { playlists, create, remove } = usePlaylists();
-  const { session } = useServerSession();
-  // Folders are read through the same subscription the playlist page writes,
-  // so filing one from its own menu regroups this shelf without a reload.
-  const metaRev = useSyncExternalStore(subscribeMeta, metaSnapshot, metaSnapshot);
   const { enabled } = usePlugins();
   // The New Playlist dialog: null closed, otherwise the name being typed.
   const [draftName, setDraftName] = useState<string | null>(null);
@@ -184,21 +178,19 @@ export function PlaylistShowcase({
     const out: typeof sorted = [];
     const groups = new Map<string, typeof sorted>();
     for (const p of sorted) {
-      const folder = metaFor(metaKey(session?.url, p.id)).folder;
-      if (!folder) {
+      if (!p.folder) {
         out.push(p);
         continue;
       }
-      const bucket = groups.get(folder);
+      const bucket = groups.get(p.folder);
       if (bucket) bucket.push(p);
-      else groups.set(folder, [p]);
+      else groups.set(p.folder, [p]);
     }
     return {
       loose: out,
       foldered: [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0])),
     };
-    // metaRev is not read here; it is the signal that the store changed.
-  }, [playlists, session, metaRev]);
+  }, [playlists]);
 
   // Real sleeves for the two whole-library doors, for the Real covers style.
   // On repeat has no list of its own here, so it wears the library's own
@@ -316,11 +308,17 @@ export function PlaylistShowcase({
                 key={playlist.id}
                 name={playlist.name}
                 cover={
-                  <MosaicCover
-                    tracks={playlist.paths.map((p) => byPath.get(p)).filter((t): t is Track => t !== undefined)}
-                    fallback={<ListMusic size={24} />}
-                    tone="tileRecent"
-                  />
+                  playlist.coverUrl ? (
+                    <div className="tileSquircle tileRecent" aria-hidden>
+                      <img className="tileChosenCover" src={playlist.coverUrl} alt="" loading="lazy" />
+                    </div>
+                  ) : (
+                    <MosaicCover
+                      tracks={playlist.paths.map((p) => byPath.get(p)).filter((t): t is Track => t !== undefined)}
+                      fallback={<ListMusic size={24} />}
+                      tone="tileRecent"
+                    />
+                  )
                 }
                 onOpen={() => onOpenPlaylist(playlist.id)}
                 onDelete={() => setDeleting({ id: playlist.id, name: playlist.name })}
@@ -364,11 +362,17 @@ export function PlaylistShowcase({
                 key={playlist.id}
                 name={playlist.name}
                 cover={
-                  <MosaicCover
-                    tracks={playlist.paths.map((p) => byPath.get(p)).filter((t): t is Track => t !== undefined)}
-                    fallback={<ListMusic size={24} />}
-                    tone="tileRecent"
-                  />
+                  playlist.coverUrl ? (
+                    <div className="tileSquircle tileRecent" aria-hidden>
+                      <img className="tileChosenCover" src={playlist.coverUrl} alt="" loading="lazy" />
+                    </div>
+                  ) : (
+                    <MosaicCover
+                      tracks={playlist.paths.map((p) => byPath.get(p)).filter((t): t is Track => t !== undefined)}
+                      fallback={<ListMusic size={24} />}
+                      tone="tileRecent"
+                    />
+                  )
                 }
                 onOpen={() => onOpenPlaylist(playlist.id)}
                 onDelete={() => setDeleting({ id: playlist.id, name: playlist.name })}

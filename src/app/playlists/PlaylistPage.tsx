@@ -7,11 +7,13 @@ import {
   Modal,
   SortableList,
   Text,
+  SearchField,
   useToast,
 } from '@glacier/react';
 import {
   Check,
   EllipsisVertical,
+  Image as ImageIcon,
   FolderClosed,
   FolderOpen,
   FolderPlus,
@@ -23,11 +25,10 @@ import {
   Trash2,
   X,
 } from '@glacier/icons';
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useRefreshNonce } from '../nav/pageRefresh.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
-import { foldersInUse, metaFor, metaKey, setMeta, subscribeMeta } from './playlistMeta.ts';
 import { mosaicArts, useArtLoad, useTileArt } from '../ux/artLoad.ts';
 import { fetchPlaylistSuggestions, remotePath } from '../server.ts';
 import { formatClock, formatTotal } from '../ux/format.ts';
@@ -62,7 +63,8 @@ interface PlaylistPageProps {
  */
 export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageProps) {
   const { tracks } = useLibrary();
-  const { playlists, rename, remove, removeTrack, reorder, addTrack } = usePlaylists();
+  const { playlists, rename, remove, removeTrack, reorder, addTrack, setMeta, setCover } =
+    usePlaylists();
   const { toast } = useToast();
   const { session } = useServerSession();
   // Pull-to-refresh re-runs the fetch below - see nav/pageRefresh.tsx.
@@ -78,6 +80,28 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
   const [describing, setDescribing] = useState<string | null>(null);
   /** The name of a folder being created, or null when no dialog is open. */
   const [newFolder, setNewFolder] = useState<string | null>(null);
+  /** True while a chosen cover is travelling to the server. */
+  const [coverBusy, setCoverBusy] = useState(false);
+  /** What the filter box holds. '' shows the whole list. */
+  const [finding, setFinding] = useState('');
+  const coverInput = useRef<HTMLInputElement | null>(null);
+
+  const chooseCover = async (file: File) => {
+    if (!setCover || !playlistId) return;
+    setCoverBusy(true);
+    try {
+      await setCover(playlistId, file);
+    } catch (err) {
+      toast({
+        message:
+          err instanceof Error && err.message
+            ? `That cover did not take: ${err.message}`
+            : 'That cover did not take.',
+      });
+    } finally {
+      setCoverBusy(false);
+    }
+  };
 
 
   // Deleted from another device while open here: the heartbeat drops it from
@@ -98,20 +122,16 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
   const memberKey = playlist?.paths.join(',') ?? '';
   const playlistId = playlist?.id;
 
-  // Decoration lives beside the playlist rather than in it - see playlistMeta.
-  // Subscribed rather than read once, because another device can edit it and
-  // the prefs sync writes the same store underneath this page.
-  const key = metaKey(session?.url, playlistId ?? '');
-  const meta = useSyncExternalStore(
-    subscribeMeta,
-    () => metaFor(key),
-    () => metaFor(key),
-  );
-  // Every folder that exists, which is every folder anything is filed in -
+  // Decoration rides the playlist object now - the provider decides whether
+  // that means the server's row, the device store, or the local object, and
+  // this page neither knows nor cares.
+  // Every folder that exists, which is every folder anything is filed in:
   // there is no separate list of folders to keep, because a folder IS the
-  // playlists that name it. Recomputed off the same subscription, so a folder
-  // created on another device appears here without a reload.
-  const folders = useMemo(() => foldersInUse(), [meta, playlists]);
+  // playlists that name it.
+  const folders = useMemo(
+    () => [...new Set(playlists.map((p) => p.folder).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [playlists],
+  );
   useEffect(() => {
     if (!session || !playlistId) return;
     const ctrl = new AbortController();
@@ -210,6 +230,22 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
   // suggestion list against the library. Membership is a Set: the old
   // `paths.includes` scan was O(suggested × members) on every render.
   const listTracks = useMemo(() => rows.map((r) => r.track), [rows]);
+
+  /*
+   * The rows that match the filter box, or null when it is empty. Null rather
+   * than the full list, because the two views are different components - the
+   * sortable list only mounts when nothing is being searched for.
+   */
+  const found = useMemo(() => {
+    const q = finding.trim().toLowerCase();
+    if (!q) return null;
+    return rows.filter(
+      (r) =>
+        r.track.title.toLowerCase().includes(q) ||
+        r.track.artist.toLowerCase().includes(q) ||
+        r.track.album.toLowerCase().includes(q),
+    );
+  }, [rows, finding]);
   const totalSeconds = useMemo(
     () => listTracks.reduce((sum, t) => sum + (t.duration ?? 0), 0),
     [listTracks],
@@ -256,10 +292,29 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
 
   return (
     <div className="homePage libraryPage playlistPage" ref={pageRef}>
+      {/* The cover chooser. A file input rather than anything cleverer: the
+          OS picker already knows the camera roll, and its change event is the
+          user gesture the upload rides on. Value cleared after each pick so
+          choosing the same file twice still fires. */}
+      <input
+        ref={coverInput}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        hidden
+        onChange={(e) => {
+          const file = e.currentTarget.files?.[0];
+          e.currentTarget.value = '';
+          if (file) void chooseCover(file);
+        }}
+      />
       <header className="playlistHead">
         <CoverWall artworks={rows.map((r) => r.track.artwork)} />
-        <div className="playlistHead__cover" aria-hidden>
-          {covers.length >= 4 ? (
+        <div className="playlistHead__cover" aria-hidden data-busy={coverBusy || undefined}>
+          {playlist.coverUrl ? (
+            <div className="tileSquircle tileRecent playlistHead__mosaic">
+              <img className="playlistHead__chosen" src={playlist.coverUrl} alt="" />
+            </div>
+          ) : covers.length >= 4 ? (
             <div
               ref={coversRef}
               className="tileSquircle tileLikedGrid playlistHead__mosaic"
@@ -299,17 +354,17 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
             <button
               type="button"
               className="playlistHead__about"
-              data-empty={!meta.description || undefined}
-              onClick={() => setDescribing(meta.description ?? '')}
+              data-empty={!playlist.description || undefined}
+              onClick={() => setDescribing(playlist.description ?? '')}
             >
-              {meta.description || 'Add a description'}
+              {playlist.description || 'Add a description'}
             </button>
           ) : (
             <form
               className="playlistHead__aboutEdit"
               onSubmit={(e) => {
                 e.preventDefault();
-                setMeta(key, { description: describing.trim() });
+                setMeta(playlist.id, { description: describing.trim() });
                 setDescribing(null);
               }}
             >
@@ -318,7 +373,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
                 value={describing}
                 onChange={(e) => setDescribing(e.target.value)}
                 onBlur={() => {
-                  setMeta(key, { description: describing.trim() });
+                  setMeta(playlist.id, { description: describing.trim() });
                   setDescribing(null);
                 }}
                 onKeyDown={(e) => {
@@ -367,22 +422,35 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
               {folders.map((name) => (
                 <MenuItem
                   key={name}
-                  icon={meta.folder === name ? <Check size={15} /> : <FolderClosed size={15} />}
+                  icon={playlist.folder === name ? <Check size={15} /> : <FolderClosed size={15} />}
                   onSelect={() =>
-                    setMeta(key, { folder: meta.folder === name ? '' : name })
+                    setMeta(playlist.id, { folder: playlist.folder === name ? '' : name })
                   }
                 >
                   {name}
                 </MenuItem>
               ))}
-              {meta.folder && (
-                <MenuItem icon={<FolderOpen size={15} />} onSelect={() => setMeta(key, { folder: '' })}>
-                  Take out of {meta.folder}
+              {playlist.folder && (
+                <MenuItem icon={<FolderOpen size={15} />} onSelect={() => setMeta(playlist.id, { folder: '' })}>
+                  Take out of {playlist.folder}
                 </MenuItem>
               )}
               <MenuItem icon={<FolderPlus size={15} />} onSelect={() => setNewFolder('')}>
                 New folder…
               </MenuItem>
+              {/* Only where a cover can actually be kept - the provider leaves
+                  setCover out for a local library and an old server, and a
+                  menu item that cannot work is worse than none. */}
+              {setCover && (
+                <MenuItem icon={<ImageIcon size={15} />} onSelect={() => coverInput.current?.click()}>
+                  {playlist.coverUrl ? 'Change cover…' : 'Choose cover…'}
+                </MenuItem>
+              )}
+              {setCover && playlist.coverUrl && (
+                <MenuItem icon={<X size={15} />} onSelect={() => void setCover(playlist.id, null)}>
+                  Remove cover
+                </MenuItem>
+              )}
               <MenuItem icon={<Trash2 size={15} />} onSelect={() => setConfirmDelete(true)}>
                 Delete playlist
               </MenuItem>
@@ -404,8 +472,50 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
         </div>
       ) : (
         <div className="playlistPageScroll">
-          {/* Controlled: the list proposes an order, the store commits it - and
-              on a server playlist that write is what every other device sees. */}
+          {/* Finding one song in four hundred. Only where it could ever be
+              needed: a list short enough to see whole has nothing to find. */}
+          {rows.length > 15 && (
+            <SearchField
+              className="playlistFind"
+              value={finding}
+              onValueChange={setFinding}
+              placeholder="Find in this playlist"
+              aria-label="Find in this playlist"
+            />
+          )}
+          {found !== null ? (
+            /*
+             * A plain list while filtering, not the sortable one. Dragging row
+             * four of a FILTERED view would have to mean something about the
+             * full order, and every answer to what is a surprise - so the
+             * handles go away with the rows they would have moved.
+             */
+            <div className="playlistRows playlistRows--found">
+              {found.length === 0 ? (
+                <Text tone="muted" size="sm" className="playlistFind__none">
+                  Nothing here matches “{finding.trim()}”.
+                </Text>
+              ) : (
+                found.map((row) => (
+                  <TrackMenu key={row.id} track={row.track} className="playlistRowMenu">
+                    <div className="playlistRow">
+                      <button
+                        type="button"
+                        className="playlistRow__main"
+                        onClick={() => onPlay(row.track, listTracks)}
+                      >
+                        <RowArt artwork={row.track.artwork} />
+                        <span className="playlistRow__text">
+                          <span className="songTitle">{row.track.title}</span>
+                          <span className="songArtist">{row.track.artist}</span>
+                        </span>
+                      </button>
+                    </div>
+                  </TrackMenu>
+                ))
+              )}
+            </div>
+          ) : (
           <SortableList
             className="playlistRows"
             items={rows}
@@ -462,6 +572,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
               </TrackMenu>
             )}
           />
+          )}
 
         {suggestions.length > 0 && (
           <section className="playlistSuggest">
@@ -540,7 +651,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
             // A folder is only a label on the playlists in it, so an empty one
             // would have nowhere to exist - naming it and filing this playlist
             // are the same act.
-            if (name) setMeta(key, { folder: name });
+            if (name) setMeta(playlist.id, { folder: name });
             setNewFolder(null);
           }}
         >
