@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.297
+
+- Settings has been reorganized around what you actually come there to do. Four named shelves — Look & sound, Your stuff, The machinery, Reference — and a new Account & devices page gathering your sign-in, your household, device pairing and every device on the account, all of which had been scattered across three panes
+- Every settings page now speaks one visual language: the same cards, rows and captions as the list that opens them, with each explanation attached to its own control
+- The settings search finds individual settings now, not just pages — type "crossfade" and the row itself appears; choosing it opens the page and lights the row up. Your recent pages show on the desktop too
+- What used to be General is Library now, and it is about your music: what you have, where it comes from, and the uploader. Streaming quality moved to Playback, where you would look for it; the lyric header, video clips, haptics and shake-to-shuffle moved to Appearance; the tour lives on the Handbook's cover
+
 ## 0.3.296
 
 - On a collection page the covers are vivid behind the wordmark and the bell now — the top bar’s shading sits only along the very top edge, behind the phone’s own status bar, and lets go before the controls
