@@ -1117,3 +1117,26 @@
   outline: 2px solid var(--glacier-focus-ring);
   outline-offset: 1px;
 }
+
+/* ---- Folders on the playlist shelf --------------------------------------
+   A folder is a heading over its own grid, not a tile you open. On a phone a
+   tile leading to another grid of tiles is a second journey for something that
+   already fits on the screen - and these exist to group a wall of playlists,
+   not to hide it. */
+.homeShelfTitle .showcaseFolderGlyph {
+  color: var(--glacier-text-muted);
+  margin-inline-end: var(--glacier-space-2);
+  flex: none;
+}
+
+/* How many are inside, so a collapsed-looking group still says its size. */
+.showcaseFolderCount {
+  margin-inline-start: var(--glacier-space-2);
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-surface);
+  color: var(--glacier-text-muted);
+  font-size: 0.7rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
