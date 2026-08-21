@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.315
+
+- Updates stick. An update would install, restart to a black screen, and then refuse itself ever after — the app was throwing away the very version it had just started running, every time it opened. It keeps it now
+
 ## 0.3.313
 
 - Now Playing always shows where the song is coming out. The speaker button used to appear only once you owned a second device, so until then there was nothing telling you the sound was on this one
