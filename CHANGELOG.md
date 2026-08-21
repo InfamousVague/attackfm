@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.302
+
+- Rich stock's labels are printed ink now rather than white text. They were white in 0.3.301, which left the card looking like a photo of paper instead of something printed on it
+
 ## 0.3.301
 
 - A fourth look for your library cards: Rich stock prints the halftone on properly coloured card instead of pale paper, so the colour actually arrives and the dots stay crisp. Settings, Appearance, Card style
