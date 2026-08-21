@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.293
+
+- Chromecast (with the next app install): a Cast to section joins the device picker, and a tap sends the music to the TV - the phone keeps the queue and the scrubber, the TV gets the sound, and stopping the cast hands the song back mid-note
+
 ## 0.3.292
 
 - Press and hold a song in Liked, All songs, On repeat or an artist's list - anywhere on the row, not only the title - and its menu opens; letting go no longer starts the song playing under the menu. On a desktop, a right-click anywhere on the row does the same, and a click held for a moment opens it too
