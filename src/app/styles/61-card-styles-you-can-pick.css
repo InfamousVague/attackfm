@@ -59,12 +59,33 @@
 }
 
 /* ---- Numbers first (default): the count is the card ---------------------- */
+/*
+ * Brighter than it was, and the ceiling is set by the number rather than by
+ * taste.
+ *
+ * This ran at L30/18, which is 63-67% less luminous than the gradient every
+ * other style wears (L48/32 in 05-the-dock-contract-a) - dark enough that the
+ * cards read as switched off. DJ was the worst of the four and by some way:
+ * measured relative luminance across the four doors put it at 3.0% against On
+ * repeat's 9.3%, because violet at that lightness is close to black.
+ *
+ * L40/26 is the BRIGHTEST this can go. The white figure sits on the top stop,
+ * and at 2.4rem/800 it is large text, so AA wants 3:1 - which L40 clears at
+ * 3.16:1 on the dimmest door and L42 fails at 2.89:1. Going all the way to the
+ * shared L48/32 would be 2.22:1, so the plain gradient other styles use is
+ * genuinely too bright to put this number on; the darkening was never arbitrary,
+ * it just overshot.
+ *
+ * One rule for all four doors rather than a DJ special case: the dimness was in
+ * the style, DJ merely showed it worst, and a lone override would leave its
+ * three siblings mismatched.
+ */
 :root[data-card-style='stat'] .libChip:not(.cardPick *),
 .cardPick[data-card-style='stat'] .libChip {
   background: linear-gradient(
     150deg,
-    hsl(var(--libChipHue, 280) 58% 30%),
-    hsl(calc(var(--libChipHue, 280) + 42) 52% 18%)
+    hsl(var(--libChipHue, 280) 62% 40%),
+    hsl(calc(var(--libChipHue, 280) + 42) 56% 26%)
   ) !important;
 }
 :root[data-card-style='stat'] .libChip__stat:not(.cardPick *),
