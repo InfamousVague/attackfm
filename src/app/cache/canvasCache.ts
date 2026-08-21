@@ -23,11 +23,14 @@ const CACHE = 'attackfm-canvas-v1';
 /** Unreachable on purpose - these keys are matched, never fetched. */
 const KEY_ORIGIN = 'https://canvas.attackfm.local';
 /**
- * How many clips to hold. Small on purpose: these are megabytes each, and
- * unlike covers the useful set is "things you actually play", not "everything
- * that scrolled past". Oldest out first.
+ * How many clips to hold. Bounded because these are megabytes each - but no
+ * longer tiny, because the sweep now fills this store for the hot end of the
+ * device cache rather than only what has already been played. The sweep's
+ * fill (CANVAS_HOT_N in cacheSweep.ts) must stay BELOW this number: a fill
+ * larger than the cap would evict its own head to seat its own tail, and the
+ * next sweep would fetch it all again, forever. Oldest out first.
  */
-const CAP = 60;
+const CAP = 150;
 
 /** Object URLs currently handed out, one per key, revoked as they are
  *  replaced - a long session must not leak a blob per song played. */
@@ -96,6 +99,37 @@ export async function keepCanvas(url: string): Promise<string | null> {
   } catch {
     // Offline, quota, or a server that said no - all mean "play it live".
     return null;
+  }
+}
+
+/**
+ * Hold a clip WITHOUT handing back a URL to play - the sweep's verb.
+ *
+ * keepCanvas above is the play path: fetch, store, and mint a blob URL
+ * because a <video> is waiting for it. The sweep wants none of that - it is
+ * warming the cupboard for later, and minting an object URL per clip would
+ * pin every fetched clip's bytes in memory for the life of the pass. So:
+ * match first (a held clip costs nothing), fetch only what is missing.
+ *
+ * The answer mirrors rememberArt for the same reason - the sweep budgets
+ * network attempts, and only `kept`/`no` spent one.
+ */
+export async function ensureCanvas(url: string): Promise<'held' | 'kept' | 'no'> {
+  const key = canvasKey(url);
+  const cache = key ? store() : null;
+  if (!key || !cache) return 'no';
+  try {
+    const c = await cache;
+    if (await c.match(key)) return 'held';
+    const res = await fetch(url);
+    // Same rule as keepCanvas: an error page stored here would be handed to
+    // a <video> forever as though it were the clip.
+    if (!res.ok || !/^video\//i.test(res.headers.get('content-type') ?? '')) return 'no';
+    await c.put(key, res);
+    void trim(c);
+    return 'kept';
+  } catch {
+    return 'no';
   }
 }
 

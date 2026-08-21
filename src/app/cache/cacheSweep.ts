@@ -23,7 +23,8 @@
 //! or an OS reclaim cannot leave it believing in files that are gone.
 
 import { rememberArt } from './artCache.ts';
-import { artSized, artUrl, loadCachedIndex, remotePath, streamUrl, trackIdFromPath, transcodeUrl, type RemoteTrack, type ServerSession } from '../server.ts';
+import { ensureCanvas } from './canvasCache.ts';
+import { artSized, artUrl, fetchCanvas, loadCachedIndex, remotePath, streamUrl, trackIdFromPath, transcodeUrl, type RemoteTrack, type ServerSession } from '../server.ts';
 import { heldPath, offlineEntries, offlineSpace, pinTrack, unpinTrack } from '../downloads/offline.ts';
 import { pickSource } from '../servers/mirrors.ts';
 import { isTauri, type Track } from '../core/tauri.ts';
@@ -664,6 +665,15 @@ export async function sweepCache(
     ),
   );
 
+  // The songs are on the disk; now the way they LOOK comes too. Never allowed
+  // to fail the sweep - a receipt that says "download failed" because a
+  // video clip did not arrive would be lying about the music.
+  try {
+    await sweepPresentation(session, byId, plan.keep, options.signal);
+  } catch {
+    // Presentation is best-effort by definition; the songs are what matter.
+  }
+
   const after = await offlineEntries();
   const ours = after.filter((e) => e.key in readLedger());
   persistManifest();
@@ -697,6 +707,149 @@ export async function sweepCache(
     evicted,
     pinnedBytes: after.filter((e) => pinnedKeys().has(e.key)).reduce((n, e) => n + e.bytes, 0),
   };
+}
+
+// --- presentation: the covers and clips beside the songs -------------------
+
+/*
+ * A cached song used to be only half held. The FILE was on the device, but
+ * its cover lived in the art cache only if that exact cover had already been
+ * ON SCREEN, and its Canvas clip only if the song had already been PLAYED
+ * since the clip cache existed. Offline, that drew as a library that plays
+ * perfectly and looks broken: grey squares on the shelves, a blurred still
+ * where the clip should move. So the sweep now finishes the job it started:
+ * whatever it decides to hold, it holds the presentation for too.
+ */
+
+/**
+ * What the canvas lookup answered per track, remembered across sweeps.
+ *
+ * The lookup is the expensive half - a track without a stored clip makes the
+ * hub ask Spotify - so its ANSWER is what must not be re-asked hundreds of
+ * times. A "none" is trusted for two weeks (clips do appear later; Spotify
+ * adds them and so does the hub's own enrichment). A found clip is remembered
+ * by its stable form: the server path WITHOUT the hourly stream token, or the
+ * CDN URL as given.
+ */
+const CANVAS_KNOWN_KEY = 'attackfm-canvas-known';
+const CANVAS_NONE_TTL = 14 * 24 * 60 * 60 * 1000;
+/** How deep into the hot set clips are fetched. Must stay below the clip
+ *  cache's CAP (canvasCache.ts) or the fill would evict its own head. */
+const CANVAS_HOT_N = 120;
+/** Fresh lookups per pass - the drip that keeps the hub's Spotify session
+ *  from being flooded the first time this runs over a full cache. */
+const CANVAS_LOOKUPS_PER_SWEEP = 25;
+/** Network attempts (fetches, not match-hits) the art backfill may spend per
+ *  pass. Two variants per track, so this seats roughly 150 tracks' covers;
+ *  the rest catch up on later sweeps, match-hits costing nothing forever. */
+const ART_FETCHES_PER_SWEEP = 300;
+
+function readCanvasKnown(): Record<string, { u: string | null; at: number }> {
+  try {
+    const raw = localStorage.getItem(CANVAS_KNOWN_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, { u: string | null; at: number }>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeCanvasKnown(memo: Record<string, { u: string | null; at: number }>): void {
+  try {
+    localStorage.setItem(CANVAS_KNOWN_KEY, JSON.stringify(memo));
+  } catch {
+    // Storage full or unavailable: the memo just will not persist, and the
+    // lookup drip re-earns it a few tracks a sweep.
+  }
+}
+
+/** The remembered form of a clip URL: server clips keep only their path (the
+ *  token beside it expires hourly), a CDN clip keeps its whole URL. */
+function stableCanvasForm(url: string, session: ServerSession): string {
+  if (url.startsWith(session.url)) {
+    try {
+      return new URL(url).pathname;
+    } catch {
+      return url;
+    }
+  }
+  return url;
+}
+
+/** The remembered form, made fetchable again with the CURRENT token. */
+function playableCanvasUrl(form: string, session: ServerSession): string {
+  return form.startsWith('/')
+    ? `${session.url}${form}?t=${encodeURIComponent(session.streamToken)}`
+    : form;
+}
+
+/**
+ * Covers for everything held, clips for the hot end of it.
+ *
+ * Pins first: a song someone deliberately kept for a flight is the single
+ * strongest statement of "I will be looking at this offline", so its cover
+ * and clip are seated before any budget runs out. Then the sweep's own keeps
+ * in rank order, so what the budgets cover is always the likeliest-reached.
+ *
+ * Serial on purpose. The audio workers just finished saturating the link six
+ * lanes wide; this pass is the quiet epilogue, and clips are megabytes each.
+ */
+async function sweepPresentation(
+  session: ServerSession,
+  byId: Map<number, RemoteTrack>,
+  keep: readonly string[],
+  signal?: AbortSignal,
+): Promise<void> {
+  // Pins first, then keeps, each track once.
+  const order: [string, RemoteTrack][] = [];
+  const seen = new Set<string>();
+  for (const key of [...pinnedKeys(), ...keep]) {
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const id = trackIdFromPath(key);
+    const remote = id === null ? undefined : byId.get(id);
+    // A pin this device's index has never heard of cannot be dressed - the
+    // same stale-index case the download plan counts as skippedUnknown.
+    if (remote) order.push([key, remote]);
+  }
+
+  let artFetches = 0;
+  for (const [, remote] of order) {
+    if (signal?.aborted) return;
+    if (!remote.artId) continue;
+    if (artFetches >= ART_FETCHES_PER_SWEEP) break;
+    // Both sizes, same reason as the per-download hook: shelves ask for 640,
+    // tables for 160, and a miss on either is the grey square again.
+    for (const px of [160, 640] as const) {
+      const cover = artSized(artUrl(session, remote.artId, remote.id), px);
+      if (!cover) continue;
+      if ((await rememberArt(cover)) !== 'held') artFetches += 1;
+    }
+  }
+
+  const known = readCanvasKnown();
+  let lookups = 0;
+  let memoChanged = false;
+  for (const [key, remote] of order.slice(0, CANVAS_HOT_N)) {
+    if (signal?.aborted) break;
+    const memo = known[key];
+    let form = memo?.u ?? null;
+    if (memo && form === null && Date.now() - memo.at < CANVAS_NONE_TTL) continue;
+    if (!form) {
+      if (lookups >= CANVAS_LOOKUPS_PER_SWEEP) continue;
+      lookups += 1;
+      const url = await fetchCanvas(session, remote.title, remote.artist, signal, remote.id);
+      form = url ? stableCanvasForm(url, session) : null;
+      known[key] = { u: form, at: Date.now() };
+      memoChanged = true;
+      if (!form) continue;
+    }
+    // A remembered clip whose fetch answers `no` is left remembered: offline
+    // and quota look identical to "deleted on the server" from here, and the
+    // retry a later sweep pays for that ambiguity is one cheap request.
+    await ensureCanvas(playableCanvasUrl(form, session));
+  }
+  if (memoChanged) writeCanvasKnown(known);
 }
 
 /** What the cache is holding right now, without changing anything. */
