@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.292
+
+- Press and hold a song in Liked, All songs, On repeat or an artist's list - anywhere on the row, not only the title - and its menu opens; letting go no longer starts the song playing under the menu. On a desktop, a right-click anywhere on the row does the same, and a click held for a moment opens it too
+- On the phone, the song table had lost the menu and the artist link on its title cell; both are back
+- In a playlist, tapping the artist's name under a song opens that artist - on the phone as well, where the name folds under the title
+
 ## 0.3.291
 
 - Songs kept on this device now bring their look with them: the cache sweep also stores their covers (both sizes) and the Canvas clips for the hottest songs, so an offline library stops drawing grey squares and still moves

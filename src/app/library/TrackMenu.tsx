@@ -22,6 +22,7 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { streamUrl, trackIdFromPath, transcodeUrl } from '../server.ts';
 import { isTauri, type Track } from '../core/tauri.ts';
 import { DjTraitSheet } from '../booth/DjTraitSheet.tsx';
+import { useHoldToMenu } from '../ux/holdToMenu.ts';
 
 /**
  * The three things you can do to a song that are not "play it", wrapped around
@@ -58,6 +59,10 @@ export function TrackMenu({
   const [filing, setFiling] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [exploring, setExploring] = useState(false);
+  // The wrapper is the menu's own target, so the hold resolves to itself: what
+  // this adds over the kit's hold is the mouse, and swallowing the release so
+  // the song under the menu does not start playing.
+  const hold = useHoldToMenu((_from, root) => root);
   const [quickQueue, setQuickQueue] = useState(false);
   // Which dialogs have ever been opened - the mount gate for the block at the
   // bottom. A ref written during render, which is safe here: it only ever
@@ -147,6 +152,7 @@ export function TrackMenu({
   return (
     <>
       <ContextMenu
+        {...hold}
         aria-label={`${track.title} actions`}
         className={className}
         content={

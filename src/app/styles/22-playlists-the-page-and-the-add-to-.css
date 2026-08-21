@@ -1169,3 +1169,20 @@
 .playlistFind__none {
   padding: var(--glacier-space-3) var(--glacier-space-2);
 }
+
+/* ── The row body as a div-button, and the folded artist as a link ─────────
+   The row body stopped being a <button> so the artist under the title could
+   be one (see RowMain). A div does not get the browser's focus ring for free,
+   so it is drawn here; and the link is sized to its text rather than the full
+   width of the text column, so the tap that opens the artist is the tap that
+   lands on the name. */
+.playlistRow__main:focus-visible {
+  outline: 2px solid var(--glacier-focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--glacier-radius-sm);
+}
+
+.playlistRow__text .songArtistLink {
+  align-self: flex-start;
+  max-inline-size: 100%;
+}
