@@ -48,10 +48,18 @@ function gb(bytes: number): string {
   return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
 }
 
-export function BackgroundWork() {
+/**
+ * The separation status, polled.
+ *
+ * A hook rather than state inside one component, because two places need this
+ * and they ask different questions of it: the operator, deciding whether their
+ * machine should be busy tonight, and the listener, wondering whether their
+ * library is ready. Only one settings pane is on screen at a time, so this never
+ * runs twice at once.
+ */
+export function usePrefetchStatus(): Prefetch | null {
   const { session } = useServerSession();
   const [state, setState] = useState<Prefetch | null>(null);
-  const [busy, setBusy] = useState(false);
 
   /*
    * Polled while the pane is open, but only while there is something to watch.
@@ -93,21 +101,100 @@ export function BackgroundWork() {
     };
   }, [session]);
 
+  return state;
+}
+
+/**
+ * How far along the whole job is - read only, and safe to show anyone.
+ *
+ * Split out of the row below so it can also sit in Playback, where somebody
+ * looking for "is my music ready to pull apart yet" will actually look. The
+ * SWITCH stays admin-only under Servers, because turning it on spends the
+ * operator's GPU and disk; watching it does not. The endpoint agrees - it asks
+ * only for a signed-in caller, not an admin.
+ */
+export function StemProgress({ state }: { state: Prefetch }) {
+  if (!state.available) return null;
+  if (typeof state.total === 'number' && state.total > 0) {
+    return (
+      <div className="prefetchProgress">
+        {/* The whole job, as one bar. Counted against liked-and-playlisted
+            songs rather than against stems on disk, so it cannot read 90%
+            because somebody separated a lot of things by hand. */}
+        <ProgressBar
+          value={state.separated ?? 0}
+          max={state.total}
+          tone="accent"
+          size="sm"
+          aria-label="Songs separated"
+        />
+        <Text tone="muted" size="xs">
+          {(state.separated ?? 0).toLocaleString()} of {state.total.toLocaleString()} songs apart
+          {state.wanted > 0 ? ` · ${state.wanted.toLocaleString()} queued` : ''} · {gb(state.bytes)} used
+          {state.failed > 0 ? ` · ${state.failed} could not be separated` : ''}
+        </Text>
+        {/* Naming the song is what turns a stalled-looking number into
+            visible work: this moves every couple of seconds even when the
+            count above will not change for another minute. */}
+        {state.running && (
+          <Text tone="muted" size="xs" className="prefetchProgress__now">
+            <Spinner size="sm" aria-hidden />
+            {state.running.phase === 'packing' ? 'Filing' : 'Taking apart'}{' '}
+            {state.running.title ? `“${state.running.title}”` : 'a song'}
+            {state.running.artist ? ` — ${state.running.artist}` : ''}
+            {state.running.phase === 'separating' && state.running.fraction > 0
+              ? ` · ${Math.round(state.running.fraction * 100)}%`
+              : ''}
+          </Text>
+        )}
+        {!state.running && state.enabled && (state.separated ?? 0) >= state.total && (
+          <Text tone="muted" size="xs">
+            Everything liked or in a playlist is already apart.
+          </Text>
+        )}
+      </div>
+    );
+  }
+  /* An older server sends counts but no total. Rather than show nothing until
+     somebody rebuilds the hub, say what it does know. */
+  if (state.done > 0 || state.wanted > 0) {
+    return (
+      <Text tone="muted" size="xs">
+        {state.done.toLocaleString()} ready · {state.wanted.toLocaleString()} waiting ·{' '}
+        {gb(state.bytes)} used
+        {state.failed > 0 ? ` · ${state.failed} could not be separated` : ''}
+      </Text>
+    );
+  }
+  return null;
+}
+
+export function BackgroundWork() {
+  const { session } = useServerSession();
+  const state = usePrefetchStatus();
+  const [busy, setBusy] = useState(false);
+  const [override, setOverride] = useState<boolean | null>(null);
+
   if (!session || !state) return null;
+  const enabled = override ?? state.enabled;
 
   const flip = async (on: boolean) => {
     setBusy(true);
-    setState({ ...state, enabled: on });
+    // Held locally rather than written into the polled state, which the next
+    // tick would overwrite. Cleared on success so the server's own answer takes
+    // over again the moment it arrives.
+    setOverride(on);
     try {
       await request(session.url, '/api/stems/prefetch', {
         method: 'POST',
         token: session.token,
         body: JSON.stringify({ enabled: on }),
       });
+      setOverride(null);
     } catch {
       // Put it back: a switch that stays where you left it while the server
       // disagrees is worse than one that springs back.
-      setState({ ...state, enabled: !on });
+      setOverride(null);
     } finally {
       setBusy(false);
     }
@@ -118,7 +205,7 @@ export function BackgroundWork() {
       <Label>Background work</Label>
       <Switch
         label="Separate songs before you ask"
-        checked={state.enabled && state.available}
+        checked={enabled && state.available}
         disabled={busy || !state.available}
         onCheckedChange={(on: boolean) => void flip(on)}
       />
@@ -127,53 +214,7 @@ export function BackgroundWork() {
           ? 'This server does not have the separation tools installed, so there is nothing to turn on.'
           : 'Pulls your liked and playlisted songs apart in the background, so the Pads and the Stems tab open instantly instead of after minutes. Costs GPU time per song and up to 60 GB of the server’s disk. It always yields to a song you ask for.'}
       </Text>
-      {state.available && typeof state.total === 'number' && state.total > 0 && (
-        <div className="prefetchProgress">
-          {/* The whole job, as one bar. Counted against liked-and-playlisted
-              songs rather than against stems on disk, so it cannot read 90%
-              because somebody separated a lot of things by hand. */}
-          <ProgressBar
-            value={state.separated ?? 0}
-            max={state.total}
-            tone="accent"
-            size="sm"
-            aria-label="Songs separated"
-          />
-          <Text tone="muted" size="xs">
-            {(state.separated ?? 0).toLocaleString()} of {state.total.toLocaleString()} songs apart
-            {state.wanted > 0 ? ` · ${state.wanted.toLocaleString()} queued` : ''} · {gb(state.bytes)} used
-            {state.failed > 0 ? ` · ${state.failed} could not be separated` : ''}
-          </Text>
-          {/* Naming the song is what turns a stalled-looking number into
-              visible work: this moves every couple of seconds even when the
-              count above will not change for another minute. */}
-          {state.running && (
-            <Text tone="muted" size="xs" className="prefetchProgress__now">
-              <Spinner size="sm" aria-hidden />
-              {state.running.phase === 'packing' ? 'Filing' : 'Taking apart'}{' '}
-              {state.running.title ? `“${state.running.title}”` : 'a song'}
-              {state.running.artist ? ` — ${state.running.artist}` : ''}
-              {state.running.phase === 'separating' && state.running.fraction > 0
-                ? ` · ${Math.round(state.running.fraction * 100)}%`
-                : ''}
-            </Text>
-          )}
-          {!state.running && state.enabled && (state.separated ?? 0) >= state.total && (
-            <Text tone="muted" size="xs">
-              Everything liked or in a playlist is already apart.
-            </Text>
-          )}
-        </div>
-      )}
-      {/* An older server sends counts but no total. Rather than show nothing
-          until somebody rebuilds the hub, say what it does know. */}
-      {state.available && typeof state.total !== 'number' && (state.done > 0 || state.wanted > 0) && (
-        <Text tone="muted" size="xs">
-          {state.done.toLocaleString()} ready · {state.wanted.toLocaleString()} waiting ·{' '}
-          {gb(state.bytes)} used
-          {state.failed > 0 ? ` · ${state.failed} could not be separated` : ''}
-        </Text>
-      )}
+      <StemProgress state={state} />
     </div>
   );
 }

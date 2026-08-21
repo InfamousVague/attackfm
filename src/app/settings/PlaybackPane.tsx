@@ -1,4 +1,5 @@
 import { Field, Label, SegmentedControl, Select, Slider, Switch, Text } from '@glacier/react';
+import { StemProgress, usePrefetchStatus } from '../servers/BackgroundWork.tsx';
 import { useEffect, useState } from 'react';
 import { fireNativeHaptic, setHapticsPref, useHapticsPref } from '../core/haptics.ts';
 import { usePlayback, type SleepTimer } from '../player/playback.tsx';
@@ -243,6 +244,11 @@ export function PlaybackSettings() {
         </Text>
       </div>
       <div className="prefsSection">
+        <Label>Taking songs apart</Label>
+        <StemsReadout />
+      </div>
+
+      <div className="prefsSection">
         <Label>Feel</Label>
         <Switch
           label="Haptics"
@@ -301,5 +307,42 @@ export function PlaybackSettings() {
         <SleepCountdown sleep={pb.sleep} />
       </div>
     </div>
+  );
+}
+
+/**
+ * How far the server has got through pulling your library apart.
+ *
+ * Here as well as under Servers, and that is the point rather than an oversight.
+ * The row under Servers is a CONTROL - it spends the operator's GPU and disk, so
+ * it is admin-only and lives with the other things that cost the machine
+ * something. But "how much of my music can I pull apart yet" is a listener's
+ * question about their own library, and nobody looking for that opens Servers.
+ * The status endpoint asks only for a signed-in caller, so this needs no
+ * privileges of its own.
+ *
+ * Renders nothing at all when the server has no separation tools, when it is not
+ * doing this, or when there is no server - an empty progress bar answering a
+ * question nobody asked is worse than the absence.
+ */
+function StemsReadout() {
+  const state = usePrefetchStatus();
+  if (!state || !state.available) {
+    return (
+      <Text tone="muted" size="sm">
+        This server does not take songs apart, so the Stems tab and the Pads work
+        on whatever you play as you play it.
+      </Text>
+    );
+  }
+  return (
+    <>
+      <Text tone="muted" size="sm">
+        Songs you have liked or put in a playlist are pulled apart on the server
+        ahead of time, so the Stems tab and the Pads open straight away instead of
+        after a wait.
+      </Text>
+      <StemProgress state={state} />
+    </>
   );
 }
