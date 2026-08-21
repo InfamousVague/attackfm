@@ -141,6 +141,29 @@
   min-inline-size: 0;
 }
 
+/* The header is a column: the title row (name, recent-panes chips, search) and,
+   under it, the update offer - which draws nothing until a version is staged on
+   the device, then asks to restart into it. */
+.settingsHeader {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  flex: 1;
+  min-inline-size: 0;
+}
+
+/* The row takes its natural height inside the column rather than stretching
+   down it (its flex:1 was for filling the kit's title slot on its own). */
+.settingsHeader > .settingsTitleRow {
+  flex: 0 0 auto;
+}
+
+/* The banner spans the header; the page margins it wears on the home screen are
+   not wanted here, where the column gap already spaces it off the row. */
+.settingsHeader > .updateBanner {
+  margin: 0;
+}
+
 .settingsTitleRow__search {
   inline-size: min(16rem, 50%);
 }

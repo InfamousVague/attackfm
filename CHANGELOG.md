@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.311
+
+- When a new version has downloaded, Settings shows a Restart banner right under the recent-settings chips — so you can update from there rather than waiting to come across it
+
 ## 0.3.310
 
 - Queue rows sit a little tighter — the padding above and below each one is halved, so more of the queue fits on screen without the covers touching

@@ -140,3 +140,18 @@ export function UpdateBanner() {
   if (staged) return <UpdateReady version={staged} />;
   return null;
 }
+
+/**
+ * The restart OFFER alone, for a surface that wants it without the full
+ * UpdateBanner's first-launch announcement modal - Settings shows this under
+ * its recent-panes chips. It draws nothing until a bundle is staged, and the
+ * same offer as the home banner once one is: "there is a newer version on the
+ * device, restart to use it". Watches the bundle so it appears the moment one
+ * lands while Settings is open.
+ */
+export function StagedUpdateBanner() {
+  const [staged, setStaged] = useState<string | null>(stagedBundle);
+  useEffect(() => watchBundle(() => setStaged(stagedBundle())), []);
+  if (!staged) return null;
+  return <UpdateReady version={staged} />;
+}
