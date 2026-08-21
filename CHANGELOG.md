@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.313
+
+- Now Playing always shows where the song is coming out. The speaker button used to appear only once you owned a second device, so until then there was nothing telling you the sound was on this one
+
 ## 0.3.312
 
 - The level meters in the Stems tab were all drawing the same thing — the whole song, six times over, instead of one part each. They show the actual parts now

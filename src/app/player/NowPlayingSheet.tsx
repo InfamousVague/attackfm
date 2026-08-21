@@ -599,7 +599,9 @@ export function NowPlayingSheet({
         </IconButton>
         {/* Whatever wants to act on the song playing right now. */}
         <PluginSlot id="now-playing-actions" />
-        <DevicePicker />
+        {/* Always here, unlike in the strip's overflow: on this screen "where is
+            this playing" is part of the question the screen answers. */}
+        <DevicePicker always />
         {/* AirPlay sits beside Connect rather than inside it because they are
             different kinds of elsewhere: Connect moves the DECK to another
             AttackFM device, AirPlay moves this device's SOUND to a speaker.

@@ -187,7 +187,7 @@ export function DeviceList() {
   );
 }
 
-export function DevicePicker() {
+export function DevicePicker({ always = false }: { always?: boolean } = {}) {
   const { connected, devices, activeDeviceId, thisDeviceId } = useConnect();
   const cast = useCastSnapshot();
 
@@ -195,22 +195,45 @@ export function DevicePicker() {
   const online = devices.filter((d) => d.online || d.id === activeDeviceId);
   const hasConnect = connected && online.length >= 2;
   const hasCast = cast.available && (cast.devices.length > 0 || cast.session != null);
-  if (!hasConnect && !hasCast) return null;
+  /*
+   * `always` keeps the button on surfaces where WHERE THE SOUND IS GOING is part
+   * of what the surface is for.
+   *
+   * Hiding it until a second device appears is right for the strip's overflow
+   * and for settings: a row that opens onto "nothing to pick" is noise in a
+   * menu. It is wrong on the Now Playing screen, where the question is not only
+   * "can I move this" but "where is this playing" - and a control that exists
+   * only when you already have two devices is one nobody discovers before they
+   * buy the second one.
+   *
+   * Safe because DeviceList answers the empty case itself, in words, rather than
+   * opening an empty panel - and because the trigger still carries data-active,
+   * so with one device it reads as "playing here" rather than as a dead button.
+   */
+  if (!always && !hasConnect && !hasCast) return null;
 
   const activeElsewhere =
     (activeDeviceId != null && activeDeviceId !== thisDeviceId) || cast.session != null;
   const activeHere = cast.session == null && activeDeviceId != null && activeDeviceId === thisDeviceId;
+  // Says which of the three things this button currently is, so a screen reader
+  // is not told "connect to a device" by a control whose panel will say there
+  // are none.
+  const label = activeElsewhere
+    ? 'Playing on another device — change'
+    : hasConnect || hasCast
+      ? 'Connect to a device'
+      : 'Playing on this device';
 
   return (
     <Popover
       placement="top-end"
-      aria-label="Connect to a device"
+      aria-label={label}
       className="devicePanel"
       trigger={
         <IconButton
           variant="ghost"
           size="sm"
-          aria-label="Connect to a device"
+          aria-label={label}
           data-connected={activeElsewhere || undefined}
           data-active={activeHere || undefined}
           className="deviceTrigger"
