@@ -16,6 +16,22 @@ use std::sync::Mutex;
 /// range requests for audio - never come here at all (a stream token is
 /// verified by HMAC, and the bytes are served off the filesystem). WAL keeps
 /// concurrent readers from queueing behind the scanner.
+/// One playlist as the API sends it: its head, its decoration, its songs.
+///
+/// A struct rather than the tuple this used to be. Three more fields turned an
+/// unlabelled six-tuple into something no reader could hold - and the ordering
+/// of `description, folder, cover` is exactly the kind of thing that swaps
+/// silently and puts a folder name in a description.
+pub struct PlaylistRow {
+    pub id: i64,
+    pub name: String,
+    pub updated_at: i64,
+    pub description: String,
+    pub folder: String,
+    pub cover: String,
+    pub tracks: Vec<i64>,
+}
+
 pub struct Db {
     conn: Mutex<Connection>,
 }
@@ -350,6 +366,14 @@ CREATE TABLE IF NOT EXISTS playlists (
   id         INTEGER PRIMARY KEY,
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name       TEXT NOT NULL,
+  -- What it is for, where it files, and the cover it wears. Empty rather than
+  -- NULL throughout: every reader wants a string, and a migration that adds a
+  -- nullable column makes every one of them handle a case that means the same
+  -- thing as "". The migration in ensure_columns adds these to older files.
+  description TEXT NOT NULL DEFAULT '',
+  folder      TEXT NOT NULL DEFAULT '',
+  -- A relative path under the covers directory, never the image itself.
+  cover       TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -1243,6 +1267,29 @@ impl Db {
                 "UPDATE tracks SET kind = 'book' WHERE rel_path LIKE 'Audiobooks/%'",
                 [],
             )?;
+        }
+        // What a playlist IS beyond its songs: what it is for, where it files,
+        // and which picture it wears. On the PLAYLISTS table rather than beside
+        // it, so it belongs to the playlist rather than to whoever happened to
+        // decorate it - a household member opening a shared list sees the same
+        // description the person who wrote it does.
+        //
+        // `cover` holds a relative path under the covers directory, never the
+        // image. Bytes in a row make every playlist read carry them, and the
+        // list endpoint returns every playlist a user owns on every heartbeat.
+        let have: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('playlists')")?
+            .query_map([], |r| r.get(0))?
+            .filter_map(Result::ok)
+            .collect();
+        for (name, decl) in [
+            ("description", "description TEXT NOT NULL DEFAULT ''"),
+            ("folder", "folder TEXT NOT NULL DEFAULT ''"),
+            ("cover", "cover TEXT NOT NULL DEFAULT ''"),
+        ] {
+            if !have.iter().any(|c| c == name) {
+                conn.execute(&format!("ALTER TABLE playlists ADD COLUMN {decl}"), [])?;
+            }
         }
         Ok(())
     }
@@ -2180,15 +2227,18 @@ impl Db {
     }
 
     /// Every playlist the user owns, each with its track ids in order.
-    pub fn playlists(&self, user_id: i64) -> Vec<(i64, String, i64, Vec<i64>)> {
+    pub fn playlists(&self, user_id: i64) -> Vec<PlaylistRow> {
         let conn = self.lock();
-        let Ok(mut stmt) = conn
-            .prepare("SELECT id, name, updated_at FROM playlists WHERE user_id = ?1 ORDER BY name")
-        else {
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT id, name, updated_at, description, folder, cover
+               FROM playlists WHERE user_id = ?1 ORDER BY name",
+        ) else {
             return Vec::new();
         };
-        let heads: Vec<(i64, String, i64)> = stmt
-            .query_map(params![user_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        let heads: Vec<(i64, String, i64, String, String, String)> = stmt
+            .query_map(params![user_id], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
+            })
             .map(|r| r.filter_map(Result::ok).collect())
             .unwrap_or_default();
         drop(stmt);
@@ -2200,14 +2250,70 @@ impl Db {
         };
         heads
             .into_iter()
-            .map(|(id, name, updated)| {
+            .map(|(id, name, updated, description, folder, cover)| {
                 let tracks: Vec<i64> = items
                     .query_map(params![id], |r| r.get(0))
                     .map(|r| r.filter_map(Result::ok).collect())
                     .unwrap_or_default();
-                (id, name, updated, tracks)
+                PlaylistRow {
+                    id,
+                    name,
+                    updated_at: updated,
+                    description,
+                    folder,
+                    cover,
+                    tracks,
+                }
             })
             .collect()
+    }
+
+    /// One playlist's decoration, changed a field at a time.
+    ///
+    /// Each is Option so a caller can send only what it means to change - a
+    /// description edit must not blank the folder, and a PUT that carried every
+    /// field would make two devices editing different things overwrite each
+    /// other with whatever they last read.
+    pub fn set_playlist_meta(
+        &self,
+        playlist_id: i64,
+        description: Option<&str>,
+        folder: Option<&str>,
+        cover: Option<&str>,
+    ) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        let now = now_ms();
+        if let Some(v) = description {
+            conn.execute(
+                "UPDATE playlists SET description = ?2, updated_at = ?3 WHERE id = ?1",
+                params![playlist_id, v, now],
+            )?;
+        }
+        if let Some(v) = folder {
+            conn.execute(
+                "UPDATE playlists SET folder = ?2, updated_at = ?3 WHERE id = ?1",
+                params![playlist_id, v, now],
+            )?;
+        }
+        if let Some(v) = cover {
+            conn.execute(
+                "UPDATE playlists SET cover = ?2, updated_at = ?3 WHERE id = ?1",
+                params![playlist_id, v, now],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// The file a playlist's cover points at, for serving and for cleanup.
+    pub fn playlist_cover(&self, playlist_id: i64) -> Option<String> {
+        self.lock()
+            .query_row(
+                "SELECT cover FROM playlists WHERE id = ?1",
+                params![playlist_id],
+                |r| r.get::<_, String>(0),
+            )
+            .ok()
+            .filter(|c| !c.is_empty())
     }
 
     /// One playlist's live track ids, in order.
