@@ -82,6 +82,29 @@ class MainActivity : TauriActivity() {
       return link
     }
 
+    /**
+     * The page's playlists, for Android Auto's browse list.
+     *
+     * JSON in, because org.json ships with the platform and three fields do
+     * not earn a schema. Tabs are stripped from what gets stored - the cache
+     * under this is tab-separated, and a name is not allowed to break the
+     * format it rides in.
+     */
+    @JavascriptInterface
+    fun setCollections(json: String) {
+      val rows = try {
+        val arr = org.json.JSONArray(json)
+        (0 until arr.length()).mapNotNull { i ->
+          val o = arr.optJSONObject(i) ?: return@mapNotNull null
+          val id = o.optString("id")
+          val name = o.optString("name").replace("\t", " ")
+          if (id.isEmpty() || name.isEmpty()) null
+          else Triple(id, name, o.optString("subtitle").replace("\t", " "))
+        }
+      } catch (_: Exception) { return }
+      PlaybackService.publishCollections(this@MainActivity, rows)
+    }
+
     @JavascriptInterface
     fun setPlaying(next: Boolean) {
       if (playing == next) return

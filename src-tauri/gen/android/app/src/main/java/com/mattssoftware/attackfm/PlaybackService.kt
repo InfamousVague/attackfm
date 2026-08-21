@@ -75,7 +75,9 @@ class PlaybackService : MediaBrowserServiceCompat() {
       // A row tapped in the car's browse list. The id IS the command - see
       // onLoadChildren for the three ids this service publishes.
       override fun onPlayFromMediaId(mediaId: String?, extras: android.os.Bundle?) {
-        if (mediaId != null && mediaId.startsWith("collection:")) command(mediaId)
+        if (mediaId == null) return
+        // The id IS the command, for both kinds of row this service publishes.
+        if (mediaId.startsWith("collection:") || mediaId.startsWith("playlist:")) command(mediaId)
       }
     })
     made.isActive = true
@@ -136,13 +138,18 @@ class PlaybackService : MediaBrowserServiceCompat() {
           .build(),
         android.support.v4.media.MediaBrowserCompat.MediaItem.FLAG_PLAYABLE,
       )
-    result.sendResult(
-      mutableListOf(
-        item("collection:liked", "Liked", "Your favourites"),
-        item("collection:all", "All songs", "The whole library"),
-        item("collection:shuffle", "Shuffle all", "Everything, surprised"),
-      ),
+    val rows = mutableListOf(
+      item("collection:liked", "Liked", "Your favourites"),
+      item("collection:all", "All songs", "The whole library"),
+      item("collection:shuffle", "Shuffle all", "Everything, surprised"),
     )
+    // The playlists, as the page last published them. Cached in preferences so
+    // a car plugged in before the app has drawn a single frame still gets the
+    // real list - the WebView is slower to stand up than Android Auto is to
+    // ask, and an answer of "three rows now, twelve in a second" draws as the
+    // tree twitching.
+    for (p in collections(this)) rows.add(item(p.first, p.second, p.third))
+    result.sendResult(rows)
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -301,6 +308,12 @@ class PlaybackService : MediaBrowserServiceCompat() {
     if (active === session) active = null
     session = null
     super.onDestroy()
+    // The last publish before the lights go out. Without it the widget keeps
+    // whatever song was playing when the service died and stands there
+    // promising controls that reach nothing - lastState going NONE is what
+    // flips it to the tap-to-open face.
+    lastState = PlaybackStateCompat.STATE_NONE
+    NowPlayingWidget.refresh(this)
   }
 
   private fun ensureChannel() {
@@ -356,6 +369,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
       lastDuration = durationMs
       pushMetadata()
       instance?.refreshNotification()
+      instance?.let { NowPlayingWidget.refresh(it) }
     }
 
     /**
@@ -371,6 +385,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
       lastArt = art
       pushMetadata()
       instance?.refreshNotification()
+      instance?.let { NowPlayingWidget.refresh(it) }
     }
 
     private fun pushMetadata() {
@@ -418,6 +433,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
           .build(),
       )
       instance?.refreshNotification()
+      instance?.let { NowPlayingWidget.refresh(it) }
     }
 
     fun start(context: Context) {
@@ -438,5 +454,60 @@ class PlaybackService : MediaBrowserServiceCompat() {
     fun soften() {
       instance?.soften()
     }
+
+    private const val COLLECTIONS_PREFS = "attackfm.collections"
+
+    /**
+     * The page's playlists, for the car's browse list.
+     *
+     * Stored as one string per row - id, name, subtitle, tab-separated -
+     * because the ONLY reader is onLoadChildren and a JSON parser here would
+     * be a dependency for three fields. Tabs cannot appear in a playlist name
+     * that came through the page (they are stripped there), and a name that
+     * somehow carries one loses its tail rather than shifting the row.
+     */
+    fun publishCollections(context: Context, rows: List<Triple<String, String, String>>) {
+      context.getSharedPreferences(COLLECTIONS_PREFS, Context.MODE_PRIVATE)
+        .edit()
+        .putStringSet(
+          "rows",
+          rows.mapIndexed { i, r -> "$i\t${r.first}\t${r.second}\t${r.third}" }.toSet(),
+        )
+        .apply()
+      // A browser mid-look redraws; one that has not asked yet simply finds
+      // the fresh answer when it does.
+      instance?.notifyChildrenChanged(BROWSE_ROOT)
+    }
+
+    fun collections(context: Context): List<Triple<String, String, String>> =
+      (context.getSharedPreferences(COLLECTIONS_PREFS, Context.MODE_PRIVATE)
+        .getStringSet("rows", emptySet()) ?: emptySet())
+        .mapNotNull { row ->
+          val parts = row.split('\t')
+          if (parts.size < 4) null else Pair(parts[0].toIntOrNull() ?: 0, Triple(parts[1], parts[2], parts[3]))
+        }
+        // A string SET forgets order; the index prefix is how the page's own
+        // ordering survives the round trip.
+        .sortedBy { it.first }
+        .map { it.second }
+
+    /** What the widget draws, read in one piece. */
+    fun widgetSnapshot(): WidgetState =
+      WidgetState(
+        title = lastTitle,
+        artist = lastArtist,
+        art = lastArt,
+        playing = lastState == PlaybackStateCompat.STATE_PLAYING,
+        live = lastState != PlaybackStateCompat.STATE_NONE,
+      )
   }
 }
+
+/** One read of everything the home-screen widget prints. */
+data class WidgetState(
+  val title: String?,
+  val artist: String?,
+  val art: android.graphics.Bitmap?,
+  val playing: Boolean,
+  val live: Boolean,
+)

@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { useLibrary } from '../library/library.tsx';
+import { usePlaylists } from '../playlists/playlists.tsx';
 import { onCarPlayPlay } from './carplay.ts';
-import { bindNativeTransport } from './androidAudio.ts';
+import { bindNativeTransport, publishNativeCollections } from './androidAudio.ts';
 import { remotePath } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
 
@@ -17,8 +18,26 @@ import type { Track } from '../core/tauri.ts';
  */
 export function CarPlayBridge({ onPlay }: { onPlay: (track: Track, queue: Track[]) => void }) {
   const { tracks, favoriteTracks } = useLibrary();
-  const latest = useRef({ tracks, favoriteTracks, onPlay });
-  latest.current = { tracks, favoriteTracks, onPlay };
+  const { playlists } = usePlaylists();
+  const latest = useRef({ tracks, favoriteTracks, playlists, onPlay });
+  latest.current = { tracks, favoriteTracks, playlists, onPlay };
+
+  /*
+   * The car's browse list learns the playlists. Published on every change and
+   * cached natively, so a car plugged in before this WebView exists still
+   * draws the real list - Android Auto asks faster than a page stands up.
+   * The count rides as the subtitle because a dashboard row with no second
+   * line looks unfinished next to the three built-ins above it.
+   */
+  useEffect(() => {
+    publishNativeCollections(
+      playlists.map((p) => ({
+        id: `playlist:${p.id}`,
+        name: p.name,
+        subtitle: p.paths.length === 1 ? '1 song' : `${p.paths.length} songs`,
+      })),
+    );
+  }, [playlists]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -102,6 +121,19 @@ export function CarPlayBridge({ onPlay }: { onPlay: (track: Track, queue: Track[
       bindNativeTransport({
         playCollection: (id) =>
           window.dispatchEvent(new CustomEvent('afm-car-collection', { detail: id })),
+        playPlaylist: (id) => {
+          const { tracks, playlists, onPlay } = latest.current;
+          const list = playlists.find((p) => p.id === id);
+          if (!list) return;
+          // The playlist's own running order, resolved to live tracks the way
+          // its page resolves them - a path whose song has gone simply drops.
+          const byPath = new Map(tracks.map((t) => [t.path, t] as const));
+          const queue = list.paths
+            .map((path) => byPath.get(path))
+            .filter((t): t is Track => t !== undefined);
+          const first = queue[0];
+          if (first) onPlay(first, queue);
+        },
       }),
     [],
   );

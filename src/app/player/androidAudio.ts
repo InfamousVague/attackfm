@@ -19,6 +19,8 @@ interface NativeBridge {
   setArtwork?: (base64: string) => void;
   setSyncing?: (active: boolean) => void;
   setPlaybackState?: (playing: boolean, positionMs: number) => void;
+  /** Present from the widget/Auto-playlists shell; absent before it. */
+  setCollections?: (json: string) => void;
 }
 
 declare global {
@@ -173,6 +175,8 @@ interface TransportHandlers {
   seek?: (seconds: number) => void;
   /** A collection tapped in the car's browse list: 'liked' | 'all' | 'shuffle'. */
   playCollection?: (id: string) => void;
+  /** A playlist tapped in the car's browse list, by its own id. */
+  playPlaylist?: (id: string) => void;
 }
 
 /*
@@ -206,6 +210,8 @@ export function bindNativeTransport(handlers: TransportHandlers): () => void {
         if (Number.isFinite(secs)) h.seek?.(secs);
       } else if (command.startsWith('collection:')) {
         h.playCollection?.(command.slice('collection:'.length));
+      } else if (command.startsWith('playlist:')) {
+        h.playPlaylist?.(command.slice('playlist:'.length));
       }
     }
   };
@@ -213,6 +219,33 @@ export function bindNativeTransport(handlers: TransportHandlers): () => void {
     bound.delete(handlers);
     if (bound.size === 0) delete window.__AFM_TRANSPORT__;
   };
+}
+
+/**
+ * Tell the car what playlists exist, so its browse list is more than three rows.
+ *
+ * Cached on the native side in preferences, deliberately: Android Auto asks
+ * for the tree faster than a WebView stands up, and the cache is what lets a
+ * cold-plugged car draw the real list instead of the built-ins alone. Tabs are
+ * stripped because the cache under this is tab-separated - a name must not be
+ * able to break the format carrying it.
+ */
+export function publishNativeCollections(
+  rows: readonly { id: string; name: string; subtitle: string }[],
+): void {
+  try {
+    window.AFMNative?.setCollections?.(
+      JSON.stringify(
+        rows.map((r) => ({
+          id: r.id,
+          name: r.name.replace(/\t/g, ' '),
+          subtitle: r.subtitle.replace(/\t/g, ' '),
+        })),
+      ),
+    );
+  } catch {
+    // Best-effort, like the rest of this bridge.
+  }
 }
 
 /**
