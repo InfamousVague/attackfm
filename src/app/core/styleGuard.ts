@@ -47,6 +47,9 @@ export function ensureBundleStylesheet(): void {
   // Vite injects styles itself there.
   if (import.meta.env.DEV) return;
 
+  if (ran) return;
+  ran = true;
+
   const self = import.meta.url;
   if (!self) return; // no module URL to reason from
   // A suffix swap, not a path resolution - see the note above. Any query the
@@ -55,9 +58,55 @@ export function ensureBundleStylesheet(): void {
   const href = self.replace(/app\.js(\?.*)?$/, 'app.css');
   if (href === self) return; // not a URL this reasoning applies to
 
-  if (applied(href)) return;
-  void restore(href);
+  void judge(href);
 }
+
+/** Runs once per document. A second pass could only ever adopt a duplicate. */
+let ran = false;
+
+/**
+ * Decide whether the loader's stylesheet arrived - AFTER giving it the chance
+ * to.
+ *
+ * This is called from the top of main.tsx, which is the module the boot loader
+ * appended one line after appending the <link>. At that instant the link has
+ * NOT loaded: it is not in document.styleSheets and has no `.sheet`. Asking
+ * then is asking a question that cannot yet have an answer, and `applied`
+ * dutifully says no - so the guard "recovered" a stylesheet that was on its way
+ * in, every single boot of every downloaded bundle, fetching a megabyte and
+ * then rewriting document.head while React was mounting into it.
+ *
+ * So: if there is a link for this file that has not settled, wait for it. Load
+ * or error, either is an answer. The ceiling is for the third case, a request
+ * that never comes back at all, which is the case this guard was written for.
+ */
+async function judge(href: string): Promise<void> {
+  const link = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).find(
+    (l): l is HTMLLinkElement => l instanceof HTMLLinkElement && sameFile(l.href, href),
+  );
+  if (link && !link.sheet) await settle(link);
+  if (applied(href)) return;
+  await restore(href);
+}
+
+/** Resolves when the link has loaded, failed, or run out of patience. */
+function settle(link: HTMLLinkElement): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      window.clearTimeout(timer);
+      link.removeEventListener('load', done);
+      link.removeEventListener('error', done);
+      resolve();
+    };
+    link.addEventListener('load', done, { once: true });
+    link.addEventListener('error', done, { once: true });
+    // Generous for a local file and short enough that a genuinely absent
+    // stylesheet is still repaired before anybody has read a screen.
+    const timer = window.setTimeout(done, SETTLE_MS);
+  });
+}
+
+const SETTLE_MS = 4000;
 
 /**
  * Is this bundle's stylesheet both present AND carrying rules?

@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.320
+
+- Finishes the black-screen fix: the app no longer replaces a stylesheet that was still on its way in. It waits to see whether the one it was given arrives before deciding anything is wrong
+
 ## 0.3.319
 
 - Updates open to the app again instead of a black screen. Installing one left the app repairing a stylesheet that was never broken — throwing away the working one and rewriting the page while it was still being drawn. Closing and reopening was the only way through, and it is not needed any more
