@@ -86,17 +86,59 @@ export const SETTINGS_INDEX: SettingEntry[] = [
   },
   {
     id: 'now-playing-video',
-    pane: 'playback',
+    pane: 'appearance',
     label: 'Video clips on Now Playing',
     description: "The song's short looping clip behind the full player.",
     keywords: 'canvas video clip loop spotify animation background data cellular battery',
   },
   {
     id: 'auto-upload',
-    pane: 'server',
+    pane: 'general',
     label: 'Send new music to this server',
     description: 'Uploads anything in your music folder this server does not have.',
     keywords: 'upload sync folder send push library bandwidth friend someone else server',
+  },
+  {
+    id: 'streaming-quality',
+    pane: 'playback',
+    label: 'Streaming quality',
+    description: 'Lossless sends the original file; Data saver re-encodes to a bitrate you pick.',
+    keywords: 'quality bitrate lossless data saver transcode cellular metered bandwidth kbps',
+  },
+  {
+    id: 'haptics',
+    pane: 'appearance',
+    label: 'Haptics',
+    description: 'Ticks from the Taptic Engine as you tap, play, and spin the disc.',
+    keywords: 'haptics vibration vibrate taptic feedback feel buzz',
+  },
+  {
+    id: 'shake-flick',
+    pane: 'appearance',
+    label: 'Shake and flick',
+    description: 'Shake to change shuffle, flick left or right to change songs, on Now Playing.',
+    keywords: 'shake flick motion gesture accelerometer tilt skip',
+  },
+  {
+    id: 'sleep-timer',
+    pane: 'playback',
+    label: 'Sleep timer',
+    description: 'Fades out and pauses when the time is up.',
+    keywords: 'sleep timer bedtime night stop fade minutes',
+  },
+  {
+    id: 'crossfade',
+    pane: 'playback',
+    label: 'Crossfade',
+    description: 'Blends the end of one song into the start of the next.',
+    keywords: 'crossfade blend fade transition seconds gapless',
+  },
+  {
+    id: 'device-rename',
+    pane: 'account',
+    label: 'Device name',
+    description: 'What this device is called in every picker on the account.',
+    keywords: 'device name rename phone label picker connect',
   },
   {
     id: 'stem-prefetch',
@@ -131,6 +173,23 @@ export function settingsMatching(query: string): SettingEntry[] {
   const q = query.trim();
   if (!q) return [];
   return SETTINGS_INDEX.filter((e) => settingMatches(e, q));
+}
+
+/**
+ * Scroll a just-opened pane to one row and flash it. The delay covers the
+ * pane mounting (and, on the phone, the push animation landing) - a scroll
+ * fired into a pane that is not there yet lands nowhere, silently. Best
+ * effort by design: a row that is gated off (signed out, wrong platform)
+ * simply is not found, and the pane opening at its top is the honest answer.
+ */
+export function revealSetting(id: string): void {
+  window.setTimeout(() => {
+    const el = document.querySelector<HTMLElement>(`[data-setting="${id}"]`);
+    if (!el) return;
+    el.scrollIntoView({ block: 'center' });
+    el.classList.add('setk-flash');
+    window.setTimeout(() => el.classList.remove('setk-flash'), 1700);
+  }, 400);
 }
 
 export function paneMatches(section: SettingsSection, query: string): boolean {

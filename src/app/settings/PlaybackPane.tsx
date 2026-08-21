@@ -107,6 +107,7 @@ export function PlaybackSettings() {
 
       <PaneSection title="Between songs">
         <SettingSliderRow
+          id="crossfade"
           label="Crossfade"
           hint="Blends the end of one song into the start of the next. Automatic changes only - skips stay immediate."
           min={0}
@@ -248,6 +249,7 @@ export function PlaybackSettings() {
         footer={<SleepCountdown sleep={pb.sleep} />}
       >
         <SettingRow
+          id="sleep-timer"
           label="Sleep timer"
           hint="Fades out and pauses when the time is up. Cleared on relaunch."
           layout="stacked"

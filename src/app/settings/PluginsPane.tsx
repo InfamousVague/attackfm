@@ -1,4 +1,4 @@
-import { Button, Card, Label, Modal, Pill, SegmentedControl, Switch, Text } from '@glacier/react';
+import { Banner, Button, Card, Label, Modal, Pill, SegmentedControl, Switch, Text } from '@glacier/react';
 import { Blocks, Trash2 } from '@glacier/icons';
 import { useMemo, useState } from 'react';
 import type { Plugin } from '../../plugins/types.ts';
@@ -144,7 +144,7 @@ export function PluginsSettings() {
   const enabledCount = all.filter((p) => isEnabled(p.id)).length;
 
   const { sources, setSources, feeds, refresh, loading } = useRepoFeeds();
-  const { busyId, install } = useInstaller(reloadRemote);
+  const { busyId, install, error: installError, clearError } = useInstaller(reloadRemote);
 
   // Installed plugins a repository is offering a higher version of. Computed
   // across every source, so a plugin that moved repositories still updates -
@@ -167,6 +167,11 @@ export function PluginsSettings() {
 
   return (
     <div className="prefsBody">
+      {installError && (
+        <Banner tone="danger" onDismiss={clearError}>
+          {installError}
+        </Banner>
+      )}
       <PluginUpdates updates={updates} busyId={busyId} onUpdate={(s, l) => void install(s, l)} />
 
       <SegmentedControl

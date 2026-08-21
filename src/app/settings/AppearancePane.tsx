@@ -210,6 +210,7 @@ export function Appearance() {
 
       <PaneSection title="Feel">
         <SettingRow
+          id="haptics"
           label="Haptics"
           hint="Ticks from the Taptic Engine as you tap, play, and spin the disc. Only things you actually press answer - scrolling and loading stay silent."
           control={
@@ -227,6 +228,7 @@ export function Appearance() {
         />
         {motionAvailable() && (
           <SettingRow
+            id="shake-flick"
             label="Shake and flick"
             hint="On the Now Playing screen: shake to change shuffle, flick left or right to move between songs. Off by default because a gesture that misreads costs you the song you were listening to — walking, running and a pocket are all ignored, but a phone that lives in a bag may still find a way."
             control={

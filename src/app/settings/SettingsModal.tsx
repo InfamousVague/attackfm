@@ -6,7 +6,7 @@ import { SearchField, TabbedModal } from '@glacier/react';
 import { Bell, Blocks, BookOpen, CircleUserRound, HardDrive, Info, Library, Palette, Play, Server, Shield, Stethoscope } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { APP_VERSION } from '../core/version.ts';
-import { noteSettingsPane } from './settingsRecency.ts';
+import { noteSettingsPane, recentPanes, type RecentPane } from './settingsRecency.ts';
 import { useAppearance } from './appearance.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { usePlayback } from '../player/playback.tsx';
@@ -44,7 +44,9 @@ import {
   MOBILE_QUERY,
   useSettingsIsModal,
   paneMatches,
+  revealSetting,
   settingsGroupLabel,
+  settingsMatching,
   SettingsNavContext,
   THEME_COPY,
   type SettingsSection,
@@ -297,6 +299,13 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
   useEffect(() => {
     if (!open) setQuery('');
   }, [open]);
+  // The panes this hand reaches for, read once per open - the chips the phone
+  // list has always shown, finally on the desktop too. Held for the open so
+  // they cannot reshuffle under the pointer.
+  const [recents, setRecents] = useState<RecentPane[]>([]);
+  useEffect(() => {
+    if (open) setRecents(recentPanes());
+  }, [open]);
   // Asked to open on a specific pane (the network dot's Manage): land there.
   useEffect(() => {
     if (open && pane) setTab(pane);
@@ -386,6 +395,23 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       title={
         <div className="settingsTitleRow">
           <span>Settings</span>
+          {/* The chips the phone list has always shown, finally here too. */}
+          {!query.trim() && recents.length > 0 && (
+            <div className="settingsTitleRow__recents" aria-label="Recently opened">
+              {recents
+                .filter((r) => sections.some((s) => s.id === r.id))
+                .map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    className="settingsScreen__recentChip"
+                    onClick={() => noteTab(r.id)}
+                  >
+                    {sections.find((s) => s.id === r.id)?.label ?? r.label}
+                  </button>
+                ))}
+            </div>
+          )}
           <SearchField
             className="settingsTitleRow__search"
             value={query}
@@ -393,6 +419,37 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
             placeholder="Find a setting"
             aria-label="Find a setting"
           />
+          {/* Individual rows the query found: the index knows what every pane
+              holds before it has mounted. Choosing one opens its pane and
+              lights the row. */}
+          {query.trim() &&
+            (() => {
+              const hits = settingsMatching(query).filter((e) =>
+                sections.some((s) => s.id === e.pane),
+              );
+              if (hits.length === 0) return null;
+              const nameOf = (id: string) => sections.find((s) => s.id === id)?.label ?? id;
+              return (
+                <div className="settingsTitleRow__hits">
+                  {hits.slice(0, 6).map((e) => (
+                    <button
+                      key={e.id}
+                      type="button"
+                      className="settingsScreen__rowHit"
+                      onClick={() => {
+                        setQuery('');
+                        noteTab(e.pane);
+                        revealSetting(e.id);
+                      }}
+                    >
+                      <span className="settingsScreen__rowHitLabel">{e.label}</span>
+                      <span className="settingsScreen__rowHitWhere">{String(nameOf(e.pane))}</span>
+                      <span className="settingsScreen__rowHitDesc">{e.description}</span>
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
         </div>
       }
       value={tab}

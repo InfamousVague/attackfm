@@ -1,4 +1,5 @@
-import { Button, Input, Label, Pill, Spinner, Text } from '@glacier/react';
+import { AlertDialog, Button, Input, Label, Pill, Spinner, Text } from '@glacier/react';
+import { SettingsCallout } from './kit/settingsKit.tsx';
 import { useEffect, useState } from 'react';
 import {
   addSource,
@@ -92,20 +93,22 @@ export function useRepoFeeds() {
 /** Installing, shared by every surface that offers it. */
 export function useInstaller(reloadRemote: () => void) {
   const [busyId, setBusyId] = useState<string | null>(null);
+  // A failure worth reading, in the app's own voice rather than the OS's
+  // alert box - which on a phone webview may not even appear.
+  const [error, setError] = useState<string | null>(null);
   const install = async (source: string, listing: RemotePluginListing) => {
     setBusyId(listing.id);
+    setError(null);
     try {
       await installPlugin(source, listing);
       reloadRemote();
     } catch (err) {
-      window.alert(
-        `Could not install ${listing.name}: ${err instanceof Error ? err.message : err}`,
-      );
+      setError(`Could not install ${listing.name}: ${err instanceof Error ? err.message : err}`);
     } finally {
       setBusyId(null);
     }
   };
-  return { busyId, install };
+  return { busyId, install, error, clearError: () => setError(null) };
 }
 
 /**
@@ -124,12 +127,12 @@ export function PluginUpdates({
   onUpdate: (source: string, listing: RemotePluginListing) => void;
 }) {
   if (updates.length === 0) return null;
+  // Wears the kit's one tinted-banner recipe (SettingsCallout) rather than
+  // the raw accent ramp steps this strip had grown - two vocabularies for
+  // "tinted notice" was one too many.
   return (
-    <div className="pluginUpdates">
-      <div className="pluginUpdatesHead">
-        <Label>
-          {updates.length === 1 ? '1 update available' : `${updates.length} updates available`}
-        </Label>
+    <SettingsCallout
+      action={
         <Button
           variant="solid"
           size="sm"
@@ -140,6 +143,13 @@ export function PluginUpdates({
         >
           {updates.length === 1 ? 'Update' : 'Update all'}
         </Button>
+      }
+    >
+    <div className="pluginUpdates pluginUpdates--inCallout">
+      <div className="pluginUpdatesHead">
+        <Label>
+          {updates.length === 1 ? '1 update available' : `${updates.length} updates available`}
+        </Label>
       </div>
       {updates.map((u) => (
         <div key={u.listing.id} className="pluginUpdateRow">
@@ -160,6 +170,7 @@ export function PluginUpdates({
         </div>
       ))}
     </div>
+    </SettingsCallout>
   );
 }
 
@@ -259,9 +270,26 @@ export function PluginSources({
   onRefresh: () => void;
 }) {
   const [adding, setAdding] = useState('');
+  // The trust question, asked in the app's own dialog. window.confirm was
+  // doing this job; a kit AlertDialog keeps the same one-question shape and
+  // the same copy, and actually renders everywhere the app runs.
+  const [confirming, setConfirming] = useState<string | null>(null);
   return (
     <div className="pluginSources">
-      <div className="spotifyAccountRow">
+      <AlertDialog
+        open={confirming !== null}
+        onClose={() => setConfirming(null)}
+        title="Add this repository?"
+        description="Plugins from a repository run inside AttackFM with the same access the app has. Only add repositories you trust."
+        actionLabel="Add repository"
+        tone="danger"
+        onAction={() => {
+          if (confirming) setSources(addSource(confirming));
+          setConfirming(null);
+          setAdding('');
+        }}
+      />
+      <div className="pluginSourcesHead">
         <Text size="sm" tone="muted">
           Where the marketplace looks. Your own server hosts one at <code>/plugins</code>.
         </Text>
@@ -326,12 +354,7 @@ export function PluginSources({
           onClick={() => {
             // Adding a repository is trusting its owner with code that runs
             // inside the app - said out loud, once, at the moment it matters.
-            const sure = window.confirm(
-              'Plugins from a repository run inside AttackFM with the same access the app has. Only add repositories you trust.\n\nAdd this repository?',
-            );
-            if (!sure) return;
-            setSources(addSource(adding));
-            setAdding('');
+            setConfirming(adding.trim());
           }}
         >
           Add
