@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.287
+
+- Press and hold a playlist on the shelf for everything its page can do — rename it, file it in a folder, give it a cover — without opening it first
+
 ## 0.3.286
 
 - Playlists can wear a picture of your choosing — pick one from the ⋮ menu and it takes the tile and the header
