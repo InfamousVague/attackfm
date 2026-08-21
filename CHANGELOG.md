@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.310
+
+- Queue rows sit a little tighter — the padding above and below each one is halved, so more of the queue fits on screen without the covers touching
+
 ## 0.3.309
 
 - You can select more than one song now. Hold a song in any table, choose "Select songs…", tick as many as you like, and the bar that appears plays them next, queues them, likes them or files them all into a playlist in one go — including into a brand-new list

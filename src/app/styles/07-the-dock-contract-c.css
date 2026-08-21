@@ -269,7 +269,17 @@
   gap: var(--glacier-space-3);
   flex: 1;
   min-width: 0;
-  padding: var(--glacier-space-1) 0;
+  /* Half of space-1 rather than the token itself. A queue row is already
+     44px of artwork; the padding is the only part of its height that is not
+     carrying anything, so it is the only part worth taking back. At the full
+     token the covers sat about 11px apart and the list read loose when you were
+     scanning it. Halved, they sit about 5px apart and the row comes down from
+     55px to 50 - tighter, without the covers touching.
+
+     Kept derived from the token rather than written as a pixel value, so it
+     still tracks the scale's clamp across viewport widths the way every other
+     spacing here does. */
+  padding: calc(var(--glacier-space-1) * 0.5) 0;
   background: none;
   border: none;
   text-align: start;
