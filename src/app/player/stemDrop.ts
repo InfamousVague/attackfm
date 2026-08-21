@@ -84,9 +84,19 @@ export function stemDropParam(trackId: number | null): string | null {
   if (trackId === null || !anyMoved()) return null;
   if (applies.get(trackId) !== true) return null;
   // `name:gain` pairs for the parts turned below full - the server's `lvl`.
+  /*
+   * Quantised to 0.05 before it becomes a URL.
+   *
+   * Only the URL: `state.gains` keeps the fader's own resolution, because that
+   * is what the UI draws and what a client-side mixer would want. This is about
+   * how many DISTINCT urls a drag can produce. On the server path every distinct
+   * value is a fresh ffmpeg encode, and a slider dragged across its range at
+   * two decimal places can ask for a hundred of them; at 0.05 the same drag asks
+   * for at most twenty, and 5% of a fader is below what anyone hears as a step.
+   */
   return Object.entries(state.gains)
     .filter(([, g]) => g < 1)
-    .map(([name, g]) => `${name}:${g.toFixed(2)}`)
+    .map(([name, g]) => `${name}:${(Math.round(g * 20) / 20).toFixed(2)}`)
     .join(',');
 }
 
