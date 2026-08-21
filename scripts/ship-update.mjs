@@ -101,11 +101,20 @@ function cmpVersion(a, b) {
 }
 
 const rs = readFileSync(join(ROOT, 'src-tauri/src/bundle.rs'), 'utf8');
-const native = Number(rs.match(/NATIVE_GENERATION:\s*u32\s*=\s*(\d+)/)?.[1]);
-if (!Number.isFinite(native)) die('could not read NATIVE_GENERATION from bundle.rs');
+// BUNDLE_REQUIRES, not NATIVE_GENERATION. The first is what this frontend needs
+// of the binary under it; the second is what a freshly built binary provides.
+// Stamping a bundle with the second locks every device still on the previous
+// generation out of every future update - including the update that would have
+// given them the new binary.
+const native = Number(rs.match(/BUNDLE_REQUIRES:\s*u32\s*=\s*(\d+)/)?.[1]);
+if (!Number.isFinite(native)) die('could not read BUNDLE_REQUIRES from bundle.rs');
+const provides = Number(rs.match(/NATIVE_GENERATION:\s*u32\s*=\s*(\d+)/)?.[1]);
+if (Number.isFinite(provides) && native > provides) {
+  die(`BUNDLE_REQUIRES (${native}) is ahead of NATIVE_GENERATION (${provides}): no binary could run this.`);
+}
 
 const notes = notesFor(version);
-step(`Shipping ${version} (native generation ${native})`);
+step(`Shipping ${version} (requires native generation ${native}; this checkout provides ${provides})`);
 if (notes) {
   for (const line of notes.split('\n')) console.log(`    ${line}`);
 } else if (process.argv.includes('--no-notes')) {

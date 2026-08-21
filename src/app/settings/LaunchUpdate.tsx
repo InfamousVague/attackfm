@@ -1,55 +1,140 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { applyStagedBundle, checkForUpdate } from './appUpdate.ts';
+import { isTauri } from '../core/tauri.ts';
+import wordmark from '../../assets/attack-white.png';
 
 /**
- * The moment before the app.
+ * The moment before the app: look for a newer frontend, install it, and only
+ * then let go.
  *
- * WHAT THIS DOES NOW: nothing, and that is the fix.
+ * Launch is the one moment where swapping the frontend costs nothing, because
+ * there is nothing on screen to tear out from under. The rest of appUpdate.ts
+ * is built around avoiding a mid-session swap; this is the gap it leaves.
  *
- * It used to check the registry for a newer frontend, install it, and reload
- * into it before opening the app - so the ordinary way to meet a new version
- * was at launch rather than being interrupted mid-song. Good idea, and it cost
- * five versions of black screens, because of where it had to run to do it.
+ * THE RULE THIS FOLLOWS: a gate may never be the reason the app does not open.
+ * Every path out of here ends in `done`, including the ones that fail.
  *
- * THE WAGER, AND WHY THIS CANNOT LIVE HERE. Booting a downloaded bundle stakes
- * a wager natively (`bundle_begin_boot`) that only a mounted app settles
- * (`reportBootOk`, inside the providers). `bundle_state` is the judge: any
- * wager still outstanding when it is asked is read as a boot that never
- * finished, so the version is quarantined and its directory DELETED - out from
- * under the code currently executing.
+ * WHY IT ASKS THE BINARY FIRST. This gate runs before the providers, and the
+ * providers are what settle the boot wager (`reportBootOk`). On a generation-1
+ * binary `bundle_state` was destructive - it treated any outstanding wager as
+ * a failed boot and DELETED the running bundle - and `checkForUpdate`'s opening
+ * move is `bundle_state`. So on those binaries this gate could not run at all
+ * without occasionally destroying the app, which is what it spent 0.3.315 to
+ * 0.3.323 doing. Five attempts to sequence around it from here failed, because
+ * the interleaving is not observable from JavaScript.
  *
- * This gate runs before the providers, and `checkForUpdate`'s opening move is
- * `bundle_state`. Three attempts were made to sequence around that:
+ * Generation 2 fixed it where it actually lived: `bundle_state` is a pure read,
+ * and the one destructive step is `bundle_claim_boot`, which the boot loader
+ * makes once, atomically, under a lock. From there this gate is free to ask
+ * whatever it likes - and it no longer touches the wager at all. The wager is
+ * staked by the loader and settled by the providers, exactly as designed, and
+ * nothing in between needs to know about it.
  *
- *   0.3.315  settle the wager first, re-stake on the way out. Correct as far
- *            as it went, and it stopped the app quarantining itself outright.
- *   0.3.321  move the re-stake after the check, because the six-second
- *            deadline could fire mid-download and hand `bundle_install`'s own
- *            trailing `bundle_state` a wager to eat.
- *   0.3.322  refuse to ask at all unless the settle provably landed.
- *
- * The device still quarantined the running bundle, at 1.3 seconds, with the
- * settle reporting success and no diagnostic recorded. Whatever the remaining
- * interleaving is, it is below what this side can see: the state file is a
- * read-modify-write shared by three commands with no lock, and the frontend
- * has no way to observe the order it lands in.
- *
- * So the gate stops playing. Nothing here calls `bundle_state` any more, which
- * means nothing can lose that race.
- *
- * WHAT IS NOT LOST. `bundle_install` sets `active` itself, and the boot loader
- * runs whatever is active - so a bundle the periodic check installs during a
- * session is ALREADY what starts at the next launch, with no help from here.
- * The behaviour people actually wanted, meeting a new version at launch rather
- * than mid-song, still happens. What is gone is only the launch-time NETWORK
- * check, so an update is picked up during the session that follows rather than
- * the one that discovers it - hours later at worst, and never at the cost of
- * the app failing to open.
- *
- * WHAT WOULD BRING IT BACK: a native `bundle_peek` that reports state without
- * consuming the wager. That is the actual bug, it has been the actual bug all
- * along, and it needs a new binary rather than an over-the-air fix. Until then
- * this file is deliberately empty of behaviour, and should stay that way.
+ * On anything older the check is simply skipped and the app opens. Updates
+ * still arrive: the periodic check installs them from inside the session, and
+ * `bundle_install` sets `active` itself, so the next launch runs the new one
+ * regardless. All that is lost is a few hours.
  */
+
+/** How long the whole check may take before the app opens anyway. */
+const DEADLINE_MS = 6000;
+
+/**
+ * Only one automatic apply per launch. `applyStagedBundle` reloads, and the
+ * reload re-runs this gate inside the NEW bundle - which is how a chain of
+ * versions applies in order. sessionStorage survives the reload and not the
+ * app, which is exactly the lifetime of "this launch".
+ */
+const APPLIED_KEY = 'attackfm-launch-applied';
+
+/** The generation from which `bundle_state` is safe to call before the app
+ *  has mounted. Published by the boot loader in index.html. */
+const SAFE_FROM = 2;
+
+type Phase = 'checking' | 'installing' | 'done';
+
+function nativeGeneration(): number {
+  return typeof window.__afmNativeGeneration === 'number' ? window.__afmNativeGeneration : 0;
+}
+
+function alreadyApplied(): boolean {
+  try {
+    return sessionStorage.getItem(APPLIED_KEY) !== null;
+  } catch {
+    // No sessionStorage is no memory of having applied, and the safe reading of
+    // that is "do not apply", because the failure it guards is an endless loop.
+    return true;
+  }
+}
+
+function markApplied(version: string): void {
+  try {
+    sessionStorage.setItem(APPLIED_KEY, version);
+  } catch {
+    /* Nothing to do: the guard above treats an unusable store as applied. */
+  }
+}
+
 export function LaunchUpdate({ children }: { children: ReactNode }) {
-  return <>{children}</>;
+  // Decided before the first render rather than in an effect, so neither a
+  // browser tab nor an old binary ever flashes a gate it is not subject to.
+  const [phase, setPhase] = useState<Phase>(() =>
+    isTauri() && nativeGeneration() >= SAFE_FROM && !alreadyApplied() ? 'checking' : 'done',
+  );
+  const [version, setVersion] = useState<string | null>(null);
+  const settled = useRef(false);
+
+  useEffect(() => {
+    if (phase !== 'checking') return;
+    let alive = true;
+    const finish = () => {
+      if (!alive || settled.current) return;
+      settled.current = true;
+      setPhase('done');
+    };
+    // The backstop, for the failure that has no error: a fetch that never
+    // settles. A staged INSTALL is not cut off by it - once bytes are landing
+    // the work is nearly done - only the asking is.
+    const timer = setTimeout(finish, DEADLINE_MS);
+
+    void checkForUpdate()
+      .then((outcome) => {
+        if (!alive || settled.current) return;
+        if (outcome.state !== 'staged') {
+          finish();
+          return;
+        }
+        // Installed. Take the deadline off - the reload is imminent, and being
+        // cut off between "installed" and "running it" is the one state worth
+        // avoiding, since the next launch would have to do it again.
+        clearTimeout(timer);
+        settled.current = true;
+        markApplied(outcome.version);
+        setVersion(outcome.version);
+        setPhase('installing');
+        // A beat on screen before the reload, so the version that just arrived
+        // is legible rather than a flash.
+        setTimeout(applyStagedBundle, 900);
+      })
+      .catch(finish);
+
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [phase]);
+
+  if (phase === 'done') return <>{children}</>;
+
+  return (
+    <div className="launchGate" role="status" aria-live="polite">
+      <img className="launchGate__mark" src={wordmark} alt="AttackFM" draggable={false} />
+      <div className="launchGate__bar" aria-hidden>
+        <span className="launchGate__barFill" />
+      </div>
+      <p className="launchGate__say">
+        {phase === 'installing' && version ? `Installing ${version}…` : 'Checking for updates…'}
+      </p>
+    </div>
+  );
 }

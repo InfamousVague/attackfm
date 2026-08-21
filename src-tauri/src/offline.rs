@@ -51,6 +51,10 @@ fn dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("no app data dir: {e}"))?
         .join("offline");
     std::fs::create_dir_all(&base).map_err(|e| format!("cannot create {}: {e}", base.display()))?;
+    // The big one: this is allowed to reach fifteen gigabytes, every byte of it
+    // re-downloadable from the hub. See nobackup.rs for why it is not simply
+    // moved to Caches instead.
+    crate::nobackup::exclude(&base);
     Ok(base)
 }
 
