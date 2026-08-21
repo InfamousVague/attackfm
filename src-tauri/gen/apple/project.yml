@@ -93,8 +93,22 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         CFBundleShortVersionString: 0.1.0
         CFBundleVersion: "0.1.0"
+    # xcodegen REWRITES the file at this path on every generate, so the keys
+    # must live here as properties - an edit made to the .entitlements file
+    # directly is silently reverted by the next generate (that is how the app
+    # group vanished the first time). The simulator variant beside it is only
+    # referenced through CODE_SIGN_ENTITLEMENTS below, so THAT file is
+    # hand-edited and survives.
+    #
+    # The app group is the widget's only channel (widgetPublish.swift writes,
+    # widget/AttackFMWidget.swift reads). Not an Apple-granted entitlement
+    # like CarPlay: automatic signing registers the group on the team by
+    # itself on the first device build.
     entitlements:
       path: app_iOS/app_iOS.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.mattssoftware.attackfm
     scheme:
       environmentVariables:
         RUST_BACKTRACE: full
@@ -148,6 +162,11 @@ targets:
       # The plugin Swift packages declared above; linking them is what makes
       # their @_cdecl init symbols real.
       - package: tauri-plugin-haptics
+      # WidgetKit in the APP because widgetPublish.swift rings
+      # WidgetCenter.reloadTimelines; the widget itself is the target below,
+      # embedded into PlugIns by this dependency.
+      - sdk: WidgetKit.framework
+      - target: widget_iOS
     preBuildScripts:
       - script: npm run -- tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths "${FRAMEWORK_SEARCH_PATHS:?}" --header-search-paths "${HEADER_SEARCH_PATHS:?}" --gcc-preprocessor-definitions "${GCC_PREPROCESSOR_DEFINITIONS:-}" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}
         name: Build Rust Code
@@ -155,3 +174,50 @@ targets:
         outputFiles:
           - $(SRCROOT)/Externals/x86_64/${CONFIGURATION}/libapp.a
           - $(SRCROOT)/Externals/arm64/${CONFIGURATION}/libapp.a
+  # HAND-ADDED: the home-screen widget (widget/AttackFMWidget.swift). A
+  # WidgetKit extension is its own process; it shares nothing with the app
+  # but the App Group container the app publishes into (widgetPublish.swift).
+  # Deployment 17 rather than the app's 15: containerBackground is the only
+  # background API Xcode 26+ accepts for widgets, and a phone old enough to
+  # miss it simply is not offered the widget while the app itself still runs.
+  # CFBundleShortVersionString must stay in step with the app target's - App
+  # Store validation rejects an archive whose extension disagrees.
+  widget_iOS:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: widget
+    info:
+      path: widget/Info.plist
+      properties:
+        CFBundleDisplayName: AttackFM
+        CFBundleShortVersionString: 0.1.0
+        CFBundleVersion: "0.1.0"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: widget/widget_iOS.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.mattssoftware.attackfm
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mattssoftware.attackfm.widget
+        DEVELOPMENT_TEAM: F6ZAL7ANAD
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: true
+    dependencies:
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    preBuildScripts:
+      # The tauri CLI stamps the APP's version from tauri.conf.json on every
+      # build, and App Store validation wants an extension's version to agree
+      # with its container's. Same source, same moment, so they cannot drift.
+      - script: |
+          VERSION=$(python3 -c "import json;print(json.load(open('${SRCROOT}/../../tauri.conf.json'))['version'])")
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "${SRCROOT}/widget/Info.plist" || true
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "${SRCROOT}/widget/Info.plist" || true
+        name: Stamp widget version
+        basedOnDependencyAnalysis: false
