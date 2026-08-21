@@ -74,6 +74,7 @@ export function NavMoreMenu({
       <button
         type="button"
         className="appNavBarTab appNavBarPlugins__trigger"
+        data-tour="nav-more"
         data-active={onMenuDest || open || undefined}
         aria-label="More"
         aria-haspopup="menu"
