@@ -1140,3 +1140,32 @@
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
+
+/* ---- A cover somebody chose ---------------------------------------------
+   Fills the same squircle frame the mosaic uses, so a playlist with a picture
+   and one without still read as the same kind of tile. */
+.playlistHead__chosen,
+.tileChosenCover {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+/* The moment between choosing and the server holding it: the old face dims
+   rather than vanishing, because a blank frame reads as the upload eating the
+   picture it is replacing. */
+.playlistHead__cover[data-busy] {
+  opacity: 0.55;
+  transition: opacity 140ms var(--glacier-ease-out);
+}
+
+/* ---- Finding one song in a long list ------------------------------------ */
+.playlistFind {
+  max-inline-size: 26rem;
+  margin-block-end: var(--glacier-space-3);
+}
+
+.playlistFind__none {
+  padding: var(--glacier-space-3) var(--glacier-space-2);
+}
