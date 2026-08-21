@@ -8,8 +8,16 @@
   flex-direction: column;
   gap: 0.125rem;
   padding: var(--glacier-space-3);
-  border-radius: var(--glacier-radius-md);
-  background: var(--glacier-surface-sunken);
+  /* The Now Playing panels' own recipe (07-the-dock-contract-c.css), because
+     on an unfolded screen this dialog stands BESIDE the deck and its cards
+     read as siblings of the queue and lyrics panels - a matte sunken box next
+     to their glass looked like two apps. Regular glass with the big blur, a
+     glass hairline, the xl radius: the same three decisions, made once there. */
+  border-radius: var(--glacier-radius-xl);
+  background: var(--glacier-glass-regular);
+  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  border: var(--glacier-hairline) solid var(--glacier-glass-border);
   margin-block-end: var(--glacier-space-3);
 }
 
@@ -28,19 +36,26 @@
 .wrongSong__list {
   display: flex;
   flex-direction: column;
-  gap: var(--glacier-space-1);
+  gap: var(--glacier-space-2);
 }
 
 .wrongSong__row {
   display: flex;
   align-items: center;
   gap: var(--glacier-space-3);
-  padding: var(--glacier-space-2);
-  border-radius: var(--glacier-radius-md);
+  padding: var(--glacier-space-3);
+  /* Thin where the header card is regular: the candidates are the reading
+     matter and the current song is the reference plate, and one step of
+     opacity is what says so - same grammar as the deck's own panels. */
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-glass-thin);
+  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  border: var(--glacier-hairline) solid var(--glacier-glass-border);
 }
 
 .wrongSong__row:hover {
-  background: var(--glacier-surface-hover);
+  background: var(--glacier-glass-regular);
 }
 
 /* Still downloading: present, and visibly not ready yet. */
