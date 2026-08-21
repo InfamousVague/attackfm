@@ -68,22 +68,28 @@ export function artKey(url: string | null): string | null {
  * engine's own HTTP cache and this second request is usually served without
  * touching the network. Deliberately quiet: a cover that fails to cache is a
  * cover that will be fetched again, which is not worth a word to anyone.
+ *
+ * The answer says what happened - already `held`, freshly `kept`, or `no` -
+ * because the sweep's backfill budgets NETWORK ATTEMPTS per pass, and a match
+ * that cost nothing must not spend that budget. Display callers ignore it.
  */
-export async function rememberArt(url: string): Promise<void> {
+export async function rememberArt(url: string): Promise<'held' | 'kept' | 'no'> {
   const key = artKey(url);
   const cache = key ? store() : null;
-  if (!key || !cache) return;
+  if (!key || !cache) return 'no';
   try {
     const c = await cache;
-    if (await c.match(key)) return; // already held; do not re-fetch
+    if (await c.match(key)) return 'held'; // already held; do not re-fetch
     const res = await fetch(url);
     // Only a real image is worth keeping. An error page cached here would be
     // served forever as though it were the cover.
-    if (!res.ok || !/^image\//i.test(res.headers.get('content-type') ?? '')) return;
+    if (!res.ok || !/^image\//i.test(res.headers.get('content-type') ?? '')) return 'no';
     await c.put(key, res);
+    return 'kept';
   } catch {
     // Offline, quota, or a server that said no - all mean "no copy", which
     // the ladder already handles.
+    return 'no';
   }
 }
 
