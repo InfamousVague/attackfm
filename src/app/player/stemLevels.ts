@@ -96,9 +96,20 @@ export async function loadStemEnvelopes(
   if (track.duration != null && track.duration > MAX_ENV_SECONDS) return out;
 
   const pending = stems.map((stem) => {
-    // Everything BUT this part, which is how one part is asked for through a
-    // door built to leave parts out.
-    const others = stems.filter((s) => s !== stem).join(',');
+    /*
+     * Everything BUT this part, which is how one part is asked for through a
+     * door built to leave parts out.
+     *
+     * `name:0` pairs, NOT bare names. That door takes `lvl`, and both ends
+     * discard a pair with no colon: `transcodeUrl` filters on `p.length === 2`
+     * before it will emit the legacy `&drop=`, and the server's `parse_levels`
+     * does `let Some(gain) = it.next() else { continue }`. So bare names sent
+     * neither levels nor a drop, the request was an ordinary transcode, and
+     * every one of the six envelopes measured here was the SAME full mix -
+     * which is the exact "rack of six identical bars" this module was written
+     * to stop being. It also spent six whole-song encodes per song to do it.
+     */
+    const others = stems.filter((s) => s !== stem).map((s) => `${s}:0`).join(',');
     const url = transcodeUrl(session, id, MEASURE_KBPS, 0, null, null, others);
     return { stem, bytes: fetch(url, { signal }).then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null) };
   });
