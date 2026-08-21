@@ -166,11 +166,19 @@ export function TopScrim({ resetKey }: { resetKey: string }) {
     // one moment that cannot afford it - the same shape as the accelerometer
     // parallax pulled out in 0.3.260. The bar is the only reader, so writing to
     // the bar invalidates one element. Found once here (a sibling of the
-    // scroller under the same window) and cached; the effect re-runs per page.
+    // scroller under the same window) and cached - but re-found if it has been
+    // DETACHED: .mobileHeader unmounts and remounts when a foldable opens and
+    // closes (useDesktopLayout flips DESKTOP), and this effect does not re-run
+    // for that - its dep is the page, which did not change. Without the
+    // isConnected guard the write would land on a detached node and the bar
+    // would silently stop fading until the next navigation. The check is a
+    // boolean on a node already held; the re-query pays only the frame after a
+    // fold.
     const win = host.closest('.appWindow');
-    const bar = win?.querySelector<HTMLElement>('.mobileHeader') ?? null;
+    let bar = win?.querySelector<HTMLElement>('.mobileHeader') ?? null;
     const set = (p: number) => {
       node.style.opacity = String(p);
+      if (!bar?.isConnected) bar = win?.querySelector<HTMLElement>('.mobileHeader') ?? null;
       bar?.style.setProperty('--app-top-scroll', String(p));
     };
     // A fresh page mounts parked at the top; start invisible.
