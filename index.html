@@ -55,6 +55,11 @@
         // exactly right.
         function run(js, css, version, generation) {
           window.__afmNativeGeneration = generation || 0;
+          // Which frontend is the real one. Removing the loser's tag below does
+          // NOT stop it running - a prepared module script evaluates even after
+          // its element is gone - so the loser has to be told to stand down;
+          // see the guard at the top of main.tsx.
+          window.__afmFrontend = js;
           if (css) {
             var link = document.createElement('link');
             link.rel = 'stylesheet';

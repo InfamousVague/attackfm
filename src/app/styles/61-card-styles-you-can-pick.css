@@ -111,6 +111,26 @@
   text-transform: uppercase;
   opacity: 0.72;
 }
+/*
+ * A door with no figure still starts its name where the others do.
+ *
+ * The card is a bottom-anchored column, so a three-line door (name, figure,
+ * count) fills it and its name lands at the padding, while a two-line one
+ * (name, count) sits lower - measured at 14px against 52px. Three of the four
+ * doors have a figure, so On repeat alone sat 38px down, and the door beside it
+ * read as though ITS name had drifted upwards. It had not; its neighbour had
+ * drifted down.
+ *
+ * `margin-block-end: auto` on the name puts the slack between the name and the
+ * count instead of above the name, which pins the name to the top and leaves
+ * the count where it was. Scoped by `:has()` to doors that genuinely have no
+ * figure, so the three that do are untouched - the alternative, changing the
+ * column's justification, would have moved all four to fix one.
+ */
+:root[data-card-style='stat'] .libChip:not(:has(.libChip__stat)):not(.cardPick *) .libChip__name,
+.cardPick[data-card-style='stat'] .libChip:not(:has(.libChip__stat)) .libChip__name {
+  margin-block-end: auto;
+}
 :root[data-card-style='stat'] .libChip__count:not(.cardPick *),
 .cardPick[data-card-style='stat'] .libChip__count {
   font-size: 0.68rem;

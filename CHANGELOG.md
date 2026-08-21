@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.325
+
+- The black screen after an update is fixed. The app was starting two copies of itself at once — the version that shipped with the app and the one it had downloaded — and they fought over the screen until one of them fell over. Only the right one starts now
+- The four library doors line their names up again. On repeat has no number to show, so its name sat lower than the other three and made the DJ door beside it look wrong
+
 ## 0.3.324
 
 - Updates are fixed properly this time, in the app itself rather than around it. The step that decided a previous update had failed could fire at the wrong moment and throw away a perfectly good one; it now happens once, at startup, and nothing else can trigger it. Needs the new app from the download page — until then nothing changes for you
