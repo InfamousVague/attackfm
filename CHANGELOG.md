@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.304
+
+- The storage bar in Downloads & space now shows the room left in grey, so you can see how full the cache is rather than only what is in it
+
 ## 0.3.303
 
 - Clear cache now really clears: covers, Canvas clips and the lookup memo go with the songs, instead of megabytes of art surviving for music that was just thrown away
