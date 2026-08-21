@@ -128,6 +128,42 @@ pub struct ScannedTrack {
     pub chapters: String,
 }
 
+/// How many activity rows are kept. Roughly a week of an ordinarily busy hub,
+/// and small enough that the table never becomes a thing anyone has to think
+/// about. Nothing reads further back than the pane's newest page anyway.
+const ACTIVITY_KEEP: i64 = 4_000;
+
+/// One thing the background machinery did, on the way in.
+///
+/// Borrowed rather than owned: every caller is a loop that already has these
+/// as slices, and a log line should not cost a round of allocations.
+pub struct NewActivity<'a> {
+    pub source: &'a str,
+    pub kind: &'a str,
+    pub state: &'a str,
+    pub key: &'a str,
+    pub title: &'a str,
+    pub body: &'a str,
+    pub track_id: Option<i64>,
+    /// Free-form JSON, as a string. The client treats it as opaque.
+    pub detail: Option<String>,
+}
+
+/// One activity row, on the way out.
+pub struct ActivityRow {
+    pub id: i64,
+    /// Unix SECONDS, like every other timestamp the API hands out.
+    pub at: i64,
+    pub source: String,
+    pub kind: String,
+    pub state: String,
+    pub key: String,
+    pub title: String,
+    pub body: String,
+    pub track_id: Option<i64>,
+    pub detail: Option<String>,
+}
+
 pub struct User {
     pub id: i64,
     pub username: String,
@@ -1043,6 +1079,34 @@ CREATE TABLE IF NOT EXISTS stem_prefetch (
   error          TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS stem_prefetch_state ON stem_prefetch(state, queued_at);
+
+-- What the background machinery has been doing, at CYCLE level: a song pulled
+-- into stems, an AI pass, a collector sweep. Two readers, one need each - the
+-- verbose-notifications watcher turns new rows into bell rows, and the Local AI
+-- pane shows the owner what the model has been up to. One table serving both is
+-- the point; a second channel for either would be a second thing to keep in
+-- step.
+--
+-- Server-wide, not per user: the prefetcher takes songs apart library-wide with
+-- no owner on the job and the AI passes run for everyone, so there is nobody to
+-- address. The reader's own verbose switch is the opt-in.
+--
+-- `key` pairs a start with its finish (`stems:<trackId>`), which is what lets a
+-- client replace the "started" row rather than stack a second one beside it.
+CREATE TABLE IF NOT EXISTS activity_events (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  at       INTEGER NOT NULL,
+  source   TEXT NOT NULL,
+  kind     TEXT NOT NULL,
+  state    TEXT NOT NULL,
+  key      TEXT NOT NULL,
+  title    TEXT NOT NULL,
+  body     TEXT NOT NULL,
+  track_id INTEGER,
+  detail   TEXT
+);
+-- Every read is "everything after this id", and the pane also filters by source.
+CREATE INDEX IF NOT EXISTS activity_events_source ON activity_events(source, id);
 
 -- Server-wide choices the operator makes from the app rather than from a unit
 -- file. Deliberately a key/value table and not columns: these are settings, not
@@ -5347,6 +5411,144 @@ impl Db {
             params![key, value],
         )?;
         Ok(())
+    }
+
+    /// Forget an operator's choice, so the environment decides again.
+    pub fn clear_server_pref(&self, key: &str) -> rusqlite::Result<()> {
+        self.lock()
+            .execute("DELETE FROM server_prefs WHERE key = ?1", params![key])?;
+        Ok(())
+    }
+
+    /// Every operator choice under a prefix, for loading the AI overlay at boot
+    /// in one query rather than one per key.
+    pub fn server_prefs_under(&self, prefix: &str) -> Vec<(String, String)> {
+        let conn = self.lock();
+        let Ok(mut stmt) =
+            conn.prepare("SELECT key, value FROM server_prefs WHERE key LIKE ?1 || '%'")
+        else {
+            return Vec::new();
+        };
+        let rows = stmt.query_map(params![prefix], |r| Ok((r.get(0)?, r.get(1)?)));
+        rows.map(|r| r.flatten().collect()).unwrap_or_default()
+    }
+
+    // --- what the machinery has been doing ------------------------------------
+
+    /// Write one activity row and return its id.
+    ///
+    /// Infallible by design: this is a side channel about work, and a failure
+    /// to describe the work must never fail the work. Callers are loops that
+    /// have no sensible way to handle an error from a log line.
+    pub fn record_activity(&self, ev: NewActivity<'_>) -> i64 {
+        let conn = self.lock();
+        let done = conn.execute(
+            "INSERT INTO activity_events (at, source, kind, state, key, title, body, track_id, detail)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                now_ms() / 1000,
+                ev.source,
+                ev.kind,
+                ev.state,
+                ev.key,
+                ev.title,
+                ev.body,
+                ev.track_id,
+                ev.detail,
+            ],
+        );
+        if done.is_err() {
+            return 0;
+        }
+        let id = conn.last_insert_rowid();
+        // Bounded, and trimmed here rather than on a timer: the only thing that
+        // grows this table is a write, so the only moment it can need trimming
+        // is just after one. The margin stops a busy loop re-trimming on every
+        // single row.
+        if id % 200 == 0 {
+            let _ = conn.execute(
+                "DELETE FROM activity_events WHERE id <= ?1",
+                params![id - ACTIVITY_KEEP],
+            );
+        }
+        id
+    }
+
+    /// Events after `since` (exclusive), oldest first, plus the newest id that
+    /// exists at all - which is how a caller that asked for a bounded page still
+    /// learns where the end is.
+    pub fn activity_since(&self, since: i64, limit: i64) -> (Vec<ActivityRow>, i64) {
+        let conn = self.lock();
+        let latest: i64 = conn
+            .query_row("SELECT COALESCE(MAX(id), 0) FROM activity_events", [], |r| {
+                r.get(0)
+            })
+            .unwrap_or(0);
+        // `since` of 0 means "the most recent page", which is a SEED for a
+        // watcher rather than a week of history to announce. Newest-first from
+        // the end, then flipped, so the page is the last N and not the first N.
+        let (sql, newest_first) = if since <= 0 {
+            (
+                "SELECT id, at, source, kind, state, key, title, body, track_id, detail
+                 FROM activity_events ORDER BY id DESC LIMIT ?2",
+                true,
+            )
+        } else {
+            (
+                "SELECT id, at, source, kind, state, key, title, body, track_id, detail
+                 FROM activity_events WHERE id > ?1 ORDER BY id ASC LIMIT ?2",
+                false,
+            )
+        };
+        let Ok(mut stmt) = conn.prepare(sql) else {
+            return (Vec::new(), latest);
+        };
+        let rows = stmt.query_map(params![since, limit.clamp(1, 200)], |r| {
+            Ok(ActivityRow {
+                id: r.get(0)?,
+                at: r.get(1)?,
+                source: r.get(2)?,
+                kind: r.get(3)?,
+                state: r.get(4)?,
+                key: r.get(5)?,
+                title: r.get(6)?,
+                body: r.get(7)?,
+                track_id: r.get(8)?,
+                detail: r.get(9)?,
+            })
+        });
+        let mut out: Vec<ActivityRow> = rows.map(|r| r.flatten().collect()).unwrap_or_default();
+        if newest_first {
+            out.reverse();
+        }
+        (out, latest)
+    }
+
+    /// The newest events from one source, newest first - what the Local AI pane
+    /// shows without pulling the whole feed.
+    pub fn activity_from(&self, source: &str, limit: i64) -> Vec<ActivityRow> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT id, at, source, kind, state, key, title, body, track_id, detail
+             FROM activity_events WHERE source = ?1 ORDER BY id DESC LIMIT ?2",
+        ) else {
+            return Vec::new();
+        };
+        let rows = stmt.query_map(params![source, limit.clamp(1, 200)], |r| {
+            Ok(ActivityRow {
+                id: r.get(0)?,
+                at: r.get(1)?,
+                source: r.get(2)?,
+                kind: r.get(3)?,
+                state: r.get(4)?,
+                key: r.get(5)?,
+                title: r.get(6)?,
+                body: r.get(7)?,
+                track_id: r.get(8)?,
+                detail: r.get(9)?,
+            })
+        });
+        rows.map(|r| r.flatten().collect()).unwrap_or_default()
     }
 
     // --- separating ahead of being asked -------------------------------------

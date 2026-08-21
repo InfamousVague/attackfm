@@ -262,9 +262,7 @@ fn now_ms() -> i64 {
 }
 
 pub(crate) fn ai_url() -> Option<String> {
-    std::env::var("AFM_AI_URL")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
+    crate::ai::setting("url", "AFM_AI_URL")
 }
 
 /// The chat model, and whether there is one at all.
@@ -276,19 +274,14 @@ pub(crate) fn ai_url() -> Option<String> {
 /// half that actually drives the recommendations - run off their own switch
 /// below, so a server can read lyrics without ever generating a word.
 pub(crate) fn ai_chat_model() -> Option<String> {
-    std::env::var("AFM_AI_MODEL")
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
+    crate::ai::setting("chatModel", "AFM_AI_MODEL")
 }
 
 /// The embedding model. Separate from the chat model because they are
 /// different things: an embedder is small and fast and the chat model usually
 /// cannot embed at all.
 fn embed_model() -> String {
-    std::env::var("AFM_AI_EMBED_MODEL")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
+    crate::ai::setting("embedModel", "AFM_AI_EMBED_MODEL")
         .unwrap_or_else(|| "nomic-embed-text".to_string())
 }
 
@@ -348,10 +341,16 @@ pub fn spawn(state: Arc<AppState>) {
             } else {
                 refinement_cycle(&state).await
             };
+            if refined {
+                note_cycle(&state, "refinement", "Went back over a profile", &crate::ai::refinement_model());
+            }
             curate_cycle(&state).await;
             // Then the world outside the library: harvest candidates, listen to
             // a couple, and keep the shelf honest about what is already owned.
             let discovered = discovery_cycle(&state).await;
+            if discovered {
+                note_cycle(&state, "discovery", "Looked for new music", "Outside the library");
+            }
             tokio::time::sleep(if did_work || ai_work || refined || discovered {
                 BUSY_SLEEP
             } else {
@@ -360,6 +359,44 @@ pub fn spawn(state: Arc<AppState>) {
             .await;
         }
     });
+}
+
+/// One pass of everything the loop does, on demand.
+///
+/// The same four cycles in the same order as the loop body, because staging is
+/// the whole point of that order - the fast pass has to have drained before the
+/// auditor may start, or the auditor spends its time on profiles that are about
+/// to be rewritten. Exists so the owner can press a button instead of waiting
+/// out an idle sleep, and returns whether anything actually needed doing.
+/// One activity line for a pass that did something. Silent when it did not:
+/// the loop wakes constantly and finds nothing to do, and a row for each of
+/// those would bury the ones that matter.
+fn note_cycle(state: &Arc<AppState>, kind: &str, title: &str, body: &str) {
+    state.db.record_activity(crate::db::NewActivity {
+        source: "ai",
+        kind,
+        state: "info",
+        // Time-keyed, because these are single moments rather than a start and
+        // a finish - there is nothing for a later row to replace.
+        key: &format!("ai:{kind}:{}", now_ms()),
+        title,
+        body,
+        track_id: None,
+        detail: None,
+    });
+}
+
+pub async fn run_once(state: Arc<AppState>) -> bool {
+    let enriched = enrich_cycle(&state).await;
+    let fast = fast_enrich_cycle(&state).await;
+    let refined = if fast_profiles_pending(&state) {
+        false
+    } else {
+        refinement_cycle(&state).await
+    };
+    curate_cycle(&state).await;
+    let discovered = discovery_cycle(&state).await;
+    enriched || fast || refined || discovered
 }
 
 fn enrichment_allowlist() -> Option<HashSet<i64>> {
@@ -422,11 +459,24 @@ async fn fast_enrich_cycle(state: &Arc<AppState>) -> bool {
         return false;
     };
     // Qwen is the fast usability layer. Operators can override the exact tag.
-    let client = std::env::var("AFM_FAST_ENRICH_MODEL")
-        .ok()
-        .filter(|model| !model.trim().is_empty())
-        .map(|model| client.clone().with_chat_model(model))
-        .unwrap_or_else(|| client.with_chat_model("qwen3.5:9b".into()));
+    let client = client.with_chat_model(crate::ai::fast_model());
+    // A BATCH-level pair, not one per song. A fresh library has thousands of
+    // tracks needing a first profile, and a notice each would be a pager rather
+    // than a notification - the useful unit is "the AI started a pass over N
+    // songs" and "it finished". The key is the batch, so the two collapse into
+    // one row that changes state.
+    let batch_key = format!("ai:fast:{}", now_ms());
+    state.db.record_activity(crate::db::NewActivity {
+        source: "ai",
+        kind: "fast-profile",
+        state: "started",
+        key: &batch_key,
+        title: "Listening to new songs",
+        body: &format!("{} to profile · {}", ids.len(), crate::ai::fast_model()),
+        track_id: None,
+        detail: None,
+    });
+    let mut profiled = 0usize;
     for track in state.db.tracks_for_curation(&ids) {
         // Re-check between songs so a newly started stream/download preempts
         // the next job rather than waiting for the whole batch.
@@ -506,9 +556,23 @@ async fn fast_enrich_cycle(state: &Arc<AppState>) -> bool {
                 vector.as_deref());
             let _ = state.db.save_layered_profile(track.id, &info, None, &info,
                 client.chat_model(), FAST_PROMPT_VERSION, false);
+            profiled += 1;
         }
         tokio::time::sleep(Duration::from_secs(2)).await;
     }
+    // Closes the pair opened above, whether the batch ran to the end or broke
+    // early because somebody pressed play - which is a perfectly good outcome
+    // and should read as one, not as a failure.
+    state.db.record_activity(crate::db::NewActivity {
+        source: "ai",
+        kind: "fast-profile",
+        state: "done",
+        key: &batch_key,
+        title: "Finished listening",
+        body: &format!("{profiled} of {} songs profiled", ids.len()),
+        track_id: None,
+        detail: None,
+    });
     true
 }
 
@@ -571,10 +635,7 @@ async fn refinement_cycle(state: &Arc<AppState>) -> bool {
     let Some(base) = crate::ai::AiClient::configured() else {
         return false;
     };
-    let model = std::env::var("AFM_REFINEMENT_MODEL")
-        .ok()
-        .filter(|v| !v.trim().is_empty())
-        .unwrap_or_else(|| "gemma4:12b".into());
+    let model = crate::ai::refinement_model();
     let client = base.with_chat_model(model);
     let allowed = enrichment_allowlist();
     let limit = if allowed.is_some() { i64::MAX } else { 1 };

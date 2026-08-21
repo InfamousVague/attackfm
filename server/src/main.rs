@@ -21,6 +21,7 @@
 //! | `AFM_PUBLIC_URL` | *(empty)* | The public origin, e.g. `https://matt.attack.fm` - needed for the Spotify OAuth redirect. |
 
 mod ai;
+mod ai_admin;
 mod appbundle;
 mod albums;
 mod api;
@@ -437,6 +438,11 @@ async fn main() {
 
     // The curator: enriches the library with tempo and lyric vectors, and
     // rebuilds each listener's playlists from what they actually play.
+    // The operator's AI choices, read once into the process-wide overlay that
+    // `ai::setting` consults ahead of the environment. Before the loops start,
+    // so the very first cycle already honours what was saved in the app.
+    ai::load_overrides(&state.db);
+    ai::mark_boot();
     curator::spawn(state.clone());
     // The buying arm rides beside the curator: same taste, real money - er,
     // real disk. See collector.rs for the honesty rules.
@@ -611,6 +617,11 @@ async fn main() {
         .route("/api/recents/remove", post(recents::remove))
         .route("/api/recents/clear", post(recents::clear))
         .route("/api/artist", get(search::artist))
+        .route("/api/ai", get(ai_admin::report))
+        .route("/api/ai/settings", post(ai_admin::save_settings))
+        .route("/api/ai/probe", post(ai_admin::probe))
+        .route("/api/ai/run", post(ai_admin::run))
+        .route("/api/activity", get(ai_admin::activity))
         .route("/api/curator", get(curator::feed))
         .route("/api/curator/pulls", get(collector::status))
         .route("/api/date/done", post(collector::date_done))

@@ -658,10 +658,39 @@ pub fn spawn_scheduler(state: Arc<AppState>) {
                 let _guard = SlotGuard { slots: Arc::clone(&slots), manager: Arc::clone(&manager) };
                 let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
                 manager.cancels.lock().await.insert(id.clone(), cancel_tx);
+                // The activity feed's view of a download. `key` is the job id,
+                // so the finish replaces the start rather than stacking beside
+                // it, and a queue of ten reads as ten rows rather than twenty.
+                let activity_key = format!("imports:{id}");
+                run_state.db.record_activity(crate::db::NewActivity {
+                    source: "imports",
+                    kind: "download",
+                    state: "started",
+                    key: &activity_key,
+                    title: "Download started",
+                    body: &url,
+                    track_id: None,
+                    detail: None,
+                });
                 let result = run_job(&run_state, &id, &url, cancel_rx).await;
                 manager.cancels.lock().await.remove(&id);
                 match result {
                     Ok((count, files, track_ids, skipped, owned)) => {
+                        run_state.db.record_activity(crate::db::NewActivity {
+                            source: "imports",
+                            kind: "download",
+                            state: "done",
+                            key: &activity_key,
+                            title: "Download finished",
+                            body: &match (count, skipped) {
+                                (0, 0) => "Nothing landed".to_string(),
+                                (n, 0) => format!("{n} added"),
+                                (0, s) => format!("{s} already owned"),
+                                (n, s) => format!("{n} added, {s} already owned"),
+                            },
+                            track_id: None,
+                            detail: None,
+                        });
                         manager
                             .update(&id, |j| {
                                 j.completed = count.max(j.completed);
@@ -681,6 +710,16 @@ pub fn spawn_scheduler(state: Arc<AppState>) {
                             .await;
                     }
                     Err(err) => {
+                        run_state.db.record_activity(crate::db::NewActivity {
+                            source: "imports",
+                            kind: "download",
+                            state: "failed",
+                            key: &activity_key,
+                            title: "Download failed",
+                            body: &err,
+                            track_id: None,
+                            detail: None,
+                        });
                         manager
                             .update(&id, |j| {
                                 j.state = "error".to_string();
