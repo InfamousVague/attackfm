@@ -91,6 +91,23 @@ export const DEPRECATED_PLUGINS: readonly string[] = [
   // so a copy installed from the repository before it was compiled in comes off
   // the device too, rather than living on as the only Pads anyone still has.
   'pads',
+  // Withdrawn at Matt's word, and each for its own reason.
+  //
+  // The EQ rack is the clearest: it is the third thing to save and recall a
+  // curve, after the sound console's own HiFi chain and its Filters shelf, and
+  // being a plugin was the only difference between them.
+  'eq-rack',
+  // The looper was an instrument on a music player's shelf - a sampler with
+  // pads, choke groups and its own transport. The Pads board went for the same
+  // reason: it is a thing to PLAY rather than a way to listen, and the app is
+  // the second of those.
+  'looper',
+  // Album filler read the library for records you nearly own and offered the
+  // missing songs. It is the one of the three with no successor in the app,
+  // and it goes anyway - a page whose whole job is a shopping list sits oddly
+  // in a player, and the curator already answers "what is missing" in the
+  // shape the app actually uses.
+  'album-filler',
 ];
 
 /** One plugin as a repository's manifest lists it. */
