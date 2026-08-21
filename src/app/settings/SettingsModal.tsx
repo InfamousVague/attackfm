@@ -7,6 +7,7 @@ import { Bell, Blocks, BookOpen, CircleUserRound, HardDrive, Info, Library, Pale
 import { useEffect, useState } from 'react';
 import { APP_VERSION } from '../core/version.ts';
 import { noteSettingsPane, recentPanes, type RecentPane } from './settingsRecency.ts';
+import { StagedUpdateBanner } from './UpdateBanner.tsx';
 import { useAppearance } from './appearance.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { usePlayback } from '../player/playback.tsx';
@@ -400,7 +401,8 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       open={open}
       onClose={onClose}
       title={
-        <div className="settingsTitleRow">
+        <div className="settingsHeader">
+          <div className="settingsTitleRow">
           <span>Settings</span>
           {/* The chips the phone list has always shown, finally here too. */}
           {!query.trim() && recents.length > 0 && (
@@ -457,6 +459,10 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
                 </div>
               );
             })()}
+          </div>
+          {/* The restart offer, under the recent-panes chips: it draws nothing
+              until an update is on the device, then asks to restart into it. */}
+          <StagedUpdateBanner />
         </div>
       }
       value={tab}
