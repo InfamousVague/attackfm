@@ -20,8 +20,6 @@ import { request, type ServerSession } from './http.ts';
 /** The six parts, in the order the server lists them (server/src/stems.rs). */
 export const STEM_ORDER = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'] as const;
 
-export type Stem = (typeof STEM_ORDER)[number];
-
 export interface StemStatus {
   /** The job: none | queued | running | done | failed. */
   state: string;
@@ -89,26 +87,6 @@ export async function requestStems(
     method: 'POST',
     token: session.token,
   });
-}
-
-/**
- * One stem, or a slice of one, for `fetch`.
- *
- * HEADER auth only - pass `stemAuthHeaders`. The handler calls
- * `auth::require_caller(&state.db, &headers)` and reads no token from the
- * query, whatever the comment above it says. So this URL must never be handed
- * to an `<audio src>`, which cannot carry a header.
- */
-export function stemBlockUrl(
-  session: ServerSession,
-  trackId: number,
-  stem: string,
-  at?: { from: number; len: number; flac?: boolean },
-): string {
-  const base = `${session.url}/api/stems/${trackId}/${stem}`;
-  if (!at) return base;
-  const flac = at.flac ? '&fmt=flac' : '';
-  return `${base}?from=${at.from.toFixed(3)}&len=${at.len.toFixed(3)}${flac}`;
 }
 
 export function stemAuthHeaders(session: ServerSession): HeadersInit {

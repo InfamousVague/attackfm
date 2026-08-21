@@ -18,7 +18,7 @@ import {
   Mic,
   MonitorSpeaker,
 } from '@glacier/icons';
-import { SoundConsole } from './NowPlayingSheet.tsx';
+import { SoundConsole } from './SoundConsole.tsx';
 import { soundChangesLabel, useSoundChanges } from './soundChanges.ts';
 import { PluginSlot } from '../../plugins/runtime.tsx';
 import { SpinningDisc } from './SpinningDisc.tsx';

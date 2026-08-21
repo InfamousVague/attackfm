@@ -11,6 +11,7 @@ import { usePlaylists } from '../playlists/playlists.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { groupAlbums, isBy } from './albums.ts';
 import { mosaicArts, useArtLoad, useTileArt } from '../ux/artLoad.ts';
+import { shuffled } from '../ux/shuffle.ts';
 import { artSized } from '../server.ts';
 import { useOwned } from '../library/owned.ts';
 import { SongTable } from '../library/SongTable.tsx';
@@ -141,14 +142,7 @@ export function ArtistPage({ artist, onPlay, onOpenArtist,
   // Play-through order for the hero buttons: albums in shelf order, discs in
   // track order - the same order the page presents.
   const playThrough = useMemo(() => albums.flatMap((a) => a.list), [albums]);
-  const shuffled = () => {
-    const pool = [...theirs];
-    for (let i = pool.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [pool[i], pool[j]] = [pool[j]!, pool[i]!];
-    }
-    return pool;
-  };
+  const shuffleTheirs = () => shuffled(theirs);
 
   /*
    * The hero scrolls away; the header picks up its name and its two buttons -
@@ -173,8 +167,8 @@ export function ArtistPage({ artist, onPlay, onOpenArtist,
     // under.
   }, [artist]);
 
-  const handlers = useRef({ playThrough, shuffled, onPlay });
-  handlers.current = { playThrough, shuffled, onPlay };
+  const handlers = useRef({ playThrough, shuffleTheirs, onPlay });
+  handlers.current = { playThrough, shuffleTheirs, onPlay };
   useEffect(() => {
     // Nothing of theirs on this device is nothing to play - the hero hides its
     // own buttons in that case, and the header must agree.
@@ -190,7 +184,7 @@ export function ArtistPage({ artist, onPlay, onOpenArtist,
         if (list[0]) handlers.current.onPlay(list[0], list);
       },
       shuffle: () => {
-        const pool = handlers.current.shuffled();
+        const pool = handlers.current.shuffleTheirs();
         if (pool[0]) handlers.current.onPlay(pool[0], pool);
       },
       disabled: false,
@@ -256,7 +250,7 @@ export function ArtistPage({ artist, onPlay, onOpenArtist,
               variant="soft"
               size="sm"
               onClick={() => {
-                const pool = shuffled();
+                const pool = shuffleTheirs();
                 onPlay(pool[0]!, pool);
               }}
             >

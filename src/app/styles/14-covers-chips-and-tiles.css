@@ -105,14 +105,6 @@
   grid-row: span 2;
 }
 
-.mixCardCover--glyph {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--glacier-surface-sunken);
-  color: var(--glacier-accent-text);
-}
-
 /* One generated object as the whole face - a single frame, not mosaic cells.
    The object rides a bold gradient of the mix's own hue: the shots' white
    grounds multiply away, so the frosted object sits ON the colour rather

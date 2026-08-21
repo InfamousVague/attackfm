@@ -8,10 +8,11 @@ import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import type { AcquireTarget } from '../../plugins/types.ts';
 import { PROBE_URL, importable, resolveImportable } from '../search/resolveImport.ts';
 import { useArtLoad } from '../ux/artLoad.ts';
+import { shuffled } from '../ux/shuffle.ts';
 import { artSized, fetchAlbumTracks, type AlbumTrack } from '../server.ts';
 import { TrackMenu } from '../library/TrackMenu.tsx';
 import { setHeaderActions } from '../nav/headerActions.ts';
-import { albumCredit, byRunningOrder, fold, isBy } from './albums.ts';
+import { albumCredit, byRunningOrder, isBy, nameFold } from './albums.ts';
 import { titleKey } from '../library/owned.ts';
 import type { Track } from '../core/tauri.ts';
 import { DjCollectionTraitSheet } from '../booth/DjTraitSheet.tsx';
@@ -68,8 +69,8 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
   // of its credits - the second half being what keeps two different records
   // called "Greatest Hits" apart.
   const list = useMemo(() => {
-    const want = fold(album);
-    return tracks.filter((t) => fold(t.album || 'Unknown album') === want && isBy(t, artist))
+    const want = nameFold(album);
+    return tracks.filter((t) => nameFold(t.album || 'Unknown album') === want && isBy(t, artist))
       .slice()
       .sort(byRunningOrder);
   }, [tracks, album, artist]);
@@ -246,12 +247,8 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
 
   const playAll = () => onPlay(list[0]!, list);
   const shuffleAll = () => {
-    const shuffled = [...list];
-    for (let i = shuffled.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!];
-    }
-    onPlay(shuffled[0]!, shuffled);
+    const order = shuffled(list);
+    onPlay(order[0]!, order);
   };
   handlers.current = { playAll, shuffleAll };
 
@@ -364,7 +361,7 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
                                 credit - which is exactly the guest that used to
                                 make this whole album vanish from the artist
                                 page. */}
-                            {fold(track.artist) !== fold(credit) && (
+                            {nameFold(track.artist) !== nameFold(credit) && (
                               <span className="albumTrack__artist">{track.artist}</span>
                             )}
                           </span>

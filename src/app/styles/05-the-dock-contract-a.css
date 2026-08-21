@@ -55,7 +55,6 @@ body:has(.npScreen[data-docked]) div[class*='_viewport_1nbns_'] {
  */
 body:has(.npScreen[data-docked]) .settingsScreen,
 body:has(.npScreen[data-docked]) .searchSummon,
-body:has(.npScreen[data-docked]) .summonPull,
 body:has(.npScreen[data-docked]) .djLayer,
 body:has(.npScreen[data-docked]) .appNavMore__scrim,
 body:has(.npScreen[data-docked]) .appNavMore__menu,
@@ -256,12 +255,6 @@ html[data-platform='android'] .appWindow {
 /* One notification kind: its switch, and the line saying when it fires. The
    gap is tighter than the section's own so the hint reads as belonging to the
    switch above it rather than as the next item down. */
-.notifyKind {
-  display: flex;
-  flex-direction: column;
-  gap: var(--glacier-space-1);
-}
-
 /*
  * The wrapper around the strip. It catches the bubbling tap that lifts the
  * full-screen player, and it is the plate the dismiss swipe pushes.

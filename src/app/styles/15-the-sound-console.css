@@ -214,82 +214,13 @@ body [class*='_panel_']:has(> .dlPanel) {
 
 /* The playlist modal's track list: a column of clickable rows, art then a
    title/artist block then the running time. */
-.playlistModalList {
-  display: flex;
-  flex-direction: column;
-  max-height: 60vh;
-  overflow-y: auto;
-}
-
-.playlistModalRow {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-3);
-  width: 100%;
-  padding: var(--glacier-space-2);
-  background: none;
-  border: none;
-  border-radius: var(--glacier-radius-md);
-  cursor: pointer;
-  color: inherit;
-  font: inherit;
-  text-align: start;
-}
-
-.playlistModalRow:hover {
-  background: var(--glacier-hover);
-}
-
-.playlistModalMeta {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1;
-}
-
-.playlistModalTime {
-  flex: none;
-  font-variant-numeric: tabular-nums;
-}
-
 /* A user playlist's row plus its remove control: siblings in a flex row, not
    nested buttons - the row is already one. The row keeps the full-width feel;
    the X rides its trailing edge. */
-.playlistModalItem {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-1);
-}
-
-.playlistModalItem .playlistModalRow {
-  flex: 1;
-  min-width: 0;
-}
-
 /* The way out of a playlist entirely: quiet until hovered, then plainly a
    deletion. Sits under the list, clear of the rows it removes. */
-.playlistSaveCopy,
-.playlistDelete {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-2);
-  margin-block-start: var(--glacier-space-3);
-  padding: var(--glacier-space-2);
-  border: none;
-  border-radius: var(--glacier-radius-md);
-  background: transparent;
-  color: var(--glacier-text-muted);
-  font: inherit;
-  font-size: var(--glacier-font-size-sm);
-  cursor: pointer;
-}
-
 /* Saving a copy is the constructive sibling of delete: same seat, accent
    rather than danger, because it makes something instead of unmaking it. */
-.playlistSaveCopy {
-  color: var(--glacier-accent-text);
-}
-
 
 .playlistDelete:hover,
 .playlistDelete:focus-visible {

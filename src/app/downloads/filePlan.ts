@@ -129,8 +129,3 @@ export function markFiled(jobId: string): void {
 export function forgetPlan(jobId: string): void {
   commit(snapshot.filter((p) => p.jobId !== jobId));
 }
-
-/** The plan owed for a job, or null. */
-export function planFor(jobId: string): FilePlan | null {
-  return snapshot.find((p) => p.jobId === jobId) ?? null;
-}

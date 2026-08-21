@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { formatBytes } from '../ux/format.ts';
 import { Label, ProgressBar, Spinner, Switch, Text } from '@glacier/react';
 import { request } from '../api/http.ts';
 import { useServerSession } from './serverSession.tsx';
@@ -42,10 +43,6 @@ interface Prefetch {
   total?: number;
   /** What the machine is doing right now, or null when it is idle. */
   running?: Running | null;
-}
-
-function gb(bytes: number): string {
-  return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
 }
 
 /**
@@ -130,7 +127,7 @@ export function StemProgress({ state }: { state: Prefetch }) {
         />
         <Text tone="muted" size="xs">
           {(state.separated ?? 0).toLocaleString()} of {state.total.toLocaleString()} songs apart
-          {state.wanted > 0 ? ` · ${state.wanted.toLocaleString()} queued` : ''} · {gb(state.bytes)} used
+          {state.wanted > 0 ? ` · ${state.wanted.toLocaleString()} queued` : ''} · {formatBytes(state.bytes)} used
           {state.failed > 0 ? ` · ${state.failed} could not be separated` : ''}
         </Text>
         {/* Naming the song is what turns a stalled-looking number into
@@ -161,7 +158,7 @@ export function StemProgress({ state }: { state: Prefetch }) {
     return (
       <Text tone="muted" size="xs">
         {state.done.toLocaleString()} ready · {state.wanted.toLocaleString()} waiting ·{' '}
-        {gb(state.bytes)} used
+        {formatBytes(state.bytes)} used
         {state.failed > 0 ? ` · ${state.failed} could not be separated` : ''}
       </Text>
     );

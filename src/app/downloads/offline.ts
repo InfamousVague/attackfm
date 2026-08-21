@@ -160,14 +160,6 @@ export async function pinTrack(
   return true;
 }
 
-/** The quality a held file is holding, or null if it is not held. */
-export function heldQuality(path: string): number | null {
-  const file = held.get(path);
-  if (file === undefined) return null;
-  const m = /\.aac(\d+)$/.exec(file);
-  return m ? Number(m[1]) : 0;
-}
-
 export async function unpinTrack(path: string): Promise<void> {
   await tauriCall('offline_unpin', { key: path });
   held.delete(path);

@@ -683,22 +683,6 @@ body [class*='_panel_']:has(.settingsTitleRow) [class*='_railLabel_'] {
   gap: var(--glacier-space-2);
 }
 
-.aboutRows {
-  display: flex;
-  flex-direction: column;
-}
-
-.aboutRow {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-3);
-  padding: var(--glacier-space-2) 0;
-}
-
-.aboutRow + .aboutRow {
-  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
-}
-
 /* A fixed square, so the labels line up whatever is in the slot.
    It used to size to its contents, which was invisible while every row held a
    16px lucide glyph - and then the Connection row arrived carrying a StatusDot,
@@ -712,32 +696,6 @@ body [class*='_panel_']:has(.settingsTitleRow) [class*='_railLabel_'] {
   block-size: 1rem;
   color: var(--glacier-text-muted);
   flex: none;
-}
-
-/* A fixed column, not a minimum one.
-   Three of these labels are ours and short; the fourth is whatever the listener
-   named their server, and "AttackFM (home)" is half as long again as the rest -
-   which pushed its own row's value out of line with every other row and made
-   the column look broken rather than the name look long. Fixed and truncated,
-   the column reads as a column; the full name is on the element for anyone who
-   hovers, and it is on the Servers screen in full besides. */
-.aboutRow__label {
-  font-weight: 550;
-  flex: none;
-  inline-size: 7rem;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.aboutRow__value {
-  color: var(--glacier-text-muted);
-  font-size: 0.875rem;
-  /* Takes what the label leaves, rather than being sized by its own text: a
-     long URL should wrap inside the row, not decide how wide the row is. */
-  flex: 1;
-  min-inline-size: 0;
-  overflow-wrap: anywhere;
 }
 
 /* The kit's StatTile sizes its value for dashboards twice this width; inside

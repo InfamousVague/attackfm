@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { formatClock } from '../ux/format.ts';
 import { Button, ProgressBar, Spinner } from '@glacier/react';
 import {
   Check,
@@ -70,12 +71,6 @@ function partState(item: DownloadItem, index: number): PartState {
   if (index < (item.completed ?? 0)) return 'done';
   if (item.currentIndex === index) return item.state === 'error' ? 'error' : 'downloading';
   return 'queued';
-}
-
-/** m:ss from milliseconds, for the length column. */
-function fmtMs(ms: number): string {
-  const s = Math.round(ms / 1000);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
 function PartIcon({ state }: { state: PartState }) {
@@ -256,7 +251,7 @@ function JobCard({ row, showSource }: { row: Row; showSource: boolean }) {
                         {rich?.artist && <span className="dlTrack__artist">{rich.artist}</span>}
                       </span>
                       {rich?.durationMs ? (
-                        <span className="dlTrack__dur">{fmtMs(rich.durationMs)}</span>
+                        <span className="dlTrack__dur">{formatClock(rich.durationMs / 1000)}</span>
                       ) : null}
                       {mine && playNow && (
                         <button

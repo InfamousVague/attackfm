@@ -30,6 +30,7 @@ export * from './api/library.ts';
 export * from './api/libraryCache.ts';
 export * from './api/listening.ts';
 export * from './api/refetch.ts';
+export * from './api/stems.ts';
 export * from './api/admin.ts';
 export * from './api/feed.ts';
 export * from './api/dj.ts';
