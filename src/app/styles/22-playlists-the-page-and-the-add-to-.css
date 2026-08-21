@@ -259,12 +259,13 @@
      left underneath is one step of breathing room so the buttons do not touch
      the first song.
 
-     21.625rem is the height Matt settled on over three asks (306 -> 406 for "a
-     third taller", then -15%). In rem so it tracks the interface-size setting
-     like everything else; the padding-block-start below stays as it was, since
-     its job is unchanged - keep content off the top bar - and it only binds if
-     a header ever grows past this height on its own. */
-  min-block-size: 21.625rem;
+     17rem now: 306 -> 406 ("a third taller") -> 346 (-15%) -> 272 (Matt: "too
+     much forehead"). Content is bottom-aligned, so this number IS the forehead
+     - the band of covers above the sleeve - and dropping it brings the sleeve
+     up toward the bar, leaving less empty wall over it. In rem so it tracks the
+     interface-size setting like everything else; the padding-block-start below
+     stays as it was - its job, keeping content off the top bar, is unchanged. */
+  min-block-size: 17rem;
   padding-block-end: var(--glacier-space-4);
   margin-inline: calc(-1 * var(--glacier-space-4));
   padding-inline: var(--glacier-space-4);
@@ -325,29 +326,26 @@
 }
 
 /*
- * The bar shows the wall THROUGH it, held back just enough to read the chrome.
+ * The bar is clear over the wall, dimmed only along the very top.
  *
  * This bar has been solid, glass, solid, glass, solid; today it is clear, so
- * the sleeves run all the way up behind the wordmark and into the notch, which
- * is what Matt asked for. But a fully transparent bar failed the bell: the
- * wall's across-mask holds the covers back on the LEFT (behind the title) and
- * lets them to full strength on the right, exactly where the bell sits -
- * measured 2.9:1 white-on-cover at the worst pixel, below the 3:1 an icon
- * needs. The wordmark end, over the masked half, was 10:1 and fine.
+ * the sleeves run all the way up behind the wordmark and into the notch.
  *
- * So a veil rather than a fill: a wash of the app's own ground across the bar,
- * held flat down through where the controls sit and let go by the bar's bottom
- * edge, so the covers are dimmed under the chrome and vivid the moment they
- * clear it. NOT a top-down fade - the controls sit in the lower half, below the
- * notch padding, so a fade would dim the empty notch and spare the bell. The
- * scrim below still fades in on scroll for the rows.
+ * The dimming is now a gradient off the top EDGE alone: darkest at the phone's
+ * top, gone by the time it reaches the controls. It shades the notch / status
+ * strip - where the phone's own clock and battery sit over the covers - and
+ * leaves the covers behind the wordmark and bell at full strength, which is
+ * how Matt wants it: no wash behind the buttons, just a dim off the top down.
+ * Anchored to the safe area rather than a fixed height, so the fade lands
+ * exactly where the controls begin (padding-block-start is safe-top + space-2)
+ * whatever the notch measures; on a phone with no inset it is a thin edge and
+ * nothing more. The scrim below still fades in on scroll for the rows.
  */
 .appWindow:has(.coverWall) .mobileHeader {
   background: linear-gradient(
     to bottom,
-    color-mix(in srgb, var(--glacier-bg) 60%, transparent),
-    color-mix(in srgb, var(--glacier-bg) 60%, transparent) 80%,
-    transparent
+    color-mix(in srgb, var(--glacier-bg) 62%, transparent) 0,
+    transparent calc(var(--app-safe-top, env(safe-area-inset-top, 0px)) + var(--glacier-space-2))
   );
 }
 
