@@ -197,6 +197,10 @@ export interface DownloadItem {
   /** Every part in order, for the card's disclosure list. Absent means the
    *  job has nothing to unfold and the toggle does not render. */
   parts?: readonly string[];
+  /** The parts with what else is known about each - who it is by, how long -
+   *  aligned with `parts` by index. A source that only knows names leaves it
+   *  out and the list draws names. */
+  partItems?: readonly { title: string; artist: string; durationMs?: number | null }[];
   /** 0-based index of the part in flight within `parts`. */
   currentIndex?: number | null;
   /** When it was queued (epoch ms), for newest-first ordering across sources. */

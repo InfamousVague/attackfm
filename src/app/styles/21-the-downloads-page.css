@@ -460,3 +460,66 @@
   color: var(--glacier-accent-text);
 }
 
+
+/* ---- A song in the queue, as a song --------------------------------------
+   The rows were a tick and a title. With the embed's artist and length on the
+   wire, and the library's own sleeve once the file lands, a playlist import
+   reads as the track list it is. Shared by the page and the importer's popover,
+   which draw the same rows. */
+.dlTrack__text {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.dlTrack__artist {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.7rem;
+  color: var(--glacier-text-subtle);
+}
+
+.dlTrack--done .dlTrack__artist,
+.dlTrack--downloading .dlTrack__artist {
+  color: var(--glacier-text-muted);
+}
+
+/* Sits in the icon's seat, so a landed song's sleeve lines up with the ticks
+   and spinners of the ones still coming. */
+.dlTrack__thumb {
+  inline-size: 1.35rem;
+  block-size: 1.35rem;
+  border-radius: 0.3rem;
+  object-fit: cover;
+  margin: -0.25rem;
+}
+
+.dlTrack__dur {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.7rem;
+  color: var(--glacier-text-subtle);
+}
+
+.dlTrack__play {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  border: none;
+  border-radius: var(--glacier-radius-full);
+  background: none;
+  color: var(--glacier-text-muted);
+  cursor: pointer;
+}
+
+.dlTrack__play:hover {
+  color: var(--glacier-text);
+  background: var(--glacier-surface);
+}

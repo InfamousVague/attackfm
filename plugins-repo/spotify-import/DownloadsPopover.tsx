@@ -14,8 +14,55 @@ import {
   X,
 } from '@glacier/icons';
 import { useDownloads } from '@attackfm/app/importsBridge';
+import { useLibrary } from '@attackfm/app/library';
+import { useMemo } from 'react';
 import type { MusicImportJob } from './musicImport.ts';
 import placeholderArt from './attack-wave.png';
+
+/** m:ss from milliseconds. */
+function fmtMs(ms: number): string {
+  const s = Math.round(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/** Case, space and curly-quote insensitive, the way the host resolves a song
+ *  it only knows by name. Title alone is not enough - "Perfect" is a dozen
+ *  songs - so artist is part of the key. */
+function norm(s: string): string {
+  return s.toLowerCase().replace(/[\u2018\u2019']/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * The library's sleeve for a song named by title + artist, or null.
+ *
+ * Built once per library change, not per row: a playlist import is fifty rows
+ * and the popover re-renders on every progress tick.
+ */
+function useSleeveFor(): (title: string, artist: string) => string | null {
+  const { tracks } = useLibrary();
+  const index = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const t of tracks) {
+      if (!t.artwork) continue;
+      const k = `${norm(t.title)}\u0001${norm(t.artist)}`;
+      if (!map.has(k)) map.set(k, t.artwork);
+    }
+    return map;
+  }, [tracks]);
+  return (title, artist) => index.get(`${norm(title)}\u0001${norm(artist)}`) ?? null;
+}
+
+/** The service a job came from, as the chip reads it. */
+function serviceLabel(service: string): string {
+  const s = service.toLowerCase();
+  if (s.includes('spotify')) return 'Spotify';
+  if (s.includes('deezer')) return 'Deezer';
+  if (s.includes('tidal')) return 'Tidal';
+  if (s.includes('apple')) return 'Apple Music';
+  if (s.includes('qobuz')) return 'Qobuz';
+  if (s.includes('youtube') || s.includes('yt')) return 'YT Music';
+  return service || '';
+}
 
 type TrackState = 'done' | 'downloading' | 'error' | 'queued';
 
@@ -67,8 +114,13 @@ function StateBadge({ job }: { job: MusicImportJob }) {
  *  progress, and controls. */
 function JobCard({ job }: { job: MusicImportJob }) {
   const { remove, retry, cancel } = useDownloads();
+  const sleeveFor = useSleeveFor();
   const active = job.state === 'queued' || job.state === 'downloading';
   const total = job.total ?? 0;
+  const service = serviceLabel(job.service);
+  // "LOSSLESS" is the server's default and says nothing; anything else is
+  // worth a chip because it was chosen.
+  const quality = job.quality && job.quality.toUpperCase() !== 'LOSSLESS' ? job.quality : null;
   return (
     <li className="dlCard">
       <span className="dlCard__artWrap">
@@ -89,6 +141,16 @@ function JobCard({ job }: { job: MusicImportJob }) {
             <span className="dlChip" title={`${job.skipped} already in library`}>
               <CheckCheck size={11} />
               {job.skipped}
+            </span>
+          )}
+          {service && (
+            <span className="dlChip dlChip--source" title={`From ${service}`}>
+              {service}
+            </span>
+          )}
+          {quality && (
+            <span className="dlChip" title="Quality">
+              {quality}
             </span>
           )}
         </span>
@@ -117,12 +179,28 @@ function JobCard({ job }: { job: MusicImportJob }) {
           <ol className="dlTracks">
             {job.tracks.map((title, i) => {
               const st = trackState(job, i);
+              // What the embed knew before the download: artist and length.
+              // Absent on a server older than the field, and the row still
+              // draws its name exactly as it always did.
+              const rich = job.items?.[i];
+              const artist = rich?.artist ?? '';
+              // Once a song is in the library its own sleeve takes the icon's
+              // seat - the list turns into the record as it lands.
+              const sleeve = st === 'done' && artist ? sleeveFor(title, artist) : null;
               return (
                 <li key={i} className={`dlTrack dlTrack--${st}`}>
                   <span className="dlTrack__icon">
-                    <TrackIcon state={st} />
+                    {sleeve ? (
+                      <img className="dlTrack__thumb" src={sleeve} alt="" loading="lazy" />
+                    ) : (
+                      <TrackIcon state={st} />
+                    )}
                   </span>
-                  <span className="dlTrack__title">{title}</span>
+                  <span className="dlTrack__text">
+                    <span className="dlTrack__title">{title}</span>
+                    {artist && <span className="dlTrack__artist">{artist}</span>}
+                  </span>
+                  {rich?.durationMs ? <span className="dlTrack__dur">{fmtMs(rich.durationMs)}</span> : null}
                 </li>
               );
             })}

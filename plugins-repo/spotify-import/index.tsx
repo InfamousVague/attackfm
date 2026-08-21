@@ -80,7 +80,7 @@ export const spotifyImport: Plugin = {
     'Downloads pasted Spotify, Apple Music, Tidal, Deezer, YT Music, and Qobuz links into the library.',
   icon: <Download size={22} />,
   author: 'AttackFM',
-  version: '1.4.0',
+  version: '1.5.0',
   tags: ['Importer', 'Downloads'],
   // The engine runs where the music lives. On a desktop that is the local
   // SpotiFLAC subprocess; signed into a server it is the hub, which downloads
