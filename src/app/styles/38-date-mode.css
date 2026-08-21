@@ -139,3 +139,25 @@
   color: #37d67a;
 }
 
+
+/* The way back.
+   Between Pass and Keep because it undoes either, so it belongs to neither
+   side - and deliberately the smallest, quietest control in the row. The two
+   verdicts are the things you came here to press; this one exists for the
+   moment you pressed the wrong one, and a row where all three shout is a row
+   where the wrong one gets hit. */
+.dateActions__btn--undo {
+  inline-size: 2.6rem;
+  block-size: 2.6rem;
+  color: var(--glacier-text-muted);
+}
+
+.dateActions__btn--undo:hover:not(:disabled) {
+  color: var(--glacier-text);
+}
+
+/* Nothing to take back yet. Kept in the row rather than hidden, so the other
+   two never move under a thumb that is already reaching for them. */
+.dateActions__btn--undo:disabled {
+  opacity: 0.3;
+}
