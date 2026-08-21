@@ -122,9 +122,9 @@ export function Appearance() {
       </PaneSection>
 
       <PaneSection title="Card style">
-        {/* The four library doors, dressed six ways. The same six the card lab
-            offers - this is the plain door to it, for people who are never
-            going to knock seven times on the wordmark. */}
+        {/* The four library doors, dressed four ways. This is the only door to
+            the choice now: the card lab that held the other thirty-two
+            directions was a workshop for picking, and the picking is done. */}
         <div className="setk-row">
           <CardStyleSection
             count={tracks.length}
