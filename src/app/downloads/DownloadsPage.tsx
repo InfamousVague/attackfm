@@ -72,6 +72,12 @@ function partState(item: DownloadItem, index: number): PartState {
   return 'queued';
 }
 
+/** m:ss from milliseconds, for the length column. */
+function fmtMs(ms: number): string {
+  const s = Math.round(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
 function PartIcon({ state }: { state: PartState }) {
   if (state === 'done') return <Check size={13} />;
   if (state === 'downloading') return <Spinner size="sm" aria-label="" />;
@@ -232,12 +238,36 @@ function JobCard({ row, showSource }: { row: Row; showSource: boolean }) {
               <ol className="dlTracks">
                 {parts.map((title, i) => {
                   const st = partState(item, i);
+                  const rich = item.partItems?.[i];
+                  const mine = st === 'done' ? ownedTrack(title, rich?.artist) : null;
                   return (
                     <li key={i} className={`dlTrack dlTrack--${st}`}>
                       <span className="dlTrack__icon">
-                        <PartIcon state={st} />
+                        {/* Once the song is ours, its own sleeve stands where the
+                            tick was - the list turns into the album as it lands. */}
+                        {mine?.artwork ? (
+                          <img className="dlTrack__thumb" src={artSized(mine.artwork, 160) ?? mine.artwork} alt="" loading="lazy" />
+                        ) : (
+                          <PartIcon state={st} />
+                        )}
                       </span>
-                      <span className="dlTrack__title">{title}</span>
+                      <span className="dlTrack__text">
+                        <span className="dlTrack__title">{title}</span>
+                        {rich?.artist && <span className="dlTrack__artist">{rich.artist}</span>}
+                      </span>
+                      {rich?.durationMs ? (
+                        <span className="dlTrack__dur">{fmtMs(rich.durationMs)}</span>
+                      ) : null}
+                      {mine && playNow && (
+                        <button
+                          type="button"
+                          className="dlTrack__play"
+                          aria-label={`Play ${title}`}
+                          onClick={() => playNow(mine)}
+                        >
+                          <Play size={12} />
+                        </button>
+                      )}
                     </li>
                   );
                 })}
@@ -367,6 +397,7 @@ function useMusicSource(): ResolvedDownloadSource | null {
           total: job.total,
           current: job.currentTrack,
           parts: job.tracks,
+          partItems: job.items,
           currentIndex: job.currentIndex,
           createdAt: job.createdAt,
           retry: () => retry(job.id),

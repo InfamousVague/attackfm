@@ -46,6 +46,13 @@ export function isMusicImportLink(value: string): boolean {
 /** A queued/running/finished music import, mirroring the Rust `MusicImportJob`. */
 export type MusicImportState = 'queued' | 'downloading' | 'done' | 'error';
 
+/** One song inside an import, as much as was known before it downloaded. */
+export interface ImportItem {
+  title: string;
+  artist: string;
+  durationMs?: number | null;
+}
+
 export interface MusicImportJob {
   id: string;
   url: string;
@@ -68,6 +75,13 @@ export interface MusicImportJob {
   currentTrack: string | null;
   /** Track titles for an album/playlist, in order. */
   tracks: string[];
+  /**
+   * The same songs with what else the source's embed knew before a byte was
+   * downloaded - artist and length - aligned with `tracks` by index. Absent on
+   * jobs from a server older than this field, which is why `tracks` stays: the
+   * wire shape only grows.
+   */
+  items?: ImportItem[];
   /** 0-based index of the track currently downloading, if any. */
   currentIndex: number | null;
   outputDir: string;
