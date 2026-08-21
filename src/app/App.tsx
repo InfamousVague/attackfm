@@ -6,7 +6,7 @@
 // (current/queue) and the queue verbs stay HERE - they close over live state
 // through refs and everything else threads off them.
 import { IconButton, TitleBar } from '@glacier/react';
-import { ChevronLeft, ChevronRight, Compass, RefreshCw, Search, Settings } from '@glacier/icons';
+import { ArrowLeft, ArrowRight, ChevronLeft, Compass, RefreshCw, Search, Settings } from '@glacier/icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NowPlayingBackdrop } from './player/NowPlayingBackdrop.tsx';
 import { PluginHookScope } from '../plugins/runtime.tsx';
@@ -42,6 +42,7 @@ import { PrimaryNav } from './nav/PrimaryNav.tsx';
 import { APP_NAME, HeaderActionButtons, HeaderIdent } from './nav/HeaderChrome.tsx';
 import { AppMain } from './nav/AppMain.tsx';
 import { setMixOpener } from './nav/openMix.ts';
+import { settingsBack } from './settings/settingsBack.ts';
 import { useNavStack } from './nav/useNavStack.ts';
 import { useSearchSummon } from './nav/useSearchSummon.ts';
 import { PageRefreshProvider } from './nav/pageRefresh.tsx';
@@ -215,7 +216,13 @@ export function App() {
   // specific needs a setter, not a mechanism.
   const [settingsPane, setSettingsPane] = useState<string | null>(null);
   // A system back swipe closes Settings before it touches the page history.
-  useSystemBack(settingsOpen, () => setSettingsOpen(false));
+  // Back out of settings ONE STEP: the pane first, the surface only once
+  // there is no pane left. Same handler the header's arrow uses, so the two
+  // cannot disagree about what a press means.
+  const backOutOfSettings = useCallback(() => {
+    if (!settingsBack()) setSettingsOpen(false);
+  }, []);
+  useSystemBack(settingsOpen, backOutOfSettings);
   // The app-wide tap tick, bound to the Settings switch. Mounted only while the
   // preference is on, so turning haptics off really does remove the listener
   // rather than leaving one that checks a flag on every touch - and turning it
@@ -420,13 +427,21 @@ export function App() {
    * conversation, and there is nothing else to draw.
    */
   const backFromAnywhere = useCallback(() => {
+    // Settings first: it is a modal OVER the page, so walking the page's stack
+    // while it is up moves something nobody can see.
+    if (settingsOpen) {
+      backOutOfSettings();
+      return;
+    }
     if (djOpen) {
       setDjOpen(false);
       return;
     }
     back();
-  }, [djOpen, back]);
-  const canGoBack = djOpen || canBack;
+  }, [settingsOpen, backOutOfSettings, djOpen, back]);
+  // Settings always has somewhere to go - a pane to leave, or the surface to
+  // close - so the arrow must not be greyed out while it is open.
+  const canGoBack = settingsOpen || djOpen || canBack;
 
   useSwipeBack(swipeEl, backFromAnywhere, !DESKTOP && canGoBack);
 
@@ -544,7 +559,7 @@ export function App() {
                         disabled={!canGoBack}
                         onClick={backFromAnywhere}
                       >
-                        <ChevronLeft size={18} />
+                        <ArrowLeft size={18} />
                       </IconButton>
                       <IconButton
                         variant="ghost"
@@ -553,7 +568,7 @@ export function App() {
                         disabled={!canForward}
                         onClick={forward}
                       >
-                        <ChevronRight size={18} />
+                        <ArrowRight size={18} />
                       </IconButton>
                     </span>
                     {tab === 'discover' ? (
@@ -628,7 +643,7 @@ export function App() {
                     disabled={!canGoBack}
                     onClick={backFromAnywhere}
                   >
-                    <ChevronLeft size={18} />
+                    <ArrowLeft size={18} />
                   </IconButton>
                   <IconButton
                     variant="ghost"
@@ -637,7 +652,7 @@ export function App() {
                     disabled={!canForward}
                     onClick={forward}
                   >
-                    <ChevronRight size={18} />
+                    <ArrowRight size={18} />
                   </IconButton>
                   <HeaderIdent tab={tab} />
                 </span>

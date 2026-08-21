@@ -1,6 +1,7 @@
 import { SearchField, Text } from '@glacier/react';
 import { ChevronLeft, ChevronRight, X } from '@glacier/icons';
 import { useEffect, useState } from 'react';
+import { setSettingsBack } from './settingsBack.ts';
 import { createPortal } from 'react-dom';
 import { noteSettingsPane, recentPanes, type RecentPane } from './settingsRecency.ts';
 import {
@@ -55,6 +56,24 @@ export function MobileSettings({
   // A section pulled from under us (a plugin crash) drops us back to the list
   // rather than onto a pane that no longer exists.
   const active = sections.find((s) => s.id === activeId) ?? null;
+
+  /*
+   * Lend the app one step back.
+   *
+   * Registered only while open, and re-registered whenever the depth changes,
+   * so the closure never answers about a pane that has since been left. The
+   * boolean is the whole contract: true when a drill was undone, false when we
+   * are already at the list and the caller should close instead.
+   */
+  useEffect(() => {
+    if (!open) return;
+    setSettingsBack(() => {
+      if (activeId === null) return false;
+      setActiveId(null);
+      return true;
+    });
+    return () => setSettingsBack(null);
+  }, [open, activeId]);
   useEffect(() => {
     if (activeId && !sections.some((s) => s.id === activeId)) setActiveId(null);
   }, [activeId, sections]);
