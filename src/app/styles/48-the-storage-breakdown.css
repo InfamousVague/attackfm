@@ -170,6 +170,45 @@
   background: var(--glacier-success-solid);
 }
 
+/* Still downloading, which moved off neutral so the free share could have the
+   grey - see the bar's own note. Without this the dot stayed grey while its
+   slice went amber, which is worse than either colour: a legend that does not
+   match the thing it is a legend for. */
+.storageBreak__key[data-tone='warning']::before {
+  background: var(--glacier-warning-solid);
+}
+
+/* `neutral` is deliberately not listed. The default above is already the grey
+   this wants, and the free share is the one key whose dot SHOULD be the same
+   quiet colour as an unlabelled one. */
+
+/*
+ * The free share of the bar, painted here rather than left to the kit's
+ * `neutral` tone.
+ *
+ * The kit gives each tone a background from `--glacier-{tone}-solid`, and
+ * there is no `--glacier-neutral-solid` - accent, success, warning, danger and
+ * info have one, neutral does not. So a neutral slice takes whatever the
+ * segment's default is, which is near enough the bar's own empty track to be
+ * invisible. An invisible grey is precisely the thing this was added to stop
+ * being, so the colour is set explicitly.
+ *
+ * `--glacier-border` rather than a bespoke grey: it is the token already used
+ * for the legend's unlabelled dot, so the slice and its key match without
+ * either being a number somebody picked.
+ *
+ * Matched on the TONE, not on child position. `> *:last-child` would have
+ * worked only for as long as the kit renders slices as direct children, and
+ * would have failed silently - no grey, no error - the day it wrapped them.
+ * Tone is the kit's own published contract for what a slice is, and since
+ * "still downloading" moved to warning the free share is the only neutral one
+ * in this bar, so it needs no guard: when the cache is full the kit drops the
+ * zero-value slice and there is simply nothing for this to match.
+ */
+.storageBreak__bar [data-tone='neutral'] {
+  background: var(--glacier-border);
+}
+
 /* A figure waiting on its data: the chrome is real, the data is absent. It
    dims rather than shimmers - six static rings turned into motion would be
    noise, and the point is "not yet", not "look here". */
