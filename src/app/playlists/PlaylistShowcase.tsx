@@ -1,10 +1,12 @@
 import { mosaicArts, useTileArt } from '../ux/artLoad.ts';
 import { Button, ContextMenu, Input, Modal, MenuItem, Text } from '@glacier/react';
-import { History, ListMusic, Plus, Trash2 } from '@glacier/icons';
-import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
+import { FolderClosed, History, ListMusic, Plus, Trash2 } from '@glacier/icons';
+import { useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { useLibrary } from '../library/library.tsx';
 import { DjLauncher } from '../booth/DjLauncher.tsx';
 import { usePlaylists } from './playlists.tsx';
+import { useServerSession } from '../servers/serverSession.tsx';
+import { metaFor, metaKey, metaSnapshot, subscribeMeta } from './playlistMeta.ts';
 import { PluginFence, usePlugins } from '../../plugins/runtime.tsx';
 import type { PluginPlaylistTile } from '../../plugins/types.ts';
 import { playlistPlayedAt, notePlaylistPlayed } from './playlistRecency.ts';
@@ -144,6 +146,10 @@ export function PlaylistShowcase({
   // removeTrack went with the strip's modal - shedding a row was only ever
   // offered there, and Recent never offered it at all.
   const { playlists, create, remove } = usePlaylists();
+  const { session } = useServerSession();
+  // Folders are read through the same subscription the playlist page writes,
+  // so filing one from its own menu regroups this shelf without a reload.
+  const metaRev = useSyncExternalStore(subscribeMeta, metaSnapshot, metaSnapshot);
   const { enabled } = usePlugins();
   // The New Playlist dialog: null closed, otherwise the name being typed.
   const [draftName, setDraftName] = useState<string | null>(null);
@@ -157,6 +163,42 @@ export function PlaylistShowcase({
   // Paths resolve against the live library, favourites-style: a row whose file
   // is gone simply does not render, and comes back if the file does.
   const byPath = useMemo(() => new Map(tracks.map((t) => [t.path, t] as const)), [tracks]);
+
+  /*
+   * Freshest first: the last edit (the server's stamp) or the last listen (this
+   * device's own memory), whichever is newer - so the list you had on last
+   * night is at your thumb, not wherever creation order left it.
+   *
+   * Then split by folder. Loose playlists stay in the main grid with Recent and
+   * New Playlist, because those are the ones somebody has not felt the need to
+   * file and burying them under a heading would punish not tidying up. Each
+   * folder gets its own labelled grid underneath, in alphabetical order - a
+   * folder's position should not move when you play something inside it.
+   */
+  const { loose, foldered } = useMemo(() => {
+    const sorted = [...playlists].sort(
+      (a, b) =>
+        Math.max(b.createdAt, playlistPlayedAt(b.id)) -
+        Math.max(a.createdAt, playlistPlayedAt(a.id)),
+    );
+    const out: typeof sorted = [];
+    const groups = new Map<string, typeof sorted>();
+    for (const p of sorted) {
+      const folder = metaFor(metaKey(session?.url, p.id)).folder;
+      if (!folder) {
+        out.push(p);
+        continue;
+      }
+      const bucket = groups.get(folder);
+      if (bucket) bucket.push(p);
+      else groups.set(folder, [p]);
+    }
+    return {
+      loose: out,
+      foldered: [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0])),
+    };
+    // metaRev is not read here; it is the signal that the store changed.
+  }, [playlists, session, metaRev]);
 
   // Real sleeves for the two whole-library doors, for the Real covers style.
   // On repeat has no list of its own here, so it wears the library's own
@@ -269,13 +311,7 @@ export function PlaylistShowcase({
                 last listen (this device's own memory), whichever is newer -
                 so the list you had on last night is at your thumb, not
                 wherever creation order left it. */}
-            {[...playlists]
-              .sort(
-                (a, b) =>
-                  Math.max(b.createdAt, playlistPlayedAt(b.id)) -
-                  Math.max(a.createdAt, playlistPlayedAt(a.id)),
-              )
-              .map((playlist) => (
+            {loose.map((playlist) => (
               <Tile
                 key={playlist.id}
                 name={playlist.name}
@@ -289,7 +325,7 @@ export function PlaylistShowcase({
                 onOpen={() => onOpenPlaylist(playlist.id)}
                 onDelete={() => setDeleting({ id: playlist.id, name: playlist.name })}
               />
-              ))}
+            ))}
             <Tile
               name="New Playlist"
               cover={
@@ -309,6 +345,39 @@ export function PlaylistShowcase({
             ))}
         </div>
       </section>
+
+      {/* One shelf per folder, under the loose ones. Deliberately flat rather
+          than a folder you open: on a phone, a tile that leads to another grid
+          of tiles is a second journey for something that fits on this screen -
+          and folders here are for grouping a wall of playlists, not for hiding
+          them. */}
+      {foldered.map(([folder, lists]) => (
+        <section className="homeShelf" key={folder}>
+          <h2 className="homeShelfTitle">
+            <FolderClosed size={15} className="showcaseFolderGlyph" aria-hidden />
+            {folder}
+            <span className="showcaseFolderCount">{lists.length}</span>
+          </h2>
+          <div className="showcaseGrid">
+            {lists.map((playlist) => (
+              <Tile
+                key={playlist.id}
+                name={playlist.name}
+                cover={
+                  <MosaicCover
+                    tracks={playlist.paths.map((p) => byPath.get(p)).filter((t): t is Track => t !== undefined)}
+                    fallback={<ListMusic size={24} />}
+                    tone="tileRecent"
+                  />
+                }
+                onOpen={() => onOpenPlaylist(playlist.id)}
+                onDelete={() => setDeleting({ id: playlist.id, name: playlist.name })}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
+
       {deleting && (
         <Modal
           open

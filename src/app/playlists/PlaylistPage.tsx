@@ -10,7 +10,11 @@ import {
   useToast,
 } from '@glacier/react';
 import {
+  Check,
   EllipsisVertical,
+  FolderClosed,
+  FolderOpen,
+  FolderPlus,
   ListMusic,
   Pencil,
   Play,
@@ -23,7 +27,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEv
 import { useRefreshNonce } from '../nav/pageRefresh.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
-import { metaFor, metaKey, setMeta, subscribeMeta } from './playlistMeta.ts';
+import { foldersInUse, metaFor, metaKey, setMeta, subscribeMeta } from './playlistMeta.ts';
 import { mosaicArts, useArtLoad, useTileArt } from '../ux/artLoad.ts';
 import { fetchPlaylistSuggestions, remotePath } from '../server.ts';
 import { formatClock, formatTotal } from '../ux/format.ts';
@@ -72,6 +76,8 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
   const [confirmDelete, setConfirmDelete] = useState(false);
   /** The description being edited, or null when it is only being read. */
   const [describing, setDescribing] = useState<string | null>(null);
+  /** The name of a folder being created, or null when no dialog is open. */
+  const [newFolder, setNewFolder] = useState<string | null>(null);
 
 
   // Deleted from another device while open here: the heartbeat drops it from
@@ -101,6 +107,11 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
     () => metaFor(key),
     () => metaFor(key),
   );
+  // Every folder that exists, which is every folder anything is filed in -
+  // there is no separate list of folders to keep, because a folder IS the
+  // playlists that name it. Recomputed off the same subscription, so a folder
+  // created on another device appears here without a reload.
+  const folders = useMemo(() => foldersInUse(), [meta, playlists]);
   useEffect(() => {
     if (!session || !playlistId) return;
     const ctrl = new AbortController();
@@ -348,6 +359,30 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
               <MenuItem icon={<Pencil size={15} />} onSelect={() => setRenaming(playlist.name)}>
                 Rename
               </MenuItem>
+              {/* Folders live in the menu rather than behind a dialog: there
+                  are only ever a handful, and a list of five is faster to
+                  choose from than a picker that has to be opened first. The
+                  one you are already in is marked rather than hidden, so the
+                  menu says where this playlist currently files. */}
+              {folders.map((name) => (
+                <MenuItem
+                  key={name}
+                  icon={meta.folder === name ? <Check size={15} /> : <FolderClosed size={15} />}
+                  onSelect={() =>
+                    setMeta(key, { folder: meta.folder === name ? '' : name })
+                  }
+                >
+                  {name}
+                </MenuItem>
+              ))}
+              {meta.folder && (
+                <MenuItem icon={<FolderOpen size={15} />} onSelect={() => setMeta(key, { folder: '' })}>
+                  Take out of {meta.folder}
+                </MenuItem>
+              )}
+              <MenuItem icon={<FolderPlus size={15} />} onSelect={() => setNewFolder('')}>
+                New folder…
+              </MenuItem>
               <MenuItem icon={<Trash2 size={15} />} onSelect={() => setConfirmDelete(true)}>
                 Delete playlist
               </MenuItem>
@@ -487,6 +522,37 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
           />
           <Button type="submit" variant="solid">
             Save
+          </Button>
+        </form>
+      </Modal>
+
+      <Modal
+        open={newFolder !== null}
+        onClose={() => setNewFolder(null)}
+        title="New folder"
+        size="sm"
+      >
+        <form
+          className="playlistCreate"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const name = (newFolder ?? '').trim();
+            // A folder is only a label on the playlists in it, so an empty one
+            // would have nowhere to exist - naming it and filing this playlist
+            // are the same act.
+            if (name) setMeta(key, { folder: name });
+            setNewFolder(null);
+          }}
+        >
+          <Input
+            autoFocus
+            value={newFolder ?? ''}
+            onChange={(e) => setNewFolder(e.currentTarget.value)}
+            placeholder="Road trips"
+            aria-label="Folder name"
+          />
+          <Button type="submit" variant="solid">
+            Move here
           </Button>
         </form>
       </Modal>
