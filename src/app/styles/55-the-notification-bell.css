@@ -157,18 +157,60 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* art | name-over-now | count, the bar underneath spanning all three. The art
+   is what makes a row of live downloads scannable as records rather than as a
+   list of job names; the "now" line under the name is the song coming down and
+   who it is by - the same two facts the downloads popover shows. */
 .notifyLive__row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 0 var(--glacier-space-2);
-  align-items: baseline;
+  align-items: center;
   font-size: var(--glacier-font-size-xs);
+}
+
+.notifyLive__art {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border-radius: var(--glacier-radius-sm);
+  background: var(--glacier-glass-regular);
+  color: var(--glacier-text-muted);
+  overflow: hidden;
+  flex: none;
+}
+
+.notifyLive__art img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.notifyLive__text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
 }
 
 .notifyLive__name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.notifyLive__now {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--glacier-text-muted);
+  font-size: 0.7rem;
+}
+
+.notifyLive__by {
+  color: var(--glacier-text-subtle);
 }
 
 .notifyLive__count {

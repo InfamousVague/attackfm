@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Button, CounterBadge, IconButton, Popover, Text } from '@glacier/react';
-import { Bell, Trash2 } from '@glacier/icons';
+import { Bell, Download, Trash2 } from '@glacier/icons';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import { noticeGlyph } from './kinds.ts';
 import { clearNotices, markAllRead, msOf, useNotices, useUnreadKinds, useUnreadNotices } from './notices.ts';
@@ -142,9 +142,33 @@ export function NotifyBell({
             <Text tone="muted" size="xs" className="notifyLive__head">
               {`${active.length} downloading${pct !== null ? ` · ${pct}%` : ''}`}
             </Text>
-            {active.map((job) => (
+            {active.map((job) => {
+              // The song coming down right now, and who it is by - the popover
+              // knows both from the embed, and a row that says only "Playlist
+              // 12/40" answers a question nobody asked. `items` is absent on a
+              // server older than the field; the line then shows the title
+              // alone, exactly as the current-track line always did.
+              const at = job.currentIndex ?? -1;
+              const nowTitle = job.currentTrack || (at >= 0 ? job.tracks[at] : null);
+              const nowArtist = at >= 0 ? job.items?.[at]?.artist : null;
+              return (
               <div key={job.id} className="notifyLive__row">
-                <span className="notifyLive__name">{job.title || 'That link'}</span>
+                <span className="notifyLive__art" aria-hidden>
+                  {job.artworkUrl ? (
+                    <img src={job.artworkUrl} alt="" loading="lazy" />
+                  ) : (
+                    <Download size={13} />
+                  )}
+                </span>
+                <span className="notifyLive__text">
+                  <span className="notifyLive__name">{job.title || 'That link'}</span>
+                  {job.state === 'downloading' && nowTitle && (
+                    <span className="notifyLive__now">
+                      {nowTitle}
+                      {nowArtist ? <span className="notifyLive__by"> · {nowArtist}</span> : null}
+                    </span>
+                  )}
+                </span>
                 {(job.total ?? 0) > 0 && (
                   <span className="notifyLive__count">
                     {job.completed}/{job.total}
@@ -163,7 +187,8 @@ export function NotifyBell({
                   aria-hidden
                 />
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
