@@ -1,10 +1,22 @@
 import { mosaicArts, useTileArt } from '../ux/artLoad.ts';
-import { Button, ContextMenu, Input, Modal, MenuItem, Text } from '@glacier/react';
-import { FolderClosed, History, ListMusic, Plus, Trash2 } from '@glacier/icons';
-import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
+import { Button, ContextMenu, Input, Modal, MenuItem, Text, useToast } from '@glacier/react';
+import {
+  Check,
+  FolderClosed,
+  FolderOpen,
+  FolderPlus,
+  History,
+  Image as ImageIcon,
+  ListMusic,
+  Pencil,
+  Plus,
+  Trash2,
+  X,
+} from '@glacier/icons';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { useLibrary } from '../library/library.tsx';
 import { DjLauncher } from '../booth/DjLauncher.tsx';
-import { usePlaylists } from './playlists.tsx';
+import { usePlaylists, type Playlist } from './playlists.tsx';
 import { PluginFence, usePlugins } from '../../plugins/runtime.tsx';
 import type { PluginPlaylistTile } from '../../plugins/types.ts';
 import { playlistPlayedAt, notePlaylistPlayed } from './playlistRecency.ts';
@@ -67,11 +79,14 @@ function Tile({
   name,
   onOpen,
   onDelete,
+  menu,
 }: {
   cover: ReactNode;
   name: string;
   onOpen: () => void;
   onDelete?: () => void;
+  /** Extra items above Delete - the playlist options the page's own menu has. */
+  menu?: ReactNode;
 }) {
   const tile = (
     <button type="button" className="playlistTile" onClick={onOpen}>
@@ -79,18 +94,48 @@ function Tile({
       <span className="playlistTileName">{name}</span>
     </button>
   );
-  if (!onDelete) return tile;
+  if (!onDelete && !menu) return tile;
   return (
     <ContextMenu
       aria-label={`${name} actions`}
       content={
-        <MenuItem icon={<Trash2 size={15} />} onSelect={onDelete}>
-          Delete playlist
-        </MenuItem>
+        <>
+          {menu}
+          {onDelete && (
+            <MenuItem icon={<Trash2 size={15} />} onSelect={onDelete}>
+              Delete playlist
+            </MenuItem>
+          )}
+        </>
       }
     >
       {tile}
     </ContextMenu>
+  );
+}
+
+/** The new-folder form, keyed per invocation so each opens empty. */
+function NewFolderForm({ onDone }: { onDone: (name: string) => void }) {
+  const [name, setName] = useState('');
+  return (
+    <form
+      className="playlistCreate"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onDone(name.trim());
+      }}
+    >
+      <Input
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.currentTarget.value)}
+        placeholder="Road trips"
+        aria-label="Folder name"
+      />
+      <Button type="submit" variant="solid">
+        Move here
+      </Button>
+    </form>
   );
 }
 
@@ -143,10 +188,71 @@ export function PlaylistShowcase({
   const { tracks, favoriteTracks } = useLibrary();
   // removeTrack went with the strip's modal - shedding a row was only ever
   // offered there, and Recent never offered it at all.
-  const { playlists, create, remove } = usePlaylists();
+  const { playlists, create, remove, rename, setMeta, setCover } = usePlaylists();
+  const { toast } = useToast();
   const { enabled } = usePlugins();
   // The New Playlist dialog: null closed, otherwise the name being typed.
   const [draftName, setDraftName] = useState<string | null>(null);
+  /** The playlist being renamed from its tile, or null. */
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
+  /** The playlist a new folder is being made FOR, or null. */
+  const [folderFor, setFolderFor] = useState<{ id: string; name: string } | null>(null);
+  /** Which playlist the next picked file becomes the cover of. */
+  const coverFor = useRef<string | null>(null);
+  const coverInput = useRef<HTMLInputElement | null>(null);
+
+  // Same rule the page's menu follows: a folder IS the playlists that name it.
+  const folders = useMemo(
+    () => [...new Set(playlists.map((p) => p.folder).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [playlists],
+  );
+
+  /*
+   * The playlist options, on the tile itself. The page's ⋮ menu has all of
+   * this, but filing twelve playlists into folders through twelve page visits
+   * is the N-journeys problem the gap audit keeps finding - press-and-hold on
+   * the shelf is where organising actually happens.
+   */
+  const tileMenu = (p: Playlist) => (
+    <>
+      <MenuItem icon={<Pencil size={15} />} onSelect={() => setRenaming({ id: p.id, name: p.name })}>
+        Rename
+      </MenuItem>
+      {folders.map((name) => (
+        <MenuItem
+          key={name}
+          icon={p.folder === name ? <Check size={15} /> : <FolderClosed size={15} />}
+          onSelect={() => setMeta(p.id, { folder: p.folder === name ? '' : name })}
+        >
+          {name}
+        </MenuItem>
+      ))}
+      {p.folder && (
+        <MenuItem icon={<FolderOpen size={15} />} onSelect={() => setMeta(p.id, { folder: '' })}>
+          Take out of {p.folder}
+        </MenuItem>
+      )}
+      <MenuItem icon={<FolderPlus size={15} />} onSelect={() => setFolderFor({ id: p.id, name: p.name })}>
+        New folder…
+      </MenuItem>
+      {setCover && (
+        <MenuItem
+          icon={<ImageIcon size={15} />}
+          onSelect={() => {
+            coverFor.current = p.id;
+            coverInput.current?.click();
+          }}
+        >
+          {p.coverUrl ? 'Change cover…' : 'Choose cover…'}
+        </MenuItem>
+      )}
+      {setCover && p.coverUrl && (
+        <MenuItem icon={<X size={15} />} onSelect={() => void setCover(p.id, null)}>
+          Remove cover
+        </MenuItem>
+      )}
+    </>
+  );
   // The playlist a delete is being confirmed for. Deleting a list is not
   // undoable, so the menu asks before the store hears about it.
   const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null);
@@ -322,6 +428,7 @@ export function PlaylistShowcase({
                 }
                 onOpen={() => onOpenPlaylist(playlist.id)}
                 onDelete={() => setDeleting({ id: playlist.id, name: playlist.name })}
+                menu={tileMenu(playlist)}
               />
             ))}
             <Tile
@@ -376,6 +483,7 @@ export function PlaylistShowcase({
                 }
                 onOpen={() => onOpenPlaylist(playlist.id)}
                 onDelete={() => setDeleting({ id: playlist.id, name: playlist.name })}
+                menu={tileMenu(playlist)}
               />
             ))}
           </div>
@@ -413,6 +521,64 @@ export function PlaylistShowcase({
 
       {/* Naming a new playlist: one field, and the name is the commitment -
           an empty submit still creates, as "New Playlist". */}
+      {/* The cover chooser for whichever tile asked. One input for the whole
+          shelf - coverFor remembers the tile, because the picker outlives the
+          menu that opened it. */}
+      <input
+        ref={coverInput}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        hidden
+        onChange={(e) => {
+          const file = e.currentTarget.files?.[0];
+          e.currentTarget.value = '';
+          const id = coverFor.current;
+          coverFor.current = null;
+          if (!file || !id || !setCover) return;
+          void setCover(id, file).catch((err: unknown) => {
+            toast({
+              message:
+                err instanceof Error && err.message
+                  ? `That cover did not take: ${err.message}`
+                  : 'That cover did not take.',
+            });
+          });
+        }}
+      />
+
+      <Modal open={renaming !== null} onClose={() => setRenaming(null)} title="Rename playlist" size="sm">
+        <form
+          className="playlistCreate"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (renaming && renaming.name.trim()) rename(renaming.id, renaming.name.trim());
+            setRenaming(null);
+          }}
+        >
+          <Input
+            autoFocus
+            value={renaming?.name ?? ''}
+            onChange={(e) => setRenaming((r) => (r ? { ...r, name: e.currentTarget.value } : r))}
+            aria-label="Playlist name"
+          />
+          <Button type="submit" variant="solid">
+            Save
+          </Button>
+        </form>
+      </Modal>
+
+      <Modal open={folderFor !== null} onClose={() => setFolderFor(null)} title="New folder" size="sm">
+        <NewFolderForm
+          key={folderFor?.id ?? ''}
+          onDone={(name) => {
+            // Naming the folder and filing this playlist are one act - an empty
+            // folder would have nowhere to exist. Same rule as the page.
+            if (folderFor && name) setMeta(folderFor.id, { folder: name });
+            setFolderFor(null);
+          }}
+        />
+      </Modal>
+
       <Modal open={draftName !== null} onClose={() => setDraftName(null)} title="New Playlist" size="sm">
         <form className="playlistCreate" onSubmit={createDraft}>
           <Input
