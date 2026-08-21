@@ -201,6 +201,10 @@ export interface ResolvedSettingsSection {
   label: string;
   icon?: ReactNode;
   content: ReactNode;
+  /** The touch list's one-line reading. Optional and ADDITIVE - the host
+   *  module table only ever grows fields, never changes them - so a plugin
+   *  built before this simply has none and the host words a fallback. */
+  summary?: string;
 }
 
 /**
@@ -216,6 +220,7 @@ export function usePluginSettingsSections(): ResolvedSettingsSection[] {
       id: `${p.id}:${s.id}`,
       label: s.label,
       icon: s.icon,
+      summary: typeof (s as { summary?: unknown }).summary === 'string' ? (s as { summary?: string }).summary : `From ${p.name}`,
       content: (
         <PluginFence pluginId={p.id}>
           <s.Content />

@@ -448,3 +448,109 @@
   font-size: 0.75rem;
   color: var(--glacier-text-muted);
 }
+
+/* --- the search's landing light -------------------------------------------- */
+
+/* A found row announces itself once: an accent wash that fades as you read.
+   On the class, not :target - the phone's drill is not a navigation. */
+.setk-flash {
+  animation: setk-flash 1.6s ease-out;
+}
+
+@keyframes setk-flash {
+  0%,
+  25% {
+    background: var(--glacier-accent-soft);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .setk-flash {
+    animation: none;
+    background: var(--glacier-accent-soft);
+  }
+}
+
+/* --- row hits under the search --------------------------------------------- */
+
+.settingsScreen__rowHits {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+  overflow: hidden;
+}
+
+.settingsScreen__rowHit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: var(--glacier-space-3);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.settingsScreen__rowHit:active,
+.settingsScreen__rowHit:hover {
+  background: var(--glacier-surface-hover, rgba(128, 128, 128, 0.16));
+}
+
+.settingsScreen__rowHit + .settingsScreen__rowHit {
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.settingsScreen__rowHitLabel {
+  font-weight: 550;
+  font-size: 0.92rem;
+}
+
+.settingsScreen__rowHitWhere {
+  font-size: 0.75rem;
+  color: var(--glacier-accent-text);
+}
+
+.settingsScreen__rowHitDesc {
+  font-size: 0.78rem;
+  color: var(--glacier-text-muted);
+}
+
+/* Desktop: the same hits, dropped under the title row's search field. */
+.settingsTitleRow {
+  position: relative;
+}
+
+.settingsTitleRow__hits {
+  position: absolute;
+  inset-block-start: calc(100% + var(--glacier-space-2));
+  inset-inline-end: 0;
+  inline-size: min(24rem, 90%);
+  z-index: 5;
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+/* Recents, now on the desktop too: the same chips the phone list shows. */
+.settingsTitleRow__recents {
+  display: flex;
+  gap: var(--glacier-space-1);
+  margin-inline-start: auto;
+}
+
+/* The sources chunk's own header - it had been borrowing .spotifyAccountRow
+   from a different feature's wardrobe. */
+.pluginSourcesHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+}

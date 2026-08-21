@@ -73,7 +73,7 @@ export function DevicesSettings() {
           label="Device name"
           hint="What the other devices' pickers call this one. Saved names announce immediately."
         >
-          <div className="deviceRename">
+          <div className="deviceRename" data-setting="device-rename">
             <Input
               value={name}
               onChange={(e) => setName(e.currentTarget.value)}

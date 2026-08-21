@@ -5,7 +5,9 @@ import { createPortal } from 'react-dom';
 import { noteSettingsPane, recentPanes, type RecentPane } from './settingsRecency.ts';
 import {
   paneMatches,
+  revealSetting,
   settingsGroupLabel,
+  settingsMatching,
   SettingsNavContext,
   type SettingsSection,
 } from './settingsShared.ts';
@@ -173,11 +175,47 @@ export function MobileSettings({
                   </div>
                 </div>
               ))}
-            {query.trim() && sections.every((s) => !paneMatches(s, query)) && (
-              <Text tone="muted" size="sm" className="settingsScreen__none">
-                Nothing matches “{query.trim()}”.
-              </Text>
-            )}
+            {/* Individual rows the query found, under the pane hits: the
+                index knows what every pane holds even before it has ever
+                mounted, which is what makes "crossfade" findable from cold.
+                Tapping one opens its pane and lights the row. */}
+            {query.trim() &&
+              (() => {
+                const hits = settingsMatching(query).filter((e) =>
+                  sections.some((s) => s.id === e.pane),
+                );
+                if (hits.length === 0) return null;
+                const nameOf = (id: string) => sections.find((s) => s.id === id)?.label ?? id;
+                return (
+                  <div className="settingsScreen__cluster">
+                    <div className="settingsScreen__groupLabel">Settings</div>
+                    <div className="settingsScreen__rowHits">
+                      {hits.map((e) => (
+                        <button
+                          key={e.id}
+                          type="button"
+                          className="settingsScreen__rowHit"
+                          onClick={() => {
+                            drill(e.pane);
+                            revealSetting(e.id);
+                          }}
+                        >
+                          <span className="settingsScreen__rowHitLabel">{e.label}</span>
+                          <span className="settingsScreen__rowHitWhere">{nameOf(e.pane)}</span>
+                          <span className="settingsScreen__rowHitDesc">{e.description}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+            {query.trim() &&
+              sections.every((s) => !paneMatches(s, query)) &&
+              settingsMatching(query).length === 0 && (
+                <Text tone="muted" size="sm" className="settingsScreen__none">
+                  Nothing matches “{query.trim()}”.
+                </Text>
+              )}
           </nav>
         </>
       )}
