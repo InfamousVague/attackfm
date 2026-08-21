@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.294
+
+- On a collection page the top bar is clear now — the covers run right up behind it and into the notch, dimmed just enough there that the wordmark and the bell stay readable, and vivid again the moment they clear the bar
+
 ## 0.3.293
 
 - Chromecast (with the next app install): a Cast to section joins the device picker, and a tap sends the music to the TV - the phone keeps the queue and the scrubber, the TV gets the sound, and stopping the cast hands the song back mid-note

@@ -325,18 +325,30 @@
 }
 
 /*
- * The bar is SOLID over the wall.
+ * The bar shows the wall THROUGH it, held back just enough to read the chrome.
  *
- * This bar has now been solid, glass, solid, glass and solid again, so rather
- * than re-argue it each time: the covers run up behind it either way, and the
- * only question is whether they show THROUGH it. Matt's settled answer is no.
- * The chrome stays a fixed black edge and the sleeves pass under it.
+ * This bar has been solid, glass, solid, glass, solid; today it is clear, so
+ * the sleeves run all the way up behind the wordmark and into the notch, which
+ * is what Matt asked for. But a fully transparent bar failed the bell: the
+ * wall's across-mask holds the covers back on the LEFT (behind the title) and
+ * lets them to full strength on the right, exactly where the bell sits -
+ * measured 2.9:1 white-on-cover at the worst pixel, below the 3:1 an icon
+ * needs. The wordmark end, over the masked half, was 10:1 and fine.
  *
- * `.mobileHeader` declares no background of its own anywhere else - the app's
- * ground is behind it - so this rule exists only because the wall arrives.
+ * So a veil rather than a fill: a wash of the app's own ground across the bar,
+ * held flat down through where the controls sit and let go by the bar's bottom
+ * edge, so the covers are dimmed under the chrome and vivid the moment they
+ * clear it. NOT a top-down fade - the controls sit in the lower half, below the
+ * notch padding, so a fade would dim the empty notch and spare the bell. The
+ * scrim below still fades in on scroll for the rows.
  */
 .appWindow:has(.coverWall) .mobileHeader {
-  background: var(--glacier-bg);
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--glacier-bg) 60%, transparent),
+    color-mix(in srgb, var(--glacier-bg) 60%, transparent) 80%,
+    transparent
+  );
 }
 
 /*
