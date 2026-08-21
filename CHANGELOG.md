@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.321
+
+- Updates stop refusing themselves. On a phone the download regularly takes longer than the launch check waits for, and that gap was making the app throw away the version it was updating from — which is what left you at a black screen having to close and reopen. It waits properly now
+
 ## 0.3.320
 
 - Finishes the black-screen fix: the app no longer replaces a stylesheet that was still on its way in. It waits to see whether the one it was given arrives before deciding anything is wrong
