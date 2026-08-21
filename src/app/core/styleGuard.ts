@@ -18,7 +18,18 @@ import { REGISTRY_URL } from '../servers/registry.ts';
  *
  * That loader is embedded, so it cannot be repaired over the air. This can: the
  * bundle's app.css sits next to its app.js, `import.meta.url` is that app.js,
- * and a sibling URL is therefore the exact stylesheet this build expects.
+ * and the stylesheet this build expects is that URL with its last four
+ * characters changed.
+ *
+ * NOT `new URL('app.css', import.meta.url)`, which is the obvious spelling and
+ * is wrong on every device this guard exists for. Tauri's asset protocol
+ * percent-encodes the WHOLE native path into a single URL segment -
+ * `http://asset.localhost/%2Fdata%2F…%2Fbundles%2F0.3.317%2Fapp.js` - so that
+ * URL's directory is `/`, and the "sibling" resolves to
+ * `http://asset.localhost/app.css`, which is nothing and answers 403. It
+ * resolves correctly for the EMBEDDED bundle, whose URL has real path
+ * separators, which is exactly why this survived: the guard was right on the
+ * one build that never needed it and wrong on every downloaded one.
  *
  * WHY THIS DOES NOT SIMPLY ADD ANOTHER <link>. It used to, and it came back:
  * the same symptom, the same screen, the same missing rules. A second <link>
@@ -36,12 +47,13 @@ export function ensureBundleStylesheet(): void {
   // Vite injects styles itself there.
   if (import.meta.env.DEV) return;
 
-  let href: string;
-  try {
-    href = new URL('app.css', import.meta.url).href;
-  } catch {
-    return; // no module URL to reason from
-  }
+  const self = import.meta.url;
+  if (!self) return; // no module URL to reason from
+  // A suffix swap, not a path resolution - see the note above. Any query the
+  // loader appended goes with it, because the stylesheet was requested without
+  // one.
+  const href = self.replace(/app\.js(\?.*)?$/, 'app.css');
+  if (href === self) return; // not a URL this reasoning applies to
 
   if (applied(href)) return;
   void restore(href);
@@ -58,7 +70,13 @@ export function ensureBundleStylesheet(): void {
  */
 function applied(href: string): boolean {
   for (const sheet of Array.from(document.styleSheets)) {
-    if (sheet.href !== href) continue;
+    // Compared by decoded value, not by string. The href the loader put on the
+    // <link> and the one derived here name the same file but need not be spelt
+    // alike - one round trip through the asset protocol is enough to change
+    // the encoding - and a mismatch here is not a harmless miss: it makes the
+    // guard "restore" a stylesheet that is already up, which means fetching a
+    // megabyte and then REMOVING the working <link> as stale.
+    if (!sameFile(sheet.href, href)) continue;
     try {
       return sheet.cssRules.length > 0;
     } catch {
@@ -68,6 +86,20 @@ function applied(href: string): boolean {
     }
   }
   return false;
+}
+
+/** Two URLs naming one file, allowing for encoding differences. */
+function sameFile(a: string | null, b: string): boolean {
+  if (!a) return false;
+  if (a === b) return true;
+  const plain = (u: string) => {
+    try {
+      return decodeURIComponent(u);
+    } catch {
+      return u;
+    }
+  };
+  return plain(a) === plain(b);
 }
 
 /**
@@ -81,13 +113,13 @@ function applied(href: string): boolean {
 async function restore(href: string): Promise<void> {
   const local = await readCss(href);
   if (local) {
-    adopt(local, 'local');
+    adopt(local, 'local', href);
     return;
   }
 
   const remote = await publishedCss();
   if (remote) {
-    adopt(remote, 'published');
+    adopt(remote, 'published', href);
     return;
   }
 
@@ -133,7 +165,7 @@ async function publishedCss(): Promise<string | null> {
 }
 
 /** Apply recovered CSS, and retire the stale sheet it is standing in for. */
-function adopt(css: string, source: 'local' | 'published'): void {
+function adopt(css: string, source: 'local' | 'published', href: string): void {
   const style = document.createElement('style');
   style.dataset.afmRecovered = source;
   style.textContent = css;
@@ -145,7 +177,13 @@ function adopt(css: string, source: 'local' | 'published'): void {
   for (const stale of document.querySelectorAll<HTMLLinkElement | HTMLStyleElement>(
     'link[rel="stylesheet"][href*="app.css"], style[data-afm-embedded]',
   )) {
-    if (stale !== style) stale.remove();
+    if (stale === style) continue;
+    // A <link> that has not settled yet is not stale - it is the loader's, mid
+    // flight, and its own onload will take the embedded sheet out. Removing it
+    // from under the loader leaves two owners for one node and the head being
+    // rewritten while React is mounting into it.
+    if (stale instanceof HTMLLinkElement && !stale.sheet && sameFile(stale.href, href)) continue;
+    stale.remove();
   }
   recordDiag('boot', `stylesheet was missing at boot and has been restored (${source})`);
 }
