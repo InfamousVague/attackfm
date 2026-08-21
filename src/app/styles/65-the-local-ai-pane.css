@@ -1,0 +1,8 @@
+/* --- the local AI pane ---------------------------------------------------- */
+
+/*
+ * Settings > Local AI (owner only): the model endpoint, which model does which
+ * job, whether it answers, and what it has been doing. As with the developer
+ * page, the kit carries the structure; this chapter holds only the per-function
+ * tiles and the activity list.
+ */

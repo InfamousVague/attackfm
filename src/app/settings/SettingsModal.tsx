@@ -3,7 +3,7 @@
 // GeneralPane / PlaybackPane / PluginsPane (+ pluginRepos) / MobileSettings,
 // shared bits in settingsShared.ts, useMediaQuery deduped into ux/.
 import { SearchField, TabbedModal } from '@glacier/react';
-import { Bell, Blocks, BookOpen, CircleUserRound, HardDrive, Info, Library, Palette, Play, Server, Shield, Stethoscope } from '@glacier/icons';
+import { Bell, Blocks, BookOpen, Bot, CircleUserRound, HardDrive, Info, Library, Palette, Play, Server, Shield, Stethoscope, Terminal } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { APP_VERSION } from '../core/version.ts';
 import { noteSettingsPane, recentPanes, type RecentPane } from './settingsRecency.ts';
@@ -14,6 +14,9 @@ import { usePlayback } from '../player/playback.tsx';
 import { usePlugins, usePluginSettingsSections } from '../../plugins/runtime.tsx';
 import { AboutSettings } from './AboutSettings.tsx';
 import { DiagnosticsPane } from './DiagnosticsPane.tsx';
+import { DeveloperPane } from './DeveloperPane.tsx';
+import { LocalAiPane, localAiSummary } from './LocalAiPane.tsx';
+import { useDeveloperMode } from './developerMode.ts';
 import { diagEntries } from '../diag/diagLog.ts';
 import { HandbookPane } from './handbook/HandbookPane.tsx';
 import { HANDBOOK_PAGES } from './handbook/handbookPages.tsx';
@@ -77,6 +80,11 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
   const pb = usePlayback();
   const sharingWeek = useSharing();
   const { session } = useServerSession();
+  // Developer mode gates two sections (Developer, Diagnostics) and is flipped
+  // from INSIDE About, so it is a live subscription rather than a one-shot
+  // read - the array below must re-render the instant the seventeenth tap
+  // lands. See developerMode.ts.
+  const devMode = useDeveloperMode();
   const { connected, devices } = useConnect();
   const { all: allPlugins, isEnabled } = usePlugins();
   const { source, tracks } = useLibrary();
@@ -243,6 +251,23 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       tint: 'blue',
       group: 2,
     },
+    // The owner's Local AI pane. The first role-gated section in this array:
+    // the client's `session.isAdmin` is the server's one admin bit (minted at
+    // account creation, never promoted), and it only HIDES the row - every
+    // route the pane calls is admin-gated server-side as well.
+    ...(session?.isAdmin
+      ? [
+          {
+            id: 'local-ai',
+            label: 'Local AI',
+            icon: <Bot size={16} />,
+            content: <LocalAiPane />,
+            summary: localAiSummary(),
+            tint: 'orange' as const,
+            group: 2,
+          },
+        ]
+      : []),
     // The importer contributes Downloads here, exactly where it has always
     // sat; any plugin's tabs land in this run of the rail.
     ...pluginSections.map((s) => ({ ...s, tint: 'orange' as const, group: 2 })),
@@ -269,15 +294,24 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
     // What broke, in the listener's own hands. Lives beside the handbook and
     // About because it is the same kind of page - reference, reached when
     // something has already gone wrong, never part of the daily loop.
-    {
-      id: 'diagnostics',
-      label: 'Diagnostics',
-      icon: <Stethoscope size={16} />,
-      content: <DiagnosticsPane />,
-      summary: diagCount > 0 ? `${diagCount} recent ${diagCount === 1 ? 'problem' : 'problems'}` : 'Nothing to report',
-      tint: 'slate',
-      group: 3,
-    },
+    // Diagnostics and Developer show only in developer mode. The id stays
+    // 'diagnostics' - it is the contract recents chips and deep links hold -
+    // and everything downstream already copes with a section leaving the
+    // array: the tab reset falls to the first section, MobileSettings drops to
+    // the list, chips and row hits filter by the live array.
+    ...(devMode
+      ? [
+          {
+            id: 'diagnostics',
+            label: 'Diagnostics',
+            icon: <Stethoscope size={16} />,
+            content: <DiagnosticsPane />,
+            summary: diagCount > 0 ? `${diagCount} recent ${diagCount === 1 ? 'problem' : 'problems'}` : 'Nothing to report',
+            tint: 'slate' as const,
+            group: 3,
+          },
+        ]
+      : []),
     {
       id: 'about',
       label: 'About',
@@ -287,6 +321,20 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       tint: 'slate',
       group: 3,
     },
+    // Under About, where the seventeen taps that open it live.
+    ...(devMode
+      ? [
+          {
+            id: 'developer',
+            label: 'Developer',
+            icon: <Terminal size={16} />,
+            content: <DeveloperPane />,
+            summary: 'Build, server, caches, notices, performance',
+            tint: 'slate' as const,
+            group: 3,
+          },
+        ]
+      : []),
   ];
 
   // The tab is controlled so a section that leaves the rail - a plugin pulled

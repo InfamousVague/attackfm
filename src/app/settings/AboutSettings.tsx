@@ -1,7 +1,7 @@
-import { Button, Pill, StatusDot, Text } from '@glacier/react';
+import { Button, Pill, StatusDot, Text, useToast } from '@glacier/react';
 import { PaneSection, SettingRow, SettingsFootnote } from './kit/settingsKit.tsx';
 import { Cloud, ExternalLink, Laptop, Music, RefreshCw, Smartphone } from '@glacier/icons';
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import { WhatsNew } from './WhatsNew.tsx';
 import { APP_VERSION, SHELL_VERSION } from '../core/version.ts';
 import wordmark from '../../assets/attack-white.png';
@@ -13,6 +13,9 @@ import { useLibrary } from '../library/library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useNetworkHealth } from '../servers/NetworkDot.tsx';
 import { isTauri } from '../core/tauri.ts';
+import { developerModeEnabled, setDeveloperMode } from './developerMode.ts';
+import { SettingsNavContext } from './settingsShared.ts';
+import { fireNativeHaptic } from '../core/haptics.ts';
 import {
   applyStagedBundle,
   checkForUpdate,
@@ -28,7 +31,62 @@ const REPO_URL = 'https://github.com/InfamousVague/attackfm';
  * to - the once-a-month pane that answers "what version am I on?" without a
  * trip to the terminal.
  */
+/*
+ * The knock counter, at module scope rather than in a ref.
+ *
+ * Seventeen presses on the wordmark turn developer mode on. The count lives
+ * here and not in a ref or state because the original (seven presses, for the
+ * card lab - 9e0840f) was first written with a useRef and the door never
+ * opened: both shells can mount AboutSettings, the sections array is rebuilt
+ * every render so `content: <AboutSettings/>` is a fresh element each time,
+ * and a ref identity was not the one the handler closed over. Module scope is
+ * the only identity that survives.
+ *
+ * The run resets when the gap since the previous press exceeds KNOCK_GAP_MS,
+ * so an idle finger cannot arrive at seventeen by accident across a week; and
+ * the mark gives no sign of it - no cursor, no hint - because the point of a
+ * knock is that you have to know.
+ */
+const KNOCKS_WANTED = 17;
+const KNOCK_GAP_MS = 900;
+/** From this many presses in, the toast counts down - the same tell Android's
+ *  own developer options give, so somebody who knows the gesture knows it is
+ *  working, and somebody who does not gets a puzzle rather than nothing. */
+const KNOCK_HINT_FROM = 10;
+let knocks = 0;
+let lastKnock = 0;
+
+/** Counts a press; returns how many remain, 0 on the press that completes the run. */
+function countKnock(): number {
+  const now = Date.now();
+  knocks = now - lastKnock > KNOCK_GAP_MS ? 1 : knocks + 1;
+  lastKnock = now;
+  if (knocks < KNOCKS_WANTED) return KNOCKS_WANTED - knocks;
+  knocks = 0;
+  return 0;
+}
+
 export function AboutSettings() {
+  const { toast } = useToast();
+  const goTo = useContext(SettingsNavContext);
+  const knock = () => {
+    const left = countKnock();
+    if (left === 0) {
+      const already = developerModeEnabled();
+      setDeveloperMode(true);
+      fireNativeHaptic('success');
+      toast({ message: already ? 'Developer mode is already on' : 'Developer mode on', duration: 1800 });
+      // Land on the page that just appeared, rather than leaving the person
+      // to find a new row under About. A no-op if no shell provided the nav.
+      goTo?.('developer');
+      return;
+    }
+    if (left <= KNOCKS_WANTED - KNOCK_HINT_FROM) {
+      // The toast replaces itself on each press (latest wins), which is exactly
+      // the behaviour a countdown wants.
+      toast({ message: `${left} more ${left === 1 ? 'tap' : 'taps'} to developer mode`, duration: 1200 });
+    }
+  };
   const { session } = useServerSession();
   // The reading that used to be a light in the header on every page.
   const net = useNetworkHealth();
@@ -155,6 +213,7 @@ export function AboutSettings() {
           src={wordmark}
           alt="AttackFM"
           draggable={false}
+          onClick={knock}
         />
         <Text tone="muted" size="sm">
           Your music, on your machines. Nothing rented, nothing shared.

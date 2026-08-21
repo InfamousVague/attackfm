@@ -33,6 +33,7 @@ import { useSystemBack } from './nav/systemBack.ts';
 import { installTapHaptics, useHapticsPref } from './core/haptics.ts';
 import { installOverlayGuard } from './core/overlayGuard.ts';
 import { DownloadNotices } from './notify/DownloadNotices.tsx';
+import { VerboseNotices } from './notify/VerboseNotices.tsx';
 import { NotifyBell } from './notify/NotifyBell.tsx';
 import { CarPlayBridge } from './player/CarPlayBridge.tsx';
 import { installSheetDismiss } from './player/playerDismiss.ts';
@@ -786,6 +787,9 @@ export function App() {
                 the toast provider, because that is where both halves are
                 reachable. */}
             <DownloadNotices />
+            {/* Same depth as DownloadNotices for the same reasons: inside the
+                plugin providers, under ToastProvider. Headless. */}
+            <VerboseNotices />
             {/* Music Date, fullscreen: over everything, chrome gone - no nav
                 bar, no player strip, just the introductions. A floating
                 chevron (and the system back) is the way out. */}

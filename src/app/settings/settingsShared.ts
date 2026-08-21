@@ -27,6 +27,8 @@ export const PANE_KEYWORDS: Record<string, string> = {
   privacy: 'privacy history scrobble tracking metadata lookups lyrics share position telemetry friends',
   diagnostics: 'diagnostics problems errors log report broken crash push notifications debug',
   about: 'version update check whats new shell licenses github',
+  developer: 'developer dev tools debug build bundle ota cache storage keys performance fps memory test notice flags',
+  'local-ai': 'local ai model ollama llm endpoint embeddings curator dj mixes stations health owner report',
   handbook:
     'handbook guide manual documentation docs how it works help plugin develop developer api build publish gestures',
 };
@@ -139,6 +141,27 @@ export const SETTINGS_INDEX: SettingEntry[] = [
     label: 'Device name',
     description: 'What this device is called in every picker on the account.',
     keywords: 'device name rename phone label picker connect',
+  },
+  {
+    id: 'dev-mode',
+    pane: 'developer',
+    label: 'Developer mode',
+    description: 'Shows the Developer page and Diagnostics in Settings.',
+    keywords: 'developer dev mode tools debug hidden unlock',
+  },
+  {
+    id: 'notify-verbose',
+    pane: 'notifications',
+    label: 'Verbose notifications',
+    description: 'Ring for background work too: downloads starting, songs being pulled into stems, the AI running.',
+    keywords: 'verbose notifications background stems ai downloads started chatty detail',
+  },
+  {
+    id: 'ai-endpoint',
+    pane: 'local-ai',
+    label: 'Model endpoint',
+    description: 'Where the server sends its AI requests - an Ollama or any OpenAI-compatible origin.',
+    keywords: 'ai endpoint url ollama model local llm server',
   },
   {
     id: 'stem-prefetch',

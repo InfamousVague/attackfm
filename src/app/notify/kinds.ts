@@ -11,7 +11,7 @@
 //! back to its own id rather than vanishing, which is what the pane has always
 //! done and what lets the server add one without a frontend release.
 
-import { Bell, Disc3, Download, Sparkles, TriangleAlert, Users } from '@glacier/icons';
+import { Bell, Bot, Disc3, Download, Scissors, Sparkles, TriangleAlert, Users } from '@glacier/icons';
 import type { ComponentType } from 'react';
 
 export const NOTICE_COPY: Record<string, { label: string; hint: string }> = {
@@ -39,6 +39,32 @@ export const NOTICE_COPY: Record<string, { label: string; hint: string }> = {
     label: 'Friend requests',
     hint: 'When somebody asks to be friends.',
   },
+  // ---- verbose kinds: local-only, behind the device's "verbose" switch ----
+  // These never appear in the server's push list (set_pref would 400 on
+  // them) and are raised by the client's own watchers, like 'failed'. Each
+  // job uses ONE id with a '-started' kind and then its plain kind, so the
+  // ring replaces the start with the completion and rings again (same id +
+  // different kind = a new event - see notices.ts).
+  'download-started': {
+    label: 'Download started',
+    hint: 'The moment a download is picked up, not only when it lands.',
+  },
+  'stems-started': {
+    label: 'Taking a song apart',
+    hint: 'When the server starts pulling a song into stems in the background.',
+  },
+  stems: {
+    label: 'Stems ready',
+    hint: 'When a song has been pulled apart and its stems are on the server.',
+  },
+  'ai-started': {
+    label: 'AI working',
+    hint: 'When a background AI pass begins: profiles, curation, discovery, mixes.',
+  },
+  ai: {
+    label: 'AI finished',
+    hint: 'When a background AI pass completes, with what it did.',
+  },
 };
 
 /** The order they read in: the ones about music first, the periodic ones next,
@@ -64,6 +90,14 @@ export function noticeGlyph(kind: string): ComponentType<{ size?: number }> {
       return Disc3;
     case 'friends':
       return Users;
+    case 'download-started':
+      return Download;
+    case 'stems-started':
+    case 'stems':
+      return Scissors;
+    case 'ai-started':
+    case 'ai':
+      return Bot;
     default:
       return Bell;
   }
