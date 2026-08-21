@@ -6,10 +6,11 @@
  *
  * Ported from the card lab (chapter 60), which held thirty-six directions on
  * its own markup and has since been removed - it was for choosing, and the
- * choosing is done. Three of the four lean on a bone the plain card does not have - the
- * count on its own (`.libChip__stat`) or a grid of the collection's own sleeves
- * (`.libChip__mosaic`) - so, unlike the old printed default, NONE of them is
- * "no attribute". Every door always carries a `data-card-style`, Numbers first
+ * choosing is done. All four hang on structure the bare card does not carry -
+ * the count on its own (`.libChip__stat`), a grid of the collection's own
+ * sleeves (`.libChip__mosaic`), or the art layer that Chrome sweeps and Rich
+ * stock screens (`.libChip__art`) - so, unlike the old printed default, NONE of
+ * them is "no attribute". Every door always carries a `data-card-style`, Numbers first
  * included; there is no plain `.libChip` state left to fall back to, and the
  * base printed halftone in chapter 14 is now only what shows for the instant
  * before this file and the applied attribute take over.
