@@ -120,7 +120,10 @@ export function MobileSettings({
                       className="settingsScreen__recentChip"
                       onClick={() => drill(r.id)}
                     >
-                      {r.label}
+                      {/* Re-resolved, not read from the store: a chip written
+                          before a pane was renamed would otherwise say
+                          "General" and open "Library". */}
+                      {sections.find((s) => s.id === r.id)?.label ?? r.label}
                     </button>
                   ))}
               </div>

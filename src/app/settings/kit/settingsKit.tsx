@@ -146,6 +146,10 @@ export function SettingRow({
       data-danger={danger || undefined}
       data-disabled={off || undefined}
       data-stacked={layout === 'stacked' || undefined}
+      // `inert`, not just the CSS: pointer-events:none stops a tap but not a
+      // Tab - a "Needs a server" row was still keyboard-operable without
+      // this, quietly writing settings it claimed were unavailable.
+      inert={off || undefined}
     >
       <div className="setk-row__main">{body}</div>
       {control != null && layout === 'stacked' && (
@@ -260,8 +264,17 @@ interface SubNavProps {
 /** Underline tabs for switching between a pane's chunks. Visually DISTINCT
  *  from SegmentedControl on purpose: a segmented control answers "which
  *  value", these answer "which page", and dressing both alike was how the
- *  Servers pane read as a form when it is a small book. */
+ *  Servers pane read as a form when it is a small book.
+ *
+ *  Claiming role=tablist obliges the whole pattern, not just the paint:
+ *  arrows move AND activate (the kit's own tabs activate automatically),
+ *  and only the active tab sits in the Tab order. */
 export function SubNav({ value, onValueChange, options }: SubNavProps) {
+  const move = (from: string, delta: number) => {
+    const i = options.findIndex((o) => o.id === from);
+    const next = options[(i + delta + options.length) % options.length];
+    if (next) onValueChange(next.id);
+  };
   return (
     <div className="setk-subnav" role="tablist">
       {options.map((o) => (
@@ -270,9 +283,33 @@ export function SubNav({ value, onValueChange, options }: SubNavProps) {
           type="button"
           role="tab"
           aria-selected={o.id === value}
+          tabIndex={o.id === value ? 0 : -1}
           className="setk-subnav__tab"
           data-active={o.id === value || undefined}
           onClick={() => onValueChange(o.id)}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+              e.preventDefault();
+              move(o.id, 1);
+            } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+              e.preventDefault();
+              move(o.id, -1);
+            } else if (e.key === 'Home') {
+              e.preventDefault();
+              if (options[0]) onValueChange(options[0].id);
+            } else if (e.key === 'End') {
+              e.preventDefault();
+              const last = options[options.length - 1];
+              if (last) onValueChange(last.id);
+            }
+          }}
+          // Activation moves focus with the selection, completing the
+          // pattern: the newly selected tab is the only tabbable one.
+          ref={(el) => {
+            if (el && o.id === value && el.closest('.setk-subnav')?.contains(document.activeElement) && document.activeElement !== el) {
+              el.focus();
+            }
+          }}
         >
           {o.label}
           {typeof o.count === 'number' && o.count > 0 && (
@@ -298,11 +335,13 @@ interface OptionCardsProps<T extends string> {
  *  the ThemeSelector's - accent border, ring, filled check. */
 export function OptionCards<T extends string>({ value, onChange, leadFirst, options }: OptionCardsProps<T>) {
   return (
-    <div className="setk-options" data-lead-first={leadFirst || undefined}>
+    <div className="setk-options" data-lead-first={leadFirst || undefined} role="radiogroup">
       {options.map((o) => (
         <button
           key={o.id}
           type="button"
+          role="radio"
+          aria-checked={o.id === value}
           className="setk-option"
           data-selected={o.id === value || undefined}
           onClick={() => onChange(o.id)}

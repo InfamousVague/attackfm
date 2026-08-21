@@ -131,14 +131,21 @@
 .setk-row__value {
   color: var(--glacier-text-muted);
   font-size: 0.85rem;
-  white-space: nowrap;
+  /* Wraps: About's server line ("v0.3.201 · up 3d · matt.attack.fm:8443")
+     is unbounded, and nowrap pushed it out of the card on a phone. The
+     slider's reading below re-pins itself - "12s" must never wrap. */
+  text-align: end;
+  overflow-wrap: anywhere;
+  max-inline-size: 60%;
 }
 
 /* The slider's reading: fixed and tabular so "Off" -> "12s" cannot nudge
    the thumb (the old .prefsSliderValue rule, kept). */
 .setk-row__value--slider {
   min-inline-size: 3ch;
+  max-inline-size: none;
   text-align: end;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 

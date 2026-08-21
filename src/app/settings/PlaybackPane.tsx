@@ -159,6 +159,7 @@ export function PlaybackSettings() {
             <SegmentedControl
               aria-label="Streaming quality"
               fullWidth
+              disabled={!session}
               value={settings.quality}
               onValueChange={(next) => updateSettings({ quality: next as 'lossless' | 'transcode' })}
               options={[
