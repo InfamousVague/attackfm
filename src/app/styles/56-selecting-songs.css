@@ -1,0 +1,55 @@
+/* ── Selecting songs ────────────────────────────────────────────────────────
+   The bulk-action bar that appears while a table is in selection mode. It
+   floats above the nav bar and the player strip (both heights are vars the
+   dock contract maintains), wearing the same glass as every panel that
+   stands over content. Portalled to the body, so it ducks the dock exactly
+   the way the settings sheet does - see the grouped rule in 05. */
+
+.selectBar {
+  position: fixed;
+  inset-inline: var(--glacier-space-3);
+  inset-block-end: calc(
+    env(safe-area-inset-bottom, 0px) + var(--app-nav-height, 4rem) +
+      var(--app-player-height, 0rem) + var(--glacier-space-2)
+  );
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  padding: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-xl);
+  background: var(--glacier-glass-regular);
+  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  border: var(--glacier-hairline) solid var(--glacier-glass-border);
+  box-shadow: var(--glacier-shadow-5);
+  animation: npRise 0.24s var(--glacier-ease-out);
+}
+
+/* Ducks the docked player like every other fixed surface. */
+body:has(.npScreen[data-docked]) .selectBar {
+  inset-inline-end: calc(var(--np-dock-width) + var(--glacier-space-3));
+}
+
+.selectBar__count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding-inline: var(--glacier-space-2);
+  color: var(--glacier-accent-text);
+}
+
+.selectBar__spring {
+  flex: 1;
+}
+
+/* On a desktop the bar does not need the whole width; it floats centred at a
+   readable measure instead of a letterboxed strip. */
+@media (min-width: 700px) {
+  .selectBar {
+    inset-inline: auto;
+    inset-inline-start: 50%;
+    transform: translateX(-50%);
+    min-inline-size: min(34rem, calc(100vw - 2 * var(--glacier-space-4)));
+  }
+}

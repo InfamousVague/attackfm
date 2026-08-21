@@ -7,6 +7,7 @@ import {
 import { Clock } from '@glacier/icons';
 import { useMemo, useState, type ReactNode } from 'react';
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
+import { SelectionBar, SongSelectionContext } from './songSelection.tsx';
 import { useLibrary } from './library.tsx';
 import { hasLocalLibrary } from '../core/platform.ts';
 import { useDockedSheet, useNarrowViewport } from '../ux/useNarrowViewport.ts';
@@ -162,6 +163,21 @@ export function SongTable({
   // menu opens; the release does not also play the song.
   const hold = useHoldToMenu(rowMenuTarget);
 
+  /*
+   * Selection mode: the grid's own checkboxes, entered through the row menu's
+   * "Select" item (which TrackMenu offers because this provider exists). In
+   * the mode, activating a row TOGGLES it instead of playing - a tap that
+   * started songs while you were gathering them would be the drag-select
+   * papercut all over again. Leaving the mode (the bar's X, or acting) drops
+   * the set.
+   */
+  const [selected, setSelected] = useState<string[] | null>(null);
+  const selecting = selected !== null;
+  const selectionEntry = useMemo(
+    () => ({ start: (path: string) => setSelected([path]) }),
+    [],
+  );
+
   // The sort is lifted out of the grid (controlled) for one reason: the play
   // queue has to be the rows as displayed, and only the sort says what that
   // order is.
@@ -304,7 +320,7 @@ export function SongTable({
   }, [tracks, sort]);
 
   return (
-    <>
+    <SongSelectionContext.Provider value={selectionEntry}>
     <DataGrid
       aria-label="Songs"
       {...hold}
@@ -330,13 +346,36 @@ export function SongTable({
             ? 'No music found in your library folder yet.'
             : 'Connect to your music server in Settings to start listening.'
       }
+      selectable={selecting}
+      selectedIds={selected ?? undefined}
+      onSelectionChange={(ids) => setSelected(ids.map(String))}
       // The row id is the track's path; hand the matching track up to play it,
-      // with the displayed order alongside as the queue it plays through.
+      // with the displayed order alongside as the queue it plays through. In
+      // selection mode the same tap toggles membership instead.
       onRowActivate={(id) => {
+        if (selecting) {
+          const path = String(id);
+          setSelected((prev) =>
+            prev === null
+              ? [path]
+              : prev.includes(path)
+                ? prev.filter((p) => p !== path)
+                : [...prev, path],
+          );
+          return;
+        }
         const track = tracks.find((t) => t.path === id);
         if (track) onPlay(track, displayed);
       }}
     />
-    </>
+    {selecting && (
+      <SelectionBar
+        tracks={displayed}
+        selected={selected}
+        onClear={() => setSelected(null)}
+        onSelectAll={() => setSelected(displayed.map((t) => t.path))}
+      />
+    )}
+    </SongSelectionContext.Provider>
   );
 }
