@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.316
+
+- The sign-in screen leads with signing IN now, not signing up — and a short password no longer blocks the button when it is the one you already have
+- Your servers travel with your AttackFM account properly. A new phone signs into the account and is handed the servers it belongs to: one tap each, or straight in when there is only one. Nothing about a server had been reaching the account at all if you signed into the server before making the account
+- Album filler, the EQ rack and the Looper have been retired. The sound console already saves and recalls curves, and the ones that were instruments rather than ways to listen have gone with the Pads board
+
 ## 0.3.315
 
 - Updates stick. An update would install, restart to a black screen, and then refuse itself ever after — the app was throwing away the very version it had just started running, every time it opened. It keeps it now
