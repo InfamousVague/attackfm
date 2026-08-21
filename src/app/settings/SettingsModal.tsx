@@ -14,7 +14,7 @@ import { usePlayback } from '../player/playback.tsx';
 import { usePlugins, usePluginSettingsSections } from '../../plugins/runtime.tsx';
 import { AboutSettings } from './AboutSettings.tsx';
 import { DiagnosticsPane } from './DiagnosticsPane.tsx';
-import { DeveloperPane } from './DeveloperPane.tsx';
+import { DeveloperPane, developerSummary } from './DeveloperPane.tsx';
 import { LocalAiPane, localAiSummary } from './LocalAiPane.tsx';
 import { useDeveloperMode } from './developerMode.ts';
 import { diagEntries } from '../diag/diagLog.ts';
@@ -329,7 +329,7 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
             label: 'Developer',
             icon: <Terminal size={16} />,
             content: <DeveloperPane />,
-            summary: 'Build, server, caches, notices, performance',
+            summary: developerSummary(),
             tint: 'slate' as const,
             group: 3,
           },

@@ -1,8 +1,162 @@
-/* --- the local AI pane ---------------------------------------------------- */
-
 /*
- * Settings > Local AI (owner only): the model endpoint, which model does which
- * job, whether it answers, and what it has been doing. As with the developer
- * page, the kit carries the structure; this chapter holds only the per-function
- * tiles and the activity list.
+ * The Local AI pane.
+ *
+ * Two shapes the settings kit does not have: a text field that carries its own
+ * provenance (set here, or inherited from the server's environment) and a
+ * health block that is a state rather than a value. Everything else is rows.
  */
+
+.localAi__loading {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-5) 0;
+}
+
+/* ---- a field, with where its value came from ---------------------------- */
+
+.localAi__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  padding-block: var(--glacier-space-3);
+}
+
+.localAi__field + .localAi__field {
+  border-block-start: 1px solid var(--glacier-border-subtle);
+}
+
+.localAi__fieldHead {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  flex-wrap: wrap;
+}
+
+.localAi__fieldRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  margin-block-start: var(--glacier-space-1);
+}
+
+/* The input takes the room; the buttons take what they need. Without the
+ * min-inline-size a long endpoint URL makes the field refuse to shrink and
+ * pushes Save off a phone. */
+.localAi__fieldRow > :first-child {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+/* ---- health -------------------------------------------------------------- */
+
+.localAi__health {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3);
+  border: 1px solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-md);
+}
+
+.localAi__healthText {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.localAi__healthMark {
+  display: grid;
+  place-items: center;
+  inline-size: 2rem;
+  block-size: 2rem;
+  border-radius: var(--glacier-radius-full);
+  /* Unknown is the resting state and must not read as either good or bad -
+   * a grey dot beside "not checked yet" is the honest picture. */
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text-subtle);
+}
+
+.localAi__health[data-state='ok'] .localAi__healthMark {
+  background: var(--glacier-success-soft);
+  color: var(--glacier-success-text);
+}
+
+.localAi__health[data-state='bad'] .localAi__healthMark {
+  background: var(--glacier-danger-soft);
+  color: var(--glacier-danger-text);
+}
+
+.localAi__models {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-1);
+  margin-block-start: var(--glacier-space-2);
+}
+
+/* ---- function statistics -------------------------------------------------- */
+
+.localAi__fnStat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--glacier-space-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.localAi__fnFail {
+  color: var(--glacier-danger-text);
+}
+
+/* ---- the feed ------------------------------------------------------------- */
+
+.localAi__feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.localAi__event {
+  display: flex;
+  align-items: baseline;
+  gap: var(--glacier-space-2);
+  padding-block: var(--glacier-space-2);
+}
+
+.localAi__event + .localAi__event {
+  border-block-start: 1px solid var(--glacier-border-subtle);
+}
+
+.localAi__eventText {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The state, as one dot. A row of words saying "done" next to every finished
+ * thing is a column of noise; the colour carries it and the title says what
+ * happened. */
+.localAi__eventDot {
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: var(--glacier-radius-full);
+  flex: none;
+  background: var(--glacier-text-subtle);
+  translate: 0 -1px;
+}
+
+.localAi__event[data-state='started'] .localAi__eventDot {
+  background: var(--glacier-accent-solid);
+}
+
+.localAi__event[data-state='done'] .localAi__eventDot {
+  background: var(--glacier-success-solid);
+}
+
+.localAi__event[data-state='failed'] .localAi__eventDot {
+  background: var(--glacier-danger-solid);
+}

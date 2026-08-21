@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.318
+
+- A Local AI page for whoever hosts the server. Point it at your model endpoint, name a model for each job, check the endpoint answers, see what each function has cost and what the curator has been doing — and hand any of it back to the server's own configuration when you would rather set it there
+- Verbose notifications, off by default. Turn it on and the bell tells you when a song starts being taken apart and when it finishes, when a download is picked up, and when the AI starts and finishes a pass over your library
+- A developer page, seventeen taps on the wordmark in About. Which frontend is actually running, what this device looks like to the layout, what is in storage — and Diagnostics now lives behind the same switch
+
 ## 0.3.317
 
 - An update gives the song back. Restarting to install one used to drop whatever was playing; now the track, the queue and the exact second all come back, still playing if they were

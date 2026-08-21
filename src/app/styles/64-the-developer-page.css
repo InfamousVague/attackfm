@@ -1,9 +1,37 @@
-/* --- the developer page --------------------------------------------------- */
+/*
+ * The Developer page.
+ *
+ * Almost none of it needs styling: it is SettingRows, which the settings kit
+ * already dresses, and that is deliberate - a page that looked like a debug
+ * console would invite being treated as one. What is here is the handful of
+ * places a value is a cluster of things rather than a line of text.
+ */
+
+.devPane__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-2);
+}
+
+/* The quarantine list is the one value that can be several things at once, and
+ * on a phone it is the one most likely to wrap. */
+.devPane__quarantine {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--glacier-space-1);
+}
 
 /*
- * Settings > Developer: the hidden tools page. Everything in it should speak
- * the settings kit's vocabulary (PaneSection / SettingRow / SettingsCallout /
- * SettingsFootnote, 63-settings-panes.css) - this chapter is only for the
- * few things the kit has no word for: readouts laid out as key/value grids,
- * a monospace report block, a live meter.
+ * A storage row's key is a raw localStorage key - long, hyphenated, and not
+ * language. Left to the row's own label rules it pushes the size off the end
+ * of a narrow screen, so it is allowed to break and the size is not.
  */
+.devPane .setk-row__label {
+  overflow-wrap: anywhere;
+}
+
+.devPane .setk-row__value {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}

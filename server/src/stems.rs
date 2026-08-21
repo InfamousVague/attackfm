@@ -255,6 +255,31 @@ pub fn spawn(state: Arc<AppState>) {
             // seconds says "separating, 0%" rather than "queued" - which reads
             // as nobody having picked it up.
             state.separating.set(track_id, 0.0, "separating", 0);
+            // The song's own name, for the activity row: "Anthology" reads as
+            // something happening to your library, "track 4812" reads as a log.
+            let name = state
+                .db
+                .track_label(track_id)
+                .map(|(title, artist)| format!("{title} — {artist}"))
+                .unwrap_or_else(|| format!("track {track_id}"));
+            let key = format!("stems:{track_id}");
+            state.db.record_activity(crate::db::NewActivity {
+                source: "stems",
+                kind: "separate",
+                state: "started",
+                key: &key,
+                title: "Taking a song apart",
+                // Whether anybody asked is the difference between "this is for
+                // you, now" and "the box is using an idle minute", and it is
+                // the first thing an owner wants to know from a 3am notice.
+                body: &if cold {
+                    format!("{name} · ahead of being asked")
+                } else {
+                    name.clone()
+                },
+                track_id: Some(track_id),
+                detail: None,
+            });
             match separate(&state, &python, cold, track_id, &rel).await {
                 Ok(()) => {
                     if cold {
@@ -262,6 +287,16 @@ pub fn spawn(state: Arc<AppState>) {
                     } else {
                         let _ = state.db.mark_stem_job(track_id, "done", "");
                     }
+                    state.db.record_activity(crate::db::NewActivity {
+                        source: "stems",
+                        kind: "separate",
+                        state: "done",
+                        key: &key,
+                        title: "Song taken apart",
+                        body: &name,
+                        track_id: Some(track_id),
+                        detail: None,
+                    });
                     evict_if_needed(&state).await;
                 }
                 Err(why) => {
@@ -271,6 +306,16 @@ pub fn spawn(state: Arc<AppState>) {
                     } else {
                         let _ = state.db.mark_stem_job(track_id, "failed", &why);
                     }
+                    state.db.record_activity(crate::db::NewActivity {
+                        source: "stems",
+                        kind: "separate",
+                        state: "failed",
+                        key: &key,
+                        title: "Could not take a song apart",
+                        body: &format!("{name} · {why}"),
+                        track_id: Some(track_id),
+                        detail: None,
+                    });
                 }
             }
             // Whichever way it ended, nothing is running now - and a stale
