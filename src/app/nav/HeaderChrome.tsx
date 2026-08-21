@@ -156,14 +156,24 @@ export function TopScrim({ resetKey }: { resetKey: string }) {
     const node = ref.current;
     const host = node?.parentElement;
     if (!node || !host) return;
+    // The SAME scroll progress the scrim rides is published as a CSS variable,
+    // so the collection page's top bar can fade its own black back in off it:
+    // the scrim is the shadow UNDER the bar, --app-top-scroll is the bar. It
+    // goes on the app window, an ancestor of both the scroller and the bar
+    // (which are siblings), rather than on either one.
+    const win = host.closest('.appWindow') as HTMLElement | null;
+    const set = (p: number) => {
+      node.style.opacity = String(p);
+      win?.style.setProperty('--app-top-scroll', String(p));
+    };
     // A fresh page mounts parked at the top; start invisible.
-    node.style.opacity = '0';
+    set(0);
     const onScroll = (event: Event) => {
       const target = event.target;
       // Only the page scroller (a direct child of the host) drives the scrim -
       // inner scrollers (track lists, shelves) pass under it untouched.
       if (!(target instanceof HTMLElement) || target.parentElement !== host) return;
-      node.style.opacity = String(Math.min(1, Math.max(0, target.scrollTop) / 56));
+      set(Math.min(1, Math.max(0, target.scrollTop) / 56));
     };
     host.addEventListener('scroll', onScroll, { capture: true, passive: true });
     return () => host.removeEventListener('scroll', onScroll, { capture: true });

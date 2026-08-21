@@ -339,14 +339,24 @@
  * Anchored to the safe area rather than a fixed height, so the fade lands
  * exactly where the controls begin (padding-block-start is safe-top + space-2)
  * whatever the notch measures; on a phone with no inset it is a thin edge and
- * nothing more. The scrim below still fades in on scroll for the rows.
+ * nothing more.
+ *
+ * ...but only while you are AT THE TOP. As you scroll, the solid bar fades back
+ * in - the second layer, the app's ground at an alpha of --app-top-scroll (0
+ * parked, 1 a few dozen pixels in, published by TopScrim off the same scrollTop
+ * that drives the scrim UNDER the bar). So the covers are clear over the wall
+ * and the chrome turns to a solid edge over the rows, which is where a bar
+ * wants a ground. The top-edge dim rides on top and simply disappears into the
+ * black once the bar is solid.
  */
 .appWindow:has(.coverWall) .mobileHeader {
-  background: linear-gradient(
-    to bottom,
-    color-mix(in srgb, var(--glacier-bg) 62%, transparent) 0,
-    transparent calc(var(--app-safe-top, env(safe-area-inset-top, 0px)) + var(--glacier-space-2))
-  );
+  background:
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--glacier-bg) 62%, transparent) 0,
+      transparent calc(var(--app-safe-top, env(safe-area-inset-top, 0px)) + var(--glacier-space-2))
+    ),
+    color-mix(in srgb, var(--glacier-bg) calc(var(--app-top-scroll, 0) * 100%), transparent);
 }
 
 /*
