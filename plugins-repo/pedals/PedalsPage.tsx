@@ -202,8 +202,19 @@ const pedalCard = (hue: number, on: boolean): CSSProperties => ({
 const cardHead: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10 };
 const knobRow: CSSProperties = { display: 'grid', gridTemplateColumns: '1fr', gap: 6 };
 const knobLine: CSSProperties = { display: 'grid', gridTemplateColumns: '84px 1fr 56px', gap: 10, alignItems: 'center' };
-/* The family picker's rail. `min-width: max-content` on the child is what
-   stops the control from being squeezed back to the container's width. */
+/* The family picker's rail.
+   Nothing here sets a min-width, and nothing needs to: the control is
+   inline-level, so inside an overflow-x scroller it takes its max-content
+   width and the rail scrolls under it. Measured on a 390px phone - control
+   504px, rail 354px, and the page itself does not slide.
+   Worth knowing before anyone widens this: the kit's SegmentedControl is an
+   inline-grid with `grid-auto-columns: 1fr`, which equalises every segment to
+   the widest label ONLY while the control fits its container. These eight
+   overflow, so `fr` resolves to max-content per column and the segments keep
+   their natural widths - measured identical, to the decimal, to the
+   inline-flex the kit used before. Give the rail room and the same eight jump
+   to 8x86.4px. Either is fine here; a squeeze is not, which is why this is a
+   scroller and not `fullWidth`. */
 const familyScroller: CSSProperties = {
   overflowX: 'auto',
   overflowY: 'hidden',
