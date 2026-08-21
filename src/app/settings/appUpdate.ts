@@ -217,10 +217,38 @@ export function bundleState(): Promise<BundleState | null> {
  * loader. It has to be called from somewhere that only runs once the app is
  * genuinely working - not from a module top level, which executes before React
  * has rendered anything and would happily bless a bundle that then threw.
+ *
+ * Awaitable, and that matters: `bundle_state` CONSUMES an outstanding wager
+ * and reads it as a failed boot, so anything that asks must be certain this
+ * has landed first. Fire-and-forget left the two IPC calls racing.
  */
-export function reportBootOk(): void {
+export async function reportBootOk(): Promise<void> {
   if (!window.__afmBundleVersion) return;
-  void tauriCall('bundle_boot_ok');
+  await tauriCall('bundle_boot_ok');
+}
+
+/**
+ * Stake the wager again on the bundle already running.
+ *
+ * The boot loader stakes once and `reportBootOk` settles once, which was a
+ * clean pair until something had to ask `bundle_state` a question BEFORE the
+ * app was up. `bundle_state` is not a reader - it takes any pending wager as
+ * proof of a boot that never finished and quarantines that version, deleting
+ * the directory the asking bundle is running out of. The launch gate did
+ * exactly this, so every cold start of a downloaded bundle destroyed itself
+ * mid-flight and every check afterwards answered "failed to boot here before".
+ *
+ * So the gate settles first and stakes again on the way out, and the wager
+ * still ends where it always did - in the provider that only mounts once the
+ * app is genuinely working. A bundle that comes up far enough to ask about
+ * updates and then throws is still caught, which is the whole point of the
+ * mechanism and the thing a simple "settle it earlier" fix would have thrown
+ * away.
+ */
+export async function restakeBootWager(): Promise<void> {
+  const version = runningBundle();
+  if (!version) return;
+  await tauriCall('bundle_begin_boot', { version });
 }
 
 /** The version baked into this build, injected by Vite. */
