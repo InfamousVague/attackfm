@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.323
+
+- Updates stop black-screening. The check that ran before the app opened was the thing breaking it, and it turned out not to be needed: an update still installs quietly in the background and still starts up the next time you open the app, rather than interrupting a song. The only difference is that it is picked up during the next session instead of the one that found it
+
 ## 0.3.322
 
 - The launch check no longer risks the app to run. It only asks the update server anything once it can prove the app has reported itself healthy — and if it cannot, it skips the check and opens, leaving the update to the periodic one later. Nothing is worth a black screen
