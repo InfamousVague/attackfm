@@ -20,6 +20,43 @@ import { isAndroid, isIOS } from './app/core/platform.ts';
 import { installGlobalDiag } from './app/diag/diagLog.ts';
 import { ensureBundleStylesheet } from './app/core/styleGuard.ts';
 
+/**
+ * AM I THE FRONTEND THAT WAS CHOSEN?
+ *
+ * The boot loader picks between the embedded bundle and a downloaded one, and
+ * takes the tag for the loser out of the document before it can run. That was
+ * believed to be enough - "module scripts are deferred, so a classic inline
+ * script can remove the tag before it ever executes" - and it is not true here.
+ * Once a script element has been prepared the fetch is already in flight and
+ * removing the element does not cancel evaluation, so on this WebView BOTH
+ * frontends run: two copies of this module, two style guards, two calls to
+ * createRoot on one #root. They then fight over the same DOM until one of them
+ * throws NotFoundError from removeChild, and the app is a black screen. It is
+ * intermittent because which one wins is a race, which is why it looked like a
+ * mystery in the update path rather than a plain double-boot.
+ *
+ * So the loader publishes the src it chose, and the other copy stops here.
+ * Compared as resolved URLs because the loader carries the embedded tag's
+ * ATTRIBUTE (`/assets/app.js`) while `import.meta.url` is absolute.
+ *
+ * The fallback when nothing was published (a browser tab, or an older binary
+ * whose index.html predates this) is to run: something has to.
+ */
+function chosenFrontend(): boolean {
+  const chosen = window.__afmFrontend;
+  if (!chosen) return true;
+  try {
+    return new URL(chosen, document.baseURI).href === import.meta.url;
+  } catch {
+    return true;
+  }
+}
+
+if (!chosenFrontend()) {
+  // Not an error and not worth a log line on every OTA launch: this copy was
+  // never meant to run, and the one that was is already on its way up.
+} else {
+
 // Stamped once so CSS can ask which glass it is under: an iPhone's screen
 // corners curve (the nav chin sweeps to match); Android's are the webview's
 // problem, not ours, and the same sweep just looks like extra rounding.
@@ -49,7 +86,14 @@ void hydrateOffline();
 // hold it for Join a server. Fire-and-forget; a no-op off a device.
 void initDeepLinks();
 
-createRoot(document.getElementById('root')!).render(
+// Cleared first. On a binary older than this guard the embedded copy has
+// already mounted into #root by now, and mounting a second root over it is
+// exactly the fight this file exists to stop. Whoever runs last wins the
+// container outright, and that is the downloaded bundle - the newer of the two,
+// which is the right one to keep.
+const container = document.getElementById('root')!;
+container.replaceChildren();
+createRoot(container).render(
   <StrictMode>
     {/* Outside App on purpose: the gate has to be able to reload before any
         provider has opened a socket, started a scan or restored a queue. Wrap
@@ -61,3 +105,5 @@ createRoot(document.getElementById('root')!).render(
     </LaunchUpdate>
   </StrictMode>,
 );
+
+} // end of the chosen-frontend guard

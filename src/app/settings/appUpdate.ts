@@ -443,5 +443,7 @@ declare global {
      * whether it is safe to ask `bundle_state` before the app has mounted.
      */
     __afmNativeGeneration?: number;
+    /** The src the boot loader chose to run; see the guard in main.tsx. */
+    __afmFrontend?: string;
   }
 }
