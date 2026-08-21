@@ -21,6 +21,18 @@ interface NativeBridge {
   setPlaybackState?: (playing: boolean, positionMs: number) => void;
   /** Present from the widget/Auto-playlists shell; absent before it. */
   setCollections?: (json: string) => void;
+  /** The Chromecast verbs, present from the casting shell; absent before it.
+   *  The page's half lives in cast.ts - state comes back whole through
+   *  window.__AFM_CAST__ rather than through return values. */
+  castState?: () => string;
+  castDiscovery?: (active: boolean) => void;
+  castConnect?: (routeId: string) => void;
+  castDisconnect?: () => void;
+  castLoad?: (json: string) => void;
+  castPlay?: () => void;
+  castPause?: () => void;
+  castSeek?: (positionMs: number) => void;
+  castVolume?: (volume: number) => void;
 }
 
 declare global {
@@ -32,6 +44,9 @@ declare global {
     /** Called BY MainActivity when a MediaSession or notification button is
      *  pressed: 'play' | 'pause' | 'next' | 'previous' | 'seek:<seconds>'. */
     __AFM_TRANSPORT__?: (command: string) => void;
+    /** Called BY CastBridge with its whole state as one JSON snapshot,
+     *  every time anything about casting changes. Installed by cast.ts. */
+    __AFM_CAST__?: (json: string) => void;
   }
 }
 

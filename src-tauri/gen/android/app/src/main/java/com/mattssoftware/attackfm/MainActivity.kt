@@ -112,6 +112,43 @@ class MainActivity : TauriActivity() {
       applyHold()
     }
 
+    // --- Chromecast, all thin delegates to CastBridge -----------------------
+    // The page is the brain: it decides what the TV should fetch and when.
+    // These are its hands. Every one is safe on a phone that cannot cast at
+    // all - CastBridge answers "unavailable" and ignores the verbs.
+
+    /** The snapshot as of the last push, and the nudge that stands the
+     *  framework up the first time anyone asks. */
+    @JavascriptInterface
+    fun castState(): String = CastBridge.state(this@MainActivity)
+
+    /** Active scan while the device picker is open, passive otherwise. */
+    @JavascriptInterface
+    fun castDiscovery(active: Boolean) = CastBridge.setDiscovery(this@MainActivity, active)
+
+    @JavascriptInterface
+    fun castConnect(routeId: String) = CastBridge.connect(this@MainActivity, routeId)
+
+    @JavascriptInterface
+    fun castDisconnect() = CastBridge.disconnect(this@MainActivity)
+
+    /** Point the TV at a stream - url/title/artist/album/art/contentType/
+     *  durationMs/positionMs/autoplay, as one JSON sentence. */
+    @JavascriptInterface
+    fun castLoad(json: String) = CastBridge.load(this@MainActivity, json)
+
+    @JavascriptInterface
+    fun castPlay() = CastBridge.play(this@MainActivity)
+
+    @JavascriptInterface
+    fun castPause() = CastBridge.pause(this@MainActivity)
+
+    @JavascriptInterface
+    fun castSeek(positionMs: Double) = CastBridge.seek(this@MainActivity, positionMs.toLong())
+
+    @JavascriptInterface
+    fun castVolume(volume: Double) = CastBridge.setVolume(this@MainActivity, volume)
+
     /**
      * The cache sweep's hold on the process.
      *
@@ -337,6 +374,26 @@ class MainActivity : TauriActivity() {
     this.webView = webView
     // The page's line to the foreground service.
     webView.addJavascriptInterface(NativeBridge(), "AFMNative")
+    // Cast snapshots flow the other way, into window.__AFM_CAST__. The same
+    // wake-first rule as the transport push: a frozen webview queues
+    // evaluateJavascript forever, and a snapshot delivered after the app is
+    // foregrounded by hand is a snapshot nobody was waiting for. The page
+    // installs the handler before it ever asks castState(), so a push that
+    // finds no handler just means a boot still in progress - dropped, and the
+    // boot read covers it.
+    CastBridge.sink = { json ->
+      val wv = this.webView
+      runOnUiThread {
+        if (wv != null) {
+          wv.onResume()
+          val escaped = json.replace("\\", "\\\\").replace("'", "\\'")
+          wv.evaluateJavascript(
+            "window.__AFM_CAST__ && window.__AFM_CAST__('" + escaped + "')",
+            null,
+          )
+        }
+      }
+    }
     onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
       override fun handleOnBackPressed() {
         val wv = this@MainActivity.webView
