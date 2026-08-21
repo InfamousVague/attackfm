@@ -96,29 +96,37 @@ export function LaunchUpdate({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (phase !== 'checking') return;
     let alive = true;
-    const finish = () => {
+    /**
+     * Open the app. Only ever this - never the wager.
+     *
+     * The deadline calls this too, and that is exactly why re-staking cannot
+     * live here: opening the app does not mean the CHECK has finished, and the
+     * check is what calls `bundle_state`. See the note on the re-stake below.
+     */
+    const openApp = () => {
       if (!alive || settled.current) return;
       settled.current = true;
-      // Hand the wager back before the app takes over, so a bundle that gets
-      // this far and then throws inside App is still caught next launch.
-      // Deliberately not awaited: `finish` is also the deadline's handler and
-      // opening the app must never wait on an IPC round trip.
-      void restakeBootWager();
       setPhase('done');
     };
     // The backstop. Runs whatever the check is doing, because the failure worth
     // guarding is the one that never returns at all.
-    const timer = setTimeout(finish, DEADLINE_MS);
+    const timer = setTimeout(openApp, DEADLINE_MS);
 
     // Settle first, and WAIT: the check's opening move is `bundle_state`, and
     // it would read this bundle's own unsettled wager as a failed boot.
     void reportBootOk()
       .then(checkForUpdate)
       .then((outcome) => {
-        if (!alive || settled.current) return;
+        if (!alive || settled.current) {
+          // The deadline got here first. The check still finished, and if it
+          // installed something the reload will happen at the next launch
+          // rather than now - which is the honest outcome for a check that
+          // outran its own deadline.
+          return false;
+        }
         if (outcome.state !== 'staged') {
-          finish();
-          return;
+          openApp();
+          return false;
         }
         // Installed. Take the deadline off - the reload is imminent and being
         // cut off between "installed" and "running it" is the one state worth
@@ -132,8 +140,33 @@ export function LaunchUpdate({ children }: { children: ReactNode }) {
         // is legible rather than a flash. This is the only deliberate delay in
         // here and it is for reading, not for work.
         setTimeout(applyStagedBundle, 900);
+        return true; // leaving: this document is about to be replaced
       })
-      .catch(finish);
+      .catch(() => {
+        openApp();
+        return false;
+      })
+      .then((leaving) => {
+        /*
+         * Re-stake HERE, and only here: after the check has completely
+         * finished, and never when a reload is coming.
+         *
+         * This cost three versions to learn. Re-staking when the app OPENED
+         * looked equivalent and is not, because the deadline can open the app
+         * while the check is still downloading - and `bundle_install` ends,
+         * in native code, with a `bundle_state` call of its own. That call
+         * then found the wager this had just re-staked, read it as a boot that
+         * never finished, and quarantined the running bundle mid-flight,
+         * deleting the directory underneath it. On a phone the download
+         * routinely outruns six seconds, so every update quarantined the
+         * version it was updating FROM and restarted to a black screen.
+         *
+         * Nothing calls `bundle_state` after this point until the next launch,
+         * so the wager is safe to hold from here to `reportBootOk` in the
+         * providers - which is the whole span it is meant to cover.
+         */
+        if (!leaving && alive) void restakeBootWager();
+      });
 
     return () => {
       alive = false;
