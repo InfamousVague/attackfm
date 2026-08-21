@@ -16,7 +16,11 @@ import type { Track } from '../core/tauri.ts';
  * nothing to anchor a popover to - a context menu, a long-press.
  */
 
-function AddToPlaylistPanel({ track, onDone }: { track: Track; onDone: () => void }) {
+function AddToPlaylistPanel({ list, onDone }: { list: Track[]; onDone: () => void }) {
+  // One song is still the common case; the plural paths only change the words
+  // and the row semantics ("in this list" means ALL of them are).
+  const track = list[0]!;
+  const paths = list.map((t) => t.path);
   const { playlists, create, addTrack, removeTrack } = usePlaylists();
   const { tracks } = useLibrary();
   const [query, setQuery] = useState('');
@@ -41,7 +45,7 @@ function AddToPlaylistPanel({ track, onDone }: { track: Track; onDone: () => voi
     // Named after the song when the field is left empty: a list called "New
     // Playlist" tells you nothing, and this is the one name we can infer.
     const name = draft.trim() || track.title;
-    create(name, [track.path])
+    create(name, paths)
       .then(onDone)
       .catch(() => setBusy(false));
   };
@@ -50,7 +54,11 @@ function AddToPlaylistPanel({ track, onDone }: { track: Track; onDone: () => voi
     <div className="addPlaylist">
       <div className="addPlaylist__head">
         <Text size="sm" className="addPlaylist__song">
-          Add <strong>{track.title}</strong> to
+          Add{' '}
+          <strong>
+            {list.length === 1 ? track.title : `${list.length} songs`}
+          </strong>{' '}
+          to
         </Text>
       </div>
 
@@ -104,7 +112,10 @@ function AddToPlaylistPanel({ track, onDone }: { track: Track; onDone: () => voi
             </Text>
           ) : (
             filtered.map((playlist) => {
-              const has = playlist.paths.includes(track.path);
+              // "In this list" means every selected song is - a half-in state
+              // acts as add-the-rest, which is what a person filing nine songs
+              // actually wants when two were already there.
+              const has = paths.every((p) => playlist.paths.includes(p));
               const count = playlist.paths.filter((p) => known.has(p)).length;
               const covers = playlist.paths
                 .map((p) => byPath.get(p))
@@ -119,8 +130,13 @@ function AddToPlaylistPanel({ track, onDone }: { track: Track; onDone: () => voi
                   // pressed state IS "the song is in this list".
                   aria-pressed={has}
                   onClick={() => {
-                    if (has) removeTrack(playlist.id, track.path);
-                    else addTrack(playlist.id, track.path);
+                    if (has) {
+                      for (const p of paths) removeTrack(playlist.id, p);
+                    } else {
+                      for (const p of paths) {
+                        if (!playlist.paths.includes(p)) addTrack(playlist.id, p);
+                      }
+                    }
                   }}
                 >
                   {/* The playlist's own face - the same four-cover mosaic
@@ -156,17 +172,21 @@ function AddToPlaylistPanel({ track, onDone }: { track: Track; onDone: () => voi
  */
 export function AddToPlaylistDialog({
   track,
+  tracks,
   open,
   onClose,
 }: {
-  track: Track | null;
+  track?: Track | null;
+  /** Several at once - the multi-select path. Takes precedence over `track`. */
+  tracks?: Track[] | null;
   open: boolean;
   onClose: () => void;
 }) {
-  if (!track) return null;
+  const list = tracks && tracks.length > 0 ? tracks : track ? [track] : [];
+  if (list.length === 0) return null;
   return (
     <Modal open={open} onClose={onClose} title="Add to playlist" size="sm">
-      <AddToPlaylistPanel track={track} onDone={onClose} />
+      <AddToPlaylistPanel list={list} onDone={onClose} />
     </Modal>
   );
 }

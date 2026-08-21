@@ -9,9 +9,11 @@ import {
   SearchX,
   Sparkles,
   Trash2,
+  CopyCheck,
 } from '@glacier/icons';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AddToPlaylistDialog } from '../playlists/AddToPlaylist.tsx';
+import { SongSelectionContext } from './songSelection.tsx';
 import { WrongSongModal } from './WrongSongModal.tsx';
 import { useQueueControls } from '../player/queueControls.tsx';
 import { isHeld, onOfflineChange, pinTrack, unpinTrack } from '../downloads/offline.ts';
@@ -56,6 +58,10 @@ export function TrackMenu({
   // The station: a song is the most natural thing to start one from, and the
   // menu is where "do something with this song" already lives.
   const radio = useRadioOptional();
+  // Present only inside a table that supports selection - the item below
+  // renders nowhere else, so a card or a search hit never offers a mode its
+  // surface cannot enter.
+  const selection = useContext(SongSelectionContext);
   const [filing, setFiling] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [exploring, setExploring] = useState(false);
@@ -166,6 +172,11 @@ export function TrackMenu({
             {/* One item, not a submenu of every list: the panel it opens can
                 search, create and un-add, none of which a nested menu of names
                 can do. */}
+            {selection && (
+              <MenuItem icon={<CopyCheck size={15} />} onSelect={() => selection.start(track.path)}>
+                Select songs…
+              </MenuItem>
+            )}
             <MenuItem icon={<ListMusic size={15} />} onSelect={() => setFiling(true)}>
               Add to playlist…
             </MenuItem>
