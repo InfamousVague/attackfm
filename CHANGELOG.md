@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.288
+
+- The downloads list shows each song's artist and length as it comes down, and its cover once it has landed — a playlist import reads like the record it is, not a list of titles. Your server needs its update to send the details; older servers still show titles
+
 ## 0.3.287
 
 - Press and hold a playlist on the shelf for everything its page can do — rename it, file it in a folder, give it a cover — without opening it first
