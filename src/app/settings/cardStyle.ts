@@ -3,12 +3,12 @@ import { useSyncExternalStore } from 'react';
 /**
  * How the four library doors are dressed.
  *
- * The card lab (seven presses on the wordmark in About) has thirty-six
- * directions in it, which is what a workshop is for: they exist to be compared
- * and argued over, most of them once. These three are the ones the app ships -
- * the set Matt settled on. All three lean on bones the plain card does not have
- * - a count on its own, a grid of the collection's own sleeves - so unlike the
- * old printed default, the shipped look is NOT "no attribute": every one of
+ * These four are the ones the app ships - the set Matt settled on out of the
+ * thirty-six directions the card lab held. The lab has since been removed: it
+ * was a workshop for choosing, and the choosing is done. All four lean on
+ * bones the plain card does not have - a count on its own, a grid of the
+ * collection's own sleeves, a screen of dots over the art - so unlike the old
+ * printed default, the shipped look is NOT "no attribute": every one of
  * these is a real `data-card-style` value with its own stylesheet, and Numbers
  * first is simply the one applied when nothing has been chosen.
  *
@@ -16,7 +16,7 @@ import { useSyncExternalStore } from 'react';
  * so the whole set is CSS. Nothing re-renders when it changes; the cards are
  * already on screen and simply put on different clothes.
  */
-export type CardStyle = 'stat' | 'mosaic' | 'chrome';
+export type CardStyle = 'stat' | 'mosaic' | 'chrome' | 'halftoneRich';
 
 export const CARD_STYLES: { id: CardStyle; name: string; note: string }[] = [
   {
@@ -33,6 +33,11 @@ export const CARD_STYLES: { id: CardStyle; name: string; note: string }[] = [
     id: 'chrome',
     name: 'Chrome',
     note: 'Anodised metal that takes each card\'s own colour - rose for Liked, blue steel for All songs - with a slow specular sweep across the plate.',
+  },
+  {
+    id: 'halftoneRich',
+    name: 'Rich stock',
+    note: 'The printed halftone, run on properly coloured stock instead of tinted paper. Pale paper is what made the old printed look go chalky: ink multiplied onto it cannot add colour the paper does not have. This drops the ground and darkens the ink to match, so the colour arrives without touching the dots.',
   },
 ];
 

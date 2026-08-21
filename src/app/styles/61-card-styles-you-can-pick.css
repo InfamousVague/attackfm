@@ -1,11 +1,12 @@
 /* --- the card styles you can pick ----------------------------------------- */
 
 /*
- * Three dressings for the four library doors: Numbers first (the shipped
- * default), Blurred real art, and Chrome.
+ * Four dressings for the four library doors: Numbers first (the shipped
+ * default), Blurred real art, Chrome, and Rich stock.
  *
- * Ported from the card lab (chapter 60), which holds thirty-six directions on
- * its own markup. All three lean on a bone the plain card does not have - the
+ * Ported from the card lab (chapter 60), which held thirty-six directions on
+ * its own markup and has since been removed - it was for choosing, and the
+ * choosing is done. Three of the four lean on a bone the plain card does not have - the
  * count on its own (`.libChip__stat`) or a grid of the collection's own sleeves
  * (`.libChip__mosaic`) - so, unlike the old printed default, NONE of them is
  * "no attribute". Every door always carries a `data-card-style`, Numbers first
@@ -190,6 +191,67 @@
 .cardPick[data-card-style='chrome'] .libChip__count {
   color: #f2f5fa;
   text-shadow: 0 1px 2px rgb(0 0 0 / 0.55);
+}
+
+/* ---- Rich stock: the print, on paper that can hold a colour --------------- */
+/*
+ * The old printed default's problem in one number: its ground sat at 88%
+ * lightness. Ink multiplied onto paper that pale can only go chalky, because
+ * multiply cannot add what the paper does not have. So the paper changes - 62%
+ * and a good deal more chroma - and the ink darkens to stay on top of it. Same
+ * screen, same objects, nothing else touched.
+ *
+ * This is the one style that uses BOTH inherited pseudo-elements rather than
+ * repurposing or hiding them: ::before is still the dot screen and ::after is
+ * still the label's ground, exactly as chapter 14 built them. Only their
+ * colours move, because on stock this dark the light screen and the light
+ * scrim would both read as haze.
+ */
+:root[data-card-style='halftoneRich'] .libChip:not(.cardPick *),
+.cardPick[data-card-style='halftoneRich'] .libChip {
+  background: hsl(var(--libChipHue, 280) 76% 62%) !important;
+  color: hsl(var(--libChipHue, 280) 92% 12%);
+}
+/* The screen, inverted: dark ink on light stock rather than the base's light
+   dots. Multiply so the dots sit IN the paper instead of on top of it. */
+:root[data-card-style='halftoneRich'] .libChip:not(.cardPick *)::before,
+.cardPick[data-card-style='halftoneRich'] .libChip::before {
+  opacity: 0.4;
+  background-image: radial-gradient(hsl(var(--libChipHue, 280) 95% 14%) 34%, transparent 36%);
+  background-size: 5px 5px;
+  mix-blend-mode: multiply;
+}
+/* The label's ground in the stock's own colour, so the foot of the card reads
+   as more paper rather than as a shadow laid over it. */
+:root[data-card-style='halftoneRich'] .libChip:not(.cardPick *)::after,
+.cardPick[data-card-style='halftoneRich'] .libChip::after {
+  inset-block-start: 40%;
+  background: linear-gradient(
+    to top,
+    hsl(var(--libChipHue, 280) 76% 62% / 0.94) 16%,
+    hsl(var(--libChipHue, 280) 76% 62% / 0.5) 58%,
+    transparent
+  );
+}
+/*
+ * The object, printed rather than lit.
+ *
+ * The tint goes in --chipTint, never in `filter` - see the note at the top of
+ * this file: the DJ and On repeat chips restate the whole filter chain to add
+ * their drop-shadow, and setting `filter` here would win over both and take
+ * those shadows with it.
+ */
+:root[data-card-style='halftoneRich'] .libChip__art:not(.cardPick *),
+.cardPick[data-card-style='halftoneRich'] .libChip__art {
+  --chipTint: grayscale(1) contrast(2.3) brightness(0.66) sepia(1)
+    hue-rotate(calc((var(--libChipHue, 280) - 40) * 1deg)) saturate(5);
+  mix-blend-mode: multiply;
+  opacity: 1;
+}
+:root[data-card-style='halftoneRich'] .libChip__count:not(.cardPick *),
+.cardPick[data-card-style='halftoneRich'] .libChip__count {
+  opacity: 0.72;
+  font-weight: 600;
 }
 
 /*
