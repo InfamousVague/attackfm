@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.282
+
+- Playlists can say what they are for. Tap under the name to write a description — it follows your account, so it is there on every device
+
 ## 0.3.281
 
 - A short guided tour now runs the first time you open the app, spotlighting the library, search, Discover, the booth and the player as it goes. You can stop it at any point, and take it again from Settings › General
