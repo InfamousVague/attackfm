@@ -1,9 +1,10 @@
 import { Button, Field, Input, Label, StatTile, Switch, Text } from '@glacier/react';
-import { Cloud, Disc3, FolderOpen, LogOut, Mic2, Music, Timer } from '@glacier/icons';
+import { Cloud, Compass, Disc3, FolderOpen, LogOut, Mic2, Music, Timer } from '@glacier/icons';
 import { useMemo, useState } from 'react';
 import { canPickFolder } from '../core/tauri.ts';
 import { useLibrary } from '../library/library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
+import { startTour } from '../tour/tourControl.ts';
 
 /**
  * The General controls. For now that is where music lives: the app resolves a
@@ -54,6 +55,24 @@ export function General() {
     </div>
   ) : null;
 
+  const tourSection = (
+    <div className="prefsSection">
+      <Label>Show me around</Label>
+      {/* The way back into the tour. It runs once by itself on a first launch
+          and then never again, so without a door here it would be a thing you
+          could only ever see by accident and never on purpose. Starting it
+          closes this modal and walks the app itself - see tourControl. */}
+      <Button variant="soft" size="sm" onClick={startTour}>
+        <Compass size={15} />
+        Take the tour
+      </Button>
+      <Text tone="muted" size="sm">
+        A short walk through the library, the booth and the player. You can stop it at any
+        point.
+      </Text>
+    </div>
+  );
+
   const statsGrid = (
     <div className="prefsSection">
       <Label>Your library</Label>
@@ -72,6 +91,7 @@ export function General() {
   if (source === 'server') {
     return (
       <div className="prefsBody">
+        {tourSection}
         {statsGrid}
         <div className="prefsSection">
           <Field
@@ -88,6 +108,7 @@ export function General() {
 
   return (
     <div className="prefsBody">
+      {tourSection}
       {statsGrid}
       <div className="prefsSection">
         <Field
