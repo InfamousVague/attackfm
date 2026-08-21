@@ -100,8 +100,11 @@
 }
 
 .launchGate__mark {
-  inline-size: 9rem;
-  max-inline-size: 55%;
+  /* Big: on the launch/checking-update screen the wordmark IS the screen, so
+     it leads at size over the whole thing rather than as a small mark above a
+     bar. Capped as a fraction of the viewport so it stays clear of the edges. */
+  inline-size: 22rem;
+  max-inline-size: 80%;
   user-select: none;
   -webkit-user-drag: none;
 }
