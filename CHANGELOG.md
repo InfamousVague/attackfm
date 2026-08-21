@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.296
+
+- On a collection page the covers are vivid behind the wordmark and the bell now — the top bar’s shading sits only along the very top edge, behind the phone’s own status bar, and lets go before the controls
+- The cover backdrop is shorter too, with less empty space above the artwork, so the first song comes up sooner
+
 ## 0.3.295
 
 - The guided tour is gone — no more walkthrough on a first launch, and no button for it on the Handbook. The Handbook itself is unchanged
