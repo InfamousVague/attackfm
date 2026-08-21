@@ -1058,3 +1058,62 @@
   background: var(--glacier-accent-solid);
   color: #fff;
 }
+
+/* ---- What a playlist is, under its name --------------------------------
+   Read and edited in the same place. A description reachable only through a
+   menu is a description nobody writes, so the empty state IS the invitation -
+   quiet enough that a playlist which does not want one still looks finished. */
+.playlistHead__about {
+  margin-block-start: var(--glacier-space-1);
+  padding: 0.15rem 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--glacier-font-size-sm);
+  line-height: 1.45;
+  color: var(--glacier-text-muted);
+  text-align: start;
+  cursor: text;
+  max-inline-size: 52ch;
+  /* Two lines, then an ellipsis: the header is a header, and a paragraph that
+     grows without limit pushes the songs off the screen. The full text is on
+     the element's own title and in the editor. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.playlistHead__about:hover {
+  color: var(--glacier-text);
+}
+
+/* Nothing written yet: dimmer still, so it reads as an offer rather than as a
+   description somebody left blank. */
+.playlistHead__about[data-empty] {
+  color: var(--glacier-text-subtle);
+  font-style: italic;
+}
+
+.playlistHead__aboutEdit {
+  margin-block-start: var(--glacier-space-1);
+  max-inline-size: 52ch;
+}
+
+.playlistHead__aboutField {
+  inline-size: 100%;
+  padding: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text);
+  font: inherit;
+  font-size: var(--glacier-font-size-sm);
+  line-height: 1.45;
+  resize: none;
+}
+
+.playlistHead__aboutField:focus-visible {
+  outline: 2px solid var(--glacier-focus-ring);
+  outline-offset: 1px;
+}

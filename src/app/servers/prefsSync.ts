@@ -60,6 +60,11 @@ export const SYNCED_KEYS = [
   'attackfm-online-metadata', // whether to look things up on the internet
   'attackfm-share-listening', // a privacy choice, and the one most worth carrying
   'attackfm-search-recents',  // what you have been looking for
+  // What a playlist IS beyond its songs - its description, its folder, the song
+  // whose art it borrows. Decoration follows the person for the same reason the
+  // rest of this list does; see playlists/playlistMeta.ts for why it is not on
+  // the music server with the playlist itself.
+  'attackfm-playlist-meta',
 ] as const;
 
 /**
