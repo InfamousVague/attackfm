@@ -214,10 +214,6 @@ function BarTab({
     <button
       type="button"
       className="appNavBarTab"
-      /* A stable handle for the tour to point at. Derived from the label
-         rather than an index: Discover only exists with a server, so an
-         nth-child selector would highlight Booth on half the installs. */
-      data-tour={`nav-${String(label).toLowerCase()}`}
       data-active={active || undefined}
       aria-current={active ? 'page' : undefined}
       onClick={onClick}
