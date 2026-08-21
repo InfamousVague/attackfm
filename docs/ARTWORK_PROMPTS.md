@@ -242,6 +242,11 @@ hole in it.
 
 ## Checking one before you commit to nineteen
 
-The card lab (Settings -> About, seven presses on the wordmark) has the
-treatment as direction **33, Halftone: reversed**. A piece that reads there will
-read on the card.
+Settings -> Appearance -> Card style -> **Rich stock** is the halftone, and it
+is a shipped style now rather than something you have to know a knock to reach.
+A piece that reads there will read on the card.
+
+This used to say the card lab, direction 33. The lab was a workshop for picking
+between thirty-six directions and it has been removed now that the picking is
+done; Rich stock is direction 33 with the ground problem solved, so the check it
+was here for still works, at an address anyone can find.

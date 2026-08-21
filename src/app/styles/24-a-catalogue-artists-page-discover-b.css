@@ -300,10 +300,11 @@
 }
 
 .aboutHero__mark {
-  /* The mark is the way into the card lab - seven presses. Deliberately gives
-     no sign of it: a cursor change would be a label, and the point of a knock
-     is that you have to know. These two only stop the browser treating it as a
-     draggable image, which is what a run of quick presses otherwise becomes. */
+  /* The mark is chrome, not content: these stop the browser offering it as a
+     draggable image or letting a stray swipe lasso it the way it would a
+     paragraph. It used to be the way into the card lab, seven presses on it,
+     and these two kept that run of presses from turning into a drag - the lab
+     is gone but a wordmark you can peel off the page is still wrong. */
   -webkit-user-drag: none;
   user-select: none;
   inline-size: 9rem;
