@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   applyStagedBundle,
   checkForUpdate,
-  reportBootOk,
   restakeBootWager,
+  settleBootWager,
 } from './appUpdate.ts';
 import { isTauri } from '../core/tauri.ts';
 import wordmark from '../../assets/attack-white.png';
@@ -112,10 +112,21 @@ export function LaunchUpdate({ children }: { children: ReactNode }) {
     // guarding is the one that never returns at all.
     const timer = setTimeout(openApp, DEADLINE_MS);
 
-    // Settle first, and WAIT: the check's opening move is `bundle_state`, and
-    // it would read this bundle's own unsettled wager as a failed boot.
-    void reportBootOk()
-      .then(checkForUpdate)
+    // Settle first, and WAIT, and CHECK THAT IT LANDED: the check's opening
+    // move is `bundle_state`, which reads an unsettled wager as a boot that
+    // never finished and deletes the bundle it is asked from. So the settle is
+    // not a courtesy before the check - it is the precondition for being
+    // allowed to ask at all.
+    //
+    // If it did not land, this launch simply does not check for updates. That
+    // costs a few hours: the periodic check runs later, from inside the app,
+    // long after the providers have settled the wager the ordinary way. The
+    // alternative costs the bundle.
+    void settleBootWager()
+      .then((ok) => {
+        if (!ok) throw new Error('boot wager unsettled; not asking bundle_state');
+        return checkForUpdate();
+      })
       .then((outcome) => {
         if (!alive || settled.current) {
           // The deadline got here first. The check still finished, and if it
@@ -124,10 +135,7 @@ export function LaunchUpdate({ children }: { children: ReactNode }) {
           // outran its own deadline.
           return false;
         }
-        if (outcome.state !== 'staged') {
-          openApp();
-          return false;
-        }
+        if (outcome.state !== 'staged') return false;
         // Installed. Take the deadline off - the reload is imminent and being
         // cut off between "installed" and "running it" is the one state worth
         // avoiding, since the next launch would have to do it again.
@@ -142,11 +150,8 @@ export function LaunchUpdate({ children }: { children: ReactNode }) {
         setTimeout(applyStagedBundle, 900);
         return true; // leaving: this document is about to be replaced
       })
-      .catch(() => {
-        openApp();
-        return false;
-      })
-      .then((leaving) => {
+      .catch(() => false)
+      .then(async (leaving) => {
         /*
          * Re-stake HERE, and only here: after the check has completely
          * finished, and never when a reload is coming.
@@ -164,8 +169,18 @@ export function LaunchUpdate({ children }: { children: ReactNode }) {
          * Nothing calls `bundle_state` after this point until the next launch,
          * so the wager is safe to hold from here to `reportBootOk` in the
          * providers - which is the whole span it is meant to cover.
+         *
+         * AWAITED, AND BEFORE THE HANDOVER. Opening the app is what mounts the
+         * providers, and their `reportBootOk` is what settles this. Staking
+         * afterwards races that effect, and the order is not decided by
+         * anything here - lose it and the wager is left standing with nobody
+         * ever going to settle it, which the next launch reads as a bundle
+         * that failed to boot. Stake, land, THEN hand over: then the settle
+         * can only come second.
          */
-        if (!leaving && alive) void restakeBootWager();
+        if (leaving || !alive || settled.current) return;
+        await restakeBootWager();
+        openApp();
       });
 
     return () => {

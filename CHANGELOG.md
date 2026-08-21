@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.322
+
+- The launch check no longer risks the app to run. It only asks the update server anything once it can prove the app has reported itself healthy — and if it cannot, it skips the check and opens, leaving the update to the periodic one later. Nothing is worth a black screen
+
 ## 0.3.321
 
 - Updates stop refusing themselves. On a phone the download regularly takes longer than the launch check waits for, and that gap was making the app throw away the version it was updating from — which is what left you at a black screen having to close and reopen. It waits properly now
