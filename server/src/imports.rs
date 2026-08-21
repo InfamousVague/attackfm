@@ -741,8 +741,8 @@ async fn file_into_playlist(state: &Arc<AppState>, job_id: &str) {
         .db
         .playlists(job.owner)
         .into_iter()
-        .find(|(_, n, _, _)| n == name)
-        .map(|(id, _, _, _)| id);
+        .find(|p| p.name == name)
+        .map(|p| p.id);
     let playlist_id = match existing {
         Some(id) => id,
         None => match state.db.create_playlist(job.owner, name) {

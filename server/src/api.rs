@@ -395,8 +395,20 @@ pub async fn playlists(State(state): State<Arc<AppState>>, headers: HeaderMap) -
         .db
         .playlists(caller.id)
         .into_iter()
-        .map(|(id, name, updated, tracks)| {
-            json!({ "id": id, "name": name, "updatedAt": updated, "tracks": tracks })
+        .map(|p| {
+            // Decoration rides the list response rather than a second endpoint:
+            // the client already refetches this on every heartbeat, and a
+            // description that arrived a request later would paint in after the
+            // name it belongs under.
+            json!({
+                "id": p.id,
+                "name": p.name,
+                "updatedAt": p.updated_at,
+                "tracks": p.tracks,
+                "description": p.description,
+                "folder": p.folder,
+                "cover": p.cover,
+            })
         })
         .collect();
     Ok(Json(json!({ "playlists": lists })))
@@ -406,6 +418,12 @@ pub async fn playlists(State(state): State<Arc<AppState>>, headers: HeaderMap) -
 pub struct PlaylistBody {
     pub name: Option<String>,
     pub tracks: Option<Vec<i64>>,
+    /// Each optional so a caller sends only what it means to change. A body
+    /// carrying every field would make two devices editing different things
+    /// overwrite each other with whatever they last read.
+    pub description: Option<String>,
+    pub folder: Option<String>,
+    pub cover: Option<String>,
 }
 
 pub async fn create_playlist(
@@ -456,6 +474,17 @@ pub async fn update_playlist(
             .set_playlist_tracks(playlist_id, &tracks)
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     }
+    // Trimmed, and empty is a real value here rather than "unchanged" - that is
+    // what `None` means. Clearing a description has to be expressible.
+    let description = body.description.as_deref().map(str::trim);
+    let folder = body.folder.as_deref().map(str::trim);
+    let cover = body.cover.as_deref().map(str::trim);
+    if description.is_some() || folder.is_some() || cover.is_some() {
+        state
+            .db
+            .set_playlist_meta(playlist_id, description, folder, cover)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -466,6 +495,12 @@ pub async fn delete_playlist(
 ) -> ApiResult {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
     owned_playlist(&state, caller.id, playlist_id)?;
+    // The cover goes with it. The row is about to be deleted, so this is the
+    // last moment anything knows the filename - after the DELETE the file is
+    // unreferenced and nothing would ever look for it again.
+    if let Some(name) = state.db.playlist_cover(playlist_id) {
+        let _ = std::fs::remove_file(state.data_dir.join("playlist-covers").join(name));
+    }
     let _ = state.db.delete_playlist(playlist_id);
     Ok(Json(json!({ "ok": true })))
 }

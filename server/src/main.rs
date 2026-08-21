@@ -51,6 +51,7 @@ mod jams;
 mod library_search;
 mod listens;
 mod pair;
+mod playlist_covers;
 mod push;
 mod radio;
 mod recents;
@@ -573,6 +574,14 @@ async fn main() {
         .route(
             "/api/playlists/{id}",
             put(api::update_playlist).delete(api::delete_playlist),
+        )
+        // The cover is its own route because it is BYTES, not JSON - putting an
+        // image through the playlist body would base64 it onto every edit.
+        .route(
+            "/api/playlists/{id}/cover",
+            get(playlist_covers::get)
+                .post(playlist_covers::upload)
+                .delete(playlist_covers::remove),
         )
         .route(
             "/api/play-state",
