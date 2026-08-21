@@ -211,7 +211,28 @@
 :root[data-card-style='halftoneRich'] .libChip:not(.cardPick *),
 .cardPick[data-card-style='halftoneRich'] .libChip {
   background: hsl(var(--libChipHue, 280) 76% 62%) !important;
-  color: hsl(var(--libChipHue, 280) 92% 12%);
+}
+/* Ink, not white text.
+   This is the one thing about the style that has to be forced, and the reason
+   is the same one that makes the ground `!important` above: the base chip sets
+   `color: #fff` with an `!important` of its own, for the three styles that put
+   their labels over dark art. A plain declaration here loses to it silently -
+   the card renders, the ground is right, the dots are right, and the label is
+   simply still white, which reads as a design choice rather than a rule that
+   never landed. It cost a screenshot to notice.
+   Named down to the label elements because the white is set on the chip AND
+   inherited, and the shadow goes with it: a dark drop shadow under dark ink is
+   mud, and on coloured stock there is nothing for it to lift the type off. */
+:root[data-card-style='halftoneRich'] .libChip:not(.cardPick *),
+:root[data-card-style='halftoneRich'] .libChip:not(.cardPick *) .libChip__name,
+:root[data-card-style='halftoneRich'] .libChip:not(.cardPick *) .libChip__count,
+:root[data-card-style='halftoneRich'] .libChip:not(.cardPick *) .libChip__stat,
+.cardPick[data-card-style='halftoneRich'] .libChip,
+.cardPick[data-card-style='halftoneRich'] .libChip .libChip__name,
+.cardPick[data-card-style='halftoneRich'] .libChip .libChip__count,
+.cardPick[data-card-style='halftoneRich'] .libChip .libChip__stat {
+  color: hsl(var(--libChipHue, 280) 92% 12%) !important;
+  text-shadow: none !important;
 }
 /* The screen, inverted: dark ink on light stock rather than the base's light
    dots. Multiply so the dots sit IN the paper instead of on top of it. */
