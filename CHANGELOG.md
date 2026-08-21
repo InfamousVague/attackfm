@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.317
+
+- An update gives the song back. Restarting to install one used to drop whatever was playing; now the track, the queue and the exact second all come back, still playing if they were
+
 ## 0.3.316
 
 - The sign-in screen leads with signing IN now, not signing up — and a short password no longer blocks the button when it is the one you already have

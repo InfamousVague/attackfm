@@ -12,6 +12,7 @@
 
 import { isTauri, tauriCall } from '../core/tauri.ts';
 import { REGISTRY_URL } from '../servers/registry.ts';
+import { stashDeck } from '../player/deckHandoff.ts';
 
 /** What the server publishes at `/api/app/bundle`. */
 export interface BundleManifest {
@@ -201,8 +202,15 @@ function announce(version: string | null): void {
  * the newly installed bundle. No process restart, no app-store round trip -
  * and because the swap only ever happens at a boot, nothing is torn out from
  * under a running screen.
+ *
+ * Except a song, which is the one thing on screen that cannot simply be drawn
+ * again. So the deck is written down first - synchronously, because the next
+ * statement ends this document - and picked back up on the other side. Every
+ * "restart to update" button in the app comes through here, which is why this
+ * is the only place that needs to know.
  */
 export function applyStagedBundle(): void {
+  stashDeck();
   window.location.reload();
 }
 

@@ -61,6 +61,7 @@ import { useNpChrome } from './useNpChrome.ts';
 import { usePlayerConnect, type PlayerLiveState } from './usePlayerConnect.ts';
 import { NowPlayingSheet, npArtMenuItems } from './NowPlayingSheet.tsx';
 import { PlayerStrip } from './PlayerStrip.tsx';
+import { clearDeckHandoff, deckHandoff, provideDeckSnapshot } from './deckHandoff.ts';
 
 /**
  * The station strip along the bottom of the window. The kit's PlayerBar owns
@@ -2756,6 +2757,51 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     setPlayingState, skipForward, skipBack, commitSeek, setVolumeState,
     libraryTracks, onTrackChange, onQueueChange, deckOwned,
   };
+  // ── Across an update ──────────────────────────────────────────────────────
+  //
+  // Installing an update reloads the document, and a song is the one thing on
+  // screen that cannot simply be drawn again on the other side. liveRef is
+  // already the exact answer - refreshed every render with the track, the
+  // queue, the clock and whether sound is coming out - so the handoff only has
+  // to be told where to read it, and reads it at the instant of the reload
+  // rather than keeping a copy continuously fresh for a moment that almost
+  // never comes.
+  useEffect(
+    () =>
+      provideDeckSnapshot(() => {
+        const live = liveRef.current;
+        // A placeholder names an import job, not a file. Keeping one would
+        // hand the next launch a song that was never playing and cannot load.
+        if (!live.track || isPendingPath(live.track.path)) return null;
+        return {
+          track: live.track,
+          queue: live.queue.length ? live.queue : [live.track],
+          position: live.position,
+          playing: live.playing,
+          at: Date.now(),
+        };
+      }),
+    [],
+  );
+
+  // And the far side: once the remembered track has actually loaded, put the
+  // needle back where the update took it from and start it again if it was
+  // running. Gated on `duration` for the same reason the Connect hand-off is -
+  // a seek asked for before the source has a timeline is simply discarded.
+  const handoffRef = useRef(deckHandoff());
+  useEffect(() => {
+    const h = handoffRef.current;
+    if (!h || !track || duration <= 0 || track.path !== h.track.path) return;
+    handoffRef.current = null;
+    clearDeckHandoff();
+    if (h.position > 0) commitSeek(h.position);
+    // A reload is not a user gesture, so the runtime is entitled to refuse
+    // this. Refused, the deck is still dressed and parked on the right second
+    // and one tap plays it - the handoff's whole value, minus the flourish.
+    if (h.playing) setPlayingState(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires on the load that satisfies the handoff
+  }, [track, duration]);
+
   // A cross-track "play here": the track is loaded via onTrackChange, then this
   // remembered seek+play is applied once it has actually loaded (in the hook).
   const resumeRef = useRef<{ trackId: number; positionMs: number; play: boolean } | null>(null);
