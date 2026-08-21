@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.303
+
+- Clear cache now really clears: covers, Canvas clips and the lookup memo go with the songs, instead of megabytes of art surviving for music that was just thrown away
+- The "send new music automatically" switch is back, beside the folder-sync row under Library — the setting was still honoured but its toggle had been lost in an old settings shuffle
+- A broom through the codebase besides: dead code and stale styling removed, and a set of debris files retired. Nothing you can see changed shape
+
 ## 0.3.302
 
 - Rich stock's labels are printed ink now rather than white text. They were white in 0.3.301, which left the card looking like a photo of paper instead of something printed on it
