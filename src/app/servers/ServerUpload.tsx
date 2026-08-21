@@ -85,7 +85,7 @@ export function UploadSection() {
   };
 
   return (
-    <div className="prefsSection">
+    <div data-setting="auto-upload" className="prefsSection">
       <Label>Add music</Label>
       <Text tone="muted" size="sm">
         Sends files from this machine to the server. They are filed by their own tags and

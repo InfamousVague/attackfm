@@ -363,3 +363,13 @@
   background: var(--glacier-hover);
 }
 
+
+/* Inside the settings kit's callout the strip must arrive undressed - the
+   base rule above would otherwise nest its accent-ramp box inside the
+   callout's own tint, the exact duplication the callout replaced. */
+.pluginUpdates--inCallout {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+}

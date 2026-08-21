@@ -217,7 +217,7 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       icon: <Bell size={16} />,
       content: <NotificationSettings />,
       summary: session
-        ? (notificationsSummaryCached() ?? 'What the app may interrupt you for')
+        ? (notificationsSummaryCached(session) ?? 'What the app may interrupt you for')
         : 'Needs a server',
       tint: 'pink',
       group: 1,
@@ -356,7 +356,14 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       icon: undefined,
       label: (
         <span className="settingsRail__item">
-          {groupLabel && <span className="settingsRail__groupLabel">{groupLabel}</span>}
+          {/* aria-hidden: the caption is wayfinding for the eye. In the
+              tab's accessible name it would read as "LOOK AND SOUND
+              Appearance...", polluting every announcement. */}
+          {groupLabel && (
+            <span className="settingsRail__groupLabel" aria-hidden="true">
+              {groupLabel}
+            </span>
+          )}
           <span className="settingsRail__row">
             {s.icon ? (
               <span className="settingsScreen__rowIcon" data-tint={s.tint ?? 'slate'}>

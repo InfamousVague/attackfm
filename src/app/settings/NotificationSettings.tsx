@@ -27,28 +27,41 @@ import { PaneSection, SettingRow, SettingsEmpty } from './kit/settingsKit.tsx';
  * the list's priming fetch both write it; whoever runs first wins, and they
  * cannot disagree because they read the same endpoint.
  */
-let summaryCache: { text: string; at: number } | null = null;
+let summaryCache: { key: string; text: string; at: number } | null = null;
 
-function writeSummary(prefs: Record<string, boolean>): string {
+/** Which account on which box wrote the cache - a multi-server app must not
+ *  show one server's counts on another's row. */
+function summaryKey(session: ServerSession): string {
+  return `${session.url}\n${session.username}`;
+}
+
+function writeSummary(session: ServerSession, prefs: Record<string, boolean>): string {
   const kinds = Object.keys(prefs);
   const on = kinds.filter((k) => prefs[k] !== false).length;
   const text = `${on} of ${kinds.length} on`;
-  summaryCache = { text, at: Date.now() };
+  summaryCache = { key: summaryKey(session), text, at: Date.now() };
   return text;
 }
 
-/** What the list shows now, or null before anything has been fetched. */
-export function notificationsSummaryCached(): string | null {
-  return summaryCache?.text ?? null;
+/** What the list shows now, or null before anything has been fetched FOR THIS
+ *  session - another account's counts are worse than the worded fallback. */
+export function notificationsSummaryCached(session: ServerSession): string | null {
+  return summaryCache && summaryCache.key === summaryKey(session) ? summaryCache.text : null;
 }
 
 /** The list's light fetch on open. A minute of trust between fetches: opening
  *  settings twice in a row should not hit the server twice. */
 export async function primeNotificationsSummary(session: ServerSession): Promise<string | null> {
-  if (summaryCache && Date.now() - summaryCache.at < 60_000) return summaryCache.text;
+  if (
+    summaryCache &&
+    summaryCache.key === summaryKey(session) &&
+    Date.now() - summaryCache.at < 60_000
+  ) {
+    return summaryCache.text;
+  }
   try {
     const r = await fetchPushPrefs(session);
-    return writeSummary(r.prefs);
+    return writeSummary(session, r.prefs);
   } catch {
     return null;
   }
@@ -68,7 +81,7 @@ export function NotificationSettings() {
         setPrefs(r.prefs);
         setDevices(r.devices);
         setError(null);
-        writeSummary(r.prefs);
+        writeSummary(session, r.prefs);
       })
       .catch((e: unknown) => {
         if (!ac.signal.aborted) setError(e instanceof Error ? e.message : 'could not load');
@@ -83,13 +96,13 @@ export function NotificationSettings() {
       // a round trip feels broken on a phone with a slow link.
       setPrefs((p) => {
         const next = { ...(p ?? {}), [kind]: enabled };
-        writeSummary(next);
+        writeSummary(session, next);
         return next;
       });
       setPushPref(session, kind, enabled).catch(() => {
         setPrefs((p) => {
           const next = { ...(p ?? {}), [kind]: !enabled };
-          writeSummary(next);
+          writeSummary(session, next);
           return next;
         });
         setError('that did not save');

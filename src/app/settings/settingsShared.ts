@@ -94,9 +94,9 @@ export const SETTINGS_INDEX: SettingEntry[] = [
   {
     id: 'auto-upload',
     pane: 'general',
-    label: 'Send new music to this server',
-    description: 'Uploads anything in your music folder this server does not have.',
-    keywords: 'upload sync folder send push library bandwidth friend someone else server',
+    label: 'Send music to this server',
+    description: 'Pick songs or a folder to upload into the library.',
+    keywords: 'upload sync folder send push library bandwidth add music import files',
   },
   {
     id: 'streaming-quality',
