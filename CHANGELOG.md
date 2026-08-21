@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.281
+
+- A short guided tour now runs the first time you open the app, spotlighting the library, search, Discover, the booth and the player as it goes. You can stop it at any point, and take it again from Settings › General
+
 ## 0.3.280
 
 - Music Date has an undo. Swiped the wrong way on a song? Take it back — it returns to the deck, and a keep or a pass is properly unwound rather than just hidden
