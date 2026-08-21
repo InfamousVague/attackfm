@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.301
+
+- A fourth look for your library cards: Rich stock prints the halftone on properly coloured card instead of pale paper, so the colour actually arrives and the dots stay crisp. Settings, Appearance, Card style
+- The hidden workshop behind seven taps on the wordmark has been retired. It was there to choose between card looks, and the choosing is done
+
 ## 0.3.300
 
 - The collection-page top bar’s fade-in on scroll is lighter now — each frame it redraws only the bar, not the whole screen behind it
