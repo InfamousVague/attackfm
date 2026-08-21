@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.306
+
+- Back now works inside Settings: it returns to the section list from a pane, and only closes Settings once you are already there. Both the header arrow and the phone's own back button do the same thing
+- The back and forward controls in the header are arrows now rather than chevrons
+
 ## 0.3.305
 
 - Segmented toggles divide their space equally now, everywhere — each segment used to take its own label's width, which read as a lopsided control wherever two labels differed in length
