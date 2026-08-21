@@ -3,7 +3,7 @@
 // GeneralPane / PlaybackPane / PluginsPane (+ pluginRepos) / MobileSettings,
 // shared bits in settingsShared.ts, useMediaQuery deduped into ux/.
 import { SearchField, TabbedModal } from '@glacier/react';
-import { Bell, Blocks, BookOpen, HardDrive, Info, Palette, Play, Server, Settings, Shield, Stethoscope } from '@glacier/icons';
+import { Bell, Blocks, BookOpen, CircleUserRound, HardDrive, Info, Library, Palette, Play, Server, Shield, Stethoscope } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { APP_VERSION } from '../core/version.ts';
 import { noteSettingsPane } from './settingsRecency.ts';
@@ -16,7 +16,11 @@ import { DiagnosticsPane } from './DiagnosticsPane.tsx';
 import { diagEntries } from '../diag/diagLog.ts';
 import { HandbookPane } from './handbook/HandbookPane.tsx';
 import { HANDBOOK_PAGES } from './handbook/handbookPages.tsx';
-import { NotificationSettings } from './NotificationSettings.tsx';
+import {
+  NotificationSettings,
+  notificationsSummaryCached,
+  primeNotificationsSummary,
+} from './NotificationSettings.tsx';
 import { useConnect } from '../player/playbackSync.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { DeviceStorageSettings } from '../downloads/DeviceStorageSettings.tsx';
@@ -26,6 +30,7 @@ import { heldCount, offlineSpace, onOfflineChange } from '../downloads/offline.t
 import { useMediaQuery } from '../ux/useMediaQuery.ts';
 import { formatBytes } from '../ux/format.ts';
 import { Appearance } from './AppearancePane.tsx';
+import { AccountPane } from './AccountPane.tsx';
 import { General } from './GeneralPane.tsx';
 import { Privacy, privacySummary } from './PrivacyPane.tsx';
 import { useSharing } from '../profile/listeningShare.tsx';
@@ -39,6 +44,8 @@ import {
   MOBILE_QUERY,
   useSettingsIsModal,
   paneMatches,
+  settingsGroupLabel,
+  SettingsNavContext,
   THEME_COPY,
   type SettingsSection,
 } from './settingsShared.ts';
@@ -101,6 +108,17 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
   }, []);
   useEffect(() => onOfflineChange(() => setOfflineHeld(heldCount())), []);
 
+  // Notifications' one-line reading lives on the server; a light fetch on open
+  // fills the module cache and this tick makes the row re-read it. Until the
+  // first answer lands the row keeps its worded fallback.
+  const [, bumpNotifySummary] = useState(0);
+  useEffect(() => {
+    if (!open || !session) return;
+    void primeNotificationsSummary(session).then((t) => {
+      if (t) bumpNotifySummary((x) => x + 1);
+    });
+  }, [open, session]);
+
   const sections: SettingsSection[] = [
     {
       id: 'appearance',
@@ -112,18 +130,6 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       group: 0,
     },
     {
-      id: 'general',
-      label: 'General',
-      icon: <Settings size={16} />,
-      content: <General />,
-      summary:
-        source === 'server'
-          ? `${tracks.length.toLocaleString()} songs from your server`
-          : `${tracks.length.toLocaleString()} songs in your folder`,
-      tint: 'slate',
-      group: 0,
-    },
-    {
       id: 'playback',
       label: 'Playback',
       icon: <Play size={16} />,
@@ -132,22 +138,37 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       tint: 'pink',
       group: 0,
     },
-    // Where the music comes from, when it does not come from this machine -
-    // and, beside it, the devices it goes out to.
+    // Who you are, and everything attached to that: the servers saved to the
+    // account, device pairing, the household, and the seats playing through
+    // it. Gathered from the bottom of General and the Servers pane's Access
+    // chunk, where the identity had smeared itself.
     {
-      id: 'server',
-      label: 'Servers',
-      icon: <Server size={16} />,
-      content: <ServersSettings />,
-      // The host you are on, and how many boxes the account can reach. Both
-      // numbers come from cheap reads, so the row is honest before any pane
-      // has mounted.
-      summary: (() => {
-        const here = session ? session.url.replace(/^https?:\/\//, '') : 'Not connected';
-        const n = knownServers().length;
-        return n > 1 ? `${here} · ${n} servers` : here;
-      })(),
+      id: 'account',
+      label: 'Account & devices',
+      icon: <CircleUserRound size={16} />,
+      content: <AccountPane />,
+      // A session restored from before usernames were stored has an empty
+      // one; "Signed in" beats a line that starts with a dot.
+      summary: session
+        ? [session.username || 'Signed in', online > 0 ? `${online} online` : null]
+            .filter(Boolean)
+            .join(' · ')
+        : 'Not signed in',
       tint: 'blue',
+      group: 1,
+    },
+    // The id stays `general` - it is the contract recency chips and deep
+    // links hold - but the pane's one job now is the library itself.
+    {
+      id: 'general',
+      label: 'Library',
+      icon: <Library size={16} />,
+      content: <General />,
+      summary:
+        source === 'server'
+          ? `${tracks.length.toLocaleString()} songs from your server`
+          : `${tracks.length.toLocaleString()} songs in your folder`,
+      tint: 'slate',
       group: 1,
     },
     // The machine that listens along: the collector's ledger and switch, the
@@ -193,9 +214,31 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       label: 'Notifications',
       icon: <Bell size={16} />,
       content: <NotificationSettings />,
-      summary: session ? 'What the app may interrupt you for' : 'Needs a server',
+      summary: session
+        ? (notificationsSummaryCached() ?? 'What the app may interrupt you for')
+        : 'Needs a server',
       tint: 'pink',
       group: 1,
+    },
+    // The machinery starts here: the boxes serving bytes, then whatever the
+    // plugins have bolted on. Servers moved down beside them because a
+    // dashboard and a mirror network are machinery, not daily stuff - the
+    // things a listener touches weekly all sit in the cluster above.
+    {
+      id: 'server',
+      label: 'Servers',
+      icon: <Server size={16} />,
+      content: <ServersSettings />,
+      // The host you are on, and how many boxes the account can reach. Both
+      // numbers come from cheap reads, so the row is honest before any pane
+      // has mounted.
+      summary: (() => {
+        const here = session ? session.url.replace(/^https?:\/\//, '') : 'Not connected';
+        const n = knownServers().length;
+        return n > 1 ? `${here} · ${n} servers` : here;
+      })(),
+      tint: 'blue',
+      group: 2,
     },
     // The importer contributes Downloads here, exactly where it has always
     // sat; any plugin's tabs land in this run of the rail.
@@ -290,25 +333,36 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
    * The classes are the touch list's own, not copies of them. A second set of
    * chip tints would be a second place to change a colour.
    */
-  const railSections = shown.map((s) => ({
-    ...s,
-    // The chip carries the glyph now, so the kit's own icon slot stays empty -
-    // handing it the icon as well would print it twice.
-    icon: undefined,
-    label: (
-      <span className="settingsRail__row">
-        {s.icon ? (
-          <span className="settingsScreen__rowIcon" data-tint={s.tint ?? 'slate'}>
-            {s.icon}
+  const railSections = shown.map((s, i) => {
+    // The cluster's name, carried by its first row: the kit renders a flat
+    // rail, so the caption rides inside the label node rather than between
+    // items. Suppressed while searching - a narrowed rail is one flat list.
+    const startsGroup =
+      !query.trim() && (i === 0 || (shown[i - 1]!.group ?? 99) !== (s.group ?? 99));
+    const groupLabel = startsGroup ? settingsGroupLabel(s.group) : null;
+    return {
+      ...s,
+      // The chip carries the glyph now, so the kit's own icon slot stays empty -
+      // handing it the icon as well would print it twice.
+      icon: undefined,
+      label: (
+        <span className="settingsRail__item">
+          {groupLabel && <span className="settingsRail__groupLabel">{groupLabel}</span>}
+          <span className="settingsRail__row">
+            {s.icon ? (
+              <span className="settingsScreen__rowIcon" data-tint={s.tint ?? 'slate'}>
+                {s.icon}
+              </span>
+            ) : null}
+            <span className="settingsScreen__rowText">
+              <span className="settingsScreen__rowLabel">{s.label}</span>
+              {s.summary && <span className="settingsScreen__rowSummary">{s.summary}</span>}
+            </span>
           </span>
-        ) : null}
-        <span className="settingsScreen__rowText">
-          <span className="settingsScreen__rowLabel">{s.label}</span>
-          {s.summary && <span className="settingsScreen__rowSummary">{s.summary}</span>}
         </span>
-      </span>
-    ),
-  }));
+      ),
+    };
+  });
 
   /*
    * Which shell this render gets: the full-screen sheet or the rail-beside-
@@ -325,6 +379,7 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
   }
 
   return (
+    <SettingsNavContext.Provider value={noteTab}>
     <TabbedModal
       open={open}
       onClose={onClose}
@@ -347,5 +402,6 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       divider={false}
       sections={railSections}
     />
+    </SettingsNavContext.Provider>
   );
 }

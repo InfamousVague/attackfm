@@ -1,0 +1,450 @@
+/*
+ * The settings kit's clothes (src/app/settings/kit/settingsKit.tsx).
+ *
+ * One vocabulary for every pane: the group card is the mobile section list's
+ * own shape (borderless --glacier-surface, radius-lg, hairline separators), so
+ * a pane looks like it belongs to the list that opened it. The look rules -
+ * two panel recipes, two icon languages, SegmentedControl-is-a-value-input -
+ * are stated in the kit file; this is just the paint.
+ */
+
+/* --- the section: caption, card, footer ---------------------------------- */
+
+.setk {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.setk__title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--glacier-text-muted);
+  padding-inline: var(--glacier-space-2);
+}
+
+.setk[data-tone='danger'] .setk__title {
+  color: var(--glacier-danger-text, oklch(0.62 0.21 25));
+}
+
+/* A session group's settings die with the app; the caption says so quietly. */
+.setk[data-tone='session'] .setk__title::after {
+  content: ' · this session';
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 500;
+}
+
+.setk__desc {
+  font-size: 0.82rem;
+  color: var(--glacier-text-muted);
+  padding-inline: var(--glacier-space-2);
+}
+
+.setk__card {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+  overflow: hidden;
+}
+
+.setk__footer {
+  font-size: 0.78rem;
+  color: var(--glacier-text-muted);
+  padding-inline: var(--glacier-space-2);
+}
+
+/* --- the row -------------------------------------------------------------- */
+
+.setk-row {
+  display: flex;
+  flex-direction: column;
+  padding: var(--glacier-space-3);
+}
+
+.setk-row + .setk-row {
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.setk-row__main {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+}
+
+/* The pressable row is its own button but draws exactly like the others. */
+.setk-row--press {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  inline-size: 100%;
+  text-align: start;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.setk-row--press:active {
+  background: var(--glacier-surface-hover, rgba(128, 128, 128, 0.16));
+}
+
+.setk-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.setk-row__label {
+  font-weight: 550;
+  font-size: 0.92rem;
+}
+
+.setk-row[data-danger] .setk-row__label,
+.setk-row--press[data-danger] .setk-row__label {
+  color: var(--glacier-danger-text, oklch(0.62 0.21 25));
+}
+
+.setk-row__hint {
+  font-size: 0.78rem;
+  color: var(--glacier-text-muted);
+}
+
+/* "Needs a server", said one way everywhere. */
+.setk-row__why {
+  font-size: 0.75rem;
+  color: var(--glacier-text-muted);
+  font-style: italic;
+}
+
+.setk-row[data-disabled] {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.setk-row__value {
+  color: var(--glacier-text-muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+/* The slider's reading: fixed and tabular so "Off" -> "12s" cannot nudge
+   the thumb (the old .prefsSliderValue rule, kept). */
+.setk-row__value--slider {
+  min-inline-size: 3ch;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.setk-row__control {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.setk-row__wide {
+  margin-block-start: var(--glacier-space-2);
+}
+
+.setk-row__chevron {
+  color: var(--glacier-text-muted);
+  display: flex;
+  flex-shrink: 0;
+}
+
+.setk-row__icon {
+  display: flex;
+  flex-shrink: 0;
+}
+
+/* --- the hero ------------------------------------------------------------- */
+
+.setk-hero {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3);
+}
+
+/* The accent-washed tile: the playlist shelf's own language. */
+.setk-hero__glyph,
+.setk-tile {
+  display: grid;
+  place-items: center;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-solid);
+  flex-shrink: 0;
+}
+
+.setk-tile[data-size='lg'] {
+  inline-size: 3.25rem;
+  block-size: 3.25rem;
+}
+
+.setk-hero__image {
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  border-radius: var(--glacier-radius-lg);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.setk-hero__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.setk-hero__title {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.setk-hero__meta {
+  font-size: 0.8rem;
+  color: var(--glacier-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.setk-hero__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--glacier-text-muted);
+}
+
+.setk-hero__dot {
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: 999px;
+  background: var(--glacier-text-muted);
+}
+
+.setk-hero__status[data-tone='success'] .setk-hero__dot { background: oklch(0.7 0.17 155); }
+.setk-hero__status[data-tone='warning'] .setk-hero__dot { background: oklch(0.75 0.15 80); }
+.setk-hero__status[data-tone='danger'] .setk-hero__dot { background: oklch(0.62 0.21 25); }
+
+.setk-hero__status[data-pulse] .setk-hero__dot {
+  animation: setk-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes setk-pulse {
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .setk-hero__status[data-pulse] .setk-hero__dot { animation: none; }
+}
+
+.setk-hero__pills {
+  display: flex;
+  gap: var(--glacier-space-1);
+  flex-wrap: wrap;
+  margin-block-start: 0.2rem;
+}
+
+.setk-hero__trailing {
+  flex-shrink: 0;
+}
+
+/* About's centred wordmark stays a sanctioned variant of the same anatomy. */
+.setk-hero[data-variant='wordmark'] {
+  flex-direction: column;
+  text-align: center;
+}
+
+.setk-hero[data-variant='wordmark'] .setk-hero__body {
+  align-items: center;
+}
+
+/* --- chunk navigation ------------------------------------------------------ */
+
+.setk-subnav {
+  display: flex;
+  gap: var(--glacier-space-3);
+  border-block-end: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.setk-subnav__tab {
+  appearance: none;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-weight: 550;
+  font-size: 0.88rem;
+  color: var(--glacier-text-muted);
+  padding: var(--glacier-space-2) 0.1rem;
+  margin-block-end: calc(var(--glacier-hairline) * -1);
+  border-block-end: 2px solid transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.setk-subnav__tab[data-active] {
+  color: var(--glacier-text);
+  border-block-end-color: var(--glacier-accent-solid);
+}
+
+.setk-subnav__count {
+  font-size: 0.72rem;
+  color: var(--glacier-accent-text);
+  background: var(--glacier-accent-soft);
+  border-radius: 999px;
+  padding: 0 0.4rem;
+}
+
+/* --- pick-a-visual --------------------------------------------------------- */
+
+.setk-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: var(--glacier-space-2);
+}
+
+.setk-options[data-lead-first] > .setk-option:first-child {
+  grid-column: 1 / -1;
+}
+
+.setk-option {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+}
+
+.setk-option[data-selected] {
+  border-color: var(--glacier-accent-solid);
+  box-shadow: 0 0 0 1px var(--glacier-accent-solid);
+}
+
+.setk-option__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.setk-option__label {
+  font-weight: 550;
+  font-size: 0.85rem;
+}
+
+.setk-option__note {
+  font-size: 0.75rem;
+  color: var(--glacier-text-muted);
+}
+
+.setk-option__check {
+  position: absolute;
+  inset-block-start: 0.5rem;
+  inset-inline-end: 0.5rem;
+  inline-size: 1.15rem;
+  block-size: 1.15rem;
+  border-radius: 999px;
+  display: none;
+  place-items: center;
+  font-size: 0.7rem;
+  background: var(--glacier-accent-solid);
+  color: #fff;
+}
+
+.setk-option[data-selected] .setk-option__check {
+  display: grid;
+}
+
+/* --- the banner ------------------------------------------------------------ */
+
+/* One tinted-banner recipe: color-mix of the tone into surface-raised (the
+   UpdateBanner's way), not raw accent ramp steps. */
+.setk-callout {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg);
+  background: color-mix(in oklab, var(--glacier-accent-solid) 12%, var(--glacier-surface-raised));
+  border: var(--glacier-hairline) solid
+    color-mix(in oklab, var(--glacier-accent-solid) 30%, var(--glacier-border-subtle));
+}
+
+.setk-callout[data-tone='warning'] {
+  background: color-mix(in oklab, oklch(0.75 0.15 80) 14%, var(--glacier-surface-raised));
+  border-color: color-mix(in oklab, oklch(0.75 0.15 80) 32%, var(--glacier-border-subtle));
+}
+
+.setk-callout[data-tone='danger'] {
+  background: color-mix(in oklab, oklch(0.62 0.21 25) 14%, var(--glacier-surface-raised));
+  border-color: color-mix(in oklab, oklch(0.62 0.21 25) 32%, var(--glacier-border-subtle));
+}
+
+.setk-callout__icon {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--glacier-accent-text);
+}
+
+.setk-callout[data-tone='warning'] .setk-callout__icon { color: oklch(0.75 0.15 80); }
+.setk-callout[data-tone='danger'] .setk-callout__icon { color: oklch(0.62 0.21 25); }
+
+.setk-callout__body {
+  flex: 1;
+  font-size: 0.85rem;
+}
+
+.setk-callout__action {
+  flex-shrink: 0;
+}
+
+/* --- gated / empty --------------------------------------------------------- */
+
+.setk-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  text-align: center;
+  padding: var(--glacier-space-6) var(--glacier-space-4);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+}
+
+.setk-empty__icon {
+  display: grid;
+  place-items: center;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-accent-soft);
+  color: var(--glacier-accent-solid);
+}
+
+/* --- the footnote ---------------------------------------------------------- */
+
+.setk-footnote {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--glacier-text-muted);
+}

@@ -19,6 +19,7 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { healthOf } from '../servers/mirrors.ts';
 import { isAndroid, isIOS } from '../core/platform.ts';
 import { isTauri } from '../core/tauri.ts';
+import { pushDeviceToken } from '../core/notifications.ts';
 
 /** Clock time, which is what someone comparing this against "it broke around
  *  ten past" actually needs; the copied report carries full ISO stamps. */
@@ -34,8 +35,15 @@ export function DiagnosticsPane() {
   const { session } = useServerSession();
   const [, setTick] = useState(0);
   const [copied, setCopied] = useState<'idle' | 'ok' | 'manual'>('idle');
+  // The push pipeline's low-level truth, moved here from Notifications: a
+  // person chasing a missing notification lands in Diagnostics, and "the
+  // shell cannot mint a token" is a diagnosis, not a setting.
+  const [pushToken, setPushToken] = useState<string | null | 'unknown'>('unknown');
 
   useEffect(() => subscribeDiag(() => setTick((n) => n + 1)), []);
+  useEffect(() => {
+    void pushDeviceToken().then((t) => setPushToken(t));
+  }, []);
 
   const entries = diagEntries();
   const health = session ? healthOf(session.url) : null;
@@ -50,10 +58,19 @@ export function DiagnosticsPane() {
         reachable: health ? String(health.ok) : 'not probed yet',
         latency: health?.latencyMs != null ? `${Math.round(health.latencyMs)}ms` : '—',
         platform: isIOS ? 'ios' : isAndroid ? 'android' : isTauri() ? 'desktop' : 'browser',
+        // Why a notification might never arrive, in one line: no token means
+        // the shell cannot ask the OS for one (native work, per-platform);
+        // a token that exists registers itself on the next sign-in.
+        push:
+          pushToken === 'unknown'
+            ? 'probing'
+            : pushToken === null
+              ? 'no device token - the shell cannot mint one on this build'
+              : 'device token held; registers on next sign-in',
       }),
     // Rebuilt on every recorded entry: `entries` is the ring itself, so its
     // identity changing is the signal that there is something new to say.
-    [session, health, entries],
+    [session, health, entries, pushToken],
   );
 
   const copy = async () => {

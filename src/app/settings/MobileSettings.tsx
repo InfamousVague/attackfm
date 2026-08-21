@@ -3,7 +3,12 @@ import { ChevronLeft, ChevronRight, X } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { noteSettingsPane, recentPanes, type RecentPane } from './settingsRecency.ts';
-import { paneMatches, type SettingsSection } from './settingsShared.ts';
+import {
+  paneMatches,
+  settingsGroupLabel,
+  SettingsNavContext,
+  type SettingsSection,
+} from './settingsShared.ts';
 
 /**
  * The touch settings surface: a full-screen sheet portalled over everything.
@@ -55,6 +60,7 @@ export function MobileSettings({
   if (!open) return null;
 
   return createPortal(
+    <SettingsNavContext.Provider value={drill}>
     <div
       className="settingsScreen"
       role="dialog"
@@ -131,7 +137,15 @@ export function MobileSettings({
                 return clusters;
               }, [])
               .map((cluster) => (
-                <div key={cluster[0]!.id} className="settingsScreen__group">
+                <div key={cluster[0]!.id} className="settingsScreen__cluster">
+                  {/* The card's name. Only while browsing - a search's flat
+                      result list is not four half-empty clusters. */}
+                  {!query.trim() && settingsGroupLabel(cluster[0]!.group) && (
+                    <div className="settingsScreen__groupLabel">
+                      {settingsGroupLabel(cluster[0]!.group)}
+                    </div>
+                  )}
+                  <div className="settingsScreen__group">
                   {cluster.map((s) => (
                     <button
                       key={s.id}
@@ -156,6 +170,7 @@ export function MobileSettings({
                       <ChevronRight size={18} className="settingsScreen__rowChevron" />
                     </button>
                   ))}
+                  </div>
                 </div>
               ))}
             {query.trim() && sections.every((s) => !paneMatches(s, query)) && (
@@ -166,7 +181,8 @@ export function MobileSettings({
           </nav>
         </>
       )}
-    </div>,
+    </div>
+    </SettingsNavContext.Provider>,
     document.body,
   );
 }

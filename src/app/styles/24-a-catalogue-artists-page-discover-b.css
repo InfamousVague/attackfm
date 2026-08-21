@@ -14,6 +14,27 @@
   margin-block-start: var(--glacier-space-3);
 }
 
+/* A cluster is a named group card: the caption plus the card it names. The
+   caption only shows while browsing - a search flattens to one bare card. */
+.settingsScreen__cluster {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.settingsScreen__cluster + .settingsScreen__cluster {
+  margin-block-start: var(--glacier-space-3);
+}
+
+.settingsScreen__groupLabel {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--glacier-text-muted);
+  padding-inline: var(--glacier-space-2);
+}
+
 .settingsScreen__group .settingsScreen__row {
   border-radius: 0;
   background: transparent;

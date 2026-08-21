@@ -1,5 +1,5 @@
 import { accentOptions } from '@glacier/tokens';
-import { useEffect, useState, type ReactNode } from 'react';
+import { createContext, useEffect, useState, type ReactNode } from 'react';
 import { BRAND_ACCENTS } from './brandAccents.ts';
 import type { ThemePreference } from './themePresets.ts';
 
@@ -10,13 +10,17 @@ import type { ThemePreference } from './themePresets.ts';
  * label and summary are always matched too.
  */
 export const PANE_KEYWORDS: Record<string, string> = {
-  appearance: 'theme dark light accent color colour scale text size dawn boreal ember midnight alpine',
-  general: 'haptics vibration folder music directory metadata artwork lyrics online',
+  appearance:
+    'theme dark light accent color colour scale text size dawn boreal ember midnight alpine lyrics video clips canvas haptics vibration shake flick motion feel',
+  general: 'library songs folder music directory source stats upload send add',
   // The equalizer left for the sound console long ago, and gapless/repeat
   // never had rows here - phantom words that matched this pane made the
   // search LOOK broken ("eq" landed you somewhere with no EQ in it).
-  playback: 'crossfade sleep timer pause style shuffle quality volume night mode mono auto dj',
-  server: 'server connect sign in url mirror network invite join host latency devices speakers where you listen seat',
+  playback:
+    'crossfade sleep timer pause style shuffle quality volume night mode mono auto dj bitrate lossless data saver streaming',
+  account:
+    'account sign in log out username devices seat speakers household invite link qr pair where you listen rename',
+  server: 'server connect sign in url mirror network host latency copy library',
   storage: 'cache offline downloads space disk limit pins clear wifi wi-fi mobile data cellular',
   notifications: 'push alerts recap weekly interrupt bell notifications news downloads finished',
   plugins: 'plugin extension import spotify buy discover sources',
@@ -237,6 +241,31 @@ export function useSettingsRoom(open: boolean): SettingsRoom {
 export function useSettingsIsModal(open: boolean): boolean {
   const { room } = useSettingsRoom(open);
   return room >= TWO_COLUMN_FLOOR;
+}
+
+/**
+ * A pane's way of sending you to another pane ("Set up under Servers"), no
+ * matter which shell is hosting it: the desktop modal provides its tab
+ * setter, the phone sheet its drill. Null outside settings, so a component
+ * that also renders elsewhere simply has no button to offer.
+ */
+export const SettingsNavContext = createContext<((sectionId: string) => void) | null>(null);
+
+/**
+ * The clusters' names. The numeric `group` on each section always decided
+ * which card a row filed into on the touch list; these give the cards words,
+ * so the clustering reads as intent rather than as accidental gaps. The same
+ * labels head the desktop rail's runs, which used to ignore `group` entirely.
+ */
+export const SETTINGS_GROUPS: readonly { id: number; label: string }[] = [
+  { id: 0, label: 'Look & sound' },
+  { id: 1, label: 'Your stuff' },
+  { id: 2, label: 'The machinery' },
+  { id: 3, label: 'Reference' },
+];
+
+export function settingsGroupLabel(id: number | undefined): string | null {
+  return SETTINGS_GROUPS.find((g) => g.id === id)?.label ?? null;
 }
 
 /** One entry in the settings rail: an id, its label, its icon, its pane -

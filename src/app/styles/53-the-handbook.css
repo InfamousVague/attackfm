@@ -305,3 +305,11 @@
   color: var(--glacier-accent-solid);
   font-weight: 600;
 }
+
+/* The tour's door on the cover: one soft button between the cover prose and
+   the table of contents, centred like the rest of the cover. */
+.handbook__tour {
+  display: flex;
+  justify-content: center;
+  margin-block: var(--glacier-space-3);
+}

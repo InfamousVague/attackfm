@@ -1,46 +1,34 @@
 import { useState } from 'react';
-import { Heading, SegmentedControl, Text } from '@glacier/react';
 import { useServerSession } from './serverSession.tsx';
-import {
-  HouseholdSection,
-  LinkDeviceSection,
-  MirrorSection,
-  ServerSettings,
-} from './ServerSettings.tsx';
+import { MirrorSection, ServerSettings } from './ServerSettings.tsx';
 import { ServersPanel } from './ServersPage.tsx';
-import { WhereYouListen } from '../profile/WhereYouListen.tsx';
-import { DevicesSettings } from '../settings/DevicesSettings.tsx';
+import { SubNav } from '../settings/kit/settingsKit.tsx';
 
 /**
- * Everything about servers, in one pane, three chunks at a time.
+ * The boxes: the one you are signed into, and the network serving bytes.
  *
- * There used to be three doors onto this subject: a Settings pane for the box
- * you are signed into, a second for the ones your account can reach, and a nav
- * destination in the overflow menu for their health and routing. Three names
- * for one thing, and the nav destination could not even scroll.
- *
- * Folding them together fixed the scroll and the duplication but made one very
- * long pane - a dashboard, a disk meter, a scan, a device pairing flow, a
- * mirror list, a user table, an uploader and two more server lists, all in a
- * single column. So the pane shows one chunk at a time:
+ * This pane used to be three chunks - This server / Network / Access - and
+ * carried the whole account inside it: device pairing, the household, the
+ * servers saved to your account, plus the Devices list embedded into Network.
+ * All of that moved to the Account & devices pane, because seats and sign-ins
+ * are about YOU; what is left here is genuinely about machines:
  *
  * - THIS SERVER: the box you are on. Its numbers, its disk, its scan, its
- *   people, what it costs to stream from it, and the way out.
+ *   people, and the way out.
  * - NETWORK: the other boxes. Which one actually serves a song, how near each
- *   is, how much of your library it holds, and what to delete to make room.
- * - ACCESS: ways in and out. Pairing a device, the household, the servers saved
- *   to your account, and the invite you hand somebody else.
+ *   is, how much of your library it holds, and the mirror copier.
  *
- * The chunks own the grouping; the sections inside them are untouched, so
- * nothing had to be rewritten to be moved and nothing was lost in moving.
+ * The chunks switch on SubNav tabs rather than a SegmentedControl: a
+ * segmented control answers "which value", tabs answer "which page", and
+ * dressing both alike was how this pane read as a form when it is a small
+ * book.
  */
 
-type Chunk = 'server' | 'network' | 'access';
+type Chunk = 'server' | 'network';
 
-const CHUNKS: { value: Chunk; label: string }[] = [
-  { value: 'server', label: 'This server' },
-  { value: 'network', label: 'Network' },
-  { value: 'access', label: 'Access' },
+const CHUNKS: { id: Chunk; label: string }[] = [
+  { id: 'server', label: 'This server' },
+  { id: 'network', label: 'Network' },
 ];
 
 export function ServersSettings() {
@@ -48,8 +36,8 @@ export function ServersSettings() {
   const [chunk, setChunk] = useState<Chunk>('server');
 
   // Signed out there is one thing to do - connect - and ServerSettings is the
-  // form that does it. Segments over a single form would be three labels
-  // pointing at two empty rooms.
+  // form that does it. Tabs over a single form would be two labels pointing
+  // at an empty room.
   if (!session) {
     return (
       <div className="prefsBody serversSettings">
@@ -60,12 +48,10 @@ export function ServersSettings() {
 
   return (
     <div className="prefsBody serversSettings">
-      <SegmentedControl
-        aria-label="Servers"
-        fullWidth
+      <SubNav
         value={chunk}
-        options={CHUNKS}
         onValueChange={(next) => setChunk(next as Chunk)}
+        options={CHUNKS}
       />
 
       {chunk === 'server' && <ServerSettings />}
@@ -74,36 +60,6 @@ export function ServersSettings() {
         <>
           <ServersPanel />
           <MirrorSection />
-          {/* The devices that play through this account - the old Devices
-              pane, folded in where it belongs: servers, mirrors and seats are
-              all one question ("where is my music?"), and this is its page. */}
-          <section className="serversSettings__part">
-            <header className="serversSettings__partHead">
-              <Heading level={3} noMargin>
-                Devices
-              </Heading>
-            </header>
-            <DevicesSettings />
-          </section>
-        </>
-      )}
-
-      {chunk === 'access' && (
-        <>
-          <LinkDeviceSection />
-          <HouseholdSection />
-          <section className="serversSettings__part">
-            <header className="serversSettings__partHead">
-              <Heading level={3} noMargin>
-                Your account
-              </Heading>
-              <Text size="sm" tone="muted">
-                Servers saved to your AttackFM account, wherever you sign in. Switch between
-                them, or hand someone a way into yours.
-              </Text>
-            </header>
-            <WhereYouListen />
-          </section>
         </>
       )}
     </div>
