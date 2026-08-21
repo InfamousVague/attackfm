@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.300
+
+- The collection-page top bar’s fade-in on scroll is lighter now — each frame it redraws only the bar, not the whole screen behind it
+
 ## 0.3.299
 
 - The "Wrong song?" listening room wears Now Playing's own glass now — on an unfolded screen its cards used to sit matte and flat beside the deck's frosted panels, like two apps sharing a hinge
