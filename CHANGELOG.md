@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.298
+
+- On a collection page the top bar is clear over the covers while you are at the top, then fades back to a solid black bar — with its soft shadow beneath it — as you scroll down into the songs
+
 ## 0.3.297
 
 - Settings has been reorganized around what you actually come there to do. Four named shelves — Look & sound, Your stuff, The machinery, Reference — and a new Account & devices page gathering your sign-in, your household, device pairing and every device on the account, all of which had been scattered across three panes
