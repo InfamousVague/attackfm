@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { applyStagedBundle, checkForUpdate } from './appUpdate.ts';
+import {
+  applyStagedBundle,
+  checkForUpdate,
+  reportBootOk,
+  restakeBootWager,
+} from './appUpdate.ts';
 import { isTauri } from '../core/tauri.ts';
 import wordmark from '../../assets/attack-white.png';
 
@@ -14,6 +19,19 @@ import wordmark from '../../assets/attack-white.png';
  * through a song. Launch is the one moment where a swap costs nothing, because
  * there is nothing on screen to tear out from under; the rest of appUpdate.ts
  * is built around avoiding exactly that, and this is the gap it leaves.
+ *
+ * THE WAGER, AND WHY THIS FILE HAS TO KNOW ABOUT IT. Booting a downloaded
+ * bundle stakes a wager natively (`bundle_begin_boot`) that only a working app
+ * settles (`reportBootOk`, deep inside the providers). `bundle_state` is the
+ * judge: any wager still outstanding when it is asked is read as a boot that
+ * never finished, and the version is quarantined and its directory deleted.
+ *
+ * This gate runs BEFORE those providers and its first act is to ask - so as
+ * written it handed the judge an unsettled wager on its own running bundle,
+ * every cold start, and the app deleted the code it was executing. So: settle
+ * on the way in, stake again on the way out. The wager still ends where it
+ * always did, and the window in which nobody is holding it is the one the
+ * gate itself occupies.
  *
  * THE RULE THIS FOLLOWS: a gate may never be the reason the app does not open.
  * Every path out of here ends in `done`, including the ones that fail. Offline,
@@ -81,13 +99,21 @@ export function LaunchUpdate({ children }: { children: ReactNode }) {
     const finish = () => {
       if (!alive || settled.current) return;
       settled.current = true;
+      // Hand the wager back before the app takes over, so a bundle that gets
+      // this far and then throws inside App is still caught next launch.
+      // Deliberately not awaited: `finish` is also the deadline's handler and
+      // opening the app must never wait on an IPC round trip.
+      void restakeBootWager();
       setPhase('done');
     };
     // The backstop. Runs whatever the check is doing, because the failure worth
     // guarding is the one that never returns at all.
     const timer = setTimeout(finish, DEADLINE_MS);
 
-    void checkForUpdate()
+    // Settle first, and WAIT: the check's opening move is `bundle_state`, and
+    // it would read this bundle's own unsettled wager as a failed boot.
+    void reportBootOk()
+      .then(checkForUpdate)
       .then((outcome) => {
         if (!alive || settled.current) return;
         if (outcome.state !== 'staged') {
