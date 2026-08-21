@@ -147,7 +147,8 @@ async fn build_spotify() -> Vec<Suggestion> {
     let mut out = Vec::new();
     for (id, section) in CATALOG {
         let url = format!("https://open.spotify.com/playlist/{id}");
-        if let Some((title, cover, total, titles)) = fetch_embed_meta(&url, "playlist").await {
+        if let Some(meta) = fetch_embed_meta(&url, "playlist").await {
+            let (title, cover, total, titles) = (meta.name, meta.cover, meta.total, meta.titles);
             let blurb = match total {
                 Some(n) => format!("{n} songs · add the whole list"),
                 None => "Add the whole list".to_string(),

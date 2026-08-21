@@ -109,6 +109,19 @@ pub(crate) fn quality() -> String {
         .unwrap_or_else(|| "LOSSLESS".to_string())
 }
 
+/// One song inside an import, as much as the source's embed page says about it
+/// before a byte has been downloaded: title, artist, length. Enough for the
+/// queue to read like a track list rather than a list of strings.
+#[derive(Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportItem {
+    pub title: String,
+    #[serde(default)]
+    pub artist: String,
+    #[serde(default)]
+    pub duration_ms: Option<u64>,
+}
+
 /// Mirrors the desktop `MusicImportJob` wire shape exactly, so the frontend
 /// type covers both transports without a translation layer.
 #[derive(Serialize, Deserialize, Clone)]
@@ -138,6 +151,12 @@ pub struct ImportJob {
     pub current_track: Option<String>,
     #[serde(default)]
     pub tracks: Vec<String>,
+    /// The same list as `tracks`, with what else the embed knew about each:
+    /// artist and length. Parallel to `tracks` rather than replacing it, so a
+    /// client built before this field keeps reading titles exactly as before -
+    /// the wire shape only ever grows. Index i here is index i there.
+    #[serde(default)]
+    pub items: Vec<ImportItem>,
     #[serde(default)]
     pub current_index: Option<u32>,
     #[serde(default)]
@@ -481,10 +500,19 @@ fn find_key<'a>(v: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::V
     }
 }
 
-pub(crate) async fn fetch_embed_meta(
-    link: &str,
-    kind: &str,
-) -> Option<(String, Option<String>, Option<u32>, Vec<String>)> {
+/// What the embed page says about a link, before anything is downloaded.
+pub(crate) struct EmbedMeta {
+    pub name: String,
+    pub cover: Option<String>,
+    /// Trusted only when the track list is short of the embed's cap.
+    pub total: Option<u32>,
+    /// Titles in order - the legacy shape `tracks` carries on the wire.
+    pub titles: Vec<String>,
+    /// The same songs with artist and length, aligned with `titles`.
+    pub items: Vec<ImportItem>,
+}
+
+pub(crate) async fn fetch_embed_meta(link: &str, kind: &str) -> Option<EmbedMeta> {
     let id = parse_spotify_id(link, kind)?;
     let client = reqwest::Client::builder().timeout(Duration::from_secs(25)).build().ok()?;
     let html = client
@@ -531,14 +559,29 @@ pub(crate) async fn fetch_embed_meta(
     let total = track_list
         .map(|a| a.len() as u32)
         .filter(|n| *n > 0 && *n < EMBED_TRACK_CAP);
-    let titles = track_list
+    // `subtitle` on an embed track is the artist line ("Tame Impala", or
+    // "A, B" for features); `duration` is milliseconds. Both are optional per
+    // item so a row missing one still lands with the others.
+    let items: Vec<ImportItem> = track_list
         .map(|a| {
             a.iter()
-                .filter_map(|t| t.get("title").and_then(|v| v.as_str()).map(String::from))
+                .filter_map(|t| {
+                    let title = t.get("title")?.as_str()?.to_string();
+                    Some(ImportItem {
+                        title,
+                        artist: t
+                            .get("subtitle")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.trim().to_string())
+                            .unwrap_or_default(),
+                        duration_ms: t.get("duration").and_then(|v| v.as_u64()),
+                    })
+                })
                 .collect()
         })
         .unwrap_or_default();
-    Some((name, cover, total, titles))
+    let titles = items.iter().map(|i| i.title.clone()).collect();
+    Some(EmbedMeta { name, cover, total, titles, items })
 }
 
 // --- The runner --------------------------------------------------------------
@@ -1289,6 +1332,7 @@ pub async fn enqueue_internal(
         subtitle: Some(subtitle.to_string()),
         current_track: None,
         tracks: Vec::new(),
+        items: Vec::new(),
         current_index: None,
         output_dir: state.music_root.display().to_string(),
         files: Vec::new(),
@@ -1347,6 +1391,7 @@ pub async fn enqueue(
         subtitle: Some(kind_label(kind)),
         current_track: None,
         tracks: Vec::new(),
+        items: Vec::new(),
         current_index: None,
         output_dir: state.music_root.display().to_string(),
         files: Vec::new(),
@@ -1370,16 +1415,17 @@ pub async fn enqueue(
     let meta_id = job.id.clone();
     let meta_kind = kind.to_string();
     tokio::spawn(async move {
-        if let Some((name, cover, total, titles)) = fetch_embed_meta(&url, &meta_kind).await {
+        if let Some(meta) = fetch_embed_meta(&url, &meta_kind).await {
             meta_state
                 .imports
                 .update(&meta_id, |j| {
-                    j.title = name;
-                    j.artwork_url = cover;
+                    j.title = meta.name;
+                    j.artwork_url = meta.cover;
                     if j.total.is_none() {
-                        j.total = total;
+                        j.total = meta.total;
                     }
-                    j.tracks = titles;
+                    j.tracks = meta.titles;
+                    j.items = meta.items;
                 })
                 .await;
             meta_state.imports.flush().await;
