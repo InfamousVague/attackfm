@@ -13,6 +13,7 @@
 import { isTauri, tauriCall } from '../core/tauri.ts';
 import { REGISTRY_URL } from '../servers/registry.ts';
 import { stashDeck } from '../player/deckHandoff.ts';
+import { recordDiag } from '../diag/diagLog.ts';
 
 /** What the server publishes at `/api/app/bundle`. */
 export interface BundleManifest {
@@ -231,8 +232,34 @@ export function bundleState(): Promise<BundleState | null> {
  * has landed first. Fire-and-forget left the two IPC calls racing.
  */
 export async function reportBootOk(): Promise<void> {
-  if (!window.__afmBundleVersion) return;
-  await tauriCall('bundle_boot_ok');
+  await settleBootWager();
+}
+
+/**
+ * Settle the wager, and say whether it actually landed.
+ *
+ * `tauriCall` cannot answer that: it returns null both when a command succeeds
+ * with no value - which `bundle_boot_ok` does - and when the call failed and
+ * was swallowed. For most callers that is fine. For this one it is the whole
+ * question, because the next thing that happens is `bundle_state`, and
+ * `bundle_state` reads an unsettled wager as a boot that never finished and
+ * DELETES the running bundle. A caller that cannot tell whether the settle
+ * landed is betting the app on it.
+ *
+ * So this one does its own invoke and lets the failure be visible.
+ */
+export async function settleBootWager(): Promise<boolean> {
+  // Nothing staked: the embedded bundle never places the bet.
+  if (!window.__afmBundleVersion) return true;
+  if (!isTauri()) return true;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('bundle_boot_ok');
+    return true;
+  } catch (e) {
+    recordDiag('boot', `could not settle the boot wager: ${e instanceof Error ? e.message : e}`);
+    return false;
+  }
 }
 
 /**
