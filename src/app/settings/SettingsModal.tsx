@@ -3,12 +3,11 @@
 // GeneralPane / PlaybackPane / PluginsPane (+ pluginRepos) / MobileSettings,
 // shared bits in settingsShared.ts, useMediaQuery deduped into ux/.
 import { SearchField, TabbedModal } from '@glacier/react';
-import { Bell, Blocks, BookOpen, HardDrive, Info, MonitorSpeaker, Palette, Play, Server, Settings, Shield, Sparkles, Stethoscope } from '@glacier/icons';
+import { Bell, Blocks, BookOpen, HardDrive, Info, Palette, Play, Server, Settings, Shield, Stethoscope } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { APP_VERSION } from '../core/version.ts';
 import { noteSettingsPane } from './settingsRecency.ts';
 import { useAppearance } from './appearance.tsx';
-import { isTauri } from '../core/tauri.ts';
 import { useLibrary } from '../library/library.tsx';
 import { usePlayback } from '../player/playback.tsx';
 import { usePlugins, usePluginSettingsSections } from '../../plugins/runtime.tsx';
@@ -18,8 +17,6 @@ import { diagEntries } from '../diag/diagLog.ts';
 import { HandbookPane } from './handbook/HandbookPane.tsx';
 import { HANDBOOK_PAGES } from './handbook/handbookPages.tsx';
 import { NotificationSettings } from './NotificationSettings.tsx';
-import { DevicesSettings } from './DevicesSettings.tsx';
-import { CuratorSettings } from './CuratorSettings.tsx';
 import { useConnect } from '../player/playbackSync.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { DeviceStorageSettings } from '../downloads/DeviceStorageSettings.tsx';
@@ -249,7 +246,7 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
   // The tab is controlled so a section that leaves the rail - a plugin pulled
   // after a crash while its own tab is showing - cannot strand the modal on an
   // id that no longer exists (the kit renders no pane at all for one). The
-  // reset lands on Plugins, where the crash notice explains what just left.
+  // reset lands on the first section still showing.
   const [tab, setTab] = useState('appearance');
   // Search over the panes: label, live summary, and each pane's own hand-kept
   // vocabulary. The RAIL narrows as you type; the structure never changes.
@@ -265,7 +262,9 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
   const shownIds = shown.map((s) => s.id).join('\n');
   useEffect(() => {
     const ids = shownIds.split('\n');
-    if (!ids.includes(tab)) setTab(ids[0] ?? 'plugins');
+    // First shown section wins; 'appearance' only covers the empty list a
+    // no-match search leaves (the moment the query changes, ids[0] takes over).
+    if (!ids.includes(tab)) setTab(ids[0] ?? 'appearance');
   }, [shownIds, tab]);
   // The chips are read once per open; opening a pane rewrites them.
   const noteTab = (id: string) => {
@@ -312,23 +311,12 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
   }));
 
   /*
-   * Full screen is what settings normally is now.
-   *
-   * It was a floating modal on any pointer device and a full-screen sheet on
-   * touch, which made the desktop the odd one out for no reason anybody using
-   * it would name: settings is a place you go, not something you glance at over
-   * the page, and the page behind it was doing nothing but showing through.
-   *
-   * The modal survives for ONE case - Now Playing docked as the right pane,
-   * where going full screen would cover the player it is standing beside - and
-   * even then only while the app's half is wide enough to hold a rail beside a
-   * pane. Squeezed below that, one readable column wins even at the cost of
-   * covering the player, which is the case that started this.
-   *
-   * MOBILE_QUERY is still consulted, though nothing docks on a phone and it
-   * should never be the deciding vote. It stays because a coarse pointer on a
-   * small screen wants the sheet whatever the measurement says, and a
-   * measurement that has not landed yet should not flash a modal at a phone.
+   * Which shell this render gets: the full-screen sheet or the rail-beside-
+   * pane modal. The whole decision - the room measurement, why it reads the
+   * .appWindow box rather than the viewport, why the floor sits at 700 - lives
+   * with useSettingsIsModal in settingsShared.ts; MOBILE_QUERY stays consulted
+   * so a coarse pointer on a small screen gets the sheet before any
+   * measurement has landed, rather than a flash of modal.
    */
   const mobile = useMediaQuery(MOBILE_QUERY);
   const asModal = useSettingsIsModal(open);

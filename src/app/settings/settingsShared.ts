@@ -12,11 +12,16 @@ import type { ThemePreference } from './themePresets.ts';
 export const PANE_KEYWORDS: Record<string, string> = {
   appearance: 'theme dark light accent color colour scale text size dawn boreal ember midnight alpine',
   general: 'haptics vibration folder music directory metadata artwork lyrics online',
-  playback: 'crossfade gapless sleep timer equalizer eq bands pause style shuffle repeat quality volume',
+  // The equalizer left for the sound console long ago, and gapless/repeat
+  // never had rows here - phantom words that matched this pane made the
+  // search LOOK broken ("eq" landed you somewhere with no EQ in it).
+  playback: 'crossfade sleep timer pause style shuffle quality volume night mode mono auto dj',
   server: 'server connect sign in url mirror network invite join host latency devices speakers where you listen seat',
   storage: 'cache offline downloads space disk limit pins clear wifi wi-fi mobile data cellular',
   notifications: 'push alerts recap weekly interrupt bell notifications news downloads finished',
   plugins: 'plugin extension import spotify buy discover sources',
+  privacy: 'privacy history scrobble tracking metadata lookups lyrics share position telemetry friends',
+  diagnostics: 'diagnostics problems errors log report broken crash push notifications debug',
   about: 'version update check whats new shell licenses github',
   handbook:
     'handbook guide manual documentation docs how it works help plugin develop developer api build publish gestures',

@@ -1,6 +1,6 @@
-import { Button, Field, Input, Label, StatTile, Switch, Text } from '@glacier/react';
+import { Button, Field, Input, Label, StatTile, Text } from '@glacier/react';
 import { Cloud, Compass, Disc3, FolderOpen, LogOut, Mic2, Music, Timer } from '@glacier/icons';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { canPickFolder } from '../core/tauri.ts';
 import { useLibrary } from '../library/library.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';

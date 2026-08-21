@@ -69,14 +69,17 @@ export function MirrorSection() {
     };
   }, [session]);
 
-  if (!session) return null;
-  const here = source?.url === session.url;
+  // Signed-out is answered AFTER the hooks, not here. An early return above a
+  // useEffect is a hooks-order violation: signing out mid-open changes how many
+  // hooks this component calls between renders, which is the exact crash React
+  // reserves for it. `here` tolerates the null so the effect below can too.
+  const here = session != null && source?.url === session.url;
 
   // Ask the SOURCE how big its listened-to set is, so the size is visible
   // before the copy rather than discovered during it. Best-effort: an older
   // source has no such endpoint and the switch simply describes itself.
   useEffect(() => {
-    if (!source || here || !hotOnly) return;
+    if (!session || !source || here || !hotOnly) return;
     let live = true;
     void fetchHotSummary(source)
       .then((s) => {
@@ -88,8 +91,10 @@ export function MirrorSection() {
     return () => {
       live = false;
     };
-  }, [source, here, hotOnly]);
+  }, [session, source, here, hotOnly]);
   const running = status?.running === true;
+
+  if (!session) return null;
 
   return (
     <div className="prefsSection">

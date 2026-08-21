@@ -69,8 +69,8 @@ export function Privacy() {
         />
         <Text tone="muted" size="sm">
           Sends what you are playing — song, artist and how far in — to your AttackFM account
-          every twenty seconds, so another device could pick it up. Off by default, because
-          nothing in the app offers to resume from it yet.
+          every twenty seconds. It is what lets another device pick up mid-song, and what the
+          audiobook shelf reads to continue where you left off.
         </Text>
       </div>
 
