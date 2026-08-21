@@ -52,6 +52,7 @@ import { AppProviders } from './nav/AppProviders.tsx';
 import { useFilePlan } from './downloads/useFilePlan.ts';
 import type { FileOutcome, FilePlan } from './downloads/filePlan.ts';
 import wordmark from '../assets/attack-white.png';
+import { deckHandoff } from './player/deckHandoff.ts';
 
 // Window chrome only makes sense where there is a window to decorate: a desktop
 // Tauri build. A phone build is inside Tauri too, but has no frame and no
@@ -236,13 +237,18 @@ export function App() {
   // A dropdown opened inside a popover portals out of it, which the popover
   // reads as a press outside itself. See overlayGuard.
   useEffect(() => installOverlayGuard(), []);
+  // What an update interrupted, if this launch is the far side of one. Read in
+  // the initialisers below rather than in an effect, so the deck is already
+  // dressed on the first paint - arriving from an update to an empty player
+  // that fills in a moment later is the flicker this exists to avoid.
+  const handoff = deckHandoff();
   // The track the list handed to the player; null until one is opened.
-  const [current, setCurrent] = useState<Track | null>(null);
+  const [current, setCurrent] = useState<Track | null>(handoff?.track ?? null);
   // The list that track was opened from, in the order it was showing - what
   // the player's skips and autoplay walk through. Snapshotted at open, the
   // way a play context should be: re-sorting the table later reorders the
   // table, not the record already spinning.
-  const [queue, setQueue] = useState<Track[]>([]);
+  const [queue, setQueue] = useState<Track[]>(handoff?.queue ?? []);
   // Stable for the station's refill effect, which lists it as a dependency:
   // a fresh closure each render would re-ask the hub on every paint.
   const extendQueue = useCallback(
@@ -259,6 +265,12 @@ export function App() {
   // compares tracks by path, so the clone changes nothing else.
   // False until the user picks something themselves: the launch seed loads
   // the deck without dropping the needle.
+  //
+  // A handoff is the one launch that opens playing: the update stopped the
+  // song, so restoring it is putting something back rather than starting
+  // something. Deliberately NOT true here even so - the player seeks to the
+  // remembered spot first and starts from there, because autoplay would drop
+  // the needle at zero while the seek was still resolving.
   const [autoplay, setAutoplay] = useState(false);
   /**
    * Whether the deck is THIS SESSION'S rather than the launch seed's.
@@ -275,7 +287,7 @@ export function App() {
    * whenever the music stopped would move the whole layout under the reader's
    * hands - a worse fault than the one it fixes.
    */
-  const [deckEngaged, setDeckEngaged] = useState(false);
+  const [deckEngaged, setDeckEngaged] = useState(handoff !== null);
   // The import job the current placeholder waits on while a tapped remote song
   // downloads (see pendingPlay.tsx). Null when nothing is downloading.
   const [pendingJobId, setPendingJobId] = useState<string | null>(null);
