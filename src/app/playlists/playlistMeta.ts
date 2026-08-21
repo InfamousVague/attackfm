@@ -96,8 +96,23 @@ export function subscribeMeta(fn: () => void): () => void {
   return () => listeners.delete(fn);
 }
 
+/**
+ * ONE object for "this playlist has no decoration", shared by every caller.
+ *
+ * Not a micro-optimisation - the absence of it crashed the playlist page. This
+ * is read through useSyncExternalStore, which compares snapshots BY IDENTITY to
+ * decide whether anything changed. Returning a fresh `{}` each call means the
+ * snapshot never equals the last one, so React re-renders, reads again, gets
+ * another new object, and loops until it gives up. And it fired on the common
+ * case: a playlist nobody has described yet, which is all of them at first.
+ *
+ * Frozen so a caller cannot write into the shared empty and give every
+ * undecorated playlist the same description.
+ */
+const NONE: PlaylistMeta = Object.freeze({});
+
 export function metaFor(key: string): PlaylistMeta {
-  return snapshot[key] ?? {};
+  return snapshot[key] ?? NONE;
 }
 
 /**
