@@ -100,6 +100,15 @@ dependencies {
     // WKWebView does on iOS, so without a session of our own the car has
     // nothing to read and nowhere to send a skip.
     implementation("androidx.media:media:1.7.0")
+    // Chromecast. The framework does discovery and session plumbing; the page
+    // stays the brain and drives it through CastBridge. mediarouter is named
+    // outright because CastBridge talks to MediaRouter directly for its own
+    // device list - the framework's MediaRouteButton UI is never used.
+    // 21.5.0 rather than 22.x: the 22 line ships kotlin-stdlib 2.1 metadata,
+    // which this project's Kotlin 1.9 compiler refuses to read. Every API
+    // CastBridge touches is identical between the two.
+    implementation("androidx.mediarouter:mediarouter:1.7.0")
+    implementation("com.google.android.gms:play-services-cast-framework:21.5.0")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.4")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.0")

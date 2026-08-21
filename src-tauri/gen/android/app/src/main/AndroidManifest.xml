@@ -25,6 +25,13 @@
             android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc" />
 
+        <!-- What stands the Cast framework up: CastContext reads this class
+             for its options (receiver id). Without it getSharedInstance
+             throws, which CastBridge reads as "this device cannot cast". -->
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="com.mattssoftware.attackfm.CastOptionsProvider" />
+
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
             android:launchMode="singleTask"

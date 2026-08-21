@@ -25,6 +25,7 @@ import { isRemotePath } from '../server.ts';
 import { fireNativeHaptic } from '../core/haptics.ts';
 import { loadScrubTape } from './scrubTape.ts';
 import { useConnect } from './playbackSync.tsx';
+import { castLoad, castMediaFor, castPause, castPlay, castSeek, useCastSnapshot } from './cast.ts';
 import { AddToPlaylistDialog } from '../playlists/AddToPlaylist.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useJamOptional } from './jam.tsx';
@@ -228,6 +229,28 @@ export function Player({
   const remoteAdrift = remoteOnly && !connect.connected;
   const remoteOnlyRef = useRef(remoteOnly);
   remoteOnlyRef.current = remoteOnly;
+  /*
+   * The Chromecast, and which brain feeds it.
+   *
+   * Casting only means anything while THIS device is the one playing: the
+   * page stays the brain (queue, next, position) and the TV is where the
+   * sound comes out - the decks run on, muted, as the clock the UI reads.
+   * A device that is itself a Connect REMOTE has no playback of its own to
+   * mirror, so `casting` is false there even with a session up; the active
+   * device is the one whose Player feeds the TV.
+   */
+  const cast = useCastSnapshot();
+  const casting = cast.session != null && !remoteOnly;
+  const castingRef = useRef(casting);
+  castingRef.current = casting;
+  /** `playing` through a ref, for cast effects keyed to the SONG - whether a
+   *  freshly loaded track should run must not itself reload the track. */
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
+  /** Quiet window for the TV-clock follower: after WE move the stream (a
+   *  load, a seek), the TV's next few reports describe where it USED to be,
+   *  and adopting them would drag the deck right back. */
+  const castQuietUntil = useRef(0);
   const listLoading = libraryLoading || scanning;
   // A placeholder for a tapped song still downloading (see pendingPlay.tsx): its
   // path names an import job, not a file. The load path skips it, and the sheet
@@ -2600,6 +2623,13 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   const commitSeek = (to: number) => {
     scrubbing.current = false;
     setPosition(to);
+    // The TV follows the listener's jump, and the follower goes quiet while
+    // it does: the TV's next reports still describe the old spot, and
+    // adopting them would drag the deck straight back to it.
+    if (castingRef.current) {
+      castSeek(to * 1000);
+      castQuietUntil.current = Date.now() + 3000;
+    }
     // The listener has chosen a spot; a recovery aimed at the old one is void,
     // and the seek itself earns a fresh set of attempts.
     clearStall();
@@ -2794,6 +2824,90 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       }),
     [],
   );
+
+  /*
+   * The cast mirror: four small effects rather than a mode.
+   *
+   * While a TV holds the sound, the decks keep running MUTED - they stay the
+   * clock every surface reads (the bar, the sheet, the wave), the ended event
+   * still advances the queue, and un-casting is nothing but un-muting. The
+   * alternative - a third display mode like the Connect remote's - would
+   * thread a second source of truth through three thousand lines that
+   * currently have one.
+   */
+
+  // The mute itself. `muted`, not volume: the fades and the loudness gain
+  // both write volume, and fighting them would re-silence or un-silence at
+  // every crossfade edge.
+  useEffect(() => {
+    for (const el of [audioRef.current, audioBRef.current]) {
+      if (el) el.muted = casting;
+    }
+  }, [casting]);
+
+  // What the TV should fetch: re-sent when the song changes or the session
+  // starts. The TV joins AT the deck's current position, so starting a cast
+  // mid-song carries on rather than starting over.
+  const castToastShown = useRef(false);
+  useEffect(() => {
+    if (!casting || !track || downloading) return;
+    const media = castMediaFor(track.path, track.codec);
+    if (!media) {
+      // A local folder's file exists only on this phone; the TV cannot fetch
+      // it. Said once per session, not once per song, and the deck plays on
+      // here exactly as before.
+      if (!castToastShown.current) {
+        castToastShown.current = true;
+        toast({ message: `“${track.title}” only lives on this device, so it can't be cast` });
+      }
+      return;
+    }
+    const el = activeAudio();
+    castQuietUntil.current = Date.now() + 3000;
+    castLoad({
+      ...media,
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      art: artwork && /^https?:/i.test(artwork) ? artwork : undefined,
+      durationMs: Math.max(0, Math.round((track.duration ?? 0) * 1000)),
+      positionMs: Math.max(0, Math.round((el ? deckTime(el) : 0) * 1000)),
+      autoplay: playingRef.current,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed to the song and the session, not every render's artwork/position
+  }, [casting, track?.path, downloading]);
+
+  // Play and pause travel; the muted deck does both anyway, so the two clocks
+  // stop and start together.
+  useEffect(() => {
+    if (!casting) return;
+    if (playing) castPlay();
+    else castPause();
+  }, [casting, playing]);
+
+  /*
+   * The TV is the clock; the silent deck follows it.
+   *
+   * The TV starts a second or two behind (its own connect-and-buffer), and
+   * left alone that gap would hold to the end of the track - where the deck's
+   * `ended` would cut the song's tail off the TV to start the next one. So
+   * when the TV's reported position has drifted from the deck's, the deck is
+   * seeked to match - it is muted, so the jump is inaudible here, and the UI
+   * follows the sound the listener is actually hearing. Threshold well above
+   * report jitter, and silent during the quiet window after our own moves.
+   */
+  useEffect(() => {
+    if (!casting || !cast.media) return;
+    if (Date.now() < castQuietUntil.current) return;
+    const el = activeAudio();
+    if (!el || scrubbing.current) return;
+    const tvS = cast.media.positionMs / 1000;
+    const deckS = deckTime(el);
+    if (Math.abs(tvS - deckS) > 2.5 && tvS > 0) {
+      el.currentTime = Math.max(0, tvS - srcOffset.current);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs on each TV report; everything else is read through refs
+  }, [casting, cast.media?.positionMs]);
 
   // What the strip shows and what its controls do, swapped by mode. Active (or
   // alone): local track, local handlers. Remote: the other device's track, and

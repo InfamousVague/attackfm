@@ -32,6 +32,7 @@ import { rememberSession, sessionForOrigin } from './sessions.ts';
 import { effectsParam } from '../player/effects.ts';
 import { fxChainParam } from '../player/fxChain.ts';
 import { setRemoteAudioResolver } from '../core/tauri.ts';
+import { setCastStreamResolver } from '../player/cast.ts';
 import { syncPushRegistration } from '../core/notifications.ts';
 
 const SESSION_KEY = 'attackfm-server-session';
@@ -196,7 +197,28 @@ export function ServerSessionProvider({ children }: { children: ReactNode }) {
       // seeks it by coming back here with a new `seek`.
       return { url: transcodeUrl(from, rowId, bitrate, at, fx, fx2, drop), offset: at, seekable: false };
     });
-    return () => setRemoteAudioResolver(null);
+    // The Chromecast's own resolver, registered here for the same reason the
+    // audio one is: only this provider knows which server owns a path and
+    // holds a live token. Always the PLAIN stream - the TV fetches the
+    // original file over public https and seeks it by ranges itself. The
+    // rack/chain/stems deliberately do not follow (cast.ts says why), and the
+    // quality setting is about THIS device's metered link, not the TV's.
+    setCastStreamResolver((path) => {
+      const owner = sessionForOrigin(originFromPath(path));
+      const live = owner ?? sessionRef.current;
+      if (!live || !isRemotePath(path)) return null;
+      const id = trackIdFromPath(path);
+      if (id === null) return null;
+      const via = pickSource(live, id);
+      const from: ServerSession = via
+        ? { ...live, url: via.url, streamToken: via.streamToken }
+        : live;
+      return streamUrl(from, via ? via.trackId : id);
+    });
+    return () => {
+      setRemoteAudioResolver(null);
+      setCastStreamResolver(null);
+    };
   }, []);
 
   // A stored session is trusted enough to render from at once, and its stream
