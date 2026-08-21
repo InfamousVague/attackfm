@@ -1,0 +1,9 @@
+/* --- the developer page --------------------------------------------------- */
+
+/*
+ * Settings > Developer: the hidden tools page. Everything in it should speak
+ * the settings kit's vocabulary (PaneSection / SettingRow / SettingsCallout /
+ * SettingsFootnote, 63-settings-panes.css) - this chapter is only for the
+ * few things the kit has no word for: readouts laid out as key/value grids,
+ * a monospace report block, a live meter.
+ */

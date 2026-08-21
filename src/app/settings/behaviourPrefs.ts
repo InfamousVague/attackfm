@@ -64,6 +64,30 @@ export function setSharePosition(value: boolean): void {
   set(RESUME_KEY, value, false);
 }
 
+/**
+ * Verbose notifications: tell me when the machinery does something.
+ *
+ * Off by default. On, the bell also rings for the things that normally happen
+ * silently in the background - a download STARTING (landing already rings), a
+ * song being pulled into stems by the server's prefetcher, the AI passes
+ * (fast profiles, refinement, curation, discovery, the home and station
+ * builders) starting and finishing. Device-local: this is about how much one
+ * phone interrupts you, not a fact about the account.
+ *
+ * Read at EMIT time by the watchers (DownloadNotices, VerboseNotices) rather
+ * than held in state, so flipping the switch takes effect on the next event
+ * without anything remounting.
+ */
+const VERBOSE_KEY = 'attackfm-notify-verbose';
+
+export function verboseNoticesEnabled(): boolean {
+  return on(VERBOSE_KEY, false);
+}
+
+export function setVerboseNotices(value: boolean): void {
+  set(VERBOSE_KEY, value, false);
+}
+
 // ── Sending your music to a server ──────────────────────────────────────────
 
 const UPLOAD_KEY = 'attackfm-auto-upload';

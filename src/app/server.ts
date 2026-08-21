@@ -42,3 +42,5 @@ export * from './api/mirror.ts';
 export * from './api/catalog.ts';
 export * from './api/playlists.ts';
 export * from './api/radio.ts';
+export * from './api/activity.ts';
+export * from './api/ai.ts';

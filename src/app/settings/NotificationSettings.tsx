@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { fetchPushPrefs, setPushPref, type ServerSession } from '../server.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { PaneSection, SettingRow, SettingsEmpty } from './kit/settingsKit.tsx';
+import { setVerboseNotices, verboseNoticesEnabled } from './behaviourPrefs.ts';
 
 /**
  * What the app is allowed to interrupt you for.
@@ -68,6 +69,9 @@ export async function primeNotificationsSummary(session: ServerSession): Promise
 }
 
 export function NotificationSettings() {
+  // Device-local, unlike every switch below it: how much THIS phone rings
+  // for background work is not a fact about the account.
+  const [verbose, setVerbose] = useState(verboseNoticesEnabled);
   const { session } = useServerSession();
   const [prefs, setPrefs] = useState<Record<string, boolean> | null>(null);
   const [devices, setDevices] = useState(0);
@@ -118,6 +122,29 @@ export function NotificationSettings() {
           title="Notifications come from your server"
           body="Sign in and the switches appear — each kind is a per-account choice the server honours for every device at once."
         />
+      {/* The one switch here that lives on the device rather than the server.
+          It gates the local-only kinds (download started, stems, AI passes)
+          raised by the client's own watchers; the server never sees them. */}
+      <PaneSection
+        title="On this device"
+        description="Normally only news rings the bell. Turn this on to hear about the machinery working too."
+      >
+        <SettingRow
+          id="notify-verbose"
+          label="Verbose notifications"
+          hint="Downloads starting, songs being pulled into stems, and the AI's background passes starting and finishing."
+          control={
+            <Switch
+            checked={verbose}
+            onCheckedChange={(v) => {
+              setVerbose(v);
+              setVerboseNotices(v);
+            }}
+            aria-label="Verbose notifications"
+          />
+          }
+        />
+      </PaneSection>
       </div>
     );
   }
@@ -181,6 +208,29 @@ export function NotificationSettings() {
             );
           })
         )}
+      </PaneSection>
+      {/* The one switch here that lives on the device rather than the server.
+          It gates the local-only kinds (download started, stems, AI passes)
+          raised by the client's own watchers; the server never sees them. */}
+      <PaneSection
+        title="On this device"
+        description="Normally only news rings the bell. Turn this on to hear about the machinery working too."
+      >
+        <SettingRow
+          id="notify-verbose"
+          label="Verbose notifications"
+          hint="Downloads starting, songs being pulled into stems, and the AI's background passes starting and finishing."
+          control={
+            <Switch
+            checked={verbose}
+            onCheckedChange={(v) => {
+              setVerbose(v);
+              setVerboseNotices(v);
+            }}
+            aria-label="Verbose notifications"
+          />
+          }
+        />
       </PaneSection>
     </div>
   );
