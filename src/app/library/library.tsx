@@ -75,6 +75,17 @@ interface LibraryContextValue {
    * the owning account's "For you" surface. Always empty for a local library.
    */
   forYou: Track[];
+  /**
+   * Audiobook files, held apart from `tracks` rather than filtered out of it.
+   *
+   * Books were once dropped on the floor here, because a twelve-hour reading
+   * loose among the songs is the wrong thing in a mix, in shuffle, in search
+   * and in the curator's idea of your taste. That reasoning was right and is
+   * unchanged - `tracks` is still music only. What was wrong was that being
+   * the END of them: a library that holds a book you own and shows it nowhere.
+   * They come out on their own shelf instead.
+   */
+  books: Track[];
   /** The favourited tracks that are present in the current library, newest first. */
   favoriteTracks: Track[];
   /** Whether a track (by path) is favourited. */
@@ -265,6 +276,7 @@ function LocalLibrary({ children }: { children: ReactNode }) {
       tracks,
       // A local folder has no collector: everything in it was put there.
       forYou: [],
+      books: [],
       favoriteTracks,
       isFavorite: (path: string) => favorites.includes(path),
       toggleFavorite: (path: string) =>
@@ -546,6 +558,8 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
   // are filtered out here, once, so no shelf, mix, search or queue downstream
   // has to know they exist.
   const music = useMemo(() => mapped.filter((t) => t.kind !== 'book'), [mapped]);
+  // The other side of that same split, kept rather than discarded.
+  const books = useMemo(() => mapped.filter((t) => t.kind === 'book'), [mapped]);
   const tracks = useMemo(
     () => music.filter((t) => t.curatorUserId == null || t.curatorPromoted),
     [music],
@@ -577,6 +591,7 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
       isDefault: false,
       tracks,
       forYou,
+      books,
       favoriteTracks,
       isFavorite: (path: string) => {
         const id = trackIdFromPath(path);
@@ -612,7 +627,7 @@ function RemoteLibrary({ session, children }: { session: ServerSession; children
       choose: async () => {},
       reset: async () => {},
     };
-  }, [session, tracks, forYou, favorites, syncing, synced, sync, error]);
+  }, [session, tracks, forYou, books, favorites, syncing, synced, sync, error]);
 
   return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;
 }

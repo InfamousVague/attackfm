@@ -64,7 +64,7 @@ export const audible: Plugin = {
   description: 'Download the audiobooks you own on Audible into your library.',
   icon: <BookHeadphones size={22} />,
   author: 'AttackFM',
-  version: '0.3.1',
+  version: '0.3.2',
   tags: ['Audiobooks', 'Downloads'],
   requiresServer: true,
   details:
