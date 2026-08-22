@@ -38,9 +38,26 @@
     -->
     <script>
       (function () {
-        var moduleTag = document.querySelector('script[type="module"][src]');
-        // The dev server serves /src/main.tsx directly; nothing to swap.
-        if (!moduleTag || moduleTag.getAttribute('src').indexOf('/src/') === 0) return;
+        // The app's own entry, which is NOT simply the first module script.
+        // Vite injects its client (`/@vite/client`) ahead of /src/main.tsx, so
+        // taking the first one made the dev server look like a built bundle:
+        // the loader published `/@vite/client` as the chosen frontend, and
+        // main.tsx - seeing a name that was not its own - correctly concluded
+        // it was the losing half of a double boot and stood down. A black page
+        // on every dev launch, from a guard that is right in production.
+        var tags = document.querySelectorAll('script[type="module"][src]');
+        var moduleTag = null;
+        for (var i = 0; i < tags.length; i++) {
+          var src = tags[i].getAttribute('src') || '';
+          // Served from source: this is the dev server and there is no bundle
+          // to swap, whichever order the tags happen to be in.
+          if (src.indexOf('/src/') === 0) return;
+          // Vite's own machinery, never the app.
+          if (src.indexOf('/@') === 0) continue;
+          moduleTag = tags[i];
+          break;
+        }
+        if (!moduleTag) return;
 
         var embeddedJs = moduleTag.getAttribute('src');
         var cssTag = document.querySelector('link[rel="stylesheet"][href*="app.css"]');

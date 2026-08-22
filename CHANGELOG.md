@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.331
+
+- Hold a playlist to get its menu. Pressing and holding a playlist on Home now opens its actions — rename, cover, and whether to separate it ahead of time — and lifting your finger no longer drops you into the playlist instead
+- The same "separate these ahead" switch now sits in a playlist's own ⋯ menu, so it is in both places you would look for it
+
 ## 0.3.330
 
 - "Clear the rest" now counts before it asks — it names how many songs and how many gigabytes before you confirm, and says plainly whether your Liked songs are being spared or cleared along with them

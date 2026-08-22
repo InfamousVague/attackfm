@@ -11,6 +11,7 @@ import {
   useToast,
 } from '@glacier/react';
 import {
+  AudioLines,
   Check,
   EllipsisVertical,
   Image as ImageIcon,
@@ -64,7 +65,7 @@ interface PlaylistPageProps {
  */
 export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageProps) {
   const { tracks } = useLibrary();
-  const { playlists, rename, remove, removeTrack, reorder, addTrack, setMeta, setCover } =
+  const { playlists, rename, remove, removeTrack, reorder, addTrack, setMeta, setCover, setAutoStem } =
     usePlaylists();
   const { toast } = useToast();
   const { session } = useServerSession();
@@ -450,6 +451,16 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
               {setCover && playlist.coverUrl && (
                 <MenuItem icon={<X size={15} />} onSelect={() => void setCover(playlist.id, null)}>
                   Remove cover
+                </MenuItem>
+              )}
+              {/* The same item the shelf's tile menu carries, so a playlist
+                  offers the same things from both of its doors. */}
+              {setAutoStem && playlist.autoStem !== undefined && (
+                <MenuItem
+                  icon={<AudioLines size={15} />}
+                  onSelect={() => setAutoStem(playlist.id, !playlist.autoStem)}
+                >
+                  {playlist.autoStem ? 'Stop separating ahead' : 'Separate these ahead'}
                 </MenuItem>
               )}
               <MenuItem icon={<Trash2 size={15} />} onSelect={() => setConfirmDelete(true)}>
