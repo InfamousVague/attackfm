@@ -1,10 +1,11 @@
-import { Modal, Text } from '@glacier/react';
-import { BookAudio, Check, ChevronRight, Play } from '@glacier/icons';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Button, Modal, ProgressBar, Text } from '@glacier/react';
+import { BookAudio, Check, ChevronRight, Play, Upload } from '@glacier/icons';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PluginPageProps } from '../types.ts';
 import { useLibrary } from '../../app/library/library.tsx';
 import { useServerSession } from '../../app/servers/serverSession.tsx';
 import { fetchPlayStates } from '../../app/api/listening.ts';
+import { uploadFile } from '../../app/api/library.ts';
 import type { Track } from '../../app/core/tauri.ts';
 
 /*
@@ -28,6 +29,102 @@ import type { Track } from '../../app/core/tauri.ts';
  *    and "where you are" is which marker the saved position sits in.
  * The Player keeps the bookmark and walks the chapters for both.
  */
+
+/**
+ * Add a book you already have.
+ *
+ * A plain file input rather than the native picker the desktop upload pane
+ * uses, and that is the whole point: `dialog.open` plus the filesystem plugin
+ * reads a path off a disk, which is why that pane is desktop-only - and a
+ * bought audiobook is very often sitting on the PHONE. A file input is the one
+ * mechanism both have, because Android's webview implements the file chooser
+ * and every desktop webview opens a native panel for it. The `File` it hands
+ * back already has the shape `uploadFile` wants: a name, a size, and slices.
+ *
+ * Where it LANDS is the server's business, not this button's. An upload is
+ * filed by its own tags and extension, and a book goes to `Audiobooks/` - which
+ * is what gets its chapters read and keeps it off the music shelves. So this
+ * does not have to say "this is a book"; it only has to hand the file over.
+ */
+function AddBook({ onAdded }: { onAdded: () => void }) {
+  const { session } = useServerSession();
+  const input = useRef<HTMLInputElement | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [fraction, setFraction] = useState(0);
+  const [note, setNote] = useState<string | null>(null);
+
+  // Uploading needs somewhere to upload TO. Local libraries have no such thing,
+  // and a button that cannot work is worse than no button.
+  if (!session) return null;
+
+  const take = async (files: FileList | null) => {
+    const chosen = [...(files ?? [])];
+    if (chosen.length === 0) return;
+    setBusy(true);
+    setNote(null);
+    let done = 0;
+    try {
+      for (const file of chosen) {
+        await uploadFile(
+          session,
+          {
+            name: file.name,
+            size: file.size,
+            slice: async (start, end) => new Uint8Array(await file.slice(start, end).arrayBuffer()),
+          },
+          {
+            onProgress: (f) => setFraction((done + f) / chosen.length),
+          },
+        );
+        done += 1;
+        setFraction(done / chosen.length);
+      }
+      // The server indexes on finish, but this device is holding its own copy
+      // of the library - so ask for the walk and the re-sync, or the shelf
+      // stays empty behind a book that is already there.
+      await onAdded();
+      setNote(chosen.length === 1 ? `Added ${chosen[0]!.name}` : `Added ${chosen.length} files`);
+    } catch (e) {
+      // The server refuses for reasons worth repeating verbatim: a format it
+      // does not take, a file over the ceiling, a full library quota.
+      setNote(e instanceof Error ? e.message : 'that upload did not go through');
+    } finally {
+      setBusy(false);
+      setFraction(0);
+      if (input.current) input.current.value = '';
+    }
+  };
+
+  return (
+    <div className="booksAdd">
+      <input
+        ref={input}
+        type="file"
+        multiple
+        className="booksAdd__input"
+        // The formats the server takes, m4b first - it is what a bought
+        // audiobook almost always is. `audio/*` keeps a picker that ignores
+        // extensions from showing an empty folder.
+        accept=".m4b,.m4a,.mp3,.aac,.flac,.wav,.aiff,.aif,.ogg,.oga,.opus,audio/*"
+        onChange={(e) => void take(e.currentTarget.files)}
+      />
+      <Button
+        variant="soft"
+        size="sm"
+        disabled={busy}
+        onClick={() => input.current?.click()}
+      >
+        <Upload size={15} /> {busy ? 'Adding…' : 'Add a book'}
+      </Button>
+      {busy && <ProgressBar value={Math.round(fraction * 100)} aria-label="Uploading" />}
+      {note && !busy && (
+        <Text tone="muted" size="xs">
+          {note}
+        </Text>
+      )}
+    </div>
+  );
+}
 
 /** afm://<id> -> id, the app's remote-path shape, for matching the bookmark
  *  ledger (which is keyed by track id). */
@@ -99,7 +196,7 @@ function minutes(ms: number): string {
 
 export function BooksPage({ onPlay }: PluginPageProps) {
   const { session } = useServerSession();
-  const { books } = useLibrary();
+  const { books, rescan } = useLibrary();
   const shelf = useMemo(() => shelve(books), [books]);
 
   const [marks, setMarks] = useState<Map<number, { positionMs: number; updatedAt: number }>>(
@@ -169,10 +266,12 @@ export function BooksPage({ onPlay }: PluginPageProps) {
             <h1 className="discoverHead__title">Books</h1>
             <p className="discoverHead__blurb">Your audiobook shelf.</p>
           </div>
+          <AddBook onAdded={rescan} />
         </header>
         <Text tone="muted" size="sm">
-          No audiobooks yet. Add a downloader plugin (Audible, or the free LibriVox catalogue) to
-          fill the shelf — anything it saves shows up here.
+          No audiobooks yet. Add one you already own with the button above, or install a downloader
+          plugin (Audible, or the free LibriVox catalogue) — anything that lands in the library
+          shows up here.
         </Text>
       </div>
     );
@@ -188,6 +287,7 @@ export function BooksPage({ onPlay }: PluginPageProps) {
           <h1 className="discoverHead__title">Books</h1>
           <p className="discoverHead__blurb">Your shelf — pick up where you left off.</p>
         </div>
+        <AddBook onAdded={rescan} />
       </header>
 
       <section className="discoverSection">
