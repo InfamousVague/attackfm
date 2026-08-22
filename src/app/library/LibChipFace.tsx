@@ -50,11 +50,18 @@ export function LibChipMosaic({ covers, force }: { covers: string[]; force?: boo
 
 /** The count on its own, for Numbers first. Absent where a door has no number
  *  to lead with (On repeat, DJ) - the style then falls back to the name, which
- *  is the honest thing to lead with when there is no figure. */
-export function LibChipStat({ value }: { value?: string }) {
+ *  is the honest thing to lead with when there is no figure.
+ *
+ *  `glyph` marks a value that is a SYMBOL rather than a figure - the DJ's
+ *  infinity. A digit fills its line box from baseline to cap height, and the
+ *  card's spacing was tuned around that; a symbol does not, so at the same
+ *  font-size it draws barely half the ink and floats in the middle of a box
+ *  sized for numerals, leaving a hole under the label. The class is what the
+ *  stylesheet needs to size it by its ink instead. */
+export function LibChipStat({ value, glyph }: { value?: string; glyph?: boolean }) {
   if (!value) return null;
   return (
-    <span className="libChip__stat" aria-hidden="true">
+    <span className={glyph ? 'libChip__stat libChip__stat--glyph' : 'libChip__stat'} aria-hidden="true">
       {value}
     </span>
   );
