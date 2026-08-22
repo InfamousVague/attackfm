@@ -353,9 +353,14 @@ export function BooksPage({ onPlay }: PluginPageProps) {
           <AddBook onAdded={rescan} />
         </header>
         <Text tone="muted" size="sm">
-          No audiobooks yet. Add one you already own with the button above, or install a downloader
-          plugin (Audible, or the free LibriVox catalogue) — anything that lands in the library
-          shows up here.
+          {/* Names the free catalogue by the label it actually wears in the
+              navigation, and does not tell anyone to install it: LibriVox
+              ships as a default plugin, so for a new person it is already
+              there. Saying "install a downloader plugin" sent them looking in
+              Settings for something they had. */}
+          No audiobooks yet. Open <strong>Free books</strong> for the LibriVox catalogue — thousands
+          of public-domain readings, free and legal to keep — or add one you already own with the
+          button above. Anything that lands in the library shows up here.
         </Text>
       </div>
     );
