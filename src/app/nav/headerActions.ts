@@ -54,10 +54,30 @@ export interface HeaderActions {
    * every time. A module-level icon is stable.
    */
   glyph?: ComponentType<{ size?: number }> | null;
-  play: () => void;
-  shuffle: () => void;
+  /**
+   * Optional, because not every page that wants its NAME up here has a single
+   * thing to play. A shelf of audiobooks is a place, not a collection: Play
+   * and Shuffle over it would have to pick a book, and picking one is the
+   * question the page exists to ask. Absent means the controls simply are not
+   * drawn, rather than drawn dead.
+   */
+  play?: () => void;
+  shuffle?: () => void;
   /** Nothing to play - both controls draw, both are dead. */
-  disabled: boolean;
+  disabled?: boolean;
+  /**
+   * One page-specific control to sit where Play would.
+   *
+   * Described rather than handed over as JSX, for the same reason `glyph` is a
+   * component and not an element: this rides in a store compared by identity,
+   * and fresh markup on every render would publish a new value every time.
+   */
+  action?: {
+    icon: ComponentType<{ size?: number }>;
+    /** For the screen reader, and the tooltip. */
+    label: string;
+    onPress: () => void;
+  } | null;
 }
 
 let current: HeaderActions | null = null;

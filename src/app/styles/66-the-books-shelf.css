@@ -554,3 +554,11 @@ span.bookCard__readAlong {
   opacity: 0.55;
   cursor: default;
 }
+
+/* The mark that says the page's own header has gone. Zero-height and inert -
+   it exists to be watched, never to be seen or to take up room. */
+.booksHead__sentinel {
+  block-size: 1px;
+  margin-block-start: -1px;
+  pointer-events: none;
+}

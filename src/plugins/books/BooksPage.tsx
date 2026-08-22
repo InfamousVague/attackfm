@@ -6,6 +6,7 @@ import { useLibrary } from '../../app/library/library.tsx';
 import { useServerSession } from '../../app/servers/serverSession.tsx';
 import { fetchPlayStates } from '../../app/api/listening.ts';
 import { uploadFile } from '../../app/api/library.ts';
+import { setHeaderActions } from '../../app/nav/headerActions.ts';
 import { request, ServerError } from '../../app/api/http.ts';
 import type { Track } from '../../app/core/tauri.ts';
 
@@ -41,6 +42,15 @@ import type { Track } from '../../app/core/tauri.ts';
  * name together, the action opposite them, the sentence underneath in the size
  * a subtitle deserves.
  */
+/*
+ * The file input lives inside AddBook, and the HEADER's copy of the button is
+ * somewhere else entirely - so the two are joined by a function the page
+ * publishes while it is mounted. A module slot rather than a context because
+ * the header is not inside this page's tree at all, and a stale opener is
+ * cleared on unmount rather than left pointing at a detached input.
+ */
+let openBookPicker: (() => void) | null = null;
+
 function BooksHeader({ blurb, onAdded }: { blurb: string; onAdded: () => void }) {
   return (
     <header className="booksHead">
@@ -82,6 +92,13 @@ function AddBook({ onAdded }: { onAdded: () => void }) {
   // Uploading needs somewhere to upload TO. Local libraries have no such thing,
   // and a button that cannot work is worse than no button.
   if (!session) return null;
+
+  useEffect(() => {
+    openBookPicker = () => input.current?.click();
+    return () => {
+      openBookPicker = null;
+    };
+  }, []);
 
   const take = async (files: FileList | null) => {
     const chosen = [...(files ?? [])];
@@ -393,6 +410,38 @@ function minutes(ms: number): string {
 export function BooksPage({ onPlay }: PluginPageProps) {
   const { session } = useServerSession();
   const { books, rescan, isFavorite, toggleFavorite } = useLibrary();
+  /*
+   * The header scrolls away and the app's own picks up what it was carrying -
+   * the same arrangement the playlist and collection pages use, and the reason
+   * `.discoverPage` is the scroller rather than an inner box.
+   *
+   * Books lends no Play: a shelf is a place, not a collection, and Play over it
+   * would have to choose a book - which is the question the page exists to ask.
+   * It lends the one control it actually offers instead.
+   */
+  const pageRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const [stuck, setStuck] = useState(false);
+  useEffect(() => {
+    const root = pageRef.current;
+    const mark = sentinelRef.current;
+    if (!root || !mark) return;
+    const observer = new IntersectionObserver(([entry]) => setStuck(!entry?.isIntersecting), {
+      root,
+      threshold: 0,
+    });
+    observer.observe(mark);
+    return () => observer.disconnect();
+  }, [books.length === 0]);
+  useEffect(() => {
+    if (!stuck) return;
+    setHeaderActions({
+      title: 'Books',
+      glyph: BookAudio,
+      action: { icon: Upload, label: 'Add a book', onPress: () => openBookPicker?.() },
+    });
+    return () => setHeaderActions(null);
+  }, [stuck]);
   const shelf = useMemo(() => shelve(books), [books]);
   /*
    * A book is a favourite when ANY of its files is hearted, and hearting it
@@ -475,8 +524,9 @@ export function BooksPage({ onPlay }: PluginPageProps) {
 
   if (shelf.length === 0) {
     return (
-      <div className="discoverPage booksPage">
+      <div ref={pageRef} className="discoverPage booksPage">
         <BooksHeader blurb="Your audiobook shelf." onAdded={rescan} />
+        <div ref={sentinelRef} className="booksHead__sentinel" aria-hidden />
         <Text tone="muted" size="sm">
           {/* Names the free catalogue by the label it actually wears in the
               navigation, and does not tell anyone to install it: LibriVox
@@ -550,8 +600,9 @@ export function BooksPage({ onPlay }: PluginPageProps) {
   };
 
   return (
-    <div className="discoverPage booksPage">
+    <div ref={pageRef} className="discoverPage booksPage">
       <BooksHeader blurb="Your shelf — pick up where you left off." onAdded={rescan} />
+      <div ref={sentinelRef} className="booksHead__sentinel" aria-hidden />
 
       {favourites.length > 0 && (
         <section className="discoverSection">
