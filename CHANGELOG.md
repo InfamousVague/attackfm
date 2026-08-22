@@ -15,7 +15,7 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
-## 0.3.338
+## 0.3.337
 
 - Audiobooks are back. Your books have their own shelf again, played with chapters and your place kept across devices — and they stay off every music surface, so a twelve-hour reading never turns up in a mix or a shuffle
 - The Audible downloader returns with them: connect your account on the hub (Amazon does the sign-in, we never see a password) and pull down the books you own
