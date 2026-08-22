@@ -191,10 +191,38 @@ fn read_track(path: &Path, rel_path: &str, art_dir: &Path) -> Option<ScannedTrac
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "Unknown artist".to_string());
-    let album = tag
+    let mut album = tag
         .and_then(|t| t.album())
         .map(|s| s.trim().to_string())
         .unwrap_or_default();
+    /*
+     * AN UNTAGGED BOOK IS NAMED BY ITS FOLDER.
+     *
+     * A book downloaded as split MP3s very often carries no album tag at all,
+     * and the shelf groups by artist+album - so every untagged book in a
+     * library collapses into ONE entry together, because they all share the
+     * empty key. Measured: two different books, five files, one blob.
+     *
+     * The folder already says which book it is; that is what the folder is
+     * FOR in every audiobook download. So when a book has no album, the
+     * directory holding it becomes one. Books only - a stray untagged song
+     * genuinely has no album and should not be given the name of whatever
+     * folder it was dropped in.
+     */
+    let mut artist = artist;
+    if crate::db::kind_for(rel_path) == "book" {
+        if let Some(folder) = book_folder(rel_path) {
+            let (folder_artist, folder_album) = split_book_folder(&folder);
+            if album.is_empty() {
+                album = folder_album;
+            }
+            if artist == "Unknown artist" {
+                if let Some(a) = folder_artist {
+                    artist = a;
+                }
+            }
+        }
+    }
     // An album artist is what groups a compilation; falling back to the track
     // artist keeps every album grouped by something.
     let album_artist = {
@@ -261,6 +289,45 @@ fn read_track(path: &Path, rel_path: &str, art_dir: &Path) -> Option<ScannedTrac
         art_id,
         chapters,
     })
+}
+
+/// The directory a book file sits in, relative to the music root - or None when
+/// it sits directly in `Audiobooks/` and so has no folder of its own.
+fn book_folder(rel_path: &str) -> Option<String> {
+    let inside = rel_path.strip_prefix("Audiobooks/")?;
+    let dir = inside.rsplit_once('/')?.0;
+    // The LAST component: `<Author>/<Title>/file.mp3` and `<Title>/file.mp3`
+    // both name the book in the same place.
+    Some(dir.rsplit('/').next().unwrap_or(dir).to_string())
+}
+
+/// An author and a title out of a folder name.
+///
+/// `Frank Herbert - 2007 - Dune Messiah (Sci-Fi)` is the shape audiobook
+/// downloads overwhelmingly arrive in, and it carries both. Split on the
+/// hyphens only when the middle piece is a YEAR - that is what makes it this
+/// pattern rather than a title that merely contains a dash ("Anne of Green
+/// Gables - Part One" must not become an author called "Anne of Green Gables").
+/// A trailing parenthesised genre is dropped; anything unrecognised is left
+/// whole as the title, which is always better than a wrong guess.
+fn split_book_folder(folder: &str) -> (Option<String>, String) {
+    let parts: Vec<&str> = folder.split(" - ").collect();
+    let (artist, title) = if parts.len() >= 3
+        && parts[1].len() == 4
+        && parts[1].chars().all(|c| c.is_ascii_digit())
+    {
+        (Some(parts[0].trim().to_string()), parts[2..].join(" - "))
+    } else {
+        (None, folder.to_string())
+    };
+    // `Dune Messiah (Sci-Fi)` -> `Dune Messiah`, but only when the brackets
+    // close at the very end and are not the whole name.
+    let title = title.trim();
+    let cleaned = match (title.rfind(" ("), title.ends_with(')')) {
+        (Some(at), true) if at > 0 => title[..at].trim().to_string(),
+        _ => title.to_string(),
+    };
+    (artist, cleaned)
 }
 
 /// Chapter markers from a media file, as a JSON string `[{title, startMs}]` in
@@ -474,5 +541,63 @@ mod empty_scan_guard {
             "an empty scan tombstoned the library - the guard is not holding",
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod book_folder_tests {
+    use super::*;
+
+    #[test]
+    fn the_common_download_shape_splits() {
+        let (artist, title) = split_book_folder("Frank Herbert - 2007 - Dune Messiah (Sci-Fi)");
+        assert_eq!(artist.as_deref(), Some("Frank Herbert"));
+        assert_eq!(title, "Dune Messiah");
+    }
+
+    /// A title that merely contains a dash must NOT donate its first half to
+    /// the author field - the year is what identifies the pattern.
+    #[test]
+    fn a_dash_alone_is_not_an_author() {
+        let (artist, title) = split_book_folder("Anne of Green Gables - Part One");
+        assert_eq!(artist, None);
+        assert_eq!(title, "Anne of Green Gables - Part One");
+    }
+
+    #[test]
+    fn a_plain_folder_is_the_title() {
+        let (artist, title) = split_book_folder("The Time Machine");
+        assert_eq!(artist, None);
+        assert_eq!(title, "The Time Machine");
+    }
+
+    /// Brackets that are the whole name are the name.
+    #[test]
+    fn brackets_are_only_dropped_when_they_trail() {
+        let (_, title) = split_book_folder("(Sci-Fi)");
+        assert_eq!(title, "(Sci-Fi)");
+    }
+
+    #[test]
+    fn a_title_keeping_its_dashes() {
+        let (artist, title) = split_book_folder("Frank Herbert - 1965 - Dune - Book One");
+        assert_eq!(artist.as_deref(), Some("Frank Herbert"));
+        assert_eq!(title, "Dune - Book One");
+    }
+
+    #[test]
+    fn the_folder_is_the_one_holding_the_file() {
+        assert_eq!(
+            book_folder("Audiobooks/Frank Herbert - 2007 - Dune Messiah (Sci-Fi)/01.mp3").as_deref(),
+            Some("Frank Herbert - 2007 - Dune Messiah (Sci-Fi)")
+        );
+        // Author/Title nesting names the book from the innermost folder.
+        assert_eq!(
+            book_folder("Audiobooks/H. G. Wells/The Time Machine/01.mp3").as_deref(),
+            Some("The Time Machine")
+        );
+        // Sitting loose in Audiobooks/ has no folder of its own.
+        assert_eq!(book_folder("Audiobooks/loose.mp3"), None);
+        assert_eq!(book_folder("Music/Artist/Album/01.mp3"), None);
     }
 }
