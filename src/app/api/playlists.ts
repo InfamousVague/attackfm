@@ -18,6 +18,9 @@ export interface RemotePlaylist {
   folder?: string;
   /** The cover's filename on the server, or '' when none is set. */
   cover?: string;
+  /** Separate this list's songs ahead of being asked. Absent on a server
+   *  from before per-list separation, which reads as "not opted in". */
+  autoStem?: boolean;
 }
 
 export async function fetchRemotePlaylists(session: ServerSession): Promise<RemotePlaylist[]> {
@@ -43,7 +46,13 @@ export async function createRemotePlaylist(
 export async function updateRemotePlaylist(
   session: ServerSession,
   id: number,
-  patch: { name?: string; tracks?: number[]; description?: string; folder?: string },
+  patch: {
+    name?: string;
+    tracks?: number[];
+    description?: string;
+    folder?: string;
+    autoStem?: boolean;
+  },
 ): Promise<void> {
   await request(session.url, `/api/playlists/${id}`, {
     method: 'PUT',

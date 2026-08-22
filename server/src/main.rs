@@ -678,6 +678,8 @@ async fn main() {
             "/api/stems/prefetch",
             get(stems::prefetch_status).post(stems::set_prefetch),
         )
+        .route("/api/stems/prefetch/liked", post(stems::set_liked))
+        .route("/api/stems/prune", post(stems::prune))
         .route("/api/stems/{track}", get(stems::status).post(stems::request))
         .route("/api/stems/{track}/mix", get(stems::mix))
         .route("/api/stems/{track}/{stem}", get(stems::file))

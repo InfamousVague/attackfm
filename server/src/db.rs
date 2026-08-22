@@ -29,6 +29,8 @@ pub struct PlaylistRow {
     pub description: String,
     pub folder: String,
     pub cover: String,
+    /// Separate this list's songs ahead of being asked.
+    pub auto_stem: bool,
     pub tracks: Vec<i64>,
 }
 
@@ -410,6 +412,10 @@ CREATE TABLE IF NOT EXISTS playlists (
   folder      TEXT NOT NULL DEFAULT '',
   -- A relative path under the covers directory, never the image itself.
   cover       TEXT NOT NULL DEFAULT '',
+  -- Whether the separator should pull this list's songs apart ahead of being
+  -- asked. Off by default and opted into per list: separating everything a
+  -- person ever playlisted is how the stem cache grew past its welcome.
+  auto_stem   INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -1350,6 +1356,7 @@ impl Db {
             ("description", "description TEXT NOT NULL DEFAULT ''"),
             ("folder", "folder TEXT NOT NULL DEFAULT ''"),
             ("cover", "cover TEXT NOT NULL DEFAULT ''"),
+            ("auto_stem", "auto_stem INTEGER NOT NULL DEFAULT 0"),
         ] {
             if !have.iter().any(|c| c == name) {
                 conn.execute(&format!("ALTER TABLE playlists ADD COLUMN {decl}"), [])?;
@@ -2294,14 +2301,14 @@ impl Db {
     pub fn playlists(&self, user_id: i64) -> Vec<PlaylistRow> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
-            "SELECT id, name, updated_at, description, folder, cover
+            "SELECT id, name, updated_at, description, folder, cover, auto_stem
                FROM playlists WHERE user_id = ?1 ORDER BY name",
         ) else {
             return Vec::new();
         };
-        let heads: Vec<(i64, String, i64, String, String, String)> = stmt
+        let heads: Vec<(i64, String, i64, String, String, String, i64)> = stmt
             .query_map(params![user_id], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?))
             })
             .map(|r| r.filter_map(Result::ok).collect())
             .unwrap_or_default();
@@ -2314,7 +2321,7 @@ impl Db {
         };
         heads
             .into_iter()
-            .map(|(id, name, updated, description, folder, cover)| {
+            .map(|(id, name, updated, description, folder, cover, auto_stem)| {
                 let tracks: Vec<i64> = items
                     .query_map(params![id], |r| r.get(0))
                     .map(|r| r.filter_map(Result::ok).collect())
@@ -2326,6 +2333,7 @@ impl Db {
                     description,
                     folder,
                     cover,
+                    auto_stem: auto_stem != 0,
                     tracks,
                 }
             })
@@ -5578,16 +5586,23 @@ impl Db {
         model: &str,
         now: i64,
         limit: i64,
+        include_liked: bool,
     ) -> Vec<(i64, String)> {
         let conn = self.lock();
         let Ok(mut q) = conn.prepare(
             "SELECT t.id,
-                    CASE WHEN EXISTS (SELECT 1 FROM favorites f WHERE f.track_id = t.id)
+                    CASE WHEN ?4 = 1 AND EXISTS (SELECT 1 FROM favorites f WHERE f.track_id = t.id)
                          THEN 'liked' ELSE 'playlist' END AS reason
                FROM tracks t
               WHERE t.deleted = 0
-                AND (EXISTS (SELECT 1 FROM favorites f WHERE f.track_id = t.id)
-                  OR EXISTS (SELECT 1 FROM playlist_tracks pt WHERE pt.track_id = t.id))
+                -- OPT-IN ONLY. This used to read 'liked OR in any playlist at
+                -- all', which is every song anybody ever filed anywhere - the
+                -- reason the stem cache outgrew the disk it lives on. A list
+                -- now has to ask, and Liked asks through its own switch.
+                AND ((?4 = 1 AND EXISTS (SELECT 1 FROM favorites f WHERE f.track_id = t.id))
+                  OR EXISTS (SELECT 1 FROM playlist_tracks pt
+                               JOIN playlists p ON p.id = pt.playlist_id
+                              WHERE pt.track_id = t.id AND p.auto_stem = 1))
                 AND NOT EXISTS (SELECT 1 FROM track_stems s
                                  WHERE s.track_id = t.id AND s.model = ?1)
                 AND NOT EXISTS (SELECT 1 FROM stem_jobs j
@@ -5601,11 +5616,73 @@ impl Db {
         ) else {
             return Vec::new();
         };
-        let Ok(rows) = q.query_map(params![model, now, limit], |r| Ok((r.get(0)?, r.get(1)?)))
-        else {
+        let Ok(rows) = q.query_map(params![model, now, limit, include_liked as i64], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        }) else {
             return Vec::new();
         };
         rows.filter_map(|r| r.ok()).collect()
+    }
+
+    /// Every separated track that nothing asks to keep, with the files to
+    /// delete. The keep set is exactly what the prefetcher would maintain:
+    /// Liked when its switch is on, plus the lists that opted in. Anything
+    /// else is a leftover of the old separate-everything rule.
+    pub fn stems_outside_keep(&self, keep_liked: bool) -> Vec<(i64, Vec<String>)> {
+        let conn = self.lock();
+        let Ok(mut q) = conn.prepare(
+            "SELECT s.track_id, s.rel_path FROM track_stems s
+              WHERE NOT (?1 = 1 AND EXISTS
+                    (SELECT 1 FROM favorites f WHERE f.track_id = s.track_id))
+                AND NOT EXISTS (SELECT 1 FROM playlist_tracks pt
+                                  JOIN playlists p ON p.id = pt.playlist_id
+                                 WHERE pt.track_id = s.track_id AND p.auto_stem = 1)
+              ORDER BY s.track_id",
+        ) else {
+            return Vec::new();
+        };
+        let Ok(rows) = q.query_map(params![keep_liked as i64], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+        }) else {
+            return Vec::new();
+        };
+        let mut out: Vec<(i64, Vec<String>)> = Vec::new();
+        for (id, rel) in rows.filter_map(|r| r.ok()) {
+            match out.last_mut() {
+                Some((last, paths)) if *last == id => paths.push(rel),
+                _ => out.push((id, vec![rel])),
+            }
+        }
+        out
+    }
+
+    /// What a set of tracks' separations weigh, for a prune to report before
+    /// it deletes anything.
+    pub fn stems_bytes_for(&self, track_ids: &[i64]) -> i64 {
+        if track_ids.is_empty() {
+            return 0;
+        }
+        let conn = self.lock();
+        let list = track_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        conn.query_row(
+            &format!("SELECT COALESCE(SUM(bytes), 0) FROM track_stems WHERE track_id IN ({list})"),
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0)
+    }
+
+    /// Turn separating-ahead on or off for one list.
+    pub fn set_playlist_auto_stem(&self, playlist_id: i64, on: bool) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "UPDATE playlists SET auto_stem = ?2, updated_at = ?3 WHERE id = ?1",
+            params![playlist_id, on as i64, now_ms()],
+        )?;
+        Ok(())
     }
 
     /// Marks a song as wanted, without disturbing one that already finished.
@@ -6770,7 +6847,7 @@ mod stem_prefetch_brakes {
         let now = super::now_ms();
 
         // Liked and unseparated: it is a candidate.
-        let first = db.prefetch_candidates("m", now, 10);
+        let first = db.prefetch_candidates("m", now, 10, true);
         assert!(first.iter().any(|(t, _)| *t == id), "a liked song should be wanted");
 
         // Separated, then evicted - which is forget_stems plus the note. This is
@@ -6782,7 +6859,7 @@ mod stem_prefetch_brakes {
         // forget_stems left no trace in track_stems or stem_jobs, so WITHOUT the
         // note this song is indistinguishable from a new one and comes straight
         // back - which is the treadmill.
-        let again = db.prefetch_candidates("m", now, 10);
+        let again = db.prefetch_candidates("m", now, 10, true);
         assert!(
             !again.iter().any(|(t, _)| *t == id),
             "an evicted song must not be re-queued while it is cooling down",
@@ -6790,10 +6867,58 @@ mod stem_prefetch_brakes {
 
         // And it becomes eligible again once the cooldown has passed, rather
         // than being excluded for good.
-        let later = db.prefetch_candidates("m", now + 31 * 24 * 60 * 60 * 1000, 10);
+        let later = db.prefetch_candidates("m", now + 31 * 24 * 60 * 60 * 1000, 10, true);
         assert!(
             later.iter().any(|(t, _)| *t == id),
             "after the cooldown it may be considered again",
+        );
+    }
+
+    #[test]
+    fn separating_ahead_waits_to_be_asked() {
+        let db = db("optin");
+        let id = liked_track(&db, "b.flac");
+        let now = super::now_ms();
+
+        // Liked, but the Liked switch is off: nothing is wanted. This is the
+        // whole change - the old rule queued anything liked or filed anywhere,
+        // which was every song a person had ever touched.
+        assert!(
+            db.prefetch_candidates("m", now, 10, false).is_empty(),
+            "a liked song must not be queued while Liked is switched off",
+        );
+
+        // The same song in a playlist that has not opted in: still nothing.
+        let owner = db.create_user("listmaker", "x", false).unwrap();
+        let list = db.create_playlist(owner, "Late nights").unwrap();
+        db.set_playlist_tracks(list, &[id]).unwrap();
+        assert!(
+            db.prefetch_candidates("m", now, 10, false).is_empty(),
+            "being in a playlist is not by itself a reason to separate",
+        );
+
+        // The list opts in, and now it is wanted.
+        db.set_playlist_auto_stem(list, true).unwrap();
+        let wanted = db.prefetch_candidates("m", now, 10, false);
+        assert!(
+            wanted.iter().any(|(t, _)| *t == id),
+            "a song in an opted-in list should be queued",
+        );
+
+        // And the prune keeps exactly what the prefetcher would maintain.
+        db.save_stem_at(id, "vocals", "m", "b/vocals.flac", 10, now).unwrap();
+        assert!(
+            db.stems_outside_keep(false).is_empty(),
+            "a song an opted-in list wants must survive the prune",
+        );
+        db.set_playlist_auto_stem(list, false).unwrap();
+        assert!(
+            db.stems_outside_keep(false).iter().any(|(t, _)| *t == id),
+            "once nothing asks for it, its separation is the prune's business",
+        );
+        assert!(
+            db.stems_outside_keep(true).is_empty(),
+            "unless Liked is switched on, which this song is in",
         );
     }
 

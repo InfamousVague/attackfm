@@ -344,6 +344,18 @@ pub fn spawn(state: Arc<AppState>) {
 /// The key the operator's switch is stored under.
 pub const PREFETCH_PREF: &str = "stems.prefetch";
 
+/// Whether LIKED songs are one of the things separated ahead.
+///
+/// Its own switch because Liked is not a playlist row and so cannot carry the
+/// per-list `auto_stem` flag, and because it is the collection most people
+/// would want separated if they wanted anything separated at all. Off by
+/// default like everything else here.
+pub const LIKED_PREF: &str = "stems.liked";
+
+pub fn liked_wanted(state: &AppState) -> bool {
+    matches!(state.db.server_pref(LIKED_PREF).as_deref(), Some("on"))
+}
+
 /// Whether to separate ahead, right now.
 ///
 /// Checked on every sweep rather than once at boot, so flipping the switch in
@@ -355,7 +367,12 @@ pub fn prefetch_wanted(state: &AppState) -> bool {
     match state.db.server_pref(PREFETCH_PREF).as_deref() {
         Some("off") => false,
         Some(_) => true,
-        None => !std::env::var("AFM_STEM_PREFETCH").map(|v| v == "off").unwrap_or(false),
+        // OFF until asked for. It defaulted to on, which - paired with the old
+        // "everything liked or playlisted" rule - meant a box started pulling
+        // a whole library apart the day it was installed, and the first anyone
+        // knew of it was the disk. AFM_STEM_PREFETCH=on still turns it on
+        // without opening the app, for an operator who wants it from boot.
+        None => std::env::var("AFM_STEM_PREFETCH").map(|v| v == "on").unwrap_or(false),
     }
 }
 
@@ -391,7 +408,12 @@ pub fn spawn_prefetch(state: Arc<AppState>) {
             let wanted =
                 state
                     .db
-                    .prefetch_candidates(MODEL, crate::db::now_ms(), PREFETCH_BATCH);
+                    .prefetch_candidates(
+                        MODEL,
+                        crate::db::now_ms(),
+                        PREFETCH_BATCH,
+                        liked_wanted(&state),
+                    );
             for (track_id, reason) in &wanted {
                 let _ = state.db.want_prefetch(*track_id, reason);
             }
@@ -719,6 +741,9 @@ pub async fn prefetch_status(
     });
     Ok(Json(json!({
         "enabled": prefetch_wanted(&state),
+        // Whether Liked is one of the things separated ahead. Absent on an
+        // older app, which simply does not draw the switch.
+        "liked": liked_wanted(&state),
         // Distinct from `enabled`: a server with no demucs cannot do this at
         // all, and a switch that flips but changes nothing is worse than a row
         // that explains itself.
@@ -761,6 +786,84 @@ pub async fn set_prefetch(
         .set_server_pref(PREFETCH_PREF, if on { "on" } else { "off" })
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(json!({ "enabled": on })))
+}
+
+/// `POST /api/stems/prefetch/liked` - whether Liked is separated ahead.
+pub async fn set_liked(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<serde_json::Value>,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers)
+        .map_err(|s| (s, "sign in first".to_string()))?;
+    if !caller.is_admin {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "only an admin can change what the server does in the background".to_string(),
+        ));
+    }
+    let on = body.get("enabled").and_then(|v| v.as_bool()).ok_or((
+        StatusCode::BAD_REQUEST,
+        "enabled must be true or false".to_string(),
+    ))?;
+    state
+        .db
+        .set_server_pref(LIKED_PREF, if on { "on" } else { "off" })
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(json!({ "enabled": on })))
+}
+
+/// `POST /api/stems/prune` - delete the separations nothing asks to keep.
+///
+/// The keep set is exactly what the prefetcher maintains: Liked while its
+/// switch is on, plus the lists that opted in. Everything else is a leftover
+/// of the old rule that separated anything ever filed anywhere, which is how
+/// the cache outgrew its disk.
+///
+/// `?dry=1` answers with the count and the bytes and deletes nothing, because
+/// the only safe way to offer a bulk delete is to let it be read first.
+///
+/// Deleting is safe in the sense that matters: a stem is derived from a file
+/// the server still has, so the worst case is separating it again on the next
+/// ask. It is not safe in TIME - a re-separation is minutes of GPU - which is
+/// why it is admin-only and deliberate rather than automatic.
+pub async fn prune(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers)
+        .map_err(|s| (s, "sign in first".to_string()))?;
+    if !caller.is_admin {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "only an admin can clear the server's separations".to_string(),
+        ));
+    }
+    let dry = params.get("dry").map(|v| v == "1").unwrap_or(false);
+    let doomed = state.db.stems_outside_keep(liked_wanted(&state));
+    let bytes = state.db.stems_bytes_for(&doomed.iter().map(|(id, _)| *id).collect::<Vec<_>>());
+    if dry {
+        return Ok(Json(json!({
+            "dry": true,
+            "tracks": doomed.len(),
+            "bytes": bytes,
+        })));
+    }
+    let root = stem_root(&state);
+    for (track_id, paths) in &doomed {
+        for rel in paths {
+            let _ = tokio::fs::remove_file(root.join(rel)).await;
+        }
+        let _ = tokio::fs::remove_dir_all(root.join(track_id.to_string())).await;
+        let _ = state.db.forget_stems(*track_id);
+        // The same cooldown eviction uses: forget_stems erases every record
+        // that the song was separated, and without this the prefetcher would
+        // queue it again the moment it qualified.
+        let _ = state.db.note_stem_eviction(*track_id, PREFETCH_COOLDOWN_MS);
+    }
+    eprintln!("[stems] pruned {} song(s) outside the keep set", doomed.len());
+    Ok(Json(json!({ "tracks": doomed.len(), "bytes": bytes })))
 }
 
 pub async fn request(

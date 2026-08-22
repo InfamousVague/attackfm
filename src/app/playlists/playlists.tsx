@@ -52,6 +52,9 @@ export interface Playlist {
   folder: string;
   /** A display-ready cover image URL, or null for the song mosaic. */
   coverUrl: string | null;
+  /** Whether the server separates this list's songs ahead of being asked.
+   *  Undefined on a local library and on servers that predate the flag. */
+  autoStem?: boolean;
 }
 
 interface PlaylistsContextValue {
@@ -77,6 +80,9 @@ interface PlaylistsContextValue {
    * a local library keeps it on the stored object. Callers never know which.
    */
   setMeta: (id: string, patch: { description?: string; folder?: string }) => void;
+  /** Ask the server to separate this list ahead of time, or stop. Absent
+   *  where the library is local or the server is too old to know. */
+  setAutoStem?: (id: string, on: boolean) => void;
   /**
    * Replace (or, with null, remove) a playlist's cover image. Absent when this
    * library has nowhere to keep one - a local library, or a server from before
@@ -358,6 +364,7 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
         description: p.description ?? fallback?.description ?? '',
         folder: p.folder ?? fallback?.folder ?? '',
         coverUrl: p.cover ? playlistCoverUrl(session, p.id, p.updatedAt) : null,
+        autoStem: p.autoStem,
       };
     });
 
@@ -427,6 +434,17 @@ function RemotePlaylists({ session, children }: { session: ServerSession; childr
         mutate(
           remote.map((p) => (p.id === target.id ? { ...p, tracks } : p)),
           () => updateRemotePlaylist(session, target.id, { tracks }),
+        );
+      },
+      setAutoStem: (id: string, on: boolean) => {
+        const target = byId(id);
+        // Undefined means a server that has never heard of the flag: there is
+        // nothing to write to, and pretending otherwise would show a switch
+        // that forgets itself on the next fetch.
+        if (!target || target.autoStem === undefined) return;
+        mutate(
+          remote.map((p) => (p.id === target.id ? { ...p, autoStem: on } : p)),
+          () => updateRemotePlaylist(session, target.id, { autoStem: on }),
         );
       },
       setMeta: (id: string, patch: { description?: string; folder?: string }) => {

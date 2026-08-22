@@ -408,6 +408,7 @@ pub async fn playlists(State(state): State<Arc<AppState>>, headers: HeaderMap) -
                 "description": p.description,
                 "folder": p.folder,
                 "cover": p.cover,
+                "autoStem": p.auto_stem,
             })
         })
         .collect();
@@ -424,6 +425,9 @@ pub struct PlaylistBody {
     pub description: Option<String>,
     pub folder: Option<String>,
     pub cover: Option<String>,
+    /// Separate this list's songs ahead of being asked.
+    #[serde(rename = "autoStem")]
+    pub auto_stem: Option<bool>,
 }
 
 pub async fn create_playlist(
@@ -483,6 +487,12 @@ pub async fn update_playlist(
         state
             .db
             .set_playlist_meta(playlist_id, description, folder, cover)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
+    if let Some(on) = body.auto_stem {
+        state
+            .db
+            .set_playlist_auto_stem(playlist_id, on)
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     }
     Ok(Json(json!({ "ok": true })))

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { formatBytes } from '../ux/format.ts';
-import { Label, ProgressBar, Spinner, Switch, Text } from '@glacier/react';
+import { AlertDialog, Button, Label, ProgressBar, Spinner, Switch, Text } from '@glacier/react';
+import { Trash2 } from '@glacier/icons';
 import { request } from '../api/http.ts';
 import { useServerSession } from './serverSession.tsx';
 
@@ -25,6 +26,9 @@ interface Running {
 
 interface Prefetch {
   enabled: boolean;
+  /** Whether Liked is one of the things separated ahead. Absent on a server
+   *  from before separating became opt-in. */
+  liked?: boolean;
   /** False when the server has no demucs at all - a different thing from off. */
   available: boolean;
   wanted: number;
@@ -171,9 +175,14 @@ export function BackgroundWork() {
   const state = usePrefetchStatus();
   const [busy, setBusy] = useState(false);
   const [override, setOverride] = useState<boolean | null>(null);
+  const [likedOverride, setLikedOverride] = useState<boolean | null>(null);
+  const [pruning, setPruning] = useState(false);
+  const [pruneNote, setPruneNote] = useState<string | null>(null);
+  const [confirmPrune, setConfirmPrune] = useState(false);
 
   if (!session || !state) return null;
   const enabled = override ?? state.enabled;
+  const likedOn = likedOverride ?? state.liked ?? false;
 
   const flip = async (on: boolean) => {
     setBusy(true);
@@ -197,6 +206,40 @@ export function BackgroundWork() {
     }
   };
 
+  const flipLiked = async (on: boolean) => {
+    setLikedOverride(on);
+    try {
+      await request(session.url, '/api/stems/prefetch/liked', {
+        method: 'POST',
+        token: session.token,
+        body: JSON.stringify({ enabled: on }),
+      });
+    } finally {
+      setLikedOverride(null);
+    }
+  };
+
+  const prune = async () => {
+    setPruning(true);
+    setPruneNote(null);
+    try {
+      const reply = await request<{ tracks: number; bytes: number }>(
+        session.url,
+        '/api/stems/prune',
+        { method: 'POST', token: session.token },
+      );
+      setPruneNote(
+        reply.tracks === 0
+          ? 'Nothing to clear — every separation belongs to something you chose.'
+          : `Cleared ${reply.tracks.toLocaleString()} ${reply.tracks === 1 ? 'song' : 'songs'}, freeing ${formatBytes(reply.bytes)}.`,
+      );
+    } catch (err) {
+      setPruneNote(err instanceof Error ? err.message : 'That did not work.');
+    } finally {
+      setPruning(false);
+    }
+  };
+
   return (
     <div className="prefsSection" data-setting="stem-prefetch">
       <Label>Background work</Label>
@@ -209,9 +252,53 @@ export function BackgroundWork() {
       <Text tone="muted" size="sm">
         {!state.available
           ? 'This server does not have the separation tools installed, so there is nothing to turn on.'
-          : 'Pulls your liked and playlisted songs apart in the background, so the Pads and the Stems tab open instantly instead of after minutes. Costs GPU time per song and up to 60 GB of the server’s disk. It always yields to a song you ask for.'}
+          : 'Pulls songs apart in the background so the Pads and the Stems tab open instantly instead of after minutes. Only the lists you choose: turn a playlist on from its ⋮ menu, and Liked with the switch below. Costs GPU time per song and disk to keep. It always yields to a song you ask for.'}
       </Text>
+      {state.available && state.liked !== undefined && (
+        <Switch
+          label="Include your Liked songs"
+          checked={likedOn}
+          disabled={!enabled}
+          onCheckedChange={(on: boolean) => void flipLiked(on)}
+        />
+      )}
       <StemProgress state={state} />
+      {state.available && (
+        <>
+          <div className="prefsActions">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={pruning}
+              onClick={() => setConfirmPrune(true)}
+            >
+              <Trash2 size={14} /> {pruning ? 'Clearing…' : 'Clear the rest'}
+            </Button>
+          </div>
+          <Text tone="muted" size="sm">
+            Deletes the separations for songs outside the lists you chose — what the old
+            separate-everything rule left behind. The songs themselves are untouched; anything
+            cleared is separated again the next time you ask for it.
+          </Text>
+          {pruneNote && (
+            <Text tone="muted" size="sm">
+              {pruneNote}
+            </Text>
+          )}
+          <AlertDialog
+            open={confirmPrune}
+            onClose={() => setConfirmPrune(false)}
+            title="Clear the separations you did not choose?"
+            description="Every song outside Liked and the playlists you turned on loses its separated parts. The music is untouched, and anything cleared is separated again the next time you ask for it — which costs the server minutes of GPU per song."
+            actionLabel="Clear them"
+            tone="danger"
+            onAction={() => {
+              setConfirmPrune(false);
+              void prune();
+            }}
+          />
+        </>
+      )}
     </div>
   );
 }
