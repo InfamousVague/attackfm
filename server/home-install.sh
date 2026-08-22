@@ -333,8 +333,12 @@ fi
 bold "Reading books along (optional)"
 WHISPER_DIR="$DATA_DIR/whisper"
 if ! command -v whisper-cli >/dev/null 2>&1; then
-  read -r -p "  Install whisper.cpp, to transcribe audiobooks? [y/N]: " yn
-  if [ "${yn:-N}" = "y" ] || [ "${yn:-N}" = "Y" ]; then
+  # Defaults to YES: the program is a few megabytes, and defaulting it to no
+  # meant anyone tapping enter through the installer ended up with a "Read
+  # along" button that could only say "No recogniser" - which is a trap of the
+  # installer's making, not a choice anyone expressed.
+  read -r -p "  Install whisper.cpp, to transcribe audiobooks? [Y/n]: " yn
+  if [ "${yn:-Y}" != "n" ] && [ "${yn:-Y}" != "N" ]; then
     brew install whisper-cpp || say "install failed - books simply will not offer 'read along'"
   fi
 fi
@@ -343,8 +347,12 @@ if command -v whisper-cli >/dev/null 2>&1; then
   if ls "$WHISPER_DIR"/ggml-*.bin >/dev/null 2>&1; then
     say "speech model already present in $WHISPER_DIR"
   else
-    read -r -p "  Download the small English model (~500MB)? [y/N]: " yn
-    if [ "${yn:-N}" = "y" ] || [ "${yn:-N}" = "Y" ]; then
+    # The model stays an explicit choice - it is half a gigabyte - but the
+    # prompt now says that transcribing does nothing without it, rather than
+    # letting somebody decline the half that makes the feature exist.
+    say "Without a model the recogniser cannot read anything."
+    read -r -p "  Download the small English model (~500MB)? [Y/n]: " yn
+    if [ "${yn:-Y}" != "n" ] && [ "${yn:-Y}" != "N" ]; then
       curl -fL --progress-bar -o "$WHISPER_DIR/ggml-small.en.bin" \
         https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin \
         || { rm -f "$WHISPER_DIR/ggml-small.en.bin"; say "model download failed - transcribing stays unavailable"; }
