@@ -114,6 +114,10 @@ class MainActivity : TauriActivity() {
      * there was no page, the app was started, and this is the app saying it is
      * ready to be told what the driver pressed.
      */
+    /** The audiobook drop folder's absolute path, or null where there is none. */
+    @JavascriptInterface
+    fun audiobooksDir(): String? = booksDir
+
     @JavascriptInterface
     fun transportReady() {
       runOnUiThread { flushTransport() }
@@ -203,6 +207,9 @@ class MainActivity : TauriActivity() {
 
     /** A shared link waiting for the web layer to exist. */
     private var shared: String? = null
+
+    /** Where books you already own are dropped, once the activity has made it. */
+    private var booksDir: String? = null
 
     /**
      * Hand a transport command to the page.
@@ -346,10 +353,42 @@ class MainActivity : TauriActivity() {
       else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
   }
 
+  /**
+   * The drop folder for books you already own.
+   *
+   * An audiobook bought from a shop arrives as a file, not as a catalogue
+   * entry - so there has to be somewhere to PUT it. This is the app's own
+   * external files directory, which is the one place on modern Android a media
+   * app may create and read without asking for a storage permission it has no
+   * other use for.
+   *
+   * The honest caveat, and the reason this is a starting point rather than the
+   * finished answer: since Android 11 the Files app will not browse into
+   * `Android/data`, so this folder is comfortable to reach over USB or adb and
+   * awkward to reach from the phone itself. A folder the user picks (SAF) and
+   * the share sheet are the two ways to fix that, and neither changes what
+   * happens to a file once it is here.
+   */
+  private fun ensureAudiobooksFolder(): String? =
+    try {
+      val dir = java.io.File(getExternalFilesDir(null), "Audiobooks")
+      if (!dir.exists() && !dir.mkdirs()) {
+        android.util.Log.w("AFMBooks", "could not create ${dir.absolutePath}")
+        null
+      } else {
+        android.util.Log.i("AFMBooks", "audiobooks folder: ${dir.absolutePath}")
+        dir.absolutePath
+      }
+    } catch (e: Exception) {
+      android.util.Log.w("AFMBooks", "audiobooks folder failed: $e")
+      null
+    }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     live = this
+    booksDir = ensureAudiobooksFolder()
     applyOrientationLock()
     // The share that launched us, if that is how we were started.
     shared = linkFrom(intent)
