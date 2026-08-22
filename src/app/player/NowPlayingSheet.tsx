@@ -27,6 +27,7 @@ import {
   formatClock,
   type ArtView,
 } from './deckShared.ts';
+import { formatTotal } from '../ux/format.ts';
 import { soundChangesLabel, useSoundChanges } from './soundChanges.ts';
 import { subscribeGestures } from './deviceMotion.ts';
 import { isTauri, tauriCall } from '../core/tauri.ts';
@@ -75,6 +76,62 @@ export function npArtMenuItems(artView: ArtView, chooseArtView: (next: ArtView) 
  * Pure presentation, extracted from Player.tsx: every value and handler
  * arrives through props from the deck core.
  */
+/**
+ * The chapters, as somewhere to go.
+ *
+ * Scrolls to the chapter being read when it opens, because a twelve-hour book
+ * has forty of these and the one you care about is almost never at the top -
+ * and a list that opens at chapter one is a list you have to search.
+ */
+function ChapterList({
+  chapters,
+  positionMs,
+  onPick,
+}: {
+  chapters: { title: string; startMs: number }[];
+  positionMs: number;
+  onPick: (startMs: number) => void;
+}) {
+  const here = (() => {
+    let idx = 0;
+    for (let i = 0; i < chapters.length; i++) {
+      if (positionMs >= chapters[i]!.startMs - 1000) idx = i;
+      else break;
+    }
+    return idx;
+  })();
+  const current = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    current.current?.scrollIntoView({ block: 'center' });
+  }, []);
+
+  return (
+    <div className="npChapters__list" role="list">
+      {chapters.map((c, i) => {
+        const title = c.title?.trim();
+        return (
+          <button
+            key={`${c.startMs}-${i}`}
+            ref={i === here ? current : undefined}
+            type="button"
+            role="listitem"
+            className="npChapters__row"
+            data-here={i === here || undefined}
+            onClick={() => onPick(c.startMs)}
+          >
+            <span className="npChapters__n">{i + 1}</span>
+            <span className="npChapters__title">
+              {title && title.toLowerCase() !== `chapter ${i + 1}` ? title : `Chapter ${i + 1}`}
+            </span>
+            <span className="npChapters__at">{formatClock(c.startMs / 1000)}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+
 export function NowPlayingSheet({
   npOpen,
   npDocked,
@@ -107,6 +164,9 @@ export function NowPlayingSheet({
   onScratchEnd,
   onOpenArtist,
   chapterLabel,
+  chapters,
+  bookRemaining,
+  onSeekChapter,
   favorite,
   toggleFavoriteFelt,
   duration,
@@ -170,6 +230,11 @@ export function NowPlayingSheet({
   onScratchEnd: () => void;
   onOpenArtist?: (artist: string) => void;
   chapterLabel: string | null;
+  /** The book's own chapter marks, so the label can open onto them. */
+  chapters: { title: string; startMs: number }[];
+  /** Seconds left in the whole book, or null when it cannot be said honestly. */
+  bookRemaining: number | null;
+  onSeekChapter: (startMs: number) => void;
   favorite: boolean;
   toggleFavoriteFelt: () => void;
   duration: number;
@@ -491,7 +556,41 @@ export function NowPlayingSheet({
           ) : (
             <span className="npScreen__artist">{track?.artist ?? ''}</span>
           )}
-          {chapterLabel && <span className="npScreen__chapter">{chapterLabel}</span>}
+          {/* The chapter line is a DOOR, not a caption.
+              Knowing you are in chapter three of twelve immediately raises
+              "so where is chapter seven", and the only answer used to be
+              tapping skip six times and watching the label. It opens the list;
+              the list jumps. Still a plain span when the book has no marks,
+              because a control that opens onto nothing is worse than a
+              label. */}
+          {chapterLabel &&
+            (chapters.length > 0 ? (
+              <Popover
+                placement="bottom"
+                aria-label="Chapters"
+                className="npChapters"
+                trigger={
+                  <button type="button" className="npScreen__chapter npScreen__chapterOpen">
+                    <BookOpenText size={13} aria-hidden />
+                    <span className="npScreen__chapterText">{chapterLabel}</span>
+                  </button>
+                }
+              >
+                <ChapterList
+                  chapters={chapters}
+                  positionMs={position * 1000}
+                  onPick={onSeekChapter}
+                />
+              </Popover>
+            ) : (
+              <span className="npScreen__chapter">{chapterLabel}</span>
+            ))}
+          {/* Its own line, because it is its own fact and because a phone has
+              no room to hang it off the end of a chapter title - which clipped
+              the title and then the number with it. */}
+          {chapterLabel && bookRemaining != null && (
+            <span className="npScreen__left">{formatTotal(bookRemaining)} left in the book</span>
+          )}
           {/* A downloading placeholder says so; otherwise only while the
               buffer is actually dry - silence with the transport still
               showing play is the mystery this whole path exists to end. */}

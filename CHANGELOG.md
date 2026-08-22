@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.340
+
+- Books now tell you where you are and where everything else is: tap the chapter line while a book plays to get the whole chapter list, jump to any of them, and see how much of the book is left
+
 ## 0.3.339
 
 - The Audible and LibriVox downloaders install themselves again, the way they did before audiobooks were taken out — you no longer have to go and find them
