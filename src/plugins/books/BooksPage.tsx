@@ -6,7 +6,7 @@ import { useLibrary } from '../../app/library/library.tsx';
 import { useServerSession } from '../../app/servers/serverSession.tsx';
 import { fetchPlayStates } from '../../app/api/listening.ts';
 import { uploadFile } from '../../app/api/library.ts';
-import { request } from '../../app/api/http.ts';
+import { request, ServerError } from '../../app/api/http.ts';
 import type { Track } from '../../app/core/tauri.ts';
 
 /*
@@ -128,6 +128,51 @@ function AddBook({ onAdded }: { onAdded: () => void }) {
 }
 
 /**
+ * Can this hub read a book aloud back to us, and if not, why not.
+ *
+ * Asked ONCE per session and shared by every card - forty books must not mean
+ * forty identical status calls. Three answers, because three different things
+ * look the same from a card and want different words:
+ *  - `ready`   the recogniser and a model are both there;
+ *  - `missing` the server answered, and has neither;
+ *  - `stale`   the server does not know the route at all, which means it is
+ *              running a build from before reading along existed. That is the
+ *              likeliest case the day this ships, and the one that used to be
+ *              indistinguishable from a broken button.
+ */
+type Readiness = 'asking' | 'ready' | 'noTool' | 'noModel' | 'stale';
+let sharedReadiness: Promise<Readiness> | null = null;
+
+function useTranscribeStatus(): Readiness {
+  const { session } = useServerSession();
+  const [ready, setReady] = useState<Readiness>('asking');
+  useEffect(() => {
+    if (!session) return;
+    sharedReadiness ??= request<{ available: boolean; toolInstalled: boolean }>(
+      session.url,
+      '/api/transcribe/status',
+      { token: session.token },
+    )
+      // The two halves fail separately and want different words: a hub with no
+      // recogniser needs a program installed, a hub with no model needs a
+      // download. Saying "no recogniser" to somebody who has one sends them
+      // to reinstall something that is already there.
+      .then((r): Readiness => (r.available ? 'ready' : r.toolInstalled ? 'noModel' : 'noTool'))
+      .catch((e: unknown): Readiness =>
+        e instanceof ServerError && e.status === 404 ? 'stale' : 'noTool',
+      );
+    let live = true;
+    void sharedReadiness.then((r) => {
+      if (live) setReady(r);
+    });
+    return () => {
+      live = false;
+    };
+  }, [session]);
+  return ready;
+}
+
+/**
  * Ask the hub to read the book, so its words can be read along with it.
  *
  * Deliberately a request rather than something that happens on its own. This
@@ -142,7 +187,9 @@ function AddBook({ onAdded }: { onAdded: () => void }) {
  */
 function ReadAlong({ book }: { book: ShelfBook }) {
   const { session } = useServerSession();
-  const [state, setState] = useState<'idle' | 'asking' | 'working' | 'done' | 'no'>('idle');
+  const ready = useTranscribeStatus();
+  const [state, setState] = useState<'idle' | 'asking' | 'working' | 'done'>('idle');
+  const [problem, setProblem] = useState<string | null>(null);
 
   // Only the operator can spend the box's evening, and only a book that is one
   // file has a track id worth transcribing.
@@ -150,8 +197,41 @@ function ReadAlong({ book }: { book: ShelfBook }) {
   const id = serverId(book.tracks[0]!.path);
   if (id == null) return null;
 
+  /*
+   * Say why BEFORE the press, not after it.
+   *
+   * This used to be a live-looking button that answered every failure with
+   * "Not available" - which is what a hub without the recogniser, a hub that
+   * has not been updated, and a genuine error all looked like. The status is
+   * asked for once per session and the button wears the answer, and when
+   * something does go wrong the SERVER'S own words are shown rather than a
+   * word of ours that fits every case and explains none.
+   */
+  if (ready === 'noTool') {
+    return (
+      <span className="bookCard__readAlong" title="Install whisper.cpp on the server to transcribe books">
+        <BookOpenText size={13} aria-hidden /> No recogniser
+      </span>
+    );
+  }
+  if (ready === 'noModel') {
+    return (
+      <span className="bookCard__readAlong" title="The server has the recogniser but no model to read with — re-run home-install.sh and take the model">
+        <BookOpenText size={13} aria-hidden /> No speech model
+      </span>
+    );
+  }
+  if (ready === 'stale') {
+    return (
+      <span className="bookCard__readAlong" title="This server predates reading along - update it and this appears">
+        <BookOpenText size={13} aria-hidden /> Update your hub
+      </span>
+    );
+  }
+
   const ask = async () => {
     setState('asking');
+    setProblem(null);
     try {
       const r = await request<{ queued: boolean; reason?: string }>(
         session.url,
@@ -159,32 +239,34 @@ function ReadAlong({ book }: { book: ShelfBook }) {
         { method: 'POST', token: session.token },
       );
       setState(r.queued ? 'working' : 'done');
-    } catch {
-      // A server without the recogniser answers 412, which is not a failure
-      // worth a dialog - the button simply says it cannot.
-      setState('no');
+    } catch (e) {
+      setState('idle');
+      // The server explains itself well - no recogniser, no model, not a book.
+      // Repeat it rather than replacing it with a word of our own.
+      setProblem(e instanceof Error ? e.message : 'that did not go through');
     }
   };
 
   const label =
-    state === 'working'
-      ? 'Reading it…'
-      : state === 'done'
-        ? 'Already read'
-        : state === 'no'
-          ? 'Not available'
-          : 'Read along';
+    state === 'working' ? 'Reading it…' : state === 'done' ? 'Already read' : 'Read along';
 
   return (
-    <button
-      type="button"
-      className="bookCard__readAlong"
-      aria-label={`Transcribe ${book.title} so you can read along`}
-      disabled={state !== 'idle'}
-      onClick={() => void ask()}
-    >
-      <BookOpenText size={13} aria-hidden /> {label}
-    </button>
+    <span className="bookCard__readAlongWrap">
+      <button
+        type="button"
+        className="bookCard__readAlong"
+        aria-label={`Transcribe ${book.title} so you can read along`}
+        disabled={state !== 'idle' || ready === 'asking'}
+        onClick={() => void ask()}
+      >
+        <BookOpenText size={13} aria-hidden /> {label}
+      </button>
+      {problem && (
+        <Text tone="muted" size="xs" className="bookCard__readAlongWhy">
+          {problem}
+        </Text>
+      )}
+    </span>
   );
 }
 

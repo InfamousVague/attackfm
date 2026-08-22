@@ -486,3 +486,23 @@
 .bookCard__heart[aria-pressed='true'] svg {
   fill: currentColor;
 }
+
+/* The reason a book cannot be read along with, under the control that would
+   otherwise have done it. Wrapped so the reason can sit beneath without
+   stretching the row of affordances it lives in. */
+.bookCard__readAlongWrap {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  min-inline-size: 0;
+}
+.bookCard__readAlongWhy {
+  max-inline-size: 12rem;
+}
+/* The unavailable states are statements, not controls - same shape, no hover,
+   no pointer. */
+span.bookCard__readAlong {
+  opacity: 0.55;
+  cursor: default;
+}

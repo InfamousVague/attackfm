@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.344
+
+- "Read along" now tells you what is actually wrong instead of saying "Not available" for everything — whether your server needs updating, needs the recogniser installed, or just needs its speech model
+
 ## 0.3.343
 
 - An empty Books page now points at Free books, the LibriVox catalogue that already comes with the app — thousands of public-domain readings, free and legal to keep. It used to tell you to go and install something you already had
