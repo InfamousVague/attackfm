@@ -8,11 +8,12 @@ import {
   Text,
   useToast,
 } from '@glacier/react';
-import { Activity, Bot, CircleCheck, CircleX, Play, RotateCcw, Zap } from 'lucide-react';
+import { Activity, ArrowLeft, ArrowRight, Bot, CircleCheck, CircleX, Play, RotateCcw, Zap } from 'lucide-react';
 import { PaneSection, SettingRow, SettingsCallout, SettingsEmpty } from './kit/settingsKit.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
-import { fetchAiReport, probeAi, runAi, setAiSettings } from '../api/ai.ts';
+import { fetchAiActivity, fetchAiReport, probeAi, runAi, setAiSettings } from '../api/ai.ts';
 import type { AiHealth, AiReport, AiSettingsPatch } from '../api/ai.ts';
+import type { ActivityEvent } from '../api/activity.ts';
 import { ServerError } from '../api/http.ts';
 
 /**
@@ -98,6 +99,19 @@ export function LocalAiPane() {
   // field so a save in flight on one does not blank another being typed in.
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
+  /**
+   * The feed, one page per entry, oldest page last.
+   *
+   * Kept as a stack rather than a single page so going back is free: the pages
+   * already read do not need fetching again, and the cursor for each is simply
+   * the last id of the one before it. `pages[0]` is seeded from the report, so
+   * opening this pane is still one request.
+   */
+  const [pages, setPages] = useState<ActivityEvent[][]>([]);
+  const [page, setPage] = useState(0);
+  /** Whether anything older than the LAST page loaded exists. */
+  const [more, setMore] = useState(false);
+  const [paging, setPaging] = useState(false);
   const alive = useRef(true);
 
   useEffect(() => () => { alive.current = false; }, []);
@@ -108,6 +122,12 @@ export function LocalAiPane() {
       const next = await fetchAiReport(session);
       if (!alive.current) return;
       setReport(next);
+      // A refresh restarts the feed at the top: anything read further back was
+      // read against a report that no longer exists, and silently keeping the
+      // reader on page four of a stale list is worse than sending them home.
+      setPages([next.recent]);
+      setPage(0);
+      setMore(next.recentHasMore === true);
       setMissing(false);
       setError(null);
     } catch (e) {
@@ -134,6 +154,35 @@ export function LocalAiPane() {
       toast({ message: `Could not save — ${e instanceof Error ? e.message : 'the server refused it'}`, tone: 'danger' });
     } finally {
       if (alive.current) setSaving(null);
+    }
+  };
+
+  const older = async () => {
+    // Already read: no request, just move.
+    if (page + 1 < pages.length) {
+      setPage(page + 1);
+      return;
+    }
+    const current = pages[page];
+    const cursor = current?.[current.length - 1]?.id;
+    if (!session || !cursor) return;
+    setPaging(true);
+    try {
+      const next = await fetchAiActivity(session, cursor);
+      if (!alive.current) return;
+      // An empty answer means the tail moved under us - stay put rather than
+      // showing a blank page, and stop offering to go further.
+      if (next.events.length === 0) {
+        setMore(false);
+        return;
+      }
+      setPages((p) => [...p, next.events]);
+      setPage((n) => n + 1);
+      setMore(next.hasMore);
+    } catch {
+      if (alive.current) setMore(false);
+    } finally {
+      if (alive.current) setPaging(false);
     }
   };
 
@@ -197,6 +246,7 @@ export function LocalAiPane() {
 
   const { settings, functions, totals, curator } = report;
   const configured = !!settings.url && !!settings.chatModel;
+  const shown = pages[page] ?? [];
 
   return (
     <div className="prefsBody localAiPane">
@@ -400,12 +450,43 @@ export function LocalAiPane() {
         />
       </PaneSection>
 
-      <PaneSection title="Recent activity" description="What the model has been doing, newest first.">
-        {report.recent.length === 0 ? (
+      <PaneSection
+        title="Recent activity"
+        description="What the model has been doing, newest first."
+        footer={
+          pages.length > 0 && (shown.length > 0) && (page > 0 || more) ? (
+            <div className="localAi__pager">
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={page === 0}
+                onClick={() => setPage((n) => Math.max(0, n - 1))}
+              >
+                <ArrowLeft size={14} /> Newer
+              </Button>
+              <Text tone="muted" size="xs">
+                {/* No total. The log is bounded and always being written to, so
+                    "page 2 of 9" would be a number that changes while it is
+                    read; where you are is honest, how much is left is not. */}
+                Page {page + 1}
+              </Text>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={paging || (page + 1 >= pages.length && !more)}
+                onClick={() => void older()}
+              >
+                {paging ? <Spinner size="sm" /> : <>Older <ArrowRight size={14} /></>}
+              </Button>
+            </div>
+          ) : undefined
+        }
+      >
+        {shown.length === 0 ? (
           <Text tone="muted" size="sm">Nothing yet.</Text>
         ) : (
           <ol className="localAi__feed">
-            {report.recent.map((ev) => (
+            {shown.map((ev) => (
               <li key={ev.id} className="localAi__event" data-state={ev.state}>
                 <span className="localAi__eventDot" aria-hidden />
                 <div className="localAi__eventText">

@@ -75,8 +75,37 @@ export interface AiReport {
   totals: { calls: number; failures: number; avgMs: number | null; sinceBoot: number };
   /** Mirror of the curator's live status object. */
   curator: { phase: string; lastCurated: number; ai: boolean; chat: boolean; embeddings: boolean } | null;
-  /** The newest AI-sourced activity events, newest first. */
+  /** The FIRST page of AI activity, newest first. Page size is the server's
+   *  (`AI_PAGE`), so the pane pages from here rather than re-fetching page one. */
   recent: ActivityEvent[];
+  /** Whether anything older than `recent` exists. */
+  recentHasMore: boolean;
+}
+
+/** One page of AI activity, older than `before` (0 = from the newest). */
+export interface AiActivityPage {
+  events: ActivityEvent[];
+  hasMore: boolean;
+}
+
+/**
+ * Page BACKWARDS through what the model has been doing.
+ *
+ * A cursor rather than a page number, because the log is appended to while it
+ * is being read: a separation finishing between two taps would shift every
+ * numbered page and show a row twice or skip one. "Older than this id" cannot
+ * do that.
+ */
+export function fetchAiActivity(
+  session: ServerSession,
+  before: number,
+  signal?: AbortSignal,
+): Promise<AiActivityPage> {
+  const q = new URLSearchParams({ before: String(before) });
+  return request<AiActivityPage>(session.url, `/api/ai/activity?${q}`, {
+    token: session.token,
+    signal,
+  });
 }
 
 export function fetchAiReport(session: ServerSession, signal?: AbortSignal): Promise<AiReport> {

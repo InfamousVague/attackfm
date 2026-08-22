@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.326
+
+- Local AI's activity list has pages. It showed the last forty things the model had done and stopped there; now it shows eight at a time and you can walk back through the rest
+
 ## 0.3.325
 
 - The black screen after an update is fixed. The app was starting two copies of itself at once — the version that shipped with the app and the one it had downloaded — and they fought over the screen until one of them fell over. Only the right one starts now

@@ -35,6 +35,13 @@ type Reply = Result<Json<Value>, StatusCode>;
 /// is being measured. A function that has never run still appears here, with
 /// zero calls - "nothing has used the refinement pass yet" is an answer, and an
 /// empty list would look like a broken report.
+/// How many activity rows a page carries.
+///
+/// Small on purpose: this sits inside a settings pane on a phone, under five
+/// other sections, and a long feed there is not a feature - it is the reason
+/// nobody scrolls to the bottom of the page. Older rows are one tap away.
+const AI_PAGE: i64 = 8;
+
 const FUNCTIONS: &[(&str, &str, &str, &str)] = &[
     // id, label, uses, which model setting drives it
     ("embed", "Lyric and descriptor embeddings", "embed", "embedModel"),
@@ -234,7 +241,14 @@ pub async fn report(State(state): State<Arc<AppState>>, headers: HeaderMap) -> R
             "sinceBoot": crate::ai::since_boot_secs(),
         },
         "curator": curator,
-        "recent": activity_json(state.db.activity_from("ai", 40)),
+        // The FIRST page, at the same size every later page uses - the pane
+        // pages from here rather than fetching its own page one, so opening
+        // the pane is still one request.
+        "recent": activity_json(state.db.activity_from("ai", 0, AI_PAGE)),
+        // Whether there is anything older, asked the cheap way: request one
+        // more than a page and see if it comes back. A count(*) over a table
+        // that only grows would cost more every week to answer the same yes.
+        "recentHasMore": state.db.activity_from("ai", 0, AI_PAGE + 1).len() as i64 > AI_PAGE,
     })))
 }
 
@@ -433,4 +447,32 @@ pub async fn activity(
     crate::auth::require_caller(&state.db, &headers)?;
     let (rows, latest) = state.db.activity_since(q.since, q.limit);
     Ok(Json(json!({ "events": activity_json(rows), "latestId": latest })))
+}
+
+#[derive(Deserialize)]
+pub struct Before {
+    #[serde(default)]
+    before: i64,
+}
+
+/// `GET /api/ai/activity?before=<id>` - one page older than `before`.
+///
+/// Separate from `/api/activity` deliberately. That one is the verbose
+/// watcher's: everything AFTER an id, oldest first, so a device can catch up on
+/// what it missed. This one is a reader's: one page BEFORE an id, newest first,
+/// for somebody scrolling back through what the model has been doing. Same
+/// table, opposite directions, and folding them into one endpoint with a mode
+/// flag would make both harder to read than either is now.
+pub async fn activity_page(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(q): Query<Before>,
+) -> Reply {
+    require_admin(&state.db, &headers)?;
+    // One more than a page, so "is there an older page" needs no second query
+    // and no count. The extra row is dropped before answering.
+    let mut rows = state.db.activity_from("ai", q.before, AI_PAGE + 1);
+    let has_more = rows.len() as i64 > AI_PAGE;
+    rows.truncate(AI_PAGE as usize);
+    Ok(Json(json!({ "events": activity_json(rows), "hasMore": has_more })))
 }
