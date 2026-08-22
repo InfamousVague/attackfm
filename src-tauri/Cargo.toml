@@ -41,6 +41,10 @@ tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "http2", "charset"] }
 tauri-plugin-deep-link = "2.4.9"
 tauri-plugin-haptics = "2.3.2"
+# The OS notification tray. LOCAL notifications only - the app raising its own
+# alerts on the device it is running on, which is a different pipeline from the
+# server-sent push in `push.rs` and needs none of its keys.
+tauri-plugin-notification = "2"
 
 # Desktop-only crates. A phone has no traffic lights to position, and decorum
 # does not build for iOS or Android - so it is named per-target rather than
