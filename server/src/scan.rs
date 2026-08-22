@@ -318,7 +318,27 @@ fn read_track(path: &Path, rel_path: &str, art_dir: &Path) -> Option<ScannedTrac
 /// merely say "folder". Read at most once per file and hashed by content, so
 /// twenty chapters sharing one picture store it once.
 fn folder_cover(path: &Path, art_dir: &Path) -> Option<String> {
-    let dir = path.parent()?;
+    /*
+     * Up to three folders, not one.
+     *
+     * A multi-disc book keeps its cover with the BOOK and its audio in
+     * `CD1/` - so looking only beside the file finds nothing, which is exactly
+     * what happened the first time this ran against a realistic download.
+     * Nearest wins, so a disc that has its own art still gets it.
+     */
+    let mut dir = path.parent();
+    for _ in 0..3 {
+        let Some(here) = dir else { break };
+        if let Some(found) = cover_in(here, art_dir) {
+            return Some(found);
+        }
+        dir = here.parent();
+    }
+    None
+}
+
+/// The cover lying directly in one directory.
+fn cover_in(dir: &Path, art_dir: &Path) -> Option<String> {
     for name in [
         "cover.jpg", "cover.jpeg", "cover.png", "folder.jpg", "folder.jpeg", "folder.png",
         "Cover.jpg", "Folder.jpg", "front.jpg", "album.jpg",
@@ -349,9 +369,46 @@ fn folder_cover(path: &Path, art_dir: &Path) -> Option<String> {
 fn book_folder(rel_path: &str) -> Option<String> {
     let inside = rel_path.strip_prefix("Audiobooks/")?;
     let dir = inside.rsplit_once('/')?.0;
-    // The LAST component: `<Author>/<Title>/file.mp3` and `<Title>/file.mp3`
-    // both name the book in the same place.
-    Some(dir.rsplit('/').next().unwrap_or(dir).to_string())
+    let mut parts: Vec<&str> = dir.split('/').filter(|p| !p.is_empty()).collect();
+    /*
+     * A DISC FOLDER IS NOT A BOOK.
+     *
+     * Long books are commonly split `<Book>/CD1/`, `<Book>/Disc 2/`,
+     * `<Book>/Part 03/`. Taking the innermost folder would name those books
+     * "CD1" and "CD2" and shelve one book as several - so a component that is
+     * only a disc marker is stepped over, and the folder above it answers.
+     * Stepped repeatedly, because `<Book>/CD1/Part 1/` exists in the wild.
+     */
+    while parts.len() > 1 {
+        match parts.last() {
+            Some(last) if is_disc_marker(last) => {
+                parts.pop();
+            }
+            _ => break,
+        }
+    }
+    // The LAST remaining component: `<Author>/<Title>/file.mp3` and
+    // `<Title>/file.mp3` both name the book in the same place.
+    parts.last().map(|p| (*p).to_string())
+}
+
+/// Whether a folder component only says which disc this is - `CD1`, `Disc 2`,
+/// `Part 03`, `Vol 4` and the spelled-out forms, with or without separators.
+///
+/// Deliberately strict: it must be the marker word and a number and nothing
+/// else. A book genuinely called "Part of the Furniture" keeps its name.
+fn is_disc_marker(part: &str) -> bool {
+    let lower = part.trim().to_ascii_lowercase();
+    for word in ["cd", "disc", "disk", "part", "vol", "volume", "tape", "side"] {
+        let Some(rest) = lower.strip_prefix(word) else {
+            continue;
+        };
+        let rest = rest.trim_start_matches([' ', '_', '-', '.']);
+        if !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()) {
+            return true;
+        }
+    }
+    false
 }
 
 /// An author and a title out of a folder name.
@@ -636,6 +693,33 @@ mod book_folder_tests {
         let (artist, title) = split_book_folder("Frank Herbert - 1965 - Dune - Book One");
         assert_eq!(artist.as_deref(), Some("Frank Herbert"));
         assert_eq!(title, "Dune - Book One");
+    }
+
+    #[test]
+    fn a_disc_folder_does_not_become_the_book() {
+        for shape in [
+            "Audiobooks/Dune Messiah/CD1/01.mp3",
+            "Audiobooks/Dune Messiah/Disc 2/01.mp3",
+            "Audiobooks/Dune Messiah/disc_03/01.mp3",
+            "Audiobooks/Dune Messiah/Part 04/01.mp3",
+            "Audiobooks/Dune Messiah/CD1/Part 2/01.mp3",
+        ] {
+            assert_eq!(book_folder(shape).as_deref(), Some("Dune Messiah"), "{shape}");
+        }
+    }
+
+    /// A book whose real name begins with one of those words keeps it.
+    #[test]
+    fn a_marker_word_is_not_a_marker_without_a_number() {
+        assert!(!is_disc_marker("Part of the Furniture"));
+        assert!(!is_disc_marker("Discworld"));
+        assert!(!is_disc_marker("Volume of a Sphere"));
+        assert!(is_disc_marker("CD1"));
+        assert!(is_disc_marker("Disc 12"));
+        assert_eq!(
+            book_folder("Audiobooks/Part of the Furniture/01.mp3").as_deref(),
+            Some("Part of the Furniture")
+        );
     }
 
     #[test]

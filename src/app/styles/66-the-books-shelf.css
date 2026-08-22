@@ -299,6 +299,43 @@
 }
 
 
+/* ---- The page's header -------------------------------------------------- */
+
+/* One row for the mark, the name and the action; the sentence under it. The
+   classes this markup used to carry belonged to a page that was deleted, so
+   nothing matched them and every piece took a line of its own - a header that
+   filled half a phone before the first book. */
+.booksHead {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-block-end: var(--glacier-space-4);
+}
+.booksHead__row {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+}
+.booksHead__glyph {
+  display: inline-flex;
+  color: var(--glacier-text-muted);
+}
+.booksHead__title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+/* The action goes to the far end of the row rather than after the title. */
+.booksHead .booksAdd {
+  margin-inline-start: auto;
+}
+.booksHead__blurb {
+  margin: 0;
+  color: var(--glacier-text-muted);
+  font-size: 0.82rem;
+}
+
 /* ---- Adding a book you already own ------------------------------------- */
 
 /* Sits at the end of the page header, opposite the title, so it reads as
@@ -460,23 +497,34 @@
 
 /* ---- Favourite books ---------------------------------------------------- */
 
-/* Sits with the other card affordances rather than over the cover: the cover is
-   the play target, and a heart floating on it would be a second thing to aim at
-   in the one place a thumb already goes. */
+/* The cover's top-left corner. The card is the positioning context, and the
+   heart stacks above the play button rather than inside it - so the whole
+   cover stays one press for "read this" and the corner is the one exception.
+   A dark scrim under it, because a cover can be any colour and an outline
+   heart on a pale illustration is invisible. */
+.bookCard {
+  position: relative;
+}
 .bookCard__heart {
+  position: absolute;
+  inset-block-start: 0.4rem;
+  inset-inline-start: 0.4rem;
+  z-index: 2;
   display: inline-flex;
   align-items: center;
-  padding: 0.2rem 0.35rem;
+  justify-content: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  padding: 0;
   border: none;
-  border-radius: var(--glacier-radius-sm);
-  background: none;
-  color: var(--glacier-text-muted);
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.45);
+  color: #fff;
   cursor: pointer;
 }
 .bookCard__heart:hover,
 .bookCard__heart:focus-visible {
-  background: var(--glacier-surface-raised);
-  color: var(--glacier-text-primary);
+  background: rgb(0 0 0 / 0.65);
 }
 /* Hearted reads as filled, not merely coloured - the shape carries it at this
    size where a hue alone would not. */
