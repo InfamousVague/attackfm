@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.332
+
+- Hold your Liked card to choose whether Liked songs are separated ahead of time — the one collection whose switch lived only in settings now answers from where the songs are
+- Fixed the background-work switches flicking straight back off after you turned them on. The change was saved every time; the switch was showing you a copy of the answer that was up to twenty seconds old
+
 ## 0.3.331
 
 - Hold a playlist to get its menu. Pressing and holding a playlist on Home now opens its actions — rename, cover, and whether to separate it ahead of time — and lifting your finger no longer drops you into the playlist instead

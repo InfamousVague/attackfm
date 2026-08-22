@@ -192,15 +192,37 @@ export function BackgroundWork() {
   const [plan, setPlan] = useState<{ tracks: number; bytes: number } | null>(null);
   const [planning, setPlanning] = useState(false);
 
+  // The other half of the optimistic switches: stand down as soon as the
+  // server's own answer says the same thing, and not a moment before. Must sit
+  // above the early return - it is a hook.
+  useEffect(() => {
+    if (override !== null && state?.enabled === override) setOverride(null);
+  }, [state?.enabled, override]);
+  useEffect(() => {
+    if (likedOverride !== null && state?.liked === likedOverride) setLikedOverride(null);
+  }, [state?.liked, likedOverride]);
+
   if (!session || !state) return null;
   const enabled = override ?? state.enabled;
   const likedOn = likedOverride ?? state.liked ?? false;
 
   const flip = async (on: boolean) => {
     setBusy(true);
-    // Held locally rather than written into the polled state, which the next
-    // tick would overwrite. Cleared on success so the server's own answer takes
-    // over again the moment it arrives.
+    /*
+     * Held locally rather than written into the polled state, which the next
+     * tick would overwrite.
+     *
+     * Kept until the POLL agrees, not until the POST returns. Clearing it on
+     * the response looked right - the server had just confirmed the write - but
+     * the value underneath is whatever the last poll fetched, and when the
+     * server is idle that poll is twenty seconds old. So the switch went on,
+     * the write succeeded, and it snapped straight back off in front of you,
+     * where it sat until the next tick quietly put it right. It read as the
+     * server refusing the change; it was our own stale copy.
+     *
+     * A failed write clears the override immediately, because there the stale
+     * value IS the true one.
+     */
     setOverride(on);
     try {
       await request(session.url, '/api/stems/prefetch', {
@@ -208,7 +230,6 @@ export function BackgroundWork() {
         token: session.token,
         body: JSON.stringify({ enabled: on }),
       });
-      setOverride(null);
     } catch {
       // Put it back: a switch that stays where you left it while the server
       // disagrees is worse than one that springs back.
@@ -219,6 +240,8 @@ export function BackgroundWork() {
   };
 
   const flipLiked = async (on: boolean) => {
+    // Same hold-until-the-poll-agrees rule as `flip` above, for the same
+    // reason - this switch sprang back too.
     setLikedOverride(on);
     try {
       await request(session.url, '/api/stems/prefetch/liked', {
@@ -226,7 +249,7 @@ export function BackgroundWork() {
         token: session.token,
         body: JSON.stringify({ enabled: on }),
       });
-    } finally {
+    } catch {
       setLikedOverride(null);
     }
   };
