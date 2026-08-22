@@ -240,6 +240,26 @@ fn read_track(path: &Path, rel_path: &str, art_dir: &Path) -> Option<ScannedTrac
         .and_then(|pic| {
             let mime = pic.mime_type().map(|m| m.as_str()).unwrap_or("image/jpeg");
             store_art(art_dir, pic.data(), mime)
+        })
+        /*
+         * A COVER SITTING BESIDE THE FILES still counts.
+         *
+         * Embedded art is the only kind this read, and a book downloaded as
+         * split MP3s almost never has any - it ships `cover.jpg` in the folder
+         * instead, the way the whole audiobook world distributes them. The
+         * shelf then draws a blank glyph for a book whose cover is right there
+         * on disk.
+         *
+         * Books only, matching the folder-name rule above and for the same
+         * reason: inside `Audiobooks/` a folder IS one book, so a picture in
+         * it belongs to that book. A music folder can hold several albums, and
+         * handing all of them one stray image would be worse than none.
+         */
+        .or_else(|| {
+            if crate::db::kind_for(rel_path) != "book" {
+                return None;
+            }
+            folder_cover(path, art_dir)
         });
 
     let lossless = matches!(
@@ -289,6 +309,39 @@ fn read_track(path: &Path, rel_path: &str, art_dir: &Path) -> Option<ScannedTrac
         art_id,
         chapters,
     })
+}
+
+/// The cover image lying beside a book's files, if there is one.
+///
+/// The names are the ones every downloader and tagger actually writes, tried
+/// in the order a human would: the ones that say "cover" before the ones that
+/// merely say "folder". Read at most once per file and hashed by content, so
+/// twenty chapters sharing one picture store it once.
+fn folder_cover(path: &Path, art_dir: &Path) -> Option<String> {
+    let dir = path.parent()?;
+    for name in [
+        "cover.jpg", "cover.jpeg", "cover.png", "folder.jpg", "folder.jpeg", "folder.png",
+        "Cover.jpg", "Folder.jpg", "front.jpg", "album.jpg",
+    ] {
+        let candidate = dir.join(name);
+        if !candidate.is_file() {
+            continue;
+        }
+        let Ok(bytes) = std::fs::read(&candidate) else {
+            continue;
+        };
+        // A cover big enough to be one; anything tiny is a stray icon.
+        if bytes.len() < 1024 {
+            continue;
+        }
+        let mime = if name.to_ascii_lowercase().ends_with(".png") {
+            "image/png"
+        } else {
+            "image/jpeg"
+        };
+        return store_art(art_dir, &bytes, mime);
+    }
+    None
 }
 
 /// The directory a book file sits in, relative to the music root - or None when
