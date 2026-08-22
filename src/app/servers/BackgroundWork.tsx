@@ -178,7 +178,19 @@ export function BackgroundWork() {
   const [likedOverride, setLikedOverride] = useState<boolean | null>(null);
   const [pruning, setPruning] = useState(false);
   const [pruneNote, setPruneNote] = useState<string | null>(null);
-  const [confirmPrune, setConfirmPrune] = useState(false);
+  /*
+   * What the prune WOULD delete, fetched before the question is asked.
+   *
+   * The dialog used to describe the rule ("everything outside Liked and the
+   * lists you turned on") and let the reader work out what that meant for
+   * them. That is exactly backwards for a destructive button, and dangerous
+   * in one specific way: with the Liked switch OFF, Liked is not in the keep
+   * set, so the honest sentence and the actual behaviour part company at the
+   * worst possible moment. Now the server counts first and the dialog states
+   * the real number, the real size, and whether Liked is currently spared.
+   */
+  const [plan, setPlan] = useState<{ tracks: number; bytes: number } | null>(null);
+  const [planning, setPlanning] = useState(false);
 
   if (!session || !state) return null;
   const enabled = override ?? state.enabled;
@@ -216,6 +228,28 @@ export function BackgroundWork() {
       });
     } finally {
       setLikedOverride(null);
+    }
+  };
+
+  /** Ask what would go, then put the question with the answer in it. */
+  const askToPrune = async () => {
+    setPlanning(true);
+    setPruneNote(null);
+    try {
+      const dry = await request<{ tracks: number; bytes: number }>(
+        session.url,
+        '/api/stems/prune?dry=1',
+        { method: 'POST' , token: session.token },
+      );
+      if (dry.tracks === 0) {
+        setPruneNote('Nothing to clear — every separation belongs to something you chose.');
+        return;
+      }
+      setPlan(dry);
+    } catch (err) {
+      setPruneNote(err instanceof Error ? err.message : 'That did not work.');
+    } finally {
+      setPlanning(false);
     }
   };
 
@@ -269,10 +303,11 @@ export function BackgroundWork() {
             <Button
               variant="outline"
               size="sm"
-              disabled={pruning}
-              onClick={() => setConfirmPrune(true)}
+              disabled={pruning || planning}
+              onClick={() => void askToPrune()}
             >
-              <Trash2 size={14} /> {pruning ? 'Clearing…' : 'Clear the rest'}
+              <Trash2 size={14} />{' '}
+              {pruning ? 'Clearing…' : planning ? 'Counting…' : 'Clear the rest'}
             </Button>
           </div>
           <Text tone="muted" size="sm">
@@ -286,14 +321,22 @@ export function BackgroundWork() {
             </Text>
           )}
           <AlertDialog
-            open={confirmPrune}
-            onClose={() => setConfirmPrune(false)}
-            title="Clear the separations you did not choose?"
-            description="Every song outside Liked and the playlists you turned on loses its separated parts. The music is untouched, and anything cleared is separated again the next time you ask for it — which costs the server minutes of GPU per song."
+            open={plan !== null}
+            onClose={() => setPlan(null)}
+            title={
+              plan
+                ? `Clear ${plan.tracks.toLocaleString()} ${plan.tracks === 1 ? 'song' : 'songs'}, freeing ${formatBytes(plan.bytes)}?`
+                : 'Clear the rest?'
+            }
+            description={
+              likedOn
+                ? 'Your Liked songs and the playlists you turned on keep their separated parts. Everything else loses them. The music itself is untouched, and anything cleared is separated again the next time you ask for it — which costs the server minutes of GPU per song.'
+                : 'Liked is switched OFF, so your liked songs are NOT spared — they are counted in the number above. Switch "Include your Liked songs" on first if you want to keep theirs. The music itself is untouched either way, and anything cleared is separated again the next time you ask for it.'
+            }
             actionLabel="Clear them"
             tone="danger"
             onAction={() => {
-              setConfirmPrune(false);
+              setPlan(null);
               void prune();
             }}
           />
