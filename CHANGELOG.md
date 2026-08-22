@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.345
+
+- Audiobooks that arrive as folders of MP3s now work properly: discs are one book rather than several, chapters play in the right order even with no track numbers, and a cover sitting in the folder is used
+- The heart moved onto the book's cover, and the Books header is one line instead of four
+
 ## 0.3.344
 
 - "Read along" now tells you what is actually wrong instead of saying "Not available" for everything — whether your server needs updating, needs the recogniser installed, or just needs its speech model

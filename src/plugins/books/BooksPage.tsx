@@ -32,6 +32,31 @@ import type { Track } from '../../app/core/tauri.ts';
  */
 
 /**
+ * The page's one header.
+ *
+ * It used to wear `discoverHead` classes inherited from a page that no longer
+ * exists, and nothing in any stylesheet matched them - so the glyph, the title,
+ * the blurb and the button each took a line of their own and the header ate
+ * half a phone screen before a single book appeared. One row: the mark and the
+ * name together, the action opposite them, the sentence underneath in the size
+ * a subtitle deserves.
+ */
+function BooksHeader({ blurb, onAdded }: { blurb: string; onAdded: () => void }) {
+  return (
+    <header className="booksHead">
+      <div className="booksHead__row">
+        <span className="booksHead__glyph" aria-hidden>
+          <BookAudio size={20} />
+        </span>
+        <h1 className="booksHead__title">Books</h1>
+        <AddBook onAdded={onAdded} />
+      </div>
+      <p className="booksHead__blurb">{blurb}</p>
+    </header>
+  );
+}
+
+/**
  * Add a book you already have.
  *
  * A plain file input rather than the native picker the desktop upload pane
@@ -299,6 +324,33 @@ interface ShelfBook {
   tracks: Track[];
 }
 
+/**
+ * The order a book's files are meant to be heard in.
+ *
+ * Track numbers first, where they exist. They very often do NOT: a book
+ * downloaded as split MP3s frequently carries no tags at all, and the previous
+ * sort - `(a.trackNo ?? 0) - (b.trackNo ?? 0)` - then compared zero with zero
+ * for every pair and left the chapters in whatever order the library happened
+ * to hand them over. For an audiobook that is not a cosmetic problem; it is
+ * the book in the wrong order.
+ *
+ * So the fallback is the name, compared NUMERICALLY - `numeric: true` is what
+ * puts "Chapter 2" before "Chapter 10" instead of after it, which a plain
+ * string compare gets backwards and which is exactly how these files are
+ * named. An untagged file's title is already its filename, so this sorts by
+ * what is on disk.
+ */
+function chapterOrder(a: Track, b: Track): number {
+  const an = a.trackNo ?? 0;
+  const bn = b.trackNo ?? 0;
+  if (an !== bn && an > 0 && bn > 0) return an - bn;
+  if (an > 0 !== bn > 0) return an > 0 ? -1 : 1;
+  return (a.title || a.path).localeCompare(b.title || b.path, undefined, {
+    numeric: true,
+    sensitivity: 'base',
+  });
+}
+
 /** Group the library's book tracks into books: album is the book, artist the
  *  author. A control character joins the key so no real title collides two. */
 function shelve(books: Track[]): ShelfBook[] {
@@ -311,7 +363,7 @@ function shelve(books: Track[]): ShelfBook[] {
   }
   const shelved: ShelfBook[] = [];
   for (const [key, tracks] of byBook) {
-    tracks.sort((a, b) => (a.trackNo ?? 0) - (b.trackNo ?? 0));
+    tracks.sort(chapterOrder);
     const first = tracks[0]!;
     const singleFile = tracks.length === 1 && (first.chapters?.length ?? 0) > 0;
     const chapters: Chapter[] = singleFile
@@ -424,16 +476,7 @@ export function BooksPage({ onPlay }: PluginPageProps) {
   if (shelf.length === 0) {
     return (
       <div className="discoverPage booksPage">
-        <header className="discoverHead">
-          <span className="discoverHead__glyph" aria-hidden>
-            <BookAudio size={22} />
-          </span>
-          <div className="discoverHead__text">
-            <h1 className="discoverHead__title">Books</h1>
-            <p className="discoverHead__blurb">Your audiobook shelf.</p>
-          </div>
-          <AddBook onAdded={rescan} />
-        </header>
+        <BooksHeader blurb="Your audiobook shelf." onAdded={rescan} />
         <Text tone="muted" size="sm">
           {/* Names the free catalogue by the label it actually wears in the
               navigation, and does not tell anyone to install it: LibriVox
@@ -454,6 +497,19 @@ export function BooksPage({ onPlay }: PluginPageProps) {
     const at = standing(book);
     return (
       <div key={book.key} className="bookCard">
+        {/* Over the cover's top-left corner, not in the row of affordances
+            below. It sits OUTSIDE the play button rather than inside it: a
+            button within a button is invalid markup, and the press would be
+            ambiguous even if it were not. */}
+        <button
+          type="button"
+          className="bookCard__heart"
+          aria-label={`${isFavouriteBook(book) ? 'Remove' : 'Add'} ${book.title} ${isFavouriteBook(book) ? 'from' : 'to'} favourites`}
+          aria-pressed={isFavouriteBook(book)}
+          onClick={() => toggleBook(book)}
+        >
+          <Heart size={14} />
+        </button>
         <button
           type="button"
           className="bookCard__body"
@@ -478,15 +534,6 @@ export function BooksPage({ onPlay }: PluginPageProps) {
               : `${book.chapters.length} ${book.chapters.length === 1 ? 'chapter' : 'chapters'}`}
           </span>
         </button>
-        <button
-      type="button"
-      className="bookCard__heart"
-      aria-label={`${isFavouriteBook(book) ? 'Remove' : 'Add'} ${book.title} ${isFavouriteBook(book) ? 'from' : 'to'} favourites`}
-      aria-pressed={isFavouriteBook(book)}
-      onClick={() => toggleBook(book)}
-    >
-      <Heart size={14} />
-    </button>
     <ReadAlong book={book} />
         {book.chapters.length > 1 && (
           <button
@@ -504,16 +551,7 @@ export function BooksPage({ onPlay }: PluginPageProps) {
 
   return (
     <div className="discoverPage booksPage">
-      <header className="discoverHead">
-        <span className="discoverHead__glyph" aria-hidden>
-          <BookAudio size={22} />
-        </span>
-        <div className="discoverHead__text">
-          <h1 className="discoverHead__title">Books</h1>
-          <p className="discoverHead__blurb">Your shelf — pick up where you left off.</p>
-        </div>
-        <AddBook onAdded={rescan} />
-      </header>
+      <BooksHeader blurb="Your shelf — pick up where you left off." onAdded={rescan} />
 
       {favourites.length > 0 && (
         <section className="discoverSection">
