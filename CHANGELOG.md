@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.336
+
+- The DJ card lines up with the three beside it: its label sits where theirs do, and its infinity is a figure rather than the loudest thing on the row. The card had been stuck at the height of a card with no number in it
+
 ## 0.3.335
 
 - Fixed tapping a playlist on the car screen doing nothing when the app was closed. The car draws its list from the app's own cache, so it can offer your playlists while the app isn't running — and every tap on that list was being thrown away. It is now held and played the moment the app is up

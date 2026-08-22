@@ -145,19 +145,30 @@
  * the symbol - the label looked like it had drifted upward, when really the
  * figure below it was half-height and floating.
  *
- * 1.667x is the ratio of those two ink heights, so the symbol now draws the
- * same 27.4px a numeral does. The line-height cancels the enlargement back out
- * (0.552 x 1.667 = 0.92, the number's own) so the BOX stays exactly the size it
- * was and no neighbour moves; the glyph simply overflows it, which is harmless
- * on a card that is already a stack of layers. The nudge upward puts its ink
- * where a numeral's ink starts, measured rather than guessed: label-to-ink 6.5px
- * against Liked's 7.1.
+ * Matching a numeral's ink height exactly (1.667x) was too far: ink height is
+ * the wrong measure of weight for a wide, closed, symmetrical glyph. At that
+ * size the infinity drew 58.6px across - wider than "28" at 50 - and read as
+ * the loudest thing on the row rather than as its figure. 1.25x lands it at
+ * roughly 20px tall and 44 wide: unmistakably the card's number, without
+ * shouting over the three beside it.
+ *
+ * The line-height cancels the enlargement back out (0.736 x 1.25 = 0.92, the
+ * number's own) so the BOX stays exactly the size it was and no neighbour
+ * moves; the glyph simply overflows it, which is harmless on a card that is
+ * already a stack of layers.
+ *
+ * The nudge lifts it out of where a box built for digits would park it. A
+ * digit fills that box from baseline to cap height; this glyph is shorter than
+ * the box either way, so what is left over has to be SHARED - all of it above
+ * and the label looks stranded, all of it below and the figure floats. Tuned
+ * until the gaps match: 11.6 above and 11.9 below, against Liked's own 8.4 and
+ * 7.9 around a numeral that fills more of the same band.
  */
 :root[data-card-style='stat'] .libChip__stat--glyph:not(.cardPick *),
 .cardPick[data-card-style='stat'] .libChip__stat--glyph {
-  font-size: calc(var(--libChipStatSize) * 1.667);
-  line-height: 0.552;
-  transform: translateY(-0.07em);
+  font-size: calc(var(--libChipStatSize) * 1.25);
+  line-height: 0.736;
+  transform: translateY(-0.075em);
 }
 :root[data-card-style='stat'] .libChip__count:not(.cardPick *),
 .cardPick[data-card-style='stat'] .libChip__count {
