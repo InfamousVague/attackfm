@@ -13,6 +13,7 @@ import { MarqueeText } from './MarqueeText.tsx';
 import { SpinningDisc } from './SpinningDisc.tsx';
 import { QueuePanel } from './QueuePanel.tsx';
 import { DevicePicker } from './DevicePicker.tsx';
+import { JamBadge } from './JamBadge.tsx';
 import { VolumeRow } from './VolumeControl.tsx';
 import { LyricsPanel } from './LyricsPanel.tsx';
 import type { PauseStyle } from './playback.tsx';
@@ -599,6 +600,9 @@ export function NowPlayingSheet({
         </IconButton>
         {/* Whatever wants to act on the song playing right now. */}
         <PluginSlot id="now-playing-actions" />
+        {/* Who else is hearing this. Renders nothing outside a jam, so the row
+            is unchanged for anyone listening alone. */}
+        <JamBadge />
         {/* Always here, unlike in the strip's overflow: on this screen "where is
             this playing" is part of the question the screen answers. */}
         <DevicePicker always />

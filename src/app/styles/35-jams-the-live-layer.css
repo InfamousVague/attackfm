@@ -190,3 +190,97 @@
   color: var(--glacier-text-muted);
 }
 
+/* ── The jam badge on Now Playing ───────────────────────────────────────────
+   A jam used to be visible only on the profile's Live now shelf - the page you
+   are not on while it is happening. This is the same room, on the screen where
+   the listening is, wearing the same Users glyph so the two read as one thing.
+
+   Sits in .npScreen__actions beside the device picker, and is built like it: a
+   glyph carrying its own state, opening a panel rather than navigating away. */
+.jamTrigger {
+  position: relative;
+}
+
+/* Hosting is your room; following is somebody else's. Same glyph, more weight. */
+.jamTrigger[data-hosting] {
+  color: var(--glacier-accent-text);
+}
+
+/* On the glyph, not beside it, so the row's rhythm does not change when a jam
+   starts. Same corner and size as the notification bell's count. */
+.jamTrigger__count {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  min-inline-size: 0.95rem;
+  padding-inline: 0.2rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-accent-on-solid, #fff);
+  font-size: 0.6rem;
+  font-weight: 700;
+  line-height: 0.95rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.jamPanel__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+  min-inline-size: 13rem;
+}
+
+.jamPanel__title {
+  font-weight: 650;
+}
+
+.jamPanel__who {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.jamPanel__member {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  min-inline-size: 0;
+}
+
+.jamPanel__member span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jamPanel__host {
+  margin-inline-start: auto;
+  flex: none;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--glacier-text-muted);
+}
+
+.jamPanel__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* The room's own face, when the song has no cover to lend it.
+   Sized by its container so it works at both the live card's square and the
+   smaller one on a friend's room. */
+.jamArt__glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 100%;
+  block-size: 100%;
+  background: color-mix(in oklab, var(--glacier-accent-solid) 18%, var(--glacier-surface-sunken));
+  color: var(--glacier-accent-text);
+}

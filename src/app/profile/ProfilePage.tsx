@@ -1,5 +1,5 @@
 import { Button, IconButton, Input, Text } from '@glacier/react';
-import { ChevronRight, Copy, LogOut, Radio, UsersRound } from '@glacier/icons';
+import { ChevronRight, Copy, LogOut, Radio, Users, UsersRound } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { nearbySupported, useNearby } from './nearby.ts';
 import { useJam } from '../player/jam.tsx';
@@ -22,7 +22,6 @@ import {
   StatTilesSkeleton,
   profileAxes,
 } from './ProfileCharts.tsx';
-import placeholderArt from '../../assets/attack-wave.png';
 
 /**
  * The Profile page: you, and everything social that hangs off you.
@@ -174,8 +173,19 @@ function LiveNow() {
               a pulse, who is inside - rather than a row. */}
           {jam.current && (
             <div className="jamLive">
+              {/* The song's cover when there is one; the Users glyph when there
+                  is not. A room has no artwork of its own, and the station mark
+                  said "AttackFM" where the honest answer is "several people" -
+                  which is also the mark this feature wears on Now Playing, so
+                  the two are recognisably the same thing. */}
               <span className="jamLive__art" aria-hidden>
-                <img src={currentTrack?.artwork ?? placeholderArt} alt="" />
+                {currentTrack?.artwork ? (
+                  <img src={currentTrack.artwork} alt="" />
+                ) : (
+                  <span className="jamArt__glyph">
+                    <Users size={22} />
+                  </span>
+                )}
                 <span className="jamLive__pulse" />
               </span>
               <span className="jamLive__body">
@@ -226,7 +236,13 @@ function LiveNow() {
                 return (
                   <div key={room.id} className="jamRoom">
                     <span className="jamRoom__art" aria-hidden>
-                      <img src={playing?.artwork ?? placeholderArt} alt="" />
+                      {playing?.artwork ? (
+                        <img src={playing.artwork} alt="" />
+                      ) : (
+                        <span className="jamArt__glyph">
+                          <Users size={20} />
+                        </span>
+                      )}
                       <FriendAvatar handle={room.hostName} size="sm" className="jamRoom__host" />
                     </span>
                     <span className="jamRoom__name">{room.hostName}</span>

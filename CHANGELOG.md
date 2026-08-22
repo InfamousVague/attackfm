@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.328
+
+- A jam now shows on Now Playing — who is in it, the code to invite someone, and the way out — instead of being visible only on your profile, which is the page you are not on while a jam is happening
+- Jams wear a group of people as their mark, on the badge and on the cards, so a room that has no cover art of its own still looks like a room
+
 ## 0.3.327
 
 - Your settings follow your account further: the card style, shake-to-skip, Now Playing's video clips, "keep my place across devices", developer mode, notification detail, your plugin sources and your place in the handbook now arrive on a new device with everything else. Crossfade and the rest of Playback already did
