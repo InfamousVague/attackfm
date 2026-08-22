@@ -110,6 +110,20 @@ read -r -p "  Index/data folder [$DEF_DATA]: " DATA_DIR
 DATA_DIR="${DATA_DIR:-$DEF_DATA}"
 mkdir -p "$DATA_DIR"
 
+# The plugin repository this server offers its own devices at /plugins.
+#
+# The bundles are built into dist-plugins/ and committed, so a `git pull` on
+# this machine already has them - but nothing was carrying them the last inch
+# into the data folder the server actually serves. The private plugins (the
+# importer, Audible, LibriVox) are exactly the ones that live here rather than
+# on plugins.attack.fm, so without this copy they are built, committed, and
+# reachable by nobody.
+if [ -d "$HERE/../dist-plugins" ]; then
+  mkdir -p "$DATA_DIR/plugins"
+  cp -f "$HERE"/../dist-plugins/* "$DATA_DIR/plugins/" 2>/dev/null || true
+  say "Plugins published to $DATA_DIR/plugins"
+fi
+
 read -r -p "  Port [$DEF_PORT]: " PORT
 PORT="${PORT:-$DEF_PORT}"
 
