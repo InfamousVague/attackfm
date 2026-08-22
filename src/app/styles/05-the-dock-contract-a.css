@@ -351,6 +351,19 @@ body:has(.appNavBar) .playerBarShell > * {
 
 .libChip {
   position: relative;
+  /*
+   * Sized by what is in it, like every other chip in the row.
+   *
+   * The DJ chip is a kit Button, and the kit gives its buttons a DEFINITE
+   * height (`--glacier-control-height-md`) - which min-block-size below raises
+   * to 5rem and then pins there. A definite height cannot grow, so the chip
+   * kept the height of the one row-mate that has no figure while carrying a
+   * figure of its own, and the surplus went out the top of a bottom-anchored
+   * column: the label ended up 3.5px from the card edge where its neighbours
+   * sit at 15.5, which reads as "the DJ text sits too high". It was not the
+   * text being high, it was the card being short.
+   */
+  block-size: auto;
   overflow: hidden;
   display: flex;
   flex-direction: column;
