@@ -93,7 +93,10 @@
   display: block;
   position: relative;
   z-index: 4;
-  font-size: 2.4rem;
+  /* Held in a property because the symbol rule below is a MULTIPLE of it, and
+     the preview overrides it at the bottom of this file. */
+  --libChipStatSize: 2.4rem;
+  font-size: var(--libChipStatSize);
   font-weight: 800;
   line-height: 0.92;
   letter-spacing: -0.045em;
@@ -130,6 +133,31 @@
 :root[data-card-style='stat'] .libChip:not(:has(.libChip__stat)):not(.cardPick *) .libChip__name,
 .cardPick[data-card-style='stat'] .libChip:not(:has(.libChip__stat)) .libChip__name {
   margin-block-end: auto;
+}
+/*
+ * The DJ's infinity, sized by its INK rather than by its font-size.
+ *
+ * Every other door leads with digits, which fill their line box from baseline
+ * to cap height - so the spacing above and below was tuned against a glyph
+ * that reaches the top of its box. The infinity does not: at 2.4rem it draws
+ * 16.5px of ink where a numeral draws 27.5, and it sits in the middle of the
+ * box rather than on the baseline. The result was a hole between the label and
+ * the symbol - the label looked like it had drifted upward, when really the
+ * figure below it was half-height and floating.
+ *
+ * 1.667x is the ratio of those two ink heights, so the symbol now draws the
+ * same 27.4px a numeral does. The line-height cancels the enlargement back out
+ * (0.552 x 1.667 = 0.92, the number's own) so the BOX stays exactly the size it
+ * was and no neighbour moves; the glyph simply overflows it, which is harmless
+ * on a card that is already a stack of layers. The nudge upward puts its ink
+ * where a numeral's ink starts, measured rather than guessed: label-to-ink 6.5px
+ * against Liked's 7.1.
+ */
+:root[data-card-style='stat'] .libChip__stat--glyph:not(.cardPick *),
+.cardPick[data-card-style='stat'] .libChip__stat--glyph {
+  font-size: calc(var(--libChipStatSize) * 1.667);
+  line-height: 0.552;
+  transform: translateY(-0.07em);
 }
 :root[data-card-style='stat'] .libChip__count:not(.cardPick *),
 .cardPick[data-card-style='stat'] .libChip__count {
@@ -389,7 +417,8 @@
    touch loud on a preview a third the width. Scaled here rather than in the
    style itself, so the style stays one description of one look. */
 .cardPick[data-card-style='stat'] .libChip__stat {
-  font-size: 1.75rem;
+  /* The property, not the font-size, so the symbol above scales with it. */
+  --libChipStatSize: 1.75rem;
 }
 
 .cardPick__name {

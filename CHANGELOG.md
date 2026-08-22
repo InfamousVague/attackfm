@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.333
+
+- The DJ card's infinity now sits under its label where every other card's number does, instead of floating half-size in the middle with a gap above it
+
 ## 0.3.332
 
 - Hold your Liked card to choose whether Liked songs are separated ahead of time — the one collection whose switch lived only in settings now answers from where the songs are

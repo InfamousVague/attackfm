@@ -225,7 +225,7 @@ export function DjLauncher({
             sleeves for Real covers, and an infinity for Numbers first, because
             the set it spins is never the same twice. */}
         <LibChipMosaic covers={tracks.map((t) => t.artwork).filter((a): a is string => !!a)} />
-        <LibChipStat value="∞" />
+        <LibChipStat value="∞" glyph />
         <span className="libChip__name">DJ</span>
         <span className="libChip__count">
           {busy ? <Spinner size="sm" aria-label="Cueing" /> : 'A live set, from your taste'}
