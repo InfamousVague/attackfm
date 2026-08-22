@@ -21,6 +21,7 @@ import { usePlaylists, type Playlist } from './playlists.tsx';
 import { PluginFence, usePlugins } from '../../plugins/runtime.tsx';
 import type { PluginPlaylistTile } from '../../plugins/types.ts';
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
+import { useLikedStems } from '../servers/likedStems.ts';
 import { playlistPlayedAt, notePlaylistPlayed } from './playlistRecency.ts';
 import { openMix } from '../nav/openMix.ts';
 import { LibChipMosaic, LibChipStat } from '../library/LibChipFace.tsx';
@@ -117,6 +118,26 @@ function Tile({
   );
 }
 
+/** A ContextMenu when there is something to show, and the bare child when
+ *  there is not - so the caller does not have to duplicate its subtree. */
+function MaybeMenu({
+  when,
+  content,
+  children,
+  ...rest
+}: {
+  when: boolean;
+  content: ReactNode;
+  children: ReactNode;
+} & { 'aria-label': string }) {
+  if (!when) return <>{children}</>;
+  return (
+    <ContextMenu {...rest} className="playlistTileMenuTarget" content={content}>
+      {children}
+    </ContextMenu>
+  );
+}
+
 /** From wherever a press lands in a grid, the tile's menu wrapper - the one
  *  element per tile that actually wears the ContextMenu. */
 function tileMenuTarget(from: Element): Element | null {
@@ -209,6 +230,9 @@ export function PlaylistShowcase({
    * the items were unreachable by touch. The hook swallows that release.
    */
   const hold = useHoldToMenu(tileMenuTarget);
+  /* Liked's own "separate ahead" answer. It is a server preference rather than
+     a row on a playlist, so unlike every tile below it has to be asked for. */
+  const { liked: likedStems, setLiked: setLikedStems } = useLikedStems();
   const { toast } = useToast();
   const { enabled } = usePlugins();
   // The New Playlist dialog: null closed, otherwise the name being typed.
@@ -372,24 +396,46 @@ export function PlaylistShowcase({
           what matters about them is the NAME, and a chip that is half the row
           says "there are exactly two of these" at a glance. */}
       <section className="homeShelf libShelf">
-        <div className="libChips">
+        <div className="libChips" {...hold}>
           {/* Built like the Browse tiles on search: a bold gradient face, the
               object bled across it, the name and its count sitting on top. The
               hue is fixed per chip rather than hashed from the name - there are
               two of these forever, and each one already has a colour of its own
               in the picture it wears. */}
-          <button
-            type="button"
-            className="libChip libChip--liked"
-            style={{ '--libChipHue': 338, '--libChipHue2': 300, '--art': `url("${likedChip}")` } as CSSProperties}
-            onClick={() => onOpenSongs('liked')}
+          {/* The one chip with a menu, and the reason the whole row carries the
+              hold handlers: separating Liked ahead of time is a thing you want
+              to reach from where your liked songs ARE, not only from a settings
+              pane three taps away. Nothing else here has an action worth
+              holding for, so the others stay plain buttons inside the same
+              press-and-hold surface. */}
+          {/* No menu at all when there is nothing to put in it - a hold that
+              opens a panel saying "nothing here" is worse than a hold that
+              does nothing. */}
+          <MaybeMenu
+            when={likedStems !== undefined}
+            aria-label="Liked actions"
+            content={
+              <MenuItem
+                icon={<AudioLines size={15} />}
+                onSelect={() => void setLikedStems(!likedStems)}
+              >
+                {likedStems ? 'Stop separating ahead' : 'Separate these ahead'}
+              </MenuItem>
+            }
           >
-            <img className="libChip__art" src={likedChip} alt="" loading="lazy" />
-            <LibChipMosaic covers={likedCovers} />
-            <LibChipStat value={String(favoriteTracks.length)} />
-            <span className="libChip__name">Liked</span>
-            <span className="libChip__count">{songCount(favoriteTracks.length)}</span>
-          </button>
+            <button
+              type="button"
+              className="libChip libChip--liked"
+              style={{ '--libChipHue': 338, '--libChipHue2': 300, '--art': `url("${likedChip}")` } as CSSProperties}
+              onClick={() => onOpenSongs('liked')}
+            >
+              <img className="libChip__art" src={likedChip} alt="" loading="lazy" />
+              <LibChipMosaic covers={likedCovers} />
+              <LibChipStat value={String(favoriteTracks.length)} />
+              <span className="libChip__name">Liked</span>
+              <span className="libChip__count">{songCount(favoriteTracks.length)}</span>
+            </button>
+          </MaybeMenu>
           <button
             type="button"
             className="libChip libChip--all"
