@@ -20,6 +20,7 @@ import { DjLauncher } from '../booth/DjLauncher.tsx';
 import { usePlaylists, type Playlist } from './playlists.tsx';
 import { PluginFence, usePlugins } from '../../plugins/runtime.tsx';
 import type { PluginPlaylistTile } from '../../plugins/types.ts';
+import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { playlistPlayedAt, notePlaylistPlayed } from './playlistRecency.ts';
 import { openMix } from '../nav/openMix.ts';
 import { LibChipMosaic, LibChipStat } from '../library/LibChipFace.tsx';
@@ -99,6 +100,7 @@ function Tile({
   return (
     <ContextMenu
       aria-label={`${name} actions`}
+      className="playlistTileMenuTarget"
       content={
         <>
           {menu}
@@ -113,6 +115,12 @@ function Tile({
       {tile}
     </ContextMenu>
   );
+}
+
+/** From wherever a press lands in a grid, the tile's menu wrapper - the one
+ *  element per tile that actually wears the ContextMenu. */
+function tileMenuTarget(from: Element): Element | null {
+  return from.closest('.playlistTileMenuTarget');
 }
 
 /** The new-folder form, keyed per invocation so each opens empty. */
@@ -190,6 +198,17 @@ export function PlaylistShowcase({
   // removeTrack went with the strip's modal - shedding a row was only ever
   // offered there, and Recent never offered it at all.
   const { playlists, create, remove, rename, setMeta, setCover, setAutoStem } = usePlaylists();
+  /*
+   * Hold a tile for its menu - and let go without opening the playlist.
+   *
+   * The kit's ContextMenu already opened on a long press, so this looked
+   * done; it was not, for the reason song rows needed the same hook. The kit
+   * shows the panel at 500ms and then leaves the pointerup alone, so the tile
+   * underneath - whose whole job is "tap to open" - took the click the moment
+   * the finger lifted: the menu appeared and the playlist opened over it, and
+   * the items were unreachable by touch. The hook swallows that release.
+   */
+  const hold = useHoldToMenu(tileMenuTarget);
   const { toast } = useToast();
   const { enabled } = usePlugins();
   // The New Playlist dialog: null closed, otherwise the name being typed.
@@ -407,7 +426,7 @@ export function PlaylistShowcase({
             into as many columns as the width holds. Only past five rows'
             worth does it scroll - the cap keeps a hundred playlists from
             burying the shelves below. */}
-        <div className="showcaseGrid">
+        <div className="showcaseGrid" {...hold}>
             <Tile
               name="Recent"
               cover={
@@ -475,7 +494,7 @@ export function PlaylistShowcase({
             {folder}
             <span className="showcaseFolderCount">{lists.length}</span>
           </h2>
-          <div className="showcaseGrid">
+          <div className="showcaseGrid" {...hold}>
             {lists.map((playlist) => (
               <Tile
                 key={playlist.id}
