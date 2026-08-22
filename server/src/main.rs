@@ -27,6 +27,7 @@ mod albums;
 mod api;
 mod mirror;
 mod audible;
+mod transcribe;
 mod audiobooks;
 mod auth;
 mod canvas;
@@ -156,6 +157,7 @@ pub struct AppState {
     pub audiobooks: Arc<audiobooks::BookQueue>,
     /// The owner's Audible connection - device tokens and any login mid-flow.
     pub audible: Arc<audible::AudibleState>,
+    pub transcribe: Arc<transcribe::TranscribeState>,
     /// Per-listener harvest clocks for the discovery pool.
     pub discovery: Arc<discovery::DiscoveryState>,
     /// When this process came up - the uptime the stats endpoint reports.
@@ -412,6 +414,7 @@ async fn main() {
         curator: curator::CuratorState::new(),
         audiobooks: Arc::new(audiobooks::BookQueue::default()),
         audible: Arc::new(audible::AudibleState::new(&data_dir)),
+        transcribe: Arc::new(transcribe::TranscribeState::new()),
         discovery: discovery::DiscoveryState::new(),
         started: std::time::Instant::now(),
     });
@@ -718,6 +721,11 @@ async fn main() {
         .route("/api/audible/library", get(audible::library))
         .route("/api/audible/import", post(audible::import))
         .route("/api/audible/jobs", get(audible::audible_jobs))
+        // Reading a book's words along with it. Books only, on request only -
+        // see transcribe.rs for why neither is negotiable.
+        .route("/api/transcribe/status", get(transcribe::status))
+        .route("/api/transcribe/jobs", get(transcribe::jobs))
+        .route("/api/transcribe/{track_id}", get(transcribe::get).post(transcribe::queue))
         .nest_service("/plugins", ServeDir::new(&plugins_dir))
         .nest_service(
             "/api/assets",

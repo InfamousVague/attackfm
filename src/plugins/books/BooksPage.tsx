@@ -1,11 +1,12 @@
 import { Button, Modal, ProgressBar, Text } from '@glacier/react';
-import { BookAudio, Check, ChevronRight, Play, Upload } from '@glacier/icons';
+import { BookAudio, BookOpenText, Check, ChevronRight, Play, Upload } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PluginPageProps } from '../types.ts';
 import { useLibrary } from '../../app/library/library.tsx';
 import { useServerSession } from '../../app/servers/serverSession.tsx';
 import { fetchPlayStates } from '../../app/api/listening.ts';
 import { uploadFile } from '../../app/api/library.ts';
+import { request } from '../../app/api/http.ts';
 import type { Track } from '../../app/core/tauri.ts';
 
 /*
@@ -123,6 +124,67 @@ function AddBook({ onAdded }: { onAdded: () => void }) {
         </Text>
       )}
     </div>
+  );
+}
+
+/**
+ * Ask the hub to read the book, so its words can be read along with it.
+ *
+ * Deliberately a request rather than something that happens on its own. This
+ * is hours of the machine's time for one book - the same class of expense as
+ * separating stems, and the same answer: nothing starts until somebody asks
+ * for it. Admin-only on the server for the same reason, so a listener who is
+ * not the operator simply never sees this.
+ *
+ * Once made, nothing here shows it: the words appear where a song's lyrics
+ * would, over the disc and in the lyrics panel, because a transcript IS timed
+ * lines and those surfaces already draw them.
+ */
+function ReadAlong({ book }: { book: ShelfBook }) {
+  const { session } = useServerSession();
+  const [state, setState] = useState<'idle' | 'asking' | 'working' | 'done' | 'no'>('idle');
+
+  // Only the operator can spend the box's evening, and only a book that is one
+  // file has a track id worth transcribing.
+  if (!session?.isAdmin || book.tracks.length !== 1) return null;
+  const id = serverId(book.tracks[0]!.path);
+  if (id == null) return null;
+
+  const ask = async () => {
+    setState('asking');
+    try {
+      const r = await request<{ queued: boolean; reason?: string }>(
+        session.url,
+        `/api/transcribe/${id}`,
+        { method: 'POST', token: session.token },
+      );
+      setState(r.queued ? 'working' : 'done');
+    } catch {
+      // A server without the recogniser answers 412, which is not a failure
+      // worth a dialog - the button simply says it cannot.
+      setState('no');
+    }
+  };
+
+  const label =
+    state === 'working'
+      ? 'Reading it…'
+      : state === 'done'
+        ? 'Already read'
+        : state === 'no'
+          ? 'Not available'
+          : 'Read along';
+
+  return (
+    <button
+      type="button"
+      className="bookCard__readAlong"
+      aria-label={`Transcribe ${book.title} so you can read along`}
+      disabled={state !== 'idle'}
+      onClick={() => void ask()}
+    >
+      <BookOpenText size={13} aria-hidden /> {label}
+    </button>
   );
 }
 
@@ -320,6 +382,7 @@ export function BooksPage({ onPlay }: PluginPageProps) {
                       : `${book.chapters.length} ${book.chapters.length === 1 ? 'chapter' : 'chapters'}`}
                   </span>
                 </button>
+                <ReadAlong book={book} />
                 {book.chapters.length > 1 && (
                   <button
                     type="button"
