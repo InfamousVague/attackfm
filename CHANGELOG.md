@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.343
+
+- An empty Books page now points at Free books, the LibriVox catalogue that already comes with the app — thousands of public-domain readings, free and legal to keep. It used to tell you to go and install something you already had
+
 ## 0.3.342
 
 - Books you love get their own shelf: heart a book and it moves to Favourites at the top of the page, so the one you are actually reading is not buried among everything you own
