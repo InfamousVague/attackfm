@@ -112,7 +112,23 @@ pub async fn offline_pin(
         }
     }
 
-    let part = target.with_extension("part");
+    /*
+     * The fragment carries the EXTENSION, so a half-finished download can only
+     * ever be resumed into a file of the same quality.
+     *
+     * It used to be `<hex>.part` for every quality, which made an abandoned 128k
+     * encode indistinguishable on disk from an abandoned lossless download. The
+     * next attempt saw bytes already there and sent `Range: bytes=N-`; the
+     * original-file endpoint honours that with a 206, so FLAC bytes were
+     * appended onto an AAC head and renamed into place - a file that passes
+     * every check this code can make and is garbage, preferred over the network
+     * for good. `<hex>.<ext>.part` makes a mismatched fragment simply invisible
+     * to the resume check, and preserves resume for a fragment that DOES match.
+     *
+     * `entry_of` is unaffected: it skips on `extension() == "part"`, which is
+     * still true, and a hex stem still contains no dot of its own.
+     */
+    let part = base.join(format!("{}.{}.part", to_hex(&key), ext));
     // A client with a connect timeout, and a watchdog on every chunk. The old
     // body was reqwest::get + bytes() - no timeout anywhere, the whole file
     // buffered in memory - so one wedged connection hung its worker forever.
@@ -254,7 +270,12 @@ pub async fn offline_unpin(app: tauri::AppHandle, key: String) -> Result<(), Str
     };
     for item in read.flatten() {
         let path = item.path();
-        if path.file_stem().and_then(|s| s.to_str()) == Some(want.as_str()) {
+        // `<hex>.<ext>` matches on the stem; `<hex>.<ext>.part` has the stem
+        // `<hex>.<ext>`, so it needs the prefix arm. Without it this stops
+        // deleting fragments entirely and the vault leaks `.part` files for
+        // ever - which is why these two changes have to land together.
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        if stem == want.as_str() || stem.starts_with(&format!("{want}.")) {
             let _ = std::fs::remove_file(&path);
         }
     }
@@ -271,4 +292,37 @@ pub async fn offline_clear(app: tauri::AppHandle) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    /// The exact predicate `offline_unpin` uses, so the two cannot drift.
+    fn matches(stem: &str, want: &str) -> bool {
+        stem == want || stem.starts_with(&format!("{want}."))
+    }
+
+    #[test]
+    fn unpin_takes_the_file_and_its_fragment_and_nothing_else() {
+        let want = "61666d3a2f2f3432";
+        let other = "61666d3a2f2f3939";
+
+        // The held file, whatever quality it is stored at. `file_stem` of
+        // `<hex>.flac` is `<hex>`, so these come through the equality arm.
+        assert!(matches(want, want), "lossless file");
+
+        // The fragment. `file_stem` of `<hex>.aac128.part` is `<hex>.aac128`,
+        // which only the prefix arm can see - and if it cannot, the vault leaks
+        // `.part` files for ever.
+        assert!(matches(&format!("{want}.aac128"), want), "lossy fragment");
+        assert!(matches(&format!("{want}.flac"), want), "lossless fragment");
+
+        // Another song is never touched. A hex stem carries no dot of its own,
+        // so no other key can start with `<want>.`.
+        assert!(!matches(other, want), "a different song");
+        assert!(!matches(&format!("{other}.aac128"), want), "another song's fragment");
+
+        // A key that merely SHARES A PREFIX is not this key - the dot is what
+        // makes the prefix arm safe rather than greedy.
+        assert!(!matches(&format!("{want}ff"), want), "a longer key with this one as a prefix");
+    }
 }
