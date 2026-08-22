@@ -428,3 +428,32 @@
   opacity: 0.5;
   font-size: 0.8em;
 }
+
+/* ---- Asking the hub to read a book -------------------------------------- */
+
+/* A quiet request, not a call to action: most books will never be transcribed
+   and the shelf is for reading them, not for administering them. Sits with the
+   chapter affordance rather than competing with the cover. */
+.bookCard__readAlong {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.45rem;
+  border: none;
+  border-radius: var(--glacier-radius-sm);
+  background: none;
+  color: var(--glacier-text-muted);
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+.bookCard__readAlong:hover:not(:disabled),
+.bookCard__readAlong:focus-visible {
+  background: var(--glacier-surface-raised);
+  color: var(--glacier-text-primary);
+}
+/* Working, done and unavailable all read as "not a button any more", which is
+   the honest state for all three. */
+.bookCard__readAlong:disabled {
+  opacity: 0.55;
+  cursor: default;
+}

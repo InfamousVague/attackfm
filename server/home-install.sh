@@ -320,6 +320,38 @@ else
   say "To enable Audible later:  brew install pipx && pipx install audible-cli"
 fi
 
+# --- Reading books along (whisper.cpp) --------------------------------------
+#
+# Transcribes an audiobook ahead of time so its words can be highlighted while
+# it is read aloud. Two pieces: the recogniser, and a model to read with. The
+# model lives in the DATA directory rather than beside the binary because it is
+# large, it is a choice the operator made, and it should travel with the rest of
+# the server's state.
+#
+# `small` is the default because it is the size that gets narration right
+# without taking all night; the server prefers a bigger model if one is there.
+bold "Reading books along (optional)"
+WHISPER_DIR="$DATA_DIR/whisper"
+if ! command -v whisper-cli >/dev/null 2>&1; then
+  read -r -p "  Install whisper.cpp, to transcribe audiobooks? [y/N]: " yn
+  if [ "${yn:-N}" = "y" ] || [ "${yn:-N}" = "Y" ]; then
+    brew install whisper-cpp || say "install failed - books simply will not offer 'read along'"
+  fi
+fi
+if command -v whisper-cli >/dev/null 2>&1; then
+  mkdir -p "$WHISPER_DIR"
+  if ls "$WHISPER_DIR"/ggml-*.bin >/dev/null 2>&1; then
+    say "speech model already present in $WHISPER_DIR"
+  else
+    read -r -p "  Download the small English model (~500MB)? [y/N]: " yn
+    if [ "${yn:-N}" = "y" ] || [ "${yn:-N}" = "Y" ]; then
+      curl -fL --progress-bar -o "$WHISPER_DIR/ggml-small.en.bin" \
+        https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin \
+        || { rm -f "$WHISPER_DIR/ggml-small.en.bin"; say "model download failed - transcribing stays unavailable"; }
+    fi
+  fi
+fi
+
 bold "Done"
 say "server:   http://$(ipconfig getifaddr en0 2>/dev/null || echo '<this-mac>'):$PORT"
 say "logs:     $LOG_DIR/server.log"

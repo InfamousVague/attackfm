@@ -1,6 +1,7 @@
 import type { LyricLine } from '@glacier/react';
 import { onlineMetadataEnabled } from '../settings/netPrefs.ts';
 import type { Track } from '../core/tauri.ts';
+import { fetchTranscript } from './transcript.ts';
 
 /**
  * Lyrics for the strip's mic popover, looked up on LRCLIB - the open synced
@@ -169,6 +170,20 @@ async function lookup(track: Track): Promise<{ lyrics: TrackLyrics; settled: boo
 
 /** The track's lyrics, from cache or one network lookup. Never rejects. */
 export function fetchLyrics(track: Track): Promise<TrackLyrics> {
+  /*
+   * A BOOK IS READ, NOT SUNG, so its words come from our own server rather
+   * than from a lyrics database that has never heard of it.
+   *
+   * Hooked here, at the one entry point both surfaces call, so neither the
+   * words-over-the-disc backdrop nor the lyrics panel needs to learn what a
+   * transcript is - they are handed timed lines either way and cannot tell a
+   * narrator from a singer. Not cached in `cache` below: transcripts keep
+   * their own, keyed by track id, so making one can be picked up without a
+   * reload.
+   */
+  if (track.kind === 'book') {
+    return fetchTranscript(track).then((lines) => (lines ? { synced: lines, plain: null } : NONE));
+  }
   const held = cache.get(track.path);
   if (held) return held;
   const looked = lookup(track).then(({ lyrics, settled }) => {

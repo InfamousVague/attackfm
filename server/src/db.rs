@@ -1074,6 +1074,19 @@ CREATE INDEX IF NOT EXISTS stem_jobs_state ON stem_jobs(state, requested_at);
 -- leaves an evicted song indistinguishable from one never separated - so the
 -- prefetcher would queue it again, and again, at ~24s of GPU a lap, forever.
 -- This is the one table eviction does not touch.
+CREATE TABLE IF NOT EXISTS transcripts (
+  track_id   INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+  -- `[{startMs, endMs, text}]`, in order. Held as a blob of JSON rather than a
+  -- row per line because it is only ever read whole, by one reader, for one
+  -- book - and a twelve-hour reading is tens of thousands of lines that no
+  -- query will ever want to filter.
+  lines      TEXT    NOT NULL,
+  -- Which model said so, so a transcript made by a small model can be told
+  -- apart from one made by a better one later.
+  model      TEXT    NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS stem_prefetch (
   track_id       INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
   state          TEXT NOT NULL,             -- wanted | running | done | failed | evicted
@@ -5402,6 +5415,42 @@ impl Db {
     /// None is meaningful: it means "nobody has chosen", which is what lets an
     /// environment variable still act as the default for an operator who set one
     /// before this table existed.
+    /// A book's transcript, or None when nobody has made one.
+    ///
+    /// Deliberately NOT part of any library payload: this is fetched for one
+    /// book at the moment somebody opens it. A transcript is the largest thing
+    /// this database holds per row, and the library listing is the one request
+    /// every device makes constantly.
+    pub fn transcript(&self, track_id: i64) -> Option<String> {
+        self.lock()
+            .query_row(
+                "SELECT lines FROM transcripts WHERE track_id = ?1",
+                params![track_id],
+                |r| r.get(0),
+            )
+            .ok()
+    }
+
+    pub fn set_transcript(&self, track_id: i64, lines: &str, model: &str) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO transcripts (track_id, lines, model, created_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(track_id) DO UPDATE SET lines = ?2, model = ?3, created_at = ?4",
+            params![track_id, lines, model, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// Whether a book already has one, without paying to read it back.
+    pub fn has_transcript(&self, track_id: i64) -> bool {
+        self.lock()
+            .query_row(
+                "SELECT 1 FROM transcripts WHERE track_id = ?1",
+                params![track_id],
+                |_| Ok(()),
+            )
+            .is_ok()
+    }
+
     pub fn server_pref(&self, key: &str) -> Option<String> {
         self.lock()
             .query_row(
