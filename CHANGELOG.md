@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.335
+
+- Fixed tapping a playlist on the car screen doing nothing when the app was closed. The car draws its list from the app's own cache, so it can offer your playlists while the app isn't running — and every tap on that list was being thrown away. It is now held and played the moment the app is up
+- The car's now-playing card can open the app again — the button had nothing behind it
+- Closing the app no longer risks taking the car's controls down with it
+
 ## 0.3.334
 
 - The app's news now reaches your phone's notification tray, not just the bell inside the app — downloads landing, stems finishing, and the rest arrive while you're doing something else, and are skipped while you're already looking at the app

@@ -80,6 +80,24 @@ class PlaybackService : MediaBrowserServiceCompat() {
         if (mediaId.startsWith("collection:") || mediaId.startsWith("playlist:")) command(mediaId)
       }
     })
+    /*
+     * Where "open the app" goes from outside it.
+     *
+     * A car's now-playing card, the lock screen and a paired computer all offer
+     * a way back to the app itself, and they take it from the SESSION rather
+     * than from the notification - so without this the button is simply absent
+     * (dumpsys reports `launchIntent=null`). The notification has always
+     * carried its own copy; the session never did.
+     */
+    made.setSessionActivity(
+      PendingIntent.getActivity(
+        this,
+        0,
+        Intent(this, MainActivity::class.java)
+          .setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+        PendingIntent.FLAG_IMMUTABLE,
+      ),
+    )
     made.isActive = true
     session = made
     active = made
@@ -298,7 +316,9 @@ class PlaybackService : MediaBrowserServiceCompat() {
    *  this chain took days to see through. */
   private fun command(what: String) {
     android.util.Log.i("AFMedia", "session command: $what")
-    MainActivity.deliverTransport(what)
+    // The service's own context, so a command arriving with the app closed
+    // can start it rather than being dropped - see deliverTransport.
+    MainActivity.deliverTransport(this, what)
   }
 
   override fun onDestroy() {
