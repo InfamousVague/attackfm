@@ -150,6 +150,20 @@ export const SETTINGS_INDEX: SettingEntry[] = [
     keywords: 'developer dev mode tools debug hidden unlock',
   },
   {
+    id: 'notify-os',
+    pane: 'notifications',
+    label: 'Show them on this device',
+    description: "Puts the app's news in your phone's notification tray, so it reaches you without the app open.",
+    keywords: 'notifications push phone tray system os alerts banner lock screen device notify popup',
+  },
+  {
+    id: 'notify-os-test',
+    pane: 'notifications',
+    label: 'Send a test one',
+    description: 'Puts one notification in the tray now, to check they arrive.',
+    keywords: 'test notification try check send sample verify tray',
+  },
+  {
     id: 'notify-verbose',
     pane: 'notifications',
     label: 'Verbose notifications',

@@ -22,6 +22,7 @@
 //! becomes the local mirror in front of it.
 
 import { useCallback, useSyncExternalStore } from 'react';
+import { mirrorNoticeToOs } from './osNotify.ts';
 
 const KEY_BASE = 'attackfm-notify-v1';
 /** A month of ordinary use for somebody who imports most days, and small
@@ -223,9 +224,14 @@ export function noteNotice(n: NewNotice): void {
     entries = sameNews
       ? entries.map((e, i) => (i === at ? row : e))
       : [...entries.slice(0, at), ...entries.slice(at + 1), row];
+    // A restated story has already been announced; only the new event rings.
+    // This is the same `sameNews` question the read flag turns on, which is why
+    // it is answered once, here, rather than guessed at again in the tray.
+    if (!sameNews) mirrorNoticeToOs(row);
   } else {
     entries = [...entries, row];
     if (entries.length > MAX_NOTICES) entries = entries.slice(-MAX_NOTICES);
+    mirrorNoticeToOs(row);
   }
   changed();
 }

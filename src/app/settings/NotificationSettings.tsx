@@ -1,12 +1,13 @@
 // The same table the bell reads, so the switch list and the notification
 // that arrives can never describe one kind in two vocabularies.
 import { NOTICE_COPY as COPY, NOTICE_ORDER as ORDER } from '../notify/kinds.ts';
-import { Switch, Text } from '@glacier/react';
+import { Button, Switch, Text } from '@glacier/react';
 import { useCallback, useEffect, useState } from 'react';
 import { fetchPushPrefs, setPushPref, type ServerSession } from '../server.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { PaneSection, SettingRow, SettingsEmpty } from './kit/settingsKit.tsx';
-import { setVerboseNotices, verboseNoticesEnabled } from './behaviourPrefs.ts';
+import { osNoticesEnabled, setOsNotices, setVerboseNotices, verboseNoticesEnabled } from './behaviourPrefs.ts';
+import { ensureOsNotifyPermission, sendTestNotification } from '../notify/osNotify.ts';
 
 /**
  * What the app is allowed to interrupt you for.
@@ -68,10 +69,111 @@ export async function primeNotificationsSummary(session: ServerSession): Promise
   }
 }
 
-export function NotificationSettings() {
-  // Device-local, unlike every switch below it: how much THIS phone rings
-  // for background work is not a fact about the account.
+/**
+ * The switches that belong to the PHONE rather than to the account.
+ *
+ * Rendered identically whether or not anyone is signed in, because neither of
+ * these asks the server anything - which is exactly why they are the only part
+ * of this pane a signed-out person can still use. It was two copies of the same
+ * markup for that reason; one component keeps them one thing.
+ */
+function DeviceSection() {
   const [verbose, setVerbose] = useState(verboseNoticesEnabled);
+  const [osOn, setOsOn] = useState(osNoticesEnabled);
+  // Only ever set by an actual refusal. Before that it is not "denied", it is
+  // "never asked" - and saying the former would be a lie on every desktop.
+  const [refused, setRefused] = useState(false);
+  // What the last test did, in the row's own words. Cleared when the switch
+  // moves, because an old verdict beside a changed setting is a lie.
+  const [tested, setTested] = useState<string | null>(null);
+
+  return (
+    <PaneSection
+      title="On this device"
+      description="Where the app's news is put, and how much of it there is. Both are about this phone rather than your account, so another device can answer differently."
+    >
+      <SettingRow
+        id="notify-os"
+        label="Show them on this device"
+        hint={
+          refused
+            ? 'Your device is refusing notifications from AttackFM. Turn them back on for this app in the system settings, then flip this again.'
+            : "Puts the same news in the notification tray, so it reaches you without the app open. Skipped while you are already looking at the app."
+        }
+        control={
+          <Switch
+            checked={osOn}
+            onCheckedChange={(v) => {
+              setOsOn(v);
+              setOsNotices(v);
+              setTested(null);
+              // Asked HERE as well as at the first notice, because turning a
+              // switch on is the clearest possible moment to be asked - and
+              // finding out then beats finding out by nothing arriving.
+              if (v) void ensureOsNotifyPermission().then((ok) => setRefused(!ok));
+              else setRefused(false);
+            }}
+            aria-label="Show notifications on this device"
+          />
+        }
+      />
+      {/* Because the honest answer to "will these actually arrive?" is one the
+          app can demonstrate rather than promise. Three things have to line up
+          for it to work - a binary with the plugin, the OS permission, and this
+          switch - and only one of them is visible from here. */}
+      {osOn && (
+        <SettingRow
+          id="notify-os-test"
+          label="Send a test one"
+          hint={
+            tested ??
+            'Puts one in the tray now, so you can see what arriving looks like before you rely on it.'
+          }
+          control={
+            <Button
+              variant="soft"
+              size="sm"
+              onClick={() => {
+                setTested('Sending…');
+                void sendTestNotification().then((r) => {
+                  setTested(
+                    r === 'sent'
+                      ? 'Sent — look at your notifications.'
+                      : r === 'refused'
+                        ? 'Your device is refusing notifications from AttackFM. Turn them back on for this app in the system settings.'
+                        : 'This build cannot reach the notification tray. Desktop and older installs need a fresh version of the app itself, not just an update.',
+                  );
+                  if (r === 'refused') setRefused(true);
+                });
+              }}
+            >
+              Send
+            </Button>
+          }
+        />
+      )}
+      {/* Gates the local-only kinds (download started, stems, AI passes) raised
+          by the client's own watchers; the server never sees them. */}
+      <SettingRow
+        id="notify-verbose"
+        label="Verbose notifications"
+        hint="Downloads starting, songs being pulled into stems, and the AI's background passes starting and finishing."
+        control={
+          <Switch
+            checked={verbose}
+            onCheckedChange={(v) => {
+              setVerbose(v);
+              setVerboseNotices(v);
+            }}
+            aria-label="Verbose notifications"
+          />
+        }
+      />
+    </PaneSection>
+  );
+}
+
+export function NotificationSettings() {
   const { session } = useServerSession();
   const [prefs, setPrefs] = useState<Record<string, boolean> | null>(null);
   const [devices, setDevices] = useState(0);
@@ -122,29 +224,7 @@ export function NotificationSettings() {
           title="Notifications come from your server"
           body="Sign in and the switches appear — each kind is a per-account choice the server honours for every device at once."
         />
-      {/* The one switch here that lives on the device rather than the server.
-          It gates the local-only kinds (download started, stems, AI passes)
-          raised by the client's own watchers; the server never sees them. */}
-      <PaneSection
-        title="On this device"
-        description="Normally only news rings the bell. Turn this on to hear about the machinery working too."
-      >
-        <SettingRow
-          id="notify-verbose"
-          label="Verbose notifications"
-          hint="Downloads starting, songs being pulled into stems, and the AI's background passes starting and finishing."
-          control={
-            <Switch
-            checked={verbose}
-            onCheckedChange={(v) => {
-              setVerbose(v);
-              setVerboseNotices(v);
-            }}
-            aria-label="Verbose notifications"
-          />
-          }
-        />
-      </PaneSection>
+      <DeviceSection />
       </div>
     );
   }
@@ -209,29 +289,7 @@ export function NotificationSettings() {
           })
         )}
       </PaneSection>
-      {/* The one switch here that lives on the device rather than the server.
-          It gates the local-only kinds (download started, stems, AI passes)
-          raised by the client's own watchers; the server never sees them. */}
-      <PaneSection
-        title="On this device"
-        description="Normally only news rings the bell. Turn this on to hear about the machinery working too."
-      >
-        <SettingRow
-          id="notify-verbose"
-          label="Verbose notifications"
-          hint="Downloads starting, songs being pulled into stems, and the AI's background passes starting and finishing."
-          control={
-            <Switch
-            checked={verbose}
-            onCheckedChange={(v) => {
-              setVerbose(v);
-              setVerboseNotices(v);
-            }}
-            aria-label="Verbose notifications"
-          />
-          }
-        />
-      </PaneSection>
+      <DeviceSection />
     </div>
   );
 }

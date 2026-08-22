@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.334
+
+- The app's news now reaches your phone's notification tray, not just the bell inside the app — downloads landing, stems finishing, and the rest arrive while you're doing something else, and are skipped while you're already looking at the app
+- Settings → Notifications has the switch for it, and a "send a test one" button so you can see it work before you rely on it
+- Needs the new app itself, not just an update: the tray is a native part of the app. An older install will say so when you press Test
+
 ## 0.3.333
 
 - The DJ card's infinity now sits under its label where every other card's number does, instead of floating half-size in the middle with a gap above it

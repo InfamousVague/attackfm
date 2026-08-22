@@ -81,7 +81,7 @@ fn state_lock() -> &'static Mutex<()> {
 /// prefers not to.
 pub const BUNDLE_REQUIRES: u32 = 1;
 
-pub const NATIVE_GENERATION: u32 = 2;
+pub const NATIVE_GENERATION: u32 = 3;
 //                                    ^ 2: `bundle_state` no longer consumes the
 // boot wager, and `bundle_claim_boot` was added to do that one job atomically.
 // A bundle built against generation 2 may rely on both; generation 1 binaries

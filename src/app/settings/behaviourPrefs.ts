@@ -88,6 +88,33 @@ export function setVerboseNotices(value: boolean): void {
   set(VERBOSE_KEY, value, false);
 }
 
+/**
+ * Whether the bell also rings the PHONE - the OS notification tray.
+ *
+ * On by default, because a notification centre nobody is looking at is a
+ * notification nobody got: the app's news only ever appeared behind a bell in
+ * chrome you have to be in the app to see, which is precisely the case where
+ * you already know.
+ *
+ * Device-local like the verbose switch, and for the same reason - how much one
+ * phone is allowed to interrupt you is a fact about that phone, not about the
+ * account. It is also NOT the same decision as the per-kind switches in the
+ * notifications pane: those decide whether the server sends anything at all,
+ * this decides where what arrives is put.
+ *
+ * Read at emit time rather than held in state, so flipping it takes effect on
+ * the next event.
+ */
+const OS_NOTIFY_KEY = 'attackfm-notify-os';
+
+export function osNoticesEnabled(): boolean {
+  return on(OS_NOTIFY_KEY, true);
+}
+
+export function setOsNotices(value: boolean): void {
+  set(OS_NOTIFY_KEY, value, true);
+}
+
 // ── Sending your music to a server ──────────────────────────────────────────
 
 const UPLOAD_KEY = 'attackfm-auto-upload';

@@ -100,7 +100,8 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         // The Taptic Engine: the web layer's HapticsProvider fires through
         // this on the phone instead of the (WKWebView-less) web fallbacks.
-        .plugin(tauri_plugin_haptics::init());
+        .plugin(tauri_plugin_haptics::init())
+        .plugin(tauri_plugin_notification::init());
 
     // decorum positions the native macOS traffic lights. There are none to
     // position on a phone, and the plugin is not built for those targets.
