@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.329
+
+- You can start a jam from Now Playing, and walk into a friend's from there too. Starting one was only ever possible from your profile — the page you leave in order to listen to something
+
 ## 0.3.328
 
 - A jam now shows on Now Playing — who is in it, the code to invite someone, and the way out — instead of being visible only on your profile, which is the page you are not on while a jam is happening
