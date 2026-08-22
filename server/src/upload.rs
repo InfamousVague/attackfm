@@ -310,6 +310,43 @@ pub(crate) fn destination_for(temp: &Path, original: &str, ext: &str) -> String 
     let album = tag.album().map(|c| c.to_string()).unwrap_or_default();
     let title = tag.title().map(|c| c.to_string()).unwrap_or_default();
 
+    /*
+     * A BOOK GOES ON THE BOOK SHELF, and the folder is the only thing that
+     * says so.
+     *
+     * `db::kind_for` decides what a file IS purely from living under
+     * `Audiobooks/`, and the scanner only spends an ffprobe looking for
+     * chapters on files it has already decided are books. So an audiobook that
+     * lands in the music tree is not merely filed oddly - its chapters are
+     * never read, and it turns up in shuffle, in mixes, in search and in the
+     * curator's idea of your taste, twelve hours of one voice among the songs.
+     * Nothing downstream can recover from the wrong folder.
+     *
+     * Three signals, any one of which is enough. `.m4b` exists for exactly one
+     * purpose and is decisive on its own; a genre saying so is the tag most
+     * shops actually set; and real chapter markers are what a book has and an
+     * album does not.
+     */
+    let genre = tag.genre().map(|c| c.to_string()).unwrap_or_default();
+    let genre_says_book = {
+        let g = genre.to_ascii_lowercase();
+        g.contains("audiobook") || g.contains("audio book") || g.contains("spoken")
+    };
+    if ext == "m4b" || genre_says_book || has_chapters(temp) {
+        // Author and book, not artist and album: an audiobook is one work, and
+        // the title is the book when there is no album to name it.
+        let book = if album.trim().is_empty() { title.clone() } else { album.clone() };
+        let author = if artist.trim().is_empty() { "Unknown Author".to_string() } else { artist.clone() };
+        if !book.trim().is_empty() {
+            return format!(
+                "Audiobooks/{}/{}.{}",
+                safe_component(&author),
+                safe_component(&book),
+                if ext.is_empty() { "audio" } else { ext }
+            );
+        }
+    }
+
     if artist.trim().is_empty() || title.trim().is_empty() {
         return fallback();
     }
@@ -328,6 +365,27 @@ pub(crate) fn destination_for(temp: &Path, original: &str, ext: &str) -> String 
         safe_component(&title),
         if ext.is_empty() { "audio" } else { ext }
     )
+}
+
+/// Whether the file carries real chapter markers.
+///
+/// The same `ffprobe -show_chapters` the scanner uses to READ them, asked only
+/// whether there are any - so a shop that tagged nothing useful is still
+/// recognised by the one thing an audiobook always has. Absent ffprobe means
+/// "no", which is the safe answer: the file simply files as music, exactly as
+/// it did before this existed.
+fn has_chapters(path: &Path) -> bool {
+    let Ok(out) = std::process::Command::new("ffprobe")
+        .args(["-v", "error", "-show_chapters", "-of", "json"])
+        .arg(path)
+        .output()
+    else {
+        return false;
+    };
+    serde_json::from_slice::<serde_json::Value>(&out.stdout)
+        .ok()
+        .and_then(|v| v.get("chapters").and_then(|c| c.as_array()).map(|a| !a.is_empty()))
+        .unwrap_or(false)
 }
 
 /// Finds a free name near `rel`, so nothing is ever overwritten.
@@ -361,5 +419,51 @@ pub fn human_bytes(bytes: i64) -> String {
         format!("{bytes} B")
     } else {
         format!("{value:.1} {}", UNITS[unit])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The one routing decision nothing downstream can recover from.
+    ///
+    /// `db::kind_for` reads the FOLDER to decide a file is a book, and the
+    /// scanner only looks for chapters in files it already believes are books.
+    /// So a book filed as music loses its chapters permanently and turns up in
+    /// shuffle - which is why this is asserted against a real tagged file
+    /// rather than reasoned about.
+    #[test]
+    fn a_book_is_filed_as_a_book() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/sample-audiobook.m4b");
+        if !fixture.is_file() {
+            eprintln!("fixture missing, skipping: {}", fixture.display());
+            return;
+        }
+        let rel = destination_for(&fixture, "sample-audiobook.m4b", "m4b");
+        assert!(
+            rel.starts_with("Audiobooks/"),
+            "an m4b must land on the book shelf, got {rel}"
+        );
+        assert!(rel.ends_with(".m4b"), "kept its extension, got {rel}");
+        // Author/Book.m4b - one work, not artist/album/track.
+        assert_eq!(rel, "Audiobooks/A. Narrator/The Test Of Time.m4b");
+    }
+
+    /// The other half: ordinary music must be untouched by the book rules.
+    #[test]
+    fn music_still_files_as_music() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/sample-song.m4a");
+        if !fixture.is_file() {
+            eprintln!("fixture missing, skipping: {}", fixture.display());
+            return;
+        }
+        let rel = destination_for(&fixture, "sample-song.m4a", "m4a");
+        assert!(
+            !rel.starts_with("Audiobooks/"),
+            "a song must not reach the book shelf, got {rel}"
+        );
     }
 }
