@@ -1,5 +1,6 @@
 package com.mattssoftware.attackfm
 
+import android.content.Context
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.content.Intent
@@ -105,6 +106,19 @@ class MainActivity : TauriActivity() {
       PlaybackService.publishCollections(this@MainActivity, rows)
     }
 
+    /**
+     * The page can answer transport commands now.
+     *
+     * Called when the web layer installs `window.__AFM_TRANSPORT__`. This is
+     * the handshake that makes a cold car tap work: the command was kept while
+     * there was no page, the app was started, and this is the app saying it is
+     * ready to be told what the driver pressed.
+     */
+    @JavascriptInterface
+    fun transportReady() {
+      runOnUiThread { flushTransport() }
+    }
+
     @JavascriptInterface
     fun setPlaying(next: Boolean) {
       if (playing == next) return
@@ -198,16 +212,75 @@ class MainActivity : TauriActivity() {
      * This is the one wire between them, and it is the same shape the audio
      * focus route used to be: a global the page installs, called by name.
      */
-    fun deliverTransport(what: String) {
+    /**
+     * Commands that arrived before there was anywhere to put them.
+     *
+     * A car does NOT wait for the app. Android Auto binds the browse service
+     * itself, and the service answers the tree from its own cache - so the
+     * dashboard can be showing your playlists while this activity does not
+     * exist at all. Every tap on that list then arrived here, found no page,
+     * and was thrown away: the rows drew perfectly and playing one did
+     * nothing, which is the exact shape of "my music isn't showing up in the
+     * car". Same for a tap that lands in the seconds after launch, before the
+     * page has installed its handler.
+     *
+     * So a command with nowhere to go is now KEPT, the app is started to make
+     * somewhere for it to go, and the page flushes the queue the moment it can
+     * answer (`transportReady`). Bounded, because a queue of stale intents is
+     * its own bug - a drive's worth of button presses must not all fire at
+     * once when the page finally opens.
+     */
+    private val pending = ArrayDeque<String>()
+    private const val MAX_PENDING = 4
+
+    private fun remember(what: String) {
+      // One press of a kind is enough; the newest wins for repeats.
+      pending.remove(what)
+      pending.addLast(what)
+      while (pending.size > MAX_PENDING) pending.removeFirst()
+    }
+
+    /** The page has a handler now: hand it everything that was waiting. */
+    fun flushTransport() {
+      if (pending.isEmpty()) return
+      val waiting = pending.toList()
+      pending.clear()
+      android.util.Log.i("AFMedia", "flushing ${waiting.size} queued transport command(s)")
+      for (what in waiting) deliverTransport(null, what)
+    }
+
+    /**
+     * @param context When given, the app is STARTED if it is not running -
+     *   which is the whole point for a car. Null when re-delivering something
+     *   already queued, so a failed flush cannot loop back into a launch.
+     */
+    fun deliverTransport(context: Context?, what: String) {
       val activity = live
       if (activity == null) {
-        android.util.Log.w("AFMedia", "transport '$what' dropped: no live activity")
+        android.util.Log.w("AFMedia", "transport '$what' held: no live activity")
+        remember(what)
+        // Bring the page up so there is something to hand it to. The app holds
+        // a media foreground service at this point, which is what makes the
+        // start permissible from the background; if the system refuses anyway
+        // the command simply stays queued for the next time the app is opened,
+        // which is still better than the silence this replaced.
+        context?.let {
+          try {
+            it.startActivity(
+              Intent(it, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            )
+          } catch (e: Exception) {
+            android.util.Log.w("AFMedia", "could not start the app for '$what': $e")
+          }
+        }
         return
       }
       activity.runOnUiThread {
         val wv = activity.webView
         if (wv == null) {
-          android.util.Log.w("AFMedia", "transport '$what' dropped: no webview")
+          android.util.Log.w("AFMedia", "transport '$what' held: no webview")
+          remember(what)
           return@runOnUiThread
         }
         // A paused, backgrounded webview is FROZEN: evaluateJavascript queues
@@ -222,7 +295,11 @@ class MainActivity : TauriActivity() {
           "window.__AFM_TRANSPORT__ ? (window.__AFM_TRANSPORT__('" + escaped + "'), 'handled') : 'no-handler'",
         ) { result ->
           if (result != "\"handled\"") {
-            android.util.Log.w("AFMedia", "transport '$what' reached page but found $result")
+            // The page is up but not yet listening - a tap in the first
+            // seconds of a cold start. Held rather than lost; transportReady
+            // is moments away.
+            android.util.Log.w("AFMedia", "transport '$what' held: page answered $result")
+            remember(what)
           }
         }
       }
@@ -344,11 +421,29 @@ class MainActivity : TauriActivity() {
     applyOrientationLock()
   }
 
+  /** Whether this activity ever actually came up. See onDestroy. */
+  private var everResumed = false
+
+  override fun onResume() {
+    super.onResume()
+    everResumed = true
+  }
+
   override fun onDestroy() {
     if (live === this) live = null
-    // The webview dies with the activity, and the audio with the webview - a
-    // session left standing after this would be controls over a corpse.
-    PlaybackService.stop(this)
+    /*
+     * The webview dies with the activity, and the audio with the webview - a
+     * session left standing after this would be controls over a corpse.
+     *
+     * UNLESS this activity never came up at all. When the service asks for the
+     * app on a car's behalf, Android may refuse the background start: the
+     * activity is created and destroyed without ever being shown, and it would
+     * take the media session down with it on its way out - the app vanishing
+     * from the dashboard as a direct result of the driver pressing something.
+     * A stillborn activity owns no webview and no audio, so it has nothing to
+     * clean up and must not clean up somebody else's.
+     */
+    if (everResumed) PlaybackService.stop(this)
     super.onDestroy()
   }
 

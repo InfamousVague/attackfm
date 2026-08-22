@@ -21,6 +21,9 @@ interface NativeBridge {
   setPlaybackState?: (playing: boolean, positionMs: number) => void;
   /** Present from the widget/Auto-playlists shell; absent before it. */
   setCollections?: (json: string) => void;
+  /** Told when the page can answer transport commands, so the native side can
+   *  hand over anything a car pressed before this page existed. */
+  transportReady?: () => void;
   /** The Chromecast verbs, present from the casting shell; absent before it.
    *  The page's half lives in cast.ts - state comes back whole through
    *  window.__AFM_CAST__ rather than through return values. */
@@ -230,6 +233,20 @@ export function bindNativeTransport(handlers: TransportHandlers): () => void {
       }
     }
   };
+  /*
+   * Tell the native side we can answer now.
+   *
+   * A car does not wait for this app. Android Auto binds the browse service
+   * itself and draws the tree from its own cache, so a row can be tapped while
+   * this page does not exist - and that command is now HELD natively instead
+   * of dropped. This is the other half of that handshake: the moment a handler
+   * exists, whatever was pressed gets delivered.
+   */
+  try {
+    window.AFMNative?.transportReady?.();
+  } catch {
+    // Not Android, or an older shell without the bridge.
+  }
   return () => {
     bound.delete(handlers);
     if (bound.size === 0) delete window.__AFM_TRANSPORT__;
