@@ -41,12 +41,14 @@ export const SYNCED_KEYS = [
   // Look and feel.
   'attackfm-appearance-v2',
   'attackfm-plugins-disabled',
+  'attackfm-card-style',      // which face the four library doors wear
   // Sound. NOTE: the fx chain is rendered per-server and servers implement
   // different node vocabularies, so a chain can arrive somewhere that cannot
   // play all of it. That is survivable - the UI already greys what the server
   // cannot render - and losing your pedalboard when you pick up another device
   // is worse than a filter that says it needs a newer server.
   'attackfm-fxchain-v1',
+  'attackfm-hifi-lab-ab',     // the two chains that chain is compared against
   'attackfm-eq',
   // Servers and identity: which libraries you belong to, and their order.
   'attackfm-known-servers',
@@ -59,7 +61,24 @@ export const SYNCED_KEYS = [
   'attackfm-art-view',        // how artwork is shown
   'attackfm-online-metadata', // whether to look things up on the internet
   'attackfm-share-listening', // a privacy choice, and the one most worth carrying
+  // The rest of the Privacy ladder. Leaving this one behind while its three
+  // neighbours travelled was the odd case: a person who turns off "keep my
+  // place across devices" means it about THEMSELVES, not about the phone they
+  // happened to turn it off on.
+  'attackfm-share-position',
   'attackfm-search-recents',  // what you have been looking for
+  // Appearance's other two: how Now Playing is dressed, and whether the phone
+  // answers to being shaken. A device with no motion sensor simply never asks
+  // the second one, so carrying it costs a device nothing it cannot ignore.
+  'attackfm-now-playing-video',
+  'attackfm-motion-gestures',
+  'attackfm-notify-verbose',  // how much the app says when it interrupts
+  'attackfm-developer-mode',  // a person is a developer on every device or none
+  // Which marketplaces to browse. The INSTALLED set deliberately stays local
+  // (see below); this is the shorter, safer half - where to look, not what is
+  // on the disk.
+  'attackfm-plugin-sources',
+  'attackfm-handbook-page',   // your place in the manual, like any bookmark
   // What a playlist IS beyond its songs - its description, its folder, the song
   // whose art it borrows. Decoration follows the person for the same reason the
   // rest of this list does; see playlists/playlistMeta.ts for why it is not on
@@ -83,6 +102,19 @@ export const SYNCED_KEYS = [
  *   whole mechanism - there is nothing to switch off.
  * - `attackfm-device-id`, `attackfm-device-name`: the things that tell devices
  *   APART. Syncing them would merge every device into one.
+ * - `attackfm-wifi-only`: the same NETWORK decision as server-quality above,
+ *   phrased as a download rule. A phone on a metered plan and a desktop on
+ *   ethernet want opposite answers.
+ * - `attackfm-auto-upload`: stored per server as `attackfm-auto-upload:<url>`,
+ *   so the bare key holds nothing and syncing it would be a silent no-op. It
+ *   is also about a FOLDER on one machine, which is the definition of local.
+ * - `attackfm-plugins-installed`: the list would arrive somewhere the bundles
+ *   are not. Adopting it would describe plugins the device cannot run; the
+ *   disabled flags (above) are safe because they only ever qualify a plugin
+ *   that is actually here.
+ * - `attackfm-favorites`, `attackfm-playlists`: the LOCAL-library pair, keyed
+ *   by absolute file paths that mean nothing on another machine. Their
+ *   server-backed equivalents already live on the server.
  * - `attackfm-server-session`, `attackfm-registry-session`: credentials.
  * - `attackfm-music-dir`, `attackfm-mirror-*`: paths and network topology that
  *   only mean anything on the machine that wrote them.
