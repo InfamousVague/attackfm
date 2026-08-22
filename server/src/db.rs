@@ -5526,15 +5526,26 @@ impl Db {
 
     /// The newest events from one source, newest first - what the Local AI pane
     /// shows without pulling the whole feed.
-    pub fn activity_from(&self, source: &str, limit: i64) -> Vec<ActivityRow> {
+    /// One page of a source's events, newest first, ending just before `before`.
+    ///
+    /// A CURSOR, not an offset. The table is appended to constantly - a
+    /// separation finishing while somebody reads page two would shift every
+    /// numbered page under them and show a row twice or not at all. Paging by
+    /// "older than this id" is stable against writes by construction, which is
+    /// the only kind of paging worth putting on a live log.
+    ///
+    /// `before` of 0 means "from the newest".
+    pub fn activity_from(&self, source: &str, before: i64, limit: i64) -> Vec<ActivityRow> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
             "SELECT id, at, source, kind, state, key, title, body, track_id, detail
-             FROM activity_events WHERE source = ?1 ORDER BY id DESC LIMIT ?2",
+             FROM activity_events
+             WHERE source = ?1 AND (?2 <= 0 OR id < ?2)
+             ORDER BY id DESC LIMIT ?3",
         ) else {
             return Vec::new();
         };
-        let rows = stmt.query_map(params![source, limit.clamp(1, 200)], |r| {
+        let rows = stmt.query_map(params![source, before, limit.clamp(1, 200)], |r| {
             Ok(ActivityRow {
                 id: r.get(0)?,
                 at: r.get(1)?,

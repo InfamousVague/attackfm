@@ -619,6 +619,7 @@ async fn main() {
         .route("/api/artist", get(search::artist))
         .route("/api/ai", get(ai_admin::report))
         .route("/api/ai/settings", post(ai_admin::save_settings))
+        .route("/api/ai/activity", get(ai_admin::activity_page))
         .route("/api/ai/probe", post(ai_admin::probe))
         .route("/api/ai/run", post(ai_admin::run))
         .route("/api/activity", get(ai_admin::activity))

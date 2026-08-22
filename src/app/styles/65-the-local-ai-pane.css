@@ -109,6 +109,18 @@
   color: var(--glacier-danger-text);
 }
 
+/* ---- the pager ------------------------------------------------------------ */
+
+/* Where you are between the two moves, rather than beside them: on a phone the
+   two buttons at the edges are the touch targets, and a position squeezed next
+   to one of them reads as a label for that button. */
+.localAi__pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+}
+
 /* ---- the feed ------------------------------------------------------------- */
 
 .localAi__feed {
