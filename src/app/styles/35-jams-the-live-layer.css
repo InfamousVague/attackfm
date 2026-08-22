@@ -284,3 +284,9 @@
   background: color-mix(in oklab, var(--glacier-accent-solid) 18%, var(--glacier-surface-sunken));
   color: var(--glacier-accent-text);
 }
+
+/* Join sits at the end of a member row, the way `host` does on the other list. */
+.jamPanel__join {
+  margin-inline-start: auto;
+  flex: none;
+}

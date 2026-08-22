@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { Button, IconButton, Popover, Text } from '@glacier/react';
 import { User, Users } from '@glacier/icons';
 import { useJamOptional } from './jam.tsx';
+import { useServerSession } from '../servers/serverSession.tsx';
 
 /**
  * Who else is hearing this, on the screen where you are hearing it.
@@ -23,11 +25,104 @@ import { useJamOptional } from './jam.tsx';
  */
 export function JamBadge() {
   const jam = useJamOptional();
-  // No provider (a build without jams), or not in a room. Nothing to say.
-  if (!jam?.current) return null;
+  const { session } = useServerSession();
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  // No provider (a build without jams) or nobody signed in: a jam is a thing
+  // that happens on a server, so without one there is nothing to offer.
+  if (!jam || !session) return null;
 
   const room = jam.current;
-  const others = Math.max(0, room.memberCount - 1);
+  const others = room ? Math.max(0, room.memberCount - 1) : 0;
+  const joinable = jam.friendJams.filter((r) => r.id !== room?.id);
+
+  /*
+   * NOT in a jam, and the button is still here.
+   *
+   * This used to render nothing until you were already in a room, which meant
+   * the only way to START one was the Live now shelf on your profile - and that
+   * is the page you leave in order to listen to something. A jam is a thing you
+   * decide to do while a song is playing, so the door belongs on the screen
+   * where the song is.
+   *
+   * The panel does the two things you can do from outside a room: open one, or
+   * walk into a friend's. Both were profile-only before.
+   */
+  if (!room) {
+    const startJam = async () => {
+      setBusy(true);
+      setFailed(false);
+      try {
+        await jam.start();
+      } catch {
+        // An older server has no jams endpoint, and start() would otherwise
+        // fail silently - a button that does nothing and says nothing is worse
+        // than one that admits it.
+        setFailed(true);
+      } finally {
+        setBusy(false);
+      }
+    };
+    return (
+      <Popover
+        placement="top-end"
+        aria-label="Start a jam"
+        className="popoverSheet jamPanel"
+        trigger={
+          <IconButton variant="ghost" size="sm" className="jamTrigger" aria-label="Start a jam">
+            <Users size={16} />
+          </IconButton>
+        }
+      >
+        <div className="jamPanel__body">
+          <span className="jamPanel__title">Jam</span>
+          <Text tone="muted" size="xs">
+            Play the same thing at the same time. Whoever starts it sets the pace;
+            everyone else follows along, and anyone can add to the queue.
+          </Text>
+          {failed && (
+            <Text tone="danger" size="xs">
+              This server could not start a jam. It may be running an older build.
+            </Text>
+          )}
+          <div className="jamPanel__actions">
+            <Button variant="solid" size="sm" disabled={busy} onClick={() => void startJam()}>
+              {busy ? 'Starting…' : 'Start a jam'}
+            </Button>
+          </div>
+
+          {/* Friends already listening together. Reachable here for the same
+              reason Start is: this is where you are when you would want it. */}
+          {joinable.length > 0 && (
+            <>
+              <span className="jamPanel__title">Live now</span>
+              <ul className="jamPanel__who">
+                {joinable.map((r) => (
+                  <li key={r.id} className="jamPanel__member">
+                    <User size={13} aria-hidden />
+                    <span>
+                      {r.hostName}
+                      {r.memberCount > 1 ? ` · ${r.memberCount} inside` : ''}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="jamPanel__join"
+                      disabled={busy}
+                      onClick={() => void jam.join(r.id)}
+                    >
+                      Join
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      </Popover>
+    );
+  }
 
   return (
     <Popover
