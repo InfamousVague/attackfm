@@ -49,7 +49,7 @@ export const DEFAULT_SOURCES: readonly string[] = ['https://plugins.attack.fm'];
  * carries it and, like a default source, remembered when removed so
  * uninstalling is not undone on the next launch.
  */
-export const DEFAULT_PLUGINS: readonly string[] = [];
+export const DEFAULT_PLUGINS: readonly string[] = ['audible', 'librivox'];
 
 /** Default plugins the user has removed, so the auto-install never re-adds them. */
 const REMOVED_DEFAULT_PLUGINS_KEY = 'attackfm-plugins-removed-defaults';
