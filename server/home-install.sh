@@ -295,6 +295,31 @@ else
   say "To enable the LLM later: install from https://ollama.com/download, then:  ollama pull $DEF_MODEL"
 fi
 
+# --- Audible (the downloader for books you own) ------------------------------
+#
+# audible-cli is what the Audible plugin drives: it does the login, lists the
+# books the account owns, and fetches them. The decrypt afterwards is ffmpeg,
+# which this server already requires - so this one tool is the whole gap
+# between "the plugin is installed" and "the plugin can do anything".
+#
+# pipx rather than pip, because the server looks for it in pipx's venv (see
+# audible_python in audible.rs) and because a shared Python is not a place to
+# install an application. Offered, never forced: a hub whose owner has no
+# Audible account should not be made to carry it.
+bold "Audible downloader (optional)"
+if command -v audible >/dev/null 2>&1 || [ -x "$HOME/.local/pipx/venvs/audible-cli/bin/python3" ] \
+  || [ -x "$HOME/Library/Application Support/pipx/venvs/audible-cli/bin/python3" ]; then
+  say "audible-cli is already installed"
+elif command -v pipx >/dev/null 2>&1; then
+  read -r -p "  Install audible-cli, for downloading books you own on Audible? [Y/n]: " yn
+  if [ "${yn:-Y}" != "n" ] && [ "${yn:-Y}" != "N" ]; then
+    pipx install audible-cli || say "install failed - the Audible plugin will say the tools are missing"
+  fi
+else
+  say "pipx is not installed, so audible-cli was skipped."
+  say "To enable Audible later:  brew install pipx && pipx install audible-cli"
+fi
+
 bold "Done"
 say "server:   http://$(ipconfig getifaddr en0 2>/dev/null || echo '<this-mac>'):$PORT"
 say "logs:     $LOG_DIR/server.log"
