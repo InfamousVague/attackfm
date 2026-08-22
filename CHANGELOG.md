@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.330
+
+- "Clear the rest" now counts before it asks — it names how many songs and how many gigabytes before you confirm, and says plainly whether your Liked songs are being spared or cleared along with them
+
 ## 0.3.329
 
 - You can start a jam from Now Playing, and walk into a friend's from there too. Starting one was only ever possible from your profile — the page you leave in order to listen to something
