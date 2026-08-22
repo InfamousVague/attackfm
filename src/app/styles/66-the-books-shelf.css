@@ -457,3 +457,32 @@
   opacity: 0.55;
   cursor: default;
 }
+
+/* ---- Favourite books ---------------------------------------------------- */
+
+/* Sits with the other card affordances rather than over the cover: the cover is
+   the play target, and a heart floating on it would be a second thing to aim at
+   in the one place a thumb already goes. */
+.bookCard__heart {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.35rem;
+  border: none;
+  border-radius: var(--glacier-radius-sm);
+  background: none;
+  color: var(--glacier-text-muted);
+  cursor: pointer;
+}
+.bookCard__heart:hover,
+.bookCard__heart:focus-visible {
+  background: var(--glacier-surface-raised);
+  color: var(--glacier-text-primary);
+}
+/* Hearted reads as filled, not merely coloured - the shape carries it at this
+   size where a hue alone would not. */
+.bookCard__heart[aria-pressed='true'] {
+  color: var(--glacier-danger-solid, #e5484d);
+}
+.bookCard__heart[aria-pressed='true'] svg {
+  fill: currentColor;
+}

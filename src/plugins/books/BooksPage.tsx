@@ -1,5 +1,5 @@
 import { Button, Modal, ProgressBar, Text } from '@glacier/react';
-import { BookAudio, BookOpenText, Check, ChevronRight, Play, Upload } from '@glacier/icons';
+import { BookAudio, BookOpenText, Check, ChevronRight, Heart, Play, Upload } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PluginPageProps } from '../types.ts';
 import { useLibrary } from '../../app/library/library.tsx';
@@ -258,8 +258,30 @@ function minutes(ms: number): string {
 
 export function BooksPage({ onPlay }: PluginPageProps) {
   const { session } = useServerSession();
-  const { books, rescan } = useLibrary();
+  const { books, rescan, isFavorite, toggleFavorite } = useLibrary();
   const shelf = useMemo(() => shelve(books), [books]);
+  /*
+   * A book is a favourite when ANY of its files is hearted, and hearting it
+   * hearts all of them.
+   *
+   * The heart is per TRACK, and a book is not always one track - a LibriVox
+   * reading is one file per chapter. Marking only the first would make the
+   * shelf disagree with itself the moment anything hearted a section directly,
+   * so the rule is the one that cannot surprise: any means yes, and the toggle
+   * applies to the whole book.
+   *
+   * Safe to reuse the music heart for this: `favoriteTracks` is built from the
+   * music-only list, so a hearted book never turns up in Liked songs.
+   */
+  const isFavouriteBook = (book: ShelfBook) => book.tracks.some((t) => isFavorite(t.path));
+  const toggleBook = (book: ShelfBook) => {
+    const on = !isFavouriteBook(book);
+    for (const t of book.tracks) {
+      if (isFavorite(t.path) !== on) toggleFavorite(t.path);
+    }
+  };
+  const favourites = shelf.filter(isFavouriteBook);
+  const rest = shelf.filter((b) => !isFavouriteBook(b));
 
   const [marks, setMarks] = useState<Map<number, { positionMs: number; updatedAt: number }>>(
     new Map(),
@@ -339,6 +361,60 @@ export function BooksPage({ onPlay }: PluginPageProps) {
     );
   }
 
+  /** One card. Identical in both shelves - a favourite is the same book, in a
+   *  different place on the page. */
+  const card = (book: ShelfBook) => {
+    const at = standing(book);
+    return (
+      <div key={book.key} className="bookCard">
+        <button
+          type="button"
+          className="bookCard__body"
+          onClick={() => readBook(book)}
+          aria-label={`${at.started ? 'Continue' : 'Start'} ${book.title}`}
+        >
+          <span className="bookCard__cover">
+            {book.cover ? (
+              <img src={book.cover} alt="" loading="lazy" />
+            ) : (
+              <BookAudio size={26} aria-hidden />
+            )}
+            <span className="bookCard__play" aria-hidden>
+              <Play size={16} />
+            </span>
+          </span>
+          <span className="bookCard__title">{book.title}</span>
+          <span className="bookCard__author">{book.author}</span>
+          <span className="bookCard__standing">
+            {at.started
+              ? `Ch ${at.index + 1} of ${book.chapters.length} · ${minutes(at.positionMs)} in`
+              : `${book.chapters.length} ${book.chapters.length === 1 ? 'chapter' : 'chapters'}`}
+          </span>
+        </button>
+        <button
+      type="button"
+      className="bookCard__heart"
+      aria-label={`${isFavouriteBook(book) ? 'Remove' : 'Add'} ${book.title} ${isFavouriteBook(book) ? 'from' : 'to'} favourites`}
+      aria-pressed={isFavouriteBook(book)}
+      onClick={() => toggleBook(book)}
+    >
+      <Heart size={14} />
+    </button>
+    <ReadAlong book={book} />
+        {book.chapters.length > 1 && (
+          <button
+            type="button"
+            className="bookCard__chapters"
+            aria-label={`Chapters of ${book.title}`}
+            onClick={() => setOpen(book)}
+          >
+            <ChevronRight size={14} />
+          </button>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="discoverPage booksPage">
       <header className="discoverHead">
@@ -352,51 +428,18 @@ export function BooksPage({ onPlay }: PluginPageProps) {
         <AddBook onAdded={rescan} />
       </header>
 
+      {favourites.length > 0 && (
+        <section className="discoverSection">
+          {/* Its own shelf rather than a filter, because "the ones I am
+              actually reading" is a different question from "everything I
+              own", and on a shelf of forty the difference is the whole point. */}
+          <h2 className="discoverSection__title">Favourites</h2>
+          <div className="booksShelf">{favourites.map(card)}</div>
+        </section>
+      )}
       <section className="discoverSection">
-        <div className="booksShelf">
-          {shelf.map((book) => {
-            const at = standing(book);
-            return (
-              <div key={book.key} className="bookCard">
-                <button
-                  type="button"
-                  className="bookCard__body"
-                  onClick={() => readBook(book)}
-                  aria-label={`${at.started ? 'Continue' : 'Start'} ${book.title}`}
-                >
-                  <span className="bookCard__cover">
-                    {book.cover ? (
-                      <img src={book.cover} alt="" loading="lazy" />
-                    ) : (
-                      <BookAudio size={26} aria-hidden />
-                    )}
-                    <span className="bookCard__play" aria-hidden>
-                      <Play size={16} />
-                    </span>
-                  </span>
-                  <span className="bookCard__title">{book.title}</span>
-                  <span className="bookCard__author">{book.author}</span>
-                  <span className="bookCard__standing">
-                    {at.started
-                      ? `Ch ${at.index + 1} of ${book.chapters.length} · ${minutes(at.positionMs)} in`
-                      : `${book.chapters.length} ${book.chapters.length === 1 ? 'chapter' : 'chapters'}`}
-                  </span>
-                </button>
-                <ReadAlong book={book} />
-                {book.chapters.length > 1 && (
-                  <button
-                    type="button"
-                    className="bookCard__chapters"
-                    aria-label={`Chapters of ${book.title}`}
-                    onClick={() => setOpen(book)}
-                  >
-                    <ChevronRight size={14} />
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
+        {favourites.length > 0 && <h2 className="discoverSection__title">All books</h2>}
+        <div className="booksShelf">{rest.map(card)}</div>
       </section>
 
       {open && (

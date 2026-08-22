@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.342
+
+- Books you love get their own shelf: heart a book and it moves to Favourites at the top of the page, so the one you are actually reading is not buried among everything you own
+
 ## 0.3.341
 
 - Books can be read along with. Ask your hub to transcribe one and its words appear where a song's lyrics do — lighting up line by line as the narrator reaches them, over the cover and in the lyrics panel
