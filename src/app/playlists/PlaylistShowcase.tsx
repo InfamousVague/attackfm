@@ -1,6 +1,7 @@
 import { mosaicArts, useTileArt } from '../ux/artLoad.ts';
 import { Button, ContextMenu, Input, Modal, MenuItem, Text, useToast } from '@glacier/react';
 import {
+  AudioLines,
   Check,
   FolderClosed,
   FolderOpen,
@@ -188,7 +189,7 @@ export function PlaylistShowcase({
   const { tracks, favoriteTracks } = useLibrary();
   // removeTrack went with the strip's modal - shedding a row was only ever
   // offered there, and Recent never offered it at all.
-  const { playlists, create, remove, rename, setMeta, setCover } = usePlaylists();
+  const { playlists, create, remove, rename, setMeta, setCover, setAutoStem } = usePlaylists();
   const { toast } = useToast();
   const { enabled } = usePlugins();
   // The New Playlist dialog: null closed, otherwise the name being typed.
@@ -249,6 +250,17 @@ export function PlaylistShowcase({
       {setCover && p.coverUrl && (
         <MenuItem icon={<X size={15} />} onSelect={() => void setCover(p.id, null)}>
           Remove cover
+        </MenuItem>
+      )}
+      {/* Separating ahead is now per list and off until asked for. Shown only
+          where the server understands the flag - p.autoStem is undefined on a
+          local library and on a server from before it. */}
+      {setAutoStem && p.autoStem !== undefined && (
+        <MenuItem
+          icon={<AudioLines size={15} />}
+          onSelect={() => setAutoStem(p.id, !p.autoStem)}
+        >
+          {p.autoStem ? 'Stop separating ahead' : 'Separate these ahead'}
         </MenuItem>
       )}
     </>
