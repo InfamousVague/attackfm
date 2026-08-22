@@ -64,9 +64,13 @@ const REMOVED_DEFAULT_PLUGINS_KEY = 'attackfm-plugins-removed-defaults';
  * dropping a plugin is not, by itself, an uninstall.
  */
 export const DEPRECATED_PLUGINS: readonly string[] = [
+  // 'audible' and 'librivox' were named here when audiobooks came out of the
+  // app on 12 August. They are back (2026-08-22) and MUST NOT be listed: this
+  // list is what actively uninstalls a bundle from a device, so leaving them
+  // would withdraw the plugin from every phone the moment it installed it.
+  // The old built-in 'audiobooks' plugin stays retired - it was superseded by
+  // the built-in Books shelf, not revived.
   'audiobooks',
-  'audible',
-  'librivox',
   // Folded into the player's sound console, which now carries both whole: the
   // HiFi room builds a chain box by box, and the Filters room is the same shelf
   // of finished sounds this plugin was.

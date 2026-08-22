@@ -44,7 +44,7 @@ export const librivox: Plugin = {
   description: 'Download free, public-domain audiobooks from the LibriVox catalogue.',
   icon: <BookAudio size={22} />,
   author: 'AttackFM',
-  version: '0.2.0',
+  version: '0.2.1',
   tags: ['Audiobooks', 'Downloads'],
   requiresServer: true,
   details:

@@ -3,6 +3,38 @@
   "name": "AttackFM plugins",
   "plugins": [
     {
+      "id": "audible",
+      "name": "Audible",
+      "version": "0.3.2",
+      "description": "Download the audiobooks you own on Audible into your library.",
+      "author": "AttackFM",
+      "tags": [
+        "Audiobooks",
+        "Downloads"
+      ],
+      "entry": "audible-0.3.2.js",
+      "api": 1,
+      "bytes": 13087,
+      "sha256": "9fc3b957f4cda7d22833284261c3e93972cc4b9b079c9a73693e6106a212a4b8",
+      "requiresServer": true
+    },
+    {
+      "id": "librivox",
+      "name": "LibriVox",
+      "version": "0.2.1",
+      "description": "Download free, public-domain audiobooks from the LibriVox catalogue into your library.",
+      "author": "AttackFM",
+      "tags": [
+        "Audiobooks",
+        "Downloads"
+      ],
+      "entry": "librivox-0.2.1.js",
+      "api": 1,
+      "bytes": 6968,
+      "sha256": "978dbee2d6da505f07634288ffde4a65193a346a41650f6415ba1888cd5d1383",
+      "requiresServer": true
+    },
+    {
       "id": "pedals",
       "name": "Pedals",
       "version": "0.3.4",

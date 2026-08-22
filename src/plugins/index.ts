@@ -1,6 +1,7 @@
 import { canRunSubprocesses } from '../app/core/platform.ts';
 import type { Plugin } from './types.ts';
 import { buy } from './buy/index.tsx';
+import { books } from './books/index.tsx';
 
 export type { Plugin } from './types.ts';
 
@@ -28,7 +29,7 @@ export type { Plugin } from './types.ts';
 // The code is in the history (see the commit that removed it) rather than
 // parked here unreferenced, because a directory nothing imports rots quietly
 // and a commit does not.
-const REGISTERED: readonly Plugin[] = [buy];
+const REGISTERED: readonly Plugin[] = [buy, books];
 
 /**
  * The plugins this device can host RIGHT NOW, given whether a server is
