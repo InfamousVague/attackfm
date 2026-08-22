@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.346
+
+- Scrolling the Books page hands its name and the Add-a-book button up to the app header, the way playlists already do
+
 ## 0.3.345
 
 - Audiobooks that arrive as folders of MP3s now work properly: discs are one book rather than several, chapters play in the right order even with no track numbers, and a cover sitting in the folder is used

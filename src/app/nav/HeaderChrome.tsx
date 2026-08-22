@@ -114,28 +114,50 @@ export function HeaderActionButtons() {
   const on = actions !== null;
   if (!shown) return null;
 
+  // A page's own control, where Play would be. A shelf is a place rather than
+  // a collection, so it lends what it actually offers instead of a Play button
+  // that would have to choose a book for you.
+  const Custom = shown.action?.icon ?? null;
+
   return (
     <span className="mobileHeader__lent" data-on={on || undefined} aria-hidden={!on}>
-      <Button
-        variant="solid"
-        size="sm"
-        onClick={shown.play}
-        disabled={shown.disabled}
-        tabIndex={on ? 0 : -1}
-      >
-        <Play size={14} fill="currentColor" />
-        Play
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={shown.shuffle}
-        disabled={shown.disabled}
-        aria-label="Shuffle"
-        tabIndex={on ? 0 : -1}
-      >
-        <Shuffle size={14} />
-      </Button>
+      {Custom && shown.action && (
+        <Button
+          variant="solid"
+          size="sm"
+          onClick={shown.action.onPress}
+          aria-label={shown.action.label}
+          title={shown.action.label}
+          tabIndex={on ? 0 : -1}
+        >
+          <Custom size={14} />
+          {shown.action.label}
+        </Button>
+      )}
+      {shown.play && (
+        <Button
+          variant="solid"
+          size="sm"
+          onClick={shown.play}
+          disabled={shown.disabled}
+          tabIndex={on ? 0 : -1}
+        >
+          <Play size={14} fill="currentColor" />
+          Play
+        </Button>
+      )}
+      {shown.shuffle && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={shown.shuffle}
+          disabled={shown.disabled}
+          aria-label="Shuffle"
+          tabIndex={on ? 0 : -1}
+        >
+          <Shuffle size={14} />
+        </Button>
+      )}
     </span>
   );
 }
