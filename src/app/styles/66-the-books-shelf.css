@@ -333,3 +333,98 @@
 .booksAdd [role='progressbar'] {
   inline-size: 100%;
 }
+
+/* ---- Chapters, from the now playing screen ------------------------------ */
+
+/* The chapter line reads as a caption until you notice it answers a press, so
+   it keeps the caption's size and colour and gains only the affordances: a
+   glyph to say it opens, and a hit area worth aiming at on a phone. */
+.npScreen__chapterOpen {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.4rem;
+  margin-inline-start: -0.4rem;
+  border: none;
+  border-radius: var(--glacier-radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.npScreen__chapterOpen:hover,
+.npScreen__chapterOpen:focus-visible {
+  background: rgb(255 255 255 / 0.08);
+}
+
+/* Its own line under the chapter, dimmer - the answer to a question you have
+   not asked yet, which must not compete with the chapter and must not be the
+   thing that gets clipped when a title runs long. */
+.npScreen__left {
+  display: block;
+  opacity: 0.62;
+  font-size: 0.82em;
+}
+
+/* The title is what gives way when the line is too narrow, not the glyph and
+   not the ordinal. */
+.npScreen__chapterText {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.npScreen__chapterOpen {
+  max-inline-size: 100%;
+}
+
+/* Tall enough to be worth scrolling, short enough to stay a popover rather
+   than becoming a page. */
+.npChapters__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  max-block-size: min(60vh, 26rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.npChapters__row {
+  display: grid;
+  grid-template-columns: 1.75rem 1fr auto;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding: 0.45rem 0.5rem;
+  border: none;
+  border-radius: var(--glacier-radius-sm);
+  background: none;
+  color: var(--glacier-text-primary);
+  text-align: start;
+  cursor: pointer;
+}
+.npChapters__row:hover,
+.npChapters__row:focus-visible {
+  background: var(--glacier-surface-raised);
+}
+/* Where you are, marked on the row rather than announced above the list. */
+.npChapters__row[data-here] {
+  background: var(--glacier-accent-soft, rgb(255 255 255 / 0.1));
+  font-weight: 600;
+}
+
+.npChapters__n {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.5;
+  text-align: end;
+}
+.npChapters__title {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.npChapters__at {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.5;
+  font-size: 0.8em;
+}

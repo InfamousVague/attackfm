@@ -2291,6 +2291,56 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     // The title only adds something when it is not just "Chapter N" again.
     return title && title.toLowerCase() !== `chapter ${idx + 1}` ? `${ord} · ${title}` : ord;
   })();
+  /**
+   * How much book is left, not how much file.
+   *
+   * A single-file m4b IS the book, so what remains of it is the answer. A book
+   * that arrived as sections (LibriVox files one per chapter) is a queue, and
+   * the honest number is this file's remainder plus every section after it -
+   * otherwise a listener eight hours into a twelve-hour book is told they have
+   * nineteen minutes left, which is true of the file and useless about the
+   * book.
+   *
+   * Null when there is nothing trustworthy to say: no duration yet, or a
+   * section in the queue whose own duration the library never learned. A
+   * missing estimate is better than a confidently wrong one.
+   */
+  const bookRemaining = (() => {
+    if (track?.kind !== 'book' || !Number.isFinite(duration) || duration <= 0) return null;
+    const left = Math.max(0, duration - position);
+    /*
+     * A single file IS the whole book, so its own remainder is the answer and
+     * the queue must not be consulted at all.
+     *
+     * This is not an optimisation, it is the fix for a wrong number. The queue
+     * a book is played from can carry the same file more than once under
+     * different spellings of its path - measured: a 75-second fixture reported
+     * 150 seconds left, exactly twice itself - so summing "later entries"
+     * counts the same audio again however carefully the paths are deduped.
+     * Chapters on the current track are what say "one file, many chapters",
+     * and there is nothing after it to add.
+     */
+    if (chapters.length > 0) return left;
+
+    // Sections, then: a book that genuinely arrived as one file per chapter.
+    // Distinct paths only, for the same reason as above.
+    let total = left;
+    const here = queue.findIndex((t) => t.path === track.path);
+    if (here >= 0) {
+      /*
+       * Distinct files, not queue entries.
+       */
+      const counted = new Set([track.path]);
+      for (const later of queue.slice(here + 1)) {
+        if (later.kind !== 'book' || counted.has(later.path)) continue;
+        if (later.duration == null || !Number.isFinite(later.duration)) return null;
+        counted.add(later.path);
+        total += later.duration;
+      }
+    }
+    return total;
+  })();
+
   const chapterNow = () => {
     const el = activeAudio();
     return (el ? deckTime(el) : positionRef.current) * 1000;
@@ -3101,6 +3151,9 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
           onScratchEnd={onScratchEnd}
           onOpenArtist={onOpenArtist}
           chapterLabel={chapterLabel}
+          chapters={chapters}
+          bookRemaining={bookRemaining}
+          onSeekChapter={(startMs) => commitSeek(startMs / 1000)}
           favorite={favorite}
           toggleFavoriteFelt={toggleFavoriteFelt}
           duration={duration}
