@@ -114,6 +114,25 @@ class MainActivity : TauriActivity() {
      * there was no page, the app was started, and this is the app saying it is
      * ready to be told what the driver pressed.
      */
+    /**
+     * What killed the webview last time, if anything did - read once and
+     * cleared, so the diagnostics report can finally say "the renderer was
+     * killed by the system" instead of showing an empty ring after a death
+     * that never reached JavaScript.
+     */
+    @JavascriptInterface
+    fun lastWebviewDeath(): String? =
+        try {
+            val f = java.io.File(filesDir, "last-webview-death.txt")
+            if (f.exists()) {
+                val text = f.readText()
+                f.delete()
+                text
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+
     /** The audiobook drop folder's absolute path, or null where there is none. */
     @JavascriptInterface
     fun audiobooksDir(): String? = booksDir
@@ -468,6 +487,80 @@ class MainActivity : TauriActivity() {
     everResumed = true
   }
 
+
+  /**
+   * wry's own client, with one addition: the renderer dying does not take the
+   * application with it. The note goes to a file the diagnostics read back on
+   * the next launch, and the activity recreates - a restart instead of a
+   * vanishing act. Everything else is forwarded untouched, because the
+   * wrapped client is what serves tauri.localhost itself.
+   */
+  private class SurvivingWebViewClient(
+    private val activity: android.app.Activity,
+    private val inner: android.webkit.WebViewClient,
+  ) : android.webkit.WebViewClient() {
+    override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?) =
+      inner.shouldOverrideUrlLoading(view, request)
+    override fun shouldInterceptRequest(view: WebView?, request: android.webkit.WebResourceRequest?) =
+      inner.shouldInterceptRequest(view, request)
+    override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) =
+      inner.onPageStarted(view, url, favicon)
+    override fun onPageFinished(view: WebView?, url: String?) = inner.onPageFinished(view, url)
+    override fun onLoadResource(view: WebView?, url: String?) = inner.onLoadResource(view, url)
+    override fun onPageCommitVisible(view: WebView?, url: String?) = inner.onPageCommitVisible(view, url)
+    override fun onReceivedError(
+      view: WebView?,
+      request: android.webkit.WebResourceRequest?,
+      error: android.webkit.WebResourceError?,
+    ) = inner.onReceivedError(view, request, error)
+    override fun onReceivedHttpError(
+      view: WebView?,
+      request: android.webkit.WebResourceRequest?,
+      errorResponse: android.webkit.WebResourceResponse?,
+    ) = inner.onReceivedHttpError(view, request, errorResponse)
+    override fun onReceivedSslError(
+      view: WebView?,
+      handler: android.webkit.SslErrorHandler?,
+      error: android.net.http.SslError?,
+    ) = inner.onReceivedSslError(view, handler, error)
+    override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) =
+      inner.doUpdateVisitedHistory(view, url, isReload)
+    override fun onFormResubmission(view: WebView?, dontResend: android.os.Message?, resend: android.os.Message?) =
+      inner.onFormResubmission(view, dontResend, resend)
+    override fun onReceivedHttpAuthRequest(
+      view: WebView?,
+      handler: android.webkit.HttpAuthHandler?,
+      host: String?,
+      realm: String?,
+    ) = inner.onReceivedHttpAuthRequest(view, handler, host, realm)
+    override fun onReceivedClientCertRequest(view: WebView?, request: android.webkit.ClientCertRequest?) =
+      inner.onReceivedClientCertRequest(view, request)
+    override fun onScaleChanged(view: WebView?, oldScale: Float, newScale: Float) =
+      inner.onScaleChanged(view, oldScale, newScale)
+    override fun shouldOverrideKeyEvent(view: WebView?, event: android.view.KeyEvent?) =
+      inner.shouldOverrideKeyEvent(view, event)
+    override fun onUnhandledKeyEvent(view: WebView?, event: android.view.KeyEvent?) =
+      inner.onUnhandledKeyEvent(view, event)
+
+    override fun onRenderProcessGone(
+      view: WebView?,
+      detail: android.webkit.RenderProcessGoneDetail?,
+    ): Boolean {
+      val why =
+        if (detail?.didCrash() == true) "renderer crashed"
+        else "renderer was killed by the system (low memory)"
+      android.util.Log.e("AFMedia", "webview gone: $why")
+      try {
+        val file = java.io.File(activity.filesDir, "last-webview-death.txt")
+        file.writeText("${java.util.Date()} — $why (priority ${detail?.rendererPriorityAtExit() ?: -1})")
+      } catch (_: Exception) {}
+      try {
+        activity.recreate()
+      } catch (_: Exception) {}
+      return true
+    }
+  }
+
   override fun onDestroy() {
     if (live === this) live = null
     /*
@@ -506,6 +599,28 @@ class MainActivity : TauriActivity() {
   override fun onWebViewCreate(webView: WebView) {
     super.onWebViewCreate(webView)
     this.webView = webView
+    /*
+     * Outlive the renderer.
+     *
+     * When Android kills the webview's renderer - reclaiming memory, almost
+     * always - the DEFAULT is to kill the whole application, which from the
+     * couch is "the app just closed", with an empty diagnostics ring because
+     * nothing survived to write. The handler has to live on the WebViewClient,
+     * and wry OWNS the client - its RustWebViewClient is regenerated from
+     * templates on every build, so an override written into it lasts exactly
+     * one build (measured). So the client wry installed is wrapped instead,
+     * from the hand-written layer that survives regeneration: every behaviour
+     * forwarded, one question answered differently. Posted, because wry
+     * assigns its client after this hook returns.
+     */
+    webView.post {
+      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+        val current = webView.webViewClient
+        if (current !is SurvivingWebViewClient) {
+          webView.webViewClient = SurvivingWebViewClient(this, current)
+        }
+      }
+    }
     // The page's line to the foreground service.
     webView.addJavascriptInterface(NativeBridge(), "AFMNative")
     // Cast snapshots flow the other way, into window.__AFM_CAST__. The same
