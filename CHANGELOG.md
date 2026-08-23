@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.350
+
+- Read-along transcripts are bounded everywhere: merged into sentence-sized lines when they are made, and capped on the way into the app however big the server's copy is — a belt for the braces, aimed at the crash that follows long audiobooks around
+
 ## 0.3.349
 
 - Fixed the app dying when opening a long audiobook that has a read-along transcript: two surfaces treated a book's twenty thousand lines like a song's sixty, and the phone paid for it
