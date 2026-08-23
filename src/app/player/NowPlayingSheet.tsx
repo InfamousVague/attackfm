@@ -25,6 +25,7 @@ import {
   SPIN_UP_MS,
   beatIntensity,
   formatClock,
+  chapterIndexAt,
   type ArtView,
 } from './deckShared.ts';
 import { formatTotal } from '../ux/format.ts';
@@ -40,7 +41,11 @@ import type { Track } from '../core/tauri.ts';
  * Canvas clip itself all open this same chooser, so the setting stays one
  * setting no matter where the press lands.
  */
-export function npArtMenuItems(artView: ArtView, chooseArtView: (next: ArtView) => void) {
+export function npArtMenuItems(
+  artView: ArtView,
+  chooseArtView: (next: ArtView) => void,
+  book = false,
+) {
   return (
     <>
       <MenuItem
@@ -57,6 +62,15 @@ export function npArtMenuItems(artView: ArtView, chooseArtView: (next: ArtView) 
       >
         Album cover
       </MenuItem>
+      {book && (
+        <MenuItem
+          icon={<BookOpenText size={15} />}
+          shortcut={artView === 'chapters' ? <Check size={14} /> : undefined}
+          onSelect={() => chooseArtView('chapters')}
+        >
+          Chapters
+        </MenuItem>
+      )}
       <MenuItem
         icon={<EyeOff size={15} />}
         shortcut={artView === 'hidden' ? <Check size={14} /> : undefined}
@@ -127,6 +141,95 @@ function ChapterList({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+
+/** One row of the chapter panel, whatever form the book arrived in. */
+interface ChapterFace {
+  title: string;
+  /** Right-hand figure: a start offset (single file) or a length (sections). */
+  at: string | null;
+  here: boolean;
+  jump: () => void;
+}
+
+/**
+ * The chapters, ON the cover - the book's face for the art slot.
+ *
+ * A record's face is its art; a book's face is its art AND its table of
+ * contents, because "where am I, what is left" is the question a book keeps
+ * open the whole way through. So this face keeps the cover as the ground,
+ * raises a scrim over its lower half, and lets the chapters live there -
+ * the reading one lit, with a hairline showing how deep into it the
+ * narrator is. Tap a chapter and the book goes there.
+ *
+ * The list re-centres itself as reading crosses a chapter mark, but never
+ * while a finger is on it - stealing the scroll from under a browsing thumb
+ * is how a list teaches people not to touch it.
+ */
+function ChapterArt({
+  art,
+  items,
+  runFraction,
+}: {
+  art: string | null;
+  items: ChapterFace[];
+  runFraction: number;
+}) {
+  const hereAt = items.findIndex((c) => c.here);
+  const hereRef = useRef<HTMLButtonElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const browsing = useRef(false);
+  useEffect(() => {
+    if (!browsing.current) hereRef.current?.scrollIntoView({ block: 'center' });
+  }, [hereAt]);
+
+  return (
+    <div className="npChapterArt">
+      {art ? (
+        <img className="npChapterArt__cover" src={art} alt="" />
+      ) : (
+        <img className="npChapterArt__cover" src={npPlaceholderArt} alt="" />
+      )}
+      <div className="npChapterArt__scrim" aria-hidden />
+      <div
+        ref={listRef}
+        className="npChapterArt__list"
+        role="list"
+        aria-label="Chapters"
+        onPointerDown={() => {
+          browsing.current = true;
+        }}
+        onPointerUp={() => {
+          // Let the tap settle, then hand the scroll back to the reader.
+          setTimeout(() => {
+            browsing.current = false;
+          }, 4000);
+        }}
+      >
+        {items.map((c, i) => (
+          <button
+            key={i}
+            ref={c.here ? hereRef : undefined}
+            type="button"
+            role="listitem"
+            className="npChapterArt__row"
+            data-here={c.here || undefined}
+            onClick={c.jump}
+          >
+            <span className="npChapterArt__n">{i + 1}</span>
+            <span className="npChapterArt__title">{c.title}</span>
+            {c.at && <span className="npChapterArt__at">{c.at}</span>}
+            {c.here && (
+              <span className="npChapterArt__run" aria-hidden>
+                <span style={{ width: `${Math.round(runFraction * 100)}%` }} />
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -279,6 +382,75 @@ export function NowPlayingSheet({
    * asked for costs nothing per frame, and decorative continuous motion costs
    * every frame whether or not anyone is looking at it.
    */
+  /*
+   * The book's chapters as ONE list, whatever form the book arrived in: a
+   * single m4b brings its own marks (jump = a seek), a sectioned book IS its
+   * queue (jump = play that section). Everything needed is already in this
+   * sheet's props - the queue is the reading order BooksPage queued.
+   */
+  const bookFaces: ChapterFace[] = (() => {
+    if (track?.kind !== 'book') return [];
+    if (chapters.length > 0) {
+      const here = chapterIndexAt(chapters, position * 1000);
+      return chapters.map((c, i) => {
+        // The row already numbers itself, so a title that opens with its own
+        // "Chapter N" (most m4b tags do) sheds the prefix: "4 · Chapter 4 —
+        // A Cartographer's Debt" says the number twice and clips the words.
+        const raw = c.title?.trim() ?? '';
+        const bare = raw
+          .replace(new RegExp(`^chapter\\s*0*${i + 1}\\b[\\s—–:.-]*`, 'i'), '')
+          .trim();
+        return {
+          title: bare || `Chapter ${i + 1}`,
+          at: formatClock(c.startMs / 1000),
+          here: i === here,
+          jump: () => onSeekChapter(c.startMs),
+        };
+      });
+    }
+    const sections = queue.filter(
+      (t) => t.kind === 'book' && t.album === track.album && t.artist === track.artist,
+    );
+    if (sections.length < 2) return [];
+    return sections.map((t) => ({
+      title: t.title,
+      at: t.duration != null ? formatClock(t.duration) : null,
+      here: t.path === track.path,
+      jump: () => onTrackChange?.(t),
+    }));
+  })();
+
+  /*
+   * The seek bar reads in CHAPTERS for a marked book: the bar spans the
+   * chapter being read, not the whole file - full right is "end of this
+   * chapter", the same promise the bar makes for every song and for every
+   * section of a many-file book. Held FROZEN while a finger is down, or a
+   * drag to the bar's end would cross the mark, re-window to the next
+   * chapter, and snap the handle out from under the thumb.
+   */
+  const chapterWin = (() => {
+    if (chapters.length === 0) return null;
+    const i = chapterIndexAt(chapters, position * 1000);
+    const start = chapters[i]!.startMs / 1000;
+    const end = i + 1 < chapters.length ? chapters[i + 1]!.startMs / 1000 : Math.max(1, duration);
+    return { start, len: Math.max(1, end - start) };
+  })();
+  const scrubWin = useRef<{ start: number; len: number } | null>(null);
+  const barWin = scrubWin.current ?? chapterWin;
+  const barDuration = barWin ? barWin.len : Math.max(1, duration);
+  const barValue = barWin
+    ? Math.min(barWin.len, Math.max(0, position - barWin.start))
+    : position;
+  const barScrub = (to: number) => {
+    if (chapterWin && !scrubWin.current) scrubWin.current = chapterWin;
+    onScrub(to + (scrubWin.current?.start ?? 0));
+  };
+  const barSeekEnd = (to: number) => {
+    const start = scrubWin.current?.start ?? chapterWin?.start ?? 0;
+    scrubWin.current = null;
+    commitSeek(chapters.length > 0 ? to + start : to);
+  };
+
   useEffect(() => {
     if (!motionGesturesEnabled()) return;
     return subscribeGestures((g) => {
@@ -499,10 +671,18 @@ export function NowPlayingSheet({
             touch) opens the chooser. */}
         <ContextMenu
           aria-label="Artwork style"
-          className="npScreen__coverTarget"
+          className={`npScreen__coverTarget${
+            artView === 'chapters' && bookFaces.length > 0 ? ' npScreen__coverTarget--chapters' : ''
+          }`}
           content={npArtMenu}
         >
-          {artView === 'cd' ? (
+          {artView === 'chapters' && bookFaces.length > 0 ? (
+            <ChapterArt
+              art={artwork}
+              items={bookFaces}
+              runFraction={Math.min(1, Math.max(0, barValue / barDuration))}
+            />
+          ) : artView === 'cd' ? (
             <SpinningDisc
               art={dispArtwork}
               spinning={activeElsewhere ? dispPlaying : audible}
@@ -621,8 +801,8 @@ export function NowPlayingSheet({
             the surface's focus, and set on a raised-card rail so the run
             ahead stays legible over the blurred cover behind it. */}
         <SeekBar
-          duration={Math.max(1, duration)}
-          value={position}
+          duration={barDuration}
+          value={barValue}
           aria-label="Seek"
           shape="swell"
           tone="accent"
@@ -632,12 +812,12 @@ export function NowPlayingSheet({
           beat={beat}
           tracer
           intensity={Math.min(3, beatIntensity(volume, muted, systemVolume) * 1.6)}
-          onValueChange={onScrub}
-          onSeekEnd={commitSeek}
+          onValueChange={barScrub}
+          onSeekEnd={barSeekEnd}
         />
         <div className="npScreen__times">
-          <span>{formatClock(position)}</span>
-          <span>-{formatClock(Math.max(0, duration - position))}</span>
+          <span>{formatClock(barValue)}</span>
+          <span>-{formatClock(Math.max(0, barDuration - barValue))}</span>
         </div>
       </div>
       )}

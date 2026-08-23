@@ -152,17 +152,25 @@ export const SPIN_UP_FADE_MS = 90;
  */
 export const CATCH_FLUSH_MS = 45;
 
-/** How the artwork is worn: a turning CD, the flat cover, or - on the big
- *  sheet - nothing at all, letting the canvas and the words have the room.
- *  The mini strip ignores 'hidden' and shows the cover: its square is also
- *  the tap target that lifts this sheet, and a hole in the strip reads as a
- *  layout bug, not a preference. */
-export type ArtView = 'cd' | 'cover' | 'hidden';
+/** How the artwork is worn: a turning CD, the flat cover, the chapter panel
+ *  (a book's list laid over its own cover), or - on the big sheet - nothing
+ *  at all, letting the canvas and the words have the room.
+ *  The mini strip ignores 'hidden' AND 'chapters' and shows the cover: its
+ *  square is also the tap target that lifts this sheet, and a hole (or a
+ *  list at postage-stamp size) in the strip reads as a layout bug, not a
+ *  preference. */
+export type ArtView = 'cd' | 'cover' | 'chapters' | 'hidden';
 
 export const ART_VIEW_KEY = 'attackfm-art-view';
 
+/** Books keep their own art-view clock: the chapter panel is the right
+ *  default for a book and nonsense for a song, so one shared choice would
+ *  have each kind fighting the other's preference. */
+export const BOOK_ART_VIEW_KEY = 'attackfm-art-view-book';
+
 // The stored choice, defaulting to the disc; anything unrecognised also lands
-// there rather than blanking the square.
+// there rather than blanking the square. 'chapters' is deliberately not
+// accepted here - it is the BOOK clock's face, meaningless for music.
 export function readArtView(): ArtView {
   try {
     const stored = localStorage.getItem(ART_VIEW_KEY);
@@ -170,6 +178,33 @@ export function readArtView(): ArtView {
   } catch {
     return 'cd';
   }
+}
+
+/** The book clock, defaulting to the chapter panel. */
+export function readBookArtView(): ArtView {
+  try {
+    const stored = localStorage.getItem(BOOK_ART_VIEW_KEY);
+    return stored === 'cd' || stored === 'cover' || stored === 'hidden' ? stored : 'chapters';
+  } catch {
+    return 'chapters';
+  }
+}
+
+/**
+ * Which chapter a position sits in - THE shared finder. The second of grace
+ * before a chapter's mark means a jump TO a chapter never lands "one short"
+ * off a rounded seek; three copies of this loop already grew apart once.
+ */
+export function chapterIndexAt(
+  chapters: readonly { startMs: number }[],
+  positionMs: number,
+): number {
+  let idx = 0;
+  for (let i = 0; i < chapters.length; i++) {
+    if (positionMs >= chapters[i]!.startMs - 1000) idx = i;
+    else break;
+  }
+  return idx;
 }
 
 /**
