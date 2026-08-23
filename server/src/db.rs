@@ -5532,6 +5532,25 @@ impl Db {
             .unwrap_or(0)
     }
 
+    /// Transcribed books whose lines carry no per-word clocks - the ones a
+    /// word-level re-run would improve. The LIKE probe is crude but honest:
+    /// `"words"` appears in every worded line and in nothing else the old
+    /// shape could hold.
+    pub fn transcripts_without_words(&self) -> Vec<i64> {
+        let lock = self.lock();
+        let mut stmt = match lock.prepare(
+            "SELECT t.id FROM transcripts tr JOIN tracks t ON t.id = tr.track_id
+             WHERE t.deleted = 0 AND t.kind = 'book'
+               AND tr.lines NOT LIKE '%\"words\"%'
+             ORDER BY t.id",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = stmt.query_map([], |r| r.get(0));
+        rows.map(|it| it.flatten().collect()).unwrap_or_default()
+    }
+
     /// Transcribed book tracks, for the blurb sweep to consider.
     pub fn transcribed_track_ids(&self) -> Vec<i64> {
         let lock = self.lock();

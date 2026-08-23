@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.11
+
+- The reading follows the narrator word by word now: the word being spoken carries the accent's underline, what has been said holds white, what is coming waits dim
+- Books transcribed from now on carry each word's own clock; books transcribed before follow along too, spread across each line - and re-transcribing catches them up to the real thing
+- For the hub: `bash server/retranscribe.sh` queues every older book for its word-level re-run, one at a time, politely
+
 ## 0.4.10
 
 - Books and Discover swapped seats on the bar: the shelf sits beside the library now
