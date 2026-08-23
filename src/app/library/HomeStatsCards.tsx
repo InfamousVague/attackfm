@@ -1,3 +1,4 @@
+import { ArtistLink } from '../ux/ArtistLink.tsx';
 import { Button } from '@glacier/react';
 import { ChartNoAxesColumn, Flame, Music, User } from '@glacier/icons';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -69,7 +70,7 @@ export function HomeStatsCards({ onOpenStats }: { onOpenStats: () => void }) {
             missing and leaves a two-across row behind. */}
         <Mini
           icon={<User size={15} />}
-          value={topArtist ?? summary.uniqueArtists.toLocaleString()}
+          value={topArtist ? <ArtistLink artist={topArtist} /> : summary.uniqueArtists.toLocaleString()}
           label={topArtist ? 'top artist' : summary.uniqueArtists === 1 ? 'artist' : 'artists'}
         />
       </div>
@@ -82,7 +83,7 @@ export function HomeStatsCards({ onOpenStats }: { onOpenStats: () => void }) {
   );
 }
 
-function Mini({ icon, value, label }: { icon: ReactNode; value: string; label: string }) {
+function Mini({ icon, value, label }: { icon: ReactNode; value: ReactNode; label: string }) {
   return (
     <div className="statsMini" style={hueOf(label)}>
       <span className="statsMini__icon" aria-hidden>

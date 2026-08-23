@@ -7,6 +7,7 @@
 //! anything already played has left the line. Reordering resolves through the
 //! kit's SortableList, which carries both drag and full keyboard reordering.
 
+import { ArtistLink } from '../ux/ArtistLink.tsx';
 import { djReason } from '../booth/djReasons.ts';
 import { trackIdFromPath } from '../server.ts';
 import { useMemo } from 'react';
@@ -229,13 +230,21 @@ export function QueuePanel({
         {current && (
           <div className="queueNow">
             <span className="queueNow__label">Now playing</span>
-            <div className="queueRow queueRow--now">
-              <Cover track={current} />
-              <div className="queueRow__meta">
-                <span className="queueRow__title">{current.title}</span>
-                <span className="queueRow__artist">{current.artist}</span>
+            {/* The one row that had no menu, in the panel whose own comment
+                says the queue is a list of songs like any other. Wrapped like
+                the rest, so the playing song can be filed or queued-next from
+                here too. */}
+            <TrackMenu track={current}>
+              <div className="queueRow queueRow--now">
+                <Cover track={current} />
+                <div className="queueRow__meta">
+                  <span className="queueRow__title">{current.title}</span>
+                  <span className="queueRow__artist">
+                    <ArtistLink artist={current.artist} beforeOpen={onClose} />
+                  </span>
+                </div>
               </div>
-            </div>
+            </TrackMenu>
           </div>
         )}
 
@@ -258,7 +267,7 @@ export function QueuePanel({
                         <div className="queueRow__meta">
                           <span className="queueRow__title">{t.title}</span>
                           <span className="queueRow__artist">
-                            {t.artist}
+                            <ArtistLink artist={t.artist} beforeOpen={onClose} />
                             {credit && <span className="queueRow__credit">added by {credit}</span>}
                           </span>
                         </div>
@@ -305,7 +314,7 @@ export function QueuePanel({
                     <div className="queueRow__meta">
                       <span className="queueRow__title">{r.track.title}</span>
                       <span className="queueRow__artist">
-                        {r.track.artist}
+                        <ArtistLink artist={r.track.artist} beforeOpen={onClose} />
                         {(() => {
                           const credit = creditFor(r.track);
                           return credit ? (

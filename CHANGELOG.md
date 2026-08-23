@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.351
+
+- Wherever an artist's name appears — the queue, your stats, a friend's week, search results, the player strip — it is now a link to their page
+- Song menus gained "Go to artist"
+- A long-press now opens the menu in the places it didn't: album cards and shelves, the mixes on Home, the top search result, and a book's chapter list
+
 ## 0.3.350
 
 - Read-along transcripts are bounded everywhere: merged into sentence-sized lines when they are made, and capped on the way into the app however big the server's copy is — a belt for the braces, aimed at the crash that follows long audiobooks around

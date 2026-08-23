@@ -1,3 +1,7 @@
+import { ContextMenu, MenuItem } from '@glacier/react';
+import { ListEnd, ListStart, Play, Shuffle } from '@glacier/icons';
+import { useQueueControls } from '../player/queueControls.tsx';
+import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { Button, Pill, SearchField, Text } from '@glacier/react';
 import { ChartNoAxesColumn, SlidersHorizontal } from '@glacier/icons';
 import { useMemo, useRef, useState } from 'react';
@@ -75,6 +79,9 @@ export function HomePage({
    */
   section?: 'curator' | 'history' | 'all';
 }) {
+  // The mix tiles' held verbs ride the queue seam every song menu uses.
+  const { playNext, addToQueue } = useQueueControls();
+  const mixHold = useHoldToMenu((from) => from.closest('.mixCardMenuTarget'));
   const showCurator = section === 'curator' || section === 'all';
   const showHistory = section === 'history' || section === 'all';
   const { tracks, favoriteTracks } = useLibrary();
@@ -177,8 +184,49 @@ export function HomePage({
         <ShelfSkeleton title="Made from your library" kind="mix" count={4} />
       ) : (
       <Shelf title="Made from your library" count={madeForYou.length}>
+        {/* A tile holding a whole tracklist carries the same held verbs a
+            playlist tile does - play it, shuffle it, put it in the line -
+            with the hold wired the house way so the release does not also
+            open the mix page over the menu. */}
         {madeForYou.map(({ mix, curated: fromCurator }) => (
-          <button key={mix.id} type="button" className="mixCard" onClick={() => openMix(mix.title, mix.tracks, 'This mix came up empty.')}>
+          <ContextMenu
+            key={mix.id}
+            {...mixHold}
+            aria-label={`${mix.title} actions`}
+            className="mixCardMenuTarget"
+            content={
+              <>
+                <MenuItem
+                  icon={<Play size={15} />}
+                  onSelect={() => mix.tracks.length > 0 && onPlay(mix.tracks[0]!, mix.tracks)}
+                >
+                  Play
+                </MenuItem>
+                <MenuItem
+                  icon={<Shuffle size={15} />}
+                  onSelect={() => {
+                    const order = [...mix.tracks].sort(() => Math.random() - 0.5);
+                    if (order.length > 0) onPlay(order[0]!, order);
+                  }}
+                >
+                  Shuffle
+                </MenuItem>
+                <MenuItem
+                  icon={<ListStart size={15} />}
+                  onSelect={() => [...mix.tracks].reverse().forEach((t) => playNext(t))}
+                >
+                  Play next
+                </MenuItem>
+                <MenuItem
+                  icon={<ListEnd size={15} />}
+                  onSelect={() => mix.tracks.forEach((t) => addToQueue(t))}
+                >
+                  Add to queue
+                </MenuItem>
+              </>
+            }
+          >
+          <button type="button" className="mixCard" onClick={() => openMix(mix.title, mix.tracks, 'This mix came up empty.')}>
             {/* No AI badge any more: these live on Discover now, which is the
                 AI's own page end to end, so a pill on every card said nothing
                 the heading did not already say. */}
@@ -218,6 +266,7 @@ export function HomePage({
               </span>
             )}
           </button>
+          </ContextMenu>
         ))}
       </Shelf>
       ))}

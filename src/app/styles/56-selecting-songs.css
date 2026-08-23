@@ -53,3 +53,22 @@ body:has(.npScreen[data-docked]) .selectBar {
     min-inline-size: min(34rem, calc(100vw - 2 * var(--glacier-space-4)));
   }
 }
+
+/* ---- An artist's name that goes somewhere -------------------------------- */
+
+/* Everywhere a name used to be dead text it now answers a press, and the
+   dress must not shout about it: same colour, same weight, an underline only
+   under the finger. It sits INSIDE pressable cards, so its own hit area stays
+   exactly the text - anything larger would eat the card's tap. */
+.artistLink {
+  cursor: pointer;
+  text-decoration: none;
+}
+.artistLink:hover,
+.artistLink:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.artistLink:active {
+  opacity: 0.7;
+}

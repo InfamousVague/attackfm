@@ -1,3 +1,4 @@
+import { ArtistLink } from '../ux/ArtistLink.tsx';
 import { Button, IconButton, Input, Text } from '@glacier/react';
 import { ChevronRight, Copy, LogOut, Radio, Users, UsersRound } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -193,9 +194,13 @@ function LiveNow() {
                   {jam.hosting ? 'Your jam' : `${jam.current.hostName}'s jam`}
                 </span>
                 <span className="jamLive__song">
-                  {currentTrack
-                    ? `${currentTrack.title} — ${currentTrack.artist}`
-                    : 'Waiting for the first song'}
+                  {currentTrack ? (
+                    <>
+                      {currentTrack.title} — <ArtistLink artist={currentTrack.artist} />
+                    </>
+                  ) : (
+                    'Waiting for the first song'
+                  )}
                 </span>
                 <span className="jamLive__meta">
                   {jam.current.memberCount === 1
@@ -347,7 +352,10 @@ function YourWeek() {
 
       {top && (
         <Text size="sm" tone="muted">
-          Most played: <strong>{top}</strong>
+          Most played:{' '}
+          <strong>
+            <ArtistLink artist={top} />
+          </strong>
         </Text>
       )}
     </section>

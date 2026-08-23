@@ -1,3 +1,4 @@
+import { TrackMenu } from '../../app/library/TrackMenu.tsx';
 import { Button, ContextMenu, MenuItem, Modal, ProgressBar, Text } from '@glacier/react';
 import { BookAudio, BookOpenText, Check, ChevronRight, Heart, Play, Trash2, Upload } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -927,7 +928,7 @@ export function BooksPage({ onPlay }: PluginPageProps) {
               const at = standing(open);
               return open.chapters.map((c, i) => {
                 const here = i === at.index && at.started;
-                return (
+                const row = (
                   <button
                     key={i}
                     type="button"
@@ -945,6 +946,18 @@ export function BooksPage({ onPlay }: PluginPageProps) {
                     <span className="bookChapters__title">{c.title}</span>
                     {here && <Check size={14} aria-hidden />}
                   </button>
+                );
+                // Many files: each chapter is a real library track, and a
+                // held chapter offers the same verbs a held song does. One
+                // file: every row is the same track, and a menu repeated
+                // eight times over one file says nothing - the book card's
+                // own menu covers it.
+                return open.singleFile ? (
+                  row
+                ) : (
+                  <TrackMenu key={i} track={c.track}>
+                    {row}
+                  </TrackMenu>
                 );
               });
             })()}

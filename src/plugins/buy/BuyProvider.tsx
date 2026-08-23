@@ -1,3 +1,4 @@
+import { ArtistLink } from '../../app/ux/ArtistLink.tsx';
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import { Modal } from '@glacier/react';
 import { ExternalLink } from '@glacier/icons';
@@ -75,7 +76,14 @@ export function BuyProvider({ children }: { children: ReactNode }) {
         <Modal open onClose={() => setTarget(null)} title={`Buy “${target.title}”`} size="sm">
           <div className="buyModal">
             <p className="buyModal__blurb">
-              {target.artist ? `${target.title} · ${target.artist}` : target.title} — open a store to
+              {target.artist ? (
+                <>
+                  {target.title} · <ArtistLink artist={target.artist} beforeOpen={close} />
+                </>
+              ) : (
+                target.title
+              )}{' '}
+              — open a store to
               buy it as a download, then drop the file into your library folder.
             </p>
             <div className="buyModal__stores">

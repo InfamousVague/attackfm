@@ -1,5 +1,6 @@
 import { ContextMenu, MenuItem } from '@glacier/react';
 import {
+  UserRound,
   ArrowDownToLine,
   Check,
   ListEnd,
@@ -25,6 +26,7 @@ import { streamUrl, trackIdFromPath, transcodeUrl } from '../server.ts';
 import { isTauri, type Track } from '../core/tauri.ts';
 import { DjTraitSheet } from '../booth/DjTraitSheet.tsx';
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
+import { artistDoorOpen, openArtist } from '../nav/artistDoor.ts';
 
 /**
  * The three things you can do to a song that are not "play it", wrapped around
@@ -166,6 +168,16 @@ export function TrackMenu({
             <MenuItem icon={<ListStart size={15} />} onSelect={() => playNext(track)}>
               Play next
             </MenuItem>
+            {/* The artist's page, from any held song anywhere. Most cards
+                print the name inside an element that is already a button, so
+                the menu is the one place this door fits every surface at
+                once - and books stay out, because authors have no page (the
+                library keeps them off the music shelves ArtistPage reads). */}
+            {artistDoorOpen() && track.kind !== 'book' && track.artist.trim() !== '' && (
+              <MenuItem icon={<UserRound size={15} />} onSelect={() => openArtist(track.artist)}>
+                Go to artist
+              </MenuItem>
+            )}
             <MenuItem icon={<ListEnd size={15} />} onSelect={() => addToQueue(track)}>
               {inJam ? 'Add to jam queue' : 'Add to queue'}
             </MenuItem>

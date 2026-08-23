@@ -1,3 +1,4 @@
+import { ArtistLink } from '../ux/ArtistLink.tsx';
 import { ChevronRight, Quote } from '@glacier/icons';
 import { useState, type ReactNode } from 'react';
 import { artworkUrl, genreArtwork } from '../ux/artwork.ts';
@@ -165,7 +166,7 @@ export function SongSub({ track, why, query }: { track: Track; why: Why; query: 
   }
   return (
     <span className="searchRow__sub">
-      Song · {track.artist}
+      Song · <ArtistLink artist={track.artist} />
       {track.lossless && <span className="searchQuality">Lossless</span>}
     </span>
   );
