@@ -127,10 +127,54 @@ fi
 # The audiobooks folder people actually make: next to music and data, not
 # inside the library. One symlink joins that layout to the single root the
 # server is built on, and the scanner knows to look through exactly this link.
+#
+# A REAL Audiobooks directory may already sit inside the music root - the
+# Audible importer used to file there literally - and on a case-insensitive
+# disk it and the link cannot even share the name. Skipping in that case is
+# how the sibling folder stayed invisible through every update: the two roots
+# have to MERGE. Contents move into the sibling (never overwriting - a name
+# collision keeps the sibling's copy and leaves the other in place to be
+# looked at), the emptied directory goes, the link goes in.
 SIBLING_BOOKS="$(dirname "$MUSIC_DIR")/audiobooks"
-if [ -d "$SIBLING_BOOKS" ] && [ ! -e "$MUSIC_DIR/audiobooks" ] && [ ! -e "$MUSIC_DIR/Audiobooks" ]; then
-  ln -s "$SIBLING_BOOKS" "$MUSIC_DIR/audiobooks"
-  say "Linked $SIBLING_BOOKS into the library - your audiobooks folder stays where it is"
+if [ -d "$SIBLING_BOOKS" ]; then
+  INNER=""
+  for cand in "$MUSIC_DIR/Audiobooks" "$MUSIC_DIR/audiobooks"; do
+    if [ -d "$cand" ] && [ ! -L "$cand" ]; then INNER="$cand"; break; fi
+  done
+  if [ -n "$INNER" ]; then
+    say "Merging $INNER into $SIBLING_BOOKS"
+    # Author folders merge by their books, because the same author on both
+    # sides is the NORMAL case, not a conflict. A genuine book-level clash
+    # keeps both copies - the incoming one renamed "(dup ...)" beside the
+    # other, where a person can see and settle it - so the merge always
+    # completes and the link always plants. Nothing is ever overwritten.
+    STAMP=$(date +%s)
+    find "$INNER" -mindepth 1 -maxdepth 1 -print0 | while IFS= read -r -d '' item; do
+      base="$(basename "$item")"
+      if [ ! -e "$SIBLING_BOOKS/$base" ]; then
+        mv "$item" "$SIBLING_BOOKS/"
+      elif [ -d "$item" ] && [ -d "$SIBLING_BOOKS/$base" ]; then
+        find "$item" -mindepth 1 -maxdepth 1 -print0 | while IFS= read -r -d '' book; do
+          bookbase="$(basename "$book")"
+          if [ -e "$SIBLING_BOOKS/$base/$bookbase" ]; then
+            mv "$book" "$SIBLING_BOOKS/$base/$bookbase (dup $STAMP)"
+            say "  both kept: $base/$bookbase existed on both sides"
+          else
+            mv "$book" "$SIBLING_BOOKS/$base/"
+          fi
+        done
+        rmdir "$item" 2>/dev/null || true
+      else
+        mv "$item" "$SIBLING_BOOKS/$base (dup $STAMP)"
+        say "  both kept: $base existed on both sides"
+      fi
+    done
+    rmdir "$INNER" 2>/dev/null || say "  $INNER not empty after merge - left for you to look at"
+  fi
+  if [ ! -e "$MUSIC_DIR/audiobooks" ] && [ ! -e "$MUSIC_DIR/Audiobooks" ]; then
+    ln -s "$SIBLING_BOOKS" "$MUSIC_DIR/audiobooks"
+    say "Linked $SIBLING_BOOKS into the library - your audiobooks folder stays where it is"
+  fi
 fi
 
 read -r -p "  Port [$DEF_PORT]: " PORT
