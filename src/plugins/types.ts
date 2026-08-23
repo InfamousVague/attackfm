@@ -166,6 +166,9 @@ export type DownloadState = 'queued' | 'downloading' | 'done' | 'error';
  * something to call.
  */
 export interface DownloadItem {
+  /** Who or what asked for this download, in words - shown on the card so a
+   *  shared box's queue says whose errand each row is. */
+  via?: string | null;
   /** Unique within its source; the page namespaces it with the source key. */
   id: string;
   title: string;

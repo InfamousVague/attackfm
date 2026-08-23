@@ -510,7 +510,15 @@ async fn enqueue_missing(state: &Arc<AppState>, user_id: i64, key: &str) -> Resu
         } else {
             format!("{} — {}", item.title, item.artist)
         };
-        match imports::enqueue_internal(state, &url, &label, "Spotify sync", key, user_id).await {
+        // Named for the queue: the mirror, and whose account it feeds.
+        let via = state
+            .db
+            .user_by_id(user_id)
+            .map(|u| format!("Spotify mirror · {}", u.username))
+            .unwrap_or_else(|| "Spotify mirror".to_string());
+        match imports::enqueue_internal(state, &url, &label, "Spotify sync", key, user_id, &via)
+            .await
+        {
             Ok(job_id) => {
                 let _ = state.db.spotify_item_set(
                     user_id,

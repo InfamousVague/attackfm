@@ -220,8 +220,16 @@ async fn buy(state: &Arc<AppState>, user: i64, d: &DiscoveryRow) -> bool {
     };
 
     let reason = reason_for(d).await;
-    match crate::imports::enqueue_internal(state, &hit.url, &d.title, &d.artist, "collector", user)
-        .await
+    // Named for the queue: the machine that pulled it, and who it is for.
+    let via = state
+        .db
+        .user_by_id(user)
+        .map(|u| format!("the collector · for {}", u.username))
+        .unwrap_or_else(|| "the collector".to_string());
+    match crate::imports::enqueue_internal(
+        state, &hit.url, &d.title, &d.artist, "collector", user, &via,
+    )
+    .await
     {
         Ok(job_id) => {
             let _ = state.db.record_pull(

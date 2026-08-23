@@ -17,6 +17,7 @@ import {
   Trash2,
   TriangleAlert,
   User,
+  UserRound,
   X,
 } from '@glacier/icons';
 import { useDownloadsOptional, type MusicImportJob } from '../../plugins/importsBridge.ts';
@@ -172,6 +173,17 @@ function JobCard({ row, showSource }: { row: Row; showSource: boolean }) {
             <span className="dlChip dlChip--kind" title={item.kind}>
               <KindIcon kind={item.kind} />
               {item.kind}
+            </span>
+          )}
+          {/* Whose errand this row is. A shared box downloads for several
+              people and two machines; the queue now says which - the name
+              that pasted it, the collector and who it pulled for, the
+              Spotify mirror and whose account it feeds. Old jobs, stamped
+              before the hub said, stay quiet rather than guessing. */}
+          {item.via && (
+            <span className="dlChip dlChip--via" title={`Queued by ${item.via}`}>
+              <UserRound size={11} />
+              {item.via}
             </span>
           )}
           {total > 0 && (
@@ -383,6 +395,7 @@ function useMusicSource(): ResolvedDownloadSource | null {
           id: job.id,
           title: job.title,
           subtitle: job.subtitle,
+          via: job.via ?? null,
           kind: job.kind,
           artworkUrl: job.artworkUrl,
           state: job.state,
