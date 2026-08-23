@@ -1141,7 +1141,7 @@ async fn run_job(
         }
         let original = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         let ext = original.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
-        let rel = upload::destination_for(path, &original, &ext);
+        let rel = upload::destination_for(&state.music_root, path, &original, &ext);
         let dest = state.music_root.join(&rel);
         let (rel, dest) = upload::unique_destination(&state.music_root, &rel, &dest);
         if let Some(parent) = dest.parent() {

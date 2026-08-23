@@ -228,7 +228,7 @@ pub async fn finish(
     }
 
     let ext = extension_of(&original);
-    let rel = destination_for(&temp, &original, &ext);
+    let rel = destination_for(&state.music_root, &temp, &original, &ext);
     let dest = state.music_root.join(&rel);
 
     // Serialize the free-name check, the move, and the index against every
@@ -278,7 +278,7 @@ pub async fn finish(
 
 /// Where an uploaded file belongs, read from its own tags. Shared with the
 /// import runner, whose staged files land through the same routing.
-pub(crate) fn destination_for(temp: &Path, original: &str, ext: &str) -> String {
+pub(crate) fn destination_for(music_root: &Path, temp: &Path, original: &str, ext: &str) -> String {
     use lofty::file::TaggedFileExt;
     use lofty::prelude::{Accessor, ItemKey};
     use lofty::probe::Probe;
@@ -339,7 +339,8 @@ pub(crate) fn destination_for(temp: &Path, original: &str, ext: &str) -> String 
         let author = if artist.trim().is_empty() { "Unknown Author".to_string() } else { artist.clone() };
         if !book.trim().is_empty() {
             return format!(
-                "Audiobooks/{}/{}.{}",
+                "{}/{}/{}.{}",
+                crate::ingest::audiobooks_component(music_root),
                 safe_component(&author),
                 safe_component(&book),
                 if ext.is_empty() { "audio" } else { ext }
@@ -441,7 +442,7 @@ mod tests {
             eprintln!("fixture missing, skipping: {}", fixture.display());
             return;
         }
-        let rel = destination_for(&fixture, "sample-audiobook.m4b", "m4b");
+        let rel = destination_for(std::path::Path::new("/nonexistent-root"), &fixture, "sample-audiobook.m4b", "m4b");
         assert!(
             rel.starts_with("Audiobooks/"),
             "an m4b must land on the book shelf, got {rel}"
@@ -460,7 +461,7 @@ mod tests {
             eprintln!("fixture missing, skipping: {}", fixture.display());
             return;
         }
-        let rel = destination_for(&fixture, "sample-song.m4a", "m4a");
+        let rel = destination_for(std::path::Path::new("/nonexistent-root"), &fixture, "sample-song.m4a", "m4a");
         assert!(
             !rel.starts_with("Audiobooks/"),
             "a song must not reach the book shelf, got {rel}"

@@ -530,10 +530,12 @@ async fn set_job(state: &Arc<AppState>, id: &str, f: impl FnOnce(&mut AudibleJob
 
 /// The rel_path a given book files to — the one place the naming lives, so the
 /// worker, the "already have it" check, and any future re-download all agree.
-fn book_rel_path(author: &str, title: &str) -> String {
+fn book_rel_path(music_root: &std::path::Path, author: &str, title: &str) -> String {
     let a = safe_segment(author);
     let t = safe_segment(title);
-    format!("Audiobooks/{a}/{t}/{t}.m4b")
+    // The folder as it exists - see ingest::audiobooks_component.
+    let books = crate::ingest::audiobooks_component(music_root);
+    format!("{books}/{a}/{t}/{t}.m4b")
 }
 
 /// A ready-to-run audible-cli command, pointed at the owner's config with a
@@ -596,7 +598,7 @@ pub async fn library(
         let cover = it.get("cover_url").and_then(|x| x.as_str()).filter(|s| !s.is_empty()).map(String::from);
         let runtime_min = it.get("runtime_length_min").and_then(|x| x.as_i64());
         let percent_complete = it.get("percent_complete").and_then(|x| x.as_f64());
-        let owned_locally = state.db.track_id_by_path(&book_rel_path(&author, &title)).is_some();
+        let owned_locally = state.db.track_id_by_path(&book_rel_path(&state.music_root, &author, &title)).is_some();
         books.push(AudibleBook {
             asin: asin.to_string(),
             title,
@@ -887,7 +889,7 @@ async fn run_audible_job(
     //    folder contract marks it kind = 'book'. Copy, not rename: the staging
     //    dir and the music root may be different mounts.
     set_job(&state, &job_id, |j| j.state = "filing".into()).await;
-    let rel = book_rel_path(&author, &title);
+    let rel = book_rel_path(&state.music_root, &author, &title);
     let dest = state.music_root.join(&rel);
     if let Some(parent) = dest.parent() {
         let _ = tokio::fs::create_dir_all(parent).await;

@@ -444,7 +444,8 @@ async fn run_job(state: Arc<AppState>, job_id: String, book: Book) {
         let file_name = format!("{n:0width$} - {}.mp3", safe_segment(&section.title));
         let dest = dir.join(&file_name);
         let rel = format!(
-            "Audiobooks/{}/{}/{}",
+            "{}/{}/{}/{}",
+            crate::ingest::audiobooks_component(&state.music_root),
             safe_segment(&book.author),
             safe_segment(&book.title),
             file_name
