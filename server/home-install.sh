@@ -124,6 +124,15 @@ if [ -d "$HERE/../dist-plugins" ]; then
   say "Plugins published to $DATA_DIR/plugins"
 fi
 
+# The audiobooks folder people actually make: next to music and data, not
+# inside the library. One symlink joins that layout to the single root the
+# server is built on, and the scanner knows to look through exactly this link.
+SIBLING_BOOKS="$(dirname "$MUSIC_DIR")/audiobooks"
+if [ -d "$SIBLING_BOOKS" ] && [ ! -e "$MUSIC_DIR/audiobooks" ] && [ ! -e "$MUSIC_DIR/Audiobooks" ]; then
+  ln -s "$SIBLING_BOOKS" "$MUSIC_DIR/audiobooks"
+  say "Linked $SIBLING_BOOKS into the library - your audiobooks folder stays where it is"
+fi
+
 read -r -p "  Port [$DEF_PORT]: " PORT
 PORT="${PORT:-$DEF_PORT}"
 

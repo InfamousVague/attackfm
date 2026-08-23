@@ -86,6 +86,42 @@ fn walk(root: &Path) -> Vec<(PathBuf, String)> {
             let path = entry.path();
             let Ok(meta) = entry.metadata() else { continue };
             if meta.is_symlink() {
+                /*
+                 * One symlink is followed, by name: `audiobooks` at the top of
+                 * the music root. The layout people actually make is
+                 * `{music, data, audiobooks}` side by side - the books next to
+                 * the library, not inside it - and a link is how that layout
+                 * joins the one root everything else (rel_path keys, the
+                 * streamer, the folder rules) is built on. The install script
+                 * plants the link; this is the walk agreeing to look through
+                 * it.
+                 *
+                 * Guarded, because a followed link is a loop waiting to
+                 * happen: the target must be a real directory whose canonical
+                 * path is neither the root itself, an ancestor of it (either
+                 * way the walk would swallow its own tail), nor inside it
+                 * (already walked; following would index everything twice).
+                 */
+                let is_books_link = dir == root
+                    && path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .is_some_and(|n| n.eq_ignore_ascii_case("audiobooks"));
+                if is_books_link {
+                    if let (Ok(target), Ok(canon_root)) =
+                        (std::fs::canonicalize(&path), std::fs::canonicalize(root))
+                    {
+                        let safe = target.is_dir()
+                            && target != canon_root
+                            && !canon_root.starts_with(&target)
+                            && !target.starts_with(&canon_root);
+                        if safe {
+                            // The LINK path, not the target: rel paths must
+                            // stay under the root for every key downstream.
+                            stack.push(path);
+                        }
+                    }
+                }
                 continue;
             }
             if meta.is_dir() {
@@ -240,7 +276,7 @@ fn read_track(path: &Path, rel_path: &str, art_dir: &Path) -> Option<ScannedTrac
                 album = folder_album;
             }
             if artist == "Unknown artist" {
-                if let Some(a) = folder_artist {
+                if let Some(a) = folder_artist.or_else(|| book_author_folder(rel_path)) {
                     artist = a;
                 }
             }
@@ -385,6 +421,20 @@ fn cover_in(dir: &Path, art_dir: &Path) -> Option<String> {
         return store_art(art_dir, &bytes, mime);
     }
     None
+}
+
+/// The author, when the layout IS the canonical one: `Audiobooks/<Author>/
+/// <Title>/file`. The shelf's own filing convention should name its own
+/// untagged files - it took a symlinked sibling library to notice it did not.
+fn book_author_folder(rel_path: &str) -> Option<String> {
+    let rest = crate::db::book_prefix(rel_path)?;
+    let parts: Vec<&str> = rest.split('/').filter(|p| !p.is_empty()).collect();
+    // Author / Title / file - anything shallower has no author component.
+    if parts.len() >= 3 {
+        Some(parts[0].to_string())
+    } else {
+        None
+    }
 }
 
 /// The directory a book file sits in, relative to the music root - or None when
@@ -737,6 +787,30 @@ mod book_folder_tests {
         assert_eq!(crate::db::kind_for("Music/Dune/01.mp3"), "music");
         // Not a false positive on a name that merely begins the same way.
         assert_eq!(crate::db::kind_for("AudiobooksOfMine/01.mp3"), "music");
+    }
+
+    /// The sibling layout: `{music, data, audiobooks}` side by side, joined by
+    /// one link. The walk follows exactly that link - and refuses one that
+    /// points back at the library, which would be the walk eating its tail.
+    #[test]
+    fn the_audiobooks_link_is_followed_and_a_loop_is_not() {
+        let base = std::env::temp_dir().join(format!("afm-walk-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let root = base.join("music");
+        let books = base.join("audiobooks").join("Author").join("Title");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&books).unwrap();
+        std::fs::write(books.join("01 - Part 1.mp3"), b"x").unwrap();
+        std::os::unix::fs::symlink(base.join("audiobooks"), root.join("audiobooks")).unwrap();
+        // The trap: a second link pointing at the root itself.
+        std::os::unix::fs::symlink(&root, root.join("loop")).unwrap();
+
+        let found = walk(&root);
+        let rels: Vec<&str> = found.iter().map(|(_, r)| r.as_str()).collect();
+        assert_eq!(rels, vec!["audiobooks/Author/Title/01 - Part 1.mp3"]);
+        // And what comes through the link is a book.
+        assert_eq!(crate::db::kind_for(rels[0]), "book");
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
