@@ -32,7 +32,11 @@ import { formatTotal } from '../ux/format.ts';
 import { soundChangesLabel, useSoundChanges } from './soundChanges.ts';
 import { subscribeGestures } from './deviceMotion.ts';
 import { isTauri, tauriCall } from '../core/tauri.ts';
+import { trackIdFromPath } from '../server.ts';
 import { motionGesturesEnabled } from '../settings/behaviourPrefs.ts';
+import { fetchChapterNotes, type BookNotes } from './chapterNotes.ts';
+import { fetchTranscript } from './transcript.ts';
+import type { LyricLine } from '@glacier/react';
 import npPlaceholderArt from '../../assets/attack-wave.png';
 import type { Track } from '../core/tauri.ts';
 
@@ -91,54 +95,40 @@ export function npArtMenuItems(
  * arrives through props from the deck core.
  */
 /**
- * The chapters, as somewhere to go.
+ * The book, reading itself across the screen.
  *
- * Scrolls to the chapter being read when it opens, because a twelve-hour book
- * has forty of these and the one you care about is almost never at the top -
- * and a list that opens at chapter one is a list you have to search.
+ * The transcript's lines walk up the slot as the narrator speaks them - the
+ * line being read lit in the middle, what was just said dimming above, what
+ * comes next waiting below. The window is a handful of lines re-keyed by
+ * index, so a line keeps its element as it slides from next to now to past
+ * and the CSS transition carries it.
  */
-function ChapterList({
-  chapters,
-  positionMs,
-  onPick,
+function BookWords({
+  lines,
+  positionSec,
 }: {
-  chapters: { title: string; startMs: number }[];
-  positionMs: number;
-  onPick: (startMs: number) => void;
+  lines: LyricLine[];
+  positionSec: number;
 }) {
-  const here = (() => {
-    let idx = 0;
-    for (let i = 0; i < chapters.length; i++) {
-      if (positionMs >= chapters[i]!.startMs - 1000) idx = i;
-      else break;
-    }
-    return idx;
-  })();
-  const current = useRef<HTMLButtonElement | null>(null);
-  useEffect(() => {
-    current.current?.scrollIntoView({ block: 'center' });
-  }, []);
-
+  let at = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i]!.time <= positionSec) at = i;
+    else break;
+  }
+  const from = Math.max(0, at - 2);
+  const shown = lines.slice(from, Math.max(0, at) + 5);
   return (
-    <div className="npChapters__list" role="list">
-      {chapters.map((c, i) => {
-        const title = c.title?.trim();
+    <div className="npBookWords">
+      {shown.map((l, j) => {
+        const i = from + j;
         return (
-          <button
-            key={`${c.startMs}-${i}`}
-            ref={i === here ? current : undefined}
-            type="button"
-            role="listitem"
-            className="npChapters__row"
-            data-here={i === here || undefined}
-            onClick={() => onPick(c.startMs)}
+          <p
+            key={i}
+            className="npBookWords__line"
+            data-state={i < at ? 'past' : i === at ? 'now' : 'next'}
           >
-            <span className="npChapters__n">{i + 1}</span>
-            <span className="npChapters__title">
-              {title && title.toLowerCase() !== `chapter ${i + 1}` ? title : `Chapter ${i + 1}`}
-            </span>
-            <span className="npChapters__at">{formatClock(c.startMs / 1000)}</span>
-          </button>
+            {l.text}
+          </p>
         );
       })}
     </div>
@@ -149,6 +139,8 @@ function ChapterList({
 /** One row of the chapter panel, whatever form the book arrived in. */
 interface ChapterFace {
   title: string;
+  /** The hub's one non-spoiler line, where its AI has written one. */
+  blurb: string | null;
   /** Right-hand figure: a start offset (single file) or a length (sections). */
   at: string | null;
   here: boolean;
@@ -222,6 +214,7 @@ function ChapterArt({
             <span className="npChapterArt__n">{i + 1}</span>
             <span className="npChapterArt__title">{c.title}</span>
             {c.at && <span className="npChapterArt__at">{c.at}</span>}
+            {c.blurb && <span className="npChapterArt__blurb">{c.blurb}</span>}
             {c.here && (
               <span className="npChapterArt__run" aria-hidden>
                 <span style={{ width: `${Math.round(runFraction * 100)}%` }} />
@@ -388,6 +381,43 @@ export function NowPlayingSheet({
    * queue (jump = play that section). Everything needed is already in this
    * sheet's props - the queue is the reading order BooksPage queued.
    */
+  /*
+   * The hub's word on what each chapter IS - a truthful name (a preamble
+   * mislabelled "Chapter 1" gets called a preamble) and one non-spoiler
+   * line. Fetched once per opened book; null until it lands or when the hub
+   * has none, and every face below falls back to the embedded labels.
+   */
+  const [bookNotes, setBookNotes] = useState<BookNotes | null>(null);
+  const [bookWords, setBookWords] = useState<LyricLine[] | null>(null);
+  const bookPath = track?.kind === 'book' ? track.path : null;
+  useEffect(() => {
+    if (!bookPath || !track) {
+      setBookNotes(null);
+      setBookWords(null);
+      return;
+    }
+    let stale = false;
+    fetchChapterNotes(track).then((notes) => {
+      if (!stale) setBookNotes(notes);
+    });
+    fetchTranscript(track).then((lines) => {
+      if (!stale) setBookWords(lines);
+    });
+    return () => {
+      stale = true;
+    };
+    // The track OBJECT changes identity every library refresh; the path is
+    // the book's identity, and the notes only depend on that.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookPath]);
+
+  /** The hub's note for one chapter slot, looked up by server track id. */
+  const noteFor = (path: string, idx: number) => {
+    const id = trackIdFromPath(path);
+    const list = (id != null && bookNotes?.[String(id)]) || null;
+    return list?.find((n) => n.idx === idx) ?? null;
+  };
+
   const bookFaces: ChapterFace[] = (() => {
     if (track?.kind !== 'book') return [];
     if (chapters.length > 0) {
@@ -396,12 +426,14 @@ export function NowPlayingSheet({
         // The row already numbers itself, so a title that opens with its own
         // "Chapter N" (most m4b tags do) sheds the prefix: "4 · Chapter 4 —
         // A Cartographer's Debt" says the number twice and clips the words.
-        const raw = c.title?.trim() ?? '';
+        const note = noteFor(track.path, i);
+        const raw = (note?.name ?? c.title ?? '').trim();
         const bare = raw
           .replace(new RegExp(`^chapter\\s*0*${i + 1}\\b[\\s—–:.-]*`, 'i'), '')
           .trim();
         return {
           title: bare || `Chapter ${i + 1}`,
+          blurb: note?.blurb?.trim() || null,
           at: formatClock(c.startMs / 1000),
           here: i === here,
           jump: () => onSeekChapter(c.startMs),
@@ -412,12 +444,16 @@ export function NowPlayingSheet({
       (t) => t.kind === 'book' && t.album === track.album && t.artist === track.artist,
     );
     if (sections.length < 2) return [];
-    return sections.map((t) => ({
-      title: t.title,
-      at: t.duration != null ? formatClock(t.duration) : null,
-      here: t.path === track.path,
-      jump: () => onTrackChange?.(t),
-    }));
+    return sections.map((t) => {
+      const note = noteFor(t.path, 0);
+      return {
+        title: note?.name?.trim() || t.title,
+        blurb: note?.blurb?.trim() || null,
+        at: t.duration != null ? formatClock(t.duration) : null,
+        here: t.path === track.path,
+        jump: () => onTrackChange?.(t),
+      };
+    });
   })();
 
   /*
@@ -428,6 +464,22 @@ export function NowPlayingSheet({
    * drag to the bar's end would cross the mark, re-window to the next
    * chapter, and snap the handle out from under the thumb.
    */
+  /*
+   * The door's own label, from the faces - so a sectioned book gets a door
+   * too (its chapters are its queue), and a renamed chapter shows its real
+   * name here. "Chapter N of M" stays positional: it is the row you are on.
+   */
+  const doorLabel = (() => {
+    if (bookFaces.length === 0) return chapterLabel;
+    const here = Math.max(
+      0,
+      bookFaces.findIndex((f) => f.here),
+    );
+    const ord = `Chapter ${here + 1} of ${bookFaces.length}`;
+    const title = bookFaces[here]?.title ?? '';
+    return title && title.toLowerCase() !== `chapter ${here + 1}` ? `${ord} · ${title}` : ord;
+  })();
+
   const chapterWin = (() => {
     if (chapters.length === 0) return null;
     const i = chapterIndexAt(chapters, position * 1000);
@@ -546,6 +598,9 @@ export function NowPlayingSheet({
       <div
         ref={sheetRef}
         className="npScreen"
+      data-reading={
+        (track?.kind === 'book' && artView === 'chapters' && !!bookWords?.length) || undefined
+      }
       role="dialog"
       aria-label="Now playing"
       // Always the dark palette, whatever the app wears: this surface lives
@@ -672,11 +727,17 @@ export function NowPlayingSheet({
         <ContextMenu
           aria-label="Artwork style"
           className={`npScreen__coverTarget${
-            artView === 'chapters' && bookFaces.length > 0 ? ' npScreen__coverTarget--chapters' : ''
+            artView === 'chapters' && bookWords && bookWords.length > 0
+              ? ' npScreen__coverTarget--reading'
+              : artView === 'chapters' && bookFaces.length > 0
+                ? ' npScreen__coverTarget--chapters'
+                : ''
           }`}
           content={npArtMenu}
         >
-          {artView === 'chapters' && bookFaces.length > 0 ? (
+          {artView === 'chapters' && bookWords && bookWords.length > 0 ? (
+            <BookWords lines={bookWords} positionSec={position} />
+          ) : artView === 'chapters' && bookFaces.length > 0 ? (
             <ChapterArt
               art={artwork}
               items={bookFaces}
@@ -743,32 +804,43 @@ export function NowPlayingSheet({
               the list jumps. Still a plain span when the book has no marks,
               because a control that opens onto nothing is worse than a
               label. */}
-          {chapterLabel &&
-            (chapters.length > 0 ? (
-              <Popover
-                placement="bottom"
-                aria-label="Chapters"
-                className="npChapters"
-                trigger={
-                  <button type="button" className="npScreen__chapter npScreen__chapterOpen">
-                    <BookOpenText size={13} aria-hidden />
-                    <span className="npScreen__chapterText">{chapterLabel}</span>
+          {bookFaces.length > 0 ? (
+            <Popover
+              placement="bottom"
+              aria-label="Chapters"
+              className="npChapters"
+              trigger={
+                <button type="button" className="npScreen__chapter npScreen__chapterOpen">
+                  <BookOpenText size={13} aria-hidden />
+                  <span className="npScreen__chapterText">{doorLabel}</span>
+                </button>
+              }
+            >
+              <div className="npChapters__list" role="list">
+                {bookFaces.map((c, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    role="listitem"
+                    className="npChapters__row"
+                    data-here={c.here || undefined}
+                    onClick={c.jump}
+                  >
+                    <span className="npChapters__n">{i + 1}</span>
+                    <span className="npChapters__title">{c.title}</span>
+                    {c.at && <span className="npChapters__at">{c.at}</span>}
+                    {c.blurb && <span className="npChapters__blurb">{c.blurb}</span>}
                   </button>
-                }
-              >
-                <ChapterList
-                  chapters={chapters}
-                  positionMs={position * 1000}
-                  onPick={onSeekChapter}
-                />
-              </Popover>
-            ) : (
-              <span className="npScreen__chapter">{chapterLabel}</span>
-            ))}
+                ))}
+              </div>
+            </Popover>
+          ) : (
+            chapterLabel && <span className="npScreen__chapter">{chapterLabel}</span>
+          )}
           {/* Its own line, because it is its own fact and because a phone has
               no room to hang it off the end of a chapter title - which clipped
               the title and then the number with it. */}
-          {chapterLabel && bookRemaining != null && (
+          {(chapterLabel || bookFaces.length > 0) && bookRemaining != null && (
             <span className="npScreen__left">{formatTotal(bookRemaining)} left in the book</span>
           )}
           {/* A downloading placeholder says so; otherwise only while the

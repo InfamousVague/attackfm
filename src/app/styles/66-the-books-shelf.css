@@ -443,6 +443,18 @@
 .npChapters__row:focus-visible {
   background: var(--glacier-surface-raised);
 }
+/* The hub's one-line teaser rides under the name, clamped to two lines. */
+.npChapters__blurb {
+  grid-column: 2 / -1;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  color: var(--glacier-text-subtle);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
 /* Where you are, marked on the row rather than announced above the list. */
 .npChapters__row[data-here] {
   background: var(--glacier-accent-soft, rgb(255 255 255 / 0.1));
