@@ -431,6 +431,8 @@ async fn main() {
 
     // Index what is already there before taking requests, in the background so
     // a large library does not hold the port closed.
+    // Audiobook piles dropped in import/ sort themselves - see ingest.rs.
+    ingest::spawn_sweep(state.clone());
     scan::spawn_scan(
         db.clone(),
         music_root.clone(),
