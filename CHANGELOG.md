@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.2
+
+- Fixed the app closing itself when opening a downloaded audiobook: the phone was handed the whole book in one half-gigabyte piece, which is more than Android allows in one hand. It now arrives in slices
+- The same fix covers the next chapter preloading on a downloaded book, and the scratch deck no longer tries to swallow an audiobook as a scratch tape
+- With the next app install, a refusal from Android to start the playback service in the background is taken as an answer instead of a crash - the service starts on the next open
+
 ## 0.4.1
 
 - Your plugins follow you. Sign in on a new device and the ones you had install themselves from the same repositories, instead of leaving you to remember what you were running and add each one back by hand

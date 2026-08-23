@@ -49,7 +49,13 @@ export async function loadScrubTape(
   signal?: AbortSignal,
 ): Promise<ScrubTape | null> {
   try {
-    if (track.duration != null && track.duration > MAX_TAPE_SECONDS) return null;
+    // A book never gets a tape - nobody scratches an audiobook, and hours of
+    // audio decode to more PCM than the phone has. An UNKNOWN duration counts
+    // as over the cap for the same reason: the only tracks without one are
+    // the ones nothing has probed, and betting the decoder on "probably
+    // short" loses exactly when the file turns out to be a book.
+    if (track.kind === 'book' || track.duration == null || track.duration > MAX_TAPE_SECONDS)
+      return null;
 
     const id = trackIdFromPath(track.path);
     let bytes: ArrayBuffer | null = null;
