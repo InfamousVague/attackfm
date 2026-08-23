@@ -43,6 +43,7 @@ import { PrimaryNav } from './nav/PrimaryNav.tsx';
 import { APP_NAME, HeaderActionButtons, HeaderIdent } from './nav/HeaderChrome.tsx';
 import { AppMain } from './nav/AppMain.tsx';
 import { setMixOpener } from './nav/openMix.ts';
+import { setArtistDoor } from './nav/artistDoor.ts';
 import { settingsBack } from './settings/settingsBack.ts';
 import { useNavStack } from './nav/useNavStack.ts';
 import { useSearchSummon } from './nav/useSearchSummon.ts';
@@ -423,6 +424,13 @@ export function App() {
     setMixOpener(goMix);
     return () => setMixOpener(null);
   }, [goMix]);
+  // And the artist page, for every leaf that prints a name - the queue panel,
+  // the stats rows, a friend's week - none of which fifteen props of plumbing
+  // was ever going to reach. See artistDoor.ts.
+  useEffect(() => {
+    setArtistDoor(go);
+    return () => setArtistDoor(null);
+  }, [go]);
 
   stateRef.current = { searchOpen, detail: detail as { kind?: string } | null, tab };
   // The phone's edge-swipe back: a drag in from the left walks the same stack

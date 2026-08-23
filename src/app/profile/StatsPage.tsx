@@ -1,3 +1,5 @@
+import { ArtistLink } from '../ux/ArtistLink.tsx';
+import { TrackMenu } from '../library/TrackMenu.tsx';
 import {
   AudioWaveform,
   ChevronDown,
@@ -284,15 +286,27 @@ export function StatsPage({
               onClick={() => onOpenArtist(topArtist.artist)}
             />
           )}
-          {topSong && (
-            <ArtChip
-              label="On repeat"
-              value={topSong.title || 'Unknown song'}
-              artwork={topSongTrack?.artwork ?? null}
-              glyph={<Music size={16} />}
-              onClick={topSongTrack ? () => onPlay(topSongTrack, [topSongTrack]) : undefined}
-            />
-          )}
+          {topSong &&
+            // The one leader chip that is a SONG wears a song's menu - the
+            // others open pages, whose verbs live on those pages.
+            (topSongTrack ? (
+              <TrackMenu track={topSongTrack}>
+                <ArtChip
+                  label="On repeat"
+                  value={topSong.title || 'Unknown song'}
+                  artwork={topSongTrack.artwork ?? null}
+                  glyph={<Music size={16} />}
+                  onClick={() => onPlay(topSongTrack, [topSongTrack])}
+                />
+              </TrackMenu>
+            ) : (
+              <ArtChip
+                label="On repeat"
+                value={topSong.title || 'Unknown song'}
+                artwork={null}
+                glyph={<Music size={16} />}
+              />
+            ))}
           {topAlbum && (
             <ArtChip
               label="Top album"
@@ -415,7 +429,7 @@ export function StatsPage({
               // The song may have left the library since it was played; the
               // row still tells its story, it just stops being a play button.
               const mine = byId.get(row.trackId) ?? null;
-              return (
+              const body = (
                 <li key={`${row.trackId}:${i}`} className="statsRow">
                   <span className="statsRow__rank">{i + 1}</span>
                   <RowArt artwork={mine?.artwork ?? null} shape="square" glyph={<Music size={16} aria-hidden />} />
@@ -433,12 +447,24 @@ export function StatsPage({
                         {row.title || 'Unknown song'}
                       </span>
                     )}
-                    <span className="statsRow__sub">{row.artist}</span>
+                    <span className="statsRow__sub">
+                      <ArtistLink artist={row.artist} />
+                    </span>
                   </span>
                   <span className="statsRow__meta">
                     {row.plays.toLocaleString()} {row.plays === 1 ? 'play' : 'plays'}
                   </span>
                 </li>
+              );
+              // A row whose song is still in the library is a song row like
+              // any other, so it wears the same menu; one whose song has left
+              // has nothing for the verbs to act on.
+              return mine ? (
+                <TrackMenu key={`${row.trackId}:${i}`} track={mine}>
+                  {body}
+                </TrackMenu>
+              ) : (
+                body
               );
             })}
           </ol>

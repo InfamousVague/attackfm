@@ -1,3 +1,4 @@
+import { ArtistLink } from '../ux/ArtistLink.tsx';
 import { AudioWaveform, Disc3, Flame, Play, Tag } from '@glacier/icons';
 import { Heatmap, ProgressRing, SegmentedBar } from '@glacier/react';
 import { clamp01, fmtMinutes, type StatsSummary } from './stats.ts';
@@ -114,7 +115,9 @@ export function StatsMore({
                   <span className="statsRow__name" data-plain>
                     {row.album || 'Unknown album'}
                   </span>
-                  <span className="statsRow__sub">{row.artist}</span>
+                  <span className="statsRow__sub">
+                    <ArtistLink artist={row.artist} />
+                  </span>
                 </span>
                 <span className="statsRow__meta">
                   {row.plays.toLocaleString()} {row.plays === 1 ? 'play' : 'plays'}

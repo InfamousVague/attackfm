@@ -1,3 +1,4 @@
+import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { ContextMenu, MenuItem } from '@glacier/react';
 import { ListEnd, ListStart, Play, Shuffle, User } from '@glacier/icons';
 import type { ReactNode } from 'react';
@@ -35,6 +36,16 @@ export function AlbumMenu({
   children: ReactNode;
 }) {
   const { playNext, addToQueue, inJam } = useQueueControls();
+  /*
+   * The same hold TrackMenu carries, for the same two reasons: the kit only
+   * answers a touch long-press and does nothing about the release - so on a
+   * phone the click that follows the hold fired the card underneath, and the
+   * album page opened on top of the menu the hold had just summoned. And a
+   * mouse held down should open it too. This was the one menu of the pair
+   * without the wiring; every album card, search album row and discography
+   * tile inherits the fix from here.
+   */
+  const hold = useHoldToMenu((_from, root) => root);
   const first = tracks[0];
   if (!first) return <>{children}</>;
 
@@ -45,6 +56,7 @@ export function AlbumMenu({
 
   return (
     <ContextMenu
+      {...hold}
       aria-label={`${first.album || first.title} actions`}
       className={className}
       content={

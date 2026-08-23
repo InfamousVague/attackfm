@@ -15,6 +15,7 @@
 //!     the Profile page around it - a section shows the people, the page owns
 //!     the person.
 
+import { ArtistLink } from '../ux/ArtistLink.tsx';
 import {
   Button,
   Field,
@@ -96,8 +97,11 @@ function seenAgo(stamp: number): string | null {
 /** The listening glance a friend chose to share: "6h this week · Jon Hopkins". */
 function weekGlance(f: RegistryFriend): string | null {
   if (typeof f.weekMinutes !== 'number' || f.weekMinutes <= 0) return null;
-  const time = f.weekMinutes >= 60 ? `${Math.round(f.weekMinutes / 60)}h this week` : `${Math.round(f.weekMinutes)}m this week`;
-  return f.weekTopArtist ? `${time} · ${f.weekTopArtist}` : time;
+  // Time only - the artist half renders separately, as a door rather than a
+  // suffix baked into the string.
+  return f.weekMinutes >= 60
+    ? `${Math.round(f.weekMinutes / 60)}h this week`
+    : `${Math.round(f.weekMinutes)}m this week`;
 }
 
 // --- account setup ----------------------------------------------------------
@@ -414,7 +418,20 @@ export function FriendsSection({
                       a wide row it takes the middle, which is the room the
                       grid used to waste; on a narrow one it drops under the
                       handle. */}
-                  {glance && <span className="friendRow__glance">{glance}</span>}
+                  {glance && (
+                    <span className="friendRow__glance">
+                      {glance}
+                      {/* The row already paints this artist's photo behind
+                          it; the name going somewhere is what that design
+                          was implying all along. */}
+                      {f.weekTopArtist && (
+                        <>
+                          {' · '}
+                          <ArtistLink artist={f.weekTopArtist} />
+                        </>
+                      )}
+                    </span>
+                  )}
                   {/* Visit leads and Stats trails, which is the opposite of
                       the reading order you would guess - but visiting is the
                       conditional one, and with it last, `Stats` landed at a
@@ -529,7 +546,10 @@ function FriendStats({ friend }: { friend: RegistryFriend }) {
               and the streak keeps a bare number a tile can always fit. */}
           {friend.weekTopArtist && (
             <p className="friendStats__artist">
-              <Clock size={14} aria-hidden /> On repeat: <strong>{friend.weekTopArtist}</strong>
+              <Clock size={14} aria-hidden /> On repeat:{' '}
+              <strong>
+                <ArtistLink artist={friend.weekTopArtist} />
+              </strong>
             </p>
           )}
           {(friend.streakDays ?? 0) > 0 && (

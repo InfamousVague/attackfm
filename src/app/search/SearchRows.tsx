@@ -1,3 +1,4 @@
+import { ArtistLink } from '../ux/ArtistLink.tsx';
 import {
   Check,
   ChevronRight,
@@ -136,7 +137,7 @@ export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
             <span className="searchRow__text">
               <span className="searchRow__title">{item.album.title}</span>
               <span className="searchRow__sub">
-                Album · {item.album.artist} ·{' '}
+                Album · <ArtistLink artist={item.album.artist} /> ·{' '}
                 {item.album.count === 1 ? '1 song' : `${item.album.count} songs`}
               </span>
             </span>
@@ -226,9 +227,17 @@ export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
               {/* An artist row's subtitle from the server is the word
                   "Artist" itself, so saying the kind twice is all it would
                   ever do; say where it leads instead. */}
-              {isArtist
-                ? 'Artist · not in your library'
-                : `${kindWord(item.result.kind)} · ${item.result.subtitle}`}
+              {isArtist ? (
+                'Artist · not in your library'
+              ) : item.result.kind === 'track' || item.result.kind === 'album' ? (
+                // The catalogue's subtitle for a song or a record IS the
+                // artist's name, so it opens like one.
+                <>
+                  {kindWord(item.result.kind)} · <ArtistLink artist={item.result.subtitle} />
+                </>
+              ) : (
+                `${kindWord(item.result.kind)} · ${item.result.subtitle}`
+              )}
               {item.result.source && (
                 <span className={`searchSource searchSource--${item.result.source}`}>
                   {item.result.source === 'deezer' ? 'Deezer' : 'Spotify'}

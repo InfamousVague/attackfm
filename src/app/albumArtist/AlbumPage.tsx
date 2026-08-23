@@ -1,3 +1,4 @@
+import { ArtistLink } from '../ux/ArtistLink.tsx';
 import { Button, Text } from '@glacier/react';
 import { Check, Disc3, Play, Plus, Shuffle, Sparkles, X } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -362,7 +363,9 @@ export function AlbumPage({ album, artist, onPlay, onOpenArtist, onGone }: Album
                                 make this whole album vanish from the artist
                                 page. */}
                             {nameFold(track.artist) !== nameFold(credit) && (
-                              <span className="albumTrack__artist">{track.artist}</span>
+                              <span className="albumTrack__artist">
+                                <ArtistLink artist={track.artist} />
+                              </span>
                             )}
                           </span>
                           {/* Inside the button, not beside it: a duration is

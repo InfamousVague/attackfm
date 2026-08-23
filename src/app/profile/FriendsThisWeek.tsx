@@ -1,3 +1,4 @@
+import { ArtistLink } from '../ux/ArtistLink.tsx';
 import { Users } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { Switch } from '@glacier/react';
@@ -107,7 +108,15 @@ export function FriendsThisWeek({
               <span className="statsFriendRow__meta">
                 {fmtMinutes(row.minutes)}
                 {row.streak != null && row.streak > 1 && ` · ${row.streak}d streak`}
-                {row.top && ` · ${row.top}`}
+                {row.top && (
+                  <>
+                    {' · '}
+                    {/* Their week's artist may not be in YOUR library, but
+                        the artist page opens by name and says so honestly -
+                        a door beats dead text either way. */}
+                    <ArtistLink artist={row.top} />
+                  </>
+                )}
               </span>
             </li>
           ))}

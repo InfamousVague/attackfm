@@ -1,3 +1,5 @@
+import { TrackMenu } from '../library/TrackMenu.tsx';
+import { AlbumMenu } from '../albumArtist/AlbumMenu.tsx';
 import { SearchField, SegmentedControl, Text } from '@glacier/react';
 import {
   Compass,
@@ -911,17 +913,36 @@ export function SearchPage({
           <section className="searchTop">
             <div className="searchTop__hero">
               <Heading icon={<Search size={15} />}>Top result</Heading>
-              <TopCard
-                item={top}
-                tracks={tracks}
-                id={position.get(top.id) !== undefined ? `searchHit-${position.get(top.id)}` : undefined}
-                active={current?.id === top.id}
-                onOpen={() => open(top)}
-                onHover={() => {
-                  const n = position.get(top.id);
-                  if (n !== undefined) setCursor(n);
-                }}
-              />
+              {(() => {
+                const card = (
+                  <TopCard
+                    item={top}
+                    tracks={tracks}
+                    id={position.get(top.id) !== undefined ? `searchHit-${position.get(top.id)}` : undefined}
+                    active={current?.id === top.id}
+                    onOpen={() => open(top)}
+                    onHover={() => {
+                      const n = position.get(top.id);
+                      if (n !== undefined) setCursor(n);
+                    }}
+                  />
+                );
+                // The hero is still a song or a record when it wins the top
+                // spot, so it holds like one; the other kinds are doors.
+                if (top.t === 'song') return <TrackMenu track={top.track}>{card}</TrackMenu>;
+                if (top.t === 'album')
+                  return (
+                    <AlbumMenu
+                      tracks={top.album.tracks}
+                      onPlay={onPlay}
+                      onOpenArtist={onOpenArtist}
+                      artistName={top.album.artist}
+                    >
+                      {card}
+                    </AlbumMenu>
+                  );
+                return card;
+              })()}
             </div>
             {beside.length > 0 && (
               <div className="searchTop__songs">

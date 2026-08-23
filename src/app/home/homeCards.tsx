@@ -5,6 +5,7 @@ import { mosaicArts, useArtLoad, useCardArt, useTileArt } from '../ux/artLoad.ts
 import { artworkHue, artworkUrl, cardTexture, mixArtwork } from '../ux/artwork.ts';
 import type { Track } from '../core/tauri.ts';
 import { AlbumMenu } from '../albumArtist/AlbumMenu.tsx';
+import { ArtistLink } from '../ux/ArtistLink.tsx';
 import { TrackMenu } from '../library/TrackMenu.tsx';
 
 /**
@@ -31,7 +32,11 @@ export function TrackCard({ track, onOpen }: { track: Track; onOpen: () => void 
       <button type="button" className="trackCard" onClick={onOpen}>
         <img className="trackCardArt artPop" src={src} alt="" loading="lazy" data-loading={idle} onLoad={onLoad} onError={onError} />
         <span className="trackCardTitle" data-loading={idle}>{loaded ? track.title : NBSP}</span>
-        <span className="trackCardArtist" data-loading={idle}>{loaded ? track.artist : NBSP}</span>
+        {/* The name is its own press: stopPropagation inside, so a tap on
+            the artist goes to their page while the rest of the card plays. */}
+        <span className="trackCardArtist" data-loading={idle}>
+          {loaded ? <ArtistLink artist={track.artist} /> : NBSP}
+        </span>
       </button>
     </TrackMenu>
   );
@@ -64,7 +69,9 @@ export function AlbumCard({
       <button type="button" className="trackCard" onClick={onOpen}>
         <img className="trackCardArt artPop" src={src} alt="" loading="lazy" data-loading={idle} onLoad={onLoad} onError={onError} />
         <span className="trackCardTitle" data-loading={idle}>{loaded ? track.album || track.title : NBSP}</span>
-        <span className="trackCardArtist" data-loading={idle}>{loaded ? track.artist : NBSP}</span>
+        <span className="trackCardArtist" data-loading={idle}>
+          {loaded ? <ArtistLink artist={track.artist} /> : NBSP}
+        </span>
       </button>
     </AlbumMenu>
   );

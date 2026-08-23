@@ -1,3 +1,4 @@
+import { TrackMenu } from '../library/TrackMenu.tsx';
 import { ListMusic, Music, Tag, User, X } from '@glacier/icons';
 import { useMemo } from 'react';
 import { artSized } from '../server.ts';
@@ -55,7 +56,12 @@ export function RecentTile({
   const sized = artSized(cover, 160);
   const art = useArtLoad(sized, '');
 
-  return (
+  // A track recent IS a song tile, so it wears the song's menu like every
+  // other; the other kinds are doors to pages that carry their own verbs.
+  const recentTrack =
+    recent.kind === 'track' ? (tracks.find((t) => t.path === recent.key) ?? null) : null;
+
+  const tile = (
     <div className="searchRecent">
       <button type="button" className="searchRecent__body" onClick={onOpen}>
         <span className="searchRecent__art" data-round={recent.kind === 'artist' || undefined}>
@@ -84,4 +90,6 @@ export function RecentTile({
       </button>
     </div>
   );
+
+  return recentTrack ? <TrackMenu track={recentTrack}>{tile}</TrackMenu> : tile;
 }

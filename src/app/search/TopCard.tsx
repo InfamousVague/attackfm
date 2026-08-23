@@ -1,3 +1,4 @@
+import { ArtistLink } from '../ux/ArtistLink.tsx';
 import { ChevronRight, Disc3, ListMusic, Music, Play, User } from '@glacier/icons';
 import { mosaicArts, useArtLoad, useTileArt } from '../ux/artLoad.ts';
 import { artSized } from '../server.ts';
@@ -41,7 +42,11 @@ export function TopCard({
           cover: item.album.cover,
           fallback: <Disc3 size={34} />,
           title: item.album.title,
-          sub: `Album · ${item.album.artist}`,
+          sub: (
+            <>
+              Album · <ArtistLink artist={item.album.artist} />
+            </>
+          ),
           play: true,
         };
       case 'song':
@@ -50,7 +55,11 @@ export function TopCard({
           cover: item.track.artwork,
           fallback: <Music size={34} />,
           title: item.track.title,
-          sub: `Song · ${item.track.artist}`,
+          sub: (
+            <>
+              Song · <ArtistLink artist={item.track.artist} />
+            </>
+          ),
           play: true,
         };
       case 'playlist':
