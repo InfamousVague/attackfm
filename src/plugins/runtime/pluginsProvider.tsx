@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { PREFS_ADOPTED } from '../../app/servers/prefsSync.ts';
 import { availablePlugins, filterAvailable, registeredIds } from '../index.ts';
 import {
   ensureDefaultPlugins,
   loadInstalledPlugins,
   pruneDeprecatedPlugins,
   readInstalled,
+  restoreWanted,
 } from '../remote.ts';
 import { useServerSession } from '../../app/servers/serverSession.tsx';
 import { PluginsContext, type PluginsContextValue } from '../pluginsContext.ts';
@@ -76,8 +78,26 @@ export function PluginsProvider({ children }: { children: ReactNode }) {
     void ensureDefaultPlugins(hub ? [hub] : []).then((installed) => {
       if (installed && !cancelled) reloadRemote();
     });
+
+    /*
+     * Plugins this ACCOUNT wants that this DEVICE has not got.
+     *
+     * Runs on mount for a device that already carries the list, and again when
+     * a sync adopts it - which is the case that matters, because signing in on
+     * a new phone brings the wanted list down some seconds AFTER this provider
+     * first mounts, and a one-shot pass here would always be too early.
+     */
+    const restore = () => {
+      void restoreWanted().then((landed) => {
+        if (landed.length > 0 && !cancelled) reloadRemote();
+      });
+    };
+    restore();
+    window.addEventListener(PREFS_ADOPTED, restore);
+
     return () => {
       cancelled = true;
+      window.removeEventListener(PREFS_ADOPTED, restore);
     };
   }, [hubUrl, reloadRemote]);
 

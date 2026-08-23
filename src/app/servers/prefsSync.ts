@@ -78,6 +78,11 @@ export const SYNCED_KEYS = [
   // (see below); this is the shorter, safer half - where to look, not what is
   // on the disk.
   'attackfm-plugin-sources',
+  // WHICH plugins, as opposed to which repositories. The id, the repository it
+  // came from and the version - never the bundle, which stays device-local.
+  // Paired with `restoreWanted`, which fetches anything named here that this
+  // device has not got, from the repositories the line above just carried over.
+  'attackfm-plugins-wanted',
   'attackfm-handbook-page',   // your place in the manual, like any bookmark
   // What a playlist IS beyond its songs - its description, its folder, the song
   // whose art it borrows. Decoration follows the person for the same reason the
@@ -108,10 +113,14 @@ export const SYNCED_KEYS = [
  * - `attackfm-auto-upload`: stored per server as `attackfm-auto-upload:<url>`,
  *   so the bare key holds nothing and syncing it would be a silent no-op. It
  *   is also about a FOLDER on one machine, which is the definition of local.
- * - `attackfm-plugins-installed`: the list would arrive somewhere the bundles
- *   are not. Adopting it would describe plugins the device cannot run; the
- *   disabled flags (above) are safe because they only ever qualify a plugin
- *   that is actually here.
+ * - `attackfm-plugins-installed`: each record carries the plugin's own BUNDLE
+ *   in `code`, so this key is tens of kilobytes of executable text per plugin.
+ *   The preferences blob describes a person's taste; it is not a delivery
+ *   channel for code, and the registry stores it without reading it. What
+ *   travels instead is `attackfm-plugins-wanted` (above) - the same list with
+ *   the code taken out - which another device turns back into working plugins
+ *   by fetching the bundles itself. The disabled flags are safe to sync for a
+ *   different reason: they only ever qualify a plugin that is actually here.
  * - `attackfm-favorites`, `attackfm-playlists`: the LOCAL-library pair, keyed
  *   by absolute file paths that mean nothing on another machine. Their
  *   server-backed equivalents already live on the server.
@@ -289,11 +298,26 @@ export function forgetPrefsRevision(): void {
  * localStorage keys every few seconds costs nothing measurable and cannot be
  * forgotten.
  */
+/**
+ * Fired when a sync has just adopted the account's values onto this device.
+ *
+ * A same-tab `localStorage.setItem` raises no `storage` event, so a pull that
+ * rewrites a dozen keys is silent to everything else in the app. Anything that
+ * has to ACT on an adopted value - rather than merely read it next time it
+ * looks - needs telling, and the plugin restore is the first such thing: the
+ * wanted list is useless until something goes and fetches the bundles.
+ */
+export const PREFS_ADOPTED = 'attackfm:prefs-adopted';
+
 export function usePrefsSync(token: string | undefined): void {
   useEffect(() => {
     if (!token) return;
     const controller = new AbortController();
-    void syncPrefs(controller.signal);
+    void syncPrefs(controller.signal).then((changed) => {
+      if (changed && !controller.signal.aborted) {
+        window.dispatchEvent(new CustomEvent(PREFS_ADOPTED));
+      }
+    });
 
     let last = JSON.stringify(localSnapshot());
     let timer: number | undefined;

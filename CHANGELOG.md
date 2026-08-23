@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.1
+
+- Your plugins follow you. Sign in on a new device and the ones you had install themselves from the same repositories, instead of leaving you to remember what you were running and add each one back by hand
+
 ## 0.4.0
 
 - Every platform steps up to 0.4 together: fresh installers for Mac, Windows, Linux and Android, carrying everything since the last set
