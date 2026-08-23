@@ -49,7 +49,7 @@ pub struct InitReply {
 
 /// Strips a user-supplied name down to something safe to put on disk: no path
 /// separators, no leading dots, no control characters, and a bounded length.
-fn safe_component(raw: &str) -> String {
+pub(crate) fn safe_component(raw: &str) -> String {
     let cleaned: String = raw
         .chars()
         .map(|c| match c {

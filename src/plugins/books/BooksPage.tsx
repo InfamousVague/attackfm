@@ -42,6 +42,161 @@ import type { Track } from '../../app/core/tauri.ts';
  * name together, the action opposite them, the sentence underneath in the size
  * a subtitle deserves.
  */
+/**
+ * The import doorway: the piles waiting in `Audiobooks/import/`, and the
+ * button that sorts them in.
+ *
+ * A dropped download is rarely shaped like a book - one giant MP3, forty
+ * numbered parts, a folder per disc, text files explaining which is which.
+ * The server reads each folder's evidence, asks its own model what the pile
+ * is when one is configured, and does the assembly itself: renamed into read
+ * order, tagged, covered, indexed. This section only ASKS and then watches.
+ *
+ * Admin-only and quiet: with nothing waiting and nothing running it renders
+ * nothing at all, so the shelf stays a shelf.
+ */
+function ImportDoorway() {
+  const { session } = useServerSession();
+  const [status, setStatus] = useState<{
+    importDir: string;
+    pending: string[];
+    ai: boolean;
+    jobs: { id: string; folder: string; state: string; via: string; books: string[]; error: string }[];
+  } | null>(null);
+
+  const admin = session?.isAdmin === true;
+  const [asking, setAsking] = useState(false);
+  const [sortErr, setSortErr] = useState<string | null>(null);
+  /** The poll's own read, reachable from the button - a press must answer on
+   *  the spot, not at the idle tick up to twenty seconds away. */
+  const readNow = useRef<() => void>(() => {});
+  /** Which server the shown status came from. A switch mid-session must not
+   *  leave hub A's folders rendering as hub B's imports - with B's Sort
+   *  button live under them. */
+  const shownFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!admin || !session) return;
+    if (shownFor.current !== session.url) {
+      shownFor.current = session.url;
+      setStatus(null);
+      setSortErr(null);
+    }
+    let live = true;
+    let timer: number | undefined;
+    const read = async () => {
+      try {
+        const next = await request<NonNullable<typeof status>>(
+          session.url,
+          '/api/audiobooks/ingest',
+          { token: session.token },
+        );
+        if (!live) return;
+        setStatus(next);
+        // The 2s/20s rhythm every other watcher here keeps: quick while the
+        // server is working, patient while it is not.
+        const working = next.jobs.some((j) => j.state !== 'done' && j.state !== 'error');
+        timer = window.setTimeout(read, working ? 2_000 : 20_000);
+      } catch (e) {
+        if (!live) return;
+        // A hub from before this existed answers 404 - nothing to offer, stop
+        // asking. Anything else is a blip: keep what we knew and try again at
+        // the patient rate, because a poll that dies on its first stumble
+        // makes the whole section vanish mid-errand - which is exactly what
+        // it did before this branch learned the difference.
+        if (e instanceof ServerError && e.status === 404) {
+          setStatus(null);
+          return;
+        }
+        timer = window.setTimeout(read, 20_000);
+      }
+    };
+    readNow.current = () => {
+      window.clearTimeout(timer);
+      void read();
+    };
+    void read();
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
+  }, [admin, session]);
+
+  if (!admin || !session || !status) return null;
+  const active = status.jobs.filter((j) => j.state !== 'done' && j.state !== 'error');
+  const settled = status.jobs.filter((j) => j.state === 'done' || j.state === 'error').slice(0, 4);
+  if (status.pending.length === 0 && status.jobs.length === 0) return null;
+
+  const sort = async () => {
+    setAsking(true);
+    setSortErr(null);
+    try {
+      await request(session.url, '/api/audiobooks/ingest', { method: 'POST', token: session.token });
+      // Ask the poll to look NOW. Its idle tick is up to twenty seconds out,
+      // and a button that changes nothing on screen for twenty seconds reads
+      // as a dead button.
+      readNow.current();
+    } catch (e) {
+      // A failed POST makes no job rows, so nothing downstream will ever say
+      // why - it has to be said here.
+      setSortErr(e instanceof Error ? e.message : 'that did not go through');
+    } finally {
+      setAsking(false);
+    }
+  };
+
+  const stateWord = (j: { state: string }) =>
+    j.state === 'reading'
+      ? 'reading the folder'
+      : j.state === 'thinking'
+        ? 'working out what it is'
+        : j.state === 'filing'
+          ? 'filing the chapters'
+          : j.state;
+
+  return (
+    <section className="discoverSection">
+      <h2 className="discoverSection__title">Imports</h2>
+      {status.pending.length > 0 && (
+        <div className="booksImport__ask">
+          <Text tone="muted" size="sm">
+            {status.pending.length === 1
+              ? `1 folder is waiting in import: ${status.pending[0]}`
+              : `${status.pending.length} folders are waiting in import`}
+            {!status.ai && ' — sorted by their names and tags; connect the local AI for smarter reads'}
+          </Text>
+          <Button
+            variant="soft"
+            size="sm"
+            onClick={() => void sort()}
+            disabled={active.length > 0 || asking}
+          >
+            <BookAudio size={15} /> {asking ? 'Asking…' : 'Sort them in'}
+          </Button>
+        </div>
+      )}
+      {sortErr && (
+        <Text tone="muted" size="xs">
+          {sortErr}
+        </Text>
+      )}
+      {[...active, ...settled].map((j) => (
+        <div key={j.id} className="bookJob" data-state={j.state === 'error' ? 'error' : undefined}>
+          <div className="bookJob__text">
+            <span className="bookJob__title">{j.folder}</span>
+            <span className="bookJob__sub">
+              {j.state === 'done'
+                ? `done${j.via === 'ai' ? ' · read by the AI' : ''} — ${j.books.join('; ')}`
+                : j.state === 'error'
+                  ? j.error
+                  : stateWord(j)}
+            </span>
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 /*
  * The file input lives inside AddBook, and the HEADER's copy of the button is
  * somewhere else entirely - so the two are joined by a function the page
@@ -541,6 +696,7 @@ export function BooksPage({ onPlay }: PluginPageProps) {
       <div ref={pageRef} className="discoverPage booksPage">
         <BooksHeader blurb="Your audiobook shelf." onAdded={rescan} />
         <div ref={sentinelRef} className="booksHead__sentinel" aria-hidden />
+        <ImportDoorway />
         <Text tone="muted" size="sm">
           {/* Names the free catalogue by the label it actually wears in the
               navigation, and does not tell anyone to install it: LibriVox
@@ -617,6 +773,7 @@ export function BooksPage({ onPlay }: PluginPageProps) {
     <div ref={pageRef} className="discoverPage booksPage">
       <BooksHeader blurb="Your shelf — pick up where you left off." onAdded={rescan} />
       <div ref={sentinelRef} className="booksHead__sentinel" aria-hidden />
+      <ImportDoorway />
 
       {favourites.length > 0 && (
         <section className="discoverSection">

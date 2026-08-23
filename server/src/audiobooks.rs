@@ -515,7 +515,7 @@ async fn run_job(state: Arc<AppState>, job_id: String, book: Book) {
 }
 
 /// Blocking lofty write: the section's identity plus the book's cover.
-fn tag_section(
+pub(crate) fn tag_section(
     path: &std::path::Path,
     title: &str,
     author: &str,
