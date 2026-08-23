@@ -1351,6 +1351,26 @@ impl Db {
                 [],
             )?;
         }
+        /*
+         * A BOOK FILED AS MUSIC IS RE-READ, not merely relabelled.
+         *
+         * Run every start, not once, because the mistake it repairs happens
+         * after any migration: the folder test used to be case-SENSITIVE, so
+         * a library whose owner made `audiobooks/` indexed every book as
+         * music. Relabelling the rows would not be enough - the scanner skips
+         * files whose size and mtime it already agrees with, so those rows
+         * would keep the album, cover and (absent) chapters they were read
+         * with. Clearing mtime is what makes the next walk read them properly.
+         *
+         * LIKE is case-insensitive for ASCII in SQLite, which is exactly the
+         * spelling-blindness wanted here. Self-limiting: once a row comes back
+         * as a book the WHERE stops matching it, so this costs one indexed
+         * lookup per start thereafter.
+         */
+        conn.execute(
+            "UPDATE tracks SET mtime = 0 WHERE kind <> 'book' AND rel_path LIKE 'Audiobooks/%'",
+            [],
+        )?;
         // What a playlist IS beyond its songs: what it is for, where it files,
         // and which picture it wears. On the PLAYLISTS table rather than beside
         // it, so it belongs to the playlist rather than to whoever happened to
@@ -6686,10 +6706,28 @@ fn discovery_from_row(r: &rusqlite::Row) -> rusqlite::Result<DiscoveryRow> {
 /// their own m4b/mp3 rips there gets the same treatment, and nothing outside
 /// it can ever be mistaken for a book.
 pub fn kind_for(rel_path: &str) -> &'static str {
-    if rel_path.starts_with("Audiobooks/") {
+    if book_prefix(rel_path).is_some() {
         "book"
     } else {
         "music"
+    }
+}
+
+/// The rest of the path after the audiobooks folder, if that is where it lives.
+///
+/// CASE-INSENSITIVE, and that is not politeness - it is the difference between
+/// a feature working and silently not. macOS filesystems are case-preserving
+/// but case-INSENSITIVE, so somebody who makes `audiobooks/` and drops books in
+/// it has, as far as the operating system is concerned, put them in the same
+/// place as `Audiobooks/`. Every tool on the machine agrees. A `starts_with`
+/// did not, so those files indexed as MUSIC: no chapters read, no book shelf,
+/// and a folder that looks exactly right on disk.
+pub fn book_prefix(rel_path: &str) -> Option<&str> {
+    const FOLDER: &str = "Audiobooks/";
+    if rel_path.len() >= FOLDER.len() && rel_path[..FOLDER.len()].eq_ignore_ascii_case(FOLDER) {
+        Some(&rel_path[FOLDER.len()..])
+    } else {
+        None
     }
 }
 
