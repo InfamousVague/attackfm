@@ -273,7 +273,10 @@
   position: relative;
   inline-size: 100%;
   block-size: 100%;
-  padding-inline: 1.4rem;
+  /* The meta and scrub rows sit a touch in from the sheet's gutter
+     (--glacier-space-2, above); the words wear the same inset, so a line of
+     the book opens exactly where the author's name does. */
+  padding-inline: var(--glacier-space-2);
   overflow: hidden;
   /* Lines surface and sink rather than popping at the slot's edges. */
   mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 86%, transparent 100%);

@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.7
+
+- The reading's margin now matches the author and chapter lines beneath it - the words open exactly where the name does
+
 ## 0.4.6
 
 - A book's controls are a book's: the second row of buttons leaves the reading screen, shuffle's seat now picks the device it plays on, and repeat's seat opens the read-along
