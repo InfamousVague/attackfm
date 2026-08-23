@@ -1861,7 +1861,10 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       return playbackRef.current.autoDj ? pickDj() : null;
     }
     let nextIndex: number;
-    if (shuffle && queue.length > 1) {
+    // A book's queue is its reading order - a shuffle left on from music
+    // must never scramble it, and with the control hidden on the book
+    // sheet, nothing could even say why it happened.
+    if (shuffle && queue.length > 1 && track.kind !== 'book') {
       // Any track but the one just played, so shuffle never repeats back-to-back.
       let pool = queue.map((t, i) => i).filter((i) => i !== index);
       if (playbackRef.current.smartShuffle) {
@@ -2216,7 +2219,10 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     }
     // Repeat-all with nothing to advance through (the demo stream, a lone
     // track) loops the track itself, matching what repeat-one does beside it.
-    if (repeat === 'one' || (repeat === 'all' && (!track || queue.length === 0))) {
+    // Books are exempt from repeat entirely: a mode left on from music would
+    // loop one chapter forever, with its control hidden on the book sheet.
+    const repeatHere = track?.kind === 'book' ? 'off' : repeat;
+    if (repeatHere === 'one' || (repeatHere === 'all' && (!track || queue.length === 0))) {
       rewindAndPlay();
       return;
     }

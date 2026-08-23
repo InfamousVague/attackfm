@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.6
+
+- A book's controls are a book's: the second row of buttons leaves the reading screen, shuffle's seat now picks the device it plays on, and repeat's seat opens the read-along
+- A shuffle or repeat left on from music no longer touches a book: chapters always read in order, and a finished chapter never loops
+- Songs keep every control exactly where it was
+
 ## 0.4.5
 
 - The line being read now holds the middle of the screen, and the reading rolls past it
