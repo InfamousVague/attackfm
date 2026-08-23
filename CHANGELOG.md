@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.3
+
+- A playing book now wears its chapters on the cover: the now-playing art becomes the table of contents, the chapter being read lit with how far in you are, and every other chapter one tap away — however the book arrived, one file or many
+- The now-playing seek bar reads in chapters for a marked book: it spans the chapter you are in, not the whole file — the same promise it makes for every song
+- Hold the art to pick a different face; books remember their own choice, separate from music
+
 ## 0.4.2
 
 - Fixed the app closing itself when opening a downloaded audiobook: the phone was handed the whole book in one half-gigabyte piece, which is more than Android allows in one hand. It now arrives in slices

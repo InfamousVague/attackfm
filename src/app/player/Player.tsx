@@ -40,6 +40,7 @@ import {
   FADE_DOWN_MS,
   FADE_UP_MS,
   ART_VIEW_KEY,
+  BOOK_ART_VIEW_KEY,
   CATCH_FLUSH_MS,
   IDLE_TRACK,
   INITIAL_VOLUME,
@@ -50,6 +51,7 @@ import {
   SPIN_UP_MS,
   TRACK_ART,
   readArtView,
+  readBookArtView,
   readDeckPref,
   timelineDuration,
   writeDeckPref,
@@ -289,10 +291,15 @@ export function Player({
   // offers the switch, and the choice persists like the rest of the app's
   // preferences.
   const [artView, setArtView] = useState<ArtView>(readArtView);
+  // Books wear their own clock: the chapter panel is the natural face for a
+  // book and nonsense for a song, so the two kinds never share the choice.
+  const [bookArtView, setBookArtView] = useState<ArtView>(readBookArtView);
+  const playingBook = track?.kind === 'book';
+  const wornArtView = playingBook ? bookArtView : artView;
   const chooseArtView = (next: ArtView) => {
-    setArtView(next);
+    (playingBook ? setBookArtView : setArtView)(next);
     try {
-      localStorage.setItem(ART_VIEW_KEY, next);
+      localStorage.setItem(playingBook ? BOOK_ART_VIEW_KEY : ART_VIEW_KEY, next);
     } catch {
       // Storage unavailable - the choice still applies for this session.
     }
@@ -300,7 +307,7 @@ export function Player({
   // One menu, three doorways: the strip's square, the sheet's art, and the
   // Canvas clip itself all open this same chooser, so the setting stays one
   // setting no matter where the press lands. (Items live in NowPlayingSheet.)
-  const npArtMenu = npArtMenuItems(artView, chooseArtView);
+  const npArtMenu = npArtMenuItems(wornArtView, chooseArtView, playingBook);
 
   // The EQ gains ride the graph's filters; kept in a ref so a freshly built
   // meter can be seeded with them without waiting for a render.
@@ -3073,7 +3080,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         openNowPlaying={openNowPlaying}
         listLoading={listLoading}
         npArtMenu={npArtMenu}
-        artView={artView}
+        artView={wornArtView}
         track={track}
         artwork={artwork}
         dispArtwork={dispArtwork}
@@ -3133,7 +3140,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
           setNpQueue={setNpQueue}
           setNpOpen={setNpOpen}
           npArtMenu={npArtMenu}
-          artView={artView}
+          artView={wornArtView}
           track={track}
           artwork={artwork}
           dispArtwork={dispArtwork}

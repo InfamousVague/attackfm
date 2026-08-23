@@ -336,6 +336,118 @@
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
 }
 
+/* The book's face: the square becomes a tall card, because a table of
+   contents wants the slot's HEIGHT - a square list shows four rows and a
+   book has forty. The width cap eases out to 86vw so chapter titles get a
+   full breath. */
+.npScreen__coverTarget--chapters {
+  aspect-ratio: auto;
+  block-size: 100%;
+  inline-size: min(86vw, 24rem);
+}
+
+.npChapterArt {
+  position: relative;
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: 22px;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+.npChapterArt__cover {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+/* The cover stays legible up top; the list owns the dark lower half. The
+   sheet is forced dark, so these are honest literals like their neighbours. */
+.npChapterArt__scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(8, 10, 16, 0) 16%,
+    rgba(8, 10, 16, 0.58) 42%,
+    rgba(8, 10, 16, 0.92) 100%
+  );
+}
+
+.npChapterArt__list {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  block-size: 70%;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2.2rem 0.7rem 0.8rem;
+  /* Rows surface out of the cover rather than ending at a hard line. */
+  mask-image: linear-gradient(to bottom, transparent 0, #000 2rem);
+}
+
+.npChapterArt__row {
+  display: grid;
+  grid-template-columns: 1.5rem 1fr auto;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.48rem 0.6rem;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: rgba(255, 255, 255, 0.82);
+  font: inherit;
+  font-size: 0.86rem;
+  text-align: start;
+  cursor: pointer;
+}
+
+.npChapterArt__row[data-here] {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.npChapterArt__n {
+  opacity: 0.5;
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.npChapterArt__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.npChapterArt__at {
+  opacity: 0.55;
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* How deep into the lit chapter the narrator is - a hairline under its
+   title, in the accent. */
+.npChapterArt__run {
+  grid-column: 2 / -1;
+  block-size: 2px;
+  margin-block-start: 0.3rem;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+}
+
+.npChapterArt__run > span {
+  display: block;
+  block-size: 100%;
+  background: var(--glacier-accent-solid);
+}
+
 .npScreen__meta {
   display: flex;
   align-items: center;
