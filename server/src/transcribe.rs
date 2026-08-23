@@ -157,6 +157,12 @@ pub async fn status(
             .as_ref()
             .and_then(|p| p.file_name())
             .map(|n| n.to_string_lossy().to_string()),
+        // WHERE it wants one. A missing model is the likeliest state this
+        // endpoint reports and the hardest to act on, because the answer is a
+        // path only the server knows - the data directory is chosen at install
+        // time and is not guessable from a phone. Sent so the app can show it
+        // rather than leaving somebody to find it.
+        "modelDir": state.data_dir.join("whisper").to_string_lossy().to_string(),
     })))
 }
 
