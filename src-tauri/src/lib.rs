@@ -110,6 +110,38 @@ pub fn run() {
 
     builder
         .setup(|app| {
+            /*
+             * A Rust panic here ABORTS THE PROCESS - from the couch, "the app
+             * just closed", with nothing in any log a person can reach: it
+             * never touches JavaScript, and it is not a renderer death, so
+             * the webview survivor never fires either. The hook writes the
+             * panic and its location to a file the diagnostics read back on
+             * the next launch, then lets the abort proceed - surviving an
+             * unknown panic is how state gets corrupted; NAMING it is how it
+             * gets fixed.
+             */
+            {
+                use tauri::Manager;
+                if let Ok(dir) = app.path().app_data_dir() {
+                    let file = dir.join("last-native-death.txt");
+                    let previous = std::panic::take_hook();
+                    std::panic::set_hook(Box::new(move |info| {
+                        let where_ = info
+                            .location()
+                            .map(|l| format!("{}:{}", l.file(), l.line()))
+                            .unwrap_or_default();
+                        let what = info
+                            .payload()
+                            .downcast_ref::<&str>()
+                            .map(|s| s.to_string())
+                            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+                            .unwrap_or_else(|| "panic".into());
+                        let _ = std::fs::create_dir_all(file.parent().unwrap_or(&file));
+                        let _ = std::fs::write(&file, format!("rust panic: {what} at {where_}"));
+                        previous(info);
+                    }));
+                }
+            }
             // Before anything else on iOS: the audio session has to be claimed
             // at launch, not at the first play, or the first play is what
             // discovers it was never claimed.

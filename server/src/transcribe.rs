@@ -308,7 +308,13 @@ async fn run(state: Arc<AppState>, job_id: String, track_id: i64) {
         return;
     }
     let wav = stage.join("audio.wav");
-    let mut ff = tokio::process::Command::new("ffmpeg");
+    let mut ff = if std::path::Path::new("/usr/bin/nice").exists() {
+        let mut c = tokio::process::Command::new("/usr/bin/nice");
+        c.arg("-n").arg("15").arg("ffmpeg");
+        c
+    } else {
+        tokio::process::Command::new("ffmpeg")
+    };
     ff.arg("-y")
         .arg("-loglevel")
         .arg("error")
@@ -335,7 +341,20 @@ async fn run(state: Arc<AppState>, job_id: String, track_id: i64) {
     //    kill a job that is working, only the one-at-a-time lock above.
     set_job(&state, &job_id, |j| j.state = "transcribing".into()).await;
     let out_base = stage.join("out");
-    let mut wh = tokio::process::Command::new(&bin);
+    /*
+     * Politely. Whisper takes every core it can see, and on the same box that
+     * serves the library that reads as the SERVER going down: the app's log
+     * filled with "could not connect" bursts that tracked transcription jobs
+     * exactly. `nice` keeps the recogniser at the back of the queue - the
+     * book takes somewhat longer and nobody's music stops answering.
+     */
+    let mut wh = if std::path::Path::new("/usr/bin/nice").exists() {
+        let mut c = tokio::process::Command::new("/usr/bin/nice");
+        c.arg("-n").arg("15").arg(&bin);
+        c
+    } else {
+        tokio::process::Command::new(&bin)
+    };
     wh.arg("-m")
         .arg(&model)
         .arg("-f")

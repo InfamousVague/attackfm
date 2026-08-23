@@ -123,12 +123,56 @@ class MainActivity : TauriActivity() {
     @JavascriptInterface
     fun lastWebviewDeath(): String? =
         try {
-            val f = java.io.File(filesDir, "last-webview-death.txt")
-            if (f.exists()) {
-                val text = f.readText()
-                f.delete()
-                text
-            } else null
+            // Three ways a run can end without a word - the renderer dying,
+            // an uncaught Kotlin exception, a Rust panic - and each leaves its
+            // note under a different name. All of them are the answer to the
+            // same question.
+            // The Rust side writes where Tauri says the app's data lives,
+            // which on Android may be filesDir or its parent - look in both.
+            val places = listOfNotNull(filesDir, filesDir.parentFile)
+            val notes = listOf("last-webview-death.txt", "last-uncaught-death.txt", "last-native-death.txt")
+                .flatMap { name -> places.map { java.io.File(it, name) } }
+                .mapNotNull { f ->
+                    if (f.exists()) {
+                        val text = f.readText()
+                        f.delete()
+                        text
+                    } else null
+                }
+            /*
+             * And the OS's own record. Android 11+ keeps the reason it last
+             * ended this app - native crash, ANR, the low-memory killer, a
+             * signal - which covers every death our own hooks cannot see,
+             * because the killer was outside the process. Only a reason from
+             * AFTER the previous read is reported, so an old death is not
+             * re-announced forever.
+             */
+            val system = try {
+                if (android.os.Build.VERSION.SDK_INT >= 30) {
+                    val am = getSystemService(android.app.ActivityManager::class.java)
+                    val marker = java.io.File(filesDir, "last-exit-read.txt")
+                    val since = marker.takeIf { it.exists() }?.readText()?.toLongOrNull() ?: 0L
+                    val reasons = am.getHistoricalProcessExitReasons(packageName, 0, 3)
+                    val fresh = reasons.firstOrNull { it.timestamp > since && it.processName == packageName }
+                    marker.writeText(System.currentTimeMillis().toString())
+                    fresh?.let {
+                        val why = when (it.reason) {
+                            android.app.ApplicationExitInfo.REASON_CRASH -> "java crash"
+                            android.app.ApplicationExitInfo.REASON_CRASH_NATIVE -> "native crash"
+                            android.app.ApplicationExitInfo.REASON_ANR -> "not responding (ANR)"
+                            android.app.ApplicationExitInfo.REASON_LOW_MEMORY -> "killed for memory"
+                            android.app.ApplicationExitInfo.REASON_SIGNALED -> "signal ${it.status}"
+                            android.app.ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "excessive resource use"
+                            android.app.ApplicationExitInfo.REASON_USER_REQUESTED -> "closed by the user"
+                            android.app.ApplicationExitInfo.REASON_USER_STOPPED -> "stopped by the user"
+                            else -> "reason ${it.reason}"
+                        }
+                        "the system recorded: $why${it.description?.let { d -> " — $d" } ?: ""}"
+                    }
+                } else null
+            } catch (_: Exception) { null }
+            val all = notes + listOfNotNull(system)
+            if (all.isEmpty()) null else all.joinToString(" | ")
         } catch (_: Exception) {
             null
         }
@@ -404,6 +448,20 @@ class MainActivity : TauriActivity() {
     }
 
   override fun onCreate(savedInstanceState: Bundle?) {
+    // An uncaught exception on ANY thread - a @JavascriptInterface method, a
+    // handler, the main thread - kills the app with nothing in the ring the
+    // diagnostics can reach. Note it first, then let the death proceed:
+    // surviving an unknown exception is how state corrupts; naming it is how
+    // it gets fixed.
+    val prior = Thread.getDefaultUncaughtExceptionHandler()
+    Thread.setDefaultUncaughtExceptionHandler { thread, e ->
+      try {
+        val stack = android.util.Log.getStackTraceString(e).take(2000)
+        java.io.File(filesDir, "last-uncaught-death.txt")
+          .writeText("uncaught on ${thread.name}: $stack")
+      } catch (_: Exception) {}
+      prior?.uncaughtException(thread, e)
+    }
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     live = this
