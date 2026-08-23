@@ -44,6 +44,7 @@ import { APP_NAME, HeaderActionButtons, HeaderIdent } from './nav/HeaderChrome.t
 import { AppMain } from './nav/AppMain.tsx';
 import { setMixOpener } from './nav/openMix.ts';
 import { setArtistDoor } from './nav/artistDoor.ts';
+import { setMusicDateDoor } from './nav/musicDateDoor.ts';
 import { settingsBack } from './settings/settingsBack.ts';
 import { useNavStack } from './nav/useNavStack.ts';
 import { useSearchSummon } from './nav/useSearchSummon.ts';
@@ -431,6 +432,12 @@ export function App() {
     setArtistDoor(go);
     return () => setArtistDoor(null);
   }, [go]);
+  // Music Date's opener, for the invitation card on Discover - same seam
+  // pattern, same reason: the layer is App's, the door is a leaf's.
+  useEffect(() => {
+    setMusicDateDoor(() => setDateOpen(true));
+    return () => setMusicDateDoor(null);
+  }, []);
 
   stateRef.current = { searchOpen, detail: detail as { kind?: string } | null, tab };
   // The phone's edge-swipe back: a drag in from the left walks the same stack
@@ -731,7 +738,6 @@ export function App() {
                   onOpenFriends={() => goTab('friends')}
                   profileRoom={tab === 'profile' ? profileRoom : null}
                   onProfileRoom={setProfileRoom}
-                  onOpenDate={() => setDateOpen(true)}
                   onOpenDj={() => setDjOpen(true)}
                 />
             {/* The DJ conversation, fullscreen: same layer, same rules. One

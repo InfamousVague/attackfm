@@ -33,6 +33,10 @@ export function PrimaryNav({
    *  whatever you were doing, and it gives that page back when it closes. */
 }) {
   const pages = usePluginPages();
+  // The Books shelf holds a bar seat of its own (by request - a nightly
+  // audiobook is a daily destination, the Booth is not). Found by plugin id
+  // so the seat simply vanishes if the plugin is ever switched off.
+  const booksPage = pages.find((pg) => pg.key.split(':')[0] === 'books') ?? null;
   // Downloads is a plugin surface, not a core one: the tab appears only while an
   // importer is actually running (it provides the downloads bridge). With no
   // importer - a fresh install, or anyone who has not added a plugin source -
@@ -176,12 +180,17 @@ export function PrimaryNav({
       {/* No Search seat here either - see the rail above. The bar it was
           standing in for now lives on Library and Discover themselves, which
           is a bigger target than this tab was and needs no explaining. */}
-      <BarTab
-        icon={<Disc3 size={22} />}
-        label="Booth"
-        active={tab === 'booth'}
-        onClick={() => onTab('booth')}
-      />
+      {/* Books took the Booth's seat: the shelf is somewhere people go every
+          night, and the Booth - a place you VISIT rather than live in - rides
+          the ⋮ menu now, beside Friends. */}
+      {booksPage && (
+        <BarTab
+          icon={booksPage.icon}
+          label={booksPage.label}
+          active={tab === booksPage.key}
+          onClick={() => onTab(booksPage.key)}
+        />
+      )}
       <BarTab
         icon={<CircleUserRound size={22} />}
         label="Profile"

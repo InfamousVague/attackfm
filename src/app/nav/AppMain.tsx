@@ -67,7 +67,6 @@ export function AppMain({
   onOpenFriends,
   profileRoom,
   onProfileRoom,
-  onOpenDate,
   onOpenDj,
   swipeRef,
 }: {
@@ -94,7 +93,6 @@ export function AppMain({
   profileRoom: 'stats' | null;
   onProfileRoom: (room: 'stats' | null) => void;
   /** Opens Music Date's fullscreen layer, from the Booth's top card. */
-  onOpenDate: () => void;
   /** Opens the DJ conversation's fullscreen layer; App hosts it too. */
   onOpenDj: () => void;
 }) {
@@ -209,7 +207,6 @@ export function AppMain({
         <BoothPage
           onPlay={onPlay}
           onOpenArtist={onOpenArtist}
-          onOpenDate={onOpenDate}
           onOpenDj={onOpenDj}
         />
       ) : tab === 'friends' ? (
