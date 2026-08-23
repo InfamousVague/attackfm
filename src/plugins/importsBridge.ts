@@ -93,6 +93,10 @@ export interface MusicImportJob {
    * the local desktop engine and on jobs from older servers. What lets a
    * surface play an import the moment the library syncs it in. */
   trackIds?: number[];
+  /** Who or what asked for this, in words: the username that queued it,
+   * "the collector · for &lt;name&gt;", "Spotify mirror · &lt;name&gt;". Absent on
+   * jobs from before the hub stamped it, and on the local desktop engine. */
+  via?: string;
 }
 
 export interface DownloadsContextValue {

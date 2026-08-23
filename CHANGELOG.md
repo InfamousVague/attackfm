@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.12
+
+- Every download now says whose errand it is: the name that queued it, "the collector · for whom", or "Spotify mirror · whose account" - worn as a quiet chip on the card. Needs the hub updated; older jobs stay unlabelled rather than guessed at
+
 ## 0.4.11
 
 - The reading follows the narrator word by word now: the word being spoken carries the accent's underline, what has been said holds white, what is coming waits dim

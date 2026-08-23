@@ -293,6 +293,16 @@
   color: var(--glacier-text-muted);
 }
 
+/* Whose errand the row is - the one chip that names a person, kept quieter
+   than the kind beside it so the queue reads as songs first, people second. */
+.dlChip--via {
+  opacity: 0.75;
+  max-inline-size: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .dlCard__track,
 .dlCard__error {
   overflow: hidden;

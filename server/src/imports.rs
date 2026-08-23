@@ -185,6 +185,13 @@ pub struct ImportJob {
     /// making one for user 0.
     #[serde(default)]
     pub owner: i64,
+    /// Who or what asked for this, in words the queue can wear: the
+    /// username that pasted the link, "the collector · for &lt;name&gt;",
+    /// "Spotify mirror · &lt;name&gt;". Display only - `origin` and `owner`
+    /// stay the machine-readable truth. Empty on jobs persisted before the
+    /// field existed; the client says nothing rather than guessing.
+    #[serde(default)]
+    pub via: String,
     /// Set when a listener TAPPED this single song to play it now: it opens Now
     /// Playing downloading and wants its file fast. Such a track jumps ahead of
     /// background singles for a download slot, and one song slot is always held
@@ -1345,6 +1352,7 @@ pub async fn enqueue_internal(
     subtitle: &str,
     origin: &str,
     owner_id: i64,
+    via: &str,
 ) -> Result<String, String> {
     let used = state.db.total_bytes();
     if state.library_quota_bytes > 0 && used >= state.library_quota_bytes {
@@ -1379,6 +1387,7 @@ pub async fn enqueue_internal(
         owned_track_ids: Vec::new(),
         origin: origin.to_string(),
         owner: owner_id,
+        via: via.to_string(),
         // Server-raised (collector, sync): a background add, never a tap.
         now_playing: false,
     };
@@ -1438,6 +1447,7 @@ pub async fn enqueue(
         owned_track_ids: Vec::new(),
         origin: String::new(),
         owner: caller.id,
+        via: caller.username.clone(),
         // Only a tapped single song is now-playing; the client sets it, and
         // detect_kind must agree it is a track for the flag to matter.
         now_playing: body.now_playing && is_song_kind(kind),
