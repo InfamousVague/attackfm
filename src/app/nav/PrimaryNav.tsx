@@ -170,17 +170,6 @@ export function PrimaryNav({
         active={libraryActive}
         onClick={() => onTab('library')}
       />
-      {canDiscover && (
-        <BarTab
-          icon={<Compass size={22} />}
-          label="Discover"
-          active={tab === 'discover'}
-          onClick={() => onTab('discover')}
-        />
-      )}
-      {/* No Search seat here either - see the rail above. The bar it was
-          standing in for now lives on Library and Discover themselves, which
-          is a bigger target than this tab was and needs no explaining. */}
       {/* Books took the Booth's seat: the shelf is somewhere people go every
           night, and the Booth - a place you VISIT rather than live in - rides
           the ⋮ menu now, beside Friends. */}
@@ -199,6 +188,17 @@ export function PrimaryNav({
           onClick={() => onTab(booksPage.key)}
         />
       )}
+      {canDiscover && (
+        <BarTab
+          icon={<Compass size={22} />}
+          label="Discover"
+          active={tab === 'discover'}
+          onClick={() => onTab('discover')}
+        />
+      )}
+      {/* No Search seat here either - see the rail above. The bar it was
+          standing in for now lives on Library and Discover themselves, which
+          is a bigger target than this tab was and needs no explaining. */}
       <BarTab
         icon={<CircleUserRound size={22} />}
         label="Profile"
