@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { installSheetDismiss } from './playerDismiss.ts';
 import { fireNativeHaptic } from '../core/haptics.ts';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
@@ -97,40 +97,65 @@ export function npArtMenuItems(
 /**
  * The book, reading itself across the screen.
  *
- * The transcript's lines walk up the slot as the narrator speaks them - the
- * line being read lit in the middle, what was just said dimming above, what
- * comes next waiting below. The window is a handful of lines re-keyed by
- * index, so a line keeps its element as it slides from next to now to past
- * and the CSS transition carries it.
+ * The transcript's lines walk past a FIXED centre: the line being read sits
+ * in the middle of the slot, measured and held there by translating the roll
+ * - a flex window only ever centred the block, and lines of uneven length
+ * pushed the lit one off-middle. Chapter starts sit IN the flow as their own
+ * items: the chapter's (truthful) title with a book-page's worth of white
+ * space around it, so crossing into a chapter reads like turning to one.
  */
+interface ReadingItem {
+  kind: 'line' | 'title';
+  time: number;
+  text: string;
+}
+
 function BookWords({
-  lines,
+  items,
   positionSec,
 }: {
-  lines: LyricLine[];
+  items: ReadingItem[];
   positionSec: number;
 }) {
-  let at = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i]!.time <= positionSec) at = i;
+  let at = 0;
+  for (let i = 0; i < items.length; i++) {
+    if (items[i]!.time <= positionSec) at = i;
     else break;
   }
-  const from = Math.max(0, at - 2);
-  const shown = lines.slice(from, Math.max(0, at) + 5);
+  const from = Math.max(0, at - 4);
+  const shown = items.slice(from, at + 7);
+
+  const slotRef = useRef<HTMLDivElement | null>(null);
+  const nowRef = useRef<HTMLElement | null>(null);
+  const [lift, setLift] = useState(0);
+  useLayoutEffect(() => {
+    const slot = slotRef.current;
+    const now = nowRef.current;
+    if (!slot || !now) return;
+    // Put the lit item's middle on the slot's middle; the CSS transition
+    // walks the roll there one line at a time.
+    setLift(slot.clientHeight / 2 - (now.offsetTop + now.offsetHeight / 2));
+  }, [at, items]);
+
   return (
-    <div className="npBookWords">
-      {shown.map((l, j) => {
-        const i = from + j;
-        return (
-          <p
-            key={i}
-            className="npBookWords__line"
-            data-state={i < at ? 'past' : i === at ? 'now' : 'next'}
-          >
-            {l.text}
-          </p>
-        );
-      })}
+    <div ref={slotRef} className="npBookWords">
+      <div className="npBookWords__roll" style={{ transform: `translateY(${lift}px)` }}>
+        {shown.map((l, j) => {
+          const i = from + j;
+          const state = i < at ? 'past' : i === at ? 'now' : 'next';
+          const Tag = l.kind === 'title' ? 'h2' : 'p';
+          return (
+            <Tag
+              key={i}
+              ref={i === at ? (nowRef as never) : undefined}
+              className={l.kind === 'title' ? 'npBookWords__title' : 'npBookWords__line'}
+              data-state={state}
+            >
+              {l.text}
+            </Tag>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -418,6 +443,41 @@ export function NowPlayingSheet({
     return list?.find((n) => n.idx === idx) ?? null;
   };
 
+  /*
+   * The reading flow: transcript lines with each chapter's start folded in
+   * as a heading item. Memoised on the stable inputs - lines, notes, marks -
+   * so the once-a-second position tick reuses it untouched.
+   */
+  const readingFlow = useMemo<ReadingItem[]>(() => {
+    if (!bookWords || bookWords.length === 0 || !track) return [];
+    const id = trackIdFromPath(track.path);
+    const notes = (id != null && bookNotes?.[String(id)]) || null;
+    const nameAt = (i: number, fallback: string) => {
+      const said = notes?.find((n) => n.idx === i)?.name?.trim();
+      if (said) return said;
+      const bare = fallback
+        .replace(new RegExp(`^chapter\\s*0*${i + 1}\\b[\\s—–:.-]*`, 'i'), '')
+        .trim();
+      return bare ? `Chapter ${i + 1} — ${bare}` : `Chapter ${i + 1}`;
+    };
+    const heads: ReadingItem[] =
+      chapters.length > 0
+        ? chapters.map((c, i) => ({
+            kind: 'title' as const,
+            time: c.startMs / 1000,
+            text: nameAt(i, c.title ?? ''),
+          }))
+        : [{ kind: 'title' as const, time: 0, text: nameAt(0, track.title) }];
+    const flow: ReadingItem[] = [
+      ...heads,
+      ...bookWords.map((l) => ({ kind: 'line' as const, time: l.time, text: l.text })),
+    ];
+    // A heading sorts ahead of the first line spoken at the same moment.
+    flow.sort((a, b) => a.time - b.time || (a.kind === 'title' ? -1 : 1));
+    return flow;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookWords, bookNotes, chapters, bookPath]);
+
   const bookFaces: ChapterFace[] = (() => {
     if (track?.kind !== 'book') return [];
     if (chapters.length > 0) {
@@ -599,7 +659,7 @@ export function NowPlayingSheet({
         ref={sheetRef}
         className="npScreen"
       data-reading={
-        (track?.kind === 'book' && artView === 'chapters' && !!bookWords?.length) || undefined
+        (track?.kind === 'book' && artView === 'chapters' && readingFlow.length > 0) || undefined
       }
       role="dialog"
       aria-label="Now playing"
@@ -727,7 +787,7 @@ export function NowPlayingSheet({
         <ContextMenu
           aria-label="Artwork style"
           className={`npScreen__coverTarget${
-            artView === 'chapters' && bookWords && bookWords.length > 0
+            artView === 'chapters' && readingFlow.length > 0
               ? ' npScreen__coverTarget--reading'
               : artView === 'chapters' && bookFaces.length > 0
                 ? ' npScreen__coverTarget--chapters'
@@ -735,8 +795,8 @@ export function NowPlayingSheet({
           }`}
           content={npArtMenu}
         >
-          {artView === 'chapters' && bookWords && bookWords.length > 0 ? (
-            <BookWords lines={bookWords} positionSec={position} />
+          {artView === 'chapters' && readingFlow.length > 0 ? (
+            <BookWords items={readingFlow} positionSec={position} />
           ) : artView === 'chapters' && bookFaces.length > 0 ? (
             <ChapterArt
               art={artwork}
@@ -781,7 +841,11 @@ export function NowPlayingSheet({
 
       <div className="npScreen__meta">
         <div className="npScreen__lines">
-          <MarqueeText className="npScreen__title" text={track?.title ?? ''} />
+          {/* A single-file book's title IS its album, and the head already
+              wears the album - saying it twice on one screen is noise. */}
+          {!(track?.kind === 'book' && track.title === track.album) && (
+            <MarqueeText className="npScreen__title" text={track?.title ?? ''} />
+          )}
           {onOpenArtist && track ? (
             <button
               type="button"

@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.5
+
+- The line being read now holds the middle of the screen, and the reading rolls past it
+- Each chapter opens in the flow the way a book would set it: its name alone in white space - the true name, where your hub has worked it out
+- The book's name no longer appears twice on the reading screen; the top of the sheet already says it
+
 ## 0.4.4
 
 - A playing book now reads itself across the screen: the cover fills the background and the words walk the middle, line by line with the narration. The chapter list lives in the chapter line under the title - tap it to jump anywhere
