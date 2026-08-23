@@ -563,14 +563,17 @@ export function NowPlayingSheet({
     commitSeek(chapters.length > 0 ? to + start : to);
   };
 
+  const bookPlaying = track?.kind === 'book';
   useEffect(() => {
     if (!motionGesturesEnabled()) return;
     return subscribeGestures((g) => {
-      if (g === 'shake') cycleShuffle();
+      // A shake toggles shuffle - except for a book, whose sheet no longer
+      // shows the control, so a pocket shake would flip invisible state.
+      if (g === 'shake' && !bookPlaying) cycleShuffle();
       else if (g === 'flick-right') skipForward();
       else if (g === 'flick-left') skipBack();
     });
-  }, [cycleShuffle, skipForward, skipBack]);
+  }, [cycleShuffle, skipForward, skipBack, bookPlaying]);
 
   // Whether this shell can put the AirPlay sheet up. Asked once, because the
   // answer cannot change inside a session - and asked rather than platform-
@@ -959,8 +962,14 @@ export function NowPlayingSheet({
       )}
 
       <div className="npScreen__transport">
-        {/* Two states: off and on. The third - smart shuffle, badged with a
-            sparkle - is parked; see the note in Player.tsx. */}
+        {/* A book's transport is not a song's. Shuffling a book is vandalism
+            and repeating one is a niche of a niche - so their two seats go
+            to what a listener mid-book actually reaches for: where it plays,
+            and the words. Everything else on the actions row below is song
+            furniture, and the row itself stands down for books. */}
+        {track?.kind === 'book' ? (
+          <DevicePicker always size="md" />
+        ) : (
         <IconButton
           variant="ghost"
           aria-label="Shuffle"
@@ -972,6 +981,7 @@ export function NowPlayingSheet({
             <Shuffle size={20} />
           </span>
         </IconButton>
+        )}
         <IconButton variant="ghost" aria-label="Previous" disabled={!canSkip} onClick={skipBack}>
           <SkipBack size={26} fill="currentColor" />
         </IconButton>
@@ -987,6 +997,11 @@ export function NowPlayingSheet({
         <IconButton variant="ghost" aria-label="Next" disabled={!canSkip} onClick={skipForward}>
           <SkipForward size={26} fill="currentColor" />
         </IconButton>
+        {track?.kind === 'book' ? (
+          <IconButton variant="ghost" aria-label="Read along" onClick={() => setNpLyrics(true)}>
+            <BookOpenText size={20} />
+          </IconButton>
+        ) : (
         <IconButton
           variant="ghost"
           aria-label={`Repeat: ${repeat}`}
@@ -995,6 +1010,7 @@ export function NowPlayingSheet({
         >
           {repeat === 'one' ? <Repeat1 size={20} /> : <Repeat size={20} />}
         </IconButton>
+        )}
       </div>
 
       {/* The secondary controls the strip has no room for: lyrics, the
@@ -1002,6 +1018,11 @@ export function NowPlayingSheet({
           equalizer, and the volume fader. The transport above already
           carries shuffle/repeat/skip, and favourite and filing sit on the
           meta and header rows. */}
+      {/* Books clear the actions row on TOUCH - it is song furniture and
+          the transport now seats the two book verbs. Desktop keeps the row:
+          the docked split hides the strip, so this row's volume popover is
+          the only fader a desktop book listener has. */}
+      {(track?.kind !== 'book' || !isMobile) && (
       <div className="npScreen__actions">
         <IconButton variant="ghost" aria-label="Queue" onClick={() => setNpQueue(true)}>
           <ListMusic size={20} />
@@ -1091,6 +1112,7 @@ export function NowPlayingSheet({
           </Popover>
         )}
       </div>
+      )}
 
       {/* Lyrics fill the whole sheet rather than a low popover: a header to
           step back to the art, and the words scrolling below it. */}

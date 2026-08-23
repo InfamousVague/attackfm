@@ -187,7 +187,10 @@ export function DeviceList() {
   );
 }
 
-export function DevicePicker({ always = false }: { always?: boolean } = {}) {
+export function DevicePicker({
+  always = false,
+  size = 'sm',
+}: { always?: boolean; size?: 'sm' | 'md' } = {}) {
   const { connected, devices, activeDeviceId, thisDeviceId } = useConnect();
   const cast = useCastSnapshot();
 
@@ -232,13 +235,13 @@ export function DevicePicker({ always = false }: { always?: boolean } = {}) {
       trigger={
         <IconButton
           variant="ghost"
-          size="sm"
+          size={size}
           aria-label={label}
           data-connected={activeElsewhere || undefined}
           data-active={activeHere || undefined}
           className="deviceTrigger"
         >
-          <MonitorSpeaker size={16} />
+          <MonitorSpeaker size={size === 'md' ? 20 : 16} />
         </IconButton>
       }
     >
