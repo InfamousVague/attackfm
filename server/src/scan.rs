@@ -367,7 +367,9 @@ fn cover_in(dir: &Path, art_dir: &Path) -> Option<String> {
 /// The directory a book file sits in, relative to the music root - or None when
 /// it sits directly in `Audiobooks/` and so has no folder of its own.
 fn book_folder(rel_path: &str) -> Option<String> {
-    let inside = rel_path.strip_prefix("Audiobooks/")?;
+    // Case-insensitive, for the same reason kind_for is: `audiobooks/` and
+    // `Audiobooks/` are one folder to macOS and must be one folder here.
+    let inside = crate::db::book_prefix(rel_path)?;
     let dir = inside.rsplit_once('/')?.0;
     let mut parts: Vec<&str> = dir.split('/').filter(|p| !p.is_empty()).collect();
     /*
@@ -693,6 +695,25 @@ mod book_folder_tests {
         let (artist, title) = split_book_folder("Frank Herbert - 1965 - Dune - Book One");
         assert_eq!(artist.as_deref(), Some("Frank Herbert"));
         assert_eq!(title, "Dune - Book One");
+    }
+
+    /// However the folder is spelled. macOS treats these as one directory and
+    /// so must we - a lowercase `audiobooks/` used to index as music, which
+    /// looks exactly like the books simply not appearing.
+    #[test]
+    fn the_folder_is_matched_whatever_its_case() {
+        for shape in [
+            "Audiobooks/Dune/01.mp3",
+            "audiobooks/Dune/01.mp3",
+            "AudioBooks/Dune/01.mp3",
+            "AUDIOBOOKS/Dune/01.mp3",
+        ] {
+            assert_eq!(crate::db::kind_for(shape), "book", "{shape}");
+            assert_eq!(book_folder(shape).as_deref(), Some("Dune"), "{shape}");
+        }
+        assert_eq!(crate::db::kind_for("Music/Dune/01.mp3"), "music");
+        // Not a false positive on a name that merely begins the same way.
+        assert_eq!(crate::db::kind_for("AudiobooksOfMine/01.mp3"), "music");
     }
 
     #[test]
