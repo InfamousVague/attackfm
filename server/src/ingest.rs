@@ -85,7 +85,11 @@ fn import_dir(music_root: &Path) -> Option<PathBuf> {
     for entry in entries.flatten() {
         let name = entry.file_name();
         if let Some(s) = name.to_str() {
-            if s.eq_ignore_ascii_case("import") && entry.path().is_dir() {
+            // Both spellings, because both get typed: "make an import folder"
+            // and "the imports folder" were the same sentence.
+            if (s.eq_ignore_ascii_case("import") || s.eq_ignore_ascii_case("imports"))
+                && entry.path().is_dir()
+            {
                 return Some(entry.path());
             }
         }
@@ -219,27 +223,9 @@ pub async fn run(
     {
         let mut jobs = state.ingest.jobs.lock().await;
         for folder in &pending {
-            // A folder already in flight is one errand, not two.
-            if jobs
-                .iter()
-                .any(|j| j.folder == *folder && j.state != "done" && j.state != "error")
-            {
-                continue;
+            if enqueue_locked(&state, &mut jobs, folder) {
+                queued += 1;
             }
-            let id = format!("ingest-{}-{}", queued, now_ms());
-            jobs.push(IngestJob {
-                id: id.clone(),
-                folder: folder.clone(),
-                state: "queued".into(),
-                via: String::new(),
-                books: Vec::new(),
-                error: String::new(),
-                queued_at: now_ms(),
-            });
-            let worker_state = state.clone();
-            let worker_folder = folder.clone();
-            tokio::spawn(async move { ingest_one(worker_state, id, worker_folder).await });
-            queued += 1;
         }
         // A history, not a log - and only the SETTLED rows are history. A
         // blind front-drain here once evicted jobs that were still queued,
@@ -259,6 +245,78 @@ pub async fn run(
         }
     }
     Ok(Json(json!({ "queued": queued })))
+}
+
+/// Push one folder's job and spawn its worker - shared by the button and the
+/// sweep, so the two can never drift on what "queued" means. The caller holds
+/// the jobs lock; a folder already in flight is one errand, not two.
+fn enqueue_locked(state: &Arc<AppState>, jobs: &mut Vec<IngestJob>, folder: &str) -> bool {
+    if jobs
+        .iter()
+        .any(|j| j.folder == folder && j.state != "done" && j.state != "error")
+    {
+        return false;
+    }
+    let id = format!("ingest-{}-{}", jobs.len(), now_ms());
+    jobs.push(IngestJob {
+        id: id.clone(),
+        folder: folder.to_string(),
+        state: "queued".into(),
+        via: String::new(),
+        books: Vec::new(),
+        error: String::new(),
+        queued_at: now_ms(),
+    });
+    let worker_state = state.clone();
+    let worker_folder = folder.to_string();
+    tokio::spawn(async move { ingest_one(worker_state, id, worker_folder).await });
+    true
+}
+
+/// The sweep: dropping a folder into import/ is enough, with nobody pressing
+/// anything - which is what the doorway was asked to be in the first place.
+///
+/// Two manners the button does not need. It only queues QUIET piles (newest
+/// file untouched for a minute), so a copy still landing waits silently
+/// instead of erroring every pass. And it never touches a folder the job
+/// history already knows: a pile that keeps failing must not burn a model
+/// call every five minutes forever - the button is the retry, on purpose.
+pub fn spawn_sweep(state: Arc<AppState>) {
+    tokio::spawn(async move {
+        // Soon after boot - a restart should pick up whatever waited - and
+        // every five minutes after.
+        tokio::time::sleep(std::time::Duration::from_secs(45)).await;
+        loop {
+            sweep_once(&state).await;
+            tokio::time::sleep(std::time::Duration::from_secs(300)).await;
+        }
+    });
+}
+
+async fn sweep_once(state: &Arc<AppState>) {
+    let music_root = state.music_root.clone();
+    let pending = tokio::task::spawn_blocking(move || pending_folders(&music_root))
+        .await
+        .unwrap_or_default();
+    for folder in pending {
+        {
+            let jobs = state.ingest.jobs.lock().await;
+            if jobs.iter().any(|j| j.folder == folder) {
+                continue;
+            }
+        }
+        let music_root = state.music_root.clone();
+        let probe = folder.clone();
+        let age = tokio::task::spawn_blocking(move || {
+            import_dir(&music_root).and_then(|d| newest_mtime(&d.join(&probe)))
+        })
+        .await
+        .unwrap_or(None);
+        if matches!(age, Some(a) if a >= std::time::Duration::from_secs(60)) {
+            let mut jobs = state.ingest.jobs.lock().await;
+            enqueue_locked(state, &mut jobs, &folder);
+        }
+    }
 }
 
 // --- Understanding a folder ---------------------------------------------------
@@ -304,22 +362,38 @@ fn take_inventory(root: &Path) -> Inventory {
             } else if matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp") {
                 images.push((rel, meta.len()));
             } else if matches!(ext.as_str(), "txt" | "nfo" | "md" | "info") && meta.len() < 64_000 {
-                // The description files are the whole reason a model is worth
-                // asking - but a prompt is not a place for a novel, and three
-                // of them tell the story as well as ten.
-                if texts.len() < 3 {
-                    let body = std::fs::read_to_string(&path).unwrap_or_default();
-                    let mut trimmed: String = body.chars().take(1_500).collect();
-                    if trimmed.len() < body.len() {
-                        trimmed.push_str("\n[…]");
-                    }
-                    texts.push((rel, trimmed));
-                }
+                // Remember them all cheaply; which ones are WORTH reading is
+                // decided after the walk. A real pile carries eight two-line
+                // "Downloaded From <tracker>" files beside the one real info
+                // sheet, and taking the first three met means the walk order
+                // decides whether the model ever sees the sheet.
+                texts.push((rel, meta.len().to_string()));
             }
         }
     }
     audio.sort_by(|a, b| natural_cmp(a, b));
     images.sort_by(|a, b| b.1.cmp(&a.1));
+
+    // The three biggest text files get read: an info sheet dwarfs a tracker
+    // stub, and a prompt is not a place for a novel either way.
+    texts.sort_by(|a, b| {
+        let sa: u64 = a.1.parse().unwrap_or(0);
+        let sb: u64 = b.1.parse().unwrap_or(0);
+        sb.cmp(&sa)
+    });
+    texts.truncate(3);
+    let root_owned = root.to_path_buf();
+    let texts: Vec<(String, String)> = texts
+        .into_iter()
+        .map(|(rel, _)| {
+            let body = std::fs::read_to_string(root_owned.join(&rel)).unwrap_or_default();
+            let mut trimmed: String = body.chars().take(1_500).collect();
+            if trimmed.len() < body.len() {
+                trimmed.push_str("\n[…]");
+            }
+            (rel, trimmed)
+        })
+        .collect();
 
     // What the files say about themselves. Three is enough to see whether the
     // tags agree; forty would just be the same answer forty times.
@@ -468,8 +542,8 @@ fn plan_is_sound(plans: &[BookPlan], inv: &Inventory) -> bool {
 /// let us down. Covers the common shapes: one folder = one book, and the
 /// series pack whose subfolders each hold audio.
 fn interpret_heuristically(folder_name: &str, inv: &Inventory) -> Vec<BookPlan> {
-    // A series pack: no audio loose at the top, and at least two top-level
-    // subfolders that each hold some.
+    // The pile's top-level subfolders that hold audio, and whether any audio
+    // sits loose beside them.
     let mut top: Vec<String> = Vec::new();
     let mut loose = false;
     for rel in &inv.audio {
@@ -482,16 +556,55 @@ fn interpret_heuristically(folder_name: &str, inv: &Inventory) -> Vec<BookPlan> 
             None => loose = true,
         }
     }
-    let (pack_author, pack_title) = scan::split_book_folder(folder_name);
-    if !loose && top.len() >= 2 && !top.iter().any(|t| scan::is_disc_marker(t)) {
+
+    /*
+     * Subfolders that are VOLUMES are one book wearing three sleeves.
+     *
+     * GraphicAudio ships "The Final Empire" as `... (1 of 3)`, `(2 of 3)`,
+     * `(3 of 3)` - three subfolders whose names are identical once the volume
+     * marker comes off. The series split would shelve that as three books,
+     * which is exactly wrong; collapsing to one book keeps the parts in
+     * order, because the volume folders natural-sort ahead of their files.
+     */
+    let volume_set = !loose && top.len() >= 2 && {
+        let mut stripped: Vec<String> =
+            top.iter().map(|t| strip_volume_marker(t).to_ascii_lowercase()).collect();
+        stripped.sort();
+        stripped.dedup();
+        stripped.len() == 1
+    };
+
+    // What the pack folder itself says: the year shape first, the
+    // Author - Series - Title shape second.
+    let (pack_author, pack_title) = {
+        let (a, t) = scan::split_book_folder(folder_name);
+        if a.is_some() {
+            (a, t)
+        } else if let Some((a, t)) = author_from_dashes(folder_name) {
+            (Some(a), t)
+        } else {
+            (None, t)
+        }
+    };
+
+    // A genuine series pack: several subfolders that are NOT volumes of one
+    // thing, each becoming its own book.
+    if !loose && top.len() >= 2 && !volume_set && !top.iter().any(|t| scan::is_disc_marker(t)) {
         return top
             .into_iter()
             .map(|sub| {
-                let (author, title) = scan::split_book_folder(&sub);
+                let sub_stripped = strip_volume_marker(&sub);
+                let (author, title) = {
+                    let (a, t) = scan::split_book_folder(&sub_stripped);
+                    if a.is_some() {
+                        (a, t)
+                    } else if let Some((a, t)) = author_from_dashes(&sub_stripped) {
+                        (Some(a), t)
+                    } else {
+                        (None, t)
+                    }
+                };
                 BookPlan {
-                    // A subfolder called "2. Dune Messiah" rarely names the
-                    // author; the pack folder or the tags often do. Its
-                    // ordinal is a shelf position, not part of the name.
                     author: author
                         .or_else(|| pack_author.clone())
                         .or_else(|| first_nonempty_artist(inv))
@@ -504,12 +617,18 @@ fn interpret_heuristically(folder_name: &str, inv: &Inventory) -> Vec<BookPlan> 
             .collect();
     }
 
-    // One book. Tags first when they agree with themselves; then, for the
-    // single-file pile, the file's OWN name - `Frank Herbert - Dune
-    // (Unabridged).mp3` names its book better than a folder called
-    // `dune1965` ever will. `Author - Title` is the convention single-file
-    // audiobooks are actually named in; the guard against `01 - Chapter One`
-    // is that a left half which is all digits is an ordinal, not an author.
+    /*
+     * One book. Who wrote it and what it is called come from different
+     * places, on the evidence of real piles rather than symmetry:
+     *
+     * AUTHOR: the folder first, the tags second. The artist tag on these
+     * files names the STUDIO ("GraphicAudio") or worse ("Mistborn") more
+     * often than the author; the folder was named by a person filing a book.
+     *
+     * TITLE: the tags first, the folder second. Album tags carried clean
+     * titles ("Mistborn 5: Shadows of Self") on pile after pile whose folder
+     * names carried tracker noise - the exact opposite reliability.
+     */
     let tag_album = majority(inv.tags.iter().map(|(_, album, _)| album.trim()));
     let tag_artist = majority(inv.tags.iter().map(|(artist, _, _)| artist.trim()));
     let stem_split = if inv.audio.len() == 1 {
@@ -531,24 +650,22 @@ fn interpret_heuristically(folder_name: &str, inv: &Inventory) -> Vec<BookPlan> 
         None
     };
     vec![BookPlan {
-        author: tag_artist
-            .or(pack_author)
+        author: pack_author
+            .clone()
+            .or(tag_artist)
             .or_else(|| stem_split.as_ref().map(|(a, _)| a.clone()))
             .or_else(|| first_nonempty_artist(inv))
             .unwrap_or_else(|| "Unknown Author".into()),
         title: tag_album
-            .map(|t| t.to_string())
+            .map(|t| strip_volume_marker(&t))
             .or_else(|| {
-                // The folder name wins over the stem only when it actually
-                // parsed as a book (author-year-title); a bare label like
-                // `dune1965` loses to a stem that names the thing.
-                if scan::split_book_folder(folder_name).0.is_some() {
-                    None
-                } else {
+                if pack_author.is_none() && scan::split_book_folder(folder_name).0.is_none() {
                     stem_split.as_ref().map(|(_, t)| t.clone())
+                } else {
+                    None
                 }
             })
-            .unwrap_or_else(|| clean_title(&pack_title)),
+            .unwrap_or_else(|| strip_volume_marker(&clean_title(&pack_title))),
         folder: String::new(),
         year: None,
     }]
@@ -608,6 +725,69 @@ fn majority<'a>(values: impl Iterator<Item = &'a str>) -> Option<String> {
         .map(|(k, _)| k)
 }
 
+/// A trailing `(N of M)` - GraphicAudio's way of shipping one book as three
+/// volumes - removed from wherever it appears: subfolder names, album tags.
+fn strip_volume_marker(s: &str) -> String {
+    let t = s.trim();
+    if let (Some(open), true) = (t.rfind('('), t.ends_with(')')) {
+        let inner = &t[open + 1..t.len() - 1];
+        let mut halves = inner.splitn(2, " of ");
+        let (a, b) = (halves.next().unwrap_or(""), halves.next().unwrap_or(""));
+        if !a.is_empty()
+            && !b.is_empty()
+            && a.trim().chars().all(|c| c.is_ascii_digit())
+            && b.trim().chars().all(|c| c.is_ascii_digit())
+        {
+            return t[..open].trim().to_string();
+        }
+    }
+    t.to_string()
+}
+
+/// Whether a cleaned stem still says anything - three letters in a row is the
+/// difference between "The Vin" and the "1P01" left over from a part code.
+fn has_a_word(s: &str) -> bool {
+    let mut run = 0;
+    for c in s.chars() {
+        if c.is_ascii_alphabetic() {
+            run += 1;
+            if run >= 3 {
+                return true;
+            }
+        } else {
+            run = 0;
+        }
+    }
+    false
+}
+
+/// `Author - Whatever - Title` without a year: the first segment is an author
+/// when it reads like a name - two to four alphabetic words - and there are at
+/// least three segments, so "Anne of Green Gables - Part One" (two segments)
+/// never donates its heroine to the author field. The evidence for the rule is
+/// the shelf itself: `Brandon Sanderson - Mistborn 02 - The Well of Ascension`
+/// is how these folders actually arrive, while their artist TAGS say
+/// "GraphicAudio" or worse - the publisher, not the author. The folder
+/// outranks the tag for authors because the folder was named by a person
+/// filing a book and the tag by a ripper crediting a studio.
+fn author_from_dashes(folder: &str) -> Option<(String, String)> {
+    let parts: Vec<&str> = folder.split(" - ").collect();
+    if parts.len() < 3 {
+        return None;
+    }
+    let first = parts[0].trim();
+    let words: Vec<&str> = first.split_whitespace().collect();
+    let namey = (2..=4).contains(&words.len())
+        && words
+            .iter()
+            .all(|w| w.chars().all(|c| c.is_ascii_alphabetic() || c == '.' || c == '\''));
+    if namey {
+        Some((first.to_string(), parts[1..].join(" - ")))
+    } else {
+        None
+    }
+}
+
 /// A folder name's worth of release-group noise, removed: `{MP3}`, `[64k]`,
 /// `(Unabridged)` survive split_book_folder because they trail nothing.
 fn clean_title(raw: &str) -> String {
@@ -624,7 +804,17 @@ fn clean_title(raw: &str) -> String {
             _ => {}
         }
     }
-    let cleaned = out.trim().trim_end_matches(['-', '_', '.']).trim().to_string();
+    let mut cleaned = out.trim().trim_end_matches(['-', '_', '.']).trim().to_string();
+    // The studio's name trailing the title - " - Graphic Audio", "- GraphicAudio"
+    // - is packaging, not name. Present on four of the seven real piles this
+    // was tested against.
+    let lower = cleaned.to_ascii_lowercase();
+    for suffix in [" - graphic audio", " - graphicaudio", "- graphic audio", "- graphicaudio"] {
+        if lower.ends_with(suffix) {
+            cleaned = cleaned[..cleaned.len() - suffix.len()].trim().to_string();
+            break;
+        }
+    }
     if cleaned.is_empty() { raw.trim().to_string() } else { cleaned }
 }
 
@@ -689,7 +879,9 @@ fn chapter_title(stem: &str, common_prefix: &str, n: usize) -> String {
     let cleaned = stripped
         .trim_matches(|c: char| c == '-' || c == '_' || c == '.' || c.is_whitespace())
         .to_string();
-    if cleaned.is_empty() || cleaned.chars().all(|c| c.is_ascii_digit()) {
+    // "1P01" survives a digits-only test on a technicality and tells a
+    // listener nothing; a name earns its keep by containing an actual word.
+    if !has_a_word(&cleaned) {
         format!("Part {n}")
     } else {
         cleaned
@@ -1175,6 +1367,79 @@ mod tests {
 
     fn inv2(audio: &[&str]) -> Inventory {
         inv(audio, &[])
+    }
+
+    /// The seven real piles from the reference set, exactly as they arrived.
+    #[test]
+    fn the_reference_shelf_comes_out_right() {
+        // GraphicAudio volumes: one book in three sleeves, never a series.
+        let volumes = inv(
+            &[
+                "Mistborn 1 - The Final Empire (1 of 3)/MISTBORN0101P01.mp3",
+                "Mistborn 1 - The Final Empire (2 of 3)/MISTBORN0102P01.mp3",
+                "Mistborn 1 - The Final Empire (3 of 3)/MISTBORN0103P01.mp3",
+            ],
+            &[],
+        );
+        let plans = interpret_heuristically("Mistborn - The Final Empire - Graphic Audio", &volumes);
+        assert_eq!(plans.len(), 1, "(N of M) folders are volumes, not books");
+        assert_eq!(plans[0].title, "Mistborn - The Final Empire");
+
+        // The artist tag says the STUDIO; the folder says the author.
+        let studio_tagged = inv(
+            &["MISTBORN04P01.mp3", "MISTBORN04P02.mp3"],
+            &[
+                ("GraphicAudio", "Mistborn 4: The Alloy of Law", "MISTBORN04P01"),
+                ("GraphicAudio", "Mistborn 4: The Alloy of Law", "MISTBORN04P02"),
+            ],
+        );
+        let plans = interpret_heuristically("Mistborn 4 - The Alloy of Law", &studio_tagged);
+        assert_eq!(plans[0].title, "Mistborn 4: The Alloy of Law", "the album tag names the title");
+
+        // Author - Series NN - Title, no year: the first segment is the author.
+        let dash = inv(&["pt 1.mp3", "pt 2.mp3"], &[("Mistborn", "", "")]);
+        let plans = interpret_heuristically(
+            "Brandon Sanderson - Mistborn 02 - The Well of Ascension [Graphic Audio]",
+            &dash,
+        );
+        assert_eq!(plans[0].author, "Brandon Sanderson", "the folder outranks a garbage artist tag");
+        assert_eq!(plans[0].title, "Mistborn 02 - The Well of Ascension");
+
+        // An album tag carrying a volume marker sheds it.
+        let vol_tag = inv(
+            &["a.mp3", "b.mp3"],
+            &[
+                ("Brandon Sanderson", "Mistborn 6: The Bands of Mourning (1 of 2)", "x"),
+                ("Brandon Sanderson", "Mistborn 6: The Bands of Mourning (1 of 2)", "y"),
+            ],
+        );
+        let plans = interpret_heuristically("Mistborn 6 - The Bands of Mourning (GraphicAudio)", &vol_tag);
+        assert_eq!(plans[0].title, "Mistborn 6: The Bands of Mourning");
+        assert_eq!(plans[0].author, "Brandon Sanderson");
+
+        // The Goodreads shape: the trailing parenthetical is series info.
+        let flat = inv(&["MISTBORN05P01.mp3"], &[("GraphicAudio", "", "")]);
+        let plans = interpret_heuristically("Shadows of Self (Mistborn, #5)", &flat);
+        assert_eq!(plans[0].title, "Shadows of Self");
+    }
+
+    /// Part codes are not chapter names: "1P01" says nothing once the shared
+    /// prefix is gone, and becomes "Part N"; words survive.
+    #[test]
+    fn part_codes_become_part_numbers() {
+        let stems: Vec<String> =
+            ["MISTBORN0101P01", "MISTBORN0102P01", "MISTBORN0103P01"].iter().map(|s| s.to_string()).collect();
+        let shared = common_stem_prefix(&stems);
+        assert_eq!(chapter_title(&stems[0], &shared, 1), "Part 1");
+        assert!(has_a_word("The Vin"));
+        assert!(!has_a_word("1P01"));
+    }
+
+    #[test]
+    fn volume_markers_come_off() {
+        assert_eq!(strip_volume_marker("The Final Empire (1 of 3)"), "The Final Empire");
+        assert_eq!(strip_volume_marker("Title (not a volume)"), "Title (not a volume)");
+        assert_eq!(strip_volume_marker("(2 of 3)"), "");
     }
 
     /// A single file named `Author - Title (aside)` donates both halves;
