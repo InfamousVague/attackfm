@@ -60,6 +60,33 @@ export function fetchTranscript(track: Track): Promise<LyricLine[] | null> {
         .filter((l) => typeof l.text === 'string' && l.text.trim().length > 0)
         .map((l) => ({ time: l.startMs / 1000, text: l.text.trim() })),
     )
+    /*
+     * BOUNDED, whatever the server sent.
+     *
+     * A recogniser's segments run three to eight seconds, so a long book is
+     * tens of thousands of lines - and every surface downstream was built for
+     * a song's sixty. The windowing added to those surfaces helps the ones we
+     * know about; this is the guarantee for the ones we do not: adjacent
+     * lines merge until the sheet fits under four thousand, which for an
+     * eighteen-hour book still means a line every fifteen seconds or so -
+     * finer than anyone taps. Songs never come through here at all.
+     */
+    .then((lines) => {
+      const CAP = 4000;
+      if (lines.length <= CAP) return lines;
+      const stride = Math.ceil(lines.length / CAP);
+      const merged: LyricLine[] = [];
+      for (let i = 0; i < lines.length; i += stride) {
+        merged.push({
+          time: lines[i]!.time,
+          text: lines
+            .slice(i, i + stride)
+            .map((l) => l.text)
+            .join(' '),
+        });
+      }
+      return merged;
+    })
     .then((lines) => (lines.length > 0 ? lines : null))
     .catch(() => null);
 

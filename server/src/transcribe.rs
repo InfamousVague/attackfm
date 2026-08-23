@@ -357,6 +357,15 @@ async fn run(state: Arc<AppState>, job_id: String, track_id: i64) {
     //    same timed-line shape the app already draws for synced lyrics.
     let raw = tokio::fs::read(&json_path).await.unwrap_or_default();
     let parsed: Value = serde_json::from_slice(&raw).unwrap_or(Value::Null);
+    /*
+     * Merged toward sentence-sized lines as they are stored. Whisper's
+     * segments run a few seconds each, which is the right grain for karaoke
+     * and the wrong one for an audiobook: a long book becomes tens of
+     * thousands of rows that every reader downstream then has to defend
+     * against. Ten seconds a line reads naturally, keeps an eighteen-hour
+     * book under seven thousand lines, and loses nothing anyone taps for.
+     */
+    const MERGE_MS: i64 = 10_000;
     let mut lines: Vec<Value> = Vec::new();
     if let Some(segments) = parsed.get("transcription").and_then(|t| t.as_array()) {
         for seg in segments {
@@ -379,7 +388,26 @@ async fn run(state: Arc<AppState>, job_id: String, track_id: i64) {
                 .and_then(|o| o.get("to"))
                 .and_then(|v| v.as_i64())
                 .unwrap_or(from);
-            lines.push(json!({ "startMs": from, "endMs": to, "text": text }));
+            // Extend the open line while it is still short; start a new one
+            // once it has had its ten seconds.
+            let extend = lines
+                .last()
+                .and_then(|l| {
+                    let start = l.get("startMs")?.as_i64()?;
+                    if to - start < MERGE_MS { Some(start) } else { None }
+                });
+            match extend {
+                Some(start) => {
+                    let last = lines.last_mut().unwrap();
+                    let joined = format!(
+                        "{} {}",
+                        last.get("text").and_then(|t| t.as_str()).unwrap_or_default(),
+                        text
+                    );
+                    *last = json!({ "startMs": start, "endMs": to, "text": joined.trim() });
+                }
+                None => lines.push(json!({ "startMs": from, "endMs": to, "text": text })),
+            }
         }
     }
     let _ = tokio::fs::remove_dir_all(&stage).await;
