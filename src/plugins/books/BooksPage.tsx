@@ -1,12 +1,13 @@
-import { Button, Modal, ProgressBar, Text } from '@glacier/react';
-import { BookAudio, BookOpenText, Check, ChevronRight, Heart, Play, Upload } from '@glacier/icons';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Button, ContextMenu, MenuItem, Modal, ProgressBar, Text } from '@glacier/react';
+import { BookAudio, BookOpenText, Check, ChevronRight, Heart, Play, Trash2, Upload } from '@glacier/icons';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { PluginPageProps } from '../types.ts';
 import { useLibrary } from '../../app/library/library.tsx';
 import { useServerSession } from '../../app/servers/serverSession.tsx';
 import { fetchPlayStates } from '../../app/api/listening.ts';
-import { uploadFile } from '../../app/api/library.ts';
+import { removeTracks, uploadFile } from '../../app/api/library.ts';
 import { setHeaderActions } from '../../app/nav/headerActions.ts';
+import { useHoldToMenu } from '../../app/ux/holdToMenu.ts';
 import { request, ServerError } from '../../app/api/http.ts';
 import type { Track } from '../../app/core/tauri.ts';
 
@@ -122,9 +123,17 @@ function ImportDoorway() {
   }, [admin, session]);
 
   if (!admin || !session || !status) return null;
-  const active = status.jobs.filter((j) => j.state !== 'done' && j.state !== 'error');
-  const settled = status.jobs.filter((j) => j.state === 'done' || j.state === 'error').slice(0, 4);
-  if (status.pending.length === 0 && status.jobs.length === 0) return null;
+  // Read defensively rather than trusting the shape. A 404 means "no such
+  // route" and is already handled above, but a 200 carrying something else -
+  // a proxy's JSON error page, a half-written reply, a hub whose ingest
+  // payload has moved on - used to reach `undefined.filter` and take the
+  // WHOLE shelf down with it, for admins only. The doorway is the smallest
+  // thing on this page; it must not be the thing that can break it.
+  const jobs = status.jobs ?? [];
+  const pending = status.pending ?? [];
+  const active = jobs.filter((j) => j.state !== 'done' && j.state !== 'error');
+  const settled = jobs.filter((j) => j.state === 'done' || j.state === 'error').slice(0, 4);
+  if (pending.length === 0 && jobs.length === 0) return null;
 
   const sort = async () => {
     setAsking(true);
@@ -156,12 +165,12 @@ function ImportDoorway() {
   return (
     <section className="discoverSection">
       <h2 className="discoverSection__title">Imports</h2>
-      {status.pending.length > 0 && (
+      {pending.length > 0 && (
         <div className="booksImport__ask">
           <Text tone="muted" size="sm">
-            {status.pending.length === 1
-              ? `1 folder is waiting in import: ${status.pending[0]}`
-              : `${status.pending.length} folders are waiting in import`}
+            {pending.length === 1
+              ? `1 folder is waiting in import: ${pending[0]}`
+              : `${pending.length} folders are waiting in import`}
             {!status.ai && ' — sorted by their names and tags; connect the local AI for smarter reads'}
           </Text>
           <Button
@@ -244,16 +253,24 @@ function AddBook({ onAdded }: { onAdded: () => void }) {
   const [fraction, setFraction] = useState(0);
   const [note, setNote] = useState<string | null>(null);
 
-  // Uploading needs somewhere to upload TO. Local libraries have no such thing,
-  // and a button that cannot work is worse than no button.
-  if (!session) return null;
-
+  // Every hook runs BEFORE the signed-out return below. Signing in or out
+  // while this page is mounted re-renders it with `session` flipped, and a
+  // hook that only sometimes runs is "Rendered more hooks than during the
+  // previous render" - the whole page gone, not just the button. So the
+  // effect sits up here and guards on session itself: no session, no input to
+  // open, and a header that finds nothing published does nothing.
+  const signedIn = session !== null;
   useEffect(() => {
+    if (!signedIn) return;
     openBookPicker = () => input.current?.click();
     return () => {
       openBookPicker = null;
     };
-  }, []);
+  }, [signedIn]);
+
+  // Uploading needs somewhere to upload TO. Local libraries have no such thing,
+  // and a button that cannot work is worse than no button.
+  if (!session) return null;
 
   const take = async (files: FileList | null) => {
     const chosen = [...(files ?? [])];
@@ -576,6 +593,120 @@ function minutes(ms: number): string {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
+/**
+ * Right-click / long-press on a book: the shelf's own manage menu.
+ *
+ * The app's only deletions lived on the song table, and a book is not in it -
+ * so a shelf full of finished or mis-imported books had no way out. This wears
+ * the same `ContextMenu` every track already does (a right-click on the
+ * desktop, a hold on touch, no pixels spent), and it IS the card rather than a
+ * wrapper around it: the returned element carries `bookCard`, so the grid item
+ * the shelf lays out is exactly the box it always was, admin or not.
+ *
+ * Removing a book is a change to the SHARED library, so it takes the rank the
+ * server asks for - offered only to an admin signed into a server, the same
+ * gate the import doorway and read-along wear. `removeTracks` quarantines the
+ * files to the library trash rather than unlinking them, so a delete is
+ * recoverable until the trash is emptied; the confirm says so and is firm
+ * rather than final.
+ */
+function BookMenu({
+  book,
+  className,
+  onChanged,
+  children,
+}: {
+  book: ShelfBook;
+  className?: string;
+  /** Re-walk the library so the removed book leaves this device's shelf. */
+  onChanged: () => void | Promise<void>;
+  children: ReactNode;
+}) {
+  const { session } = useServerSession();
+  // The wrapper is the menu's own target, so the hold resolves to itself and
+  // the release is swallowed - a long-press to manage a book must not also
+  // start playing it. The same hook TrackMenu uses.
+  const hold = useHoldToMenu((_from, root) => root);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  // The server ids behind this book's files. A local library has none (its
+  // paths are not `afm://`), which also means it has no remove endpoint - so
+  // an empty list is the same answer as "not a server book": no menu.
+  const ids = book.tracks.map((t) => serverId(t.path)).filter((n): n is number => n !== null);
+  const canManage = session?.isAdmin === true && ids.length > 0;
+
+  if (!canManage) return <div className={className}>{children}</div>;
+
+  const remove = async () => {
+    if (!session || busy) return;
+    setBusy(true);
+    setProblem(null);
+    try {
+      await removeTracks(session, ids);
+      // The row is tombstoned server-side; this device keeps its own copy of
+      // the index, so ask for the re-sync or the book lingers on the shelf.
+      await onChanged();
+      setConfirming(false);
+    } catch (e) {
+      // The server's own words: not an admin (403), or nothing left to move.
+      setProblem(e instanceof Error ? e.message : 'that book could not be removed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <ContextMenu
+        {...hold}
+        className={className}
+        aria-label={`${book.title} actions`}
+        content={
+          <MenuItem icon={<Trash2 size={15} />} danger onSelect={() => setConfirming(true)}>
+            Delete book
+          </MenuItem>
+        }
+      >
+        {children}
+      </ContextMenu>
+      {confirming && (
+        <Modal
+          open={confirming}
+          onClose={() => {
+            if (!busy) setConfirming(false);
+          }}
+          size="sm"
+          title={`Delete ${book.title}?`}
+          footer={
+            <>
+              <Button variant="ghost" disabled={busy} onClick={() => setConfirming(false)}>
+                Keep
+              </Button>
+              <Button variant="danger" disabled={busy} onClick={() => void remove()}>
+                {busy ? 'Deleting…' : 'Delete book'}
+              </Button>
+            </>
+          }
+        >
+          <Text size="sm" tone="muted">
+            {book.tracks.length === 1
+              ? 'This moves the book to the library trash on the server. '
+              : `This moves all ${book.tracks.length} files of this book to the library trash on the server. `}
+            It leaves every device on the next sync, and stays recoverable until the trash is emptied.
+          </Text>
+          {problem && (
+            <Text as="p" size="sm" tone="danger">
+              {problem}
+            </Text>
+          )}
+        </Modal>
+      )}
+    </>
+  );
+}
+
 export function BooksPage({ onPlay }: PluginPageProps) {
   const { session } = useServerSession();
   const { books, rescan, isFavorite, toggleFavorite } = useLibrary();
@@ -716,7 +847,7 @@ export function BooksPage({ onPlay }: PluginPageProps) {
   const card = (book: ShelfBook) => {
     const at = standing(book);
     return (
-      <div key={book.key} className="bookCard">
+      <BookMenu key={book.key} book={book} className="bookCard" onChanged={rescan}>
         {/* Over the cover's top-left corner, not in the row of affordances
             below. It sits OUTSIDE the play button rather than inside it: a
             button within a button is invalid markup, and the press would be
@@ -765,7 +896,7 @@ export function BooksPage({ onPlay }: PluginPageProps) {
             <ChevronRight size={14} />
           </button>
         )}
-      </div>
+      </BookMenu>
     );
   };
 
