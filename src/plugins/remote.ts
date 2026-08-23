@@ -20,6 +20,40 @@ import { normalizeServerUrl } from '../app/api/http.ts';
 
 const SOURCES_KEY = 'attackfm-plugin-sources';
 const INSTALLED_KEY = 'attackfm-plugins-installed';
+/*
+ * What this ACCOUNT wants installed, as opposed to what this DEVICE has.
+ *
+ * The installed record carries the bundle itself in `code`, which is why it is
+ * device-local and must stay that way: syncing it would push tens of kilobytes
+ * of executable text per plugin through the preferences blob, and the blob is
+ * meant to describe a person's taste, not to be a delivery channel for code.
+ *
+ * This is the same list with the code taken out - id, where it came from, and
+ * which version was installed. Small enough to sync, and enough for another
+ * device to go and fetch the same bundles from the same repositories, which it
+ * already has because the repository list syncs too.
+ */
+const WANTED_KEY = 'attackfm-plugins-wanted';
+
+/** One plugin a person has chosen, described so any device can get it. */
+export interface WantedPlugin {
+  id: string;
+  source: string;
+  version: string;
+}
+
+export function readWanted(): WantedPlugin[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(WANTED_KEY) ?? '[]') as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (w): w is WantedPlugin =>
+        !!w && typeof (w as WantedPlugin).id === 'string' && typeof (w as WantedPlugin).source === 'string',
+    );
+  } catch {
+    return [];
+  }
+}
 /** Defaults the user has deliberately removed, so a merge never re-adds them. */
 const REMOVED_DEFAULTS_KEY = 'attackfm-plugin-sources-removed';
 
@@ -388,6 +422,16 @@ export function readInstalled(): InstalledRemotePlugin[] {
 function writeInstalled(all: InstalledRemotePlugin[]): void {
   try {
     localStorage.setItem(INSTALLED_KEY, JSON.stringify(all));
+    /*
+     * Derived here rather than at the three call sites, so an install, an
+     * update and a removal cannot disagree about it. Written AFTER the installed
+     * list, so a storage quota that refuses the bundle also refuses to claim the
+     * plugin is wanted - the throw below leaves both untouched.
+     */
+    localStorage.setItem(
+      WANTED_KEY,
+      JSON.stringify(all.map(({ id, source, version }) => ({ id, source, version }))),
+    );
   } catch (err) {
     // A bundle that does not fit the storage quota cannot survive a relaunch;
     // better to say so than to pretend the install stuck.
@@ -395,6 +439,65 @@ function writeInstalled(all: InstalledRemotePlugin[]): void {
       `could not persist the plugin: ${err instanceof Error ? err.message : 'storage refused it'}`,
     );
   }
+}
+
+/**
+ * Install whatever this account wants and this device has not got.
+ *
+ * The other half of syncing the wanted list. Signing in on a new phone brings
+ * the repository list and the wanted list down through the preferences blob;
+ * this is what turns those two lists into working plugins, by fetching the same
+ * bundles from the same repositories the other device used.
+ *
+ * Deliberately additive: it never REMOVES a plugin this device has and the list
+ * does not mention. Removing on one device would otherwise reach across and
+ * uninstall on every other, which is a far worse surprise than an extra plugin
+ * - and the existing "removed defaults" list already exists to express a
+ * deliberate removal without deleting anything.
+ *
+ * Every failure is per-plugin and silent-ish: a repository that has gone away,
+ * or a plugin pulled from it, must not stop the other four arriving. What it
+ * returns is what actually landed, so a caller can say so.
+ */
+export async function restoreWanted(signal?: AbortSignal): Promise<string[]> {
+  const wanted = readWanted();
+  if (wanted.length === 0) return [];
+  const have = new Set(readInstalled().map((p) => p.id));
+  const missing = wanted.filter((w) => !have.has(w.id));
+  if (missing.length === 0) return [];
+
+  // One manifest fetch per repository, not per plugin: five plugins from one
+  // repository is one round trip.
+  const bySource = new Map<string, WantedPlugin[]>();
+  for (const w of missing) {
+    const list = bySource.get(w.source);
+    if (list) list.push(w);
+    else bySource.set(w.source, [w]);
+  }
+
+  const landed: string[] = [];
+  for (const [source, list] of bySource) {
+    let manifest: RemoteManifest;
+    try {
+      manifest = await fetchManifest(source, signal);
+    } catch {
+      // The repository is gone or unreachable. Its plugins stay wanted, so the
+      // next launch tries again rather than forgetting they were ever asked for.
+      continue;
+    }
+    for (const w of list) {
+      const listing = manifest.plugins.find((l) => l.id === w.id);
+      if (!listing) continue;
+      try {
+        await installPlugin(source, listing, signal);
+        landed.push(w.id);
+      } catch {
+        // A bundle that will not evaluate, or an API too new for this build.
+        // installPlugin has already refused to persist it.
+      }
+    }
+  }
+  return landed;
 }
 
 // --- evaluation ------------------------------------------------------------
