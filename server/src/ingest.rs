@@ -78,6 +78,19 @@ fn audiobooks_dir(music_root: &Path) -> PathBuf {
     music_root.join("Audiobooks")
 }
 
+/// The audiobooks folder's NAME as it exists under this root - "audiobooks"
+/// on the hub whose folder is a lowercase symlink, "Audiobooks" where nothing
+/// exists yet. Every writer that files a book builds its rel_path from this,
+/// because a literal "Audiobooks/" works on a case-insensitive disk by
+/// accident and splits the shelf in two on any other.
+pub(crate) fn audiobooks_component(music_root: &Path) -> String {
+    audiobooks_dir(music_root)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Audiobooks")
+        .to_string()
+}
+
 /// The import folder inside it, again as it actually exists.
 fn import_dir(music_root: &Path) -> Option<PathBuf> {
     let books = audiobooks_dir(music_root);
