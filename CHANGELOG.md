@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.10
+
+- Books and Discover swapped seats on the bar: the shelf sits beside the library now
+
 ## 0.4.9
 
 - The Books tab's icon now stands the same height as its neighbours on the bar
