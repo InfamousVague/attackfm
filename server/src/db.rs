@@ -1087,6 +1087,22 @@ CREATE TABLE IF NOT EXISTS transcripts (
   created_at INTEGER NOT NULL DEFAULT 0
 );
 
+-- What each chapter of a book IS, said by an AI that has read its opening.
+-- One row per (track, chapter): a single-file book's marks index within the
+-- one track; a book of sections has one row per section at idx 0. `name` is
+-- what the audio DECLARES itself to be - a preamble tagged "Chapter 1" gets
+-- called a preamble - and `blurb` is one non-spoiler line. A separate table
+-- for the same reason transcripts are: it lands on deployed databases.
+CREATE TABLE IF NOT EXISTS chapter_blurbs (
+  track_id   INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+  idx        INTEGER NOT NULL,
+  name       TEXT    NOT NULL,
+  blurb      TEXT    NOT NULL,
+  model      TEXT    NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (track_id, idx)
+);
+
 CREATE TABLE IF NOT EXISTS stem_prefetch (
   track_id       INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
   state          TEXT NOT NULL,             -- wanted | running | done | failed | evicted
@@ -5461,6 +5477,99 @@ impl Db {
     }
 
     /// Whether a book already has one, without paying to read it back.
+    /// Every stored chapter note for a set of tracks - one book's worth.
+    pub fn chapter_blurbs(&self, track_ids: &[i64]) -> Vec<(i64, i64, String, String)> {
+        if track_ids.is_empty() {
+            return Vec::new();
+        }
+        let marks = std::iter::repeat("?")
+            .take(track_ids.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT track_id, idx, name, blurb FROM chapter_blurbs
+             WHERE track_id IN ({marks}) ORDER BY track_id, idx"
+        );
+        let lock = self.lock();
+        let mut stmt = match lock.prepare(&sql) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = stmt.query_map(rusqlite::params_from_iter(track_ids.iter()), |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        });
+        rows.map(|it| it.flatten().collect()).unwrap_or_default()
+    }
+
+    pub fn set_chapter_blurb(
+        &self,
+        track_id: i64,
+        idx: i64,
+        name: &str,
+        blurb: &str,
+        model: &str,
+    ) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO chapter_blurbs (track_id, idx, name, blurb, model, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(track_id, idx) DO UPDATE SET
+               name = excluded.name, blurb = excluded.blurb,
+               model = excluded.model, created_at = excluded.created_at",
+            params![track_id, idx, name, blurb, model, now_ms() / 1000],
+        )?;
+        Ok(())
+    }
+
+    /// How many notes a track holds - enough to tell "done" from "not started"
+    /// against the chapter count the caller knows.
+    pub fn chapter_blurb_count(&self, track_id: i64) -> i64 {
+        self.lock()
+            .query_row(
+                "SELECT COUNT(*) FROM chapter_blurbs WHERE track_id = ?1",
+                params![track_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
+    }
+
+    /// Transcribed book tracks, for the blurb sweep to consider.
+    pub fn transcribed_track_ids(&self) -> Vec<i64> {
+        let lock = self.lock();
+        let mut stmt = match lock.prepare(
+            "SELECT t.id FROM transcripts tr JOIN tracks t ON t.id = tr.track_id
+             WHERE t.deleted = 0 AND t.kind = 'book' ORDER BY t.id",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = stmt.query_map([], |r| r.get(0));
+        rows.map(|it| it.flatten().collect()).unwrap_or_default()
+    }
+
+    /// Every live track in the same folder as this one - the BOOK, under the
+    /// folder contract: a book is its directory.
+    pub fn book_siblings(&self, track_id: i64) -> Vec<(i64, String)> {
+        let Some(rel) = self.track_rel_path(track_id) else {
+            return Vec::new();
+        };
+        let dir = match rel.rfind('/') {
+            Some(i) => &rel[..i + 1],
+            None => "",
+        };
+        let lock = self.lock();
+        let mut stmt = match lock.prepare(
+            "SELECT id, rel_path FROM tracks
+             WHERE deleted = 0 AND kind = 'book' AND rel_path LIKE ?1 || '%'
+               AND rel_path NOT LIKE ?1 || '%/%'
+             ORDER BY rel_path",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = stmt.query_map(params![dir], |r| Ok((r.get(0)?, r.get(1)?)));
+        rows.map(|it| it.flatten().collect()).unwrap_or_default()
+    }
+
     pub fn has_transcript(&self, track_id: i64) -> bool {
         self.lock()
             .query_row(

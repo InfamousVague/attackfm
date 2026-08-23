@@ -454,4 +454,12 @@ async fn run(state: Arc<AppState>, job_id: String, track_id: i64) {
         j.lines = count;
     })
     .await;
+
+    // The words are down; now say what each chapter is. Detached, because
+    // naming is the AI's errand and the transcription queue should not wait
+    // on a model that might not even be configured.
+    let st = state.clone();
+    tokio::spawn(async move {
+        crate::chapter_blurbs::generate_for_track(&st, track_id).await;
+    });
 }

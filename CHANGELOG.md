@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.4
+
+- A playing book now reads itself across the screen: the cover fills the background and the words walk the middle, line by line with the narration. The chapter list lives in the chapter line under the title - tap it to jump anywhere
+- Chapters can say what they ARE: once a book is transcribed, your hub reads each chapter's opening and gives it its true name - a preamble mislabelled "Chapter 1" is called a preamble - plus a one-line, spoiler-free description. Needs the hub updated, with its local AI switched on
+- Books without a transcript keep the chapter list on the cover, exactly as before
+
 ## 0.4.3
 
 - A playing book now wears its chapters on the cover: the now-playing art becomes the table of contents, the chapter being read lit with how far in you are, and every other chapter one tap away — however the book arrived, one file or many

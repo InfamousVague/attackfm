@@ -30,6 +30,7 @@ mod audible;
 mod ingest;
 mod transcribe;
 mod audiobooks;
+mod chapter_blurbs;
 mod auth;
 mod canvas;
 mod collector;
@@ -433,6 +434,18 @@ async fn main() {
     // a large library does not hold the port closed.
     // Audiobook piles dropped in import/ sort themselves - see ingest.rs.
     ingest::spawn_sweep(state.clone());
+    // Chapter notes ride the same rhythm as the ingest sweep: a beat after
+    // boot for anything transcribed while the box was down, then patiently.
+    {
+        let st = state.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(90)).await;
+            loop {
+                chapter_blurbs::sweep(st.clone()).await;
+                tokio::time::sleep(std::time::Duration::from_secs(600)).await;
+            }
+        });
+    }
     scan::spawn_scan(
         db.clone(),
         music_root.clone(),
@@ -716,6 +729,7 @@ async fn main() {
             "/api/spotify/mirror/{key}/forget",
             post(spotify::mirror_forget),
         )
+        .route("/api/audiobooks/blurbs/{track_id}", get(chapter_blurbs::book))
         .route("/api/audiobooks/search", get(audiobooks::search))
         .route("/api/audiobooks/import", post(audiobooks::import))
         .route("/api/audiobooks/jobs", get(audiobooks::jobs))
