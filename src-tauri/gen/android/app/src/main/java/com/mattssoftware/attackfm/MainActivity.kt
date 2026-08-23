@@ -543,6 +543,13 @@ class MainActivity : TauriActivity() {
   override fun onResume() {
     super.onResume()
     everResumed = true
+    // A service start the system refused while we were backgrounded gets its
+    // foreground moment here. applyHold() is idempotent - starting an
+    // already-running service is a no-op - so re-applying is always safe.
+    if (PlaybackService.startDenied) {
+      PlaybackService.startDenied = false
+      applyHold()
+    }
   }
 
 

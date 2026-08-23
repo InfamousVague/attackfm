@@ -458,12 +458,26 @@ class PlaybackService : MediaBrowserServiceCompat() {
 
     fun start(context: Context) {
       val intent = Intent(context, PlaybackService::class.java)
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        context.startForegroundService(intent)
-      } else {
-        context.startService(intent)
+      try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+          context.startForegroundService(intent)
+        } else {
+          context.startService(intent)
+        }
+      } catch (e: IllegalStateException) {
+        // Android 12+ refuses a foreground start from the background - the
+        // sync leg waking while the phone is pocketed, a remote play racing
+        // past the media-button exemption window. The refusal used to travel
+        // up as ForegroundServiceStartNotAllowedException and kill the whole
+        // process. Swallow it and remember the want instead: the activity's
+        // onResume re-applies the hold, and the service starts the moment
+        // the system allows it again.
+        startDenied = true
       }
     }
+
+    /** A start the system refused, waiting for the next foreground moment. */
+    @Volatile var startDenied = false
 
     fun stop(context: Context) {
       context.stopService(Intent(context, PlaybackService::class.java))

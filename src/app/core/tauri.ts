@@ -546,14 +546,86 @@ async function loadLocalAudioUrl(path: string): Promise<string | null> {
  *  tens of megabytes and blobs live until revoked. */
 const vaultBlobCache = new Map<string, string>();
 
+/** Exactly the asset protocol's per-answer cap (its MAX_LEN). Asking for
+ *  precisely this much is the difference between "every slice comes back
+ *  full" and "every slice comes back short and the offsets drift". */
+const VAULT_SLICE = 1000 * 1024;
+
+/** Past this, a blob stops being the right shape for the file - stream it
+ *  from the hub instead. (An eighteen-hour book at the phone's cache bitrate
+ *  sits well under this; the guard is for the pathological.) */
+const VAULT_BLOB_CEILING = 1600 * 1024 * 1024;
+
+/**
+ * A vault file, pulled through the asset protocol in RANGED slices and stood
+ * back up as one Blob.
+ *
+ * Why not one fetch: on Android every response body crosses the JNI bridge as
+ * a SINGLE Java byte array, and the Java heap's growth limit is 512MB. A
+ * whole-file fetch of a cached audiobook was a half-gigabyte allocation in
+ * `Rust.handleRequest` - OutOfMemoryError, process gone. That is why opening
+ * a cached book killed the app while a fresh install (nothing cached, served
+ * by the hub over HTTP ranges) played the same book fine. Songs never showed
+ * it only because tens of megabytes fit.
+ *
+ * A Range request keeps every crossing small: the protocol answers 206 and
+ * caps each slice at ~1MB. The slices are fetched a few at a time at fixed
+ * offsets - safe because the handler only ever shortens the LAST slice - and
+ * every slice is verified for size, so a surprise short answer degrades to
+ * the network stream rather than corrupt audio. The assembled Blob lives in
+ * the renderer's blob storage, which pages big blobs to disk.
+ */
+export async function fetchVaultBlob(
+  src: string,
+  fetchLike: typeof fetch = fetch,
+): Promise<Blob | null> {
+  const slice = (start: number, end: number) =>
+    fetchLike(src, { cache: 'no-store', headers: { Range: `bytes=${start}-${end}` } });
+
+  const first = await slice(0, VAULT_SLICE - 1);
+  if (first.status === 200) {
+    // A shell whose protocol ignores Range sends the whole body - it has
+    // already crossed the bridge, so keeping it costs nothing extra.
+    const whole = await first.blob();
+    return whole.size > 0 ? whole : null;
+  }
+  if (first.status !== 206) return null;
+
+  const type = first.headers.get('content-type') ?? '';
+  const total = Number(first.headers.get('content-range')?.split('/')[1]);
+  if (!Number.isFinite(total) || total <= 0 || total > VAULT_BLOB_CEILING) return null;
+
+  const parts: Blob[] = [await first.blob()];
+  let at = parts[0]!.size;
+  if (at === 0) return null;
+
+  while (at < total) {
+    const wave: { want: number; res: Promise<Response> }[] = [];
+    for (let i = 0; i < 4 && at + i * VAULT_SLICE < total; i++) {
+      const start = at + i * VAULT_SLICE;
+      const end = Math.min(start + VAULT_SLICE, total) - 1;
+      wave.push({ want: end - start + 1, res: slice(start, end) });
+    }
+    for (const { want, res } of wave) {
+      const r = await res;
+      if (r.status !== 206) return null;
+      const b = await r.blob();
+      if (b.size !== want) return null;
+      parts.push(b);
+      at += b.size;
+    }
+  }
+  return new Blob(parts, { type });
+}
+
 async function androidVaultUrl(local: string): Promise<string | null> {
   const cached = vaultBlobCache.get(local);
   if (cached) return cached;
   try {
     const { convertFileSrc } = await import('@tauri-apps/api/core');
-    const res = await fetch(convertFileSrc(local), { cache: 'no-store' });
-    if (!res.ok) return null;
-    const url = URL.createObjectURL(await res.blob());
+    const blob = await fetchVaultBlob(convertFileSrc(local));
+    if (!blob) return null;
+    const url = URL.createObjectURL(blob);
     while (vaultBlobCache.size >= 2) {
       const oldest = vaultBlobCache.entries().next().value;
       if (!oldest) break;
