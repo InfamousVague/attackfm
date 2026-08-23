@@ -50,7 +50,7 @@ impl ScanProgress {
     }
 }
 
-fn is_audio(path: &Path) -> bool {
+pub(crate) fn is_audio(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
         .map(|e| AUDIO_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
@@ -93,6 +93,29 @@ fn walk(root: &Path) -> Vec<(PathBuf, String)> {
                 // from the library; walking it would resurrect them.
                 if path.file_name().and_then(|n| n.to_str()) == Some(TRASH_DIR) {
                     continue;
+                }
+                /*
+                 * The audiobook IMPORT folder is raw material, not library.
+                 *
+                 * Each folder dropped in `Audiobooks/import/` is a book in
+                 * whatever shape it arrived - one giant MP3, forty parts with
+                 * names only their tracker understands, text files describing
+                 * the rest. The ingest worker reads those folders, works out
+                 * what they are, and files the result properly. If the walk
+                 * indexed them first, every half-understood pile would appear
+                 * on the shelf mid-assembly and then vanish again - so the
+                 * walk treats import/ the way it treats the trash: invisible.
+                 * Case-insensitive on both components, like everything else
+                 * about the audiobooks folder.
+                 */
+                if let Ok(rel) = path.strip_prefix(root) {
+                    if let Some(rel) = rel.to_str() {
+                        if crate::db::book_prefix(rel)
+                            .is_some_and(|rest| rest.eq_ignore_ascii_case("import"))
+                        {
+                            continue;
+                        }
+                    }
                 }
                 stack.push(path);
             } else if meta.is_file() && is_audio(&path) {
@@ -399,7 +422,7 @@ fn book_folder(rel_path: &str) -> Option<String> {
 ///
 /// Deliberately strict: it must be the marker word and a number and nothing
 /// else. A book genuinely called "Part of the Furniture" keeps its name.
-fn is_disc_marker(part: &str) -> bool {
+pub(crate) fn is_disc_marker(part: &str) -> bool {
     let lower = part.trim().to_ascii_lowercase();
     for word in ["cd", "disc", "disk", "part", "vol", "volume", "tape", "side"] {
         let Some(rest) = lower.strip_prefix(word) else {
@@ -422,7 +445,7 @@ fn is_disc_marker(part: &str) -> bool {
 /// Gables - Part One" must not become an author called "Anne of Green Gables").
 /// A trailing parenthesised genre is dropped; anything unrecognised is left
 /// whole as the title, which is always better than a wrong guess.
-fn split_book_folder(folder: &str) -> (Option<String>, String) {
+pub(crate) fn split_book_folder(folder: &str) -> (Option<String>, String) {
     let parts: Vec<&str> = folder.split(" - ").collect();
     let (artist, title) = if parts.len() >= 3
         && parts[1].len() == 4

@@ -562,3 +562,16 @@ span.bookCard__readAlong {
   margin-block-start: -1px;
   pointer-events: none;
 }
+
+/* ---- The import doorway ------------------------------------------------- */
+
+/* The ask and its button on one line; the job rows below reuse the bookJob
+   dress the LibriVox queue already wears, because a folder being sorted and a
+   book being downloaded are the same kind of news. */
+.booksImport__ask {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  justify-content: space-between;
+  margin-block-end: var(--glacier-space-2);
+}

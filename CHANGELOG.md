@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.348
+
+- Audiobooks can be dropped in as-is. Make an `import` folder inside your server's Audiobooks folder and drop each downloaded book into it — one giant file, forty numbered parts, disc folders, text files and all. The Books page shows what is waiting; one tap and the server works out what each pile is (with its local AI reading the notes when one is set up), names it, orders the chapters, carries the cover, and shelves it properly. Nothing is deleted — consumed folders are kept in the library's trash
+
 ## 0.3.347
 
 - When a book cannot be transcribed because the server has no speech model, the app now names the exact folder to put one in rather than leaving you to find it
