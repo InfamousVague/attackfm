@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CounterBadge } from '@glacier/react';
-import { Download, EllipsisVertical, Settings, UsersRound } from '@glacier/icons';
+import { Disc3, Download, EllipsisVertical, Settings, UsersRound } from '@glacier/icons';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import { usePluginPages } from '../../plugins/runtime.tsx';
 
@@ -27,6 +27,9 @@ export function NavMoreMenu({
   onSettings: () => void;
 }) {
   const pages = usePluginPages();
+  // Books sits on the bar itself now; listing it here too would be the same
+  // door twice in one hand.
+  const menuPages = pages.filter((pg) => pg.key.split(':')[0] !== 'books');
   const [open, setOpen] = useState(false);
   // The queue's presence, for the Downloads row and the count riding the ⋮.
   const dl = useDownloadsOptional();
@@ -51,7 +54,10 @@ export function NavMoreMenu({
   // Stats and Date are Profile's rooms now, so the drawer no longer claims
   // them; the DJ moved into the Booth's nav seat.
   const onMenuDest =
-    pages.some((pg) => pg.key === tab) || tab === 'friends' || tab === 'downloads';
+    menuPages.some((pg) => pg.key === tab) ||
+    tab === 'friends' ||
+    tab === 'downloads' ||
+    tab === 'booth';
 
   const go = (next: string) => {
     setOpen(false);
@@ -120,7 +126,7 @@ export function NavMoreMenu({
               }}
             />
             <div className="appNavMore__menu" role="menu" aria-label="More">
-        {pages.map((pg) => (
+        {menuPages.map((pg) => (
           <button
             key={pg.key}
             type="button"
@@ -136,7 +142,7 @@ export function NavMoreMenu({
           </button>
         ))}
 
-        {pages.length > 0 && <span className="appNavBarPlugins__divider" aria-hidden />}
+        {menuPages.length > 0 && <span className="appNavBarPlugins__divider" aria-hidden />}
 
         {/* Date and Stats live inside Profile as rooms now, and the DJ holds
             a real nav seat as the Booth - the drawer keeps only what has no
@@ -151,6 +157,22 @@ export function NavMoreMenu({
             Ungated, like Date and DJ: friends live on the registry account
             rather than a server, and the page draws its own signed-out face
             (AccountSetup) rather than needing the menu to hide it. */}
+        {/* The Booth: the DJ's room. It held a bar seat until the Books shelf
+            needed one more; a place you visit accepts a menu row, a place you
+            live in does not. */}
+        <button
+          type="button"
+          role="menuitem"
+          className="appNavBarPlugins__item"
+          data-active={tab === 'booth' || undefined}
+          onClick={() => go('booth')}
+        >
+          <span className="appNavBarPlugins__itemIcon" aria-hidden>
+            <Disc3 size={18} />
+          </span>
+          <span className="appNavBarPlugins__itemLabel">Booth</span>
+        </button>
+
         <button
           type="button"
           role="menuitem"

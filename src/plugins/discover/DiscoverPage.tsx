@@ -1,7 +1,9 @@
 import { SearchEntry } from '../../app/search/SearchEntry.tsx';
 import { Button, Modal, ScrollArea, SearchField, Spinner, Text } from '@glacier/react';
-import { Check, Compass, ListMusic, ListPlus, Music, Play, Plus, Sparkles } from '@glacier/icons';
+import { CalendarHeart, Check, ChevronRight, Compass, ListMusic, ListPlus, Music, Play, Plus, Sparkles } from '@glacier/icons';
 import { searchPlaylists, type PlaylistResult } from '../../app/server.ts';
+import { fetchCollectorStatus } from '../../app/server.ts';
+import { musicDateDoorOpen, openMusicDate } from '../../app/nav/musicDateDoor.ts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRippleWave } from '../../app/ux/rippleWave.ts';
 import { useServerSession } from '../../app/servers/serverSession.tsx';
@@ -276,6 +278,45 @@ function SetMosaic({ covers, size }: { covers: string[]; size?: 'hero' }) {
 // onOpenArtist: that opens the LIBRARY's artist page, and on Discover an artist
 // means their catalogue - the discography you can add from - so every artist row
 // here stacks a CatalogArtistPage instead.
+/**
+ * Music Date's invitation, at the top of the page it now belongs to: Discover
+ * is where you meet music you do not have, and the Date is the purest form of
+ * that - art and sound, no names. It lived on the Booth; the Booth moved off
+ * the bar, and an invitation nobody walks past is no invitation.
+ */
+function MusicDateInvite() {
+  const { session } = useServerSession();
+  const [waiting, setWaiting] = useState(0);
+  useEffect(() => {
+    if (!session) {
+      setWaiting(0);
+      return;
+    }
+    const ctrl = new AbortController();
+    void fetchCollectorStatus(session, ctrl.signal)
+      .then((st) => setWaiting(st?.recent?.filter((r) => r.state === 'landed').length ?? 0))
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [session]);
+  if (!session || !musicDateDoorOpen()) return null;
+  return (
+    <Button type="button" variant="glass" fullWidth className="boothDate" onClick={openMusicDate}>
+      <span className="boothDate__mark" aria-hidden="true">
+        <CalendarHeart size={18} />
+      </span>
+      <span className="boothDate__text">
+        <span className="boothDate__title">Music Date</span>
+        <span className="boothDate__caption">
+          {waiting > 0
+            ? `${waiting} new ${waiting === 1 ? 'find' : 'finds'} waiting — art and sound, no names`
+            : 'Meet what the collector found — art and sound, no names'}
+        </span>
+      </span>
+      <ChevronRight size={18} className="boothDate__chevron" aria-hidden="true" />
+    </Button>
+  );
+}
+
 export function DiscoverPage({
   onPlay,
   onOpenArtist,
@@ -705,6 +746,7 @@ export function DiscoverPage({
       {/* Same bar as Library. Discover is where you look for what you do NOT
           have, so the prompt says so - the page it opens searches both. */}
       <SearchEntry placeholder="Search for music to add" />
+      <MusicDateInvite />
       {/* What the AI made FROM your library: mixes whose every track you
           already own, so they play the instant you tap them. They lead the
           personal half of the page because they are the only thing here that

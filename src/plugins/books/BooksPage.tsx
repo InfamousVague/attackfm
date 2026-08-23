@@ -734,15 +734,24 @@ export function BooksPage({ onPlay }: PluginPageProps) {
     observer.observe(mark);
     return () => observer.disconnect();
   }, [books.length === 0]);
-  useEffect(() => {
+  // The cover the header wears when the page's own head scrolls away.
+  const headerCover = useMemo(() => {
+    const fav = books.find((t) => isFavorite(t.path) && t.artwork);
+    return fav?.artwork ?? books.find((t) => t.artwork)?.artwork ?? null;
+  }, [books, isFavorite]);
+    useEffect(() => {
     if (!stuck) return;
     setHeaderActions({
       title: 'Books',
-      glyph: BookAudio,
+      // The shelf's leading cover, the way a playlist hands up its mosaic -
+      // favourites first, since that is the book being read. The glyph stays
+      // as the fallback for a shelf with no artwork at all.
+      art: headerCover,
+      glyph: headerCover ? null : BookAudio,
       action: { icon: Upload, label: 'Add a book', onPress: () => openBookPicker?.() },
     });
     return () => setHeaderActions(null);
-  }, [stuck]);
+  }, [stuck, headerCover]);
   const shelf = useMemo(() => shelve(books), [books]);
   /*
    * A book is a favourite when ANY of its files is hearted, and hearting it

@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.8
+
+- Books moved onto the bar, in the Booth's old seat - a shelf you visit nightly deserves one tap. The Booth lives in the ⋮ menu now, beside Friends
+- Music Date's invitation moved to the top of Discover, where meeting unfamiliar music belongs
+- When the Books page scrolls its name into the header, a book's cover rides along - the way a playlist's mosaic does
+
 ## 0.4.7
 
 - The reading's margin now matches the author and chapter lines beneath it - the words open exactly where the name does

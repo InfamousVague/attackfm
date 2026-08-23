@@ -99,13 +99,10 @@ function pulseLine(feed: CuratorFeed | null): { Icon: typeof Ear; text: string }
 export function BoothPage({
   onPlay,
   onOpenArtist,
-  onOpenDate,
   onOpenDj,
 }: {
   onPlay: (track: Track, queue?: Track[]) => void;
   onOpenArtist: (artist: string) => void;
-  /** Opens Music Date's fullscreen layer; App hosts it above all chrome. */
-  onOpenDate: () => void;
   /** Opens the DJ conversation's fullscreen layer - hosted by App too, for
    *  the same reason: a fixed layer inside the swipe host's transform is
    *  trapped under the app's chrome. */
@@ -217,24 +214,6 @@ export function BoothPage({
           <span className="boothPulse__text">{pulse.text}</span>
         </Button>
       </header>
-
-      {/* Music Date: the invitation stays on top, by request. */}
-      {session && (
-        <Button type="button" variant="glass" fullWidth className="boothDate" onClick={onOpenDate}>
-          <span className="boothDate__mark" aria-hidden="true">
-            <CalendarHeart size={18} />
-          </span>
-          <span className="boothDate__text">
-            <span className="boothDate__title">Music Date</span>
-            <span className="boothDate__caption">
-              {waiting > 0
-                ? `${waiting} new ${waiting === 1 ? 'find' : 'finds'} waiting — art and sound, no names`
-                : 'Meet what the collector found — art and sound, no names'}
-            </span>
-          </span>
-          <ChevronRight size={18} className="boothDate__chevron" aria-hidden="true" />
-        </Button>
-      )}
 
       {/* Drop the needle: the page's one hero, and the moods that steer it. */}
       {session && <DjLauncher variant="hero" onPlay={onPlay} />}
