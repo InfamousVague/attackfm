@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.9
+
+- The Books tab's icon now stands the same height as its neighbours on the bar
+
 ## 0.4.8
 
 - Books moved onto the bar, in the Booth's old seat - a shelf you visit nightly deserves one tap. The Booth lives in the ⋮ menu now, beside Friends

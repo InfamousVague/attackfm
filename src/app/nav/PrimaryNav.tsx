@@ -1,6 +1,7 @@
 import { NavBar, NavBarItem } from '@glacier/react';
 import { CircleUserRound, Compass, Disc3, LibraryBig } from '@glacier/icons';
-import type { ReactNode } from 'react';
+import { cloneElement, isValidElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { useAcquire, usePluginPages } from '../../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import { NavMoreMenu } from './NavMoreMenu.tsx';
@@ -185,7 +186,14 @@ export function PrimaryNav({
           the ⋮ menu now, beside Friends. */}
       {booksPage && (
         <BarTab
-          icon={booksPage.icon}
+          /* The page registered its icon at the rail-and-menu size (18); the
+             bar draws every tab at 22, so the seat re-cuts the same glyph
+             rather than seating a visibly smaller one. */
+          icon={
+            isValidElement(booksPage.icon)
+              ? cloneElement(booksPage.icon as ReactElement<{ size?: number }>, { size: 22 })
+              : booksPage.icon
+          }
           label={booksPage.label}
           active={tab === booksPage.key}
           onClick={() => onTab(booksPage.key)}
