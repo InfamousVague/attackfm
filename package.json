@@ -1,7 +1,7 @@
 {
   "name": "attackfm",
   "private": true,
-  "version": "0.3.347",
+  "version": "0.3.348",
   "type": "module",
   "scripts": {
     "dev": "vite",
