@@ -345,6 +345,33 @@
   color: rgba(255, 255, 255, 0.24);
 }
 
+/* Word by word, inside the lit line: what has been said holds full white,
+   what is coming waits dimmer, and the word under the narrator's voice
+   carries the accent's underline. Color only - a size change would make
+   the whole line breathe at five ticks a second. */
+.npBookWords__w {
+  color: rgba(255, 255, 255, 0.5);
+  transition: color 0.18s ease;
+}
+
+.npBookWords__w[data-said],
+.npBookWords__w[data-lit] {
+  color: #fff;
+}
+
+.npBookWords__w[data-lit] {
+  text-decoration: underline;
+  text-decoration-color: var(--glacier-accent-solid);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.22em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .npBookWords__w {
+    transition: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .npBookWords__line {
     transition: none;

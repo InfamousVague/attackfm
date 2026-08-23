@@ -20,11 +20,23 @@ import type { Track } from '../core/tauri.ts';
 
 /** One in-flight or settled lookup per book. A miss caches too - a book with no
  *  transcript should not be asked for again every time the screen redraws. */
-const cache = new Map<number, Promise<LyricLine[] | null>>();
+const cache = new Map<number, Promise<BookLine[] | null>>();
 
 interface TranscriptLine {
   startMs: number;
   text: string;
+  /** Word-level clocks, as the server stores them: `[startMs, word]` pairs.
+   *  Absent on transcripts made before word tracking. */
+  words?: [number, string][];
+}
+
+/** A line with each word's own clock, where the recogniser provided one.
+ *  Shape-compatible with LyricLine, so every existing consumer reads it
+ *  unchanged and only the reading face looks closer. */
+export interface BookLine {
+  time: number;
+  text: string;
+  words?: { t: number; w: string }[];
 }
 
 /**
@@ -32,7 +44,7 @@ interface TranscriptLine {
  * for every song, for a book nobody has transcribed, and for a device with no
  * server to ask.
  */
-export function fetchTranscript(track: Track): Promise<LyricLine[] | null> {
+export function fetchTranscript(track: Track): Promise<BookLine[] | null> {
   if (track.kind !== 'book') return Promise.resolve(null);
   const id = trackIdFromPath(track.path);
   if (id == null) return Promise.resolve(null);
@@ -58,7 +70,17 @@ export function fetchTranscript(track: Track): Promise<LyricLine[] | null> {
       // caller compares against the playhead.
       (r.lines ?? [])
         .filter((l) => typeof l.text === 'string' && l.text.trim().length > 0)
-        .map((l) => ({ time: l.startMs / 1000, text: l.text.trim() })),
+        .map((l) => ({
+          time: l.startMs / 1000,
+          text: l.text.trim(),
+          ...(Array.isArray(l.words) && l.words.length > 0
+            ? {
+                words: l.words
+                  .filter((p) => Array.isArray(p) && typeof p[0] === 'number')
+                  .map(([t, w]) => ({ t: t / 1000, w: String(w) })),
+              }
+            : {}),
+        })),
     )
     /*
      * BOUNDED, whatever the server sent.
@@ -75,14 +97,14 @@ export function fetchTranscript(track: Track): Promise<LyricLine[] | null> {
       const CAP = 4000;
       if (lines.length <= CAP) return lines;
       const stride = Math.ceil(lines.length / CAP);
-      const merged: LyricLine[] = [];
+      const merged: BookLine[] = [];
       for (let i = 0; i < lines.length; i += stride) {
+        const span = lines.slice(i, i + stride);
+        const words = span.flatMap((l) => l.words ?? []);
         merged.push({
-          time: lines[i]!.time,
-          text: lines
-            .slice(i, i + stride)
-            .map((l) => l.text)
-            .join(' '),
+          time: span[0]!.time,
+          text: span.map((l) => l.text).join(' '),
+          ...(words.length > 0 ? { words } : {}),
         });
       }
       return merged;

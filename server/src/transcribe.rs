@@ -261,6 +261,64 @@ pub async fn queue(
     Ok(Json(json!({ "queued": true, "id": id })))
 }
 
+/// `POST /api/transcribe/redo` - queue every transcribed book whose lines
+/// lack per-word clocks, so a library transcribed before word tracking
+/// catches up. Admin, like queueing one: this spends hours of the box's
+/// time. Existing transcripts stay readable until their replacement lands -
+/// the worker overwrites on completion, never deletes up front.
+pub async fn redo(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let caller = auth::require_caller(&state.db, &headers)
+        .map_err(|s| (s, "sign in first".to_string()))?;
+    if !caller.is_admin {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "only an admin can spend the server's time transcribing".into(),
+        ));
+    }
+    if whisper_bin().is_none() || whisper_model(&state).is_none() {
+        return Err((
+            StatusCode::PRECONDITION_FAILED,
+            "this server has no speech recogniser or model".into(),
+        ));
+    }
+    let wanting = state.db.transcripts_without_words();
+    let mut queued = 0;
+    for track_id in &wanting {
+        let Some(track) = state.db.track(*track_id) else { continue };
+        let id = format!("tr{track_id}-{}", now_ms());
+        {
+            let mut jobs = state.transcribe.jobs.lock().await;
+            if jobs
+                .iter()
+                .any(|j| j.track_id == *track_id && j.state != "done" && j.state != "error")
+            {
+                continue;
+            }
+            jobs.push(TranscribeJob {
+                id: id.clone(),
+                track_id: *track_id,
+                title: track.title.clone(),
+                state: "queued".into(),
+                error: String::new(),
+                lines: 0,
+                queued_at: now_ms(),
+            });
+            let len = jobs.len();
+            if len > 40 {
+                jobs.drain(0..len - 40);
+            }
+        }
+        let worker_state = state.clone();
+        let tid = *track_id;
+        tokio::spawn(async move { run(worker_state, id, tid).await });
+        queued += 1;
+    }
+    Ok(Json(json!({ "queued": queued, "considered": wanting.len() })))
+}
+
 // --- The work ----------------------------------------------------------------
 
 async fn run(state: Arc<AppState>, job_id: String, track_id: i64) {
@@ -359,6 +417,13 @@ async fn run(state: Arc<AppState>, job_id: String, track_id: i64) {
         .arg(&model)
         .arg("-f")
         .arg(&wav)
+        // One WORD per segment: the reading face follows the narrator word by
+        // word, and whisper's own per-token clock is the only honest source
+        // for that. Lines are still merged below exactly as before - the
+        // segments arrive finer, the shape stored stays sentence-sized.
+        .arg("--max-len")
+        .arg("1")
+        .arg("--split-on-word")
         .arg("--output-json")
         .arg("--output-file")
         .arg(&out_base)
@@ -385,7 +450,25 @@ async fn run(state: Arc<AppState>, job_id: String, track_id: i64) {
      * book under seven thousand lines, and loses nothing anyone taps for.
      */
     const MERGE_MS: i64 = 10_000;
+    // A line under construction: its window, its text, and each word with the
+    // moment it is spoken. Words ride the stored lines as compact pairs
+    // ([startMs, "word"]) - an eighteen-hour book is ninety thousand of them,
+    // and the pair form is half the size of objects saying the same thing.
     let mut lines: Vec<Value> = Vec::new();
+    let mut words: Vec<Value> = Vec::new();
+    let mut open: Option<(i64, i64, String)> = None;
+    let mut close = |open: &mut Option<(i64, i64, String)>,
+                     words: &mut Vec<Value>,
+                     lines: &mut Vec<Value>| {
+        if let Some((start, end, text)) = open.take() {
+            lines.push(json!({
+                "startMs": start,
+                "endMs": end,
+                "text": text.trim(),
+                "words": std::mem::take(words),
+            }));
+        }
+    };
     if let Some(segments) = parsed.get("transcription").and_then(|t| t.as_array()) {
         for seg in segments {
             let text = seg
@@ -407,28 +490,23 @@ async fn run(state: Arc<AppState>, job_id: String, track_id: i64) {
                 .and_then(|o| o.get("to"))
                 .and_then(|v| v.as_i64())
                 .unwrap_or(from);
-            // Extend the open line while it is still short; start a new one
-            // once it has had its ten seconds.
-            let extend = lines
-                .last()
-                .and_then(|l| {
-                    let start = l.get("startMs")?.as_i64()?;
-                    if to - start < MERGE_MS { Some(start) } else { None }
-                });
-            match extend {
-                Some(start) => {
-                    let last = lines.last_mut().unwrap();
-                    let joined = format!(
-                        "{} {}",
-                        last.get("text").and_then(|t| t.as_str()).unwrap_or_default(),
-                        text
-                    );
-                    *last = json!({ "startMs": start, "endMs": to, "text": joined.trim() });
+            // Extend the open line while it is still short; close it and
+            // start anew once it has had its ten seconds.
+            match &mut open {
+                Some((start, end, line)) if to - *start < MERGE_MS => {
+                    line.push(' ');
+                    line.push_str(&text);
+                    *end = to;
                 }
-                None => lines.push(json!({ "startMs": from, "endMs": to, "text": text })),
+                _ => {
+                    close(&mut open, &mut words, &mut lines);
+                    open = Some((from, to, text.clone()));
+                }
             }
+            words.push(json!([from, text]));
         }
     }
+    close(&mut open, &mut words, &mut lines);
     let _ = tokio::fs::remove_dir_all(&stage).await;
 
     if lines.is_empty() {

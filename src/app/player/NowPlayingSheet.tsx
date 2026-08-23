@@ -35,8 +35,7 @@ import { isTauri, tauriCall } from '../core/tauri.ts';
 import { trackIdFromPath } from '../server.ts';
 import { motionGesturesEnabled } from '../settings/behaviourPrefs.ts';
 import { fetchChapterNotes, type BookNotes } from './chapterNotes.ts';
-import { fetchTranscript } from './transcript.ts';
-import type { LyricLine } from '@glacier/react';
+import { fetchTranscript, type BookLine } from './transcript.ts';
 import npPlaceholderArt from '../../assets/attack-wave.png';
 import type { Track } from '../core/tauri.ts';
 
@@ -108,22 +107,76 @@ interface ReadingItem {
   kind: 'line' | 'title';
   time: number;
   text: string;
+  /** Each word's own clock, where the recogniser gave one. */
+  words?: { t: number; w: string }[];
 }
 
 function BookWords({
   items,
   positionSec,
+  playing,
 }: {
   items: ReadingItem[];
   positionSec: number;
+  playing: boolean;
 }) {
+  /*
+   * A finer clock than the deck reports. The position prop ticks about once
+   * a second - fine for lines, a slideshow for words. Between ticks this
+   * extrapolates from the last report while playing, and every real report
+   * re-anchors it, so drift lives at most a second and pauses freeze it.
+   */
+  const [fineNow, setFineNow] = useState(positionSec);
+  const anchor = useRef({ pos: positionSec, at: performance.now() });
+  useEffect(() => {
+    anchor.current = { pos: positionSec, at: performance.now() };
+    setFineNow(positionSec);
+  }, [positionSec]);
+  useEffect(() => {
+    if (!playing) return;
+    const tick = window.setInterval(() => {
+      setFineNow(anchor.current.pos + (performance.now() - anchor.current.at) / 1000);
+    }, 200);
+    return () => window.clearInterval(tick);
+  }, [playing]);
+
   let at = 0;
   for (let i = 0; i < items.length; i++) {
-    if (items[i]!.time <= positionSec) at = i;
+    if (items[i]!.time <= fineNow) at = i;
     else break;
   }
   const from = Math.max(0, at - 4);
   const shown = items.slice(from, at + 7);
+
+  /*
+   * The lit line's words, each with a moment. Real clocks where the
+   * recogniser wrote them; otherwise the words are spread across the line's
+   * window weighted by their length - close enough that the eye follows,
+   * and free, which is what every book transcribed before word tracking
+   * gets until its re-run lands.
+   */
+  const nowWords = useMemo(() => {
+    const item = items[at];
+    if (!item || item.kind !== 'line') return null;
+    if (item.words && item.words.length > 0) return item.words;
+    const until = items[at + 1]?.time ?? item.time + 10;
+    const span = Math.max(1, until - item.time);
+    const words = item.text.split(/\s+/).filter(Boolean);
+    const total = words.reduce((n, w) => n + w.length + 1, 0);
+    let acc = 0;
+    return words.map((w) => {
+      const t = item.time + (acc / total) * span;
+      acc += w.length + 1;
+      return { t, w };
+    });
+  }, [items, at]);
+  let lit = -1;
+  if (nowWords) {
+    for (let i = 0; i < nowWords.length; i++) {
+      if (nowWords[i]!.t <= fineNow) lit = i;
+      else break;
+    }
+  }
 
   const slotRef = useRef<HTMLDivElement | null>(null);
   const nowRef = useRef<HTMLElement | null>(null);
@@ -151,7 +204,20 @@ function BookWords({
               className={l.kind === 'title' ? 'npBookWords__title' : 'npBookWords__line'}
               data-state={state}
             >
-              {l.text}
+              {i === at && l.kind === 'line' && nowWords ? (
+                nowWords.map((w, k) => (
+                  <span
+                    key={k}
+                    className="npBookWords__w"
+                    data-said={k < lit || undefined}
+                    data-lit={k === lit || undefined}
+                  >
+                    {w.w}{' '}
+                  </span>
+                ))
+              ) : (
+                l.text
+              )}
             </Tag>
           );
         })}
@@ -413,7 +479,7 @@ export function NowPlayingSheet({
    * has none, and every face below falls back to the embedded labels.
    */
   const [bookNotes, setBookNotes] = useState<BookNotes | null>(null);
-  const [bookWords, setBookWords] = useState<LyricLine[] | null>(null);
+  const [bookWords, setBookWords] = useState<BookLine[] | null>(null);
   const bookPath = track?.kind === 'book' ? track.path : null;
   useEffect(() => {
     if (!bookPath || !track) {
@@ -470,7 +536,12 @@ export function NowPlayingSheet({
         : [{ kind: 'title' as const, time: 0, text: nameAt(0, track.title) }];
     const flow: ReadingItem[] = [
       ...heads,
-      ...bookWords.map((l) => ({ kind: 'line' as const, time: l.time, text: l.text })),
+      ...bookWords.map((l) => ({
+        kind: 'line' as const,
+        time: l.time,
+        text: l.text,
+        ...(l.words ? { words: l.words } : {}),
+      })),
     ];
     // A heading sorts ahead of the first line spoken at the same moment.
     flow.sort((a, b) => a.time - b.time || (a.kind === 'title' ? -1 : 1));
@@ -799,7 +870,7 @@ export function NowPlayingSheet({
           content={npArtMenu}
         >
           {artView === 'chapters' && readingFlow.length > 0 ? (
-            <BookWords items={readingFlow} positionSec={position} />
+            <BookWords items={readingFlow} positionSec={position} playing={playing} />
           ) : artView === 'chapters' && bookFaces.length > 0 ? (
             <ChapterArt
               art={artwork}
