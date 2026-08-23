@@ -34,9 +34,28 @@ export function LyricsPanel({
 
   if (lyrics === null) return <Lyrics lines={[]} emptyLabel="Searching for lyrics…" aria-label="Lyrics" />;
   if (lyrics.synced) {
+    /*
+     * A window of a huge sheet, not the whole of it. Song lyrics are a couple
+     * of hundred lines and render whole, exactly as before. A book transcript
+     * is tens of thousands, and handing them all to the kit is tens of
+     * thousands of DOM nodes in a phone webview - the kind of allocation the
+     * OS answers by shooting the renderer, which kills the app. Six hundred
+     * lines is half an hour of narration either side of the playhead; seeking
+     * beyond the window re-centres it.
+     */
+    const all = lyrics.synced;
+    let lines = all;
+    if (all.length > 1500) {
+      let at = 0;
+      for (let i = 0; i < all.length; i += 1) {
+        if (all[i]!.time <= position) at = i;
+        else break;
+      }
+      lines = all.slice(Math.max(0, at - 600), at + 600);
+    }
     return (
       <Lyrics
-        lines={lyrics.synced}
+        lines={lines}
         position={position}
         onLineSelect={(line) => onSeek(line.time)}
         aria-label="Lyrics"

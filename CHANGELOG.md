@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.349
+
+- Fixed the app dying when opening a long audiobook that has a read-along transcript: two surfaces treated a book's twenty thousand lines like a song's sixty, and the phone paid for it
+- When the app's display process is killed anyway — usually the phone reclaiming memory — the app now restarts itself instead of closing, and the next diagnostics report says what happened instead of showing nothing
+
 ## 0.3.348
 
 - Audiobooks can be dropped in as-is. Make an `import` folder inside your server's Audiobooks folder and drop each downloaded book into it — one giant file, forty numbered parts, disc folders, text files and all. The Books page shows what is waiting; one tap and the server works out what each pile is (with its local AI reading the notes when one is set up), names it, orders the chapters, carries the cover, and shelves it properly. Nothing is deleted — consumed folders are kept in the library's trash

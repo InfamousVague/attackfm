@@ -230,6 +230,20 @@ export function diagReport(context: Record<string, string | number | boolean | n
  */
 export function installGlobalDiag(): void {
   if (typeof window === 'undefined') return;
+  /*
+   * What killed the LAST run, asked of the shell. A webview renderer death -
+   * the OS reclaiming memory, most often - never reaches JavaScript at all:
+   * the ring shows nothing because nothing survived to write. The Android
+   * shell records it to a file as it happens and hands it over here, once,
+   * so "the app just closed" finally arrives with its reason attached.
+   */
+  try {
+    const death = (window as unknown as { AFMNative?: { lastWebviewDeath?: () => string | null } })
+      .AFMNative?.lastWebviewDeath?.();
+    if (death) recordDiag('crash', `previous run ended: ${death}`);
+  } catch {
+    // An older shell without the bridge.
+  }
   window.addEventListener('error', (e) => {
     // Resource errors (a cover that 404s) fire here too and are noise; only
     // script errors carry a message worth keeping.

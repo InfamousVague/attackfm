@@ -309,7 +309,22 @@ function PosterLine({ path, active, lines, life }: LineProps) {
     return false;
   };
 
-  for (let index = 0; index <= active; index += 1) {
+  /*
+   * The walk starts a window back, not at the beginning of time.
+   *
+   * For a song this loop was the whole history - sixty lines, nothing. A book
+   * transcript resumed hours in made it tens of thousands of lines times
+   * every word, re-run on every position tick: measured at ~32ms a tick in
+   * plain Node, several times that on a phone, forever. Only the CURRENT page
+   * is ever displayed, so the composition only needs enough history to fill
+   * a few pages. The start is quantised so it moves in steps rather than
+   * sliding per line - a sliding start would recompose the whole page on
+   * every advance.
+   */
+  const POSTER_WINDOW = 48;
+  const start = Math.max(0, Math.floor((active - POSTER_WINDOW) / POSTER_WINDOW) * POSTER_WINDOW);
+  pageStart = start;
+  for (let index = start; index <= active; index += 1) {
     const lineWords = wordsOf(lines[index]!.text);
     for (const [wordIndex, word] of lineWords.entries()) {
       const random = seeded(`${path}#${index}#${wordIndex}#${word}`);
