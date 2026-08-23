@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.0
+
+- Every platform steps up to 0.4 together: fresh installers for Mac, Windows, Linux and Android, carrying everything since the last set
+- Audiobooks headline the jump: your books have their own shelf, with chapters, favourites, read-along, and your place kept across devices
+- And the app answers your hand the same way everywhere — names open pages, a long-press opens the menu
+
 ## 0.3.351
 
 - Wherever an artist's name appears — the queue, your stats, a friend's week, search results, the player strip — it is now a link to their page
