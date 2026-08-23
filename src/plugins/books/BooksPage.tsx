@@ -184,17 +184,24 @@ function AddBook({ onAdded }: { onAdded: () => void }) {
  */
 type Readiness = 'asking' | 'ready' | 'noTool' | 'noModel' | 'stale';
 let sharedReadiness: Promise<Readiness> | null = null;
+/** Where the server wants its speech model, reported by the server because it
+ *  is a path only the server knows. */
+let modelDir: string | null = null;
 
 function useTranscribeStatus(): Readiness {
   const { session } = useServerSession();
   const [ready, setReady] = useState<Readiness>('asking');
   useEffect(() => {
     if (!session) return;
-    sharedReadiness ??= request<{ available: boolean; toolInstalled: boolean }>(
+    sharedReadiness ??= request<{ available: boolean; toolInstalled: boolean; modelDir?: string }>(
       session.url,
       '/api/transcribe/status',
       { token: session.token },
     )
+      .then((r) => {
+        modelDir = r.modelDir ?? null;
+        return r;
+      })
       // The two halves fail separately and want different words: a hub with no
       // recogniser needs a program installed, a hub with no model needs a
       // download. Saying "no recogniser" to somebody who has one sends them
@@ -258,7 +265,14 @@ function ReadAlong({ book }: { book: ShelfBook }) {
   }
   if (ready === 'noModel') {
     return (
-      <span className="bookCard__readAlong" title="The server has the recogniser but no model to read with — re-run home-install.sh and take the model">
+      <span
+        className="bookCard__readAlong"
+        title={
+          modelDir
+            ? `The recogniser is installed but has nothing to read with. Put a whisper model in ${modelDir} — ggml-small.en.bin is the one to want.`
+            : 'The recogniser is installed but has no model to read with.'
+        }
+      >
         <BookOpenText size={13} aria-hidden /> No speech model
       </span>
     );

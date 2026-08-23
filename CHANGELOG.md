@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.3.347
+
+- When a book cannot be transcribed because the server has no speech model, the app now names the exact folder to put one in rather than leaving you to find it
+
 ## 0.3.346
 
 - Scrolling the Books page hands its name and the Add-a-book button up to the app header, the way playlists already do
