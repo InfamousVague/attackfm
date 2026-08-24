@@ -1,4 +1,5 @@
 import type { Track } from '../core/tauri.ts';
+import { useDeveloperMode } from '../settings/developerMode.ts';
 import {
   useAcquire,
   useHasDownloadQueue,
@@ -96,6 +97,12 @@ export function AppMain({
   /** Opens the DJ conversation's fullscreen layer; App hosts it too. */
   onOpenDj: () => void;
 }) {
+  // The Booth is behind developer mode. Gated HERE as well as in the nav, not
+  // only there: the tab is remembered across launches, so anybody standing in
+  // the Booth when the switch went off would still be standing in it. Falling
+  // through lands on Library, which is where the lit nav item already says you
+  // are - the deny-list that lights it treats an unmatched tab as Library.
+  const showBooth = useDeveloperMode();
   const pages = usePluginPages();
   const activePage = detail ? null : (pages.find((pg) => pg.key === tab) ?? null);
   // Downloads only exists while an importer runs; without one, a tab left on
@@ -119,18 +126,27 @@ export function AppMain({
    * re-arms the listener against the new page's scroller instead of holding a
    * handle on the one that just unmounted.
    */
-  const scrimKey =
-    detail?.kind === 'songs'
+  // A PLUGIN PAGE gets one too. This list was written before plugin pages
+  // existed as destinations, and the omission is why the Books shelf - which
+  // wears the same cover-wall header a playlist does, and picks up all of that
+  // header's CSS - had no fade and no shadow: the whole effect rides
+  // --app-top-scroll, and nothing was publishing it there. The CSS was always
+  // ready for it. Keyed on the page, so it re-arms against the new scroller.
+  const scrimKey = detail
+    ? detail.kind === 'songs'
       ? `songs:${detail.view}`
-      : detail?.kind === 'album'
+      : detail.kind === 'album'
         ? `album:${detail.artist}:${detail.album}`
-      : detail?.kind === 'playlist'
-        ? `playlist:${detail.id}`
-        : detail?.kind === 'artist'
-          ? `artist:${detail.artist}`
-          : !detail && (tab === 'home' || tab === 'library' || tab === 'discover')
-            ? tab
-            : null;
+        : detail.kind === 'playlist'
+          ? `playlist:${detail.id}`
+          : detail.kind === 'artist'
+            ? `artist:${detail.artist}`
+            : null
+    : activePage
+      ? `page:${activePage.key}`
+      : tab === 'home' || tab === 'library' || tab === 'discover'
+        ? tab
+        : null;
 
   return (
     <main className="appContent" ref={swipeRef}>
@@ -201,7 +217,7 @@ export function AppMain({
         // acquire handler (import or buy), so a build with no way to add through
         // (the plugin-free App-Review server) never surfaces it.
         <DiscoverPage onPlay={onPlay} onOpenArtist={onOpenArtist} />
-      ) : tab === 'booth' ? (
+      ) : tab === 'booth' && showBooth ? (
         // The Booth: the taste engine's one body - the DJ conversation, the
         // mixes it built, what it is doing right now, and its own preferences.
         <BoothPage

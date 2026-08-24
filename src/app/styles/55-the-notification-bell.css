@@ -253,13 +253,44 @@
 
 .notifyRow {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  /* Art, text, when, dismiss. */
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   gap: var(--glacier-space-2);
   align-items: center;
   padding: var(--glacier-space-2);
   border-radius: var(--glacier-radius-sm);
   background: var(--glacier-glass-thin);
   text-align: start;
+}
+
+/* Quiet until wanted: a row of these down the panel would read as a column of
+   crosses rather than a list of news. It keeps its full hit area throughout -
+   only the ink fades - so a thumb is never aiming at something invisible. */
+.notifyRow__dismiss {
+  display: grid;
+  place-items: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--glacier-radius-sm);
+  background: none;
+  color: var(--glacier-text-muted);
+  opacity: 0.55;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+.notifyRow__dismiss:hover,
+.notifyRow__dismiss:focus-visible {
+  opacity: 1;
+  background: var(--glacier-surface-raised);
+  color: var(--glacier-danger-text);
+}
+/* A touch screen has no hover to reveal it with. */
+@media (hover: none) {
+  .notifyRow__dismiss {
+    opacity: 0.8;
+  }
 }
 
 .notifyRow[role='button'] {

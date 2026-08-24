@@ -6,6 +6,7 @@ import { atSize, useNavSeats, type NavDest } from './navSeats.ts';
 import { useAcquire, usePluginPages } from '../../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import { NavMoreMenu } from './NavMoreMenu.tsx';
+import { useDeveloperMode } from '../settings/developerMode.ts';
 
 /**
  * The primary navigation, in the shape each platform holds: a vertical icon
@@ -54,6 +55,9 @@ export function PrimaryNav({
   // than it left. Nothing below may be added while that is still true.
   const acquire = useAcquire();
   const canDiscover = hasDownloads || acquire.hasAny;
+  // The Booth is a workshop, not a destination: it is behind developer mode now
+  // rather than holding a seat (or a menu row) for everybody.
+  const showBooth = useDeveloperMode();
   // A tab pointing at a plugin page whose plugin was just switched off reads as
   // Home - the same fallback the content host makes - so the lit item never
   // disagrees with what is actually on screen.
@@ -116,6 +120,15 @@ export function PrimaryNav({
         go: () => onTab('discover'),
       });
     }
+    // Friends before Profile: they are the two "people" seats and the one you
+    // visit is other people's, not your own.
+    list.push({
+      key: 'friends',
+      label: 'Friends',
+      icon: <UsersRound size={18} />,
+      active: tab === 'friends',
+      go: () => onTab('friends'),
+    });
     list.push({
       key: 'profile',
       label: 'Profile',
@@ -133,22 +146,18 @@ export function PrimaryNav({
         go: () => onTab(pg.key),
       });
     }
-    list.push({
-      key: 'booth',
-      label: 'Booth',
-      icon: <Disc3 size={18} />,
-      active: tab === 'booth',
-      go: () => onTab('booth'),
-    });
-    list.push({
-      key: 'friends',
-      label: 'Friends',
-      icon: <UsersRound size={18} />,
-      active: tab === 'friends',
-      go: () => onTab('friends'),
-    });
+    // Last, and only for anybody who has turned developer mode on.
+    if (showBooth) {
+      list.push({
+        key: 'booth',
+        label: 'Booth',
+        icon: <Disc3 size={18} />,
+        active: tab === 'booth',
+        go: () => onTab('booth'),
+      });
+    }
     return list;
-  }, [pages, booksPage, canDiscover, libraryActive, tab, onTab]);
+  }, [pages, booksPage, canDiscover, libraryActive, tab, onTab, showBooth]);
 
   const seats = useNavSeats(barRef, dests.length);
   /*
@@ -194,12 +203,15 @@ export function PrimaryNav({
           icon here - and it is now a bar on Library and Discover themselves,
           which is where people look when they want to look something up. The
           legacy /search route still opens the page, through useNavStack. */}
-      <NavBarItem
-        icon={<Disc3 size={18} />}
-        label="Booth"
-        active={tab === 'booth'}
-        onClick={() => onTab('booth')}
-      />
+      {/* Developer mode only, on the rail as in the bar. */}
+      {showBooth && (
+        <NavBarItem
+          icon={<Disc3 size={18} />}
+          label="Booth"
+          active={tab === 'booth'}
+          onClick={() => onTab('booth')}
+        />
+      )}
       {/* Plugin pages ride the rail as their own items on the desktop, which
           has the vertical room; the phone bar folds them into its Plugins
           button (cascading up out of the bar) instead. */}

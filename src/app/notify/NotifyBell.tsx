@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Button, CounterBadge, IconButton, Popover, Text } from '@glacier/react';
-import { Bell, Download, Trash2 } from '@glacier/icons';
+import { Bell, Download, Trash2, X } from '@glacier/icons';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import { noticeGlyph } from './kinds.ts';
-import { clearNotices, markAllRead, msOf, useNotices, useUnreadKinds, useUnreadNotices } from './notices.ts';
+import { clearNotices, dismissNotice, markAllRead, msOf, useNotices, useUnreadKinds, useUnreadNotices } from './notices.ts';
 import { useHasDownloadQueue } from '../../plugins/runtime/pluginHooks.tsx';
 
 /**
@@ -294,6 +294,22 @@ function NoticeRow({
           <span className="notifyRow__body">{notice.body}</span>
         </span>
         <span className="notifyRow__when">{agoOf(notice.at)}</span>
+        {/* One row, gone. "Clear all" was the only answer here, which is a poor
+            one for a single stuck notice - a download that failed and will not
+            stop saying so is exactly the row you want rid of while keeping the
+            five you have not read. Its own button, OUTSIDE the pressable row's
+            handler: a press must not also open downloads on the way past. */}
+        <button
+          type="button"
+          className="notifyRow__dismiss"
+          aria-label={`Dismiss ${notice.title}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            dismissNotice(notice.id);
+          }}
+        >
+          <X size={13} />
+        </button>
       </div>
     </li>
   );

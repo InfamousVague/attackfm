@@ -15,6 +15,17 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.32
+
+- Chapters are numbered by what the NARRATOR says, not by what the files are called. A book whose first file is the publisher's own card - "this is Audible…" - had every chapter one ahead of itself, because the tags count that card as chapter one. The reading does not: one section's transcript places the whole book, and front matter that announces nothing now carries no number at all
+- The chapter list has room to breathe, and a description under each chapter name where the hub has written one (that still needs a hub with a model configured - see below)
+- Failed downloads that stick at 100% can be got rid of. Remove and Cancel used to be an either/or, so a job that had failed while still calling itself "downloading" offered only Cancel - and cancelling something the importer has already let go of does nothing. Remove is always there now
+- Notifications can be dismissed one at a time instead of only all at once
+- The queue's overall Pause button has gone. It only ever held the NEXT download, so anything in flight finished anyway - Cancel on a card is the control it looked like
+- The nav bar reads Library, Books, Discover, Friends, Profile, with the rest behind the ⋮
+- The Booth is behind developer mode for now
+- The Books top bar fades its background in as you scroll, with the shadow underneath, the way a playlist's does
+
 ## 0.4.31
 
 - Fixed audiobooks losing your place when you switch between them - two faults at once: the parting bookmark was being written against whichever book you had just moved TO, and the restore was measuring your place against the previous book's length and giving up
