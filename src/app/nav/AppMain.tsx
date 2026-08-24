@@ -8,6 +8,7 @@ import {
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import { RoomBar, TopScrim } from './HeaderChrome.tsx';
 import { UpdateBanner } from '../settings/UpdateBanner.tsx';
+import { ResumeElsewhere } from '../servers/ResumeElsewhere.tsx';
 import { AlbumPage } from '../albumArtist/AlbumPage.tsx';
 import { ArtistPage } from '../albumArtist/ArtistPage.tsx';
 import { PlaylistPage } from '../playlists/PlaylistPage.tsx';
@@ -157,6 +158,10 @@ export function AppMain({
           it sits above - an update is news about the whole app, and a page
           that unmounts on navigation would take the notice with it. */}
       <UpdateBanner />
+      {/* The other half of "keep my place across devices": the app has been
+          writing that place to the account for a long time and never once read
+          it back. An offer, not an action - see ResumeElsewhere. */}
+      <ResumeElsewhere onPlay={onPlay} />
       {/* The top of the page mirrors the bottom: scrolled content dissolves
           into black under the header instead of cutting off at its edge. Only
           once scrolled - parked at the top there is nothing to dissolve and

@@ -1262,14 +1262,14 @@ export function BooksPage({ onPlay }: PluginPageProps) {
         <div ref={sentinelRef} className="booksHead__sentinel" aria-hidden />
         <ImportDoorway />
         <Text tone="muted" size="sm">
-          {/* Names the free catalogue by the label it actually wears in the
-              navigation, and does not tell anyone to install it: LibriVox
-              ships as a default plugin, so for a new person it is already
-              there. Saying "install a downloader plugin" sent them looking in
-              Settings for something they had. */}
-          No audiobooks yet. Open <strong>Free books</strong> for the LibriVox catalogue — thousands
-          of public-domain readings, free and legal to keep — or add one you already own with the
-          button above. Anything that lands in the library shows up here.
+          {/* Names only doors that EXIST. This used to send people to "Free
+              books" for the LibriVox catalogue, which shipped as a default
+              plugin - withdrawn 2026-08-24, so that sentence would now point at
+              a page nobody has. The drop folder is the one route that needs no
+              plugin at all, so it leads. */}
+          No audiobooks yet. Add one you already own with the button above, or drop files into the
+          library&rsquo;s <strong>Audiobooks</strong> folder and they will be shelved here with
+          their chapters. Downloaders live in Settings, under their own plugins.
         </Text>
       </div>
     );

@@ -83,7 +83,13 @@ export const DEFAULT_SOURCES: readonly string[] = ['https://plugins.attack.fm'];
  * carries it and, like a default source, remembered when removed so
  * uninstalling is not undone on the next launch.
  */
-export const DEFAULT_PLUGINS: readonly string[] = ['audible', 'librivox'];
+// 'librivox' was here until 2026-08-24. It is RETIRED rather than deleted -
+// the source stays in plugins-repo and one flag brings it back - so this list
+// simply stops installing it on new devices. Deliberately NOT added to
+// DEPRECATED_PLUGINS below: that list actively uninstalls a bundle from every
+// phone that has one, which is a heavier thing than withdrawing it, and this is
+// a withdrawal for now rather than for good.
+export const DEFAULT_PLUGINS: readonly string[] = ['audible'];
 
 /** Default plugins the user has removed, so the auto-install never re-adds them. */
 const REMOVED_DEFAULT_PLUGINS_KEY = 'attackfm-plugins-removed-defaults';
