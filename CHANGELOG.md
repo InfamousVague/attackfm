@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.24
+
+- Chapters now count the way the BOOK counts. A book that opens at "Chapter 0" was reported one ahead of itself everywhere - the chapter list, "Chapter N of M" in the transport, and the headings in the read-along all counted from position instead. The book's own numbering is read once and every surface follows it
+
 ## 0.4.23
 
 - The read-along underline was one space too wide - it painted the gap after the word as well, so it always overshot to the right and ran off the edge on the last word of a line. It now ends where the word does
