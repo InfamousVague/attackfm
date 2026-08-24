@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.44
+
+- A big screen held UPRIGHT gets the whole width back. The split view was gated on width alone, so an unfolded foldable in portrait cleared the bar and still got two narrow columns - a library of shelves squeezed into a slot beside the player. It now asks for a screen at least as wide as it is tall, which is the shape where a second column is a gain rather than a division. Sideways, and on the desktop, nothing changes
+
 ## 0.4.43
 
 - The Audible library moved out of the nav and into its own settings pane, beside the account it depends on - a downloader is somewhere you go a handful of times a year, and a permanent seat for that pushed the places you go nightly along the bar. Update the Audible plugin to get it
