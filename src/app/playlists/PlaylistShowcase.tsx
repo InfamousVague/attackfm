@@ -22,6 +22,9 @@ import { PluginFence, usePlugins } from '../../plugins/runtime.tsx';
 import type { PluginPlaylistTile } from '../../plugins/types.ts';
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { useLikedStems } from '../servers/likedStems.ts';
+import { useServerSession } from '../servers/serverSession.tsx';
+import { readFeedCache } from '../library/feedCache.ts';
+import { trackIdFromPath, type HomeFeed } from '../server.ts';
 import { playlistPlayedAt, notePlaylistPlayed } from './playlistRecency.ts';
 import { openMix } from '../nav/openMix.ts';
 import { LibChipMosaic, LibChipStat } from '../library/LibChipFace.tsx';
@@ -216,6 +219,37 @@ export function PlaylistShowcase({
   onOpenArtist?: (artist: string) => void;
 }) {
   const { tracks, favoriteTracks } = useLibrary();
+  const { session } = useServerSession();
+
+  /*
+   * How many songs are actually on repeat.
+   *
+   * The other three doors carry a figure and this one carried a phrase, which
+   * is why it read as missing something: "Your most played" says what the door
+   * IS, not how much is behind it.
+   *
+   * Taken from the CACHED home feed rather than fetched. `heavy` is the same
+   * list the On repeat page itself opens with, and the feed is already on disk
+   * from the home page - so this costs a localStorage read and no request. It
+   * follows the page's own definition by intersecting with the library: an id
+   * the server counts but this device has not synced is not a song anyone can
+   * open, so counting it would make the card disagree with the page it opens.
+   *
+   * Null - and so no figure at all, LibChipStat draws nothing for it - before
+   * the first home feed has ever landed. A door that says nothing is better
+   * than one that says nought while the library is plainly full.
+   */
+  const onRepeatCount = useMemo(() => {
+    const feed = readFeedCache<HomeFeed>(session, 'home');
+    if (!feed?.heavy?.length) return null;
+    const known = new Set<number>();
+    for (const t of tracks) {
+      const id = trackIdFromPath(t.path);
+      if (id !== null) known.add(id);
+    }
+    const n = feed.heavy.filter((id) => known.has(id)).length;
+    return n > 0 ? n : null;
+  }, [session, tracks]);
   // removeTrack went with the strip's modal - shedding a row was only ever
   // offered there, and Recent never offered it at all.
   const { playlists, create, remove, rename, setMeta, setCover, setAutoStem } = usePlaylists();
@@ -459,8 +493,11 @@ export function PlaylistShowcase({
           >
             <img className="libChip__art" src={onRepeatChip} alt="" loading="lazy" />
             <LibChipMosaic covers={allCovers} />
+            <LibChipStat value={onRepeatCount === null ? undefined : String(onRepeatCount)} />
             <span className="libChip__name">On repeat</span>
-            <span className="libChip__count">Your most played</span>
+            <span className="libChip__count">
+              {onRepeatCount === null ? 'Your most played' : songCount(onRepeatCount)}
+            </span>
           </button>
           <DjLauncher onPlay={(track, queue) => onPlay(track, queue ?? [track])} />
         </div>
