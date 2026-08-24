@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.21
+
+- Closed the band of empty space under the Books header, above Favourites - the shelf now starts where every other page's first section does
+
 ## 0.4.20
 
 - A word-level transcript of a very long book is a big download, and it was being cut off by a deadline meant for small requests - it now gets the time it needs

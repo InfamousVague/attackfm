@@ -549,9 +549,21 @@ span.bookCard__readAlong {
 
 /* The mark that says the page's own header has gone. Zero-height and inert -
    it exists to be watched, never to be seen or to take up room. */
+/* The observer's mark for "the page's own header has scrolled away", sitting at
+   the header's bottom edge so the compact top bar takes over exactly there.
+   
+   IT MUST NOT COST A GAP. `.discoverPage` is a flex column with
+   `gap: var(--glacier-space-8)`, and gap is charged BETWEEN every pair of
+   children - so a marker parked between the header and the first section is
+   charged that gap twice, once above it and once below, and 2 x 2rem of nothing
+   read as a band of dead space under the Books header. The mark cannot leave the
+   flow (it is what the observer watches, and only its position in the flow puts
+   it at the header's edge), so it hands one gap back instead: the negative block
+   start cancels its own pixel, the negative block end cancels the second gap.
+   Its own position is unchanged, so the bar still flips at the same scroll. */
 .booksHead__sentinel {
   block-size: 1px;
-  margin-block-start: -1px;
+  margin-block: -1px calc(-1 * var(--glacier-space-8));
   pointer-events: none;
 }
 
