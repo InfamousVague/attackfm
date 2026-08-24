@@ -685,26 +685,39 @@
 /* The reading pace: a pill among the book's own facts, quiet at 1x and lit
    once somebody has chosen a pace of their own - the same "on" language the
    transport's toggles speak. */
-.npScreen__speed {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  margin-block-start: 0.3rem;
-  padding: 0.14rem 0.5rem;
-  border: 0;
-  border-radius: 999px;
-  background: rgb(255 255 255 / 0.12);
-  color: var(--glacier-text-subtle, var(--glacier-text-muted));
-  font: inherit;
-  font-size: 0.78rem;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
+/*
+ * The pace, as a seat beside the heart.
+ *
+ * It was a pill carrying its own rate, sitting among the lines that say what is
+ * playing - a control in a caption. It is a glyph at the heart's weight now, and
+ * the rate rides it as a badge rather than widening it, so the two seats stay
+ * the same size whether it says 1x or 1.75x.
+ */
+.npScreen__speedBtn {
+  position: relative;
+  overflow: visible;
 }
 
-.npScreen__speed[data-on] {
-  background: var(--glacier-accent-soft, rgb(255 255 255 / 0.18));
-  color: #fff;
+.npScreen__speedBtn[data-on] {
+  color: var(--glacier-accent-text, #fff);
+}
+
+/* Tucked under the glyph's lower-right, where a badge goes, and out of the
+   press: the whole seat is the target, and a number that eats taps near its own
+   corner is a control that feels broken. */
+.npScreen__speedBadge {
+  position: absolute;
+  inset-block-end: 0.05rem;
+  inset-inline-end: -0.15rem;
+  padding: 0 0.2rem;
+  border-radius: 999px;
+  background: var(--glacier-accent-solid, #fff);
+  color: var(--glacier-accent-contrast, #000);
+  font-size: 0.58rem;
+  font-weight: 700;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 
 .npSpeed__list {

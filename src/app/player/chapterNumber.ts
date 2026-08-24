@@ -91,11 +91,23 @@ export function chapterNumbers(
 
   const base = (heard ? heard[anchor]! : one ? one.number : stated[anchor]!) - anchor;
   return titles.map((_, i) => {
-    // Before the first announced chapter. With a full reading that is proof of
-    // front matter; with only titles to go on it is the same rule applied to
-    // the weaker evidence - a row that claims no number of its own.
-    if (i < anchor && (heard ? heard[i] === null : stated[i] === null)) return null;
     const n = i + base;
+    /*
+     * FRONT MATTER, and only front matter.
+     *
+     * A row that announced nothing and sits before the first one that did is a
+     * candidate - but only where the arithmetic ALSO puts it at or before the
+     * book's start. That second half is not a nicety: the first thing to parse
+     * may be a long way in (a narrator who runs "chapter one" across two of the
+     * recogniser's segments announces nothing this can read until much later),
+     * and without it every real chapter before that point was declared front
+     * matter and lost its number. Nine of them, in the list that showed this up.
+     *
+     * At or below zero is the test because a book's first chapter is 1, or 0 for
+     * a series that opens there; anything computing lower than its own opening
+     * chapter is in front of the book rather than part of it.
+     */
+    if (n <= 0 && (heard ? heard[i] === null : stated[i] === null)) return null;
     return n >= 0 ? n : null;
   });
 }

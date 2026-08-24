@@ -515,7 +515,7 @@
 
 .npChapters__row {
   display: grid;
-  grid-template-columns: 1.75rem 1fr auto;
+  grid-template-columns: 1.75rem minmax(0, 1fr) auto;
   align-items: center;
   column-gap: var(--glacier-space-3);
   /* A gap between the name and the description under it, not the space-3 the
@@ -561,18 +561,30 @@
   font-weight: 600;
 }
 
+/*
+ * EXPLICIT COLUMNS, because the numeral is not always there.
+ *
+ * Front matter carries no number, and with the numeral span simply absent the
+ * title slid into the 1.75rem column meant for it and was clipped to "Ch…" -
+ * every row of a book whose first file is a publisher's card. Placing each cell
+ * by name means a missing numeral leaves a gap where it would have been rather
+ * than dragging the rest of the row across.
+ */
 .npChapters__n {
+  grid-column: 1;
   font-variant-numeric: tabular-nums;
   opacity: 0.5;
   text-align: end;
 }
 .npChapters__title {
+  grid-column: 2;
   min-inline-size: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .npChapters__at {
+  grid-column: 3;
   font-variant-numeric: tabular-nums;
   opacity: 0.5;
   font-size: 0.8em;
