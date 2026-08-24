@@ -9,6 +9,8 @@ import { CoverWall } from '../../app/playlists/CoverWall.tsx';
 import { fetchPlayStates } from '../../app/api/listening.ts';
 import { removeTracks, uploadFile } from '../../app/api/library.ts';
 import { setHeaderActions } from '../../app/nav/headerActions.ts';
+import { artSized } from '../../app/server.ts';
+import { formatTotal } from '../../app/ux/format.ts';
 import { useHoldToMenu } from '../../app/ux/holdToMenu.ts';
 import { request, ServerError } from '../../app/api/http.ts';
 import type { Track } from '../../app/core/tauri.ts';
@@ -247,27 +249,65 @@ function BooksHeader({
   blurb,
   onAdded,
   covers = [],
+  count = 0,
+  totalSeconds = 0,
+  cover = null,
+  onResume,
 }: {
   blurb: string;
   onAdded: () => void;
   /** The shelf's own sleeves, drifting behind the title - the same treatment a
    *  playlist wears, because a shelf is identified by what is on it just as a
-   *  list is. Empty on the empty page, where CoverWall draws nothing anyway:
-   *  it wants three distinct sleeves before a wall is a wall rather than
-   *  wallpaper, so the no-books case needs no branch here. */
+   *  list is. Empty on the empty page, where CoverWall draws nothing anyway. */
   covers?: readonly (string | null)[];
+  count?: number;
+  totalSeconds?: number;
+  /** The tile's face: the book being read (favourites first), like a
+   *  playlist's mosaic - the door and the room behind it, one thing. */
+  cover?: string | null;
+  /** Picks the book up where it was left - the shelf's one honest verb. */
+  onResume?: (() => void) | null;
 }) {
+  /*
+   * The same hero every collection wears - Liked songs, All songs, a
+   * playlist - because this page IS one of those doors, and it was the only
+   * one dressed differently. Same classes on purpose: the anatomy cannot
+   * drift from the others if it is the others.
+   */
   return (
-    <header className="booksHead">
+    <header className="playlistHead songPageHead booksHead">
       <CoverWall artworks={covers} />
-      <div className="booksHead__row">
-        <span className="booksHead__glyph" aria-hidden>
-          <BookAudio size={20} />
-        </span>
-        <h1 className="booksHead__title">Books</h1>
-        <AddBook onAdded={onAdded} />
+      <div className="playlistHead__cover" aria-hidden>
+        <div className="tileSquircle playlistHead__mosaic booksHero">
+          {cover ? (
+            <img className="booksHero__cover" src={artSized(cover, 640) ?? cover} alt="" />
+          ) : (
+            <span className="booksHero__glyph">
+              <BookAudio size={34} />
+            </span>
+          )}
+        </div>
       </div>
-      <p className="booksHead__blurb">{blurb}</p>
+      <div className="playlistHead__body">
+        <Text tone="muted" size="xs" className="playlistHead__kicker">
+          Your library
+        </Text>
+        <h2 className="playlistHead__name">Books</h2>
+        <Text tone="muted" size="sm">
+          {count > 0
+            ? `${count} ${count === 1 ? 'book' : 'books'}${totalSeconds > 0 ? ` · ${formatTotal(totalSeconds)}` : ''}`
+            : blurb}
+        </Text>
+        <div className="playlistHead__actions">
+          {onResume && (
+            <Button variant="solid" size="sm" onClick={onResume}>
+              <Play size={15} fill="currentColor" />
+              Resume
+            </Button>
+          )}
+          <AddBook onAdded={onAdded} />
+        </div>
+      </div>
     </header>
   );
 }
@@ -954,12 +994,34 @@ export function BooksPage({ onPlay }: PluginPageProps) {
     );
   };
 
+  // The hero's figures and its one verb: how much shelf there is, and the
+  // book most recently touched - the one "pick up where you left off" means.
+  const totalSeconds = useMemo(
+    () => shelf.reduce((n, b) => n + b.tracks.reduce((m, t) => m + (t.duration ?? 0), 0), 0),
+    [shelf],
+  );
+  const resumeBook = useMemo(() => {
+    let best: { book: ShelfBook; at: number } | null = null;
+    for (const b of shelf) {
+      for (const t of b.tracks) {
+        const id = serverId(t.path);
+        const mark = id != null ? marks.get(id) : undefined;
+        if (mark && (!best || mark.updatedAt > best.at)) best = { book: b, at: mark.updatedAt };
+      }
+    }
+    return best?.book ?? null;
+  }, [shelf, marks]);
+
   return (
     <div ref={pageRef} className="discoverPage booksPage">
       <BooksHeader
         blurb="Your shelf — pick up where you left off."
         onAdded={rescan}
         covers={shelf.map((b) => b.cover)}
+        count={shelf.length}
+        totalSeconds={totalSeconds}
+        cover={headerCover}
+        onResume={resumeBook ? () => readBook(resumeBook) : null}
       />
       <div ref={sentinelRef} className="booksHead__sentinel" aria-hidden />
 

@@ -631,3 +631,20 @@ span.bookCard__readAlong {
 .booksImport__head .discoverSection__title {
   margin: 0;
 }
+
+/* The hero tile's two faces: the reading book's sleeve, or the shelf glyph
+   for a shelf with no art yet. The squircle wrapper sizes it; these fill. */
+.booksHero__cover {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.booksHero__glyph {
+  display: grid;
+  place-items: center;
+  inline-size: 100%;
+  block-size: 100%;
+  color: rgba(255, 255, 255, 0.8);
+  background: linear-gradient(140deg, #3a2f55, #1f1a30);
+}

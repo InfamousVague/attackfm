@@ -46,7 +46,12 @@ export function fetchChapterNotes(track: Track): Promise<BookNotes | null> {
       const blurbs = r.blurbs ?? {};
       return Object.keys(blurbs).length > 0 ? blurbs : null;
     })
-    .catch(() => null);
+    // A failed ask forgets itself - the transcripts' rule, for the same
+    // launch-race reason. Only a served answer (even an empty one) stays.
+    .catch(() => {
+      cache.delete(id);
+      return null;
+    });
 
   cache.set(id, looked);
   return looked;

@@ -34,8 +34,8 @@ import { subscribeGestures } from './deviceMotion.ts';
 import { isTauri, tauriCall } from '../core/tauri.ts';
 import { trackIdFromPath } from '../server.ts';
 import { motionGesturesEnabled } from '../settings/behaviourPrefs.ts';
-import { fetchChapterNotes, type BookNotes } from './chapterNotes.ts';
-import { fetchTranscript, type BookLine } from './transcript.ts';
+import { fetchChapterNotes, forgetChapterNotes, type BookNotes } from './chapterNotes.ts';
+import { fetchTranscript, forgetTranscript, type BookLine } from './transcript.ts';
 import npPlaceholderArt from '../../assets/attack-wave.png';
 import type { Track } from '../core/tauri.ts';
 
@@ -524,6 +524,9 @@ export function NowPlayingSheet({
    */
   const [bookNotes, setBookNotes] = useState<BookNotes | null>(null);
   const [bookWords, setBookWords] = useState<BookLine[] | null>(null);
+  /** Bumped by the Read-along seat to ask again - a failed fetch is no
+   *  longer cached, so a retry is a real retry. */
+  const [wordsAsk, setWordsAsk] = useState(0);
   const bookPath = track?.kind === 'book' ? track.path : null;
   useEffect(() => {
     if (!bookPath || !track) {
@@ -544,7 +547,7 @@ export function NowPlayingSheet({
     // The track OBJECT changes identity every library refresh; the path is
     // the book's identity, and the notes only depend on that.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookPath]);
+  }, [bookPath, wordsAsk]);
 
   /** The hub's note for one chapter slot, looked up by server track id. */
   const noteFor = (path: string, idx: number) => {
@@ -1126,7 +1129,20 @@ export function NowPlayingSheet({
             variant="ghost"
             aria-label="Read along"
             data-on={artView === 'chapters' || undefined}
-            onClick={() => chooseArtView('chapters')}
+            onClick={() => {
+              if (artView !== 'chapters') {
+                chooseArtView('chapters');
+                return;
+              }
+              // Already the face, but no words on it: ask the hub again.
+              // The launch-race fetch is no longer cached on failure, so
+              // this is the lit button healing itself.
+              if (readingFlow.length === 0 && track) {
+                forgetTranscript(track);
+                forgetChapterNotes(track);
+                setWordsAsk((n) => n + 1);
+              }
+            }}
           >
             <BookOpenText size={20} />
           </IconButton>
