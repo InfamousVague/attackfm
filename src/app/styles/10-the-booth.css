@@ -49,14 +49,44 @@
 
 /* The invitation: one warm row, deliberately small - Music Date's real face
    is the fullscreen layer, and a card that oversold it here would just be a
-   second version of the page it opens. */
-.boothPage .boothDate {
+   second version of the page it opens.
+   
+   NOT SCOPED TO THE BOOTH, though it was. The invitation moved to Discover -
+   "the Booth moved off the bar, and an invitation nobody walks past is no
+   invitation" - and the selector stayed behind, so every one of these
+   declarations quietly stopped applying: the padding, the min-height, the gap,
+   the ground. What was left was the kit's bare Button with a 2.4rem circle in
+   it, which is why the icon sat against the top and bottom edges with nothing
+   around it. The child rules below were never scoped, which is exactly why the
+   mark still looked right while the row around it did not.
+   
+   `button.boothDate` rather than `.boothDate` for ONE reason: the kit sizes its
+   medium button with `height: var(--glacier-control-height-md)`, a single class
+   like ours, and it was winning - so the row was pinned to 44px while its
+   content wanted 65, and the 2.4rem mark ended up 2.8px from each edge with the
+   padding below having no effect at all. The type selector settles it without
+   an `!important`, and this is always a button. */
+button.boothDate {
   display: flex;
   align-items: center;
   justify-content: flex-start;
   gap: var(--glacier-space-3);
   block-size: auto;
-  min-block-size: var(--glacier-control-height-md);
+  /*
+   * THE FLOOR IS THE CONTENT, not the kit's control height.
+   *
+   * It was `--glacier-control-height-md` (44px), which is right for a button
+   * holding a word and wrong for one holding a 2.4rem disc: the mark plus the
+   * block padding needs 65, so the row was pinned at 44 and the disc overflowed
+   * its own content box, ending up 2.8px from each edge with the padding having
+   * no visible effect. Stated as the height the CONTENT needs, min-block-size
+   * clamps the kit's `height` for free - no specificity fight, no !important.
+   *
+   * Derived from the mark rather than typed twice, so resizing the disc below
+   * carries the row with it.
+   */
+  --booth-date-mark: 2.4rem;
+  min-block-size: calc(var(--booth-date-mark) + var(--glacier-space-3) * 2);
   padding: var(--glacier-space-3) var(--glacier-space-4);
   border: var(--glacier-hairline) solid var(--glacier-border-subtle);
   border-radius: var(--glacier-radius-lg);
@@ -75,8 +105,8 @@
 
 .boothDate__mark {
   flex: none;
-  inline-size: 2.4rem;
-  block-size: 2.4rem;
+  inline-size: var(--booth-date-mark, 2.4rem);
+  block-size: var(--booth-date-mark, 2.4rem);
   border-radius: 50%;
   display: grid;
   place-items: center;

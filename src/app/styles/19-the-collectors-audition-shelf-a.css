@@ -98,7 +98,12 @@
    overhang, which read as the player having drifted away from the nav. */
 .appWindow:has(.appNavBar) .appPlayer {
   inset-block-end: calc(var(--app-nav-height) + var(--app-nav-gap));
-  padding-block-end: var(--glacier-space-2);
+  /* Half a step, not a whole one. TWO things spend here - this padding and
+     --app-nav-gap - and a full step of each put nearly eighteen pixels between
+     two plates meant to read as a stack. The gap stays real, because they ARE
+     two plates and a hairline would weld them; it is just no longer paid for
+     twice over. */
+  padding-block-end: var(--glacier-space-1);
 }
 
 /* Far enough down to clear its own height AND the offset it rests at, so it
@@ -299,6 +304,18 @@
     --app-player-art: calc(
       var(--app-player-seek) + var(--glacier-space-1) + var(--app-player-play)
     );
+  }
+
+  /* The cover, rounded harder than the kit's default.
+  
+     The kit gives its artwork `--glacier-radius-md` - 10px, which on a 63px
+     square reads as a photo with the corners knocked off. A squircle at a third
+     of the side reads as an OBJECT, the shape the tiles and playlist cards wear
+     everywhere else in the app, and in the strip the cover is a tap target
+     first and a picture second. A percentage rather than a token, so it stays a
+     squircle at whatever size the two scale numbers above put it. */
+  .appPlayer [class*="_artwork_"] {
+    border-radius: 30%;
   }
 
   /* The album cover, left-aligned: a fat, obvious tap target for lifting the
