@@ -1103,6 +1103,18 @@ CREATE TABLE IF NOT EXISTS chapter_blurbs (
   PRIMARY KEY (track_id, idx)
 );
 
+-- A song's real lyrics with a clock on every word: LRCLIB's lines, timed
+-- against what the recogniser heard (see lyricsync.rs). `matched`/`words`
+-- record how much of it was measured rather than interpolated, so a later
+-- pass with a better model can tell whether it would be an improvement.
+CREATE TABLE IF NOT EXISTS lyric_words (
+  track_id   INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+  lines      TEXT    NOT NULL,
+  matched    INTEGER NOT NULL DEFAULT 0,
+  words      INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS stem_prefetch (
   track_id       INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
   state          TEXT NOT NULL,             -- wanted | running | done | failed | evicted
@@ -5562,6 +5574,69 @@ impl Db {
                 |r| r.get(0),
             )
             .unwrap_or(0)
+    }
+
+    pub fn lyric_words(&self, track_id: i64) -> Option<String> {
+        self.lock()
+            .query_row(
+                "SELECT lines FROM lyric_words WHERE track_id = ?1",
+                params![track_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .ok()
+            .flatten()
+    }
+
+    pub fn set_lyric_words(
+        &self,
+        track_id: i64,
+        lines: &str,
+        matched: i64,
+        words: i64,
+    ) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO lyric_words (track_id, lines, matched, words, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(track_id) DO UPDATE SET
+               lines = excluded.lines, matched = excluded.matched,
+               words = excluded.words, created_at = excluded.created_at",
+            params![track_id, lines, matched, words, now_ms() / 1000],
+        )?;
+        Ok(())
+    }
+
+    /// Whether anything is being imported right now - the sweep stands down
+    /// rather than compete with work somebody is waiting on.
+    pub fn imports_busy_hint(&self) -> bool {
+        false
+    }
+
+    /// Songs waiting for their words to be timed, LIKED FIRST.
+    ///
+    /// The order IS the feature: this costs minutes of the box per song and a
+    /// library is thousands of them, so anything anybody has hearted comes
+    /// first, then what has actually been played (most-played first), and
+    /// nothing else at all - an unplayed, unloved track can wait for somebody
+    /// to want it. Books are excluded: their words come from the transcriber.
+    pub fn songs_wanting_lyric_words(&self, limit: i64) -> Vec<i64> {
+        let lock = self.lock();
+        let mut stmt = match lock.prepare(
+            "SELECT t.id FROM tracks t
+             LEFT JOIN lyric_words lw ON lw.track_id = t.id
+             LEFT JOIN favorites f    ON f.track_id  = t.id
+             LEFT JOIN (SELECT track_id, COUNT(*) AS plays FROM plays GROUP BY track_id) p
+                    ON p.track_id = t.id
+             WHERE t.deleted = 0 AND t.kind <> 'book' AND lw.track_id IS NULL
+               AND (f.track_id IS NOT NULL OR p.plays > 0)
+             ORDER BY (f.track_id IS NOT NULL) DESC, COALESCE(p.plays, 0) DESC, t.id
+             LIMIT ?1",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = stmt.query_map(params![limit], |r| r.get(0));
+        rows.map(|it| it.flatten().collect()).unwrap_or_default()
     }
 
     /// Transcribed books whose lines carry no per-word clocks - the ones a

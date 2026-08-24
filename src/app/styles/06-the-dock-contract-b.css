@@ -787,3 +787,70 @@
   color: var(--glacier-accent-text);
 }
 
+
+/* ---- Lyrics with a clock on every word --------------------------------- */
+
+/* The kit's Lyrics lights a line; this lights the words inside it. Same
+   manners - centred reading line, every line a seek target - so the two are
+   interchangeable and a song without word clocks notices nothing. */
+.wordLyrics {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  max-block-size: min(60vh, 26rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  padding-block: 35%;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 88%, transparent 100%);
+}
+
+.wordLyrics::-webkit-scrollbar {
+  display: none;
+}
+
+.wordLyrics__line {
+  border: 0;
+  padding: 0.1rem 0.2rem;
+  background: none;
+  color: var(--glacier-text-subtle, var(--glacier-text-muted));
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  text-align: start;
+  text-wrap: pretty;
+  cursor: pointer;
+  transition: color 0.3s ease;
+}
+
+.wordLyrics__line[data-state='now'] {
+  color: var(--glacier-text-primary);
+  font-weight: 600;
+}
+
+/* Inside the sung line: what has been sung stays bright, what is coming
+   waits, and the word under the voice is underlined in the accent - held as
+   long as the singer holds it. */
+.wordLyrics__w {
+  color: var(--glacier-text-subtle, var(--glacier-text-muted));
+  transition: color 0.16s ease;
+}
+
+.wordLyrics__w[data-said],
+.wordLyrics__w[data-lit] {
+  color: var(--glacier-text-primary);
+}
+
+.wordLyrics__w[data-lit] {
+  text-decoration: underline;
+  text-decoration-color: var(--glacier-accent-solid);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.2em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wordLyrics__line,
+  .wordLyrics__w {
+    transition: none;
+  }
+}
