@@ -65,14 +65,36 @@ export function chapterNumbers(
    * file is called. So when the transcript tells us a number, that is the
    * anchor and the titles only fill in around it.
    */
-  spoken?: { index: number; number: number } | null,
+  spoken?: { index: number; number: number } | readonly (number | null)[] | null,
 ): (number | null)[] {
   const stated = titles.map((t) => statedChapterNumber(t ?? ''));
-  const anchor = spoken ? spoken.index : stated.findIndex((n) => n !== null);
+
+  /*
+   * An ARRAY means we heard every chapter's opening, not just one.
+   *
+   * That is the case for a single-file book: its transcript covers the whole
+   * thing, so each marker's own opening can be read. It is worth more than one
+   * anchor, because it turns "this row announced nothing" into EVIDENCE. A
+   * publisher's card at the top of the file announces nothing and is not a
+   * chapter; a real Chapter Zero says so out loud. Without that, the two are
+   * indistinguishable and the card ends up numbered.
+   */
+  const heard = Array.isArray(spoken) ? (spoken as readonly (number | null)[]) : null;
+  const one = heard ? null : (spoken as { index: number; number: number } | null | undefined) ?? null;
+
+  const anchor = heard
+    ? heard.findIndex((n) => n !== null)
+    : one
+      ? one.index
+      : stated.findIndex((n) => n !== null);
   if (anchor === -1 || anchor >= titles.length) return titles.map((_, i) => i + 1);
-  const base = (spoken ? spoken.number : stated[anchor]!) - anchor;
+
+  const base = (heard ? heard[anchor]! : one ? one.number : stated[anchor]!) - anchor;
   return titles.map((_, i) => {
-    if (i < anchor && stated[i] === null) return null;
+    // Before the first announced chapter. With a full reading that is proof of
+    // front matter; with only titles to go on it is the same rule applied to
+    // the weaker evidence - a row that claims no number of its own.
+    if (i < anchor && (heard ? heard[i] === null : stated[i] === null)) return null;
     const n = i + base;
     return n >= 0 ? n : null;
   });

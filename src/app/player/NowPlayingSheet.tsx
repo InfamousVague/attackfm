@@ -287,6 +287,32 @@ function BookWords({
 
 
 /** One row of the chapter panel, whatever form the book arrived in. */
+/**
+ * A chapter's first words, trimmed to sit under its name.
+ *
+ * NOT a description, and it must not pretend to be one - it is what the chapter
+ * opens with, quoted. The hub writes real descriptions with a model; this is
+ * what a book can say about itself with nothing but its own reading, so a
+ * chapter list is informative on a hub that has no model configured instead of
+ * being a bare column of numbers.
+ *
+ * The announcement itself is dropped, because the row already carries the
+ * number, and "Chapter six. Chapter six…" is not worth the line.
+ */
+function openingLine(opening: string): string | null {
+  let t = opening.trim();
+  if (!t) return null;
+  t = t
+    .replace(/^(?:and\s+now,?\s+)?chapter\s+(?:[a-z]+(?:[-\s][a-z]+)?|\d{1,4})\s*[.:,!?-]*\s*/i, '')
+    .trim();
+  // Too short to say anything: a marker whose opening is one stray word.
+  if (t.length < 16) return null;
+  if (t.length <= 120) return t;
+  const cut = t.slice(0, 120);
+  const stop = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf(', '), cut.lastIndexOf(' '));
+  return `${(stop > 60 ? cut.slice(0, stop) : cut).trim()}…`;
+}
+
 interface ChapterFace {
   title: string;
   /** The number this chapter wears - the book's own, not its position.
@@ -294,6 +320,9 @@ interface ChapterFace {
   n: number | null;
   /** The hub's one non-spoiler line, where its AI has written one. */
   blurb: string | null;
+  /** What it opens with, when the hub has written no description. Shown in the
+   *  same place, dressed differently - it is quoted narration, not a summary. */
+  opening: string | null;
   /** Right-hand figure: a start offset (single file) or a length (sections). */
   at: string | null;
   here: boolean;
@@ -597,6 +626,36 @@ export function NowPlayingSheet({
    * Front matter announces nothing, which is exactly how it ends up carrying no
    * number at all.
    */
+  /**
+   * EVERY marker's opening words, for a book that is one file.
+   *
+   * The transcript covers the whole file, so each chapter marker's own opening
+   * can be read - which is worth more than the single anchor below, because it
+   * turns "this one announced nothing" into evidence rather than a guess. A
+   * publisher's card at the head of the file announces nothing and is not a
+   * chapter; a real Chapter Zero says so aloud. Nothing else can tell them
+   * apart, and it is why a seventeen-second Audible card was being counted as
+   * chapter one and shifting the entire book.
+   *
+   * The opening doubles as a description of last resort - see `openingOf`.
+   */
+  const markerOpenings = useMemo(() => {
+    if (!bookWords || bookWords.length === 0 || chapters.length === 0) return null;
+    return chapters.map((c, i) => {
+      const from = c.startMs / 1000;
+      const to = i + 1 < chapters.length ? chapters[i + 1]!.startMs / 1000 : Infinity;
+      const lines: string[] = [];
+      for (const l of bookWords) {
+        if (l.time < from - 1) continue;
+        if (l.time >= to) break;
+        lines.push(l.text);
+        if (lines.length >= 3) break;
+      }
+      const opening = lines.join(' ').trim();
+      return { opening, number: spokenChapterNumber(opening) };
+    });
+  }, [bookWords, chapters]);
+
   const spokenAnchor = useMemo(() => {
     if (!bookWords || bookWords.length === 0 || track?.kind !== 'book') return null;
     // The opening only. "Chapter" turns up all through a reading and a mention
@@ -727,7 +786,9 @@ export function NowPlayingSheet({
       const here = chapterIndexAt(chapters, position * 1000);
       const nums = chapterNumbers(
         chapters.map((c, i) => noteFor(track.path, i)?.name?.trim() || c.title || ''),
-        spokenAnchor,
+        // Every marker's own opening beats the single anchor: it can tell front
+        // matter from a chapter, which one anchor cannot.
+        markerOpenings ? markerOpenings.map((m) => m.number) : spokenAnchor,
       );
       return chapters.map((c, i) => {
         // The row already numbers itself, so a title that opens with its own
@@ -744,6 +805,7 @@ export function NowPlayingSheet({
           n,
           title: bare || (n === null ? `Chapter ${i + 1}` : `Chapter ${n}`),
           blurb: note?.blurb?.trim() || null,
+          opening: openingLine(markerOpenings?.[i]?.opening ?? ''),
           at: formatClock(c.startMs / 1000),
           here: i === here,
           jump: () => onSeekChapter(c.startMs),
@@ -775,6 +837,9 @@ export function NowPlayingSheet({
         n,
         title: bare || (n === null ? `Chapter ${i + 1}` : `Chapter ${n}`),
         blurb: note?.blurb?.trim() || null,
+        // A sectioned book is one transcript per FILE, and only the one playing
+        // has been fetched - there is nothing to quote for the others.
+        opening: null,
         at: t.duration != null ? formatClock(t.duration) : null,
         here: t.path === track.path,
         jump: () => onTrackChange?.(t),
@@ -1382,7 +1447,15 @@ export function NowPlayingSheet({
                   {c.n !== null && <span className="npChapters__n">{c.n}</span>}
                   <span className="npChapters__title">{c.title}</span>
                   {c.at && <span className="npChapters__at">{c.at}</span>}
-                  {c.blurb && <span className="npChapters__blurb">{c.blurb}</span>}
+                  {c.blurb ? (
+                    <span className="npChapters__blurb">{c.blurb}</span>
+                  ) : c.opening ? (
+                    /* Quoted narration, not a summary - dressed differently on
+                       purpose so it never reads as the hub's own words. */
+                    <span className="npChapters__blurb" data-opening>
+                      {c.opening}
+                    </span>
+                  ) : null}
                 </button>
               ))}
             </div>

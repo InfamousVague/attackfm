@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.34
+
+- A single-file audiobook now reads EVERY chapter's opening, not just the file's. That is what finally sorts the Audible card at the top of Dungeon Crawler Carl: a seventeen-second card announces no chapter and is not one, so it carries no number and chapter one is chapter one again. It needs the book transcribed
+- Each chapter shows what it opens with, under its name, where your hub has not written a description. Set in italics, because it is the narrator's words quoted rather than a summary - real descriptions are written by a model and still need one configured on the hub
+- More room in the chapter list: the panel had no padding rule of its own and was wearing the kit's default, which is why it sat tighter than the rest of the app
+
 ## 0.4.33
 
 - Starting a book you have never played no longer drops you at the timestamp of the one you were just listening to. It begins at the beginning, and a book you HAVE been reading still returns to its own place
