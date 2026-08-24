@@ -180,6 +180,46 @@ export function readArtView(): ArtView {
   }
 }
 
+/**
+ * How fast a book is read, and where that choice lives.
+ *
+ * The ELEMENT's own rate, not the effects rack's `atempo`, and the reason is
+ * the book's timeline. An fx tempo re-encodes the stream, so the bar counts
+ * seconds coming OUT of ffmpeg while chapter marks, the bookmark ledger and
+ * every transcript word stamp count seconds of the FILE - the two clocks part
+ * company the moment the pedal is on (which is what `chainRate` and
+ * `timelineDuration` exist to reconcile for music). A media element played
+ * faster still reports `currentTime` in file seconds, so a book at 1.5x keeps
+ * its chapters, its place and its read-along exactly where they were. The
+ * engine's own resampler holds pitch (`preservesPitch`), which is the whole
+ * ask - and it costs the hub nothing, works on a downloaded book with no
+ * server at all, and answers instantly instead of re-buffering.
+ *
+ * The house's warning about `playbackRate` (see the turntable ramp above)
+ * is about BENDING it - re-writing it per frame, which glitches and gets
+ * reset across a pause on WebKit. A setting written once per load is the
+ * other thing entirely; it is re-applied on play and on the engine's own
+ * ratechange, so a WebKit reset does not take the choice with it.
+ */
+export const BOOK_SPEED_KEY = 'attackfm-book-speed';
+
+/** The speeds offered, and the only ones stored. */
+export const BOOK_SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2] as const;
+
+export function readBookSpeed(): number {
+  try {
+    const n = Number(localStorage.getItem(BOOK_SPEED_KEY));
+    return BOOK_SPEEDS.includes(n as (typeof BOOK_SPEEDS)[number]) ? n : 1;
+  } catch {
+    return 1;
+  }
+}
+
+/** 1x reads as "normal" rather than as a number nobody chose. */
+export function bookSpeedLabel(rate: number): string {
+  return `${rate}×`;
+}
+
 /** The book clock, defaulting to the chapter panel. */
 export function readBookArtView(): ArtView {
   try {

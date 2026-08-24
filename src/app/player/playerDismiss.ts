@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { makeRatchet } from '../ux/ratchet.ts';
 
 /**
@@ -157,9 +157,20 @@ export function installPlayerDismiss(
 export function usePlayerDismiss(playing: boolean) {
   const [dismissed, setDismissed] = useState(false);
   const shellRef = useRef<HTMLDivElement | null>(null);
-  /** True from the moment a swipe is claimed until the next touch begins, so
-   *  the click that trails a drag does not also lift the Now Playing sheet. */
-  const draggedRef = useRef(false);
+  /*
+   * WHEN a swipe was last claimed - a moment, not a flag.
+   *
+   * It was a boolean cleared by the NEXT touchstart, which is a promise this
+   * gesture cannot keep: its listeners are only installed while the strip is
+   * paused and present, so a claimed drag followed by playback starting (the
+   * common case - drag the strip a little, then press play) tore the
+   * listeners down with the flag still true, and nothing was left to clear
+   * it. From then on every tap on the strip's dead space was read as the
+   * tail of that drag and the Now Playing sheet stopped lifting, while every
+   * real button on the strip kept working - which is exactly how it was
+   * reported. A timestamp cannot stick: the window closes on its own.
+   */
+  const draggedAt = useRef(0);
 
   // Sound again - here or on whichever device took the seat - and the strip is
   // a control again, so it returns whether or not it was pushed away.
@@ -173,14 +184,22 @@ export function usePlayerDismiss(playing: boolean) {
     if (!shell || playing || dismissed) return;
     return installPlayerDismiss(shell, {
       onClaim: (claimed) => {
-        draggedRef.current = claimed;
+        draggedAt.current = claimed ? Date.now() : 0;
       },
       onDismiss: () => setDismissed(true),
     });
   }, [playing, dismissed]);
 
-  return { dismissed, shellRef, draggedRef };
+  /** Whether a tap arriving now is the click that trails a drag. Long enough
+   *  to cover the click that follows a touchend, far shorter than anyone
+   *  deliberately tapping the strip after letting go of it. */
+  const draggedRecently = useCallback(() => Date.now() - draggedAt.current < DRAG_CLICK_MS, []);
+
+  return { dismissed, shellRef, draggedRecently };
 }
+
+/** How long after a claimed drag a click is still that drag's release. */
+const DRAG_CLICK_MS = 700;
 
 /** How far the sheet must travel to be let go of. It is a whole screen, not a
  *  plate across the bottom, so the mark is further down than the strip's. */

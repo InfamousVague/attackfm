@@ -16,7 +16,7 @@ import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { createPortal } from 'react-dom';
 import { ContextMenu, CounterBadge, IconButton, MenuItem, Popover, SeekBar, useBeat, useLiveLevels } from '@glacier/react';
 import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
-import { Airplay, AudioLines, Bookmark, BookmarkCheck, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Heart, Image as ImageIcon, ListMusic, ListPlus, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Trash2, Volume2, TableOfContents } from '@glacier/icons';
+import { Airplay, AudioLines, Bookmark, BookmarkCheck, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Gauge, Heart, Image as ImageIcon, ListMusic, ListPlus, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, TableOfContents, Trash2, Volume2 } from '@glacier/icons';
 import { isMobile } from '../core/platform.ts';
 import { PluginSlot } from '../../plugins/runtime.tsx';
 import { SoundConsole } from './SoundConsole.tsx';
@@ -37,6 +37,8 @@ import {
   beatIntensity,
   formatClock,
   chapterIndexAt,
+  BOOK_SPEEDS,
+  bookSpeedLabel,
   type ArtView,
 } from './deckShared.ts';
 import { formatTotal } from '../ux/format.ts';
@@ -395,6 +397,8 @@ export function NowPlayingSheet({
   npArtMenu,
   artView,
   chooseArtView,
+  bookSpeed,
+  chooseBookSpeed,
   track,
   artwork,
   dispArtwork,
@@ -460,6 +464,9 @@ export function NowPlayingSheet({
   artView: ArtView;
   /** The chooser's own setter, for the Read-along seat to summon the face. */
   chooseArtView: (next: ArtView) => void;
+  /** How fast a book is read - the element's own pitch-locked rate. */
+  bookSpeed: number;
+  chooseBookSpeed: (next: number) => void;
   track: Track | null;
   artwork: string | null;
   dispArtwork: string | null;
@@ -1147,6 +1154,39 @@ export function NowPlayingSheet({
               <BookOpenText size={13} aria-hidden />
               <span className="npScreen__chapterText">{doorLabel ?? chapterLabel}</span>
             </span>
+          )}
+          {/* The reading pace, beside the figure it changes: pick a speed and
+              the "left in the book" line above answers in the same breath,
+              because that number is spent at this rate. */}
+          {track?.kind === 'book' && (
+            <Popover
+              placement="top"
+              aria-label="Reading speed"
+              className="npSpeed"
+              trigger={
+                <button type="button" className="npScreen__speed" data-on={bookSpeed !== 1 || undefined}>
+                  <Gauge size={13} aria-hidden />
+                  {bookSpeedLabel(bookSpeed)}
+                </button>
+              }
+            >
+              <div className="npSpeed__list" role="list">
+                {BOOK_SPEEDS.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    role="listitem"
+                    className="npSpeed__row"
+                    data-here={r === bookSpeed || undefined}
+                    onClick={() => chooseBookSpeed(r)}
+                  >
+                    <span className="npSpeed__rate">{bookSpeedLabel(r)}</span>
+                    {r === 1 && <span className="npSpeed__note">normal</span>}
+                    {r === bookSpeed && <Check size={14} aria-hidden />}
+                  </button>
+                ))}
+              </div>
+            </Popover>
           )}
           {/* Its own line, because it is its own fact and because a phone has
               no room to hang it off the end of a chapter title - which clipped

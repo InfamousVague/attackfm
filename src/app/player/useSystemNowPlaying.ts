@@ -37,6 +37,7 @@ export interface SystemTransportControls {
 export function useSystemNowPlaying({
   track,
   playing,
+  rate = 1,
   position,
   coarsePosition,
   duration,
@@ -45,6 +46,9 @@ export function useSystemNowPlaying({
 }: {
   track: Track | null;
   playing: boolean;
+  /** The element's playback rate, so the system clock runs at the pace the
+   *  listener actually hears (a book at 1.5x). */
+  rate?: number;
   position: number;
   coarsePosition: number;
   duration: number;
@@ -131,7 +135,7 @@ export function useSystemNowPlaying({
       album: track.album,
       artwork: artwork?.startsWith('http') ? artwork : null,
     });
-    updateMediaSessionState({ duration, position: positionRef.current, playing });
+    updateMediaSessionState({ duration, position: positionRef.current, playing, rate });
     // Android's half of the same sentence: a WebView does not publish the
     // page's mediaSession to the system, so without this the lock screen, the
     // notification and an Android Auto dashboard know nothing. No-ops
@@ -186,7 +190,7 @@ export function useSystemNowPlaying({
       return;
     }
     carPlaySentPos.current = coarsePosition;
-    updateMediaSessionState({ duration, position: coarsePosition, playing });
+    updateMediaSessionState({ duration, position: coarsePosition, playing, rate });
     setNativePlaybackState(playing, coarsePosition);
     if (isIOS) {
       void pushCarPlayNowPlaying({
