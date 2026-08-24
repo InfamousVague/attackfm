@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.40
+
+- The now-playing strip is a quarter smaller. It stood at 98px on a phone - a ninth of the screen, permanently - and it is 74 now. The play button keeps its full thumb-sized target; what went is the air around it and a cover square that had grown to fill a height nothing else wanted. The space is actually given back, too: the gap every page holds for the strip came down with it
+
 ## 0.4.39
 
 - Search your books. A field at the top of the shelf narrows it as you type - by title, by author, and by chapter name, since a subtitle or a part name is often written nowhere else. Accents fold both ways, every word has to land so a second one narrows rather than widens, and searching shows one list instead of the usual shelves

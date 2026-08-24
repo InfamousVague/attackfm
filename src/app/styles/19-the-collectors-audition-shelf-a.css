@@ -142,8 +142,15 @@
  */
 @media (pointer: coarse), (max-width: 540px) {
   .appWindow {
-    /* The grown strip stands taller; the list clears it by the same amount. */
-    --app-player-height: 9rem;
+    /* What a list holds back so its last rows are not under the strip.
+    
+       It follows the strip, and the strip is set by the two numbers further
+       down this file (the seek band and the play button). Measured: those put
+       the plate at 74px, and this is that plus the gap it floats in above the
+       nav. It was 9rem for a 98px plate; leaving it there would have kept the
+       hole in every page and given none of the space back, which is the entire
+       point of making the plate smaller. */
+    --app-player-height: 7.5rem;
   }
 
   /* On the phone the lyric words fill the WHOLE height of the background - a
@@ -267,12 +274,21 @@
     /* Stretch, so the artwork column can be as tall as the card itself. */
     align-items: stretch;
     gap: var(--glacier-space-3);
-    padding: var(--glacier-space-2) var(--glacier-space-3);
+    /* Block padding is a step rather than two: the plate stood 98px tall on a
+       392-wide phone - a ninth of the screen, permanently, for a bar whose whole
+       job is "this is playing, and here is pause". */
+    padding: var(--glacier-space-1) var(--glacier-space-3);
     /* Two numbers set the strip's scale - the seek's band and the play button -
        and everything else is derived from them: the kit's row height, the
-       disc's square, the card's own height. Nothing can drift out of step. */
-    --app-player-seek: 2.125rem;
-    --app-player-play: 2.5rem;
+       disc's square, the card's own height. Nothing can drift out of step.
+       
+       Both come down, and the play button is the one that does NOT come down
+       far: 2.25rem is 36px, which is the floor for something a thumb hits while
+       walking. The seek band gives up more because it is mostly air around a
+       line - it is still a full-width drag, just a shallower one. Together they
+       take the plate from 98px to about 72. */
+    --app-player-seek: 1.4rem;
+    --app-player-play: 2.25rem;
     --bar-seek: var(--app-player-seek);
     /* The disc is exactly as tall as the two rows beside it, which is the
        card's content box: a square pinned to a definite size rather than one
