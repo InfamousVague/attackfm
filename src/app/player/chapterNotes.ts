@@ -27,14 +27,18 @@ export interface ChapterNote {
 /** Notes for a whole book, keyed by track id (as the server sends it). */
 export type BookNotes = Record<string, ChapterNote[]>;
 
-const cache = new Map<number, Promise<BookNotes | null>>();
+/** Notes regenerate server-side after a re-transcription; the same expiry
+ *  the transcripts keep, so fresh names appear without a restart. */
+const NOTES_TTL_MS = 15 * 60_000;
+
+const cache = new Map<number, { p: Promise<BookNotes | null>; at: number }>();
 
 export function fetchChapterNotes(track: Track): Promise<BookNotes | null> {
   if (track.kind !== 'book') return Promise.resolve(null);
   const id = trackIdFromPath(track.path);
   if (id == null) return Promise.resolve(null);
   const held = cache.get(id);
-  if (held) return held;
+  if (held && Date.now() - held.at < NOTES_TTL_MS) return held.p;
 
   const session = sessionForOrigin(originFromPath(track.path));
   if (!session) return Promise.resolve(null);
@@ -53,7 +57,7 @@ export function fetchChapterNotes(track: Track): Promise<BookNotes | null> {
       return null;
     });
 
-  cache.set(id, looked);
+  cache.set(id, { p: looked, at: Date.now() });
   return looked;
 }
 

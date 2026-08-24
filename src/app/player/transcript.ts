@@ -20,7 +20,12 @@ import type { Track } from '../core/tauri.ts';
 
 /** One in-flight or settled lookup per book. A miss caches too - a book with no
  *  transcript should not be asked for again every time the screen redraws. */
-const cache = new Map<number, Promise<BookLine[] | null>>();
+/** How long a fetched transcript is trusted before the hub is asked again.
+ *  Re-transcriptions (word clocks, better models) land server-side while the
+ *  app is open; without an expiry the old reading held until a restart. */
+const TRANSCRIPT_TTL_MS = 15 * 60_000;
+
+const cache = new Map<number, { p: Promise<BookLine[] | null>; at: number }>();
 
 interface TranscriptLine {
   startMs: number;
@@ -49,7 +54,7 @@ export function fetchTranscript(track: Track): Promise<BookLine[] | null> {
   const id = trackIdFromPath(track.path);
   if (id == null) return Promise.resolve(null);
   const held = cache.get(id);
-  if (held) return held;
+  if (held && Date.now() - held.at < TRANSCRIPT_TTL_MS) return held.p;
 
   /*
    * The session that owns the PATH, not whichever server happens to be primary.
@@ -64,6 +69,10 @@ export function fetchTranscript(track: Track): Promise<BookLine[] | null> {
 
   const looked = request<{ lines: TranscriptLine[] }>(session.url, `/api/transcribe/${id}`, {
     token: session.token,
+    // A worded eighteen-hour book is megabytes through two proxies; the
+    // standard 30s deadline was built for library payloads, not this. The
+    // fetch is bounded, just honestly.
+    timeoutMs: 120_000,
   })
     .then((r) =>
       // Seconds, because that is what the kit's line takes and what every
@@ -123,7 +132,7 @@ export function fetchTranscript(track: Track): Promise<BookLine[] | null> {
       return null;
     });
 
-  cache.set(id, looked);
+  cache.set(id, { p: looked, at: Date.now() });
   return looked;
 }
 

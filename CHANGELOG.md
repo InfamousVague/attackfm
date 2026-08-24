@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.20
+
+- A word-level transcript of a very long book is a big download, and it was being cut off by a deadline meant for small requests - it now gets the time it needs
+- A book re-transcribed while the app was open showed its old reading until a restart; the app now re-asks the hub after a quarter hour, so fresh words and chapter names arrive on their own
+
 ## 0.4.19
 
 - Chapter select moved into the transport, where your thumb already is - the book icon's seat now opens the chapter list under a proper chapters icon. The line under the title is a plain caption now, and the reading face is still a hold on the artwork away
