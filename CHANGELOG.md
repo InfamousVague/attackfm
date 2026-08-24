@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.46
+
+- Search finds your books. They were held out of the searchable library on purpose - a twelve-hour reading has no business in a mix or a shuffle - which also meant the one global search could never find one. There is a Books chip beside Songs now, matching on title, author and chapter name, and opening a result picks the book up where you left it
+- One row per book, not per file. A fifty-chapter reading answered "dungeon" with fifty identical rows before, because a book is fifty tracks as far as the engine is concerned
+- The books you have hearted get a shelf on the Library page, under your playlists - both are things you chose, and a hearted book used to be invisible everywhere except its own page
+
 ## 0.4.45
 
 - "Keep my place across devices" now actually does. The app has been writing that place to your account for a long time and nothing ever read it back; open the app on another device and it offers to pick up where you left off — an offer you can take or wave away, never something that starts playing at you. The switch stays off until you turn it on

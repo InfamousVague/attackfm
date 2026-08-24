@@ -1,19 +1,5 @@
 import { ArtistLink } from '../ux/ArtistLink.tsx';
-import {
-  Check,
-  ChevronRight,
-  Disc3,
-  ListEnd,
-  ListMusic,
-  ListStart,
-  Music,
-  Play,
-  Plus,
-  Tag,
-  User,
-  Users,
-  X,
-} from '@glacier/icons';
+import { BookAudio, Check, ChevronRight, Disc3, ListEnd, ListMusic, ListStart, Music, Play, Plus, Tag, User, Users, X } from '@glacier/icons';
 import type { ReactNode } from 'react';
 import { AlbumMenu } from '../albumArtist/AlbumMenu.tsx';
 import { TrackMenu } from '../library/TrackMenu.tsx';
@@ -120,6 +106,26 @@ export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
             </span>
           </span>
           <ChevronRight size={16} className="searchRow__end" />
+        </button>
+      );
+
+    case 'book':
+      return (
+        <button key={item.id} type="button" {...seat} onClick={() => open(item)}>
+          <Glyph shape="square" cover={item.book.cover} fallback={<BookAudio size={18} />} />
+          <span className="searchRow__text">
+            <span className="searchRow__title">{item.book.title}</span>
+            <span className="searchRow__sub">
+              {/* The author is NOT an ArtistLink. That door opens an artist page
+                  - other records, top songs - which is built for a musician and
+                  would hold one book. */}
+              Book &middot; {item.book.author} &middot;{' '}
+              {item.book.chapters.length === 1
+                ? '1 chapter'
+                : `${item.book.chapters.length} chapters`}
+            </span>
+          </span>
+          <Play size={16} className="searchRow__end" />
         </button>
       );
 
@@ -277,6 +283,16 @@ export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
           )}
         </button>
       );
+    }
+
+    default: {
+      /* A kind with no row here renders NOTHING, in silence - which is what
+         happened while books were being added: this switch is not exhaustive by
+         itself, so the compiler was perfectly happy with a blank space where a
+         result should be. This makes the next one a build error instead. */
+      const unreachable: never = item;
+      void unreachable;
+      return null;
     }
   }
 };

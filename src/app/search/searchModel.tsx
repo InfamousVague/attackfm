@@ -1,4 +1,5 @@
-import { Check, Compass, Disc3, ListMusic, Music, Search, Tag, User, Users } from '@glacier/icons';
+import { BookAudio, Check, Compass, Disc3, ListMusic, Music, Search, Tag, User, Users } from '@glacier/icons';
+import type { ShelfBook } from '../library/bookShelf.ts';
 import type { CSSProperties, ReactNode } from 'react';
 import type { Playlist } from '../playlists/playlists.tsx';
 import type { RegistryFriend } from '../servers/registry.ts';
@@ -33,6 +34,7 @@ export type Filter =
   | 'all'
   | 'mine'
   | 'songs'
+  | 'books'
   | 'artists'
   | 'albums'
   | 'playlists'
@@ -50,6 +52,11 @@ export const CHIPS: { id: Filter; label: string; icon: ReactNode; group: 'scope'
   { id: 'mine', label: 'Yours', icon: <Check size={13} />, group: 'scope' },
   { id: 'catalog', label: 'To add', icon: <Compass size={13} />, group: 'scope' },
   { id: 'songs', label: 'Songs', icon: <Music size={13} />, group: 'kind' },
+  /* Books are a KIND, not a scope: they are things you own, sitting in the same
+     library as the songs - they are simply kept out of `tracks` so a twelve-hour
+     reading never turns up in a mix or a shuffle. That separation is why the one
+     global search could not find them at all until now. */
+  { id: 'books', label: 'Books', icon: <BookAudio size={13} />, group: 'kind' },
   { id: 'artists', label: 'Artists', icon: <User size={13} />, group: 'kind' },
   { id: 'albums', label: 'Albums', icon: <Disc3 size={13} />, group: 'kind' },
   { id: 'playlists', label: 'Playlists', icon: <ListMusic size={13} />, group: 'kind' },
@@ -69,6 +76,10 @@ export type Item =
   | { t: 'song'; id: string; track: Track; why: Why }
   | { t: 'artist'; id: string; artist: LocalArtist }
   | { t: 'album'; id: string; album: LocalAlbum }
+  /* One row per BOOK, never per file. A sectioned reading is one file per
+     chapter, so passing them through as songs would answer "dungeon" with fifty
+     identical-looking rows for one title. */
+  | { t: 'book'; id: string; book: ShelfBook }
   | { t: 'playlist'; id: string; playlist: Playlist }
   | { t: 'genre'; id: string; genre: LocalGenre }
   | { t: 'friend'; id: string; friend: RegistryFriend }
