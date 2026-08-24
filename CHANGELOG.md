@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.28
+
+- The nav bar now fills the width it has. It held a hand-kept four tabs whatever the screen, so a wide phone left room going spare while a narrow one crowded the same four together - Booth and Friends were stuck behind the ⋮ even when there was space for them. Destinations move out of the ⋮ as room appears and fold back into it as room runs out, in one order, so the thing at the top of the menu is the next thing to come out of it
+
 ## 0.4.27
 
 - Bookmarks in audiobooks. Now Playing's "add to playlist" seat becomes a bookmark for a book - filing chapter nineteen of a thirteen-hour reading next to a song was never a thing anybody did. Tap to keep the place you are at, tap again to lift it, and find them all above the chapters in the chapter door. Tapping one goes there, even if it is two sections back

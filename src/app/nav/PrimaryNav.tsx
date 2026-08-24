@@ -1,7 +1,8 @@
 import { NavBar, NavBarItem } from '@glacier/react';
-import { CircleUserRound, Compass, Disc3, LibraryBig } from '@glacier/icons';
-import { cloneElement, isValidElement } from 'react';
-import type { ReactElement, ReactNode } from 'react';
+import { CircleUserRound, Compass, Disc3, LibraryBig, UsersRound } from '@glacier/icons';
+import { useMemo, useRef } from 'react';
+import type { ReactNode } from 'react';
+import { atSize, useNavSeats, type NavDest } from './navSeats.ts';
 import { useAcquire, usePluginPages } from '../../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import { NavMoreMenu } from './NavMoreMenu.tsx';
@@ -47,7 +48,12 @@ export function PrimaryNav({
   // Discover appears whenever there is ANY way to acquire music - an importer
   // to download through, or a Buy handler to purchase through. Only a build with
   // no acquire handlers at all (the plugin-free App-Review server) hides it.
-  const canDiscover = hasDownloads || useAcquire().hasAny;
+  // Called unconditionally. It used to sit behind `hasDownloads ||`, so the
+  // hook ran or did not depending on whether an importer was loaded - and the
+  // day that flipped mid-session React would have found a different hook order
+  // than it left. Nothing below may be added while that is still true.
+  const acquire = useAcquire();
+  const canDiscover = hasDownloads || acquire.hasAny;
   // A tab pointing at a plugin page whose plugin was just switched off reads as
   // Home - the same fallback the content host makes - so the lit item never
   // disagrees with what is actually on screen.
@@ -69,6 +75,96 @@ export function PrimaryNav({
       // Profile's rooms now, not tabs.)
       tab !== 'booth' &&
       !onPluginPage);
+
+  /*
+   * EVERY destination the phone bar can offer, in the order it gives them up.
+   *
+   * One list, ordered by how much a seat is worth to it, and the bar simply
+   * takes as many as it has room for. What is left goes to the ⋮ - so the menu
+   * is the overflow rather than a second, hand-kept list of its own, and a
+   * destination cannot end up in both hands or neither.
+   *
+   * The order is the old menu's order, which means the thing that was at the
+   * top of ⋮ is the thing that comes out of it first.
+   */
+  const barRef = useRef<HTMLElement | null>(null);
+  const dests = useMemo<NavDest[]>(() => {
+    const list: NavDest[] = [
+      {
+        key: 'library',
+        label: 'Library',
+        icon: <LibraryBig size={18} />,
+        active: libraryActive,
+        go: () => onTab('library'),
+      },
+    ];
+    if (booksPage) {
+      list.push({
+        key: booksPage.key,
+        label: booksPage.label,
+        icon: booksPage.icon,
+        active: tab === booksPage.key,
+        go: () => onTab(booksPage.key),
+      });
+    }
+    if (canDiscover) {
+      list.push({
+        key: 'discover',
+        label: 'Discover',
+        icon: <Compass size={18} />,
+        active: tab === 'discover',
+        go: () => onTab('discover'),
+      });
+    }
+    list.push({
+      key: 'profile',
+      label: 'Profile',
+      icon: <CircleUserRound size={18} />,
+      active: tab === 'profile',
+      go: () => onTab('profile'),
+    });
+    for (const pg of pages) {
+      if (pg.key === booksPage?.key) continue;
+      list.push({
+        key: pg.key,
+        label: pg.label,
+        icon: pg.icon,
+        active: tab === pg.key,
+        go: () => onTab(pg.key),
+      });
+    }
+    list.push({
+      key: 'booth',
+      label: 'Booth',
+      icon: <Disc3 size={18} />,
+      active: tab === 'booth',
+      go: () => onTab('booth'),
+    });
+    list.push({
+      key: 'friends',
+      label: 'Friends',
+      icon: <UsersRound size={18} />,
+      active: tab === 'friends',
+      go: () => onTab('friends'),
+    });
+    return list;
+  }, [pages, booksPage, canDiscover, libraryActive, tab, onTab]);
+
+  const seats = useNavSeats(barRef, dests.length);
+  /*
+   * The ⋮ keeps a seat of its own, always. Settings lives in it and never comes
+   * out - a bar seat for the cog was the same door twice - and so does the
+   * download queue, so there is no width at which the menu can be dispensed
+   * with. The split is therefore over the seats that are LEFT.
+   *
+   * Before the first measurement `seats` is null and everything is drawn. That
+   * is corrected in a layout effect, which runs before the browser paints, so
+   * the over-full bar is never a frame anybody sees.
+   */
+  const shown =
+    seats === null ? dests.length : Math.max(1, Math.min(dests.length, seats - 1));
+  const inBar = dests.slice(0, shown);
+  const inMenu = dests.slice(shown);
 
   const primaryItems = (
     <>
@@ -162,54 +258,25 @@ export function PrimaryNav({
   // Plugins button in the right group (PluginsBarButton), which cascades them
   // up out of the bar - so the core tabs stay put however many plugins are on.
   return (
-    <nav className="appNavBar" aria-label="Primary">
-      {/* The library: where the music you own lives, and the app's home. */}
-      <BarTab
-        icon={<LibraryBig size={22} />}
-        label="Library"
-        active={libraryActive}
-        onClick={() => onTab('library')}
-      />
-      {/* Books took the Booth's seat: the shelf is somewhere people go every
-          night, and the Booth - a place you VISIT rather than live in - rides
-          the ⋮ menu now, beside Friends. */}
-      {booksPage && (
+    <nav className="appNavBar" aria-label="Primary" ref={barRef}>
+      {/* As many as there is room for, in priority order, and the rest fold
+          into the ⋮ beside them. The bar used to hold a hand-kept four
+          regardless of width, which meant a wide phone left room going spare
+          while a narrow one crowded the same four together. */}
+      {inBar.map((d) => (
         <BarTab
-          /* The page registered its icon at the rail-and-menu size (18); the
-             bar draws every tab at 22, so the seat re-cuts the same glyph
-             rather than seating a visibly smaller one. */
-          icon={
-            isValidElement(booksPage.icon)
-              ? cloneElement(booksPage.icon as ReactElement<{ size?: number }>, { size: 22 })
-              : booksPage.icon
-          }
-          label={booksPage.label}
-          active={tab === booksPage.key}
-          onClick={() => onTab(booksPage.key)}
+          key={d.key}
+          /* Registered at the menu's size; the bar draws at 22. */
+          icon={atSize(d.icon, 22)}
+          label={d.label}
+          active={d.active}
+          onClick={d.go}
         />
-      )}
-      {canDiscover && (
-        <BarTab
-          icon={<Compass size={22} />}
-          label="Discover"
-          active={tab === 'discover'}
-          onClick={() => onTab('discover')}
-        />
-      )}
-      {/* No Search seat here either - see the rail above. The bar it was
-          standing in for now lives on Library and Discover themselves, which
-          is a bigger target than this tab was and needs no explaining. */}
-      <BarTab
-        icon={<CircleUserRound size={22} />}
-        label="Profile"
-        active={tab === 'profile'}
-        onClick={() => onTab('profile')}
-      />
-      {/* The overflow: the ⋮ menu cascades up the plugin pages plus Stats,
-          Downloads and Settings. */}
-      <NavMoreMenu tab={tab} onTab={onTab} onSettings={onSettings} />
-      {/* Settings left the bar for the header's top-right (mobileHeader), so
-          this side holds two tabs like the other - three was a crowd. */}
+      ))}
+      {/* The overflow, plus the two that never leave it: the download queue and
+          Settings. It is always here, which is why the split above only ever
+          plays for the seats beside it. */}
+      <NavMoreMenu overflow={inMenu} tab={tab} onTab={onTab} onSettings={onSettings} />
     </nav>
   );
 }
