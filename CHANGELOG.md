@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.29
+
+- Closed the band of empty space under the Books header, above Favourites - the shelf now starts where every other page's first section does
+
 ## 0.4.28
 
 - The nav bar now fills the width it has. It held a hand-kept four tabs whatever the screen, so a wide phone left room going spare while a narrow one crowded the same four together - Booth and Friends were stuck behind the ⋮ even when there was space for them. Destinations move out of the ⋮ as room appears and fold back into it as room runs out, in one order, so the thing at the top of the menu is the next thing to come out of it
@@ -51,6 +55,10 @@ and where that library came from is not the app's story to tell.
 ## 0.4.21
 
 - Closed the band of empty space under the Books header, above Favourites - the shelf now starts where every other page's first section does
+## 0.4.21
+
+- Fixed the now-playing bar refusing to open the full screen after a while: a half-swipe of the strip left it convinced every later tap was the end of that swipe, so the transport kept working and only the lift stopped. It forgets on its own now
+- Audiobooks read at your pace: tap the speed pill under the chapter line for 0.75× to 2×, pitch held steady, and the "left in the book" figure answers in listening time rather than file time. Your pace is remembered, applies to every book, and never follows you into music
 
 ## 0.4.20
 

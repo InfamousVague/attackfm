@@ -88,6 +88,10 @@ export function updateMediaSessionState(state: {
   duration: number;
   position: number;
   playing: boolean;
+  /** The element's rate, so the OS extrapolates the clock at the pace the
+   *  sound is actually coming out. A book at 1.5x reported as 1 makes the
+   *  lock screen and the car's dash run slow between our updates. */
+  rate?: number;
 }): void {
   const media = session();
   if (!media) return;
@@ -97,7 +101,8 @@ export function updateMediaSessionState(state: {
       media.setPositionState({
         duration: state.duration,
         position: Math.min(Math.max(state.position, 0), state.duration),
-        playbackRate: 1,
+        playbackRate:
+          state.rate != null && Number.isFinite(state.rate) && state.rate > 0 ? state.rate : 1,
       });
     }
   } catch {

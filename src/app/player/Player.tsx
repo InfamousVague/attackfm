@@ -42,6 +42,7 @@ import {
   FADE_UP_MS,
   ART_VIEW_KEY,
   BOOK_ART_VIEW_KEY,
+  BOOK_SPEED_KEY,
   CATCH_FLUSH_MS,
   IDLE_TRACK,
   INITIAL_VOLUME,
@@ -53,6 +54,7 @@ import {
   TRACK_ART,
   readArtView,
   readBookArtView,
+  readBookSpeed,
   readDeckPref,
   timelineDuration,
   writeDeckPref,
@@ -295,6 +297,23 @@ export function Player({
   // Books wear their own clock: the chapter panel is the natural face for a
   // book and nonsense for a song, so the two kinds never share the choice.
   const [bookArtView, setBookArtView] = useState<ArtView>(readBookArtView);
+  // How fast a book is read. One choice for all books, remembered - the pace
+  // somebody reads at is theirs, not the book's.
+  const [bookSpeed, setBookSpeed] = useState<number>(readBookSpeed);
+  const chooseBookSpeed = (next: number) => {
+    setBookSpeed(next);
+    try {
+      localStorage.setItem(BOOK_SPEED_KEY, String(next));
+    } catch {
+      // Storage unavailable - the pace still applies for this session.
+    }
+  };
+  /** The rate the elements should be running at: a book's chosen pace, or 1
+   *  for music, whose bend belongs to the graph. Derived here because the
+   *  book's remaining-time figure is spent at this rate too. */
+  const wantedRate = track?.kind === 'book' ? bookSpeed : 1;
+  const wantedRateRef = useRef(wantedRate);
+  wantedRateRef.current = wantedRate;
   const playingBook = track?.kind === 'book';
   const wornArtView = playingBook ? bookArtView : artView;
   const chooseArtView = (next: ArtView) => {
@@ -1117,6 +1136,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   const { carPlayControls, positionRef } = useSystemNowPlaying({
     track,
     playing,
+    rate: wantedRate,
     position,
     coarsePosition,
     duration,
@@ -2359,6 +2379,19 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     }
     return total;
   })();
+  /*
+   * Spent in LISTENING time, not file time: at 1.5x a twelve-hour book is
+   * eight hours of somebody's evening, and the figure on the screen should be
+   * the one they can plan around. Applied HERE rather than inside the walk
+   * above, because that walk has two honest exits (one file, many sections)
+   * and a rate applied per-branch is a rate one branch forgets - which is
+   * exactly what the first cut of this did, leaving single-file books
+   * reporting file time while sectioned ones reported listening time.
+   * Chapter marks, the bookmark and every word stamp stay in FILE seconds;
+   * only this promise about the future is re-priced.
+   */
+  const bookLeft =
+    bookRemaining != null && wantedRate > 0 ? bookRemaining / wantedRate : bookRemaining;
 
   const chapterNow = () => {
     const el = activeAudio();
@@ -2437,7 +2470,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   const openNowPlaying = (event: React.MouseEvent) => {
     if (!track || npDocked) return;
     // A swipe ends in a click too; the gesture already had its meaning.
-    if (draggedRef.current) return;
+    if (draggedRecently()) return;
     const el = event.target as HTMLElement;
     if (el.closest('button, a, input, [role="slider"], [role="menu"], [role="menuitem"]')) return;
     // The sheet has weight; lifting it should too. (The strip's dead space is
@@ -2445,6 +2478,49 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     fireNativeHaptic('light');
     setNpOpen(true);
   };
+
+  /*
+   * The reading pace, on the elements themselves.
+   *
+   * Written to BOTH decks (the crossfade's spare included, so a warmed next
+   * section does not open at 1x), with the engine's own pitch lock on. Held
+   * against the media stack rather than set once: WebKit resets `playbackRate`
+   * across some pauses and source swaps, so the wanted rate is re-applied on
+   * `play`, on `loadedmetadata`, and on the engine's own `ratechange` - the
+   * last of which is what catches a reset nobody asked for. Songs are pinned
+   * at 1: the deck's musical bend lives in the graph, and an element rate left
+   * over from a book would be a silent surprise on the next song.
+   */
+  useEffect(() => {
+    const decks = [audioRef.current, audioBRef.current].filter(
+      (el): el is HTMLAudioElement => el !== null,
+    );
+    const apply = (el: HTMLAudioElement) => {
+      const want = wantedRateRef.current;
+      // `preservesPitch` is the modern name; the webkit one is still what an
+      // older iOS answers to, and setting both is cheaper than sniffing.
+      const pitched = el as HTMLAudioElement & {
+        preservesPitch?: boolean;
+        webkitPreservesPitch?: boolean;
+      };
+      pitched.preservesPitch = true;
+      pitched.webkitPreservesPitch = true;
+      if (Math.abs(el.playbackRate - want) > 0.001) el.playbackRate = want;
+    };
+    const cleanups = decks.map((el) => {
+      apply(el);
+      const onEvent = () => apply(el);
+      el.addEventListener('play', onEvent);
+      el.addEventListener('loadedmetadata', onEvent);
+      el.addEventListener('ratechange', onEvent);
+      return () => {
+        el.removeEventListener('play', onEvent);
+        el.removeEventListener('loadedmetadata', onEvent);
+        el.removeEventListener('ratechange', onEvent);
+      };
+    });
+    return () => cleanups.forEach((off) => off());
+  }, [wantedRate, track?.path]);
 
   // ── Scratching ───────────────────────────────────────────────────────────
   //
@@ -3035,7 +3111,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   // Paused, the strip can be pushed off the bottom of the screen; it comes
   // back by itself with the next sound. Reads dispPlaying rather than the
   // local deck so a remote's playback holds the bar here too.
-  const { dismissed, shellRef, draggedRef } = usePlayerDismiss(dispPlaying);
+  const { dismissed, shellRef, draggedRecently } = usePlayerDismiss(dispPlaying);
 
   /*
    * A remote with no socket can send nothing. Handing it live-looking controls
@@ -3154,6 +3230,8 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
           npArtMenu={npArtMenu}
           artView={wornArtView}
           chooseArtView={chooseArtView}
+          bookSpeed={bookSpeed}
+          chooseBookSpeed={chooseBookSpeed}
           track={track}
           artwork={artwork}
           dispArtwork={dispArtwork}
@@ -3172,7 +3250,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
           onOpenArtist={onOpenArtist}
           chapterLabel={chapterLabel}
           chapters={chapters}
-          bookRemaining={bookRemaining}
+          bookRemaining={bookLeft}
           onSeekChapter={(startMs) => commitSeek(startMs / 1000)}
           favorite={favorite}
           toggleFavoriteFelt={toggleFavoriteFelt}
