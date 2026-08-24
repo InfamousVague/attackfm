@@ -136,11 +136,14 @@ function BookWords({
   items,
   positionSec,
   playing,
+  stalled,
   onJump,
 }: {
   items: ReadingItem[];
   positionSec: number;
   playing: boolean;
+  /** Waiting on bytes. The clock below must not run through it. */
+  stalled: boolean;
   onJump: (timeSec: number) => void;
 }) {
   const [fineNow, setFineNow] = useState(positionSec);
@@ -148,14 +151,28 @@ function BookWords({
   useEffect(() => {
     anchor.current = { pos: positionSec, at: performance.now() };
     setFineNow(positionSec);
-  }, [positionSec]);
+    // `stalled` is a dependency so the anchor is re-taken the instant a stall
+    // ENDS: without it the clock resumes counting from before the wait and
+    // stays ahead by however long the buffering took.
+  }, [positionSec, stalled]);
+  /*
+   * The words are lit off a WALL CLOCK between position reports, because the
+   * player reports its place a few times a second and reading along wants finer
+   * than that.
+   *
+   * It has to stop when the audio does. `playing` means "meant to be playing"
+   * and stays true through a buffer stall - so a book that paused to fetch more
+   * had its transcript carry on reading without it, drifting further from the
+   * voice the longer the wait lasted. No position reports arrive while stalled,
+   * so the drift was exactly the length of the stall.
+   */
   useEffect(() => {
-    if (!playing) return;
+    if (!playing || stalled) return;
     const tick = window.setInterval(() => {
       setFineNow(anchor.current.pos + (performance.now() - anchor.current.at) / 1000);
     }, 200);
     return () => window.clearInterval(tick);
-  }, [playing]);
+  }, [playing, stalled]);
 
   let at = 0;
   for (let i = 0; i < items.length; i++) {
@@ -1179,6 +1196,7 @@ export function NowPlayingSheet({
               items={readingFlow}
               positionSec={position}
               playing={playing}
+              stalled={buffering}
               onJump={commitSeek}
             />
           ) : artView === 'chapters' && bookFaces.length > 0 ? (

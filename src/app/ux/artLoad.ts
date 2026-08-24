@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { serverSeemsDown } from '../api/reachability.ts';
 import { artSized } from '../server.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { artFallbackUrl } from '../servers/mirrors.ts';
@@ -90,7 +91,28 @@ export function useCardArt(artwork: string | null): {
     setSrc(wanted);
     setLoaded(false);
     const timer = window.setTimeout(() => setLoaded(true), REVEAL_TIMEOUT_MS);
-    return () => window.clearTimeout(timer);
+    /*
+     * WITH THE HUB DARK, go to the held copy at once.
+     *
+     * The error ladder below already finds it, but only after the <img> has
+     * tried the dead server and failed - and a request to a host that is simply
+     * not answering does not fail promptly, it hangs until something times it
+     * out. That is a shelf of grey rectangles for as long as that takes, on a
+     * phone with every one of those covers already on disk.
+     *
+     * Not a replacement for the ladder: this is a guess about the network, and
+     * the ladder is what answers when one particular cover genuinely fails.
+     */
+    let alive = true;
+    if (serverSeemsDown() && wanted !== placeholderArt) {
+      void cachedArt(wanted).then((held) => {
+        if (alive && held) setSrc(held);
+      });
+    }
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
   }, [wanted]);
   return {
     src,

@@ -107,7 +107,29 @@ export async function cachedArt(url: string): Promise<string | null> {
   const cache = key ? store() : null;
   if (!key || !cache) return null;
   try {
-    const hit = await (await cache).match(key);
+    const c = await cache;
+    /*
+     * The exact variant first, then ANY variant of the same cover.
+     *
+     * Size is part of the identity on purpose - serving a 160 thumb into a 640
+     * card makes a shelf go soft - but that is a judgement about which copy
+     * looks best, and it only holds while there is a better one to be had. With
+     * the hub dark there is no better one: the choice is a slightly soft cover
+     * or a grey placeholder, and the placeholder is not the kinder answer.
+     *
+     * This is most of "a lot of the album art does not load": a phone that had
+     * browsed shelves held piles of 160s and 320s, and every 640 the cards asked
+     * for missed by a size.
+     */
+    const hit =
+      (await c.match(key)) ??
+      (await (async () => {
+        const id = key.slice(0, key.lastIndexOf('@'));
+        for (const req of await c.keys()) {
+          if (req.url.startsWith(`${id}@`)) return c.match(req);
+        }
+        return undefined;
+      })());
     if (!hit) return null;
     const blob = await hit.blob();
     const previous = live.get(key);
