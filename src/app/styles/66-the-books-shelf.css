@@ -405,9 +405,9 @@
 .npMarks {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
-  padding-block-end: var(--glacier-space-2);
-  margin-block-end: var(--glacier-space-2);
+  gap: var(--glacier-space-1);
+  padding-block-end: var(--glacier-space-3);
+  margin-block-end: var(--glacier-space-3);
   border-block-end: 1px solid var(--glacier-border-subtle);
 }
 
@@ -500,14 +500,14 @@
    It had no rule at all before, so it wore the kit's default padding and its
    rows sat tighter than anything else in the app. */
 .npChapters {
-  inline-size: min(22rem, calc(100vw - var(--glacier-space-8)));
-  padding: var(--glacier-space-3);
+  inline-size: min(23rem, calc(100vw - var(--glacier-space-6)));
+  padding: var(--glacier-space-4);
 }
 
 .npChapters__list {
   display: flex;
   flex-direction: column;
-  gap: var(--glacier-space-1);
+  gap: var(--glacier-space-2);
   max-block-size: min(60vh, 26rem);
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -520,8 +520,8 @@
   column-gap: var(--glacier-space-3);
   /* A gap between the name and the description under it, not the space-3 the
      columns take - they are one thought, and a column-sized gap reads as two. */
-  row-gap: 0.15rem;
-  padding: var(--glacier-space-2) var(--glacier-space-3);
+  row-gap: 0.2rem;
+  padding: var(--glacier-space-3);
   border: none;
   border-radius: var(--glacier-radius-sm);
   background: none;
@@ -534,6 +534,13 @@
   background: var(--glacier-surface-raised);
 }
 /* The hub's one-line teaser rides under the name, clamped to two lines. */
+/* The chapter's own first words, when the hub has written no description.
+   Italic so it reads as something QUOTED rather than as the hub's summary. */
+.npChapters__blurb[data-opening] {
+  font-style: italic;
+  opacity: 0.85;
+}
+
 .npChapters__blurb {
   grid-column: 2 / -1;
   font-size: 0.76rem;
