@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.36
+
+- Storage now says what the space is holding, not just how it got there. Music and audiobooks are their own shares of the bar and their own lines in the legend, each saying how much of it you kept on purpose - a shelf of books and a library of songs are nothing alike, and added together each was hiding the other. The covers and the book transcripts held on the device are counted underneath
+
 ## 0.4.35
 
 - Keep a whole audiobook on this device, words and all. Hold a book on the shelf and choose "Keep on this device": every file is downloaded and put outside the cache's reach, and its transcript is written down beside them. The rolling cache was never going to do this properly - it ranks by what you are likely to want next, and the far end of a twenty-hour book you are halfway through is exactly what that calls cold

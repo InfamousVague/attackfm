@@ -868,6 +868,66 @@ export async function cacheUsage(): Promise<{ bytes: number; count: number; pinn
   };
 }
 
+/** What one KIND of thing is using, split by how it got here. */
+export interface KindUse {
+  /** Brought by the cache itself, and therefore evictable. */
+  bytes: number;
+  count: number;
+  /** Kept on purpose - outside the cache's ownership, never evicted. */
+  pinnedBytes: number;
+  pinnedCount: number;
+}
+
+/**
+ * The same bytes as `cacheUsage`, split into music and audiobooks.
+ *
+ * Worth separating because they are not the same kind of object and do not
+ * behave alike: a library of songs is thousands of four-minute files that come
+ * and go on the cache's ranking, while one audiobook is a single twenty-hour
+ * thing you deliberately keep. Read as one number they hide each other - a
+ * shelf of books makes the music look small, and "12 GB of downloads" answers
+ * neither "how much music have I got" nor "which book can I delete".
+ *
+ * `bookPaths` comes from the library, which is the only place that knows a key
+ * is a book: the vault stores bytes against a path and nothing else.
+ */
+export async function cacheBreakdown(
+  bookPaths: ReadonlySet<string>,
+): Promise<{ music: KindUse; books: KindUse }> {
+  return splitByKind(await offlineEntries(), pinnedKeys(), bookPaths);
+}
+
+/**
+ * The sorting itself, apart from where the numbers come from.
+ *
+ * Separated so it can be exercised: everything interesting here is the
+ * bookkeeping - which bucket a key lands in and whether it counts as kept - and
+ * that is exactly what cannot be checked while it is welded to a native vault
+ * and a localStorage ledger. The invariant worth protecting is that the two
+ * buckets SUM to the whole vault, because the storage bar draws them as shares
+ * of one total and a key falling through would quietly shrink the picture.
+ */
+export function splitByKind(
+  entries: readonly { key: string; bytes: number }[],
+  marked: ReadonlySet<string>,
+  bookPaths: ReadonlySet<string>,
+): { music: KindUse; books: KindUse } {
+  const blank = (): KindUse => ({ bytes: 0, count: 0, pinnedBytes: 0, pinnedCount: 0 });
+  const music = blank();
+  const books = blank();
+  for (const e of entries) {
+    const into = bookPaths.has(e.key) ? books : music;
+    if (marked.has(e.key)) {
+      into.pinnedBytes += e.bytes;
+      into.pinnedCount += 1;
+    } else {
+      into.bytes += e.bytes;
+      into.count += 1;
+    }
+  }
+  return { music, books };
+}
+
 /** Drop everything the cache owns, leaving pins alone - and the denials with
  *  it: clearing the cache is a fresh start, and a fresh start includes the
  *  songs you once told it to stop bringing back. The presentation goes too:
