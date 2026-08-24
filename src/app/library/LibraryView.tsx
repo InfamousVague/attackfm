@@ -6,6 +6,7 @@ import { useLibrary } from './library.tsx';
 import { useCardArt } from '../ux/artLoad.ts';
 import { useRippleWave } from '../ux/rippleWave.ts';
 import { usePlaylists } from '../playlists/playlists.tsx';
+import { isFavouriteBook, shelve } from './bookShelf.ts';
 import { ShelfSkeleton } from '../ux/ShelfSkeleton.tsx';
 import { PlaylistShowcase } from '../playlists/PlaylistShowcase.tsx';
 import { HomeStatsCards } from './HomeStatsCards.tsx';
@@ -168,7 +169,19 @@ export function LibraryView({
    *  icon goes with it - there is nothing to queue without one. */
   onOpenDownloads?: () => void;
 }) {
-  const { tracks, favoriteTracks, scanning } = useLibrary();
+  const { tracks, favoriteTracks, scanning, books, isFavorite } = useLibrary();
+  /*
+   * The books you have hearted, as a shelf of their own.
+   *
+   * Books are held out of `tracks`, so none of the shelves below could ever show
+   * one - a hearted book was invisible everywhere except its own page. Grouped
+   * into books rather than listed as files: a hearted sectioned reading would
+   * otherwise be fifty identical cards.
+   */
+  const lovedBooks = useMemo(
+    () => shelve(books).filter((b) => isFavouriteBook(b, isFavorite)),
+    [books, isFavorite],
+  );
   const { playlists } = usePlaylists();
 
   // A library that is empty AT MOUNT is either truly empty or still on its
@@ -284,6 +297,33 @@ export function LibraryView({
             onOpenArtist={onOpenArtist}
             onOpenSongs={onOpenSongs}
           />
+
+          {/* Under the playlists, because both are "things you chose" - a list
+              you built and a book you kept - and above the shelves the library
+              fills in for you. Renders nothing until a book is hearted. */}
+          <Shelf title="Books you love" count={lovedBooks.length}>
+            {lovedBooks.map((book) => (
+              <button
+                key={book.key}
+                type="button"
+                className="trackCard"
+                onClick={() => {
+                  const [first] = book.tracks;
+                  // The whole book is the queue; the player's own restore puts
+                  // the needle back where this one was left.
+                  if (first) onPlay(first, book.tracks);
+                }}
+              >
+                {book.cover ? (
+                  <img className="trackCardArt artPop" src={book.cover} alt="" loading="lazy" />
+                ) : (
+                  <span className="trackCardArt" aria-hidden />
+                )}
+                <span className="trackCardTitle">{book.title}</span>
+                <span className="trackCardArtist">{book.author}</span>
+              </button>
+            ))}
+          </Shelf>
 
           {/* This week's listening at a glance, linking into the full page.
               Renders nothing until there is a week to speak of. */}

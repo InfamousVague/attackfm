@@ -1,17 +1,7 @@
 import { TrackMenu } from '../library/TrackMenu.tsx';
 import { AlbumMenu } from '../albumArtist/AlbumMenu.tsx';
 import { SearchField, SegmentedControl, Text } from '@glacier/react';
-import {
-  Compass,
-  Disc3,
-  ListMusic,
-  Music,
-  Plus,
-  Search,
-  Tag,
-  User,
-  Users,
-} from '@glacier/icons';
+import { BookAudio, Compass, Disc3, ListMusic, Music, Plus, Search, Tag, User, Users } from '@glacier/icons';
 import {
   useCallback,
   useEffect,
@@ -21,6 +11,8 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { useLibrary } from '../library/library.tsx';
+import { shelve } from '../library/bookShelf.ts';
+import { filterBooks } from '../library/bookSearch.ts';
 import { useRippleWave } from '../ux/rippleWave.ts';
 import { usePlaylists } from '../playlists/playlists.tsx';
 import { useQueueControls } from '../player/queueControls.tsx';
@@ -121,7 +113,7 @@ export function SearchPage({
    *  bar rather than swapping text as the page arrives. */
   placeholder?: string;
 }) {
-  const { tracks } = useLibrary();
+  const { tracks, books } = useLibrary();
   const { playlists } = usePlaylists();
   // Results, genre tiles and recents wave in as they meet the view, landing
   // with the same soft ticks the Library's shelves ride - see rippleWave.ts.
@@ -199,6 +191,20 @@ export function SearchPage({
   const parsed = useMemo(() => parseQuery(query), [query]);
   const lib = useMemo(() => searchLibrary(tracks, query), [tracks, query]);
 
+  /*
+   * Books, matched as BOOKS.
+   *
+   * Not fed through `searchLibrary`: that engine ranks tracks, and a book is one
+   * or fifty of them - "dungeon" would answer with fifty identical-looking rows
+   * for a single title. They are grouped first and matched on what a person
+   * would type at a shelf (title, author, a chapter name), which is what
+   * `filterBooks` already does for the Books page.
+   */
+  const bookHits = useMemo(
+    () => (query.trim() ? filterBooks(shelve(books), query) : []),
+    [books, query],
+  );
+
   const people = useMemo(() => {
     const q = query.trim().toLowerCase().replace(/^@/, '');
     if (!q) return [];
@@ -270,6 +276,24 @@ export function SearchPage({
           });
           onOpenArtist(item.artist.name);
           break;
+
+        case 'book': {
+          const [first] = item.book.tracks;
+          if (!first) break;
+          touch({
+            kind: 'track',
+            key: first.path,
+            title: item.book.title,
+            subtitle: item.book.author,
+            cover: null,
+            url: '',
+          });
+          // The whole book as the queue, and the FIRST file as the entry: the
+          // player's own restore puts the needle back where this book was left,
+          // so opening one from search resumes it rather than restarting it.
+          onPlay(first, item.book.tracks);
+          break;
+        }
 
         case 'album': {
           const [first] = item.album.tracks;
@@ -482,6 +506,20 @@ export function SearchPage({
         items: lib.songs
           .slice(0, filter === 'songs' ? EXPANDED : COLLAPSED + 2)
           .map<Item>((s) => ({ t: 'song', id: `song:${s.track.path}`, track: s.track, why: s.why })),
+      });
+    }
+    // Beside the songs, because a book is the other thing in this library you
+    // PLAY - and because somebody typing a title is usually looking for exactly
+    // one of them, which puts it high or nowhere.
+    if (on('books') && bookHits.length > 0) {
+      out.push({
+        key: 'books',
+        title: 'Books',
+        icon: <BookAudio size={15} />,
+        total: bookHits.length,
+        items: bookHits
+          .slice(0, cap('books'))
+          .map<Item>((b) => ({ t: 'book', id: `book:${b.key}`, book: b })),
       });
     }
     if (on('artists') && lib.artists.length > 0) {

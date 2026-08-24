@@ -10,6 +10,10 @@
  * A shelf wants something smaller anyway. Twenty-five books is a list you
  * filter, not a corpus you query: type two letters and the shelves narrow. No
  * operators, no ranking, no network.
+ *
+ * It lives in the app rather than the Books plugin because the app's own search
+ * page needs it too: books are held out of `tracks`, so the one global search
+ * could not find them at all, and an app module must not reach into a plugin.
  */
 
 /** Lower-cased and stripped of accents, so "Dinniman" finds "Dinnim\u00e1n". */

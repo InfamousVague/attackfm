@@ -7,7 +7,13 @@ import { useLibrary } from '../../app/library/library.tsx';
 import { useServerSession } from '../../app/servers/serverSession.tsx';
 import { CoverWall } from '../../app/playlists/CoverWall.tsx';
 import { chapterNumbers } from '../../app/player/chapterNumber.ts';
-import { filterBooks } from './bookSearch.ts';
+import {
+  isFavouriteBook,
+  shelve,
+  type Chapter,
+  type ShelfBook,
+} from '../../app/library/bookShelf.ts';
+import { filterBooks } from '../../app/library/bookSearch.ts';
 import { fetchPlayStates } from '../../app/api/listening.ts';
 import { forgetTranscript } from '../../app/player/transcript.ts';
 import { forgetKeptTranscript } from '../../app/player/transcriptStore.ts';
@@ -788,86 +794,6 @@ function serverId(path: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-interface Chapter {
-  title: string;
-  /** Offset within its track (ms) - 0 for a per-file chapter, the marker's own
-   *  offset for a single-file one. */
-  startMs: number;
-  /** The track to play for this chapter (the section, or the one m4b). */
-  track: Track;
-}
-
-interface ShelfBook {
-  key: string;
-  title: string;
-  author: string;
-  cover: string | null;
-  /** One m4b carrying its own chapter markers, vs many section files. */
-  singleFile: boolean;
-  chapters: Chapter[];
-  /** The whole book in reading order - the queue a play starts with. */
-  tracks: Track[];
-}
-
-/**
- * The order a book's files are meant to be heard in.
- *
- * Track numbers first, where they exist. They very often do NOT: a book
- * downloaded as split MP3s frequently carries no tags at all, and the previous
- * sort - `(a.trackNo ?? 0) - (b.trackNo ?? 0)` - then compared zero with zero
- * for every pair and left the chapters in whatever order the library happened
- * to hand them over. For an audiobook that is not a cosmetic problem; it is
- * the book in the wrong order.
- *
- * So the fallback is the name, compared NUMERICALLY - `numeric: true` is what
- * puts "Chapter 2" before "Chapter 10" instead of after it, which a plain
- * string compare gets backwards and which is exactly how these files are
- * named. An untagged file's title is already its filename, so this sorts by
- * what is on disk.
- */
-function chapterOrder(a: Track, b: Track): number {
-  const an = a.trackNo ?? 0;
-  const bn = b.trackNo ?? 0;
-  if (an !== bn && an > 0 && bn > 0) return an - bn;
-  if (an > 0 !== bn > 0) return an > 0 ? -1 : 1;
-  return (a.title || a.path).localeCompare(b.title || b.path, undefined, {
-    numeric: true,
-    sensitivity: 'base',
-  });
-}
-
-/** Group the library's book tracks into books: album is the book, artist the
- *  author. A control character joins the key so no real title collides two. */
-function shelve(books: Track[]): ShelfBook[] {
-  const byBook = new Map<string, Track[]>();
-  for (const t of books) {
-    const key = `${t.artist}${t.album}`;
-    const list = byBook.get(key);
-    if (list) list.push(t);
-    else byBook.set(key, [t]);
-  }
-  const shelved: ShelfBook[] = [];
-  for (const [key, tracks] of byBook) {
-    tracks.sort(chapterOrder);
-    const first = tracks[0]!;
-    const singleFile = tracks.length === 1 && (first.chapters?.length ?? 0) > 0;
-    const chapters: Chapter[] = singleFile
-      ? first.chapters!.map((c) => ({ title: c.title, startMs: c.startMs, track: first }))
-      : tracks.map((t) => ({ title: t.title, startMs: 0, track: t }));
-    shelved.push({
-      key,
-      title: first.album || first.title,
-      author: first.artist,
-      cover: tracks.find((t) => t.artwork)?.artwork ?? null,
-      singleFile,
-      chapters,
-      tracks,
-    });
-  }
-  shelved.sort((a, b) => a.title.localeCompare(b.title));
-  return shelved;
-}
-
 function minutes(ms: number): string {
   const m = Math.floor(ms / 60_000);
   if (m < 1) return 'under a minute';
@@ -1200,15 +1126,15 @@ export function BooksPage({ onPlay }: PluginPageProps) {
    * Safe to reuse the music heart for this: `favoriteTracks` is built from the
    * music-only list, so a hearted book never turns up in Liked songs.
    */
-  const isFavouriteBook = (book: ShelfBook) => book.tracks.some((t) => isFavorite(t.path));
+  const isFav = (book: ShelfBook) => isFavouriteBook(book, isFavorite);
   const toggleBook = (book: ShelfBook) => {
-    const on = !isFavouriteBook(book);
+    const on = !isFav(book);
     for (const t of book.tracks) {
       if (isFavorite(t.path) !== on) toggleFavorite(t.path);
     }
   };
-  const favourites = shelf.filter(isFavouriteBook);
-  const rest = shelf.filter((b) => !isFavouriteBook(b));
+  const favourites = shelf.filter(isFav);
+  const rest = shelf.filter((b) => !isFav(b));
 
   const standing = useCallback(
     (book: ShelfBook): { index: number; positionMs: number; started: boolean } => {
@@ -1288,8 +1214,8 @@ export function BooksPage({ onPlay }: PluginPageProps) {
         <button
           type="button"
           className="bookCard__heart"
-          aria-label={`${isFavouriteBook(book) ? 'Remove' : 'Add'} ${book.title} ${isFavouriteBook(book) ? 'from' : 'to'} favourites`}
-          aria-pressed={isFavouriteBook(book)}
+          aria-label={`${isFav(book) ? 'Remove' : 'Add'} ${book.title} ${isFav(book) ? 'from' : 'to'} favourites`}
+          aria-pressed={isFav(book)}
           onClick={() => toggleBook(book)}
         >
           <Heart size={14} />
