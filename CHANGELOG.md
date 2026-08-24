@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.26
+
+- Read several books at once. Each book has always kept its own place, but the shelf only ever offered one "Resume" and sorted everything else by title, so a second and third book in progress were scattered among the rest. There is now a "Continue reading" shelf at the top - every book you are in the middle of, most recent first, each opening exactly where you left it
+- A book you had not opened in a while could genuinely FORGET its place: the hub keeps one list of resume points, capped and ordered by recency, so three books deep the oldest one fell off the end. Books now keep their own marks with room for all of them. Needs the hub updated
+- The chapter figure on a book card counts the way the book counts, like the transport and the chapter list already do
+
 ## 0.4.25
 
 - Your hub can now name chapters with no AI configured at all. The number and name a narrator announces in the opening breath - "Chapter Zero." - are read straight off the transcription by code. Descriptions are still written by a model and still need one. Needs the hub updated

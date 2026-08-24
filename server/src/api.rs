@@ -538,11 +538,26 @@ pub async fn set_play_state(
     Ok(Json(json!({ "ok": true })))
 }
 
-pub async fn play_states(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
+pub async fn play_states(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String, String>>,
+    headers: HeaderMap,
+) -> ApiResult {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    // `?kind=book` asks for audiobook bookmarks alone. Without it a reader with
+    // several books on the go loses the mark for whichever they touched least
+    // recently, because one capped, recency-ordered list served everything.
+    let kind = q.get("kind").map(String::as_str).filter(|k| !k.is_empty());
+    // A shelf wants every book's mark, not a recent hundred. Bounded all the
+    // same - the cap is there to keep one request from reading a whole table.
+    let limit = q
+        .get("limit")
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(100)
+        .clamp(1, 2_000);
     let states: Vec<_> = state
         .db
-        .play_states(caller.id, 100)
+        .play_states(caller.id, limit, kind)
         .into_iter()
         .map(|(track_id, position_ms, updated)| {
             json!({ "trackId": track_id, "positionMs": position_ms, "updatedAt": updated })

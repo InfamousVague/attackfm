@@ -3078,21 +3078,45 @@ impl Db {
 
     /// The most recent resume points, newest first - what a phone asks for when
     /// it wants to carry on where the desktop stopped.
-    pub fn play_states(&self, user_id: i64, limit: i64) -> Vec<(i64, i64, i64)> {
+    /// Resume positions for one account, newest first.
+    ///
+    /// `kind` narrows to one sort of track, and for books that is not a
+    /// convenience - it is the difference between a bookmark surviving and not.
+    /// The list is capped and ordered by recency, so with several books on the
+    /// go the oldest one's mark is the first thing pushed off the end: a reader
+    /// three books deep would find the one they had not touched this week had
+    /// simply forgotten where it was. Asking for books alone means a book only
+    /// ever competes with other books.
+    pub fn play_states(&self, user_id: i64, limit: i64, kind: Option<&str>) -> Vec<(i64, i64, i64)> {
         let conn = self.lock();
-        let Ok(mut stmt) = conn.prepare(
-            "SELECT p.track_id, p.position_ms, p.updated_at
-               FROM play_state p JOIN tracks t ON t.id = p.track_id
-              WHERE p.user_id = ?1 AND t.deleted = 0
-              ORDER BY p.updated_at DESC LIMIT ?2",
-        ) else {
+        let sql = match kind {
+            Some(_) => {
+                "SELECT p.track_id, p.position_ms, p.updated_at
+                   FROM play_state p JOIN tracks t ON t.id = p.track_id
+                  WHERE p.user_id = ?1 AND t.deleted = 0 AND t.kind = ?3
+                  ORDER BY p.updated_at DESC LIMIT ?2"
+            }
+            None => {
+                "SELECT p.track_id, p.position_ms, p.updated_at
+                   FROM play_state p JOIN tracks t ON t.id = p.track_id
+                  WHERE p.user_id = ?1 AND t.deleted = 0
+                  ORDER BY p.updated_at DESC LIMIT ?2"
+            }
+        };
+        let Ok(mut stmt) = conn.prepare(sql) else {
             return Vec::new();
         };
-        stmt.query_map(params![user_id, limit], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-        })
-        .map(|r| r.filter_map(Result::ok).collect())
-        .unwrap_or_default()
+        let row = |r: &rusqlite::Row<'_>| Ok((r.get(0)?, r.get(1)?, r.get(2)?));
+        match kind {
+            Some(k) => stmt
+                .query_map(params![user_id, limit, k], row)
+                .map(|r| r.filter_map(Result::ok).collect())
+                .unwrap_or_default(),
+            None => stmt
+                .query_map(params![user_id, limit], row)
+                .map(|r| r.filter_map(Result::ok).collect())
+                .unwrap_or_default(),
+        }
     }
 
     // --- Spotify account link ---------------------------------------------
@@ -7171,4 +7195,91 @@ mod stem_prefetch_brakes {
 
     /// Mirrors stems.rs COLD_OFFSET_MS.
     const COLD: i64 = 10 * 365 * 24 * 60 * 60 * 1000;
+}
+
+#[cfg(test)]
+mod book_bookmarks_are_not_crowded_out {
+    //! Several books on the go, each keeping its own place.
+    //!
+    //! The bookmark ledger is one list, capped and ordered by recency, so the
+    //! book you have not opened this week was the first thing pushed off the
+    //! end - and a reader three books deep found one of them had simply
+    //! forgotten where it was. Asking for books alone, with room for all of
+    //! them, is what keeps a place kept.
+
+    #[test]
+    fn the_least_recently_read_book_still_knows_its_place() {
+        let dir = std::env::temp_dir().join(format!("afm-marks-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = super::Db::open(&dir.join("t.sqlite")).unwrap();
+        let user = db.create_user("reader", "x", false).unwrap();
+
+        let add = |rel: &str, kind: &str| -> i64 {
+            db.lock()
+                .execute(
+                    "INSERT INTO tracks (rel_path,title,artist,album_artist,album,added_at,rev,kind)
+                     VALUES (?1,?1,'a','a','al',0,0,?2)",
+                    super::params![rel, kind],
+                )
+                .unwrap();
+            db.lock().last_insert_rowid()
+        };
+        let stamp = |track: i64, at: i64| {
+            db.lock()
+                .execute(
+                    "UPDATE play_state SET updated_at = ?1 WHERE track_id = ?2",
+                    super::params![at, track],
+                )
+                .unwrap();
+        };
+
+        // Three books of fifty sections - one long series is enough to fill the
+        // old hundred on its own, let alone three.
+        let mut sections = Vec::new();
+        for b in 0..3 {
+            for s in 0..50 {
+                let id = add(&format!("Audiobooks/b{b}-{s}.m4b"), "book");
+                db.set_play_state(user, id, 60_000).unwrap();
+                // Book 0 is the one read least recently.
+                stamp(id, 1_000 + (b as i64) * 1_000 + s as i64);
+                sections.push((b, id));
+            }
+        }
+        // Music keeps positions too, and it is the most recent thing here.
+        for m in 0..40 {
+            let id = add(&format!("m{m}.flac"), "music");
+            db.set_play_state(user, id, 5_000).unwrap();
+            stamp(id, 900_000 + m as i64);
+        }
+
+        let oldest_book_section = sections.iter().find(|(b, _)| *b == 0).unwrap().1;
+
+        // The old shape: one capped list serving everything.
+        let mixed = db.play_states(user, 100, None);
+        assert_eq!(mixed.len(), 100, "the unfiltered list is capped");
+        assert!(
+            mixed.iter().any(|(_, pos, _)| *pos == 5_000),
+            "music takes room in it"
+        );
+        assert!(
+            !mixed.iter().any(|(t, _, _)| *t == oldest_book_section),
+            "and the least recently read book falls off the end - the bug"
+        );
+
+        // Asking for books, with room for them.
+        let books = db.play_states(user, 2_000, Some("book"));
+        assert_eq!(books.len(), 150, "every section of every book keeps its mark");
+        assert!(
+            books.iter().all(|(_, pos, _)| *pos == 60_000),
+            "no music in a list of books"
+        );
+        assert!(
+            books.iter().any(|(t, _, _)| *t == oldest_book_section),
+            "including the book that has waited longest"
+        );
+
+        // The cap is still a cap: it bounds the read, it just is not reached.
+        assert_eq!(db.play_states(user, 10, Some("book")).len(), 10);
+    }
 }
