@@ -196,8 +196,12 @@ pub async fn get(
 pub async fn queue(
     State(state): State<Arc<AppState>>,
     AxumPath(track_id): AxumPath<i64>,
+    axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String, String>>,
     headers: HeaderMap,
 ) -> Result<Json<Value>, (StatusCode, String)> {
+    // `?force=1`: read the book again even though a transcript exists - the
+    // door a re-transcription (word clocks, a better model) walks through.
+    let force = q.get("force").map(|v| v == "1" || v == "true").unwrap_or(false);
     let caller = auth::require_caller(&state.db, &headers)
         .map_err(|s| (s, "sign in first".to_string()))?;
     if !caller.is_admin {
@@ -228,8 +232,15 @@ pub async fn queue(
             "this server has no speech model to read with".into(),
         ));
     }
-    if state.db.has_transcript(track_id) {
+    if state.db.has_transcript(track_id) && !force {
         return Ok(Json(json!({ "queued": false, "reason": "already transcribed" })));
+    }
+    if force {
+        // The chapter notes were written from the transcript being replaced;
+        // clearing them lets the post-run sweep write fresh ones from the new
+        // reading. The old transcript itself stays until its replacement
+        // lands - the worker overwrites, never deletes up front.
+        let _ = state.db.clear_chapter_blurbs(track_id);
     }
 
     let id = format!("tr{track_id}-{}", now_ms());

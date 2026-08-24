@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.18
+
+- The Books hero clears the top bar properly - old header rules were squeezing it until its text slid off the top of the screen
+- Hold a book for "Transcribe again": the hub reads it afresh - the way onto word-level clocks and renewed chapter notes for books transcribed before them (needs the hub updated)
+
 ## 0.4.17
 
 - The Books page wears the same hero every collection does: the reading book's cover on the tile, the shelf's count and length, and Resume - which picks up whichever book you touched last - beside Add a book

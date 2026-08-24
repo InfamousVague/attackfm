@@ -5520,6 +5520,14 @@ impl Db {
         Ok(())
     }
 
+    pub fn clear_chapter_blurbs(&self, track_id: i64) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "DELETE FROM chapter_blurbs WHERE track_id = ?1",
+            params![track_id],
+        )?;
+        Ok(())
+    }
+
     /// How many notes a track holds - enough to tell "done" from "not started"
     /// against the chapter count the caller knows.
     pub fn chapter_blurb_count(&self, track_id: i64) -> i64 {

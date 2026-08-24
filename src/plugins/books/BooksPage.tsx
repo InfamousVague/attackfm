@@ -7,6 +7,8 @@ import { useLibrary } from '../../app/library/library.tsx';
 import { useServerSession } from '../../app/servers/serverSession.tsx';
 import { CoverWall } from '../../app/playlists/CoverWall.tsx';
 import { fetchPlayStates } from '../../app/api/listening.ts';
+import { forgetTranscript } from '../../app/player/transcript.ts';
+import { forgetChapterNotes } from '../../app/player/chapterNotes.ts';
 import { removeTracks, uploadFile } from '../../app/api/library.ts';
 import { setHeaderActions } from '../../app/nav/headerActions.ts';
 import { artSized } from '../../app/server.ts';
@@ -724,6 +726,34 @@ function BookMenu({
 
   if (!canManage) return <div className={className}>{children}</div>;
 
+  const retranscribe = async () => {
+    if (!session || busy) return;
+    setBusy(true);
+    try {
+      // Every file of the book: a sectioned book is transcribed per section.
+      // force=1 reads it again even though a transcript exists - the door to
+      // word-level clocks and fresh chapter notes for books done before them.
+      for (const id of ids) {
+        await request(session.url, `/api/transcribe/${id}?force=1`, {
+          method: 'POST',
+          token: session.token,
+        });
+      }
+      // Drop this session's cached copies so the new reading is picked up
+      // the next time the book opens, not on the next app restart.
+      for (const t of book.tracks) {
+        forgetTranscript(t);
+        forgetChapterNotes(t);
+      }
+    } catch {
+      // An old hub ignores the force flag and answers "already transcribed";
+      // a hub with no recogniser refuses. Either way the shelf stays as it
+      // was, and the transcription panel is where the queue tells its story.
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const remove = async () => {
     if (!session || busy) return;
     setBusy(true);
@@ -749,9 +779,14 @@ function BookMenu({
         className={className}
         aria-label={`${book.title} actions`}
         content={
-          <MenuItem icon={<Trash2 size={15} />} danger onSelect={() => setConfirming(true)}>
-            Delete book
-          </MenuItem>
+          <>
+            <MenuItem icon={<BookOpenText size={15} />} onSelect={() => void retranscribe()}>
+              Transcribe again
+            </MenuItem>
+            <MenuItem icon={<Trash2 size={15} />} danger onSelect={() => setConfirming(true)}>
+              Delete book
+            </MenuItem>
+          </>
         }
       >
         {children}
