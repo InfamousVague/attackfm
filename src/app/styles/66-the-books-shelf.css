@@ -699,6 +699,15 @@ span.bookCard__readAlong {
   pointer-events: none;
 }
 
+/* ---- Searching the shelf ------------------------------------------------ */
+
+/* Full width and flush with the shelves below it, so it reads as part of the
+   page rather than a control dropped on top of it. The kit's field brings every
+   visual; this only places it. */
+.booksSearch {
+  inline-size: 100%;
+}
+
 /* ---- Books being transcribed -------------------------------------------- */
 
 /* A list of bars above the shelves, present only while the hub is reading
