@@ -112,6 +112,28 @@ export function useListenReporting({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the clock drives it; the rest ride refs or are stable per tick
   }, [coarsePosition, playing, track, duration]);
 
+  /*
+   * Where each book got to, kept PER BOOK.
+   *
+   * The parting write below used to send `positionRef.current` - a live ref
+   * the deck shares with everything - and on a track change React runs that
+   * cleanup after the new track has already rendered, so the ref had moved on
+   * and the OLD book's bookmark was overwritten with the new one's opening
+   * seconds. Switching between two books wiped both places, which is exactly
+   * how it was reported.
+   *
+   * A mark keyed by path cannot be confused about whose place it is. Nothing
+   * under five seconds is ever recorded: the opening of a book is not a place
+   * anybody needs returned to, and it is precisely the value a track that has
+   * only just loaded would otherwise write over a good bookmark.
+   */
+  const marks = useRef(new Map<string, number>());
+  useEffect(() => {
+    if (!track || track.kind !== 'book') return;
+    const ms = positionRef.current * 1000;
+    if (ms > 5_000) marks.current.set(track.path, ms);
+  }, [coarsePosition, track, positionRef]);
+
   // ── The audiobook bookmark ───────────────────────────────────────────────
   //
   // A book is a place you return to, so the server learns where the listener
@@ -125,7 +147,10 @@ export function useListenReporting({
     if (id === null) return;
     const send = () => {
       const s = playSessionRef.current;
-      if (s) void reportPosition(s, id, positionRef.current * 1000).catch(() => {});
+      // THIS book's own mark - never the live ref, which by cleanup time may
+      // already belong to whatever is playing now.
+      const ms = marks.current.get(track.path);
+      if (s && ms !== undefined) void reportPosition(s, id, ms).catch(() => {});
     };
     let timer: number | undefined;
     if (playing) {
@@ -147,7 +172,25 @@ export function useListenReporting({
   // clock, crossfade guard and republish rides along.
   const resumedPath = useRef<string | null>(null);
   useEffect(() => {
+    /*
+     * The deck's duration must belong to THIS book.
+     *
+     * `duration` is one number for whichever track the deck holds, and on a
+     * switch it still reads the PREVIOUS book's length for a beat. That was
+     * enough to pass this gate, spend the once-per-track guard, and measure
+     * the bookmark against the wrong record: coming back to a twelve-hour
+     * book while the deck still said thirty seconds, a mark at 1:09 failed
+     * the "inside the track" test and was dropped - and the retry never came,
+     * because the guard had already been spent. Both books forgot their
+     * place, which is exactly how it was reported.
+     *
+     * The library's own duration for the track is the check: when the deck
+     * agrees with it, the deck is holding this book. A book whose length
+     * nobody has measured falls back to the old bare test.
+     */
     if (!track || track.kind !== 'book' || !(duration > 0)) return;
+    const known = track.duration ?? 0;
+    if (known > 0 && Math.abs(duration - known) > 2) return;
     if (resumedPath.current === track.path) return;
     resumedPath.current = track.path;
     // Somebody asked for a SPECIFIC spot in this track - a bookmark two
@@ -162,15 +205,28 @@ export function useListenReporting({
     const s = playSessionRef.current;
     if (id === null || !s) return;
     let live = true;
+    /*
+     * This session's own mark outranks the server's, and the network round
+     * trip is what makes either of them land.
+     *
+     * The mark is fresher: coming back to a book left minutes ago, the
+     * server's copy is at best the same number and at worst the one from
+     * before the parting write. But the seek must NOT be applied any sooner
+     * than this - the source is still loading in the same tick the track
+     * changed, and a seek issued then is clobbered by the load (measured: a
+     * synchronous restore left the book playing from the top). The fetch's
+     * own latency is doing real work, so the local mark rides it rather than
+     * skipping it, and a failed lookup still honours what this session knows.
+     */
+    const settle = (serverMs: number | null) => {
+      if (!live) return;
+      const local = marks.current.get(track.path);
+      const to = (local ?? serverMs ?? 0) / 1000;
+      if (to > 15 && to < duration - 15) commitSeek(to);
+    };
     void fetchPlayStates(s, { kind: 'book', limit: 2_000 })
-      .then((states) => {
-        if (!live) return;
-        const mine = states.find((st) => st.trackId === id);
-        if (!mine) return;
-        const to = mine.positionMs / 1000;
-        if (to > 15 && to < duration - 15) commitSeek(to);
-      })
-      .catch(() => {});
+      .then((states) => settle(states.find((st) => st.trackId === id)?.positionMs ?? null))
+      .catch(() => settle(null));
     return () => {
       live = false;
     };
