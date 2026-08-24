@@ -3147,6 +3147,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
           setNpOpen={setNpOpen}
           npArtMenu={npArtMenu}
           artView={wornArtView}
+          chooseArtView={chooseArtView}
           track={track}
           artwork={artwork}
           dispArtwork={dispArtwork}
