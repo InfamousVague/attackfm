@@ -277,19 +277,26 @@
      (--glacier-space-2, above); the words wear the same inset, so a line of
      the book opens exactly where the author's name does. */
   padding-inline: var(--glacier-space-2);
-  overflow: hidden;
+  /* A real scroller now - following is DONE with scrollTo, so the same
+     surface answers a browsing thumb with the same physics. */
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: none;
   /* Lines surface and sink rather than popping at the slot's edges. */
   mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 86%, transparent 100%);
 }
 
-/* The roll carries every visible line; translating it is what keeps the lit
-   line pinned to the slot's middle, and the transition is the page moving. */
+.npBookWords::-webkit-scrollbar {
+  display: none;
+}
+
 .npBookWords__roll {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
-  transition: transform 0.45s cubic-bezier(0.22, 0.8, 0.3, 1);
-  will-change: transform;
+  /* Half a slot of breathing room each end, so the first and last lines can
+     still be scrolled to the middle where the reading lights them. */
+  padding-block: 40vh;
 }
 
 /* A chapter break, as a book would set one: the name alone in white space. */
@@ -330,9 +337,17 @@
   line-height: 1.45;
   color: rgba(255, 255, 255, 0.38);
   text-wrap: pretty;
+  cursor: pointer;
   transition:
     color 0.35s ease,
     opacity 0.35s ease;
+}
+
+/* Browsing: every line a shade brighter - now they are the content being
+   read by eye rather than the wake of a voice. */
+.npBookWords[data-browsing] .npBookWords__line[data-state='past'],
+.npBookWords[data-browsing] .npBookWords__line[data-state='next'] {
+  color: rgba(255, 255, 255, 0.62);
 }
 
 .npBookWords__line[data-state='now'] {

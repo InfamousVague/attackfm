@@ -93,16 +93,8 @@ export function npArtMenuItems(
  * Pure presentation, extracted from Player.tsx: every value and handler
  * arrives through props from the deck core.
  */
-/**
- * The book, reading itself across the screen.
- *
- * The transcript's lines walk past a FIXED centre: the line being read sits
- * in the middle of the slot, measured and held there by translating the roll
- * - a flex window only ever centred the block, and lines of uneven length
- * pushed the lit one off-middle. Chapter starts sit IN the flow as their own
- * items: the chapter's (truthful) title with a book-page's worth of white
- * space around it, so crossing into a chapter reads like turning to one.
- */
+/** One item of the reading flow: a spoken line, or a chapter's own title
+ *  standing in the text the way a book sets one. */
 interface ReadingItem {
   kind: 'line' | 'title';
   time: number;
@@ -111,21 +103,33 @@ interface ReadingItem {
   words?: { t: number; w: string }[];
 }
 
+/**
+ * The book, reading itself - and readable by hand.
+ *
+ * Two states, one surface. FOLLOWING, the default: the line under the
+ * narrator's voice keeps itself centred, its words lighting as they are
+ * spoken. BROWSING: the moment a hand touches the scroll it belongs to the
+ * hand - skim ahead, skim back, tap any line and the book plays from there.
+ * Four quiet seconds after the last touch, the reading takes the scroll
+ * back. Full parity with the lyrics popover this face replaces: everything
+ * it could do happens ON the page now.
+ *
+ * A whole transcript renders whole up to 1500 items; past that a window of
+ * 600 either side of the reading rides along - half an hour of narration
+ * each way, the popover's own limit. The window holds still while a hand is
+ * on the page, so lines never re-slice under a thumb.
+ */
 function BookWords({
   items,
   positionSec,
   playing,
+  onJump,
 }: {
   items: ReadingItem[];
   positionSec: number;
   playing: boolean;
+  onJump: (timeSec: number) => void;
 }) {
-  /*
-   * A finer clock than the deck reports. The position prop ticks about once
-   * a second - fine for lines, a slideshow for words. Between ticks this
-   * extrapolates from the last report while playing, and every real report
-   * re-anchors it, so drift lives at most a second and pauses freeze it.
-   */
   const [fineNow, setFineNow] = useState(positionSec);
   const anchor = useRef({ pos: positionSec, at: performance.now() });
   useEffect(() => {
@@ -145,16 +149,31 @@ function BookWords({
     if (items[i]!.time <= fineNow) at = i;
     else break;
   }
-  const from = Math.max(0, at - 4);
-  const shown = items.slice(from, at + 7);
 
-  /*
-   * The lit line's words, each with a moment. Real clocks where the
-   * recogniser wrote them; otherwise the words are spread across the line's
-   * window weighted by their length - close enough that the eye follows,
-   * and free, which is what every book transcribed before word tracking
-   * gets until its re-run lands.
-   */
+  /* Browsing: the hand owns the scroll until it has been still for a while. */
+  const [browsing, setBrowsing] = useState(false);
+  const quiet = useRef<number | null>(null);
+  const touched = () => {
+    setBrowsing(true);
+    if (quiet.current) window.clearTimeout(quiet.current);
+    quiet.current = window.setTimeout(() => setBrowsing(false), 4000);
+  };
+  useEffect(
+    () => () => {
+      if (quiet.current) window.clearTimeout(quiet.current);
+    },
+    [],
+  );
+
+  /* The window: still while browsing, riding the reading otherwise. */
+  const [winAt, setWinAt] = useState(at);
+  useEffect(() => {
+    if (!browsing) setWinAt(at);
+  }, [at, browsing]);
+  const whole = items.length <= 1500;
+  const from = whole ? 0 : Math.max(0, winAt - 600);
+  const shown = whole ? items : items.slice(from, winAt + 600);
+
   const nowWords = useMemo(() => {
     const item = items[at];
     if (!item || item.kind !== 'line') return null;
@@ -178,21 +197,30 @@ function BookWords({
     }
   }
 
+  /* Following: keep the lit line on the slot's middle, by real scrolling now
+     - which is exactly what hands the same gesture to the reader. */
   const slotRef = useRef<HTMLDivElement | null>(null);
   const nowRef = useRef<HTMLElement | null>(null);
-  const [lift, setLift] = useState(0);
-  useLayoutEffect(() => {
+  useEffect(() => {
+    if (browsing) return;
     const slot = slotRef.current;
     const now = nowRef.current;
     if (!slot || !now) return;
-    // Put the lit item's middle on the slot's middle; the CSS transition
-    // walks the roll there one line at a time.
-    setLift(slot.clientHeight / 2 - (now.offsetTop + now.offsetHeight / 2));
-  }, [at, items]);
+    const top = now.offsetTop - slot.clientHeight / 2 + now.offsetHeight / 2;
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    slot.scrollTo({ top, behavior: still ? 'auto' : 'smooth' });
+  }, [at, browsing, items]);
 
   return (
-    <div ref={slotRef} className="npBookWords">
-      <div className="npBookWords__roll" style={{ transform: `translateY(${lift}px)` }}>
+    <div
+      ref={slotRef}
+      className="npBookWords"
+      data-browsing={browsing || undefined}
+      onPointerDown={touched}
+      onWheel={touched}
+      onTouchMove={touched}
+    >
+      <div className="npBookWords__roll">
         {shown.map((l, j) => {
           const i = from + j;
           const state = i < at ? 'past' : i === at ? 'now' : 'next';
@@ -203,6 +231,19 @@ function BookWords({
               ref={i === at ? (nowRef as never) : undefined}
               className={l.kind === 'title' ? 'npBookWords__title' : 'npBookWords__line'}
               data-state={state}
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                // A tapped line plays from its top - and the reading resumes
+                // following immediately at the new place, because the tap IS
+                // the hand choosing where the reading should be.
+                onJump(l.time);
+                if (quiet.current) window.clearTimeout(quiet.current);
+                setBrowsing(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onJump(l.time);
+              }}
             >
               {i === at && l.kind === 'line' && nowWords ? (
                 nowWords.map((w, k) => (
@@ -334,6 +375,7 @@ export function NowPlayingSheet({
   setNpOpen,
   npArtMenu,
   artView,
+  chooseArtView,
   track,
   artwork,
   dispArtwork,
@@ -397,6 +439,8 @@ export function NowPlayingSheet({
   setNpOpen: (next: boolean) => void;
   npArtMenu: ReactNode;
   artView: ArtView;
+  /** The chooser's own setter, for the Read-along seat to summon the face. */
+  chooseArtView: (next: ArtView) => void;
   track: Track | null;
   artwork: string | null;
   dispArtwork: string | null;
@@ -870,7 +914,12 @@ export function NowPlayingSheet({
           content={npArtMenu}
         >
           {artView === 'chapters' && readingFlow.length > 0 ? (
-            <BookWords items={readingFlow} positionSec={position} playing={playing} />
+            <BookWords
+              items={readingFlow}
+              positionSec={position}
+              playing={playing}
+              onJump={commitSeek}
+            />
           ) : artView === 'chapters' && bookFaces.length > 0 ? (
             <ChapterArt
               art={artwork}
@@ -1069,7 +1118,16 @@ export function NowPlayingSheet({
           <SkipForward size={26} fill="currentColor" />
         </IconButton>
         {track?.kind === 'book' ? (
-          <IconButton variant="ghost" aria-label="Read along" onClick={() => setNpLyrics(true)}>
+          /* The reading face replaced the lyrics popover for books - the
+             words live ON the page, scroll by hand, jump on tap. This seat
+             now simply summons that face for anyone reading on the disc or
+             cover instead. */
+          <IconButton
+            variant="ghost"
+            aria-label="Read along"
+            data-on={artView === 'chapters' || undefined}
+            onClick={() => chooseArtView('chapters')}
+          >
             <BookOpenText size={20} />
           </IconButton>
         ) : (
