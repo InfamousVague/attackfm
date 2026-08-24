@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.27
+
+- Bookmarks in audiobooks. Now Playing's "add to playlist" seat becomes a bookmark for a book - filing chapter nineteen of a thirteen-hour reading next to a song was never a thing anybody did. Tap to keep the place you are at, tap again to lift it, and find them all above the chapters in the chapter door. Tapping one goes there, even if it is two sections back
+- These are not the same as the place a book resumes from. That one is kept for you and there is one per book; a bookmark is one you chose, and you can keep as many as you like. They travel between your devices with the rest of your settings
+
 ## 0.4.26
 
 - Read several books at once. Each book has always kept its own place, but the shelf only ever offered one "Resume" and sorted everything else by title, so a second and third book in progress were scattered among the rest. There is now a "Continue reading" shelf at the top - every book you are in the middle of, most recent first, each opening exactly where you left it
