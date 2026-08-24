@@ -97,7 +97,12 @@ fn parsed_transcript(raw: &str) -> Vec<(i64, String)> {
 
 /// A spoken number, as narrators say them, up to ninety-nine.
 fn spoken_number(words: &str) -> Option<i64> {
-    const ONES: [(&str, i64); 19] = [
+    // ZERO IS IN HERE for a reason: a series that opens at "Chapter Zero"
+    // (and several do) was unreadable before - `parse` rejected 0 below and no
+    // word matched it - so its opening announcement was never recognised and
+    // every chapter of the book stayed nameless.
+    const ONES: [(&str, i64); 20] = [
+        ("zero", 0),
         ("one", 1), ("two", 2), ("three", 3), ("four", 4), ("five", 5),
         ("six", 6), ("seven", 7), ("eight", 8), ("nine", 9), ("ten", 10),
         ("eleven", 11), ("twelve", 12), ("thirteen", 13), ("fourteen", 14),
@@ -110,7 +115,7 @@ fn spoken_number(words: &str) -> Option<i64> {
     ];
     let w = words.trim().to_lowercase();
     if let Ok(n) = w.parse::<i64>() {
-        return (n > 0 && n < 1000).then_some(n);
+        return (n >= 0 && n < 1000).then_some(n);
     }
     if let Some((_, n)) = ONES.iter().find(|(name, _)| *name == w) {
         return Some(*n);
@@ -122,7 +127,7 @@ fn spoken_number(words: &str) -> Option<i64> {
         None | Some("") => Some(*t),
         Some(rest) => ONES
             .iter()
-            .find(|(name, _)| *name == rest && *name != "ten")
+            .find(|(name, _)| *name == rest && *name != "ten" && *name != "zero")
             .map(|(_, o)| t + o),
     }
 }
@@ -222,12 +227,23 @@ transcript, the narrator, or that this is an audiobook. Plain text only.";
 /// Write notes for one transcribed track. Quiet about everything that is not
 /// ready: no model configured, no transcript, nothing missing - all no-ops.
 pub async fn generate_for_track(state: &Arc<AppState>, track_id: i64) {
-    let Some(client) = ai::AiClient::configured() else {
-        return;
-    };
-    // The enrichment model, not the chat default - reading prose and naming
-    // it truthfully is exactly the errand the curator's fast pass runs on.
-    let client = client.with_chat_model(ai::fast_model());
+    /*
+     * THE MODEL IS OPTIONAL.
+     *
+     * A description is genuinely written and needs one. A chapter's NAME and
+     * its number are not written, they are ANNOUNCED - the narrator says
+     * "Chapter Zero." in the first breath - and reading that off the transcript
+     * is `declared_name`, which is code and always has been.
+     *
+     * Returning here when no model is configured meant a hub without AI got
+     * neither, so every chapter of every book stayed nameless, and the app fell
+     * back to numbering chapters by their position in the list - which is how a
+     * book that opens at zero ended up reported one ahead of itself throughout.
+     *
+     * The enrichment model, not the chat default - reading prose and naming it
+     * truthfully is exactly the errand the curator's fast pass runs on.
+     */
+    let client = ai::AiClient::configured().map(|c| c.with_chat_model(ai::fast_model()));
     let Some(track) = state.db.track(track_id) else {
         return;
     };
@@ -259,20 +275,25 @@ pub async fn generate_for_track(state: &Arc<AppState>, track_id: i64) {
             .collect()
     };
 
-    let have = state.db.chapter_blurb_count(track_id);
-    if have >= windows.len() as i64 {
-        return;
-    }
-    let done: std::collections::HashSet<i64> = state
+    // What is stored already, so a re-run only fills gaps. Held as name AND
+    // blurb rather than a set of finished indexes because the two halves now
+    // arrive separately: a row with a name and an EMPTY blurb is exactly what a
+    // hub with no model writes, and it is NOT finished once a model appears.
+    let stored: std::collections::HashMap<i64, (String, String)> = state
         .db
         .chapter_blurbs(&[track_id])
         .into_iter()
-        .map(|(_, idx, _, _)| idx)
+        .map(|(_, idx, name, blurb)| (idx, (name, blurb)))
         .collect();
 
     let total = windows.len();
     for (i, (label, from, to)) in windows.into_iter().enumerate() {
-        if done.contains(&(i as i64)) {
+        let existing = stored.get(&(i as i64));
+        let named = existing.is_some_and(|(n, _)| !n.trim().is_empty());
+        let described = existing.is_some_and(|(_, b)| !b.trim().is_empty());
+        // Nothing left to add here: it has a name, and either it has a
+        // description or there is no model to write one.
+        if named && (described || client.is_none()) {
             continue;
         }
         let text = opening(&lines, from, to);
@@ -285,32 +306,51 @@ pub async fn generate_for_track(state: &Arc<AppState>, track_id: i64) {
         } else {
             label
         };
-        let Some(note) = note_for(
-            &client,
-            &track.album,
-            &track.artist,
-            i + 1,
-            total,
-            &label,
-            &text,
-        )
-        .await
-        else {
-            // A model that cannot answer now will be asked again by a later
-            // sweep; failing loudly here would just spam the log per chapter.
-            continue;
+        // Read off the recording FIRST, by code. The opening's own announcement
+        // outranks everything - so a preamble stays a preamble, and "chapter
+        // zero" stays zero, on the smallest model and on no model at all.
+        let declared = declared_name(&text);
+        // A model is asked only when there is one AND the description is still
+        // missing. A name already read from the recording costs nothing to keep.
+        let note = match (&client, described) {
+            (Some(c), false) => {
+                note_for(c, &track.album, &track.artist, i + 1, total, &label, &text).await
+            }
+            _ => None,
         };
-        // The opening's own announcement outranks everything: it is read by
-        // code, so a preamble stays a preamble on the smallest model.
-        let name = declared_name(&text)
-            .unwrap_or_else(|| note.name.trim().chars().take(80).collect::<String>());
-        let blurb = note.blurb.trim().chars().take(160).collect::<String>();
+        let name = declared
+            .or_else(|| {
+                note.as_ref()
+                    .map(|n| n.name.trim().chars().take(80).collect::<String>())
+            })
+            .filter(|n| !n.trim().is_empty());
+        let blurb = note
+            .as_ref()
+            .map(|n| n.blurb.trim().chars().take(160).collect::<String>())
+            .filter(|b| !b.is_empty());
+        if name.is_none() && blurb.is_none() {
+            // Neither the recording nor a model said anything this time. A
+            // model that cannot answer now is asked again by a later sweep, and
+            // writing the file's own title back as a "name" would only hide the
+            // gap from that sweep.
+            continue;
+        }
+        // Keep whatever is stored for the half this pass did not produce, so
+        // configuring a model later fills in descriptions WITHOUT discarding
+        // the names read from the recording.
+        let name = name.unwrap_or_else(|| existing.map(|(n, _)| n.clone()).unwrap_or_default());
+        let blurb = blurb.unwrap_or_else(|| existing.map(|(_, b)| b.clone()).unwrap_or_default());
+        // Provenance: the recording said it, or a model did.
+        let by = match (&client, &note) {
+            (Some(c), Some(_)) => c.chat_model(),
+            _ => "transcript",
+        };
         let _ = state.db.set_chapter_blurb(
             track_id,
             i as i64,
-            if name.is_empty() { &label } else { &name },
+            if name.trim().is_empty() { &label } else { &name },
             &blurb,
-            client.chat_model(),
+            by,
         );
     }
 }
@@ -373,5 +413,33 @@ mod tests {
         // A sentence that merely STARTS with the word is not an announcement.
         assert_eq!(declared_name("Prologue was the name of the ship."), None);
         assert_eq!(declared_name("The morning came slowly."), None);
+    }
+
+    /// A book that opens at zero. The whole reason this pass exists without a
+    /// model: the recording announces the number, and reading it is what stops
+    /// every surface counting from position instead.
+    #[test]
+    fn a_book_that_opens_at_zero_is_read_as_zero() {
+        assert_eq!(spoken_number("zero"), Some(0));
+        assert_eq!(spoken_number("0"), Some(0));
+        assert_eq!(
+            declared_name("Chapter zero. The one where I get a cat. Carl here."),
+            Some("Chapter 0: The One Where I Get A Cat".into())
+        );
+        assert_eq!(declared_name("Chapter 0. Donut."), Some("Chapter 0: Donut".into()));
+        assert_eq!(declared_name("Chapter zero."), Some("Chapter 0".into()));
+        // The chapter after it still reads as one, so the sequence holds.
+        assert_eq!(declared_name("Chapter one. Down we go."), Some("Chapter 1: Down We Go".into()));
+    }
+
+    /// Numbers a narrator does not say. A wrong number here would renumber a
+    /// whole book, so the parser stays narrow.
+    #[test]
+    fn nonsense_numbers_are_refused() {
+        assert_eq!(spoken_number("twenty zero"), None);
+        assert_eq!(spoken_number("banana"), None);
+        assert_eq!(spoken_number("-1"), None);
+        assert_eq!(spoken_number("1000"), None);
+        assert_eq!(spoken_number("twenty-three"), Some(23));
     }
 }

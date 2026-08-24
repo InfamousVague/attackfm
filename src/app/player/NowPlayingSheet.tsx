@@ -1,4 +1,4 @@
-import { chapterNumberBase } from './chapterNumber.ts';
+import { chapterNumbers } from './chapterNumber.ts';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { installSheetDismiss } from './playerDismiss.ts';
 import { fireNativeHaptic } from '../core/haptics.ts';
@@ -277,8 +277,9 @@ function BookWords({
 /** One row of the chapter panel, whatever form the book arrived in. */
 interface ChapterFace {
   title: string;
-  /** The number this chapter wears - the book's own, not its position. */
-  n: number;
+  /** The number this chapter wears - the book's own, not its position.
+   *  Null for front matter that sits ahead of the numbering. */
+  n: number | null;
   /** The hub's one non-spoiler line, where its AI has written one. */
   blurb: string | null;
   /** Right-hand figure: a start offset (single file) or a length (sections). */
@@ -570,13 +571,22 @@ export function NowPlayingSheet({
     if (!bookWords || bookWords.length === 0 || !track) return [];
     const id = trackIdFromPath(track.path);
     const notes = (id != null && bookNotes?.[String(id)]) || null;
-    const base = chapterNumberBase(
-      chapters.length > 0 ? chapters.map((c) => c.title ?? '') : [track.title],
+    // The hub's NAME for a chapter comes first, because that is the one read
+    // off the recording ("Chapter Zero.") - the file's tag is only a fallback,
+    // and on a ripped book it often carries no number at all.
+    const namedAt = (i: number, fallback: string) =>
+      notes?.find((n) => n.idx === i)?.name?.trim() || fallback;
+    const nums = chapterNumbers(
+      chapters.length > 0
+        ? chapters.map((c, i) => namedAt(i, c.title ?? ''))
+        : [namedAt(0, track.title)],
     );
     const nameAt = (i: number, fallback: string) => {
       const said = notes?.find((n) => n.idx === i)?.name?.trim();
       if (said) return said;
-      const n = i + base;
+      const n = nums[i] ?? null;
+      // Front matter keeps its own name and takes no number.
+      if (n === null) return fallback.trim() || `Chapter ${i + 1}`;
       const bare = fallback
         .replace(new RegExp(`^chapter\\s*0*${n}\\b[\\s—–:.-]*`, 'i'), '')
         .trim();
@@ -609,20 +619,23 @@ export function NowPlayingSheet({
     if (track?.kind !== 'book') return [];
     if (chapters.length > 0) {
       const here = chapterIndexAt(chapters, position * 1000);
-      const base = chapterNumberBase(chapters.map((c) => c.title ?? ''));
+      const nums = chapterNumbers(
+        chapters.map((c, i) => noteFor(track.path, i)?.name?.trim() || c.title || ''),
+      );
       return chapters.map((c, i) => {
         // The row already numbers itself, so a title that opens with its own
         // "Chapter N" (most m4b tags do) sheds the prefix: "4 · Chapter 4 —
         // A Cartographer's Debt" says the number twice and clips the words.
         const note = noteFor(track.path, i);
-        const n = i + base;
+        const n = nums[i] ?? null;
         const raw = (note?.name ?? c.title ?? '').trim();
-        const bare = raw
-          .replace(new RegExp(`^chapter\\s*0*${n}\\b[\\s—–:.-]*`, 'i'), '')
-          .trim();
+        const bare =
+          n === null
+            ? raw
+            : raw.replace(new RegExp(`^chapter\\s*0*${n}\\b[\\s—–:.-]*`, 'i'), '').trim();
         return {
           n,
-          title: bare || `Chapter ${n}`,
+          title: bare || (n === null ? `Chapter ${i + 1}` : `Chapter ${n}`),
           blurb: note?.blurb?.trim() || null,
           at: formatClock(c.startMs / 1000),
           here: i === here,
@@ -637,17 +650,22 @@ export function NowPlayingSheet({
     // A sectioned book numbers itself in its FILE titles - "Chapter 0" first,
     // for a series that opens at zero - so the list counts from there too
     // rather than from position, which had every row one ahead of the words.
-    const base = chapterNumberBase(sections.map((t) => t.title));
+    const nums = chapterNumbers(
+      sections.map((t) => noteFor(t.path, 0)?.name?.trim() || t.title),
+    );
     return sections.map((t, i) => {
       const note = noteFor(t.path, 0);
-      const n = i + base;
+      const n = nums[i] ?? null;
       // Same reason as the marked branch above: the row prints the number, so
       // a title that opens with its own "Chapter N" would say it twice.
       const raw = (note?.name?.trim() || t.title || '').trim();
-      const bare = raw.replace(new RegExp(`^chapter\\s*0*${n}\\b[\\s\u2014\u2013:.-]*`, 'i'), '').trim();
+      const bare =
+        n === null
+          ? raw
+          : raw.replace(new RegExp(`^chapter\\s*0*${n}\\b[\\s\u2014\u2013:.-]*`, 'i'), '').trim();
       return {
         n,
-        title: bare || `Chapter ${n}`,
+        title: bare || (n === null ? `Chapter ${i + 1}` : `Chapter ${n}`),
         blurb: note?.blurb?.trim() || null,
         at: t.duration != null ? formatClock(t.duration) : null,
         here: t.path === track.path,
@@ -677,9 +695,11 @@ export function NowPlayingSheet({
     );
     // The book's own number for this chapter, not its row - "of N" stays a
     // count of the chapters, which is what it always was.
-    const n = bookFaces[here]?.n ?? here + 1;
-    const ord = `Chapter ${n} of ${bookFaces.length}`;
+    const n = bookFaces[here]?.n ?? null;
     const title = bookFaces[here]?.title ?? '';
+    // Front matter is not "Chapter -1 of 50" - it is the Preamble, by name.
+    if (n === null) return title || chapterLabel;
+    const ord = `Chapter ${n} of ${bookFaces.length}`;
     return title && title.toLowerCase() !== `chapter ${n}` ? `${ord} · ${title}` : ord;
   })();
 
@@ -1145,7 +1165,7 @@ export function NowPlayingSheet({
                   data-here={c.here || undefined}
                   onClick={c.jump}
                 >
-                  <span className="npChapters__n">{c.n}</span>
+                  {c.n !== null && <span className="npChapters__n">{c.n}</span>}
                   <span className="npChapters__title">{c.title}</span>
                   {c.at && <span className="npChapters__at">{c.at}</span>}
                   {c.blurb && <span className="npChapters__blurb">{c.blurb}</span>}
