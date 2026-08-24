@@ -397,6 +397,100 @@
 
 /* Tall enough to be worth scrolling, short enough to stay a popover rather
    than becoming a page. */
+/* ---- Kept places ------------------------------------------------------- */
+
+/* The bookmarks, above the chapters in the same door. Separated by a rule
+   rather than a gap: they are a different KIND of list - places somebody chose
+   - and without the line they read as chapters with odd names. */
+.npMarks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding-block-end: var(--glacier-space-2);
+  margin-block-end: var(--glacier-space-2);
+  border-block-end: 1px solid var(--glacier-border-subtle);
+}
+
+.npMarks__title {
+  padding-inline: 0.5rem;
+  color: var(--glacier-text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.npMarks__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  /* Its own ceiling, so a book with thirty kept places cannot push the
+     chapters out of reach - both lists stay reachable in one door. */
+  max-block-size: min(30vh, 11rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Go and remove are two targets, so the row is a grid of two buttons rather
+   than a button with another inside it - which is invalid markup and an
+   ambiguous press even where it renders. */
+.npMarks__row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+.npMarks__go {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  border: none;
+  border-radius: var(--glacier-radius-sm);
+  background: none;
+  color: var(--glacier-text-primary);
+  text-align: start;
+  cursor: pointer;
+}
+.npMarks__go:hover,
+.npMarks__go:focus-visible {
+  background: var(--glacier-surface-raised);
+}
+
+/* The chapter name takes the squeeze; the clock never does - it is the part
+   that tells two bookmarks in one chapter apart. */
+.npMarks__label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.85rem;
+}
+
+.npMarks__at {
+  color: var(--glacier-text-muted);
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.npMarks__drop {
+  display: grid;
+  place-items: center;
+  padding: 0.4rem;
+  border: none;
+  border-radius: var(--glacier-radius-sm);
+  background: none;
+  color: var(--glacier-text-muted);
+  cursor: pointer;
+}
+.npMarks__drop:hover,
+.npMarks__drop:focus-visible {
+  background: var(--glacier-surface-raised);
+  color: var(--glacier-danger-text);
+}
+
 .npChapters__list {
   display: flex;
   flex-direction: column;

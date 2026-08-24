@@ -84,6 +84,12 @@ export const SYNCED_KEYS = [
   // device has not got, from the repositories the line above just carried over.
   'attackfm-plugins-wanted',
   'attackfm-handbook-page',   // your place in the manual, like any bookmark
+  // The places kept IN a book, as opposed to where you stopped reading it. A
+  // passage worth finding again is a thing about the reader, not the phone, and
+  // losing it by picking up a different device is exactly the failure the rest
+  // of this list exists to prevent. Each row names its own server, so carrying
+  // them between libraries cannot make one point at a stranger's track id.
+  'attackfm-book-bookmarks',
   // What a playlist IS beyond its songs - its description, its folder, the song
   // whose art it borrows. Decoration follows the person for the same reason the
   // rest of this list does; see playlists/playlistMeta.ts for why it is not on

@@ -7,6 +7,7 @@ import {
   type ServerSession,
 } from '../server.ts';
 import { createListenReporter, type ListenSnapshot } from './listens.ts';
+import { takePendingSeek } from './pendingSeek.ts';
 import { usePlayback } from './playback.tsx';
 import type { Track } from '../core/tauri.ts';
 
@@ -149,6 +150,14 @@ export function useListenReporting({
     if (!track || track.kind !== 'book' || !(duration > 0)) return;
     if (resumedPath.current === track.path) return;
     resumedPath.current = track.path;
+    // Somebody asked for a SPECIFIC spot in this track - a bookmark two
+    // chapters back. That outranks the automatic mark, which would otherwise
+    // pull them to wherever they last stopped here instead.
+    const asked = takePendingSeek(track.path);
+    if (asked !== null) {
+      commitSeek(asked / 1000);
+      return;
+    }
     const id = trackIdFromPath(track.path);
     const s = playSessionRef.current;
     if (id === null || !s) return;

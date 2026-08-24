@@ -1,4 +1,14 @@
 import { chapterNumbers } from './chapterNumber.ts';
+import {
+  BOOKMARKS_CHANGED,
+  bookmarksIn,
+  SAME_SPOT_MS,
+  removeBookmark,
+  toggleBookmark,
+  type Bookmark as BookMark,
+} from './bookmarks.ts';
+import { setPendingSeek } from './pendingSeek.ts';
+import { useServerSession } from '../servers/serverSession.tsx';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { installSheetDismiss } from './playerDismiss.ts';
 import { fireNativeHaptic } from '../core/haptics.ts';
@@ -6,7 +16,7 @@ import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { createPortal } from 'react-dom';
 import { ContextMenu, CounterBadge, IconButton, MenuItem, Popover, SeekBar, useBeat, useLiveLevels } from '@glacier/react';
 import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
-import { Airplay, AudioLines, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Heart, Image as ImageIcon, ListMusic, ListPlus, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Volume2, TableOfContents } from '@glacier/icons';
+import { Airplay, AudioLines, Bookmark, BookmarkCheck, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Heart, Image as ImageIcon, ListMusic, ListPlus, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Trash2, Volume2, TableOfContents } from '@glacier/icons';
 import { isMobile } from '../core/platform.ts';
 import { PluginSlot } from '../../plugins/runtime.tsx';
 import { SoundConsole } from './SoundConsole.tsx';
@@ -615,6 +625,57 @@ export function NowPlayingSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookWords, bookNotes, chapters, bookPath]);
 
+  /*
+   * Bookmarks: the places in this book somebody meant to keep.
+   *
+   * Read from the store rather than held in state, and re-read on its event, so
+   * two surfaces looking at the same book never disagree - the header's filled
+   * or empty glyph and the list inside the chapters door are the same fact.
+   */
+  const { session: bookSession } = useServerSession();
+  const [bookmarkTick, setBookmarkTick] = useState(0);
+  useEffect(() => {
+    const redraw = () => setBookmarkTick((n) => n + 1);
+    window.addEventListener(BOOKMARKS_CHANGED, redraw);
+    return () => window.removeEventListener(BOOKMARKS_CHANGED, redraw);
+  }, []);
+
+  /** Every file this book is made of - one for an m4b, the sections otherwise. */
+  const bookTrackIds = useMemo(() => {
+    if (track?.kind !== 'book') return [];
+    const ids =
+      chapters.length > 0
+        ? [track.path]
+        : queue
+            .filter((t) => t.kind === 'book' && t.album === track.album && t.artist === track.artist)
+            .map((t) => t.path);
+    return ids.map((p) => trackIdFromPath(p)).filter((n): n is number => n !== null);
+  }, [track, chapters.length, queue]);
+
+  const bookMarks = useMemo(
+    () => (bookSession ? bookmarksIn(bookSession.url, bookTrackIds) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the tick IS the dependency; the store is not reactive
+    [bookSession, bookTrackIds, bookmarkTick],
+  );
+
+  const hereId = track ? trackIdFromPath(track.path) : null;
+  /**
+   * A bookmark already standing where the needle is - so the one button both
+   * drops and lifts, and its glyph says which it will do.
+   *
+   * Read off the list rather than out of the store: `position` ticks several
+   * times a second, and asking the store each time would parse the whole set of
+   * bookmarks on every one of those ticks for an answer the list already holds.
+   */
+  const markHere = useMemo(() => {
+    if (hereId === null || track?.kind !== 'book') return null;
+    const ms = Math.round(position * 1000);
+    return (
+      bookMarks.find((b) => b.trackId === hereId && Math.abs(b.positionMs - ms) <= SAME_SPOT_MS) ??
+      null
+    );
+  }, [bookMarks, hereId, track?.kind, position]);
+
   const bookFaces: ChapterFace[] = (() => {
     if (track?.kind !== 'book') return [];
     if (chapters.length > 0) {
@@ -673,6 +734,31 @@ export function NowPlayingSheet({
       };
     });
   })();
+
+  /** Drop one here, or lift the one already here. The label is the chapter's
+   *  name, so the list reads as places in the book rather than raw clocks. */
+  const toggleMarkHere = () => {
+    if (!bookSession || hereId === null || !track) return;
+    toggleBookmark({
+      server: bookSession.url,
+      trackId: hereId,
+      positionMs: Math.round(position * 1000),
+      label: bookFaces.find((f) => f.here)?.title || track.title,
+    });
+  };
+
+  /** Go to a kept place, in this file or in another of the book's sections. */
+  const jumpToMark = (b: BookMark) => {
+    if (hereId === b.trackId) {
+      commitSeek(b.positionMs / 1000);
+      return;
+    }
+    const t = queue.find((q) => trackIdFromPath(q.path) === b.trackId);
+    if (!t) return;
+    // A section has to load before it can be seeked, so leave word first.
+    setPendingSeek(t.path, b.positionMs);
+    onTrackChange?.(t);
+  };
 
   /*
    * The seek bar reads in CHAPTERS for a marked book: the bar spans the
@@ -927,7 +1013,22 @@ export function NowPlayingSheet({
         {/* Where the close button's counterweight was: filing the song is
             the one action worth a permanent seat up here, and this sheet
             has the room the mini-strip's rail does not. */}
-        {track ? (
+        {track?.kind === 'book' ? (
+          /* A BOOK gets a bookmark here, not a playlist. Filing chapter
+             nineteen of a thirteen-hour reading next to a song is not a thing
+             anybody does, and the seat is better spent on the one action a book
+             actually wants: keep this place. The glyph says which way the tap
+             goes - filled when a mark already stands where the needle is, so
+             the same button lifts it again. */
+          <IconButton
+            variant="ghost"
+            aria-label={markHere ? 'Remove the bookmark here' : 'Bookmark this place'}
+            aria-pressed={!!markHere}
+            onClick={toggleMarkHere}
+          >
+            {markHere ? <BookmarkCheck size={20} /> : <Bookmark size={20} />}
+          </IconButton>
+        ) : track ? (
           <IconButton
             variant="ghost"
             aria-label="Add to playlist"
@@ -1155,6 +1256,39 @@ export function NowPlayingSheet({
               </IconButton>
             }
           >
+            {/* The kept places, above the chapters. A bookmark is a thing you
+                went looking for on purpose, so it is answered before the table
+                of contents you would otherwise have to search. Absent when
+                there are none, rather than an empty heading. */}
+            {bookMarks.length > 0 && (
+              <div className="npMarks">
+                <span className="npMarks__title">Bookmarks</span>
+                <div className="npMarks__list" role="list">
+                  {bookMarks.map((b) => (
+                    <div key={`${b.trackId}-${b.positionMs}`} className="npMarks__row" role="listitem">
+                      <button
+                        type="button"
+                        className="npMarks__go"
+                        onClick={() => jumpToMark(b)}
+                        aria-label={`Go to ${b.label} at ${formatClock(b.positionMs / 1000)}`}
+                      >
+                        <Bookmark size={13} aria-hidden />
+                        <span className="npMarks__label">{b.label}</span>
+                        <span className="npMarks__at">{formatClock(b.positionMs / 1000)}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="npMarks__drop"
+                        onClick={() => removeBookmark(b)}
+                        aria-label={`Remove the bookmark at ${formatClock(b.positionMs / 1000)}`}
+                      >
+                        <Trash2 size={13} aria-hidden />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="npChapters__list" role="list">
               {bookFaces.map((c, i) => (
                 <button
