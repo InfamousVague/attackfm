@@ -110,7 +110,18 @@ export function fetchTranscript(track: Track): Promise<BookLine[] | null> {
       return merged;
     })
     .then((lines) => (lines.length > 0 ? lines : null))
-    .catch(() => null);
+    /*
+     * A FAILURE is not a miss. The reading face asks the moment a book
+     * opens, which on a fresh app launch races the server connection - and
+     * a rejection cached for the session left every book wordless until a
+     * restart, with the read-along lit over a chapter list. Only a real
+     * answer stays cached; a failed ask forgets itself so the next open
+     * asks again.
+     */
+    .catch(() => {
+      cache.delete(id);
+      return null;
+    });
 
   cache.set(id, looked);
   return looked;

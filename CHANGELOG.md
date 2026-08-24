@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.17
+
+- The Books page wears the same hero every collection does: the reading book's cover on the tile, the shelf's count and length, and Resume - which picks up whichever book you touched last - beside Add a book
+- Fixed the reading face coming up wordless and staying that way: a transcript asked for while the app was still reaching the server was remembered as missing for the whole session. A failed ask forgets itself now - and tapping the lit Read along button asks again on the spot
+
 ## 0.4.16
 
 - The reading is yours to hold now: scroll the book by hand, skim ahead or back, and tap any line to play from there - everything the lyrics panel could do, on the page itself
