@@ -272,6 +272,113 @@ pub async fn queue(
     Ok(Json(json!({ "queued": true, "id": id })))
 }
 
+/// Whether this box can recognise anything at all - the sweep's own gate, so
+/// a server with no recogniser spends nothing looking for work it cannot do.
+pub(crate) fn whisper_ready(state: &Arc<AppState>) -> bool {
+    whisper_bin().is_some() && whisper_model(state).is_some()
+}
+
+/// Audio in, words with clocks out - the recogniser's core, shared.
+///
+/// Factored out so the lyric aligner (see `lyricsync.rs`) reads a song with
+/// exactly the machinery that reads a book: the same decode to 16 kHz mono,
+/// the same one-word-per-segment flags, the same politeness. Anything that
+/// improves recognition improves both, and neither can drift from the other.
+///
+/// Returns `(startMs, endMs, word)` in order, or None if any step failed.
+pub(crate) async fn recognise_words(
+    state: &Arc<AppState>,
+    audio: &std::path::Path,
+    stage_name: &str,
+) -> Option<Vec<(i64, i64, String)>> {
+    let (bin, model) = (whisper_bin()?, whisper_model(state)?);
+    let stage = state.data_dir.join("transcribe").join(stage_name);
+    tokio::fs::create_dir_all(&stage).await.ok()?;
+    let wav = stage.join("in.wav");
+
+    let mut ff = if std::path::Path::new("/usr/bin/nice").exists() {
+        let mut c = tokio::process::Command::new("/usr/bin/nice");
+        c.arg("-n").arg("15").arg("ffmpeg");
+        c
+    } else {
+        tokio::process::Command::new("ffmpeg")
+    };
+    ff.arg("-y")
+        .arg("-loglevel")
+        .arg("error")
+        .arg("-i")
+        .arg(audio)
+        .arg("-ar")
+        .arg("16000")
+        .arg("-ac")
+        .arg("1")
+        .arg("-c:a")
+        .arg("pcm_s16le")
+        .arg(&wav)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let decoded = tokio::time::timeout(Duration::from_secs(900), ff.status()).await;
+    if !matches!(decoded, Ok(Ok(st)) if st.success()) || !wav.is_file() {
+        let _ = tokio::fs::remove_dir_all(&stage).await;
+        return None;
+    }
+
+    let out_base = stage.join("out");
+    let mut wh = if std::path::Path::new("/usr/bin/nice").exists() {
+        let mut c = tokio::process::Command::new("/usr/bin/nice");
+        c.arg("-n").arg("15").arg(&bin);
+        c
+    } else {
+        tokio::process::Command::new(&bin)
+    };
+    wh.arg("-m")
+        .arg(&model)
+        .arg("-f")
+        .arg(&wav)
+        .arg("--max-len")
+        .arg("1")
+        .arg("--split-on-word")
+        .arg("--output-json")
+        .arg("--output-file")
+        .arg(&out_base)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let read = wh.status().await;
+    let json_path = stage.join("out.json");
+    if !matches!(read, Ok(st) if st.success()) || !json_path.is_file() {
+        let _ = tokio::fs::remove_dir_all(&stage).await;
+        return None;
+    }
+    let raw = tokio::fs::read(&json_path).await.unwrap_or_default();
+    let parsed: Value = serde_json::from_slice(&raw).unwrap_or(Value::Null);
+    let _ = tokio::fs::remove_dir_all(&stage).await;
+
+    let mut words = Vec::new();
+    for seg in parsed.get("transcription").and_then(|t| t.as_array())? {
+        let text = seg
+            .get("text")
+            .and_then(|t| t.as_str())
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if text.is_empty() {
+            continue;
+        }
+        let from = seg
+            .get("offsets")
+            .and_then(|o| o.get("from"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let to = seg
+            .get("offsets")
+            .and_then(|o| o.get("to"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(from);
+        words.push((from, to, text));
+    }
+    (!words.is_empty()).then_some(words)
+}
+
 /// `POST /api/transcribe/redo` - queue every transcribed book whose lines
 /// lack per-word clocks, so a library transcribed before word tracking
 /// catches up. Admin, like queueing one: this spends hours of the box's

@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.30
+
+- Lyrics can light up word by word. Where a file already times its words, the app now uses those instead of throwing them away - and for everything else your hub can work them out: it reads the song, matches what it heard against the real lyrics, and keeps only the timings. Liked songs are done first
+- A word held across a long note stays lit for as long as it is held
+- Songs without word timings read exactly as they did before
+
 ## 0.4.29
 
 - Closed the band of empty space under the Books header, above Favourites - the shelf now starts where every other page's first section does

@@ -2,6 +2,9 @@ import type { LyricLine } from '@glacier/react';
 import { onlineMetadataEnabled } from '../settings/netPrefs.ts';
 import type { Track } from '../core/tauri.ts';
 import { fetchTranscript } from './transcript.ts';
+import { sessionForOrigin } from '../servers/sessions.ts';
+import { request } from '../api/http.ts';
+import { originFromPath, trackIdFromPath } from '../server.ts';
 
 /**
  * Lyrics for the strip's mic popover, looked up on LRCLIB - the open synced
@@ -11,9 +14,23 @@ import { fetchTranscript } from './transcript.ts';
  * What a track has decides what the popover can do: synced lines light and
  * seek; plain-only lyrics read as static text; nothing is an honest empty.
  */
+/**
+ * A synced line, and - where anyone has said so - the clock on each word
+ * inside it.
+ *
+ * Two sources fill `words`, and neither is a guess: LRC's A2 extension,
+ * which writes `<00:12.34>` before each word and which some taggers and
+ * LRCLIB entries carry, and the hub's own alignment of a recognised reading
+ * against these very lines. Absent means nobody knew, and the surfaces fall
+ * back to lighting the whole line exactly as they always have.
+ */
+export interface SyncedLine extends LyricLine {
+  words?: { t: number; w: string }[];
+}
+
 export interface TrackLyrics {
   /** Timed lines, or null when LRCLIB has no synced body for the track. */
-  synced: LyricLine[] | null;
+  synced: SyncedLine[] | null;
   /** Untimed lines for a plain-only match, or null. */
   plain: string[] | null;
 }
@@ -49,10 +66,15 @@ const TIME_TAG = /\[(?:(\d+):)?(\d+):(\d{1,2}(?:[.:]\d{1,3})?)\]/g;
 
 /**
  * The A2 extension's per-word timestamps - `<00:12.34>` woven through the
- * text. This surface highlights lines, not words, so they are lifted out
- * rather than displayed as literal angle-bracket timecodes.
+ * text.
+ *
+ * These used to be thrown away, because the surface highlighted lines rather
+ * than words. It highlights words now, and a time somebody WROTE beats any
+ * time we could infer: this is the same fact the hub spends minutes of
+ * recognition to recover for songs that lack it, sitting in the file for
+ * free. Lifted out of the text either way - nobody wants to read a timecode.
  */
-const WORD_TAG = /<\d+:\d{1,2}(?:[.:]\d{1,3})?>\s?/g;
+const WORD_TAG = /<(\d+):(\d{1,2}(?:[.:]\d{1,3})?)>\s?/g;
 
 /**
  * The `[offset:±ms]` header some files carry: a whole-song correction, plus
@@ -68,16 +90,32 @@ const OFFSET_TAG = /\[offset:\s*([+-]?\d+)\s*\]/i;
  * returns to the repeated line at its second time. Pure metadata tags
  * ([ar:], [ti:], …) fall away - except [offset:], which is applied.
  */
-export function parseLrc(lrc: string): LyricLine[] {
+export function parseLrc(lrc: string): SyncedLine[] {
   const offsetSeconds = Number(lrc.match(OFFSET_TAG)?.[1] ?? 0) / 1000;
-  const out: LyricLine[] = [];
+  const out: SyncedLine[] = [];
   for (const raw of lrc.split(LINE_BREAK)) {
     const tags = [...raw.matchAll(TIME_TAG)];
     if (tags.length === 0) continue;
-    const text = raw
-      .slice((tags.at(-1)?.index ?? 0) + tags.at(-1)![0].length)
-      .replace(WORD_TAG, '')
-      .trim();
+    const body = raw.slice((tags.at(-1)?.index ?? 0) + tags.at(-1)![0].length);
+    const text = body.replace(WORD_TAG, '').trim();
+    /*
+     * The words, where the file timed them. Only for a line carrying ONE time
+     * tag: a repeated chorus writes the same text under several stamps, and
+     * word times are absolute, so the second occurrence would light words from
+     * the first pass through. A line like that keeps its line-level timing and
+     * loses only the finer grain it could not have used honestly anyway.
+     */
+    const words =
+      tags.length === 1
+        ? [...body.matchAll(WORD_TAG)]
+            .map((m, i, all) => {
+              const at = Number(m[1]) * 60 + Number(m[2]!.replace(':', '.'));
+              const from = (m.index ?? 0) + m[0].length;
+              const to = i + 1 < all.length ? all[i + 1]!.index : body.length;
+              return { t: at, w: body.slice(from, to).replace(WORD_TAG, '').trim() };
+            })
+            .filter((x) => Number.isFinite(x.t) && x.w.length > 0)
+        : [];
     for (const tag of tags) {
       const lead = tag[1];
       const mid = Number(tag[2]);
@@ -94,10 +132,52 @@ export function parseLrc(lrc: string): LyricLine[] {
           ? Number(lead) * 60 + mid + Number(last) / 100
           : Number(lead ?? 0) * 3600 + mid * 60 + Number(last.replace(':', '.'));
       if (!Number.isFinite(time)) continue;
-      out.push({ time: Math.max(0, time - offsetSeconds), text });
+      out.push({
+        time: Math.max(0, time - offsetSeconds),
+        text,
+        // The song's own offset moves the words with the line they sit in.
+        ...(words.length > 0
+          ? { words: words.map((x) => ({ t: Math.max(0, x.t - offsetSeconds), w: x.w })) }
+          : {}),
+      });
     }
   }
   return out.sort((a, b) => a.time - b.time);
+}
+
+/**
+ * The hub's word-timed copy of this song's lyrics, or null.
+ *
+ * One request per song, only for a track that lives on a server (a local
+ * file has no hub to ask), and a miss is an ordinary answer: most songs have
+ * not been through the aligner and never will. Deliberately quiet on every
+ * failure - the lyrics that follow are the point, and this is only a better
+ * grain of the same words.
+ */
+async function fetchTimedWords(track: Track): Promise<SyncedLine[] | null> {
+  const id = trackIdFromPath(track.path);
+  if (id == null) return null;
+  const session = sessionForOrigin(originFromPath(track.path));
+  if (!session) return null;
+  try {
+    const r = await request<{ lines: { startMs: number; text: string; words?: [number, string][] }[] }>(
+      session.url,
+      `/api/lyrics/${id}`,
+      { token: session.token },
+    );
+    const lines = (r.lines ?? [])
+      .filter((l) => typeof l.text === 'string' && l.text.trim().length > 0)
+      .map((l) => ({
+        time: l.startMs / 1000,
+        text: l.text.trim(),
+        ...(Array.isArray(l.words) && l.words.length > 0
+          ? { words: l.words.map(([t, w]) => ({ t: t / 1000, w: String(w) })) }
+          : {}),
+      }));
+    return lines.length > 0 ? lines : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -155,6 +235,20 @@ async function fromLrclib(track: Track): Promise<TrackLyrics> {
  */
 async function lookup(track: Track): Promise<{ lyrics: TrackLyrics; settled: boolean }> {
   const tagged = fromTags(track);
+  // A file that times its own words needs nobody's help - and an author's
+  // clocks beat any we could infer.
+  if (tagged?.synced?.some((l) => l.words?.length)) return { lyrics: tagged, settled: true };
+  /*
+   * The hub's own timing, where it has done the work.
+   *
+   * It holds the SAME lines (it reads LRCLIB too) with a clock on every word,
+   * aligned against a recognised pass of the song - so this is not a second
+   * opinion about the words, it is the first opinion with better timing.
+   * Asked before the plain tag short-circuit below, because a synced tag with
+   * no word clocks is exactly what the hub improves on.
+   */
+  const timed = await fetchTimedWords(track);
+  if (timed) return { lyrics: { synced: timed, plain: tagged?.plain ?? null }, settled: true };
   if (tagged?.synced) return { lyrics: tagged, settled: true };
   // The privacy switch: an answer that was never asked for is served but not
   // kept (like a network failure), so flipping lookups back ON re-asks on the

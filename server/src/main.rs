@@ -31,6 +31,7 @@ mod ingest;
 mod transcribe;
 mod audiobooks;
 mod chapter_blurbs;
+mod lyricsync;
 mod auth;
 mod canvas;
 mod collector;
@@ -434,6 +435,18 @@ async fn main() {
     // a large library does not hold the port closed.
     // Audiobook piles dropped in import/ sort themselves - see ingest.rs.
     ingest::spawn_sweep(state.clone());
+    // The lyric aligner's own slow clock: liked songs first, a few minutes
+    // after boot so a restart never lands in the middle of a recognition.
+    {
+        let st = state.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(240)).await;
+            loop {
+                lyricsync::sweep(st.clone()).await;
+                tokio::time::sleep(std::time::Duration::from_secs(1800)).await;
+            }
+        });
+    }
     // Chapter notes ride the same rhythm as the ingest sweep: a beat after
     // boot for anything transcribed while the box was down, then patiently.
     {
@@ -746,6 +759,8 @@ async fn main() {
         .route("/api/audiobooks/ingest", get(ingest::status).post(ingest::run))
         .route("/api/audiobooks/ingest/clear-errors", post(ingest::clear_errors))
         .route("/api/transcribe/redo", post(transcribe::redo))
+        .route("/api/lyrics/{track_id}", get(lyricsync::get))
+        .route("/api/lyrics/sweep", post(lyricsync::run_now))
         .route("/api/transcribe/status", get(transcribe::status))
         .route("/api/transcribe/jobs", get(transcribe::jobs))
         .route("/api/transcribe/{track_id}", get(transcribe::get).post(transcribe::queue))
