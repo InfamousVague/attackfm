@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.23
+
+- The read-along underline was one space too wide - it painted the gap after the word as well, so it always overshot to the right and ran off the edge on the last word of a line. It now ends where the word does
+
 ## 0.4.22
 
 - Books being transcribed now sit at the top of the shelf with a progress bar - "chapter 3 of 42" as the hub works through a sectioned book, and a plain running bar for a single file, which gives nothing to measure from outside

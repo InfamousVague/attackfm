@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { installSheetDismiss } from './playerDismiss.ts';
 import { fireNativeHaptic } from '../core/haptics.ts';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
@@ -247,14 +247,19 @@ function BookWords({
             >
               {i === at && l.kind === 'line' && nowWords ? (
                 nowWords.map((w, k) => (
-                  <span
-                    key={k}
-                    className="npBookWords__w"
-                    data-said={k < lit || undefined}
-                    data-lit={k === lit || undefined}
-                  >
-                    {w.w}{' '}
-                  </span>
+                  // THE SPACE LIVES OUTSIDE THE SPAN. It used to sit inside it,
+                  // and `[data-lit]` underlines the whole span - so the accent
+                  // ran one space past the end of every word, reading as an
+                  // underline that overshoots to the right.
+                  <Fragment key={k}>
+                    <span
+                      className="npBookWords__w"
+                      data-said={k < lit || undefined}
+                      data-lit={k === lit || undefined}
+                    >
+                      {w.w}
+                    </span>{' '}
+                  </Fragment>
                 ))
               ) : (
                 l.text
