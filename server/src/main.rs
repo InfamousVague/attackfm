@@ -744,6 +744,7 @@ async fn main() {
         // see transcribe.rs for why neither is negotiable.
         // Sorting a dropped pile of files into a real book - see ingest.rs.
         .route("/api/audiobooks/ingest", get(ingest::status).post(ingest::run))
+        .route("/api/audiobooks/ingest/clear-errors", post(ingest::clear_errors))
         .route("/api/transcribe/redo", post(transcribe::redo))
         .route("/api/transcribe/status", get(transcribe::status))
         .route("/api/transcribe/jobs", get(transcribe::jobs))

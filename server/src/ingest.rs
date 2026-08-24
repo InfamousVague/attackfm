@@ -181,6 +181,27 @@ async fn set_job(state: &Arc<AppState>, id: &str, f: impl FnOnce(&mut IngestJob)
 // --- Routes -------------------------------------------------------------------
 
 /// `GET /api/audiobooks/ingest` - what waits, and what happened.
+/// `POST /api/audiobooks/ingest/clear-errors` - drop every errored job from
+/// the list. The pile itself stays in `import/`, so a cleared failure is
+/// also an invitation: the sweep no longer remembers it failed and will
+/// offer it again - which is the point, since the usual reason to clear is
+/// having just fixed the folder.
+pub async fn clear_errors(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let caller = auth::require_caller(&state.db, &headers)
+        .map_err(|s| (s, "sign in first".to_string()))?;
+    if !caller.is_admin {
+        return Err((StatusCode::FORBIDDEN, "only an admin can tidy the imports".into()));
+    }
+    let mut jobs = state.ingest.jobs.lock().await;
+    let before = jobs.len();
+    jobs.retain(|j| j.state != "error");
+    let cleared = before - jobs.len();
+    Ok(Json(json!({ "cleared": cleared })))
+}
+
 pub async fn status(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,

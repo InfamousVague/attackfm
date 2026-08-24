@@ -1,6 +1,6 @@
 import { TrackMenu } from '../../app/library/TrackMenu.tsx';
 import { Button, ContextMenu, MenuItem, Modal, ProgressBar, Text } from '@glacier/react';
-import { BookAudio, BookOpenText, Check, ChevronRight, Heart, Play, Trash2, Upload } from '@glacier/icons';
+import { ListX, BookAudio, BookOpenText, Check, ChevronRight, Heart, Play, Trash2, Upload } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { PluginPageProps } from '../types.ts';
 import { useLibrary } from '../../app/library/library.tsx';
@@ -163,9 +163,35 @@ function ImportDoorway() {
           ? 'filing the chapters'
           : j.state;
 
+  const errored = jobs.filter((j) => j.state === 'error').length;
+  const clearErrors = async () => {
+    if (!session) return;
+    try {
+      await request(session.url, '/api/audiobooks/ingest/clear-errors', {
+        method: 'POST',
+        token: session.token,
+      });
+      readNow.current();
+    } catch {
+      // The list simply stays as it was; the next poll tells the truth.
+    }
+  };
+
   return (
     <section className="discoverSection">
-      <h2 className="discoverSection__title">Imports</h2>
+      <div className="booksImport__head">
+        <h2 className="discoverSection__title">Imports</h2>
+        {errored > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void clearErrors()}
+            title="Clear the failed rows; a fixed folder still in import will be offered again"
+          >
+            <ListX size={14} /> Clear {errored === 1 ? 'error' : 'errors'}
+          </Button>
+        )}
+      </div>
       {pending.length > 0 && (
         <div className="booksImport__ask">
           <Text tone="muted" size="sm">
@@ -477,7 +503,10 @@ function ReadAlong({ book }: { book: ShelfBook }) {
   };
 
   const label =
-    state === 'working' ? 'Reading it…' : state === 'done' ? 'Already read' : 'Read along';
+    // "Already read" meant the RECOGNISER had read it - and sat on the card
+    // sounding like a claim about the listener's progress. Say whose reading
+    // it is.
+    state === 'working' ? 'Reading it…' : state === 'done' ? 'Read along ready' : 'Read along';
 
   return (
     <span className="bookCard__readAlongWrap">
@@ -914,7 +943,6 @@ export function BooksPage({ onPlay }: PluginPageProps) {
     <div ref={pageRef} className="discoverPage booksPage">
       <BooksHeader blurb="Your shelf — pick up where you left off." onAdded={rescan} />
       <div ref={sentinelRef} className="booksHead__sentinel" aria-hidden />
-      <ImportDoorway />
 
       {favourites.length > 0 && (
         <section className="discoverSection">
@@ -929,6 +957,12 @@ export function BooksPage({ onPlay }: PluginPageProps) {
         {favourites.length > 0 && <h2 className="discoverSection__title">All books</h2>}
         <div className="booksShelf">{rest.map(card)}</div>
       </section>
+
+      {/* The doorway's paperwork, below the books - the shelf is what the
+          page is FOR, and the import ledger is worth a scroll, not the top
+          third of every visit. (An EMPTY shelf still leads with it: with no
+          books, getting some in is the page.) */}
+      <ImportDoorway />
 
       {open && (
         <Modal open onClose={() => setOpen(null)} title={open.title}>
