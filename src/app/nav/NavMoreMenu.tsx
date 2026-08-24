@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CounterBadge } from '@glacier/react';
-import { Disc3, Download, EllipsisVertical, Settings, UsersRound } from '@glacier/icons';
+import { Download, EllipsisVertical, Settings } from '@glacier/icons';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
-import { usePluginPages } from '../../plugins/runtime.tsx';
+import type { NavDest } from './navSeats.ts';
 
 /**
  * The bar's overflow: a vertical-ellipsis tab that opens the app's "rest of the
@@ -18,18 +18,19 @@ import { usePluginPages } from '../../plugins/runtime.tsx';
  * row can close it on the way out.
  */
 export function NavMoreMenu({
+  overflow,
   tab,
   onTab,
   onSettings,
 }: {
+  /** Whatever did not fit in the bar, in the bar's own order. The menu does
+   *  not choose these and no longer keeps a list of its own: one hand decides
+   *  what is where, so a destination cannot appear in both or in neither. */
+  overflow: NavDest[];
   tab: string;
   onTab: (tab: string) => void;
   onSettings: () => void;
 }) {
-  const pages = usePluginPages();
-  // Books sits on the bar itself now; listing it here too would be the same
-  // door twice in one hand.
-  const menuPages = pages.filter((pg) => pg.key.split(':')[0] !== 'books');
   const [open, setOpen] = useState(false);
   // The queue's presence, for the Downloads row and the count riding the ⋮.
   const dl = useDownloadsOptional();
@@ -53,11 +54,9 @@ export function NavMoreMenu({
   // The ⋮ lights when what is on screen lives in this menu.
   // Stats and Date are Profile's rooms now, so the drawer no longer claims
   // them; the DJ moved into the Booth's nav seat.
-  const onMenuDest =
-    menuPages.some((pg) => pg.key === tab) ||
-    tab === 'friends' ||
-    tab === 'downloads' ||
-    tab === 'booth';
+  // The ⋮ lights when what is on screen lives in here - which now depends on
+  // the width, since the same destination may be a bar tab on a wider phone.
+  const onMenuDest = overflow.some((d) => d.active) || tab === 'downloads';
 
   const go = (next: string) => {
     setOpen(false);
@@ -126,65 +125,35 @@ export function NavMoreMenu({
               }}
             />
             <div className="appNavMore__menu" role="menu" aria-label="More">
-        {menuPages.map((pg) => (
+        {/* The destinations the bar had no room for. Same order they would have
+            taken up there, so widening the window promotes them from the top of
+            this list rather than in some order of its own. */}
+        {overflow.map((d) => (
           <button
-            key={pg.key}
+            key={d.key}
             type="button"
             role="menuitem"
             className="appNavBarPlugins__item"
-            data-active={tab === pg.key || undefined}
-            onClick={() => go(pg.key)}
+            data-active={d.active || undefined}
+            onClick={() => {
+              setOpen(false);
+              d.go();
+            }}
           >
             <span className="appNavBarPlugins__itemIcon" aria-hidden>
-              {pg.icon}
+              {d.icon}
             </span>
-            <span className="appNavBarPlugins__itemLabel">{pg.label}</span>
+            <span className="appNavBarPlugins__itemLabel">{d.label}</span>
           </button>
         ))}
 
-        {menuPages.length > 0 && <span className="appNavBarPlugins__divider" aria-hidden />}
+        {overflow.length > 0 && <span className="appNavBarPlugins__divider" aria-hidden />}
 
-        {/* Date and Stats live inside Profile as rooms now, and the DJ holds
-            a real nav seat as the Booth - the drawer keeps only what has no
-            better home: Friends, the download queue while it runs, Settings. */}
-
-        {/* The people, reachable without going through Profile first. The
-            profile page keeps its own door onto this - the one with their
-            faces on it and the count of who is waiting on you - because that
-            door says something a menu row cannot. This is the shortcut for
-            when you already know where you are going.
-
-            Ungated, like Date and DJ: friends live on the registry account
-            rather than a server, and the page draws its own signed-out face
-            (AccountSetup) rather than needing the menu to hide it. */}
-        {/* The Booth: the DJ's room. It held a bar seat until the Books shelf
-            needed one more; a place you visit accepts a menu row, a place you
-            live in does not. */}
-        <button
-          type="button"
-          role="menuitem"
-          className="appNavBarPlugins__item"
-          data-active={tab === 'booth' || undefined}
-          onClick={() => go('booth')}
-        >
-          <span className="appNavBarPlugins__itemIcon" aria-hidden>
-            <Disc3 size={18} />
-          </span>
-          <span className="appNavBarPlugins__itemLabel">Booth</span>
-        </button>
-
-        <button
-          type="button"
-          role="menuitem"
-          className="appNavBarPlugins__item"
-          data-active={tab === 'friends' || undefined}
-          onClick={() => go('friends')}
-        >
-          <span className="appNavBarPlugins__itemIcon" aria-hidden>
-            <UsersRound size={18} />
-          </span>
-          <span className="appNavBarPlugins__itemLabel">Friends</span>
-        </button>
+        {/* Booth and Friends are ordinary destinations now: they take a bar
+            seat when there is width for one and fall back here when there is
+            not, so they are rendered by the overflow above rather than nailed
+            into this menu. Date and Stats are Profile's rooms. What is left
+            below is what never moves: the queue, and Settings. */}
 
         {/* The queue, whenever an importer exists at all - not only mid-pull:
             the page holds history and retries, and a door that only exists
