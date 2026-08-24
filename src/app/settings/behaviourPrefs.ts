@@ -49,12 +49,16 @@ const RESUME_KEY = 'attackfm-share-position';
  * The reporting shipped ungated: every twenty seconds, and on every track
  * change, the deck sent the song, artist, full path and position to a central
  * service - while the Playback pane told people "Off, nothing is written
- * anywhere" under a switch that never touched it. Worse, `fetchResume` has no
- * callers anywhere in the app, so the data went out and nothing has ever read
- * it back: a continuous outbound stream paying for a feature that does not
- * exist on screen yet.
+ * anywhere" under a switch that never touched it.
  *
- * Default it on the day something actually offers to resume.
+ * THE READ SIDE EXISTS NOW - `ResumeElsewhere` offers the point back when you
+ * open the app - so this is no longer an outbound stream paying for nothing.
+ * The note that used to sit here said to default it on the day something
+ * offered to resume. It is still off, deliberately: what turned out to be wrong
+ * before was a switch that did not match its promise, and quietly starting a
+ * continuous report to a central service on everybody's behalf would be the
+ * same fault pointing the other way. It works the moment somebody asks for it,
+ * which is what a privacy switch is for.
  */
 export function sharePositionEnabled(): boolean {
   return on(RESUME_KEY, false);

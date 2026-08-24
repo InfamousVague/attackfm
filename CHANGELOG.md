@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.45
+
+- "Keep my place across devices" now actually does. The app has been writing that place to your account for a long time and nothing ever read it back; open the app on another device and it offers to pick up where you left off — an offer you can take or wave away, never something that starts playing at you. The switch stays off until you turn it on
+- Asking to open a track at a particular spot works for music too. It only ever worked for audiobooks, so any request to start a song partway in was written down and quietly ignored
+- The LibriVox plugin is withdrawn for now. It is no longer installed on new devices and has left the marketplace; if you already have it, it stays until you remove it
+
 ## 0.4.44
 
 - A big screen held UPRIGHT gets the whole width back. The split view was gated on width alone, so an unfolded foldable in portrait cleared the bar and still got two narrow columns - a library of shelves squeezed into a slot beside the player. It now asks for a screen at least as wide as it is tall, which is the shape where a second column is a gain rather than a division. Sideways, and on the desktop, nothing changes

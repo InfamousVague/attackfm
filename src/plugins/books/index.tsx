@@ -7,7 +7,7 @@ import { BooksPage } from './BooksPage.tsx';
  * marketplace install - baked into the app, on by default, and toggleable in
  * Settings like any plugin, but never fetched from anywhere. It only READS the
  * library (the reading half of audiobooks); acquiring books is the job of
- * separate downloader plugins (Audible, the LibriVox catalogue), whose saves
+ * separate downloader plugins (Audible today), whose saves
  * land in the library as `kind = 'book'` and appear here automatically.
  *
  * No server floor: a desktop with local book files shelves them too. Its page
@@ -23,7 +23,8 @@ export const books: Plugin = {
   details:
     'The reading side of audiobooks, built in: your shelf of books, however they got into the ' +
     'library, played back with chapters and your place kept across devices. Turn it off and the ' +
-    'shelf and its Library row simply go away. Getting books IN is a separate job — add the ' +
-    'Audible downloader or the free LibriVox catalogue for that.',
+    'shelf and its Library row simply go away. Getting books IN is a separate job — the Audible ' +
+    'downloader does it for books you own, and anything dropped in the library\u2019s Audiobooks ' +
+    'folder is shelved here too.',
   pages: [{ id: 'shelf', label: 'Books', icon: <BookAudio size={18} />, Content: BooksPage }],
 };

@@ -210,17 +210,27 @@ export function useListenReporting({
      * agrees with it, the deck is holding this book. A book whose length
      * nobody has measured falls back to the old bare test.
      */
-    if (!track || track.kind !== 'book' || !deckHolds(track, duration)) return;
+    if (!track || !deckHolds(track, duration)) return;
     if (resumedPath.current === track.path) return;
     resumedPath.current = track.path;
-    // Somebody asked for a SPECIFIC spot in this track - a bookmark two
-    // chapters back. That outranks the automatic mark, which would otherwise
-    // pull them to wherever they last stopped here instead.
+    /*
+     * Somebody asked for a SPECIFIC spot in this track - a bookmark two chapters
+     * back, or the place another device left off. It outranks the automatic
+     * mark, which would otherwise pull them to wherever they last stopped here.
+     *
+     * Checked before the book gate below, and for ANY kind of track. It used to
+     * sit inside that gate because bookmarks were the only thing leaving word,
+     * which meant a request to open a SONG at a position was written and then
+     * silently ignored - the one seek nobody could make work.
+     */
     const asked = takePendingSeek(track.path);
     if (asked !== null) {
       commitSeek(asked / 1000);
       return;
     }
+    // Everything below is the audiobook bookmark, which music has no use for:
+    // resuming a song mid-verse is nobody's habit.
+    if (track.kind !== 'book') return;
     const id = trackIdFromPath(track.path);
     const s = playSessionRef.current;
     if (id === null || !s) return;

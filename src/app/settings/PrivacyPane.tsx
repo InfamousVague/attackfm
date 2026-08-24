@@ -68,7 +68,7 @@ export function Privacy() {
         <SettingRow
           id="share-position"
           label="Keep my place across devices"
-          hint="Sends what you are playing — song, artist and how far in — to your AttackFM account every twenty seconds. It is what lets another device pick up mid-song, and what the audiobook shelf reads to continue where you left off."
+          hint="Sends what you are playing — song, artist and how far in — to your AttackFM account every twenty seconds, and offers it back when you open the app somewhere else. Your audiobook places are kept by your own server and do not need this."
           control={
             <Switch
               aria-label="Keep my place across devices"

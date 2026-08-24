@@ -165,3 +165,69 @@
     opacity: 0.5;
   }
 }
+
+
+/* ---- Where you were, on another device --------------------------------- */
+
+/*
+ * The offer to resume, wearing the update banner's plate deliberately: both are
+ * one line the app volunteers above the page, both can be taken or waved away,
+ * and giving them two different looks would suggest they are two different
+ * kinds of interruption. One ROW rather than a column, because everything it
+ * says fits on one and a stacked banner for "carry on with this" reads as more
+ * of an event than it is.
+ */
+.resumeElsewhere {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  margin: var(--glacier-space-2) var(--glacier-space-4) 0;
+  padding: var(--glacier-space-2) var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface-raised);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.resumeElsewhere__icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--glacier-text-muted);
+}
+
+/* The title takes the squeeze; the button and the dismiss never do. */
+.resumeElsewhere__text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.resumeElsewhere__title {
+  font-size: var(--glacier-font-size-sm);
+  font-weight: 650;
+}
+
+.resumeElsewhere__text > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resumeElsewhere__dismiss {
+  display: grid;
+  place-items: center;
+  flex: none;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--glacier-radius-sm);
+  background: none;
+  color: var(--glacier-text-muted);
+  cursor: pointer;
+}
+.resumeElsewhere__dismiss:hover,
+.resumeElsewhere__dismiss:focus-visible {
+  background: var(--glacier-surface-sunken, rgb(255 255 255 / 0.06));
+  color: var(--glacier-text-primary);
+}
