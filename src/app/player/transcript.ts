@@ -1,4 +1,5 @@
 import type { LyricLine } from '@glacier/react';
+import { keepTranscript, keptTranscript } from './transcriptStore.ts';
 import { sessionForOrigin } from '../servers/sessions.ts';
 import { request } from '../api/http.ts';
 import { originFromPath, trackIdFromPath } from '../server.ts';
@@ -119,6 +120,13 @@ export function fetchTranscript(track: Track): Promise<BookLine[] | null> {
       return merged;
     })
     .then((lines) => (lines.length > 0 ? lines : null))
+    /* Written down for a hub that is not there next time. Only a real reading
+       is kept - a null means "nobody has transcribed this", which is not a fact
+       worth storing against the day the server is dark. */
+    .then((lines) => {
+      if (lines) void keepTranscript(id, lines);
+      return lines;
+    })
     /*
      * A FAILURE is not a miss. The reading face asks the moment a book
      * opens, which on a fresh app launch races the server connection - and
@@ -127,9 +135,20 @@ export function fetchTranscript(track: Track): Promise<BookLine[] | null> {
      * answer stays cached; a failed ask forgets itself so the next open
      * asks again.
      */
-    .catch(() => {
+    .catch(async () => {
       cache.delete(id);
-      return null;
+      /*
+       * THE COPY ON THIS DEVICE, when the ask fails.
+       *
+       * This is the whole point of keeping a book offline: its audio was
+       * already in the vault and playing, while the words - the reason most
+       * people transcribe at all - were still being fetched from a hub that had
+       * gone dark, so the reading face fell back to a chapter list.
+       *
+       * Not re-cached in memory: a held copy is cheap to read again, and
+       * caching it would stop the app noticing the hub coming back.
+       */
+      return await keptTranscript(id);
     });
 
   cache.set(id, { p: looked, at: Date.now() });

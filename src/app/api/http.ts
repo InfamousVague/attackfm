@@ -1,4 +1,5 @@
 import { describeFailure, recordDiag, redactUrl } from '../diag/diagLog.ts';
+import { noteServerAnswered, noteServerSilent } from './reachability.ts';
 
 /** A signed-in connection. Everything the app needs to talk to one server. */
 export interface ServerSession {
@@ -76,10 +77,17 @@ export async function request<T>(
     // it is rethrown, because the callers upstream turn this into a quiet
     // "whatever is on screen stays" and the reason would otherwise be lost.
     recordDiag('request', describeFailure(err, `${url}${path}`));
+    // Nobody answered the door. Surfaces that would rather have the hub than
+    // the copy already on this device need to know when there is no hub to have.
+    noteServerSilent();
     throw err;
   } finally {
     window.clearTimeout(deadline);
   }
+  // It replied. A 500 or a 404 is still the server TALKING - only silence means
+  // it is gone, and treating an error page as an outage would send the app to
+  // the vault over a bad request.
+  noteServerAnswered();
   if (!response.ok) {
     // The server answers errors as plain text, which is what belongs in a
     // toast; a body that will not read is not worth failing twice over.

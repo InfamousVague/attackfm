@@ -1,6 +1,6 @@
 import { TrackMenu } from '../../app/library/TrackMenu.tsx';
-import { Button, ContextMenu, MenuItem, Modal, ProgressBar, Text } from '@glacier/react';
-import { ListX, BookAudio, BookOpenText, Check, ChevronRight, Heart, Play, Trash2, Upload } from '@glacier/icons';
+import { Button, ContextMenu, MenuItem, Modal, ProgressBar, Spinner, Text } from '@glacier/react';
+import { ArrowDownToLine, ListX, BookAudio, BookOpenText, Check, ChevronRight, Heart, Play, Trash2, Upload } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { PluginPageProps } from '../types.ts';
 import { useLibrary } from '../../app/library/library.tsx';
@@ -9,6 +9,9 @@ import { CoverWall } from '../../app/playlists/CoverWall.tsx';
 import { chapterNumbers } from '../../app/player/chapterNumber.ts';
 import { fetchPlayStates } from '../../app/api/listening.ts';
 import { forgetTranscript } from '../../app/player/transcript.ts';
+import { forgetKeptTranscript } from '../../app/player/transcriptStore.ts';
+import { keepBook, type KeepStep } from '../../app/downloads/keepBook.ts';
+import { isHeld, onOfflineChange, unpinTrack } from '../../app/downloads/offline.ts';
 import { forgetChapterNotes } from '../../app/player/chapterNotes.ts';
 import { removeTracks, uploadFile } from '../../app/api/library.ts';
 import { setHeaderActions } from '../../app/nav/headerActions.ts';
@@ -16,6 +19,7 @@ import { artSized } from '../../app/server.ts';
 import { formatTotal } from '../../app/ux/format.ts';
 import { useHoldToMenu } from '../../app/ux/holdToMenu.ts';
 import { request, ServerError } from '../../app/api/http.ts';
+import { isTauri } from '../../app/core/tauri.ts';
 import type { Track } from '../../app/core/tauri.ts';
 import { JOB_ACTIVE, transcribeRows, type TranscribeJob } from './transcribeRows.ts';
 
@@ -907,6 +911,17 @@ function BookMenu({
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [keeping, setKeeping] = useState(false);
+  const [step, setStep] = useState<KeepStep | null>(null);
+  // Whether every file of this book is on the device. Re-read on the vault's
+  // own event, so keeping one book updates the menu of another that shares a
+  // file (an omnibus, a re-release) without either being reopened.
+  const [allHeld, setAllHeld] = useState(false);
+  useEffect(() => {
+    const look = () => setAllHeld(book.tracks.every((t) => isHeld(t.path)));
+    look();
+    return onOfflineChange(look);
+  }, [book.tracks]);
 
   // The server ids behind this book's files. A local library has none (its
   // paths are not `afm://`), which also means it has no remove endpoint - so
@@ -914,7 +929,50 @@ function BookMenu({
   const ids = book.tracks.map((t) => serverId(t.path)).filter((n): n is number => n !== null);
   const canManage = session?.isAdmin === true && ids.length > 0;
 
-  if (!canManage) return <div className={className}>{children}</div>;
+  /*
+   * The menu opens for ANYBODY signed in now, not only the operator.
+   *
+   * It was gated whole on `isAdmin`, which was right when everything in it
+   * spent the server's time or deleted from its disk. Keeping a book on your own
+   * phone does neither - it is a thing you do to your device, and refusing it to
+   * everyone in the house because they cannot also delete the book was the
+   * wrong shape. The two admin verbs are gated individually below.
+   */
+  if (!session || ids.length === 0) return <div className={className}>{children}</div>;
+
+  const keepWholeBook = async () => {
+    if (!session || keeping) return;
+    setKeeping(true);
+    setProblem(null);
+    try {
+      const done = await keepBook(session, book.tracks, setStep);
+      if (done.failed > 0) {
+        setProblem(
+          done.failed === book.tracks.length
+            ? 'None of it would download. The hub may be unreachable.'
+            : `${done.failed} of ${book.tracks.length} files did not download - try again to fill the gaps.`,
+        );
+      }
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : 'that did not go through');
+    } finally {
+      setKeeping(false);
+      setStep(null);
+    }
+  };
+
+  const releaseBook = async () => {
+    if (keeping) return;
+    setKeeping(true);
+    try {
+      for (const t of book.tracks) await unpinTrack(t.path);
+      // The words go with the audio: keeping a transcript for a book whose
+      // sound is no longer here holds megabytes for nothing.
+      for (const id of ids) await forgetKeptTranscript(id);
+    } finally {
+      setKeeping(false);
+    }
+  };
 
   const retranscribe = async () => {
     if (!session || busy) return;
@@ -970,12 +1028,43 @@ function BookMenu({
         aria-label={`${book.title} actions`}
         content={
           <>
-            <MenuItem icon={<BookOpenText size={15} />} onSelect={() => void retranscribe()}>
-              Transcribe again
+            {/* A book is one object twenty hours long that you are halfway
+                through, so the cache's ranking - which calls the far end cold -
+                is exactly wrong for it. This keeps the whole thing, words and
+                all, outside that ranking. */}
+            {/* The vault is a native folder, so a browser has nowhere to put a
+                book. An item that silently does nothing is worse than no item. */}
+            {isTauri() && (
+            <MenuItem
+              icon={keeping ? <Spinner size="sm" aria-label="" /> : <ArrowDownToLine size={15} />}
+              onSelect={() => void keepWholeBook()}
+            >
+              {keeping
+                ? step
+                  ? step.words
+                    ? 'Keeping the words…'
+                    : `Keeping ${step.done} of ${step.total}…`
+                  : 'Keeping…'
+                : allHeld
+                  ? 'Kept on this device'
+                  : 'Keep on this device'}
             </MenuItem>
-            <MenuItem icon={<Trash2 size={15} />} danger onSelect={() => setConfirming(true)}>
-              Delete book
-            </MenuItem>
+            )}
+            {isTauri() && allHeld && !keeping && (
+              <MenuItem icon={<Trash2 size={15} />} onSelect={() => void releaseBook()}>
+                Remove from this device
+              </MenuItem>
+            )}
+            {canManage && (
+              <MenuItem icon={<BookOpenText size={15} />} onSelect={() => void retranscribe()}>
+                Transcribe again
+              </MenuItem>
+            )}
+            {canManage && (
+              <MenuItem icon={<Trash2 size={15} />} danger onSelect={() => setConfirming(true)}>
+                Delete book
+              </MenuItem>
+            )}
           </>
         }
       >

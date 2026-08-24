@@ -12,6 +12,7 @@
 //! songs it does not.
 
 import { effectsOn } from '../player/effects.ts';
+import { serverSeemsDown } from '../api/reachability.ts';
 import { fxChainOn } from '../player/fxChain.ts';
 import { stemDropParam } from '../player/stemDrop.ts';
 import { trackIdFromPath } from '../server.ts';
@@ -113,6 +114,21 @@ export function heldPath(path: string): string | null {
  * song off its local copy.
  */
 function offlineSource(path: string): string | null {
+  /*
+   * ...UNLESS THERE IS NO HUB.
+   *
+   * Every refusal below is the same trade: the server can render this song and
+   * the copy on this device cannot, so the copy is declined in favour of the
+   * stream. That is right while the server is answering and exactly wrong when
+   * it has stopped - the choice stops being "with filters or without" and
+   * becomes "without filters, or not at all". A song that plays unfiltered
+   * beats a song that does not play, every time.
+   *
+   * This is the whole reason a liked song would not start with the home server
+   * down: the vault had it, and the resolver was handing it back a null because
+   * an effect was switched on weeks ago.
+   */
+  if (serverSeemsDown()) return heldPath(path);
   if (effectsOn() || fxChainOn()) return null;
   if (stemDropParam(trackIdFromPath(path)) !== null) return null;
   return heldPath(path);

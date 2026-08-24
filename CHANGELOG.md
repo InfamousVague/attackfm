@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.35
+
+- Keep a whole audiobook on this device, words and all. Hold a book on the shelf and choose "Keep on this device": every file is downloaded and put outside the cache's reach, and its transcript is written down beside them. The rolling cache was never going to do this properly - it ranks by what you are likely to want next, and the far end of a twenty-hour book you are halfway through is exactly what that calls cold
+- Your liked songs play with the home server down. The app was refusing the copy on your own phone whenever an effect or a filter was switched on, because the hub is what renders those - which is right while the hub is answering and exactly wrong when it is not. Unfiltered beats silent
+- Album art turns up offline. Covers are held per size, so a phone full of 160s missed every 640 a card asked for; when there is no better copy to be had, any size now serves. And with the hub dark the held copy is used at once instead of waiting for a request to a dead host to time out
+- Read-along no longer runs ahead while a book is buffering. The words were lit off a wall clock that kept counting through the wait, so the reading drifted further from the voice the longer the stall
+
 ## 0.4.34
 
 - A single-file audiobook now reads EVERY chapter's opening, not just the file's. That is what finally sorts the Audible card at the top of Dungeon Crawler Carl: a seventeen-second card announces no chapter and is not one, so it carries no number and chapter one is chapter one again. It needs the book transcribed
