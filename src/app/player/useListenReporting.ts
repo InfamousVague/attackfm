@@ -153,7 +153,7 @@ export function useListenReporting({
     const s = playSessionRef.current;
     if (id === null || !s) return;
     let live = true;
-    void fetchPlayStates(s)
+    void fetchPlayStates(s, { kind: 'book', limit: 2_000 })
       .then((states) => {
         if (!live) return;
         const mine = states.find((st) => st.trackId === id);

@@ -6,6 +6,7 @@ import type { PluginPageProps } from '../types.ts';
 import { useLibrary } from '../../app/library/library.tsx';
 import { useServerSession } from '../../app/servers/serverSession.tsx';
 import { CoverWall } from '../../app/playlists/CoverWall.tsx';
+import { chapterNumbers } from '../../app/player/chapterNumber.ts';
 import { fetchPlayStates } from '../../app/api/listening.ts';
 import { forgetTranscript } from '../../app/player/transcript.ts';
 import { forgetChapterNotes } from '../../app/player/chapterNotes.ts';
@@ -1089,7 +1090,7 @@ export function BooksPage({ onPlay }: PluginPageProps) {
   );
   const refreshMarks = useCallback(() => {
     if (!session) return;
-    void fetchPlayStates(session)
+    void fetchPlayStates(session, { kind: 'book', limit: 2_000 })
       .then((states) => setMarks(new Map(states.map((s) => [s.trackId, s]))))
       .catch(() => {});
   }, [session]);
@@ -1199,7 +1200,7 @@ export function BooksPage({ onPlay }: PluginPageProps) {
           <span className="bookCard__author">{book.author}</span>
           <span className="bookCard__standing">
             {at.started
-              ? `Ch ${at.index + 1} of ${book.chapters.length} · ${minutes(at.positionMs)} in`
+              ? `${chapterFigure(book, at.index)} · ${minutes(at.positionMs)} in`
               : `${book.chapters.length} ${book.chapters.length === 1 ? 'chapter' : 'chapters'}`}
           </span>
         </button>
@@ -1224,6 +1225,48 @@ export function BooksPage({ onPlay }: PluginPageProps) {
     () => shelf.reduce((n, b) => n + b.tracks.reduce((m, t) => m + (t.duration ?? 0), 0), 0),
     [shelf],
   );
+  /** "Ch 2 of 50" - the book's OWN number for the chapter, the same one the
+   *  transport and the chapter list show. Front matter claims no number, so it
+   *  is placed rather than numbered. */
+  const chapterFigure = useCallback((book: ShelfBook, index: number) => {
+    const n = chapterNumbers(book.chapters.map((c) => c.title ?? ''))[index] ?? null;
+    return n === null
+      ? `${index + 1} of ${book.chapters.length}`
+      : `Ch ${n} of ${book.chapters.length}`;
+  }, []);
+
+  /**
+   * Every book with a place kept, most recently read first.
+   *
+   * A bookmark per book has always been what the ledger holds - a mark is
+   * written against the SECTION being read, so two books never shared a
+   * position. What was missing was anywhere to see that: the hero offers one
+   * verb, "Resume", pointing at the single most recent book, and the shelves
+   * below are sorted by title, so a second and third book in progress were
+   * scattered among everything else and reading more than one at a time felt
+   * like something the app did not do.
+   *
+   * This is that shelf. It is derived, not stored - `standing()` already knows
+   * where each book stands, so nothing new is written and a book leaves the
+   * shelf by being finished, not by being tidied away.
+   */
+  const reading = useMemo(() => {
+    const touched = (b: ShelfBook) => {
+      let at = 0;
+      for (const t of b.tracks) {
+        const id = serverId(t.path);
+        const mark = id != null ? marks.get(id) : undefined;
+        if (mark && mark.updatedAt > at) at = mark.updatedAt;
+      }
+      return at;
+    };
+    return shelf
+      .filter((b) => standing(b).started)
+      .map((b) => ({ book: b, at: touched(b) }))
+      .sort((x, y) => y.at - x.at)
+      .map((r) => r.book);
+  }, [shelf, marks, standing]);
+
   const resumeBook = useMemo(() => {
     let best: { book: ShelfBook; at: number } | null = null;
     for (const b of shelf) {
@@ -1253,6 +1296,20 @@ export function BooksPage({ onPlay }: PluginPageProps) {
           came to this page with while one is being read. It shows nothing at
           all when nothing is running. */}
       <TranscribeProgress shelf={shelf} />
+
+      {/* Before the sorted shelves, because a book you are in the middle of is
+          not something to go looking for alphabetically.
+
+          Only once there are TWO. A single book in progress is already the
+          hero's "Resume", and a shelf holding one card would say the same thing
+          twice; this earns its place at the moment it stops being answerable by
+          one button. */}
+      {reading.length > 1 && (
+        <section className="discoverSection">
+          <h2 className="discoverSection__title">Continue reading</h2>
+          <div className="booksShelf">{reading.map(card)}</div>
+        </section>
+      )}
 
       {favourites.length > 0 && (
         <section className="discoverSection">

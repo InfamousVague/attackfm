@@ -59,10 +59,31 @@ export interface PlayState {
   updatedAt: number;
 }
 
-export async function fetchPlayStates(session: ServerSession): Promise<PlayState[]> {
-  const reply = await request<{ states: PlayState[] }>(session.url, '/api/play-state', {
-    token: session.token,
-  });
+/**
+ * Resume positions, newest first.
+ *
+ * `kind: 'book'` is worth asking for rather than filtering afterwards. The
+ * server's list is CAPPED and ordered by recency, so an unfiltered ask means a
+ * book competes for room with everything else that keeps a position - and the
+ * book you have not opened this week is the first to fall off the end and
+ * forget where it was. Narrowing to books means a book only competes with
+ * books, and `limit` then covers however many are on the go.
+ *
+ * Both are ignored by an older hub, which simply answers as it always did.
+ */
+export async function fetchPlayStates(
+  session: ServerSession,
+  opts?: { kind?: 'book' | 'music'; limit?: number },
+): Promise<PlayState[]> {
+  const q = new URLSearchParams();
+  if (opts?.kind) q.set('kind', opts.kind);
+  if (opts?.limit) q.set('limit', String(opts.limit));
+  const tail = q.toString();
+  const reply = await request<{ states: PlayState[] }>(
+    session.url,
+    `/api/play-state${tail ? `?${tail}` : ''}`,
+    { token: session.token },
+  );
   return reply.states;
 }
 
