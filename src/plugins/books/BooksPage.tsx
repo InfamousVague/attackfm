@@ -1,5 +1,5 @@
 import { TrackMenu } from '../../app/library/TrackMenu.tsx';
-import { Button, ContextMenu, MenuItem, Modal, ProgressBar, Spinner, Text } from '@glacier/react';
+import { Button, ContextMenu, MenuItem, Modal, ProgressBar, SearchField, Spinner, Text } from '@glacier/react';
 import { ArrowDownToLine, ListX, BookAudio, BookOpenText, Check, ChevronRight, Heart, Play, Trash2, Upload } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { PluginPageProps } from '../types.ts';
@@ -7,6 +7,7 @@ import { useLibrary } from '../../app/library/library.tsx';
 import { useServerSession } from '../../app/servers/serverSession.tsx';
 import { CoverWall } from '../../app/playlists/CoverWall.tsx';
 import { chapterNumbers } from '../../app/player/chapterNumber.ts';
+import { filterBooks } from './bookSearch.ts';
 import { fetchPlayStates } from '../../app/api/listening.ts';
 import { forgetTranscript } from '../../app/player/transcript.ts';
 import { forgetKeptTranscript } from '../../app/player/transcriptStore.ts';
@@ -1250,6 +1251,9 @@ export function BooksPage({ onPlay }: PluginPageProps) {
   };
 
   const [open, setOpen] = useState<ShelfBook | null>(null);
+  const [query, setQuery] = useState('');
+  const searching = query.trim().length > 0;
+  const found = useMemo(() => filterBooks(shelf, query), [shelf, query]);
 
   if (shelf.length === 0) {
     return (
@@ -1405,6 +1409,22 @@ export function BooksPage({ onPlay }: PluginPageProps) {
       {/* Above the shelves, because "is my book ready yet" is the question you
           came to this page with while one is being read. It shows nothing at
           all when nothing is running. */}
+      {/* A REAL field, not the app's search-page doorway.
+          That one hands off to the page that searches your SONGS, over a
+          library books are deliberately kept out of. This filters the shelf in
+          place: no navigation, no overlay, and the books stay where they are.
+          Only once there is a shelf worth filtering - on four books it is
+          furniture. */}
+      {shelf.length > 4 && (
+        <SearchField
+          className="booksSearch"
+          placeholder="Search your books"
+          value={query}
+          onValueChange={setQuery}
+          aria-label="Search your books"
+        />
+      )}
+
       <TranscribeProgress shelf={shelf} />
 
       {/* Before the sorted shelves, because a book you are in the middle of is
@@ -1414,26 +1434,49 @@ export function BooksPage({ onPlay }: PluginPageProps) {
           hero's "Resume", and a shelf holding one card would say the same thing
           twice; this earns its place at the moment it stops being answerable by
           one button. */}
-      {reading.length > 1 && (
+      {!searching && reading.length > 1 && (
         <section className="discoverSection">
           <h2 className="discoverSection__title">Continue reading</h2>
           <div className="booksShelf">{reading.map(card)}</div>
         </section>
       )}
 
-      {favourites.length > 0 && (
+      {/* SEARCHING REPLACES THE SHELVES, rather than narrowing each of them.
+          Favourites, Continue reading and All books answer "what should I read
+          next"; a search answers "where is the one I am thinking of", and the
+          same book turning up under two headings is noise in the middle of that.
+          One list, in the shelf's own order. */}
+      {searching ? (
         <section className="discoverSection">
-          {/* Its own shelf rather than a filter, because "the ones I am
-              actually reading" is a different question from "everything I
-              own", and on a shelf of forty the difference is the whole point. */}
-          <h2 className="discoverSection__title">Favourites</h2>
-          <div className="booksShelf">{favourites.map(card)}</div>
+          <h2 className="discoverSection__title">
+            {found.length} {found.length === 1 ? 'book' : 'books'}
+          </h2>
+          {found.length > 0 ? (
+            <div className="booksShelf">{found.map(card)}</div>
+          ) : (
+            <Text tone="muted" size="sm">
+              Nothing on the shelf matches “{query.trim()}”. Titles, authors and chapter names are
+              all searched.
+            </Text>
+          )}
         </section>
+      ) : (
+        <>
+          {favourites.length > 0 && (
+            <section className="discoverSection">
+              {/* Its own shelf rather than a filter, because "the ones I am
+                  actually reading" is a different question from "everything I
+                  own", and on a shelf of forty the difference is the whole point. */}
+              <h2 className="discoverSection__title">Favourites</h2>
+              <div className="booksShelf">{favourites.map(card)}</div>
+            </section>
+          )}
+          <section className="discoverSection">
+            {favourites.length > 0 && <h2 className="discoverSection__title">All books</h2>}
+            <div className="booksShelf">{rest.map(card)}</div>
+          </section>
+        </>
       )}
-      <section className="discoverSection">
-        {favourites.length > 0 && <h2 className="discoverSection__title">All books</h2>}
-        <div className="booksShelf">{rest.map(card)}</div>
-      </section>
 
       {/* The doorway's paperwork, below the books - the shelf is what the
           page is FOR, and the import ledger is worth a scroll, not the top
