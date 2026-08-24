@@ -587,3 +587,16 @@ span.bookCard__readAlong {
   justify-content: space-between;
   margin-block-end: var(--glacier-space-2);
 }
+
+/* The Imports ledger's head: the title and, when failures have piled up,
+   the broom - spread to the row's ends like every list-with-a-verb. */
+.booksImport__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+}
+
+.booksImport__head .discoverSection__title {
+  margin: 0;
+}

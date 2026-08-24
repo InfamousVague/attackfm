@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.13
+
+- The Imports ledger moved to the bottom of the Books page - the shelf leads, the paperwork follows (an empty shelf still leads with the doorway)
+- Failed imports can be cleared in one tap; a cleared folder still sitting in import gets offered again, which is the point of clearing after a fix
+- The read-along badge stopped claiming you had "already read" books you had not started: it was the recogniser's reading, and it now says "Read along ready"
+
 ## 0.4.12
 
 - Every download now says whose errand it is: the name that queued it, "the collector · for whom", or "Spotify mirror · whose account" - worn as a quiet chip on the card. Needs the hub updated; older jobs stay unlabelled rather than guessed at
