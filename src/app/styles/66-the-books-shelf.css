@@ -567,6 +567,60 @@ span.bookCard__readAlong {
   pointer-events: none;
 }
 
+/* ---- Books being transcribed -------------------------------------------- */
+
+/* A list of bars above the shelves, present only while the hub is reading
+   something. The row is title-over-bar-over-caption rather than a single line,
+   because the caption is the part that carries the meaning - a bar sitting at
+   two forty-seconds means nothing without "chapter 3 of 42" under it. */
+.bookProgress__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bookProgress__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  min-width: 0;
+}
+
+.bookProgress__line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+  min-width: 0;
+}
+
+/* A book title is long and a phone is narrow, so the title takes the squeeze
+   and the count never does - the count is two short numbers and wrapping them
+   under the title would look like a second row of content. */
+.bookProgress__title {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.bookProgress__count {
+  flex: none;
+  color: var(--glacier-text-muted);
+  font-size: 0.8rem;
+  /* The numbers climb while you watch; lining figures keep them from jittering. */
+  font-variant-numeric: tabular-nums;
+}
+
+.bookProgress__failed {
+  color: var(--glacier-danger-text);
+}
+
 /* ---- The import doorway ------------------------------------------------- */
 
 /* The ask and its button on one line; the job rows below reuse the bookJob
