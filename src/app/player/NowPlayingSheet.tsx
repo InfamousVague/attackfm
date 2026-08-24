@@ -1,4 +1,5 @@
 import { chapterNumbers, spokenChapterNumber } from './chapterNumber.ts';
+import { chapterPreview } from './chapterOpening.ts';
 import {
   BOOKMARKS_CHANGED,
   bookmarksIn,
@@ -304,32 +305,6 @@ function BookWords({
 
 
 /** One row of the chapter panel, whatever form the book arrived in. */
-/**
- * A chapter's first words, trimmed to sit under its name.
- *
- * NOT a description, and it must not pretend to be one - it is what the chapter
- * opens with, quoted. The hub writes real descriptions with a model; this is
- * what a book can say about itself with nothing but its own reading, so a
- * chapter list is informative on a hub that has no model configured instead of
- * being a bare column of numbers.
- *
- * The announcement itself is dropped, because the row already carries the
- * number, and "Chapter six. Chapter six…" is not worth the line.
- */
-function openingLine(opening: string): string | null {
-  let t = opening.trim();
-  if (!t) return null;
-  t = t
-    .replace(/^(?:and\s+now,?\s+)?chapter\s+(?:[a-z]+(?:[-\s][a-z]+)?|\d{1,4})\s*[.:,!?-]*\s*/i, '')
-    .trim();
-  // Too short to say anything: a marker whose opening is one stray word.
-  if (t.length < 16) return null;
-  if (t.length <= 120) return t;
-  const cut = t.slice(0, 120);
-  const stop = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf(', '), cut.lastIndexOf(' '));
-  return `${(stop > 60 ? cut.slice(0, stop) : cut).trim()}…`;
-}
-
 interface ChapterFace {
   title: string;
   /** The number this chapter wears - the book's own, not its position.
@@ -822,7 +797,7 @@ export function NowPlayingSheet({
           n,
           title: bare || (n === null ? `Chapter ${i + 1}` : `Chapter ${n}`),
           blurb: note?.blurb?.trim() || null,
-          opening: openingLine(markerOpenings?.[i]?.opening ?? ''),
+          opening: chapterPreview(markerOpenings?.[i]?.opening ?? ''),
           at: formatClock(c.startMs / 1000),
           here: i === here,
           jump: () => onSeekChapter(c.startMs),
@@ -1278,39 +1253,6 @@ export function NowPlayingSheet({
               <span className="npScreen__chapterText">{doorLabel ?? chapterLabel}</span>
             </span>
           )}
-          {/* The reading pace, beside the figure it changes: pick a speed and
-              the "left in the book" line above answers in the same breath,
-              because that number is spent at this rate. */}
-          {track?.kind === 'book' && (
-            <Popover
-              placement="top"
-              aria-label="Reading speed"
-              className="npSpeed"
-              trigger={
-                <button type="button" className="npScreen__speed" data-on={bookSpeed !== 1 || undefined}>
-                  <Gauge size={13} aria-hidden />
-                  {bookSpeedLabel(bookSpeed)}
-                </button>
-              }
-            >
-              <div className="npSpeed__list" role="list">
-                {BOOK_SPEEDS.map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    role="listitem"
-                    className="npSpeed__row"
-                    data-here={r === bookSpeed || undefined}
-                    onClick={() => chooseBookSpeed(r)}
-                  >
-                    <span className="npSpeed__rate">{bookSpeedLabel(r)}</span>
-                    {r === 1 && <span className="npSpeed__note">normal</span>}
-                    {r === bookSpeed && <Check size={14} aria-hidden />}
-                  </button>
-                ))}
-              </div>
-            </Popover>
-          )}
           {/* Its own line, because it is its own fact and because a phone has
               no room to hang it off the end of a chapter title - which clipped
               the title and then the number with it. */}
@@ -1326,6 +1268,51 @@ export function NowPlayingSheet({
             </span>
           )}
         </div>
+        {/* THE PACE, beside the heart rather than down in the title block.
+            It was a pill wearing its own rate ("1.2x") among the lines that say
+            what is playing - a control sitting in a caption. Up here it is one
+            of the two things you DO to what is playing, next to the other one
+            and at the same weight. The rate rides the glyph as a badge, so the
+            seat stays the size of the heart's whatever it says. */}
+        {track?.kind === 'book' && (
+          <Popover
+            placement="bottom-end"
+            aria-label="Reading speed"
+            className="npSpeed"
+            trigger={
+              <IconButton
+                variant="ghost"
+                className="npScreen__speedBtn"
+                data-on={bookSpeed !== 1 || undefined}
+                aria-label={`Reading speed - ${bookSpeedLabel(bookSpeed)}`}
+              >
+                <Gauge size={22} />
+                {bookSpeed !== 1 && (
+                  <span className="npScreen__speedBadge" aria-hidden>
+                    {bookSpeedLabel(bookSpeed)}
+                  </span>
+                )}
+              </IconButton>
+            }
+          >
+            <div className="npSpeed__list" role="list">
+              {BOOK_SPEEDS.map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  role="listitem"
+                  className="npSpeed__row"
+                  data-here={r === bookSpeed || undefined}
+                  onClick={() => chooseBookSpeed(r)}
+                >
+                  <span className="npSpeed__rate">{bookSpeedLabel(r)}</span>
+                  {r === 1 && <span className="npSpeed__note">normal</span>}
+                  {r === bookSpeed && <Check size={14} aria-hidden />}
+                </button>
+              ))}
+            </div>
+          </Popover>
+        )}
         <IconButton
           variant="ghost"
           aria-label={favorite ? 'Remove from favourites' : 'Add to favourites'}

@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.37
+
+- Fixed chapter numbers vanishing from the list. A narrator who runs "chapter one" across two of the recogniser's segments announces nothing the app can read until much later in the book - and every chapter before that point was being written off as front matter and losing its number
+- The chapter name is no longer clipped to "Ch…" on a book whose first file is a publisher's card. With no number to show, the name was sliding into the narrow column the number lives in
+- Chapter previews cut the publisher's card and the narrator's announcement away, so a preview says something about ITS chapter instead of repeating the same boilerplate twelve times. A real written summary is the hub's job and still needs a model configured on it
+- The reading-speed pill is a button beside the heart now, with the rate as a badge on it, rather than a control sitting among the lines that say what is playing
+
 ## 0.4.36
 
 - Storage now says what the space is holding, not just how it got there. Music and audiobooks are their own shares of the bar and their own lines in the legend, each saying how much of it you kept on purpose - a shelf of books and a library of songs are nothing alike, and added together each was hiding the other. The covers and the book transcripts held on the device are counted underneath
