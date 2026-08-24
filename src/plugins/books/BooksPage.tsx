@@ -1044,17 +1044,52 @@ export function BooksPage({ onPlay }: PluginPageProps) {
     return () => observer.disconnect();
   }, [books.length === 0]);
   // The cover the header wears when the page's own head scrolls away.
+  const [marks, setMarks] = useState<Map<number, { positionMs: number; updatedAt: number }>>(
+    new Map(),
+  );
+  const refreshMarks = useCallback(() => {
+    if (!session) return;
+    void fetchPlayStates(session, { kind: 'book', limit: 2_000 })
+      .then((states) => setMarks(new Map(states.map((s) => [s.trackId, s]))))
+      .catch(() => {});
+  }, [session]);
+  useEffect(() => {
+    refreshMarks();
+  }, [refreshMarks]);
+
+  /** Where a book stands: which chapter, and how far into it. */
+
+  /*
+   * The face of the shelf: the book you were LAST LISTENING TO.
+   *
+   * The bookmark ledger says which that is - the newest mark of any file of
+   * any book - and it is a better answer than "a favourite" was: a shelf is
+   * identified by the thing you are in the middle of, which is also the book
+   * the Resume button plays. The door and the room agree. Favourites, then
+   * any sleeve at all, remain the fallbacks for a shelf nobody has started.
+   */
   const headerCover = useMemo(() => {
+    let newest: { at: number; art: string } | null = null;
+    for (const t of books) {
+      if (!t.artwork) continue;
+      const id = serverId(t.path);
+      const mark = id != null ? marks.get(id) : undefined;
+      if (mark && (!newest || mark.updatedAt > newest.at)) {
+        newest = { at: mark.updatedAt, art: t.artwork };
+      }
+    }
+    if (newest) return newest.art;
     const fav = books.find((t) => isFavorite(t.path) && t.artwork);
     return fav?.artwork ?? books.find((t) => t.artwork)?.artwork ?? null;
-  }, [books, isFavorite]);
+  }, [books, isFavorite, marks]);
+
     useEffect(() => {
     if (!stuck) return;
     setHeaderActions({
       title: 'Books',
-      // The shelf's leading cover, the way a playlist hands up its mosaic -
-      // favourites first, since that is the book being read. The glyph stays
-      // as the fallback for a shelf with no artwork at all.
+      // The shelf's leading cover, the way a playlist hands up its mosaic:
+      // the book being read right now. The glyph stays as the fallback for a
+      // shelf with no artwork at all.
       art: headerCover,
       glyph: headerCover ? null : BookAudio,
       action: { icon: Upload, label: 'Add a book', onPress: () => openBookPicker?.() },
@@ -1085,20 +1120,6 @@ export function BooksPage({ onPlay }: PluginPageProps) {
   const favourites = shelf.filter(isFavouriteBook);
   const rest = shelf.filter((b) => !isFavouriteBook(b));
 
-  const [marks, setMarks] = useState<Map<number, { positionMs: number; updatedAt: number }>>(
-    new Map(),
-  );
-  const refreshMarks = useCallback(() => {
-    if (!session) return;
-    void fetchPlayStates(session, { kind: 'book', limit: 2_000 })
-      .then((states) => setMarks(new Map(states.map((s) => [s.trackId, s]))))
-      .catch(() => {});
-  }, [session]);
-  useEffect(() => {
-    refreshMarks();
-  }, [refreshMarks]);
-
-  /** Where a book stands: which chapter, and how far into it. */
   const standing = useCallback(
     (book: ShelfBook): { index: number; positionMs: number; started: boolean } => {
       if (book.singleFile) {

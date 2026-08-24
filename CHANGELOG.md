@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.31
+
+- Fixed audiobooks losing your place when you switch between them - two faults at once: the parting bookmark was being written against whichever book you had just moved TO, and the restore was measuring your place against the previous book's length and giving up
+- The Books page now wears the cover of the book you were last listening to
+
 ## 0.4.30
 
 - Lyrics can light up word by word. Where a file already times its words, the app now uses those instead of throwing them away - and for everything else your hub can work them out: it reads the song, matches what it heard against the real lyrics, and keeps only the timings. Liked songs are done first
