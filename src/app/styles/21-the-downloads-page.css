@@ -77,18 +77,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.dlPaused {
-  display: flex;
-  align-items: center;
-  gap: var(--glacier-space-2);
-  margin: 0;
-  padding: var(--glacier-space-2) var(--glacier-space-3);
-  border-radius: var(--glacier-radius-md);
-  background: var(--glacier-accent-soft);
-  border: var(--glacier-hairline) solid var(--glacier-accent-border);
-  color: var(--glacier-text);
-  font-size: var(--glacier-font-size-sm);
-}
 
 .dlSection {
   display: flex;

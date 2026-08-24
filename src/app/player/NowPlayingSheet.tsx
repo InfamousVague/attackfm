@@ -1,4 +1,4 @@
-import { chapterNumbers } from './chapterNumber.ts';
+import { chapterNumbers, spokenChapterNumber } from './chapterNumber.ts';
 import {
   BOOKMARKS_CHANGED,
   bookmarksIn,
@@ -579,6 +579,43 @@ export function NowPlayingSheet({
     return list?.find((n) => n.idx === idx) ?? null;
   };
 
+  /**
+   * WHERE THE READING SAYS WE ARE.
+   *
+   * The tags cannot be trusted to number a book. Whoever ripped it routinely
+   * counts the publisher's own front matter as chapter one - the Audible card
+   * that announces the title takes the first seat - and every chapter after it
+   * reads one ahead of itself for the rest of the book.
+   *
+   * The narration does not have that problem: it says "Chapter One" at the top
+   * of chapter one whatever the file is called. And ONE section is enough to
+   * place the whole book, because the sections are in order - hearing "chapter
+   * one" at the second file fixes every other file's number by arithmetic. So
+   * this reads the transcript already fetched for what is playing, rather than
+   * fetching fifty of them or waiting for the hub to have swept the book.
+   *
+   * Front matter announces nothing, which is exactly how it ends up carrying no
+   * number at all.
+   */
+  const spokenAnchor = useMemo(() => {
+    if (!bookWords || bookWords.length === 0 || track?.kind !== 'book') return null;
+    // The opening only. "Chapter" turns up all through a reading and a mention
+    // is not an announcement, so a few lines in is already too far.
+    const opening = bookWords
+      .slice(0, 3)
+      .map((l) => l.text)
+      .join(' ');
+    const number = spokenChapterNumber(opening);
+    if (number === null) return null;
+    // Which file this transcript belongs to. A marked single file IS the book,
+    // so its opening is the opening of its first chapter.
+    if (chapters.length > 0) return { index: 0, number };
+    const i = queue
+      .filter((t) => t.kind === 'book' && t.album === track.album && t.artist === track.artist)
+      .findIndex((t) => t.path === track.path);
+    return i < 0 ? null : { index: i, number };
+  }, [bookWords, track, chapters.length, queue]);
+
   /*
    * The reading flow: transcript lines with each chapter's start folded in
    * as a heading item. Memoised on the stable inputs - lines, notes, marks -
@@ -597,6 +634,7 @@ export function NowPlayingSheet({
       chapters.length > 0
         ? chapters.map((c, i) => namedAt(i, c.title ?? ''))
         : [namedAt(0, track.title)],
+      spokenAnchor,
     );
     const nameAt = (i: number, fallback: string) => {
       const said = notes?.find((n) => n.idx === i)?.name?.trim();
@@ -630,7 +668,7 @@ export function NowPlayingSheet({
     flow.sort((a, b) => a.time - b.time || (a.kind === 'title' ? -1 : 1));
     return flow;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookWords, bookNotes, chapters, bookPath]);
+  }, [bookWords, bookNotes, chapters, bookPath, spokenAnchor]);
 
   /*
    * Bookmarks: the places in this book somebody meant to keep.
@@ -689,6 +727,7 @@ export function NowPlayingSheet({
       const here = chapterIndexAt(chapters, position * 1000);
       const nums = chapterNumbers(
         chapters.map((c, i) => noteFor(track.path, i)?.name?.trim() || c.title || ''),
+        spokenAnchor,
       );
       return chapters.map((c, i) => {
         // The row already numbers itself, so a title that opens with its own
@@ -720,6 +759,7 @@ export function NowPlayingSheet({
     // rather than from position, which had every row one ahead of the words.
     const nums = chapterNumbers(
       sections.map((t) => noteFor(t.path, 0)?.name?.trim() || t.title),
+      spokenAnchor,
     );
     return sections.map((t, i) => {
       const note = noteFor(t.path, 0);

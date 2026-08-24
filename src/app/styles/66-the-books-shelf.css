@@ -444,9 +444,9 @@
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: var(--glacier-space-2);
+  gap: var(--glacier-space-3);
   min-width: 0;
-  padding: 0.4rem 0.5rem;
+  padding: var(--glacier-space-2) var(--glacier-space-3);
   border: none;
   border-radius: var(--glacier-radius-sm);
   background: none;
@@ -491,10 +491,23 @@
   color: var(--glacier-danger-text);
 }
 
+/* The chapter door's own panel.
+   
+   GEOMETRY ONLY. The kit's Popover paints through an ArrowGlass SIBLING of this
+   element, so a background or a blur here does not replace that - it stacks on
+   top of it, and the panel goes cloudy. Width and padding are all this may set.
+   
+   It had no rule at all before, so it wore the kit's default padding and its
+   rows sat tighter than anything else in the app. */
+.npChapters {
+  inline-size: min(22rem, calc(100vw - var(--glacier-space-8)));
+  padding: var(--glacier-space-3);
+}
+
 .npChapters__list {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: var(--glacier-space-1);
   max-block-size: min(60vh, 26rem);
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -504,8 +517,11 @@
   display: grid;
   grid-template-columns: 1.75rem 1fr auto;
   align-items: center;
-  gap: var(--glacier-space-2);
-  padding: 0.45rem 0.5rem;
+  column-gap: var(--glacier-space-3);
+  /* A gap between the name and the description under it, not the space-3 the
+     columns take - they are one thought, and a column-sized gap reads as two. */
+  row-gap: 0.15rem;
+  padding: var(--glacier-space-2) var(--glacier-space-3);
   border: none;
   border-radius: var(--glacier-radius-sm);
   background: none;
@@ -521,8 +537,11 @@
 .npChapters__blurb {
   grid-column: 2 / -1;
   font-size: 0.76rem;
-  line-height: 1.35;
-  color: var(--glacier-text-subtle);
+  line-height: 1.4;
+  /* -muted, NOT -subtle: subtle is the one text token that resolves to the same
+     grey in both themes, so on the dark panel this door wears it sat almost on
+     the background. */
+  color: var(--glacier-text-muted);
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;

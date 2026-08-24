@@ -11,7 +11,6 @@ import {
   ListMusic,
   ListX,
   Music,
-  Pause,
   Play,
   RotateCcw,
   Trash2,
@@ -384,7 +383,7 @@ function useMusicSource(): ResolvedDownloadSource | null {
   const downloads = useDownloadsOptional();
   return useMemo(() => {
     if (!downloads) return null;
-    const { jobs, paused, setPaused, clearFinished, remove, retry, cancel } = downloads;
+    const { jobs, clearFinished, remove, retry, cancel } = downloads;
     return {
       key: 'core:music',
       pluginId: 'spotify-import',
@@ -413,8 +412,6 @@ function useMusicSource(): ResolvedDownloadSource | null {
           remove: () => remove(job.id),
         }),
       ),
-      paused,
-      setPaused,
       clearFinished,
     };
   }, [downloads]);
@@ -469,10 +466,13 @@ function DownloadsBoard() {
     0,
   );
 
-  // The header's controls act on every source that offered them: one Pause for
-  // the page, not one per plugin, and Clear sweeps all the finished cards.
-  const pausable = sources.filter((s) => s.setPaused);
-  const paused = pausable.some((s) => s.paused);
+  // Clear sweeps all the finished cards, across every source that offered it.
+  //
+  // There was a Pause here too, one for the whole page. It has gone: it only
+  // ever held the QUEUE, so anything already in flight finished regardless, and
+  // a button that stops the NEXT download rather than this one is a button whose
+  // effect you cannot see. Cancel on a card does what pausing looked like it
+  // would do.
   const clearable = sources.filter((s) => s.clearFinished);
 
   return (
@@ -494,16 +494,6 @@ function DownloadsBoard() {
               {partsLeft} {partsLeft === 1 ? 'file' : 'files'} to go
             </span>
           )}
-          {pausable.length > 0 && (
-            <Button
-              variant={paused ? 'solid' : 'soft'}
-              size="sm"
-              onClick={() => pausable.forEach((s) => s.setPaused?.(!paused))}
-            >
-              {paused ? <Play size={15} /> : <Pause size={15} />}
-              <span>{paused ? 'Resume' : 'Pause'}</span>
-            </Button>
-          )}
           {finished.length > 0 && clearable.length > 0 && (
             <Button
               variant="ghost"
@@ -517,12 +507,6 @@ function DownloadsBoard() {
           )}
         </div>
       </header>
-
-      {paused && (
-        <p className="dlPaused" role="status">
-          <Pause size={13} /> The queue is paused — downloads already in flight will finish.
-        </p>
-      )}
 
       {rows.length === 0 ? (
         <div className="emptyState emptyState--tall">

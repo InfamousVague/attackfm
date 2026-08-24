@@ -282,6 +282,26 @@ export function markAllRead(): void {
   flushNotices();
 }
 
+/**
+ * One notice, gone.
+ *
+ * The panel only ever had "clear everything", which is a poor answer to a
+ * single stuck row: a failed download that will not go away is exactly the
+ * notice somebody wants rid of WITHOUT throwing away the other five they have
+ * not read yet. Dismissing is about the list, not about the thing it reports -
+ * the download is still failed, it is simply no longer being announced.
+ *
+ * The unread tally is recounted rather than decremented, because a notice may
+ * or may not have been read and guessing which is how a badge starts lying.
+ */
+export function dismissNotice(id: string): void {
+  const next = entries.filter((e) => e.id !== id);
+  if (next.length === entries.length) return;
+  entries = next;
+  changed();
+  flushNotices();
+}
+
 export function clearNotices(): void {
   if (entries.length === 0) return;
   entries = [];
