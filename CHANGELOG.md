@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.41
+
+- The Music Date invitation had lost its padding, so the icon sat against the top and bottom edges. Its styling had been scoped to the Booth and the invitation moved to Discover a while back, taking none of it along
+- The cover on the now-playing strip is properly squircled rather than a square with the corners knocked off
+- The now-playing strip sits closer to the nav bar. Two things were spending space between them and each was spending a full step
+
 ## 0.4.40
 
 - The now-playing strip is a quarter smaller. It stood at 98px on a phone - a ninth of the screen, permanently - and it is 74 now. The play button keeps its full thumb-sized target; what went is the air around it and a cover square that had grown to fill a height nothing else wanted. The space is actually given back, too: the gap every page holds for the strip came down with it

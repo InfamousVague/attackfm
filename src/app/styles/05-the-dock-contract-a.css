@@ -188,7 +188,10 @@ body:has(.npScreen[data-docked]) .djToast {
      protruding element again wants exactly one place to say so. */
   --app-nav-overhang: 0px;
   /* What separates the player plate from the raised button above the nav. */
-  --app-nav-gap: var(--glacier-space-2);
+  /* The air between the player plate and the nav plate. Halved: with the
+     player's own block padding spending a step as well, a step here had the two
+     reading as drifting apart rather than stacked. */
+  --app-nav-gap: var(--glacier-space-1);
   /* One tab's height, named so the bar and the band it occupies cannot drift:
      a glyph, a hairline gap and a small label, with room to tap. */
   --app-nav-item-height: 2.5rem;
