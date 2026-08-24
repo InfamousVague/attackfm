@@ -281,6 +281,54 @@
   margin-block-start: var(--glacier-space-2);
 }
 
+/*
+ * One book you own, as a row you can pull from.
+ *
+ * These had NO rules at all - `.bookResults` was styled and its children were
+ * not - so every cover drew at whatever Audible sent, which is a few hundred
+ * pixels square. A library of forty was forty full-width posters to scroll
+ * past. A row is the right shape: the cover is an identifier here, not the
+ * content, and the thing you came to do is press the button on the right.
+ */
+.bookResult {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+}
+.bookResult:hover {
+  background: var(--glacier-surface-raised);
+}
+
+/* Square, small, and the same size whether it is a cover or the fallback
+   glyph - a list whose rows change height as covers load reads as broken. */
+.bookResultArt {
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  display: grid;
+  place-items: center;
+  border-radius: var(--glacier-radius-sm);
+  background: var(--glacier-surface-sunken, rgb(255 255 255 / 0.06));
+  color: var(--glacier-text-muted);
+  object-fit: cover;
+  overflow: hidden;
+}
+
+/* The title takes the squeeze; the button never does. */
+.bookResultCopy {
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.bookResultCopy > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .booksSearching {
   display: flex;
   align-items: center;

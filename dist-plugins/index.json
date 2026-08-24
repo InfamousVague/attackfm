@@ -5,17 +5,17 @@
     {
       "id": "audible",
       "name": "Audible",
-      "version": "0.3.2",
+      "version": "0.3.3",
       "description": "Download the audiobooks you own on Audible into your library.",
       "author": "AttackFM",
       "tags": [
         "Audiobooks",
         "Downloads"
       ],
-      "entry": "audible-0.3.2.js",
+      "entry": "audible-0.3.3.js",
       "api": 1,
-      "bytes": 13087,
-      "sha256": "9fc3b957f4cda7d22833284261c3e93972cc4b9b079c9a73693e6106a212a4b8",
+      "bytes": 13109,
+      "sha256": "308ede2e4270293d07199f7afbcafbb8a10f90f213ee411da5f591a0c4c1c61f",
       "requiresServer": true
     },
     {

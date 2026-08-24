@@ -1,8 +1,7 @@
-import { Button, Spinner, Text } from '@glacier/react';
+import { Button, Label, Spinner, Text } from '@glacier/react';
 import { BookHeadphones, Check, Plus } from '@glacier/icons';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useServerSession } from '@attackfm/app/serverSession';
-import type { PluginPageProps } from '../../src/plugins/types.ts';
 import { audibleLibrary, audibleStatus, type AudibleBook, type AudibleJob } from './audibleAccount.ts';
 import { useAudibleQueue } from './queue.tsx';
 
@@ -33,7 +32,21 @@ function minutes(min: number | null): string {
   return `${Math.floor(min / 60)}h ${min % 60}m`;
 }
 
-export function DownloaderPage(_props: PluginPageProps) {
+/**
+ * Your Audible library, as a list you can pull from.
+ *
+ * It LIVES IN SETTINGS now rather than holding a nav seat. A downloader is
+ * something you visit when you have bought a book - a handful of times a year -
+ * and a permanent seat for that pushes the places you go nightly along the bar.
+ * The account it depends on is already a settings pane, and "connect the
+ * account" and "take what it gives you" are one errand, so they are now one
+ * place.
+ *
+ * `embedded` is the difference between the two hosts: on its own it was a page
+ * and brought a page's scroller and heading with it; inside the settings pane
+ * those belong to the pane, and a second scroller nested in one traps the drag.
+ */
+export function DownloaderPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { session } = useServerSession();
   const { jobFor, busy, pull: pullBook } = useAudibleQueue();
 
@@ -91,22 +104,31 @@ export function DownloaderPage(_props: PluginPageProps) {
     );
   };
 
+  const Frame = ({ children }: { children: ReactNode }) =>
+    embedded ? <>{children}</> : <div className="discoverPage">{children}</div>;
+
   if (!session) {
     return (
-      <div className="discoverPage">
+      <Frame>
         <Text tone="muted" size="sm">
           Audible downloads run on your server — connect one under Settings → Server first.
         </Text>
-      </div>
+      </Frame>
     );
   }
 
   return (
-    <div className="discoverPage">
+    <Frame>
+      {/* The pane above already says whose account this is, so embedded it
+          needs a label rather than a page heading. */}
       <div className="prefsSection">
-        <Text size="lg" className="pageHeading">
-          Your Audible library
-        </Text>
+        {embedded ? (
+          <Label>Your library</Label>
+        ) : (
+          <Text size="lg" className="pageHeading">
+            Your Audible library
+          </Text>
+        )}
         <Text tone="muted" size="sm">
           The books you own, pulled into your library and shelved under Books.
         </Text>
@@ -201,6 +223,6 @@ export function DownloaderPage(_props: PluginPageProps) {
           <Spinner /> <Text tone="muted" size="sm">Checking Audible…</Text>
         </div>
       )}
-    </div>
+    </Frame>
   );
 }

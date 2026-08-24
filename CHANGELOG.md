@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.43
+
+- The Audible library moved out of the nav and into its own settings pane, beside the account it depends on - a downloader is somewhere you go a handful of times a year, and a permanent seat for that pushed the places you go nightly along the bar. Update the Audible plugin to get it
+- Its covers are a sane size. They had no styling at all, so every one drew at whatever Audible sent - a library of forty was forty full-width posters to scroll past
+- Newest purchases lead the list instead of whatever order the export happened to emit. Needs the hub updated
+
 ## 0.4.42
 
 - The now-playing strip is inset evenly on all four sides. It had a step above and below and three to the left and right, so once the plate got shorter the cover nearly touched the top and bottom while a band of nothing sat beside it
