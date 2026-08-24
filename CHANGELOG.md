@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.33
+
+- Starting a book you have never played no longer drops you at the timestamp of the one you were just listening to. It begins at the beginning, and a book you HAVE been reading still returns to its own place
+
 ## 0.4.32
 
 - Chapters are numbered by what the NARRATOR says, not by what the files are called. A book whose first file is the publisher's own card - "this is Audible…" - had every chapter one ahead of itself, because the tags count that card as chapter one. The reading does not: one section's transcript places the whole book, and front matter that announces nothing now carries no number at all

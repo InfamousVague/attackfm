@@ -113,6 +113,28 @@ export function useListenReporting({
   }, [coarsePosition, playing, track, duration]);
 
   /*
+   * Whether the DECK is holding this very book, rather than still holding
+   * the last one.
+   *
+   * `duration` is one number for whatever the deck has loaded, and a track
+   * change moves `track` a beat before it moves that. Both halves of the
+   * bookmark need this proof and for the same reason: a position read in
+   * that beat belongs to the PREVIOUS book. Reading it as this book's mark
+   * is how starting a new series jumped straight to the timestamp of the one
+   * you were already listening to; reading it as this book's readiness is
+   * how coming back to a book measured its place against the wrong length.
+   *
+   * The library's own duration for the track is the check. A book nobody has
+   * measured falls back to the bare "the deck knows some length" test, which
+   * is what both halves did before.
+   */
+  const deckHolds = (t: Track, deckDuration: number) => {
+    if (!(deckDuration > 0)) return false;
+    const known = t.duration ?? 0;
+    return known <= 0 || Math.abs(deckDuration - known) <= 2;
+  };
+
+  /*
    * Where each book got to, kept PER BOOK.
    *
    * The parting write below used to send `positionRef.current` - a live ref
@@ -129,10 +151,10 @@ export function useListenReporting({
    */
   const marks = useRef(new Map<string, number>());
   useEffect(() => {
-    if (!track || track.kind !== 'book') return;
+    if (!track || track.kind !== 'book' || !deckHolds(track, duration)) return;
     const ms = positionRef.current * 1000;
     if (ms > 5_000) marks.current.set(track.path, ms);
-  }, [coarsePosition, track, positionRef]);
+  }, [coarsePosition, track, duration, positionRef]);
 
   // ── The audiobook bookmark ───────────────────────────────────────────────
   //
@@ -188,9 +210,7 @@ export function useListenReporting({
      * agrees with it, the deck is holding this book. A book whose length
      * nobody has measured falls back to the old bare test.
      */
-    if (!track || track.kind !== 'book' || !(duration > 0)) return;
-    const known = track.duration ?? 0;
-    if (known > 0 && Math.abs(duration - known) > 2) return;
+    if (!track || track.kind !== 'book' || !deckHolds(track, duration)) return;
     if (resumedPath.current === track.path) return;
     resumedPath.current = track.path;
     // Somebody asked for a SPECIFIC spot in this track - a bookmark two
