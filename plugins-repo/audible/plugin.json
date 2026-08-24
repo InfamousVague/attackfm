@@ -1,7 +1,7 @@
 {
   "id": "audible",
   "name": "Audible",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Download the audiobooks you own on Audible into your library.",
   "author": "AttackFM",
   "tags": [

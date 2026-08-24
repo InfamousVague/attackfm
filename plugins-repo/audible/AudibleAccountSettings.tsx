@@ -1,4 +1,5 @@
 import { Button, Field, Input, Label, Select, Spinner, Text } from '@glacier/react';
+import { DownloaderPage } from './DownloaderPage.tsx';
 import { Check, ExternalLink, Unplug } from '@glacier/icons';
 import { useCallback, useEffect, useState } from 'react';
 import { useServerSession } from '@attackfm/app/serverSession';
@@ -189,7 +190,8 @@ export function AudibleAccountSettings() {
   return (
     <div className="prefsBody">
       {status?.connected && !login ? (
-        <div className="prefsSection">
+          <>
+          <div className="prefsSection">
           <Label>Account</Label>
           <Text size="sm">
             Connected{status.name ? ` as ${status.name}` : ''}. Your server can download the
@@ -204,12 +206,19 @@ export function AudibleAccountSettings() {
             </Button>
           </div>
           <Text tone="muted" size="sm">
-            Your Audible library shows up under the Books tab — anything you own can be pulled in
-            with its chapters and cover. Sign in again if downloads start failing: being
-            “connected” only means the hub still holds tokens, and Amazon can retire those at its
-            own end without telling us.
+            Anything you own can be pulled in below, with its chapters and cover, and lands on
+            the Books shelf. Sign in again if downloads start failing: being “connected” only
+            means the hub still holds tokens, and Amazon can retire those at its own end without
+            telling us.
           </Text>
-        </div>
+          </div>
+          {/* THE LIBRARY, in the pane that owns the account it needs - it used
+              to be a nav page of its own. Inside this branch because it depends
+              on exactly what this branch reports: a list of books you cannot
+              fetch is not a feature, and the branches below are already telling
+              you to sign in. */}
+          <DownloaderPage embedded />
+        </>
       ) : !login ? (
         <div className="prefsSection">
           <Label>Connect Audible</Label>

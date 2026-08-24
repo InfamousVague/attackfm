@@ -502,6 +502,11 @@ pub struct AudibleBook {
     pub runtime_min: Option<i64>,
     pub percent_complete: Option<f64>,
     pub owned_locally: bool,
+    /// When it was bought, as Audible reports it. Carried so the newest thing
+    /// you own can lead the list - which is what somebody opening this is
+    /// almost always looking for, and what a library sorted by whatever order
+    /// the export happened to emit never gives them.
+    pub purchase_date: Option<String>,
 }
 
 /// One download, in flight or finished. camelCase for the client.
@@ -598,6 +603,14 @@ pub async fn library(
         let cover = it.get("cover_url").and_then(|x| x.as_str()).filter(|s| !s.is_empty()).map(String::from);
         let runtime_min = it.get("runtime_length_min").and_then(|x| x.as_i64());
         let percent_complete = it.get("percent_complete").and_then(|x| x.as_f64());
+        // audible-cli writes an ISO-ish stamp ("2024-03-11 09:22:14"), which
+        // sorts correctly as text - no parsing, and nothing to get wrong about
+        // time zones for a field only ever used to order a list.
+        let purchase_date = it
+            .get("purchase_date")
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from);
         let owned_locally = state.db.track_id_by_path(&book_rel_path(&state.music_root, &author, &title)).is_some();
         books.push(AudibleBook {
             asin: asin.to_string(),
@@ -607,8 +620,27 @@ pub async fn library(
             runtime_min,
             percent_complete,
             owned_locally,
+            purchase_date,
         });
     }
+    /*
+     * Newest first.
+     *
+     * Sorted HERE rather than in the plugin because the order is a property of
+     * the library, not of one surface that happens to draw it - and because a
+     * client that sorts has to be given the date to sort by, which is the same
+     * work plus a chance for two surfaces to disagree.
+     *
+     * A book with no date sorts last rather than first: an absent stamp means
+     * "we do not know", and letting unknowns lead the list would put the oldest
+     * imports where the newest purchases belong.
+     */
+    books.sort_by(|a, b| match (&a.purchase_date, &b.purchase_date) {
+        (Some(x), Some(y)) => y.cmp(x),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.title.cmp(&b.title),
+    });
     Ok(Json(json!({ "connected": true, "books": books })))
 }
 

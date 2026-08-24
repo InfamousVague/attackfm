@@ -2,7 +2,6 @@ import { useMemo } from 'react';
 import { BookHeadphones } from '@glacier/icons';
 import type { DownloadItem, DownloadState, Plugin } from '../../src/plugins/types.ts';
 import { AudibleAccountSettings } from './AudibleAccountSettings.tsx';
-import { DownloaderPage } from './DownloaderPage.tsx';
 import { AudibleQueueProvider, useAudibleQueue } from './queue.tsx';
 import type { AudibleJob } from './audibleAccount.ts';
 
@@ -64,7 +63,7 @@ export const audible: Plugin = {
   description: 'Download the audiobooks you own on Audible into your library.',
   icon: <BookHeadphones size={22} />,
   author: 'AttackFM',
-  version: '0.3.2',
+  version: '0.3.3',
   tags: ['Audiobooks', 'Downloads'],
   requiresServer: true,
   details:
@@ -76,14 +75,11 @@ export const audible: Plugin = {
   // Mounted while the plugin is on, so a book keeps downloading (and the
   // library keeps getting rescanned as it lands) wherever you are.
   Provider: AudibleQueueProvider,
-  pages: [
-    {
-      id: 'downloader',
-      label: 'Audible',
-      icon: <BookHeadphones size={18} />,
-      Content: DownloaderPage,
-    },
-  ],
+  // NO PAGE. The downloader lives inside this plugin's settings section now.
+  // A downloader is something you visit when you have bought a book - a handful
+  // of times a year - and a permanent nav seat for that pushes the places you go
+  // nightly along the bar. The account it depends on was already a settings
+  // pane, and "connect the account" and "take what it gives you" are one errand.
   settingsSections: [
     {
       id: 'account',
