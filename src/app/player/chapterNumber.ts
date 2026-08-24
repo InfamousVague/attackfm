@@ -32,22 +32,34 @@ export function statedChapterNumber(title: string): number | null {
 }
 
 /**
- * The number the FIRST chapter wears, given every chapter's name in order.
+ * The number each chapter wears, in order - null for front matter.
  *
- * Anchored on the first chapter that states a number, then applied to all of
- * them - so one unnumbered "Prologue" in front of "Chapter 1" does not throw the
- * rest off, and a book whose tags say nothing keeps the 1-based counting it has
- * always had.
+ * Two rules, and the second is the one that is easy to get wrong:
  *
- * ANCHORING ON ONE CHAPTER IS THE POINT. Reading each row's own number instead
- * would let a single odd heading ("Chapter 12" sitting at position 3, because a
- * tagger got creative) put a hole in the sequence, and the list would count
- * 1, 2, 12, 4. A book numbers itself one way or not at all.
+ * 1. The book is ANCHORED on the first chapter that states a number in its own
+ *    name, and every chapter counts from there. Anchoring on one chapter is
+ *    deliberate: reading each row's own number instead would let a single odd
+ *    heading ("Chapter 12" sitting third, because a tagger got creative) put a
+ *    hole in the sequence and count 1, 2, 12, 4. A book numbers itself one way
+ *    or not at all.
+ *
+ * 2. A row BEFORE the anchor that states no number of its own is front matter -
+ *    a Preamble, a Prologue, an Author's Note - and it carries NO number. It
+ *    already has a real name. Numbering it by arithmetic produces "Chapter 0"
+ *    for a prologue that the book never called chapter zero, or "-1" for one
+ *    sitting ahead of a genuine Chapter 0, and both are inventions.
+ *
+ * A book whose titles say nothing anywhere keeps the 1-based counting by
+ * position that every chapter surface has always used.
  */
-export function chapterNumberBase(titles: readonly string[]): number {
-  for (let i = 0; i < titles.length; i += 1) {
-    const stated = statedChapterNumber(titles[i] ?? '');
-    if (stated !== null) return stated - i;
-  }
-  return 1;
+export function chapterNumbers(titles: readonly string[]): (number | null)[] {
+  const stated = titles.map((t) => statedChapterNumber(t ?? ''));
+  const anchor = stated.findIndex((n) => n !== null);
+  if (anchor === -1) return titles.map((_, i) => i + 1);
+  const base = stated[anchor]! - anchor;
+  return titles.map((_, i) => {
+    if (i < anchor && stated[i] === null) return null;
+    const n = i + base;
+    return n >= 0 ? n : null;
+  });
 }

@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.25
+
+- Your hub can now name chapters with no AI configured at all. The number and name a narrator announces in the opening breath - "Chapter Zero." - are read straight off the transcription by code. Descriptions are still written by a model and still need one. Needs the hub updated
+- Front matter keeps its own name: a preamble or prologue sitting ahead of the first numbered chapter is no longer counted as a chapter, so the numbered ones still read 0, 1, 2 and the preamble stays the preamble
+
 ## 0.4.24
 
 - Chapters now count the way the BOOK counts. A book that opens at "Chapter 0" was reported one ahead of itself everywhere - the chapter list, "Chapter N of M" in the transport, and the headings in the read-along all counted from position instead. The book's own numbering is read once and every surface follows it

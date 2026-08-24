@@ -11,7 +11,7 @@ import type { AnalyserMeter, LoudnessMeter, PlayerRepeat } from '@glacier/react'
 import { isIOS, isMobile } from '../core/platform.ts';
 import { useLibrary } from '../library/library.tsx';
 import { useEqualizer } from './equalizer.tsx';
-import { chapterNumberBase } from './chapterNumber.ts';
+import { chapterNumbers } from './chapterNumber.ts';
 import { gainFor, useLoudnessMode, useLoudnessTable } from './loudness.ts';
 import { usePlayback } from './playback.tsx';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
@@ -2303,7 +2303,9 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     const title = chapters[idx]!.title?.trim();
     // The book's own numbering, so a book opening at "Chapter 0" is not
     // reported one ahead of itself the whole way through.
-    const n = idx + chapterNumberBase(chapters.map((c) => c.title ?? ''));
+    const n = chapterNumbers(chapters.map((c) => c.title ?? ''))[idx] ?? null;
+    // Front matter is not "Chapter -1 of 50" - it is the Preamble, by name.
+    if (n === null) return title || `Chapter ${idx + 1} of ${chapters.length}`;
     const ord = `Chapter ${n} of ${chapters.length}`;
     // The title only adds something when it is not just "Chapter N" again.
     return title && title.toLowerCase() !== `chapter ${n}` ? `${ord} · ${title}` : ord;
