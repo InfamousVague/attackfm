@@ -1223,7 +1223,13 @@ export function NowPlayingSheet({
           {!(track?.kind === 'book' && track.title === track.album) && (
             <MarqueeText className="npScreen__title" text={track?.title ?? ''} />
           )}
-          {onOpenArtist && track ? (
+          {/* A BOOK'S AUTHOR IS NOT A LINK.
+              The artist line is a door to an artist page - a record's other
+              records, their top songs, the shelf they belong to. None of that
+              exists for an author: it would open a page built for a musician,
+              holding one book. So for a book the name is a caption, the way it
+              is for a track with nowhere to go. */}
+          {onOpenArtist && track && track.kind !== 'book' ? (
             <button
               type="button"
               className="npScreen__artist npScreen__artistLink"
@@ -1238,18 +1244,10 @@ export function NowPlayingSheet({
           ) : (
             <span className="npScreen__artist">{track?.artist ?? ''}</span>
           )}
-          {/* The chapter line is a DOOR, not a caption.
-              Knowing you are in chapter three of twelve immediately raises
-              "so where is chapter seven", and the only answer used to be
-              tapping skip six times and watching the label. It opens the list;
-              the list jumps. Still a plain span when the book has no marks,
-              because a control that opens onto nothing is worse than a
-              label. */}
           {/* A caption now, not a door: chapter select moved into the
               transport, where the thumb already is. */}
           {(doorLabel || chapterLabel) && (
             <span className="npScreen__chapter">
-              <BookOpenText size={13} aria-hidden />
               <span className="npScreen__chapterText">{doorLabel ?? chapterLabel}</span>
             </span>
           )}

@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.38
+
+- An audiobook's author is no longer a link. It opened an artist page - other records, top songs, a shelf - which is a page built for a musician and holds one book
+- The little book glyph has left the chapter line on Now Playing
+
 ## 0.4.37
 
 - Fixed chapter numbers vanishing from the list. A narrator who runs "chapter one" across two of the recogniser's segments announces nothing the app can read until much later in the book - and every chapter before that point was being written off as front matter and losing its number
