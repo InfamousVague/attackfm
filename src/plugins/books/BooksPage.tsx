@@ -16,6 +16,7 @@ import { formatTotal } from '../../app/ux/format.ts';
 import { useHoldToMenu } from '../../app/ux/holdToMenu.ts';
 import { request, ServerError } from '../../app/api/http.ts';
 import type { Track } from '../../app/core/tauri.ts';
+import { JOB_ACTIVE, transcribeRows, type TranscribeJob } from './transcribeRows.ts';
 
 /*
  * Restored 2026-08-22. This page was deleted whole on 12 August when
@@ -477,6 +478,169 @@ function useTranscribeStatus(): Readiness {
   return ready;
 }
 
+/* --- The transcription queue ------------------------------------------------
+ *
+ * `/api/transcribe/jobs` is the server's live queue and the app had never once
+ * asked for it. Everything the shelf said about a reading in progress came from
+ * the answer to the POST that started it - a single reply, never revisited - so
+ * a book could sit in the queue for an hour while its card claimed to be ready.
+ *
+ * ONE POLL FOR THE WHOLE PAGE. Every card wants this and so does the panel, so
+ * the fetch lives here and the subscribers share it; a shelf of forty books
+ * must not become forty requests.
+ */
+
+let jobsNow: TranscribeJob[] = [];
+const jobListeners = new Set<() => void>();
+let jobLoop: ReturnType<typeof setTimeout> | null = null;
+let jobSubscribers = 0;
+/** An older hub has no queue endpoint. Ask once, then stop asking for ever. */
+let jobsUnsupported = false;
+
+function sameJobs(a: TranscribeJob[], b: TranscribeJob[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const x = a[i]!;
+    const y = b[i]!;
+    if (x.id !== y.id || x.state !== y.state || x.lines !== y.lines) return false;
+  }
+  return true;
+}
+
+function startJobPoll(url: string, token: string): void {
+  const tick = async () => {
+    try {
+      const r = await request<{ jobs: TranscribeJob[] }>(url, '/api/transcribe/jobs', { token });
+      const next = Array.isArray(r.jobs) ? r.jobs : [];
+      if (!sameJobs(jobsNow, next)) {
+        jobsNow = next;
+        for (const l of jobListeners) l();
+      }
+    } catch (e) {
+      if (e instanceof ServerError && e.status === 404) {
+        jobsUnsupported = true;
+        return;
+      }
+      // A blip. Keep the last answer and try again on the next beat rather than
+      // blanking a panel somebody is watching.
+    }
+    // Four seconds while something is running, because that is when anybody is
+    // looking; a slow beat otherwise so a queue started on another device still
+    // turns up here without the page polling hard all day.
+    const busy = jobsNow.some((j) => JOB_ACTIVE.has(j.state));
+    jobLoop = setTimeout(() => void tick(), busy ? 4_000 : 20_000);
+  };
+  void tick();
+}
+
+function useTranscribeJobs(): TranscribeJob[] {
+  const { session } = useServerSession();
+  const [, bump] = useState(0);
+  useEffect(() => {
+    if (!session || jobsUnsupported) return;
+    const listener = () => bump((n) => n + 1);
+    jobListeners.add(listener);
+    jobSubscribers += 1;
+    if (jobSubscribers === 1) startJobPoll(session.url, session.token);
+    return () => {
+      jobListeners.delete(listener);
+      jobSubscribers -= 1;
+      if (jobSubscribers === 0 && jobLoop) {
+        clearTimeout(jobLoop);
+        jobLoop = null;
+      }
+    };
+  }, [session]);
+  return jobsNow;
+}
+
+/** What the server is doing to this file right now, in words. */
+function jobWord(state: string): string {
+  return state === 'queued'
+    ? 'waiting its turn'
+    : state === 'preparing'
+      ? 'decoding the audio'
+      : 'reading it';
+}
+
+/**
+ * The books being transcribed, at the top of the shelf.
+ *
+ * WHAT THE BAR ACTUALLY MEASURES, because it would be easy to imply more than
+ * the server knows: a job carries no progress figure. Whisper is handed a file
+ * and answers when it is finished, so there is no fraction to report from
+ * inside one reading. What IS known is how many of a book's files are done, and
+ * for a sectioned book that is a real measure of the whole - chapter 3 of 42.
+ *
+ * A one-file book therefore gets an INDETERMINATE bar, not a fake percentage.
+ * It is one long job and the only honest thing to say is that it is running.
+ *
+ * The panel is absent when nothing is happening. It is news, not furniture.
+ */
+function TranscribeProgress({ shelf }: { shelf: ShelfBook[] }) {
+  const jobs = useTranscribeJobs();
+
+  const rows = useMemo(
+    () =>
+      transcribeRows(
+        jobs,
+        shelf.map((b) => ({
+          key: b.key,
+          title: b.title,
+          trackIds: b.tracks
+            .map((t) => serverId(t.path))
+            .filter((n): n is number => n !== null),
+        })),
+      ),
+    [jobs, shelf],
+  );
+
+  if (rows.length === 0) return null;
+
+  return (
+    <section className="discoverSection bookProgress" aria-label="Books being transcribed">
+      <h2 className="discoverSection__title">Being transcribed</h2>
+      <ul className="bookProgress__list">
+        {rows.map((r) => {
+          const sectioned = r.total > 1;
+          const at = Math.min(r.done + 1, r.total);
+          return (
+            <li key={r.key} className="bookProgress__row">
+              <div className="bookProgress__line">
+                <span className="bookProgress__title">{r.title}</span>
+                {sectioned && (
+                  <span className="bookProgress__count">
+                    {r.done} of {r.total}
+                  </span>
+                )}
+              </div>
+              <ProgressBar
+                value={sectioned ? r.done : undefined}
+                max={sectioned ? r.total : undefined}
+                indeterminate={!sectioned}
+                aria-label={`Transcribing ${r.title}`}
+              />
+              <Text tone="muted" size="xs">
+                {r.live
+                  ? sectioned
+                    ? `Chapter ${at} of ${r.total} — ${jobWord(r.live.state)}`
+                    : `One long file — ${jobWord(r.live.state)}, and it cannot be measured from outside`
+                  : null}
+                {r.failed > 0 && (
+                  <span className="bookProgress__failed">
+                    {r.live ? ' · ' : ''}
+                    {r.failed} {r.failed === 1 ? 'file' : 'files'} could not be read
+                  </span>
+                )}
+              </Text>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 /**
  * Ask the hub to read the book, so its words can be read along with it.
  *
@@ -495,12 +659,33 @@ function ReadAlong({ book }: { book: ShelfBook }) {
   const ready = useTranscribeStatus();
   const [state, setState] = useState<'idle' | 'asking' | 'working' | 'done'>('idle');
   const [problem, setProblem] = useState<string | null>(null);
+  // The real queue, so this button stops guessing from a reply it got once.
+  const jobs = useTranscribeJobs();
 
   // Only the operator can spend the box's evening, and only a book that is one
   // file has a track id worth transcribing.
   if (!session?.isAdmin || book.tracks.length !== 1) return null;
   const id = serverId(book.tracks[0]!.path);
   if (id == null) return null;
+
+  /*
+   * THE QUEUE OUTRANKS WHAT THIS BUTTON WAS TOLD. `state` only ever knew about
+   * a run this card itself started, in this mount - so a reading started on
+   * another device, or before the page was opened, was invisible here, and a
+   * finished one never turned into "ready" without a restart.
+   *
+   * An errored job reads as idle rather than as a stuck "Reading it…": the
+   * button becomes pressable again, and the panel above the shelf is where the
+   * failure is spelled out.
+   */
+  const live = jobs.find((j) => j.trackId === id);
+  const shown: typeof state = live
+    ? JOB_ACTIVE.has(live.state)
+      ? 'working'
+      : live.state === 'done'
+        ? 'done'
+        : 'idle'
+    : state;
 
   /*
    * Say why BEFORE the press, not after it.
@@ -550,7 +735,11 @@ function ReadAlong({ book }: { book: ShelfBook }) {
         `/api/transcribe/${id}`,
         { method: 'POST', token: session.token },
       );
-      setState(r.queued ? 'working' : 'done');
+      // `queued: false` had TWO meanings and this collapsed them into one.
+      // "already transcribed" really is ready; "already in the queue" means the
+      // reading has not started - and calling that ready sent people into a
+      // book with no words in it, which is exactly what it looked like.
+      setState(r.reason === 'already transcribed' ? 'done' : 'working');
     } catch (e) {
       setState('idle');
       // The server explains itself well - no recogniser, no model, not a book.
@@ -563,7 +752,7 @@ function ReadAlong({ book }: { book: ShelfBook }) {
     // "Already read" meant the RECOGNISER had read it - and sat on the card
     // sounding like a claim about the listener's progress. Say whose reading
     // it is.
-    state === 'working' ? 'Reading it…' : state === 'done' ? 'Read along ready' : 'Read along';
+    shown === 'working' ? 'Reading it…' : shown === 'done' ? 'Read along ready' : 'Read along';
 
   return (
     <span className="bookCard__readAlongWrap">
@@ -571,7 +760,7 @@ function ReadAlong({ book }: { book: ShelfBook }) {
         type="button"
         className="bookCard__readAlong"
         aria-label={`Transcribe ${book.title} so you can read along`}
-        disabled={state !== 'idle' || ready === 'asking'}
+        disabled={shown !== 'idle' || ready === 'asking'}
         onClick={() => void ask()}
       >
         <BookOpenText size={13} aria-hidden /> {label}
@@ -1059,6 +1248,11 @@ export function BooksPage({ onPlay }: PluginPageProps) {
         onResume={resumeBook ? () => readBook(resumeBook) : null}
       />
       <div ref={sentinelRef} className="booksHead__sentinel" aria-hidden />
+
+      {/* Above the shelves, because "is my book ready yet" is the question you
+          came to this page with while one is being read. It shows nothing at
+          all when nothing is running. */}
+      <TranscribeProgress shelf={shelf} />
 
       {favourites.length > 0 && (
         <section className="discoverSection">

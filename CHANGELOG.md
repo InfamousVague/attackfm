@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.22
+
+- Books being transcribed now sit at the top of the shelf with a progress bar - "chapter 3 of 42" as the hub works through a sectioned book, and a plain running bar for a single file, which gives nothing to measure from outside
+- A book still waiting in the transcription queue used to claim "Read along ready" and then open with no words in it. The card follows the real queue now, so it says ready when the words exist - and it keeps up on its own, including readings started from another device
+
 ## 0.4.21
 
 - Closed the band of empty space under the Books header, above Favourites - the shelf now starts where every other page's first section does
