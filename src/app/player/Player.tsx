@@ -340,11 +340,26 @@ export function Player({
   // the freed width goes to the transport, which app.css grows to thumb size
   // under the same query.
   const mobileControls = useMediaQuery(MOBILE_PLAYER_QUERY);
-  // A screen wide enough to give Now Playing the right half for keeps -
-  // an unfolded foldable, a tablet. The sheet stops being a destination you
-  // lift and becomes a room that is simply always there; the rest of the app
-  // lives in the left pane (appWindow shrinks by --np-dock-width, app.css).
-  const npWide = useMediaQuery('(min-width: 700px)');
+  /*
+   * A screen SHAPED to give Now Playing the right half for keeps - an unfolded
+   * foldable held sideways, a tablet in landscape, a desktop window. The sheet
+   * stops being a destination you lift and becomes a room that is simply always
+   * there; the rest of the app lives in the left pane (appWindow shrinks by
+   * --np-dock-width, app.css).
+   *
+   * WIDTH ALONE WAS THE WRONG TEST. A fold opened in PORTRAIT clears 700px
+   * easily and is still the wrong shape for two rooms: the dock takes nearly
+   * half, and what is left is a tall narrow column - a library of shelves
+   * squeezed into a slot beside a player, on a screen that had plenty of room
+   * to show either one properly. Reading a book that way is worse than either
+   * pane alone.
+   *
+   * `min-aspect-ratio: 1/1` says it exactly: at least as wide as it is tall.
+   * That is the shape where a second column is a gain rather than a division,
+   * and it keeps the desktop and a sideways fold while letting anything held
+   * upright have the whole width back.
+   */
+  const npWide = useMediaQuery('(min-width: 700px) and (min-aspect-ratio: 1/1)');
   /**
    * The desktop wears the same split as an unfolded foldable.
    *
