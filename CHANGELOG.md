@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.14
+
+- The Books header wears your own covers now — the sleeves of the audiobooks on the shelf, drifting behind the title, the same way a playlist header wears the records inside it
+
 ## 0.4.13
 
 - The Imports ledger moved to the bottom of the Books page - the shelf leads, the paperwork follows (an empty shelf still leads with the doorway)

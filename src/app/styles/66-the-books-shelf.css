@@ -306,10 +306,41 @@
    nothing matched them and every piece took a line of its own - a header that
    filled half a phone before the first book. */
 .booksHead {
+  /*
+   * Hosts the drifting cover wall, exactly as .playlistHead does.
+   *
+   * `position: relative` because the wall is `inset: 0` and needs a box to be
+   * absolute INTO; `isolation` keeps its blending and stacking inside this
+   * header rather than reaching the shelf scrolling underneath. Both are
+   * load-bearing rather than tidiness - without the first the wall escapes to
+   * the page, without the second it composites against the rows.
+   */
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
+  justify-content: flex-end;
+  padding: var(--glacier-space-4) var(--glacier-space-4) var(--glacier-space-3);
+  border-radius: var(--glacier-radius-lg);
   margin-block-end: var(--glacier-space-4);
+}
+
+/* Room for the wall to be a wall - but ONLY when there is one.
+   CoverWall draws nothing below three distinct sleeves, so a shelf of one or
+   two books (or of books with no artwork) would otherwise get a tall empty
+   header with its two lines of text stranded at the bottom. `:has` ties the
+   height to the thing that needs it. */
+.booksHead:has(.coverWall) {
+  min-block-size: 7.5rem;
+}
+
+/* Everything the header SAYS rides above the wall - same rule the playlist
+   header uses, and for the same reason: the wall is z-index 0 in this box. */
+.booksHead__row,
+.booksHead__blurb {
+  position: relative;
+  z-index: 1;
 }
 .booksHead__row {
   display: flex;

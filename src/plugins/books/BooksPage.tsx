@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type { PluginPageProps } from '../types.ts';
 import { useLibrary } from '../../app/library/library.tsx';
 import { useServerSession } from '../../app/servers/serverSession.tsx';
+import { CoverWall } from '../../app/playlists/CoverWall.tsx';
 import { fetchPlayStates } from '../../app/api/listening.ts';
 import { removeTracks, uploadFile } from '../../app/api/library.ts';
 import { setHeaderActions } from '../../app/nav/headerActions.ts';
@@ -242,9 +243,23 @@ function ImportDoorway() {
  */
 let openBookPicker: (() => void) | null = null;
 
-function BooksHeader({ blurb, onAdded }: { blurb: string; onAdded: () => void }) {
+function BooksHeader({
+  blurb,
+  onAdded,
+  covers = [],
+}: {
+  blurb: string;
+  onAdded: () => void;
+  /** The shelf's own sleeves, drifting behind the title - the same treatment a
+   *  playlist wears, because a shelf is identified by what is on it just as a
+   *  list is. Empty on the empty page, where CoverWall draws nothing anyway:
+   *  it wants three distinct sleeves before a wall is a wall rather than
+   *  wallpaper, so the no-books case needs no branch here. */
+  covers?: readonly (string | null)[];
+}) {
   return (
     <header className="booksHead">
+      <CoverWall artworks={covers} />
       <div className="booksHead__row">
         <span className="booksHead__glyph" aria-hidden>
           <BookAudio size={20} />
@@ -941,7 +956,11 @@ export function BooksPage({ onPlay }: PluginPageProps) {
 
   return (
     <div ref={pageRef} className="discoverPage booksPage">
-      <BooksHeader blurb="Your shelf — pick up where you left off." onAdded={rescan} />
+      <BooksHeader
+        blurb="Your shelf — pick up where you left off."
+        onAdded={rescan}
+        covers={shelf.map((b) => b.cover)}
+      />
       <div ref={sentinelRef} className="booksHead__sentinel" aria-hidden />
 
       {favourites.length > 0 && (
