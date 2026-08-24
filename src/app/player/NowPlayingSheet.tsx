@@ -5,7 +5,7 @@ import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { createPortal } from 'react-dom';
 import { ContextMenu, CounterBadge, IconButton, MenuItem, Popover, SeekBar, useBeat, useLiveLevels } from '@glacier/react';
 import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
-import { Airplay, AudioLines, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Heart, Image as ImageIcon, ListMusic, ListPlus, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Volume2 } from '@glacier/icons';
+import { Airplay, AudioLines, BookOpenText, Check, ChevronDown, Disc3, EyeOff, Heart, Image as ImageIcon, ListMusic, ListPlus, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Volume2, TableOfContents } from '@glacier/icons';
 import { isMobile } from '../core/platform.ts';
 import { PluginSlot } from '../../plugins/runtime.tsx';
 import { SoundConsole } from './SoundConsole.tsx';
@@ -34,8 +34,8 @@ import { subscribeGestures } from './deviceMotion.ts';
 import { isTauri, tauriCall } from '../core/tauri.ts';
 import { trackIdFromPath } from '../server.ts';
 import { motionGesturesEnabled } from '../settings/behaviourPrefs.ts';
-import { fetchChapterNotes, forgetChapterNotes, type BookNotes } from './chapterNotes.ts';
-import { fetchTranscript, forgetTranscript, type BookLine } from './transcript.ts';
+import { fetchChapterNotes, type BookNotes } from './chapterNotes.ts';
+import { fetchTranscript, type BookLine } from './transcript.ts';
 import npPlaceholderArt from '../../assets/attack-wave.png';
 import type { Track } from '../core/tauri.ts';
 
@@ -524,9 +524,6 @@ export function NowPlayingSheet({
    */
   const [bookNotes, setBookNotes] = useState<BookNotes | null>(null);
   const [bookWords, setBookWords] = useState<BookLine[] | null>(null);
-  /** Bumped by the Read-along seat to ask again - a failed fetch is no
-   *  longer cached, so a retry is a real retry. */
-  const [wordsAsk, setWordsAsk] = useState(0);
   const bookPath = track?.kind === 'book' ? track.path : null;
   useEffect(() => {
     if (!bookPath || !track) {
@@ -547,7 +544,7 @@ export function NowPlayingSheet({
     // The track OBJECT changes identity every library refresh; the path is
     // the book's identity, and the notes only depend on that.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookPath, wordsAsk]);
+  }, [bookPath]);
 
   /** The hub's note for one chapter slot, looked up by server track id. */
   const noteFor = (path: string, idx: number) => {
@@ -994,38 +991,13 @@ export function NowPlayingSheet({
               the list jumps. Still a plain span when the book has no marks,
               because a control that opens onto nothing is worse than a
               label. */}
-          {bookFaces.length > 0 ? (
-            <Popover
-              placement="bottom"
-              aria-label="Chapters"
-              className="npChapters"
-              trigger={
-                <button type="button" className="npScreen__chapter npScreen__chapterOpen">
-                  <BookOpenText size={13} aria-hidden />
-                  <span className="npScreen__chapterText">{doorLabel}</span>
-                </button>
-              }
-            >
-              <div className="npChapters__list" role="list">
-                {bookFaces.map((c, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    role="listitem"
-                    className="npChapters__row"
-                    data-here={c.here || undefined}
-                    onClick={c.jump}
-                  >
-                    <span className="npChapters__n">{i + 1}</span>
-                    <span className="npChapters__title">{c.title}</span>
-                    {c.at && <span className="npChapters__at">{c.at}</span>}
-                    {c.blurb && <span className="npChapters__blurb">{c.blurb}</span>}
-                  </button>
-                ))}
-              </div>
-            </Popover>
-          ) : (
-            chapterLabel && <span className="npScreen__chapter">{chapterLabel}</span>
+          {/* A caption now, not a door: chapter select moved into the
+              transport, where the thumb already is. */}
+          {(doorLabel || chapterLabel) && (
+            <span className="npScreen__chapter">
+              <BookOpenText size={13} aria-hidden />
+              <span className="npScreen__chapterText">{doorLabel ?? chapterLabel}</span>
+            </span>
           )}
           {/* Its own line, because it is its own fact and because a phone has
               no room to hang it off the end of a chapter title - which clipped
@@ -1121,31 +1093,38 @@ export function NowPlayingSheet({
           <SkipForward size={26} fill="currentColor" />
         </IconButton>
         {track?.kind === 'book' ? (
-          /* The reading face replaced the lyrics popover for books - the
-             words live ON the page, scroll by hand, jump on tap. This seat
-             now simply summons that face for anyone reading on the disc or
-             cover instead. */
-          <IconButton
-            variant="ghost"
-            aria-label="Read along"
-            data-on={artView === 'chapters' || undefined}
-            onClick={() => {
-              if (artView !== 'chapters') {
-                chooseArtView('chapters');
-                return;
-              }
-              // Already the face, but no words on it: ask the hub again.
-              // The launch-race fetch is no longer cached on failure, so
-              // this is the lit button healing itself.
-              if (readingFlow.length === 0 && track) {
-                forgetTranscript(track);
-                forgetChapterNotes(track);
-                setWordsAsk((n) => n + 1);
-              }
-            }}
+          /* Chapter select, in the hand's own row - by request: the door
+             under the title was a small target a thumb's length from where
+             thumbs live. The list is the same faces the door offered:
+             truthful names, blurbs, jump on tap. */
+          <Popover
+            placement="top"
+            aria-label="Chapters"
+            className="npChapters"
+            trigger={
+              <IconButton variant="ghost" aria-label="Chapters" disabled={bookFaces.length === 0}>
+                <TableOfContents size={20} />
+              </IconButton>
+            }
           >
-            <BookOpenText size={20} />
-          </IconButton>
+            <div className="npChapters__list" role="list">
+              {bookFaces.map((c, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  role="listitem"
+                  className="npChapters__row"
+                  data-here={c.here || undefined}
+                  onClick={c.jump}
+                >
+                  <span className="npChapters__n">{i + 1}</span>
+                  <span className="npChapters__title">{c.title}</span>
+                  {c.at && <span className="npChapters__at">{c.at}</span>}
+                  {c.blurb && <span className="npChapters__blurb">{c.blurb}</span>}
+                </button>
+              ))}
+            </div>
+          </Popover>
         ) : (
         <IconButton
           variant="ghost"

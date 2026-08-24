@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.19
+
+- Chapter select moved into the transport, where your thumb already is - the book icon's seat now opens the chapter list under a proper chapters icon. The line under the title is a plain caption now, and the reading face is still a hold on the artwork away
+
 ## 0.4.18
 
 - The Books hero clears the top bar properly - old header rules were squeezing it until its text slid off the top of the screen
