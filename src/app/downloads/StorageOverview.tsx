@@ -1,11 +1,16 @@
 import { Button, Field, Label, SegmentedBar, SegmentedControl, Slider, Switch, Text } from '@glacier/react';
+import { useLibrary } from '../library/library.tsx';
+import { artCacheCount } from '../cache/artCache.ts';
+import { keptTranscriptCount } from '../player/transcriptStore.ts';
 import { artSized } from '../server.ts';
 import { useCallback, useEffect, useState } from 'react';
 import { useServerSession } from '../servers/serverSession.tsx';
 import {
   cacheLimitBytes,
   sweepManifest,
+  cacheBreakdown,
   cacheUsage,
+  type KindUse,
   clearCache,
   dismissSweepReport,
   resetFailedManifest,
@@ -120,6 +125,15 @@ export function StorageOverview() {
     pinnedCount: number;
   } | null>(null);
   const [space, setSpace] = useState<{ freeBytes: number | null; heldBytes: number } | null>(null);
+  // The library is the only thing that knows a key is a book: the vault stores
+  // bytes against a path and nothing else.
+  const { books } = useLibrary();
+  const [kinds, setKinds] = useState<{ music: KindUse; books: KindUse } | null>(null);
+  // The two stores that are NOT audio and not budgeted against the allowance
+  // below - counted rather than weighed, because measuring a Cache API store
+  // means reading every entry back, and a phone holds hundreds of covers.
+  const [wordCount, setWordCount] = useState(0);
+  const [coverCount, setCoverCount] = useState(0);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [report, setReport] = useState(lastSweep);
@@ -133,6 +147,9 @@ export function StorageOverview() {
 
   const refresh = useCallback(() => {
     void cacheUsage().then(setUsage);
+    void cacheBreakdown(new Set(books.map((b) => b.path))).then(setKinds);
+    void keptTranscriptCount().then(setWordCount);
+    void artCacheCount().then(setCoverCount);
     void offlineSpace().then(setSpace);
     setReport(lastSweep());
     setPlan([...sweepManifest()]);
@@ -200,9 +217,14 @@ export function StorageOverview() {
    * segments would sum past 100%. When that happens the gray is simply zero,
    * which is the honest picture: nothing spare.
    */
+  /* The two type totals, each counting what the cache brought AND what was kept
+     on purpose - the bar is about what the space holds, not how it arrived. */
+  const musicBytes = (kinds?.music.bytes ?? 0) + (kinds?.music.pinnedBytes ?? 0);
+  const bookBytes = (kinds?.books.bytes ?? 0) + (kinds?.books.pinnedBytes ?? 0);
+  const musicCount = (kinds?.music.count ?? 0) + (kinds?.music.pinnedCount ?? 0);
+  const bookCount = (kinds?.books.count ?? 0) + (kinds?.books.pinnedCount ?? 0);
   const capacity = Math.max(limit, total);
   const empty = Math.max(0, capacity - total);
-  const count = (usage?.count ?? 0) + (usage?.pinnedCount ?? 0);
 
   return (
     <>
@@ -211,7 +233,13 @@ export function StorageOverview() {
         <div className="storageBreak__totals">
           <span className="storageBreak__big">{formatBytes(total)}</span>
           <Text size="sm" tone="muted">
-            {count.toLocaleString()} {count === 1 ? 'song' : 'songs'}
+            {/* Named separately for the same reason the bar is split: "1,204
+                songs" over a shelf of audiobooks counts two unlike things as
+                one. */}
+            {musicCount.toLocaleString()} {musicCount === 1 ? 'song' : 'songs'}
+            {bookCount > 0
+              ? ` · ${bookCount.toLocaleString()} ${bookCount === 1 ? 'book file' : 'book files'}`
+              : ''}
             {space?.freeBytes != null ? ` · ${formatBytes(space.freeBytes)} free on the phone` : ''}
           </Text>
         </div>
@@ -221,9 +249,15 @@ export function StorageOverview() {
               className="storageBreak__bar"
               size="md"
               rounded
+              /* BY WHAT IT IS, not by how it got here. Automatic-versus-kept
+                 was the right split while everything on the device was songs;
+                 with books on it too the first question is which of the two is
+                 using the gigabytes - they behave nothing alike, and read as one
+                 number each hides the other. How it got here is still said, per
+                 type, in the legend below. */
               data={[
-                { value: usage?.bytes ?? 0, tone: 'accent', label: 'Downloaded automatically' },
-                { value: usage?.pinnedBytes ?? 0, tone: 'success', label: 'Kept by hand' },
+                { value: musicBytes, tone: 'accent', label: 'Music' },
+                { value: bookBytes, tone: 'success', label: 'Audiobooks' },
                 /* Debris moves off `neutral` so the gray can have it. The kit
                    offers five tones and only one of them is a gray, so the
                    empty share and the unfinished downloads cannot both wear
@@ -237,13 +271,16 @@ export function StorageOverview() {
             />
             <div className="storageBreak__legend">
               <span className="storageBreak__key" data-tone="accent">
-                {/* The limit is set in binary GB (15 * 1024³); rounding the same
-                    way the slider labels do keeps this from reading as a second,
-                    different setting. */}
-                Automatic · {formatBytes(usage?.bytes ?? 0)} of {gbLabel(limit)}
+                Music · {formatBytes(musicBytes)}
+                {kinds && kinds.music.pinnedBytes > 0
+                  ? ` (${formatBytes(kinds.music.pinnedBytes)} kept)`
+                  : ''}
               </span>
               <span className="storageBreak__key" data-tone="success">
-                Kept by hand · {formatBytes(usage?.pinnedBytes ?? 0)}
+                Audiobooks · {formatBytes(bookBytes)}
+                {kinds && kinds.books.pinnedBytes > 0
+                  ? ` (${formatBytes(kinds.books.pinnedBytes)} kept)`
+                  : ''}
               </span>
               {debris > 0 && (
                 <span className="storageBreak__key" data-tone="warning">
@@ -261,6 +298,23 @@ export function StorageOverview() {
           <Text size="sm" tone="muted">
             Nothing stored yet. The cache fills in as you listen, and a song&rsquo;s own menu keeps
             it here for good.
+          </Text>
+        )}
+        {/* The rest of what is on the device.
+
+            Deliberately COUNTED, not weighed, and deliberately outside the bar
+            above: both live in the browser's own store rather than the vault,
+            neither is charged against the allowance the slider sets, and
+            measuring either means reading every entry back out - which for a
+            phone holding hundreds of covers costs more than the answer is
+            worth. Saying how many there are is honest and cheap; drawing them as
+            a slice of a budget they are not part of would not be. */}
+        {(coverCount > 0 || wordCount > 0) && (
+          <Text size="xs" tone="subtle">
+            Also held: {coverCount.toLocaleString()} {coverCount === 1 ? 'cover' : 'covers'}
+            {wordCount > 0
+              ? ` · words for ${wordCount.toLocaleString()} ${wordCount === 1 ? 'book' : 'books'}`
+              : ''}
           </Text>
         )}
         {report && limit > 0 && (

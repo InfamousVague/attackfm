@@ -22,6 +22,6 @@ export { DATE_CACHE_TARGET, setDateDeck, rankHotness } from '../cache/cacheHotne
 export type { Hotness } from '../cache/cacheHotness.ts';
 export { sweepManifest, dismissSweepReport, resetFailedManifest, lastSweep } from '../cache/cacheManifest.ts';
 export type { ManifestEntry, SweepReport } from '../cache/cacheManifest.ts';
-export { notePlaybackAudible, planCache, sweepCache, cacheUsage, clearCache } from '../cache/cacheSweep.ts';
-export type { SweepResult } from '../cache/cacheSweep.ts';
+export { notePlaybackAudible, planCache, sweepCache, cacheUsage, cacheBreakdown, clearCache } from '../cache/cacheSweep.ts';
+export type { SweepResult, KindUse } from '../cache/cacheSweep.ts';
 export { sweepIfIdle, nudgeSweep, startCacheSweeps } from '../cache/cacheSchedule.ts';
