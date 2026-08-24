@@ -279,10 +279,16 @@
     /* Stretch, so the artwork column can be as tall as the card itself. */
     align-items: stretch;
     gap: var(--glacier-space-3);
-    /* Block padding is a step rather than two: the plate stood 98px tall on a
-       392-wide phone - a ninth of the screen, permanently, for a bar whose whole
-       job is "this is playing, and here is pause". */
-    padding: var(--glacier-space-1) var(--glacier-space-3);
+    /* ONE STEP, ALL FOUR SIDES.
+    
+       It was a step down the block and three across the inline, which is a
+       proportion that only made sense while the plate was tall: with the height
+       cut, the cover ended up nearly touching the top and bottom edges while a
+       band of nothing sat to its left, and the plate read as a wide box holding
+       a small one. An even inset makes it one object again - and the cover is
+       the first thing in the row, so the inline padding IS the space to the
+       left of the album art. */
+    padding: var(--glacier-space-1);
     /* Two numbers set the strip's scale - the seek's band and the play button -
        and everything else is derived from them: the kit's row height, the
        disc's square, the card's own height. Nothing can drift out of step.

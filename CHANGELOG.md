@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.42
+
+- The now-playing strip is inset evenly on all four sides. It had a step above and below and three to the left and right, so once the plate got shorter the cover nearly touched the top and bottom while a band of nothing sat beside it
+
 ## 0.4.41
 
 - The Music Date invitation had lost its padding, so the icon sat against the top and bottom edges. Its styling had been scoped to the Booth and the invitation moved to Discover a while back, taking none of it along
