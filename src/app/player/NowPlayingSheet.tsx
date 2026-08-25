@@ -1,4 +1,6 @@
 import { chapterNumbers, spokenChapterNumber } from './chapterNumber.ts';
+import { SpectrumArt } from './SpectrumArt.tsx';
+import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { chapterPreview } from './chapterOpening.ts';
 import {
   BOOKMARKS_CHANGED,
@@ -88,6 +90,13 @@ export function npArtMenuItems(
           Chapters
         </MenuItem>
       )}
+      <MenuItem
+        icon={<AudioLines size={15} />}
+        shortcut={artView === 'analyser' ? <Check size={14} /> : undefined}
+        onSelect={() => chooseArtView('analyser')}
+      >
+        Analyser
+      </MenuItem>
       <MenuItem
         icon={<EyeOff size={15} />}
         shortcut={artView === 'hidden' ? <Check size={14} /> : undefined}
@@ -539,6 +548,15 @@ export function NowPlayingSheet({
   onTrackChange?: (track: Track) => void;
   setFiling: (track: Track | null) => void;
 }) {
+  /*
+   * The analyser, straight from the audio graph.
+   *
+   * Read from the motion context rather than taken as a prop: the player owns
+   * the graph and already publishes it there for anything that wants to move to
+   * the sound, and threading it down as one more prop through a component that
+   * already takes fifty would be the worse of the two.
+   */
+  const { analyser } = useNowPlayingMotion();
   /*
    * The phone's own movement, on the one screen where it means anything.
    *
@@ -1180,6 +1198,10 @@ export function NowPlayingSheet({
               items={bookFaces}
               runFraction={Math.min(1, Math.max(0, barValue / barDuration))}
             />
+          ) : artView === 'analyser' ? (
+            /* The first thing in the app to read more than one number off the
+               audio graph - see SpectrumArt. */
+            <SpectrumArt analyser={analyser} audible={activeElsewhere ? dispPlaying : audible} />
           ) : artView === 'cd' ? (
             <SpinningDisc
               art={dispArtwork}

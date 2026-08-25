@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
-import type { LoudnessMeter } from '@glacier/react';
+import type { AnalyserMeter, LoudnessMeter } from '@glacier/react';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -14,6 +14,18 @@ import type { Track } from '../core/tauri.ts';
 interface MotionSource {
   /** Reads current loudness, 0..1. Null until the first play builds the graph. */
   meter: LoudnessMeter | null;
+  /**
+   * The whole analyser, for anything that wants more than one number.
+   *
+   * `meter` is a single scalar - how loud, right now - and every visual in the
+   * app was driven from it: the disc, the seek bar, the header. That is a
+   * volume knob wearing several costumes, and it is why they all move together.
+   * The analyser has `spectrum(count)` alongside it, log-spaced bands from bass
+   * to treble, which has been sitting in the shipped audio graph with no callers
+   * anywhere. Published here so a real analyser can exist without lifting the
+   * audio graph out of the player that owns it.
+   */
+  analyser: AnalyserMeter | null;
   /**
    * Whether anything is actually coming out. Paused, muted, or a fader on the
    * floor all read false: the meter still reads the source in those states, and
@@ -37,6 +49,7 @@ const NowPlayingMotionContext = createContext<NowPlayingMotionValue | null>(null
 export function NowPlayingMotionProvider({ children }: { children: ReactNode }) {
   const [source, setSource] = useState<MotionSource>({
     meter: null,
+    analyser: null,
     audible: false,
     track: null,
     position: 0,
@@ -48,6 +61,7 @@ export function NowPlayingMotionProvider({ children }: { children: ReactNode }) 
   const publish = useCallback((next: MotionSource) => {
     setSource((prev) =>
       prev.meter === next.meter &&
+    prev.analyser === next.analyser &&
       prev.audible === next.audible &&
       prev.track === next.track &&
       prev.position === next.position
@@ -59,6 +73,7 @@ export function NowPlayingMotionProvider({ children }: { children: ReactNode }) 
   const value = useMemo<NowPlayingMotionValue>(
     () => ({
       meter: source.meter,
+    analyser: source.analyser,
       audible: source.audible,
       track: source.track,
       position: source.position,

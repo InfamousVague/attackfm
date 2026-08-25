@@ -864,3 +864,31 @@
     transition: none;
   }
 }
+
+
+/* ---- The analyser, in the art slot -------------------------------------- */
+
+/*
+ * Square, like every other face the slot wears, so switching between the disc,
+ * the cover and this does not resize the room around them.
+ *
+ * `color` is what the canvas paints with - it reads its own computed colour
+ * rather than being handed a hex - so the bars follow the accent and the theme
+ * without the drawing code knowing either exists.
+ */
+.npSpectrum {
+  inline-size: 100%;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: stretch;
+  padding: var(--glacier-space-4);
+  border-radius: var(--glacier-radius-xl, 1.375rem);
+  background: var(--glacier-glass-thin);
+  color: var(--glacier-accent-solid, #fff);
+}
+
+.npSpectrum__canvas {
+  inline-size: 100%;
+  block-size: 100%;
+  display: block;
+}

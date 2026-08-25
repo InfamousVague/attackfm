@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.47
+
+- A real analyser on Now Playing. Hold the artwork and pick Analyser: bass on the left, treble on the right, each band moving on its own. Every visual in the app until now — the disc, the seek wave, the header — breathed to a single loudness number, which is why they all moved together and why a bass drop and a cymbal looked identical
+
 ## 0.4.46
 
 - Search finds your books. They were held out of the searchable library on purpose - a twelve-hour reading has no business in a mix or a shuffle - which also meant the one global search could never find one. There is a Books chip beside Songs now, matching on title, author and chapter name, and opening a result picks the book up where you left it
