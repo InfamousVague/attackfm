@@ -1115,6 +1115,18 @@ CREATE TABLE IF NOT EXISTS lyric_words (
   created_at INTEGER NOT NULL DEFAULT 0
 );
 
+-- Every line anything in the library SAYS: a book's transcript, a song's
+-- aligned lyrics. Not content-linked to a table (the text lives inside JSON
+-- blobs, one row per track), so it is written alongside those blobs and
+-- rebuilt wholesale by reindex_spoken() - which is cheap, because the words
+-- are already on disk and the walk is text.
+CREATE VIRTUAL TABLE IF NOT EXISTS spoken_fts USING fts5(
+  text,
+  track_id UNINDEXED,
+  start_ms UNINDEXED,
+  tokenize = 'unicode61 remove_diacritics 2'
+);
+
 CREATE TABLE IF NOT EXISTS stem_prefetch (
   track_id       INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
   state          TEXT NOT NULL,             -- wanted | running | done | failed | evicted
@@ -5504,6 +5516,7 @@ impl Db {
     }
 
     pub fn set_transcript(&self, track_id: i64, lines: &str, model: &str) -> rusqlite::Result<()> {
+        self.index_spoken(track_id, lines);
         self.lock().execute(
             "INSERT INTO transcripts (track_id, lines, model, created_at) VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT(track_id) DO UPDATE SET lines = ?2, model = ?3, created_at = ?4",
@@ -5595,6 +5608,7 @@ impl Db {
         matched: i64,
         words: i64,
     ) -> rusqlite::Result<()> {
+        self.index_spoken(track_id, lines);
         self.lock().execute(
             "INSERT INTO lyric_words (track_id, lines, matched, words, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5)
@@ -5610,6 +5624,109 @@ impl Db {
     /// rather than compete with work somebody is waiting on.
     pub fn imports_busy_hint(&self) -> bool {
         false
+    }
+
+    /// Replace one track's lines in the spoken index.
+    ///
+    /// Called wherever a transcript or a lyric body is written, so the index
+    /// never drifts from the text it indexes. Deleting first makes it
+    /// idempotent - re-transcribing a book replaces its words rather than
+    /// doubling them.
+    pub fn index_spoken(&self, track_id: i64, body: &str) {
+        let lines = crate::spoken::lines_of(body);
+        let lock = self.lock();
+        let _ = lock.execute("DELETE FROM spoken_fts WHERE track_id = ?1", params![track_id]);
+        let Ok(mut stmt) =
+            lock.prepare("INSERT INTO spoken_fts (text, track_id, start_ms) VALUES (?1, ?2, ?3)")
+        else {
+            return;
+        };
+        for (at, text) in lines {
+            let _ = stmt.execute(params![text, track_id, at]);
+        }
+    }
+
+    /// Rebuild the whole index from the transcripts and lyric bodies on disk.
+    /// Returns how many lines it holds afterwards.
+    pub fn reindex_spoken(&self) -> i64 {
+        let bodies: Vec<(i64, String)> = {
+            let lock = self.lock();
+            let mut all = Vec::new();
+            for sql in [
+                "SELECT track_id, lines FROM transcripts",
+                "SELECT track_id, lines FROM lyric_words",
+            ] {
+                if let Ok(mut stmt) = lock.prepare(sql) {
+                    if let Ok(rows) = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))) {
+                        all.extend(rows.flatten());
+                    }
+                }
+            }
+            all
+        };
+        {
+            let lock = self.lock();
+            let _ = lock.execute("DELETE FROM spoken_fts", []);
+        }
+        for (id, body) in bodies {
+            self.index_spoken(id, &body);
+        }
+        self.lock()
+            .query_row("SELECT COUNT(*) FROM spoken_fts", [], |r| r.get(0))
+            .unwrap_or(0)
+    }
+
+    /// Lines that say this, best first. `kind` narrows to books or songs.
+    pub fn search_spoken(&self, query: &str, limit: usize, kind: &str) -> Vec<crate::spoken::Line> {
+        // FTS5 takes a query language; a listener types a sentence. Quoting
+        // each word and joining them makes "the winding key" a phrase-ish AND
+        // rather than a syntax error on an apostrophe.
+        let terms: Vec<String> = query
+            .split_whitespace()
+            .map(|w| {
+                let clean: String = w.chars().filter(|c| c.is_alphanumeric() || *c == '\'').collect();
+                format!("\"{}\"", clean.replace('\'', ""))
+            })
+            .filter(|t| t.len() > 2)
+            .collect();
+        if terms.is_empty() {
+            return Vec::new();
+        }
+        let expr = terms.join(" ");
+        let narrow = match kind {
+            "books" => " AND t.kind = 'book'",
+            "songs" => " AND t.kind <> 'book'",
+            _ => "",
+        };
+        let sql = format!(
+            "SELECT f.track_id, f.start_ms, f.text
+             FROM spoken_fts f JOIN tracks t ON t.id = f.track_id
+             WHERE spoken_fts MATCH ?1 AND t.deleted = 0{narrow}
+             ORDER BY bm25(spoken_fts), f.start_ms
+             LIMIT ?2"
+        );
+        let lock = self.lock();
+        let Ok(mut stmt) = lock.prepare(&sql) else { return Vec::new() };
+        let rows = stmt.query_map(params![expr, limit as i64], |r| {
+            Ok(crate::spoken::Line { track_id: r.get(0)?, start_ms: r.get(1)?, text: r.get(2)? })
+        });
+        rows.map(|it| it.flatten().collect()).unwrap_or_default()
+    }
+
+    pub fn tracks_with_lyric_words(&self) -> Vec<i64> {
+        let lock = self.lock();
+        let Ok(mut stmt) = lock.prepare("SELECT track_id FROM lyric_words ORDER BY track_id") else {
+            return Vec::new();
+        };
+        let rows = stmt.query_map([], |r| r.get(0));
+        rows.map(|it| it.flatten().collect()).unwrap_or_default()
+    }
+
+    /// Keep the indexed row in step with a tag this server just rewrote.
+    pub fn set_track_lyrics(&self, track_id: i64, lyrics: &str) -> rusqlite::Result<()> {
+        self.lock()
+            .execute("UPDATE tracks SET lyrics = ?2 WHERE id = ?1", params![track_id, lyrics])?;
+        Ok(())
     }
 
     /// Songs waiting for their words to be timed, LIKED FIRST.

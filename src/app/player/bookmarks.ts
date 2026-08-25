@@ -29,6 +29,15 @@ export interface Bookmark {
   positionMs: number;
   /** What was playing there: the chapter's name, so a list reads as places. */
   label: string;
+  /**
+   * The sentence being read at that moment, where the words are known.
+   *
+   * A list of "Chapter 7, Chapter 7, Chapter 7" is ten identical rows for ten
+   * different places - the chapter is where the bookmark IS, not what it
+   * kept. The line is the thing somebody actually meant to hold on to, and
+   * the transcript already knows it, so keeping it costs one lookup.
+   */
+  quote?: string;
   /** When it was dropped, for ordering and for de-duplicating a double tap. */
   at: number;
 }

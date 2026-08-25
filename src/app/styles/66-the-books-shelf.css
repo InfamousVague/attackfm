@@ -507,6 +507,21 @@
   background: var(--glacier-surface-raised);
 }
 
+/* The line a bookmark kept, under the place it kept it. Spans the whole row
+   because a sentence needs the width, and clamps at two lines because the
+   rest of it is on the page it came from. */
+.npMarks__quote {
+  grid-column: 2 / -1;
+  margin-block-start: 0.15rem;
+  color: var(--glacier-text-subtle, var(--glacier-text-muted));
+  font-size: 0.8rem;
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
 /* The chapter name takes the squeeze; the clock never does - it is the part
    that tells two bookmarks in one chapter apart. */
 .npMarks__label {

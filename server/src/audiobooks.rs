@@ -516,6 +516,32 @@ async fn run_job(state: Arc<AppState>, job_id: String, book: Book) {
 }
 
 /// Blocking lofty write: the section's identity plus the book's cover.
+/// Write a lyrics body into a file's own tag, leaving everything else alone.
+///
+/// The same lofty door `tag_section` uses, narrowed to one field: this is
+/// called on music the listener already owns and tagged, so touching a single
+/// key is the whole contract.
+pub(crate) fn write_lyrics_tag(path: &std::path::Path, lyrics: &str) -> Result<(), String> {
+    use lofty::config::WriteOptions;
+    use lofty::file::{AudioFile, TaggedFileExt};
+    use lofty::prelude::ItemKey;
+    use lofty::probe::Probe;
+    use lofty::tag::{Tag, TagExt};
+
+    let mut tagged = Probe::open(path)
+        .map_err(|e| format!("cannot open: {e}"))?
+        .read()
+        .map_err(|e| format!("cannot parse: {e}"))?;
+    let kind = tagged.primary_tag_type();
+    if tagged.primary_tag_mut().is_none() {
+        tagged.insert_tag(Tag::new(kind));
+    }
+    let tag = tagged.primary_tag_mut().ok_or_else(|| "no tag to write".to_string())?;
+    tag.insert_text(ItemKey::Lyrics, lyrics.to_string());
+    tag.save_to_path(path, WriteOptions::default())
+        .map_err(|e| format!("cannot write: {e}"))
+}
+
 pub(crate) fn tag_section(
     path: &std::path::Path,
     title: &str,
