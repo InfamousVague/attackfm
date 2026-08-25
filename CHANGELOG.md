@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.55
+
+- A car you can ask. Say "play Fleetwood Mac on AttackFM" and it plays them — the artist, not one song of theirs
+- And a car you can browse. The dashboard listed four rows and nothing opened; it now has Artists, Albums, Books and Playlists, each one you can walk into. Needs the new app from the download page
+
 ## 0.4.53
 
 - The handbook catches up with Books: one new page, between The deck and Search, on the shelf, reading along, bookmarks, speed, skipping the publisher's card, finding a spoken line, and adding a book you own
