@@ -52,6 +52,7 @@ import { isTauri, tauriCall } from '../core/tauri.ts';
 import { trackIdFromPath } from '../server.ts';
 import { motionGesturesEnabled } from '../settings/behaviourPrefs.ts';
 import { fetchChapterNotes, type BookNotes } from './chapterNotes.ts';
+import { CatchMeUp, CatchMeUpRow } from './CatchMeUp.tsx';
 import { fetchTranscript, type BookLine } from './transcript.ts';
 import npPlaceholderArt from '../../assets/attack-wave.png';
 import type { Track } from '../core/tauri.ts';
@@ -1105,6 +1106,10 @@ export function NowPlayingSheet({
     commitSeek(chapters.length > 0 ? to + start : to);
   };
 
+  /** Whether the catch-up dialog is up. Held here rather than inside the
+   *  chapters popover, which unmounts the moment the dialog takes focus. */
+  const [recapUp, setRecapUp] = useState(false);
+
   const bookPlaying = track?.kind === 'book';
   useEffect(() => {
     if (!motionGesturesEnabled()) return;
@@ -1602,6 +1607,11 @@ export function NowPlayingSheet({
               </IconButton>
             }
           >
+            {/* The way back in, first. Everything under it assumes you
+                remember the book; this is the row for when you do not. The
+                dialog itself is hoisted below the controls, because pressing
+                this shuts the popover it lives in. */}
+            <CatchMeUpRow onClick={() => setRecapUp(true)} />
             {/* The kept places, above the chapters. A bookmark is a thing you
                 went looking for on purpose, so it is answered before the table
                 of contents you would otherwise have to search. Absent when
@@ -1675,6 +1685,14 @@ export function NowPlayingSheet({
         </IconButton>
         )}
       </div>
+
+      <CatchMeUp
+        track={track}
+        positionMs={position * 1000}
+        variant="none"
+        open={recapUp}
+        onOpenChange={setRecapUp}
+      />
 
       {/* The secondary controls the strip has no room for: lyrics, the
           device hand-off (only when there is somewhere to send it), the

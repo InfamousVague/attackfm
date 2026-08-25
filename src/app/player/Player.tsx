@@ -13,7 +13,7 @@ import { useLibrary } from '../library/library.tsx';
 import { useEqualizer } from './equalizer.tsx';
 import { chapterNumbers, chapterTitleWords, frontMatterTitle } from './chapterNumber.ts';
 import { gainFor, useLoudnessMode, useLoudnessTable } from './loudness.ts';
-import { usePlayback } from './playback.tsx';
+import { sleepsAtAnEnd, usePlayback } from './playback.tsx';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { VOLUME_UNITY } from './VolumeControl.tsx';
 import { recordResume } from '../servers/resumeSync.ts';
@@ -48,10 +48,12 @@ import {
   INITIAL_VOLUME,
   MOBILE_PLAYER_QUERY,
   RATE_FLOOR,
+  SLEEP_FADE_S,
   SPIN_DOWN_MS,
   SPIN_UP_FADE_MS,
   SPIN_UP_MS,
   TRACK_ART,
+  chapterBreakAfter,
   readArtView,
   readBookArtView,
   readBookSpeed,
@@ -1255,11 +1257,28 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     analyserRef.current?.setMono(playback.mono);
   }, [playback.mono]);
 
+  // What the sleep controls need and cannot see: they live in Settings, and
+  // "stop at the end of this" means the end of a CHAPTER when the thing
+  // playing is a reading.
+  const setBookPlaying = playback.setBookPlaying;
+  useEffect(() => {
+    setBookPlaying(track?.kind === 'book');
+  }, [track?.kind, setBookPlaying]);
+
+  /** The chapter break a sleep timer is waiting on, once it is close enough to
+   *  have started fading toward it. See sleepTick. */
+  const chapterSleep = useRef<{ armedFor: number | null }>({ armedFor: null });
+  // A break belongs to the file it was read from; a new file starts its own
+  // clock at zero, and a held one could land on a moment that means nothing.
+  useEffect(() => {
+    chapterSleep.current.armedFor = null;
+  }, [track?.path]);
+
   // A blend already running answers to the settings too: repeat-one and an
   // end-of-track timer both promise that THIS track's end matters, so a fade
   // toward the next one is cancelled rather than allowed to outrank them.
   useEffect(() => {
-    if (repeat === 'one' || playback.sleep === 'end-of-track') abortCrossfadeRef.current();
+    if (repeat === 'one' || sleepsAtAnEnd(playback.sleep)) abortCrossfadeRef.current();
   }, [repeat, playback.sleep]);
 
   // The clock half of the sleep timer ('end of track' lives in the ended
@@ -1269,7 +1288,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   // presses play tomorrow morning.
   useEffect(() => {
     const sleep = playback.sleep;
-    if (!sleep || sleep === 'end-of-track') return;
+    if (!sleep || sleepsAtAnEnd(sleep)) return;
     let fading = false;
     let expired = false;
     const check = () => {
@@ -1284,7 +1303,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         setPlayingState(false);
         return;
       }
-      if (remaining <= 5000 && !fading) {
+      if (remaining <= SLEEP_FADE_S * 1000 && !fading) {
         fading = true;
         analyserRef.current?.rampVolume(0, remaining / 1000);
       }
@@ -2195,7 +2214,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     if (!playing || windingDown.current || scrubbing.current) return;
     // These ends do not advance, so there is nothing to warm.
     if (repeat === 'one') return;
-    if (playbackRef.current.sleep === 'end-of-track') return;
+    if (sleepsAtAnEnd(playbackRef.current.sleep)) return;
     const duration = el.duration;
     if (!Number.isFinite(duration) || duration < PREFETCH_LEAD_S + 4) return;
     const remaining = duration - deckTime(el);
@@ -2221,8 +2240,69 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     })();
   };
 
+  /*
+   * The CHAPTER half of the sleep timer.
+   *
+   * "End of track" is a promise a book cannot keep: a twelve-hour reading is
+   * usually one file, so the honest answer to "stop when this finishes" is
+   * eleven hours from now. The marks the player already walks say where the
+   * next natural break is, and stopping there is what a reader meant.
+   *
+   * Only the marks INSIDE a file are handled here. A book of section files has
+   * no marks and its break is the end of the file, which the ended handler
+   * already stops at - the two modes agree there, and needing no special case
+   * is why this reads the same marks the chapter list draws rather than a
+   * shape of its own.
+   *
+   * The last seconds are a fade, like the clock timer's, so sleep arrives as a
+   * settling rather than a cut.
+   */
+  const sleepTick = (el: HTMLAudioElement) => {
+    const settings = playbackRef.current;
+    if (settings.sleep !== 'end-of-chapter') {
+      chapterSleep.current.armedFor = null;
+      return;
+    }
+    const now = deckTime(el);
+    /*
+     * Once a break is armed it is HELD rather than recomputed, and that is the
+     * whole trick. `chapterBreakAfter` only ever looks ahead, so the moment the
+     * playhead crosses the mark it starts answering with the NEXT one - and a
+     * timer that recomputed every tick would watch its own target run away from
+     * it and never arrive.
+     */
+    const armed = chapterSleep.current.armedFor;
+    if (armed != null) {
+      if (now >= armed) {
+        chapterSleep.current.armedFor = null;
+        settings.setSleep(null);
+        // Through the ordinary pause, which puts the level back once the
+        // element has stopped - so tomorrow morning's play is not silent.
+        setPlayingState(false);
+        return;
+      }
+      // Seeking back out of a fade this armed - the level is down and nothing
+      // else would put it back.
+      if (armed - now > SLEEP_FADE_S + 1) {
+        chapterSleep.current.armedFor = null;
+        applyVolume();
+      }
+      return;
+    }
+    // The last chapter's break, and an unmarked file's, is the end of the
+    // file: the ended handler has those, and arming a fade here would double
+    // up with the crossfade guard.
+    const breakAt = chapterBreakAfter(liveRef.current.track?.chapters, now);
+    if (breakAt == null) return;
+    if (breakAt - now <= SLEEP_FADE_S) {
+      chapterSleep.current.armedFor = breakAt;
+      analyserRef.current?.rampVolume(0, breakAt - now);
+    }
+  };
+
   /** Watches the active deck's clock and opens the blend inside the window. */
   const crossfadeTick = (el: HTMLAudioElement) => {
+    sleepTick(el);
     if (xfadeRef.current) return;
     // A load in flight means the deck under this timeupdate is already being
     // replaced: its remaining seconds belong to a track on its way out, and a
@@ -2237,7 +2317,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     if (!playing || windingDown.current || scrubbing.current) return;
     if (repeat === 'one') return;
     // A timer waiting on this track's end must get an end, not a segue.
-    if (settings.sleep === 'end-of-track') return;
+    if (sleepsAtAnEnd(settings.sleep)) return;
     const duration = el.duration;
     // Short files are all edges: a blend needs a middle to blend over.
     if (!Number.isFinite(duration) || duration < settings.crossfade + 8) return;
@@ -2309,7 +2389,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     }
     // The timer that asked for this very moment: stop here, tidily, rather
     // than rolling into the next track and past the listener's sleep.
-    if (playbackRef.current.sleep === 'end-of-track') {
+    if (sleepsAtAnEnd(playbackRef.current.sleep)) {
       playbackRef.current.setSleep(null);
       wantPlaying.current = false;
       setPlaying(false);

@@ -20,6 +20,7 @@ import { forgetKeptTranscript } from '../../app/player/transcriptStore.ts';
 import { keepBook, type KeepStep } from '../../app/downloads/keepBook.ts';
 import { isHeld, onOfflineChange, unpinTrack } from '../../app/downloads/offline.ts';
 import { forgetChapterNotes } from '../../app/player/chapterNotes.ts';
+import { CatchMeUp, CatchMeUpButton } from '../../app/player/CatchMeUp.tsx';
 import { removeTracks, uploadFile } from '../../app/api/library.ts';
 import { setHeaderActions } from '../../app/nav/headerActions.ts';
 import { artSized } from '../../app/server.ts';
@@ -1260,6 +1261,9 @@ export function BooksPage({ onPlay }: PluginPageProps) {
   };
 
   const [open, setOpen] = useState<ShelfBook | null>(null);
+  /** The book and place a catch-up was asked for, held here rather than in the
+   *  sheet so closing the sheet does not take the recap with it. */
+  const [recap, setRecap] = useState<{ track: Track; ms: number } | null>(null);
   const [query, setQuery] = useState('');
   const searching = query.trim().length > 0;
   const found = useMemo(() => filterBooks(shelf, query), [shelf, query]);
@@ -1516,8 +1520,42 @@ export function BooksPage({ onPlay }: PluginPageProps) {
           books, getting some in is the page.) */}
       <ImportDoorway />
 
+      {recap && (
+        <CatchMeUp
+          track={recap.track}
+          positionMs={recap.ms}
+          variant="none"
+          open
+          onOpenChange={(up) => {
+            if (!up) setRecap(null);
+          }}
+        />
+      )}
+
       {open && (
         <Modal open onClose={() => setOpen(null)} title={open.title}>
+          {/* The way back in. THIS is the sheet a book gets opened from three
+              weeks later, before anything is playing - so the recap is offered
+              here rather than only inside the player, and it reads the mark
+              off the hub's own ledger. Only for a book already started: there
+              is nothing to catch up on at the beginning. */}
+          {(() => {
+            const at = standing(open);
+            if (!at.started) return null;
+            const where = open.singleFile ? open.tracks[0]! : open.chapters[at.index]!.track;
+            return (
+              <div className="bookChapters__catch">
+                <CatchMeUpButton
+                  onClick={() => {
+                    // This sheet steps aside rather than stacking: two dialogs
+                    // over each other is two focus traps and two scrims.
+                    setRecap({ track: where, ms: at.positionMs });
+                    setOpen(null);
+                  }}
+                />
+              </div>
+            );
+          })()}
           <div className="bookChapters">
             {(() => {
               const at = standing(open);

@@ -1,7 +1,7 @@
 import { SegmentedControl, Switch, Text } from '@glacier/react';
 import { StemProgress, usePrefetchStatus } from '../servers/BackgroundWork.tsx';
 import { useEffect, useState } from 'react';
-import { usePlayback, type SleepTimer } from '../player/playback.tsx';
+import { sleepsAtAnEnd, usePlayback, type SleepTimer } from '../player/playback.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import {
   loudnessCoverage,
@@ -14,7 +14,7 @@ import { PaneSection, SettingRow, SettingSliderRow } from './kit/settingsKit.tsx
 /** The sleep timer's countdown, ticking once a second while one is armed. */
 function SleepCountdown({ sleep }: { sleep: SleepTimer }) {
   const [now, setNow] = useState(() => Date.now());
-  const running = sleep !== null && sleep !== 'end-of-track';
+  const running = sleep !== null && !sleepsAtAnEnd(sleep);
   useEffect(() => {
     if (!running) return;
     // Fresh before the first paint too: the state's initial reading is from
@@ -26,6 +26,8 @@ function SleepCountdown({ sleep }: { sleep: SleepTimer }) {
   }, [running]);
   if (sleep === null) return null;
   if (sleep === 'end-of-track') return <>Playback stops when the current track ends.</>;
+  if (sleep === 'end-of-chapter')
+    return <>Playback stops at the next chapter break.</>;
   const remaining = Math.max(0, sleep.at - now);
   const minutes = Math.floor(remaining / 60_000);
   const seconds = Math.floor((remaining % 60_000) / 1000);
@@ -53,11 +55,21 @@ export function PlaybackSettings() {
   const pb = usePlayback();
   const { session, settings, updateSettings } = useServerSession();
 
+  /*
+   * What "the end of this" means depends on what is playing.
+   *
+   * A twelve-hour reading is usually ONE file, so "track end" on a book is a
+   * sleep timer set for tomorrow morning. For a book the same button waits for
+   * the next chapter break instead, which is what anyone reaching for it in
+   * bed meant - and the label says so, rather than promising one thing and
+   * doing another.
+   */
+  const endMode: SleepTimer = pb.bookPlaying ? 'end-of-chapter' : 'end-of-track';
   const sleepValue =
-    pb.sleep === null ? 'off' : pb.sleep === 'end-of-track' ? 'end' : String(pb.sleep.minutes);
+    pb.sleep === null ? 'off' : sleepsAtAnEnd(pb.sleep) ? 'end' : String(pb.sleep.minutes);
   const setSleepChoice = (choice: string) => {
     if (choice === 'off') pb.setSleep(null);
-    else if (choice === 'end') pb.setSleep('end-of-track');
+    else if (choice === 'end') pb.setSleep(endMode);
     else {
       const minutes = Number(choice);
       pb.setSleep({ at: Date.now() + minutes * 60_000, minutes });
@@ -252,7 +264,11 @@ export function PlaybackSettings() {
         <SettingRow
           id="sleep-timer"
           label="Sleep timer"
-          hint="Fades out and pauses when the time is up. Cleared on relaunch."
+          hint={
+            pb.bookPlaying
+              ? 'Fades out and pauses when the time is up. Chapter end stops at the next break, not at the end of the file. Cleared on relaunch.'
+              : 'Fades out and pauses when the time is up. Cleared on relaunch.'
+          }
           layout="stacked"
           control={
             <SegmentedControl
@@ -266,7 +282,7 @@ export function PlaybackSettings() {
                 { value: '30', label: '30m' },
                 { value: '45', label: '45m' },
                 { value: '60', label: '1h' },
-                { value: 'end', label: 'Track end' },
+                { value: 'end', label: pb.bookPlaying ? 'Chapter end' : 'Track end' },
               ]}
             />
           }

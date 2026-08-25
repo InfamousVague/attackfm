@@ -16,9 +16,31 @@ export type LyricWay = 'off' | 'random' | 'scatter' | 'typewriter' | 'poster' | 
 /**
  * The sleep timer's target: a clock time (kept with the preset that chose it,
  * so the settings can keep showing which button is lit), the end of the
- * current track, or off.
+ * current track, the end of the current CHAPTER, or off.
+ *
+ * The chapter mode exists because "end of track" is a promise a book cannot
+ * keep. A twelve-hour reading is often one file, so the honest answer to
+ * "stop when this finishes" is eleven hours from now - which is not a sleep
+ * timer, it is a night light. The marks the player already walks say where
+ * the next natural break is, and that is what a reader means.
+ *
+ * A book with no marks - one section file of many - has its break at the end
+ * of the file, so the two modes agree there and nothing special is needed.
  */
-export type SleepTimer = { at: number; minutes: number } | 'end-of-track' | null;
+export type SleepTimer =
+  | { at: number; minutes: number }
+  | 'end-of-track'
+  | 'end-of-chapter'
+  | null;
+
+/** Whether a timer is waiting on something ENDING rather than on the clock -
+ *  the question every crossfade and prefetch guard is really asking. Written
+ *  as a predicate so the clock's own code still narrows to the dated shape. */
+export function sleepsAtAnEnd(
+  sleep: SleepTimer,
+): sleep is 'end-of-track' | 'end-of-chapter' {
+  return sleep === 'end-of-track' || sleep === 'end-of-chapter';
+}
 
 export interface PlaybackSettings {
   /** Seconds the end of one song blends into the start of the next; 0 is off. */
@@ -57,6 +79,14 @@ interface PlaybackContextValue extends PlaybackSettings {
    */
   sleep: SleepTimer;
   setSleep: (next: SleepTimer) => void;
+  /**
+   * Whether what is playing is a book. Runtime, like the timer above, and here
+   * for the same reason the timer is: the sleep controls live in Settings,
+   * where the deck's own track does not reach, and "stop at the end of this"
+   * means a different thing for a reading than for a song.
+   */
+  bookPlaying: boolean;
+  setBookPlaying: (next: boolean) => void;
 }
 
 const DEFAULTS: PlaybackSettings = {
@@ -118,6 +148,7 @@ function readStored(): PlaybackSettings {
 export function PlaybackProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<PlaybackSettings>(readStored);
   const [sleep, setSleep] = useState<SleepTimer>(null);
+  const [bookPlaying, setBookPlaying] = useState(false);
 
   useEffect(() => {
     try {
@@ -133,8 +164,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       update: (next) => setSettings((prev) => ({ ...prev, ...next })),
       sleep,
       setSleep,
+      bookPlaying,
+      setBookPlaying,
     }),
-    [settings, sleep],
+    [settings, sleep, bookPlaying],
   );
 
   return <PlaybackContext.Provider value={value}>{children}</PlaybackContext.Provider>;

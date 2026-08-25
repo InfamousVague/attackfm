@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.70
+
+- Catch me up. Come back to a book after three weeks and press one button: the app reads back everything that has happened up to your bookmark and stops there. Not one word past where you stopped - the recap is built only from the chapters you have finished and the words you actually heard, so it cannot spoil what is coming. It is in the chapter list in the player, and on the book's own sheet on the shelf, where you would find it before pressing play. Needs a server with a transcript of the book and an AI model set up; without either it says so plainly
+- Fall asleep at the end of a chapter. The sleep timer's "track end" is no use to a reading: a twelve-hour book is usually one file, so stopping at the end of it meant stopping tomorrow morning. On a book the same button now waits for the next chapter break instead, fading out into it, and says "Chapter end" so it is not promising one thing and doing another
+
 ## 0.4.69
 
 - Reading along stops lurching. Following the word through a long passage walks the page down; anything that then pulled it back up was a second rule disagreeing with the first, which is what you saw as the text going too far and coming back. Within a passage the reading now only ever moves forward, and a scroll already on its way is left to arrive instead of being restarted five times a second

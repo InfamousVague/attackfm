@@ -241,6 +241,7 @@ pub async fn queue(
         // reading. The old transcript itself stays until its replacement
         // lands - the worker overwrites, never deletes up front.
         let _ = state.db.clear_chapter_blurbs(track_id);
+        let _ = state.db.clear_recap_parts(track_id);
     }
 
     let id = format!("tr{track_id}-{}", now_ms());
@@ -667,5 +668,10 @@ async fn run(state: Arc<AppState>, job_id: String, track_id: i64) {
     let st = state.clone();
     tokio::spawn(async move {
         crate::chapter_blurbs::generate_for_track(&st, track_id).await;
+        // And what each chapter said, for the catch-up. After the names, on
+        // the same task: one model, one queue, in the order the reader meets
+        // them - the chapter list is on screen long before anyone presses
+        // "Catch me up".
+        crate::recap::generate_for_track(&st, track_id).await;
     });
 }

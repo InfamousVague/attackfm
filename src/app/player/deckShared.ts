@@ -237,6 +237,36 @@ export function readBookArtView(): ArtView {
  * before a chapter's mark means a jump TO a chapter never lands "one short"
  * off a rounded seek; three copies of this loop already grew apart once.
  */
+/** How long the sleep timer spends fading out before it pauses. Shared by
+ *  the clock timer and the chapter one so sleep always arrives the same way. */
+export const SLEEP_FADE_S = 5;
+
+/**
+ * Where the chapter you are in ENDS, in seconds - the next natural break AHEAD
+ * of a position.
+ *
+ * `null` when the file's own end is the break: an unmarked file (one section
+ * of a many-file book, or a song), or the last chapter of a marked one. Both
+ * are already stopped at by the ended handler, so the caller has nothing to
+ * arm and says so by getting nothing back.
+ *
+ * STRICTLY ahead, and deliberately NOT `chapterIndexAt`, whose second of
+ * tolerance counts a mark you are about to reach as already behind you. That
+ * tolerance is right for "which chapter am I in" - a bar handle a hair short
+ * of the mark should read as the next chapter - and wrong for this, where it
+ * would skip the very break being waited on and quietly aim a whole chapter
+ * further on.
+ */
+export function chapterBreakAfter(
+  chapters: readonly { startMs: number }[] | undefined,
+  positionS: number,
+): number | null {
+  if (!chapters || chapters.length === 0) return null;
+  const positionMs = positionS * 1000;
+  const next = chapters.find((c) => c.startMs > positionMs);
+  return next == null ? null : next.startMs / 1000;
+}
+
 export function chapterIndexAt(
   chapters: readonly { startMs: number }[],
   positionMs: number,
