@@ -323,21 +323,30 @@ body:has(.appNavBar) .playerBarShell > * {
  * its buttons would go on taking presses aimed at the nav above them.
  */
 /*
- * The clocks used to be hidden here, at every width.
+ * No clocks on the strip.
  *
- * They are gone from the SMALL strip for the reason that rule gave: three
- * things competing for one line, and the two that lose are the title and the
- * bar itself. But the wide strip now has a second row and gives the clocks its
- * two ends, so the hide belongs with the rest of the touch sizing and has moved
- * to chapter 19, inside `(pointer: coarse), (max-width: 540px)`.
+ * The kit's bar prints the elapsed time at one end of the seek bar and what is
+ * left at the other. On a strip that is three things competing for one line -
+ * and the two that lose are the title and the bar itself, which are the
+ * reasons anybody looks at it. The full player still has both.
  *
- * The `_times_` half of it went in the bin rather than moving. `_times_` is a
- * PlayerCard class, and this app renders PlayerCard nowhere - the old comment
- * here named `_times_bo40x_48` as "the kit's bar", which is wrong and cost a
- * later session an hour. The bar is the `cld2u` module; it has `_clock_`, and
- * no `_times_` at all. Prefix-matching is still the rule for anything reaching
- * into the kit: the hash changes on every rebuild, the name does not.
+ * This is the DEFAULT, and the compact strip opts back out of it: chapter 19
+ * gives its second row's two ends to the clocks, at a specificity that beats
+ * this. Any state that is not explicitly that layout shows no clocks, which is
+ * the safe way round - a stray clock is worse than a missing one on a bar this
+ * size.
+ *
+ * The `_times_` arm this rule used to carry went in the bin rather than moving.
+ * `_times_` is a PlayerCard class and this app renders PlayerCard nowhere; the
+ * old comment here named `_times_bo40x_48` as "the kit's bar", which is wrong
+ * and cost a later session an hour. The bar is the `cld2u` module: it has
+ * `_clock_` and no `_times_` at all. Prefix-matching is still the rule for
+ * anything reaching into the kit - the hash changes on every rebuild, the name
+ * does not.
  */
+.playerBarShell [class*="_clock_"] {
+  display: none;
+}
 
 .playerBarShell[data-dismissed] {
   --player-ease: var(--glacier-duration-normal);
