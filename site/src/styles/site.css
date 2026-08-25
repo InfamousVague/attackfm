@@ -1553,3 +1553,11 @@ a {
     inline-size: 11rem;
   }
 }
+
+/* A screenshot from a device the capture script does not own.
+   The framed set is 9/19.5; this one is 900x1422, and `cover` on the standard
+   frame would crop exactly the half that matters here - the chapter line, the
+   times and the scrubber. So the frame takes the image's own shape. */
+.phone--native .phone__screen {
+  aspect-ratio: 50 / 79;
+}

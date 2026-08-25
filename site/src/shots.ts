@@ -34,6 +34,22 @@ export const SHOTS = {
   stats: shot('stats', 'Listening', 'Listening statistics for the week: 21.2 hours, 656 plays, 372 songs and 277 artists, with the top artist and album'),
   desktop: shot('desktop', 'Desktop', 'AttackFM running full width on a desktop, with playlists and listening stats'),
   desktopAlbum: shot('desktopAlbum', 'Playlist', 'A playlist open on the desktop, its tracks listed beside the player bar'),
+  /*
+   * Reading along, from a phone rather than the capture script - it is the one
+   * screen the script cannot produce, because it needs a real book that a real
+   * hub has really transcribed, and the capture library has neither.
+   *
+   * A .jpg, and so an explicit src rather than the `shot()` helper: it is a
+   * photograph of dense text where PNG buys nothing and costs five times the
+   * bytes. Its device is a different shape from the captured set, which is why
+   * it is framed `phone--native` on the page instead of the 9/19.5 frame that
+   * would crop the transport away.
+   */
+  reading: {
+    src: '/shots/reading.jpg',
+    label: 'Reading along',
+    alt: 'An audiobook playing on a phone: the words fill the screen with the sentence being read held bright and the word being spoken underlined, above the chapter line, the time left in the book, and a waveform scrubber',
+  },
 } satisfies Record<string, Shot>;
 
 export type ShotKey = keyof typeof SHOTS;

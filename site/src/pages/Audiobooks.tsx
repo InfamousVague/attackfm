@@ -6,9 +6,11 @@ import {
   Search,
   TableOfContents,
 } from '@glacier/icons';
+import { PhoneShot } from '../components/Device.tsx';
 import { Footer } from '../components/Footer.tsx';
 import { Nav } from '../components/Nav.tsx';
 import { Reveal } from '../components/Reveal.tsx';
+import { SHOTS } from '../shots.ts';
 
 /**
  * The audiobooks page.
@@ -272,6 +274,33 @@ export function Audiobooks() {
                 one pass it draws the words in time with the narrator, names the chapters the way
                 the reading names them, and lets you search a sentence you half remember.
               </p>
+            </Reveal>
+          </div>
+        </section>
+
+        <section className="section section--ruled" id="along">
+          <div className="wrap wrap--wide row">
+            <Reveal variant="left" className="stack">
+              <p className="eyebrow">Reading along</p>
+              <h2 className="h2">
+                The words, <span className="accent">as they are read</span>
+              </h2>
+              <p className="body">
+                The sentence being read holds bright, the word being spoken carries the underline,
+                and what is coming waits dim. It follows the narrator rather than a clock, so a
+                stall on a slow connection never lets the text run ahead of the voice.
+              </p>
+              <p className="body">
+                Underneath it: which chapter you are in and how much book is left at the speed you
+                actually read, over a scrubber that measures the chapter rather than the whole
+                thirteen hours. Scroll back through what you missed and tap any line to send the
+                narrator to it.
+              </p>
+            </Reveal>
+
+            <Reveal variant="right" className="row__media">
+              <PhoneShot shot={SHOTS.reading} className="phone--native tilt" />
+              <div className="deviceGlow" />
             </Reveal>
           </div>
         </section>
