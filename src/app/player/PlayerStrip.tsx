@@ -24,7 +24,6 @@ import {
   Repeat,
   Repeat1,
   Shuffle,
-  SkipBack,
   SkipForward,
 } from '@glacier/icons';
 import { SoundConsole } from './SoundConsole.tsx';
@@ -250,16 +249,11 @@ export function PlayerStrip({
    */
   const compactTransport = (
     <div className="stripTransport" role="group" aria-label="Playback controls">
-      <IconButton
-        variant="ghost"
-        aria-label="Previous track"
-        aria-disabled={!onSkipBackDisp || undefined}
-        data-off={!onSkipBackDisp || undefined}
-        skeleton={listLoading}
-        onClick={onSkipBackDisp}
-      >
-        <SkipBack size={20} fill="currentColor" />
-      </IconButton>
+      {/* No back skip on the condensed bar. Going BACK a track is the rarer
+          of the two by a distance, and it is the one that is still a tap away
+          on the full player this strip lifts - where the width it costs here
+          is width the seek bar and the clocks are short of. Forward stays:
+          skipping on is what people do to a strip in passing. */}
       <IconButton
         variant="solid"
         className="stripTransport__play"

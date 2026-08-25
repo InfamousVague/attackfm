@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.59
+
+- The condensed player bar is down to what you actually reach for: the disc, the seek bar with the time at each end of the line under it, and play and skip-forward. The heart, the device picker and the back skip have gone - every one of them is a tap away on the full player, which the strip lifts, and the room they were taking is room the times and the bar were short of
+- Its three parts now sit on one line. The seek and its times were riding high while the disc and the buttons beside them were centred, and there was a step of air under the bar that made the middle taller than everything else
+
 ## 0.4.58
 
 - The three-column strip is on the SMALL player bar, where it was meant to be, and the desktop bar is back to what it was. The compact strip now reads left to right the way it should: the disc, then the seek bar with the elapsed and remaining times at either end of the row beneath it and the heart and device picker between them, then play and the two skips out on the right at thumb size
