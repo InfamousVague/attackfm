@@ -10,10 +10,10 @@
 # Asks for an admin sign-in; the password goes to the local API over stdin and
 # is kept nowhere.
 #
-# What it does NOT do is throw away lyrics. Only the derived word clocks go, so
-# the words themselves are still there while the hub works out their timing
-# again - a song reads as it did a moment ago, it just stops lighting up until
-# its turn comes round.
+# Nothing is thrown away. Songs are QUEUED for re-timing and keep the clocks
+# they have until better ones replace them, so the library goes on lighting up
+# word by word the whole time this runs. An earlier version deleted first and
+# left everything unsynced for hours; it does not do that any more.
 set -euo pipefail
 
 PORT="${AFM_PORT:-8788}"
@@ -74,8 +74,8 @@ esac
 
 echo "${OUT}"
 
-CLEARED=$(printf '%s' "$OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["cleared"])' 2>/dev/null || echo "?")
+QUEUED_N=$(printf '%s' "$OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["queued"])' 2>/dev/null || echo "?")
 WAITING=$(printf '%s' "$OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["waiting"])' 2>/dev/null || echo "?")
-echo "forgot the clocks on ${CLEARED} song(s); ${WAITING} are queued."
+echo "queued ${QUEUED_N} song(s) for re-timing; ${WAITING} are waiting in all."
 echo "They run one at a time with a pause between, liked songs first, then most played -"
 echo "so the ones you actually listen to come back first. A big library takes hours."

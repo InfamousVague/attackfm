@@ -309,7 +309,15 @@ fn parse_lrc(body: &str) -> Vec<Line> {
 /// no recogniser, no lyrics, no audio - all no-ops, because this runs
 /// unattended and a library has thousands of songs it will never manage.
 pub async fn sync_track(state: &Arc<AppState>, track_id: i64) -> bool {
-    if state.db.lyric_words(track_id).is_some() {
+    /*
+     * Already answered, and nobody has asked for a better answer.
+     *
+     * The second half matters as much as the first: a re-time keeps the old
+     * clocks playing and marks the song instead of deleting them, so without
+     * the stale check this guard would refuse every song that was queued and
+     * the mark would never clear. Re-timing would silently do nothing.
+     */
+    if state.db.lyric_words(track_id).is_some() && !state.db.lyrics_stale(track_id) {
         return false;
     }
     let Some(track) = state.db.track(track_id) else { return false };
@@ -544,12 +552,21 @@ pub async fn redo(
             "this server has no speech recogniser or model, so it cannot time lyrics".into(),
         ));
     }
-    let cleared = state.db.clear_lyric_words(ask.id);
+    /*
+     * MARKED, not cleared.
+     *
+     * The first version of this deleted the clocks, because the sweep only
+     * offers a song it has none for - so asking for a better answer threw the
+     * working one away first, and a whole-library re-time left every song
+     * reading unsynced for as long as the recogniser needed. Which is hours.
+     * Marking leaves the old timing playing until a new one overwrites it.
+     */
+    let cleared = state.db.mark_lyrics_stale(ask.id);
     // The sweep picks its own order - liked first, then most played - so a
     // whole-library redo starts with what the listener actually listens to.
     tokio::spawn(sweep(state.clone()));
     let waiting = state.db.songs_wanting_lyric_words(5000).len();
-    Ok(Json(json!({ "cleared": cleared, "waiting": waiting, "started": true })))
+    Ok(Json(json!({ "queued": cleared, "waiting": waiting, "started": true })))
 }
 
 #[derive(Deserialize)]

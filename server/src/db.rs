@@ -1223,6 +1223,19 @@ CREATE TABLE IF NOT EXISTS track_loudness (
 -- filled by the same pass but not always together: every track measured before
 -- this existed has loudness and no shape, and the sweep uses exactly that
 -- difference to find them.
+-- Songs whose word clocks should be worked out AGAIN.
+--
+-- A marker rather than a deletion, and that distinction is the whole point.
+-- The first re-timing worked by clearing `lyric_words`, because the sweep only
+-- offers a song it has no clocks for - which meant asking for a better answer
+-- threw away the working one first, and every song in the library read
+-- unsynced for however many hours the recogniser needed to catch up. Marked
+-- instead, the old timing keeps playing until the new one overwrites it.
+CREATE TABLE IF NOT EXISTS lyric_stale (
+  track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+  asked_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS track_waveform (
   track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
   columns  BLOB NOT NULL,
@@ -5651,11 +5664,31 @@ impl Db {
     /// Only the derived clocks go. The lyrics themselves are the source and are
     /// left alone - throwing those away would mean fetching them again to redo
     /// work that is only about their timing.
-    pub fn clear_lyric_words(&self, track_id: Option<i64>) -> usize {
+    /// Has this song been asked for a better answer than the one it has?
+    pub fn lyrics_stale(&self, track_id: i64) -> bool {
+        self.lock()
+            .query_row(
+                "SELECT 1 FROM lyric_stale WHERE track_id = ?1",
+                params![track_id],
+                |_| Ok(()),
+            )
+            .is_ok()
+    }
+
+    pub fn mark_lyrics_stale(&self, track_id: Option<i64>) -> usize {
         let lock = self.lock();
         let done = match track_id {
-            Some(id) => lock.execute("DELETE FROM lyric_words WHERE track_id = ?1", params![id]),
-            None => lock.execute("DELETE FROM lyric_words", []),
+            Some(id) => lock.execute(
+                "INSERT OR REPLACE INTO lyric_stale (track_id, asked_at) VALUES (?1, ?2)",
+                params![id, now_ms()],
+            ),
+            // Every song that HAS clocks, so a whole-library re-time is a
+            // queue rather than a demolition.
+            None => lock.execute(
+                "INSERT OR REPLACE INTO lyric_stale (track_id, asked_at)
+                 SELECT track_id, ?1 FROM lyric_words",
+                params![now_ms()],
+            ),
         };
         done.unwrap_or(0)
     }
@@ -5668,6 +5701,10 @@ impl Db {
         words: i64,
     ) -> rusqlite::Result<()> {
         self.index_spoken(track_id, lines);
+        // Answered, so it is no longer owed one.
+        let _ = self
+            .lock()
+            .execute("DELETE FROM lyric_stale WHERE track_id = ?1", params![track_id]);
         self.lock().execute(
             "INSERT INTO lyric_words (track_id, lines, matched, words, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5)
@@ -5854,7 +5891,9 @@ impl Db {
              LEFT JOIN favorites f    ON f.track_id  = t.id
              LEFT JOIN (SELECT track_id, COUNT(*) AS plays FROM plays GROUP BY track_id) p
                     ON p.track_id = t.id
-             WHERE t.deleted = 0 AND t.kind <> 'book' AND lw.track_id IS NULL
+             LEFT JOIN lyric_stale st ON st.track_id = t.id
+             WHERE t.deleted = 0 AND t.kind <> 'book'
+               AND (lw.track_id IS NULL OR st.track_id IS NOT NULL)
                AND (f.track_id IS NOT NULL OR p.plays > 0)
              ORDER BY (f.track_id IS NOT NULL) DESC, COALESCE(p.plays, 0) DESC, t.id
              LIMIT ?1",
