@@ -405,7 +405,16 @@
     grid-template-rows: auto auto;
     align-items: center;
     column-gap: var(--glacier-space-1);
-    row-gap: var(--glacier-space-1);
+    /* No gap: the seek and the clock under it are one object, and the two rows
+       together should stand exactly as tall as the play button beside them.
+       A step of air here made the middle column the tallest thing on the plate
+       and pushed the whole strip out of square with the transport. */
+    row-gap: 0;
+    /* The column is stretched to the plate's full height by the bar, and two
+       auto rows inside it would otherwise sit at the top of that box with the
+       leftover underneath - the seek riding high while the disc and the
+       transport beside it are centred. */
+    align-content: center;
   }
 
   .appPlayer [class*="_scrubber_"] {
@@ -454,16 +463,22 @@
     overflow: hidden;
   }
 
-  /* The queue button leaves the strip's icon row.
-  
-     Not to save a feature but to save the row: the two clocks, the icons and a
-     thumb-sized transport do not fit across 357px together, and something had
-     to give. The queue is the one of them that is a whole SCREEN elsewhere -
-     tapping the strip lifts the full player, which has it - where the heart is
-     a one-tap thing you do in passing and the device picker is how you get the
-     sound out of the phone at all. Books make this tighter still: their clocks
-     read `-1:23:33` rather than `-3:15`. */
-  .appPlayer [class*="_controls_"] [aria-label="Queue"] {
+  /*
+   * Nothing but the clocks under the seek.
+   *
+   * The heart, the device picker and the queue all leave the condensed bar.
+   * Every one of them is a tap away on the full player this strip lifts, and
+   * the row they were sharing is 136px wide on a phone - three icons and two
+   * clocks in it left the clocks fighting for room the moment a chapter ran
+   * past an hour and printed `-1:23:33` instead of `-3:15`. The strip is a
+   * place to see where you are and to stop the music, not a control panel.
+   *
+   * Matched by label rather than by hiding the whole row, so a plugin's own
+   * button in `player-trailing` still has somewhere to be.
+   */
+  .appPlayer [class*="_controls_"] [aria-label="Queue"],
+  .appPlayer [class*="_controls_"] [aria-label="Playing on"],
+  .appPlayer [class*="_controls_"] [aria-label$="favourites"] {
     display: none;
   }
 
@@ -492,23 +507,29 @@
    * cannot silently take the transport off the strip. An engine without
    * `:has()` drops that rule and keeps the first.
    */
+  /* This column is the kit's, and the kit lays it out as a COLUMN - so the
+     main axis here is vertical and the cross axis horizontal, which is the
+     opposite of the reading that first went in. `justify-content` is the one
+     that centres the transport against the disc beside it; `align-items` is
+     the one that takes it to the plate's outer edge. Swapped, as they were,
+     the buttons sat centred left-to-right and hard against the bottom. */
   .appPlayer [class*="_output_"] {
     display: flex;
     flex: none;
-    /* Never 0: the transport is three fixed squares that cannot shrink, and a
-       column allowed below its own contents does not clip them, it lets them
-       overflow leftward over the clock. */
+    /* Never 0: the buttons are fixed squares that cannot shrink, and a column
+       allowed below its own contents does not clip them, it lets them overflow
+       leftward over the clock. */
     min-inline-size: min-content;
-    align-items: center;
-    justify-content: flex-end;
+    align-items: flex-end;
+    justify-content: center;
   }
 
   .appPlayer [class*="_bar_"] > *:has(.stripTransport) {
     display: flex;
     flex: none;
     min-inline-size: min-content;
-    align-items: center;
-    justify-content: flex-end;
+    align-items: flex-end;
+    justify-content: center;
   }
 
   .stripTransport {
