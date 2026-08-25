@@ -94,3 +94,4 @@ dist-site/
 # untracked AND ignored - it once sat untracked-but-not-ignored in this shared
 # tree, one `git add -A` away from a public repo.
 public/__seed.json
+capture/
