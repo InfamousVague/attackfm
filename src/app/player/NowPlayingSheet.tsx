@@ -245,8 +245,23 @@ function BookWords({
      - which is exactly what hands the same gesture to the reader. */
   const slotRef = useRef<HTMLDivElement | null>(null);
   const nowRef = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    if (browsing) return;
+  /* The rendered window's first index, last time this ran, and the scroll we
+   *  last asked for - see the two notes below. */
+  const lastFrom = useRef(from);
+  const lastAt = useRef(at);
+  const wanted = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const shifted = lastFrom.current !== from;
+    const movedOn = lastAt.current !== at;
+    lastFrom.current = from;
+    lastAt.current = at;
+    if (browsing) {
+      // The hand owns the scroll now, so wherever we were heading is no longer
+      // where the reader is. Forgetting it means the first move after they
+      // stop is taken from where they actually left off.
+      wanted.current = null;
+      return;
+    }
     const slot = slotRef.current;
     const now = nowRef.current;
     if (!slot || !now) return;
@@ -302,11 +317,61 @@ function BookWords({
      * exactly, because that only happens when the chunk itself changes.
      */
     const slack = litBox ? room * 0.2 : 1;
+    const dest = slot.scrollTop + target;
+
+    /*
+     * THE JUMP THIS RUNS BEFORE PAINT TO HIDE.
+     *
+     * Past 1500 chunks the list is windowed, and the window's first index
+     * advances with the reading - so a row is dropped from ABOVE the viewport
+     * every time the reading moves on. Removing content above a scroll
+     * position moves everything below it up, and the reading with it.
+     *
+     * Chromium absorbs this on its own: scroll anchoring adjusts `scrollTop` to
+     * hold the visible content still, which was measured here rather than
+     * assumed - remove a row above and the active line does not move a pixel.
+     * WebKit has no scroll anchoring, so on iOS the lurch is real. This is for
+     * that, and it is cheap enough to keep for both.
+     *
+     * A layout effect runs after the DOM changes and BEFORE the browser paints,
+     * so the correction is never drawn as movement. It has to be instant on
+     * that frame: a smooth scroll would animate away from a position the reader
+     * was never shown.
+     */
+    if (shifted) {
+      wanted.current = dest;
+      slot.scrollTo({ top: dest, behavior: 'auto' });
+      return;
+    }
+
+    /*
+     * WITHIN a chunk the reading only ever moves forward, so a correction that
+     * would scroll BACK up is not a correction - it is the glitch. Following
+     * the spoken word walks the slot down through a long passage; anything
+     * that then pulls it up is a second rule disagreeing with the first, and
+     * what a reader sees is the text going too far and coming back.
+     *
+     * Moving on to the next chunk is the one time up is legitimate: a short
+     * chunk after a long one really does sit higher once centred.
+     */
+    if (!movedOn && target < 0) return;
+
     if (Math.abs(target) < slack) return;
+    /*
+     * A smooth scroll takes a few hundred milliseconds and the words tick
+     * every two hundred, so this runs again while the last one is still
+     * travelling. Measuring mid-flight is fine - the rects and `scrollTop`
+     * move together, so the sum lands on the same place - but ASKING again
+     * restarts the animation from wherever it had got to, and a scroll
+     * restarted five times a second crawls. So a destination we are already
+     * heading for is left alone.
+     */
+    if (wanted.current !== null && Math.abs(dest - wanted.current) < slack) return;
+    wanted.current = dest;
 
     const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    slot.scrollTo({ top: slot.scrollTop + target, behavior: still ? 'auto' : 'smooth' });
-  }, [at, lit, browsing, items]);
+    slot.scrollTo({ top: dest, behavior: still ? 'auto' : 'smooth' });
+  }, [at, lit, browsing, items, from]);
 
   return (
     <div
