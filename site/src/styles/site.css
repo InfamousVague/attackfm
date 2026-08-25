@@ -1425,3 +1425,131 @@ a {
   object-position: top center;
   display: block;
 }
+
+/* ---- The audiobooks page --------------------------------------------------
+   Its own document (see vite.site.config.ts), sharing every token and every
+   component surface with the home page - the only new furniture is the feature
+   table, which the home page has no use for. */
+
+/* The hero sits under the fixed bar like every other first section, but it
+   carries no device shot beside it, so it gets the width for a long lead. */
+.booksHero {
+  padding-block-start: clamp(7rem, 14vw, 11rem);
+}
+
+.booksHero .hero__lead {
+  max-width: 58ch;
+}
+
+/* Six cards, and the last row should not stretch two of them across the page. */
+.booksGrid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+}
+
+/* ---- The feature table ----------------------------------------------------
+   A real <table>, because it is real tabular data: three columns that mean the
+   same thing on every row, and a reader who wants to scan one of them. Cards
+   would have looked more like the rest of the page and answered the question
+   worse.
+
+   It scrolls inside its own box rather than letting the page scroll sideways -
+   the middle column is prose and cannot honestly go below about 24rem. */
+.featureTableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--site-glass-line);
+  border-radius: 1.15rem;
+  background: var(--site-glass);
+  /* The scroll container is the focusable thing when it overflows, so it needs
+     to say so to a keyboard. */
+  scrollbar-width: thin;
+}
+
+.featureTable {
+  inline-size: 100%;
+  min-inline-size: 42rem;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+  text-align: start;
+}
+
+.featureTable th,
+.featureTable td {
+  padding: 0.85rem 1.1rem;
+  vertical-align: top;
+  text-align: start;
+  border-block-start: 1px solid var(--site-rail);
+}
+
+/* The head stays put while a long group scrolls past it. */
+.featureTable thead th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  background: var(--site-ground);
+  border-block-start: 0;
+  border-block-end: 1px solid var(--site-rail-strong);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--glacier-text-muted);
+  font-weight: 600;
+}
+
+/* A band, not a row: it names the rows under it rather than describing one. */
+.featureTable__group th {
+  padding-block: 1.15rem 0.5rem;
+  border-block-start: 1px solid var(--site-rail-strong);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--glacier-accent-text);
+  font-weight: 600;
+}
+
+.featureTable tbody th[scope='row'] {
+  inline-size: 15rem;
+  font-weight: 600;
+  color: var(--glacier-text);
+}
+
+.featureTable td {
+  color: var(--glacier-text-soft, var(--glacier-text-muted));
+  max-inline-size: 46ch;
+}
+
+.featureTable tbody tr:hover td,
+.featureTable tbody tr:hover th[scope='row'] {
+  background: color-mix(in srgb, var(--glacier-accent-9) 5%, transparent);
+}
+
+/* What a row depends on, as a chip - the column is scanned far more often than
+   it is read, and three words in a pill scan faster than three words in prose. */
+.needs {
+  display: inline-block;
+  white-space: nowrap;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--site-rail-strong);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  color: var(--glacier-text-muted);
+}
+
+/* Only the two that cost the reader something are coloured. "Any device" and
+   "Your hub" are the ordinary cases and a page where every chip shouts tells
+   you nothing. */
+.needs[data-needs='read'] {
+  color: var(--glacier-accent-text);
+  border-color: color-mix(in srgb, var(--glacier-accent-9) 45%, transparent);
+}
+
+.needs[data-needs='ai'] {
+  color: var(--glacier-warning-text, #e8a24a);
+  border-color: color-mix(in srgb, var(--glacier-warning-9, #e8a24a) 45%, transparent);
+}
+
+@media (max-width: 46rem) {
+  .featureTable tbody th[scope='row'] {
+    inline-size: 11rem;
+  }
+}
