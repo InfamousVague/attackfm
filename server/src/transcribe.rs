@@ -639,12 +639,22 @@ async fn run(state: Arc<AppState>, job_id: String, track_id: i64) {
         .unwrap_or_default();
     if state
         .db
-        .set_transcript(track_id, &Value::Array(lines).to_string(), &model_name)
+        .set_transcript(track_id, &Value::Array(lines.clone()).to_string(), &model_name)
         .is_err()
     {
         fail("could not save the transcript".into()).await;
         return;
     }
+    // The shape falls out of the same text, so it is read once here rather
+    // than on demand: a twelve-hour reading is tens of thousands of lines, and
+    // a shelf asking for eight books' worth would parse all of it every time
+    // the page opened.
+    let shape = crate::bookshape::analyse(
+        &Value::Array(lines).to_string(),
+        (track.duration.unwrap_or(0.0) * 1000.0) as i64,
+    );
+    let _ = state.db.set_book_shape(track_id, &shape);
+
     set_job(&state, &job_id, |j| {
         j.state = "done".into();
         j.lines = count;

@@ -33,6 +33,8 @@ mod audiobooks;
 mod chapter_blurbs;
 mod lyricsync;
 mod spoken;
+
+mod bookshape;
 mod auth;
 mod canvas;
 mod collector;
@@ -478,6 +480,9 @@ async fn main() {
     // so the very first cycle already honours what was saved in the app.
     ai::load_overrides(&state.db);
     ai::mark_boot();
+    // Readings transcribed before the shape existed, caught up in the
+    // background and then never again.
+    bookshape::spawn_backfill(state.clone());
     curator::spawn(state.clone());
     // The buying arm rides beside the curator: same taste, real money - er,
     // real disk. See collector.rs for the honesty rules.
@@ -658,6 +663,7 @@ async fn main() {
         .route("/api/ai/probe", post(ai_admin::probe))
         .route("/api/ai/run", post(ai_admin::run))
         .route("/api/activity", get(ai_admin::activity))
+        .route("/api/books/shape", get(bookshape::shape))
         .route("/api/curator", get(curator::feed))
         .route("/api/curator/pulls", get(collector::status))
         .route("/api/date/done", post(collector::date_done))

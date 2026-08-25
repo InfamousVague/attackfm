@@ -1125,6 +1125,27 @@ CREATE VIRTUAL TABLE IF NOT EXISTS spoken_fts USING fts5(
   track_id UNINDEXED,
   start_ms UNINDEXED,
   tokenize = 'unicode61 remove_diacritics 2'
+
+-- What a transcript says about the shape of a reading: how fast it is read,
+-- where the publisher's card ends and where the credits begin. Derived, so it
+-- is cached rather than authoritative - deleting a row costs one re-analysis.
+--
+-- Its own table rather than columns on `transcripts` for the usual reason (a
+-- new table lands through execute_batch(SCHEMA), a new column does not), and
+-- because the two have different lifetimes: re-transcribing with a better
+-- model should replace this, and nothing else should.
+CREATE TABLE IF NOT EXISTS book_shape (
+  track_id     INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+  wpm          INTEGER NOT NULL DEFAULT 0,
+  pace         TEXT    NOT NULL DEFAULT '',
+  -- 0 means "none found", never "the start of the file". The offer is only
+  -- made for a positive number.
+  opening_ms   INTEGER NOT NULL DEFAULT 0,
+  credits_ms   INTEGER NOT NULL DEFAULT 0,
+  opening_text TEXT    NOT NULL DEFAULT '',
+  credits_text TEXT    NOT NULL DEFAULT '',
+  words        INTEGER NOT NULL DEFAULT 0,
+  created_at   INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS stem_prefetch (
@@ -5620,6 +5641,57 @@ impl Db {
         Ok(())
     }
 
+    /// The cached shape of a reading, if it has been worked out.
+    pub fn book_shape(&self, track_id: i64) -> Option<crate::bookshape::BookShape> {
+        self.lock()
+            .query_row(
+                "SELECT wpm, pace, opening_ms, credits_ms, opening_text, credits_text, words
+                 FROM book_shape WHERE track_id = ?1",
+                params![track_id],
+                |r| {
+                    Ok(crate::bookshape::BookShape {
+                        wpm: r.get(0)?,
+                        pace: r.get(1)?,
+                        opening_ms: r.get(2)?,
+                        credits_ms: r.get(3)?,
+                        opening_text: r.get(4)?,
+                        credits_text: r.get(5)?,
+                        words: r.get(6)?,
+                    })
+                },
+            )
+            .ok()
+    }
+
+    pub fn set_book_shape(
+        &self,
+        track_id: i64,
+        shape: &crate::bookshape::BookShape,
+    ) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO book_shape
+               (track_id, wpm, pace, opening_ms, credits_ms, opening_text, credits_text, words, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(track_id) DO UPDATE SET
+               wpm = excluded.wpm, pace = excluded.pace,
+               opening_ms = excluded.opening_ms, credits_ms = excluded.credits_ms,
+               opening_text = excluded.opening_text, credits_text = excluded.credits_text,
+               words = excluded.words, created_at = excluded.created_at",
+            params![
+                track_id,
+                shape.wpm,
+                shape.pace,
+                shape.opening_ms,
+                shape.credits_ms,
+                shape.opening_text,
+                shape.credits_text,
+                shape.words,
+                now_ms() / 1000,
+            ],
+        )?;
+        Ok(())
+    }
+
     /// Whether anything is being imported right now - the sweep stands down
     /// rather than compete with work somebody is waiting on.
     pub fn imports_busy_hint(&self) -> bool {
@@ -5811,6 +5883,20 @@ impl Db {
         };
         let rows = stmt.query_map(params![dir], |r| Ok((r.get(0)?, r.get(1)?)));
         rows.map(|it| it.flatten().collect()).unwrap_or_default()
+    }
+
+    /// Transcribed but never analysed - the backfill's work list.
+    pub fn tracks_needing_shape(&self, limit: i64) -> Vec<i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT t.track_id FROM transcripts t
+             LEFT JOIN book_shape s ON s.track_id = t.track_id
+             WHERE s.track_id IS NULL LIMIT ?1",
+        ) else {
+            return Vec::new();
+        };
+        let rows = stmt.query_map(params![limit], |r| r.get(0));
+        rows.map(|r| r.flatten().collect()).unwrap_or_default()
     }
 
     pub fn has_transcript(&self, track_id: i64) -> bool {

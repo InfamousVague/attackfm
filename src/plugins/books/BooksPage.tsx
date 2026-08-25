@@ -1,6 +1,6 @@
 import { TrackMenu } from '../../app/library/TrackMenu.tsx';
 import { Button, ContextMenu, MenuItem, Modal, ProgressBar, SearchField, Spinner, Text } from '@glacier/react';
-import { ArrowDownToLine, ListX, BookAudio, BookOpenText, Check, ChevronRight, Heart, Play, Trash2, Upload } from '@glacier/icons';
+import { ArrowDownToLine, ListX, BookAudio, BookOpenText, Check, ChevronRight, Heart, Play, SkipForward, Trash2, Upload } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { PluginPageProps } from '../types.ts';
 import { useLibrary } from '../../app/library/library.tsx';
@@ -25,6 +25,8 @@ import { setHeaderActions } from '../../app/nav/headerActions.ts';
 import { artSized } from '../../app/server.ts';
 import { formatTotal } from '../../app/ux/format.ts';
 import { useHoldToMenu } from '../../app/ux/holdToMenu.ts';
+import { fetchBookShapes, type BookShape } from '../../app/api/books.ts';
+import { bookSkips, setSkipsCard, watchSkips } from '../../app/player/bookSkips.ts';
 import { request, ServerError } from '../../app/api/http.ts';
 import { isTauri } from '../../app/core/tauri.ts';
 import type { Track } from '../../app/core/tauri.ts';
@@ -820,11 +822,14 @@ function minutes(ms: number): string {
  */
 function BookMenu({
   book,
+  shape,
   className,
   onChanged,
   children,
 }: {
   book: ShelfBook;
+  /** What the transcript found, if anything. Null hides the skip offer. */
+  shape: BookShape | null;
   className?: string;
   /** Re-walk the library so the removed book leaves this device's shelf. */
   onChanged: () => void | Promise<void>;
@@ -865,6 +870,13 @@ function BookMenu({
    * everyone in the house because they cannot also delete the book was the
    * wrong shape. The two admin verbs are gated individually below.
    */
+  // Whether the transcript found a card or credits worth offering to skip.
+  // Not gated on being an admin - deleting a book belongs to whoever runs the
+  // library, but where a reading STARTS is the listener's own business, and
+  // every listener on a shared server gets their own answer.
+  const hasCard = !!shape && (shape.openingMs > 0 || shape.creditsMs > 0);
+  const skipping = hasCard && bookSkips(ids);
+
   if (!session || ids.length === 0) return <div className={className}>{children}</div>;
 
   const keepWholeBook = async () => {
@@ -955,6 +967,18 @@ function BookMenu({
         aria-label={`${book.title} actions`}
         content={
           <>
+            {/* Offered only when a transcript actually found something, and
+                worded as what will happen rather than as a setting: the whole
+                point is that it is per book, so a global-sounding label would
+                be a lie. */}
+            {hasCard && (
+              <MenuItem
+                icon={<SkipForward size={15} />}
+                onSelect={() => setSkipsCard(ids, !skipping)}
+              >
+                {skipping ? 'Play the card and credits' : 'Skip the card and credits'}
+              </MenuItem>
+            )}
             {/* A book is one object twenty hours long that you are halfway
                 through, so the cache's ranking - which calls the far end cold -
                 is exactly wrong for it. This keeps the whole thing, words and
@@ -1113,6 +1137,44 @@ export function BooksPage({ onPlay }: PluginPageProps) {
     return () => setHeaderActions(null);
   }, [stuck, headerCover]);
   const shelf = useMemo(() => shelve(books), [books]);
+
+  /**
+   * What each book's transcript says about it: the narrator's pace, and where
+   * the publisher's card and the closing credits are. One request for the
+   * whole shelf rather than one per book.
+   *
+   * Keyed by the FIRST file's id - the one a book is opened on, and the one
+   * whose card the offer is about. A book nobody has transcribed simply is not
+   * in the answer, and every reader of it below renders that as silence.
+   */
+  const [shapes, setShapes] = useState<Record<string, BookShape>>({});
+  const shelfIds = useMemo(
+    () => shelf.map((b) => serverId(b.tracks[0]!.path)).filter((n): n is number => n !== null),
+    [shelf],
+  );
+  useEffect(() => {
+    if (!session || shelfIds.length === 0) return;
+    const ac = new AbortController();
+    // A hub that predates this answers 404; nothing is shown and nothing is
+    // said, which is the same as a library whose books are not transcribed.
+    void fetchBookShapes(session, shelfIds, ac.signal)
+      .then(setShapes)
+      .catch(() => {});
+    return () => ac.abort();
+  }, [session, shelfIds]);
+
+  // The skip choice lives in localStorage and is changed from the menu, so the
+  // shelf has to be told rather than re-rendered by React on its own.
+  const [, bumpSkips] = useState(0);
+  useEffect(() => watchSkips(() => bumpSkips((n) => n + 1)), []);
+
+  const shapeOf = useCallback(
+    (book: ShelfBook): BookShape | null => {
+      const id = serverId(book.tracks[0]!.path);
+      return id === null ? null : (shapes[String(id)] ?? null);
+    },
+    [shapes],
+  );
   /*
    * A book is a favourite when ANY of its files is hearted, and hearting it
    * hearts all of them.
@@ -1205,8 +1267,9 @@ export function BooksPage({ onPlay }: PluginPageProps) {
    *  different place on the page. */
   const card = (book: ShelfBook) => {
     const at = standing(book);
+    const shape = shapeOf(book);
     return (
-      <BookMenu key={book.key} book={book} className="bookCard" onChanged={rescan}>
+      <BookMenu key={book.key} book={book} shape={shapeOf(book)} className="bookCard" onChanged={rescan}>
         {/* Over the cover's top-left corner, not in the row of affordances
             below. It sits OUTSIDE the play button rather than inside it: a
             button within a button is invalid markup, and the press would be
@@ -1243,6 +1306,24 @@ export function BooksPage({ onPlay }: PluginPageProps) {
               ? `${chapterFigure(book, at.index)} · ${minutes(at.positionMs)} in`
               : `${book.chapters.length} ${book.chapters.length === 1 ? 'chapter' : 'chapters'}`}
           </span>
+          {/* The narrator's actual reading speed, beside how long the book is.
+              It is the number that decides whether to reach for 1.25x before
+              starting rather than ten minutes in, and it costs nothing - it
+              falls out of a transcript that already exists. Absent for a book
+              nobody has transcribed, which is most of them at first. */}
+          {shape && shape.wpm > 0 && (
+            <span className="bookCard__pace" title={`${shape.words.toLocaleString()} words`}>
+              {shape.wpm} wpm{shape.pace ? `, ${shape.pace}` : ''}
+              {bookSkips(
+                book.tracks.map((t) => serverId(t.path)).filter((n): n is number => n !== null),
+              ) && (
+                <>
+                  {' · '}
+                  <span className="bookCard__paceSkip">card skipped</span>
+                </>
+              )}
+            </span>
+          )}
         </button>
     <ReadAlong book={book} />
         {book.chapters.length > 1 && (
