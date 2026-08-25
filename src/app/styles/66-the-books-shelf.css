@@ -892,3 +892,118 @@ span.bookCard__readAlong {
   color: rgba(255, 255, 255, 0.8);
   background: linear-gradient(140deg, #3a2f55, #1f1a30);
 }
+
+/* ---------------------------------------------------------------------------
+ * Catch me up
+ *
+ * The recap's own dressing, next to the bookmarks because it answers the same
+ * question from the other end: a bookmark is a place you kept on purpose, and
+ * this is the place you left by accident, three weeks ago.
+ *
+ * The row form sits at the top of the chapters popover; the dialog is where
+ * the reading happens, so it is set as prose - wider measure, real paragraph
+ * spacing - rather than as another list of controls.
+ * ------------------------------------------------------------------------ */
+
+.catchUp__row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 0 var(--glacier-space-2);
+  width: 100%;
+  padding: var(--glacier-space-2) 0.5rem;
+  margin-block-end: var(--glacier-space-2);
+  border: 1px solid var(--glacier-border-subtle);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface-raised);
+  color: var(--glacier-text-primary);
+  text-align: start;
+  cursor: pointer;
+}
+
+.catchUp__row:hover {
+  border-color: var(--glacier-accent-solid);
+}
+
+.catchUp__label {
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.catchUp__hint {
+  grid-column: 2;
+  color: var(--glacier-text-muted);
+  font-size: 0.7rem;
+}
+
+.catchUp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  max-width: 62ch;
+}
+
+.catchUp__wait {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding-block: var(--glacier-space-4);
+}
+
+.catchUp__para {
+  margin: 0;
+  color: var(--glacier-text-primary);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.catchUp__clip {
+  padding-block-end: var(--glacier-space-1);
+  border-block-end: 1px solid var(--glacier-border-subtle);
+}
+
+.catchUp__threads {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  padding-block-start: var(--glacier-space-3);
+  border-block-start: 1px solid var(--glacier-border-subtle);
+}
+
+.catchUp__threadsTitle {
+  color: var(--glacier-text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.catchUp__threads ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  margin: 0;
+  padding-inline-start: 1.1rem;
+}
+
+.catchUp__threads li {
+  color: var(--glacier-text-secondary);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.catchUp__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glacier-space-3);
+  width: 100%;
+}
+
+.bookChapters__catch {
+  display: flex;
+  justify-content: flex-end;
+  padding-block-end: var(--glacier-space-3);
+  margin-block-end: var(--glacier-space-2);
+  border-block-end: 1px solid var(--glacier-border-subtle);
+}

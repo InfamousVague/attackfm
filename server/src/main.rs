@@ -31,6 +31,7 @@ mod ingest;
 mod transcribe;
 mod audiobooks;
 mod chapter_blurbs;
+mod recap;
 mod lyricsync;
 mod spoken;
 
@@ -458,6 +459,10 @@ async fn main() {
             tokio::time::sleep(std::time::Duration::from_secs(90)).await;
             loop {
                 chapter_blurbs::sweep(st.clone()).await;
+                // Then the catch-up's chapter summaries, on the blurbs' heels
+                // and never beside them: both are the same small model, and two
+                // sweeps racing it turn one slow box into a stalled one.
+                recap::sweep(st.clone()).await;
                 tokio::time::sleep(std::time::Duration::from_secs(600)).await;
             }
         });
@@ -751,6 +756,7 @@ async fn main() {
             post(spotify::mirror_forget),
         )
         .route("/api/audiobooks/blurbs/{track_id}", get(chapter_blurbs::book))
+        .route("/api/audiobooks/recap/{track_id}", get(recap::catch_up))
         .route("/api/audiobooks/search", get(audiobooks::search))
         .route("/api/audiobooks/import", post(audiobooks::import))
         .route("/api/audiobooks/jobs", get(audiobooks::jobs))

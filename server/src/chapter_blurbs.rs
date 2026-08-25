@@ -43,7 +43,7 @@ const OPENING_CHARS: usize = 4500;
 /// One sweep at a time, however many doors call for it.
 static SWEEPING: AtomicBool = AtomicBool::new(false);
 
-fn chapter_marks(track: &db::Track) -> Vec<(String, i64)> {
+pub(crate) fn chapter_marks(track: &db::Track) -> Vec<(String, i64)> {
     let Value::Array(items) = &track.chapters else {
         return Vec::new();
     };
@@ -57,6 +57,31 @@ fn chapter_marks(track: &db::Track) -> Vec<(String, i64)> {
                 .unwrap_or("")
                 .to_string();
             Some((title, start))
+        })
+        .collect()
+}
+
+/// One book FILE, cut into the sections it announces: a marked single file is
+/// its chapter marks, an unmarked file IS one section of a many-file book.
+///
+/// Shared with the catch-up next door rather than written twice, because both
+/// tables are keyed by the index of a window in this list. Two copies that
+/// drifted would leave a recap quoting one chapter under another's name.
+pub(crate) fn chapter_windows(track: &db::Track) -> Vec<(String, i64, i64)> {
+    let marks = chapter_marks(track);
+    let end_ms = track
+        .duration
+        .map(|d| (d * 1000.0) as i64)
+        .unwrap_or(i64::MAX);
+    if marks.is_empty() {
+        return vec![(track.title.clone(), 0, end_ms)];
+    }
+    marks
+        .iter()
+        .enumerate()
+        .map(|(i, (title, start))| {
+            let stop = marks.get(i + 1).map(|(_, s)| *s).unwrap_or(end_ms);
+            (title.clone(), *start, stop)
         })
         .collect()
 }
@@ -81,7 +106,7 @@ fn opening(lines: &[(i64, String)], from_ms: i64, to_ms: i64) -> String {
     out
 }
 
-fn parsed_transcript(raw: &str) -> Vec<(i64, String)> {
+pub(crate) fn parsed_transcript(raw: &str) -> Vec<(i64, String)> {
     let Ok(Value::Array(items)) = serde_json::from_str::<Value>(raw) else {
         return Vec::new();
     };
@@ -258,22 +283,7 @@ pub async fn generate_for_track(state: &Arc<AppState>, track_id: i64) {
         return;
     }
 
-    let marks = chapter_marks(&track);
-    let end_ms = track.duration.map(|d| (d * 1000.0) as i64).unwrap_or(i64::MAX);
-    // A marked single file is its chapters; an unmarked file IS one chapter -
-    // a section of a many-file book, described whole.
-    let windows: Vec<(String, i64, i64)> = if marks.is_empty() {
-        vec![(track.title.clone(), 0, end_ms)]
-    } else {
-        marks
-            .iter()
-            .enumerate()
-            .map(|(i, (title, start))| {
-                let stop = marks.get(i + 1).map(|(_, s)| *s).unwrap_or(end_ms);
-                (title.clone(), *start, stop)
-            })
-            .collect()
-    };
+    let windows = chapter_windows(&track);
 
     // What is stored already, so a re-run only fills gaps. Held as name AND
     // blurb rather than a set of finished indexes because the two halves now

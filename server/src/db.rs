@@ -1103,6 +1103,41 @@ CREATE TABLE IF NOT EXISTS chapter_blurbs (
   PRIMARY KEY (track_id, idx)
 );
 
+-- What HAPPENED in each chapter, for the catch-up. The blurb next door is a
+-- teaser and must never reveal an outcome; this is its opposite - the outcomes
+-- are the whole point, because a recap is read by someone who already heard
+-- them. Written chapter at a time, off the request path, from the same sweep,
+-- so pressing "Catch me up" is one model call over text already on disk.
+--
+-- `start_ms`/`end_ms` are the window inside the track, and they are what makes
+-- the spoiler bound enforceable by SQL rather than by trust: the recap takes
+-- rows that END at or before the bookmark and no others.
+CREATE TABLE IF NOT EXISTS book_recap_parts (
+  track_id   INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+  idx        INTEGER NOT NULL,
+  start_ms   INTEGER NOT NULL DEFAULT 0,
+  end_ms     INTEGER NOT NULL DEFAULT 0,
+  summary    TEXT    NOT NULL,
+  model      TEXT    NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (track_id, idx)
+);
+
+-- The finished catch-up, per reader per book. One row: a recap is only ever
+-- wanted for where you ARE, and where you are moves. `upto_ms` and `parts`
+-- together say what it was written from, which is how a second press inside
+-- the same chapter is answered from here instead of paying for the model again.
+CREATE TABLE IF NOT EXISTS book_recaps (
+  user_id    INTEGER NOT NULL,
+  track_id   INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+  upto_ms    INTEGER NOT NULL,
+  parts      INTEGER NOT NULL DEFAULT 0,
+  body       TEXT    NOT NULL,
+  model      TEXT    NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, track_id)
+);
+
 -- A song's real lyrics with a clock on every word: LRCLIB's lines, timed
 -- against what the recogniser heard (see lyricsync.rs). `matched`/`words`
 -- record how much of it was measured rather than interpolated, so a later
@@ -5639,6 +5674,109 @@ impl Db {
                 |r| r.get(0),
             )
             .unwrap_or(0)
+    }
+
+    // --- The catch-up ------------------------------------------------------
+
+    /// Every stored recap part for a set of tracks, in reading order:
+    /// `(track_id, idx, start_ms, end_ms, summary)`.
+    pub fn recap_parts(&self, track_ids: &[i64]) -> Vec<(i64, i64, i64, i64, String)> {
+        if track_ids.is_empty() {
+            return Vec::new();
+        }
+        let marks = std::iter::repeat("?")
+            .take(track_ids.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT track_id, idx, start_ms, end_ms, summary FROM book_recap_parts
+             WHERE track_id IN ({marks}) ORDER BY track_id, idx"
+        );
+        let lock = self.lock();
+        let mut stmt = match lock.prepare(&sql) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = stmt.query_map(rusqlite::params_from_iter(track_ids.iter()), |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+        });
+        rows.map(|it| it.flatten().collect()).unwrap_or_default()
+    }
+
+    pub fn set_recap_part(
+        &self,
+        track_id: i64,
+        idx: i64,
+        start_ms: i64,
+        end_ms: i64,
+        summary: &str,
+        model: &str,
+    ) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO book_recap_parts (track_id, idx, start_ms, end_ms, summary, model, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(track_id, idx) DO UPDATE SET
+               start_ms = excluded.start_ms, end_ms = excluded.end_ms,
+               summary = excluded.summary, model = excluded.model,
+               created_at = excluded.created_at",
+            params![track_id, idx, start_ms, end_ms, summary, model, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// Thrown away when a book is re-transcribed: the parts were read off the
+    /// old text and a recap assembled from both would be neither.
+    pub fn clear_recap_parts(&self, track_id: i64) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "DELETE FROM book_recap_parts WHERE track_id = ?1",
+            params![track_id],
+        )?;
+        Ok(())
+    }
+
+    /// The stored catch-up for one reader and one book file:
+    /// `(upto_ms, parts, body, created_at)`.
+    pub fn book_recap(&self, user_id: i64, track_id: i64) -> Option<(i64, i64, String, i64)> {
+        self.lock()
+            .query_row(
+                "SELECT upto_ms, parts, body, created_at FROM book_recaps
+                 WHERE user_id = ?1 AND track_id = ?2",
+                params![user_id, track_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .ok()
+    }
+
+    pub fn set_book_recap(
+        &self,
+        user_id: i64,
+        track_id: i64,
+        upto_ms: i64,
+        parts: i64,
+        body: &str,
+        model: &str,
+    ) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO book_recaps (user_id, track_id, upto_ms, parts, body, model, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(user_id, track_id) DO UPDATE SET
+               upto_ms = excluded.upto_ms, parts = excluded.parts,
+               body = excluded.body, model = excluded.model,
+               created_at = excluded.created_at",
+            params![user_id, track_id, upto_ms, parts, body, model, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// Where this reader stopped in one track, if they ever started it.
+    pub fn play_state(&self, user_id: i64, track_id: i64) -> Option<i64> {
+        self.lock()
+            .query_row(
+                "SELECT position_ms FROM play_state WHERE user_id = ?1 AND track_id = ?2",
+                params![user_id, track_id],
+                |r| r.get(0),
+            )
+            .ok()
     }
 
     pub fn lyric_words(&self, track_id: i64) -> Option<String> {

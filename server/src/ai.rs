@@ -247,7 +247,10 @@ impl AiClient {
         // Patch responses contain three complete field sets plus provenance,
         // so the fast-profile ceiling truncates otherwise valid refinement
         // JSON on slower local models.
-        let max_tokens = if schema_name.contains("refinement_patch") {
+        // A catch-up is several paragraphs by definition, and the default
+        // ceiling cuts one off mid-sentence - which reads as a broken feature
+        // rather than a short answer.
+        let max_tokens = if schema_name.contains("refinement_patch") || schema_name == "book_recap" {
             1200
         } else {
             500
