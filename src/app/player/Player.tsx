@@ -1099,7 +1099,17 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   const { publish } = useNowPlayingMotion();
   const coarsePosition = Math.floor(position);
   useEffect(() => {
-    publish({ meter, audible, track: track ?? IDLE_TRACK, position: coarsePosition });
+    // The analyser rides a ref, so it is read rather than depended on - and it
+    // does not need to be a dependency: `meter` is taken off the analyser the
+    // moment it is built, so the two arrive together and this effect re-runs on
+    // the one that is a value.
+    publish({
+      meter,
+      analyser: analyserRef.current,
+      audible,
+      track: track ?? IDLE_TRACK,
+      position: coarsePosition,
+    });
   }, [publish, meter, audible, track, coarsePosition]);
 
   // The listening log. One report per listen-through, once the track has
