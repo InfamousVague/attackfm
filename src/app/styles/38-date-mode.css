@@ -142,18 +142,14 @@
 
 /* The way back.
    Between Pass and Keep because it undoes either, so it belongs to neither
-   side - and deliberately the smallest, quietest control in the row. The two
-   verdicts are the things you came here to press; this one exists for the
-   moment you pressed the wrong one, and a row where all three shout is a row
-   where the wrong one gets hit. */
+   side. It used to be the smallest and quietest thing in the row on the
+   argument that a row where all three shout is a row where the wrong one gets
+   hit - but the two it sits between are a red cross and a green heart, and
+   against those a small grey circle did not read as a control at all. It is a
+   third verdict, so it is dressed as one: same circle, same outline, and the
+   third colour those two leave free. */
 .dateActions__btn--undo {
-  inline-size: 2.6rem;
-  block-size: 2.6rem;
-  color: var(--glacier-text-muted);
-}
-
-.dateActions__btn--undo:hover:not(:disabled) {
-  color: var(--glacier-text);
+  color: #ffc93c;
 }
 
 /* Nothing to take back yet. Kept in the row rather than hidden, so the other
