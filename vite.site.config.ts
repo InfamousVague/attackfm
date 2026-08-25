@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -21,6 +22,21 @@ export default defineConfig({
   build: {
     outDir: '../dist-site',
     emptyOutDir: true,
+    /*
+     * Two documents, not one page with a router.
+     *
+     * Caddy serves this tree with a plain `file_server` and no SPA fallback, so
+     * a client-side route would 404 on a cold link - which is the only kind of
+     * link that matters for a page people are sent to. A directory entry emits
+     * `audiobooks/index.html`, which `file_server` serves at `/audiobooks/`
+     * without being told anything.
+     */
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'site/index.html'),
+        audiobooks: resolve(__dirname, 'site/audiobooks/index.html'),
+      },
+    },
     // Screenshots are the payload here and they are large. Inlining anything
     // sizeable into the JS would block first paint on bytes the page does not
     // need until the reader scrolls to them.

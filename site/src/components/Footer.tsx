@@ -7,17 +7,18 @@ const COLUMNS = [
   {
     title: 'Product',
     links: [
-      { label: 'Library', href: '#library' },
-      { label: 'The Booth', href: '#booth' },
-      { label: 'Now playing', href: '#playing' },
-      { label: 'Everywhere', href: '#everywhere' },
+      { label: 'Library', href: '/#library' },
+      { label: 'The Booth', href: '/#booth' },
+      { label: 'Now playing', href: '/#playing' },
+      { label: 'Audiobooks', href: '/audiobooks/' },
+      { label: 'Everywhere', href: '/#everywhere' },
     ],
   },
   {
     title: 'Run it',
     links: [
-      { label: 'Self-hosting', href: '#yours' },
-      { label: 'Install the server', href: '#get' },
+      { label: 'Self-hosting', href: '/#yours' },
+      { label: 'Install the server', href: '/#get' },
       { label: 'Source', href: REPO },
       { label: 'Releases', href: `${REPO}/releases` },
     ],

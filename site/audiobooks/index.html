@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+
+    <title>Audiobooks on AttackFM: read along, on your own server</title>
+    <meta
+      name="description"
+      content="Play the audiobooks you own from your own server - and read along with them. Your hub transcribes a book on your hardware: words in time with the narrator, chapters named the way the reading names them, and a search that finds a spoken line."
+    />
+
+    <!-- Dark is the design, but the page is honest about supporting both so the
+         browser paints the right ground before the first frame. -->
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0b0b0d" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+
+    <link rel="icon" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="AttackFM" />
+    <meta property="og:title" content="Audiobooks on AttackFM" />
+    <meta
+      property="og:description"
+      content="Read along with the books you own, transcribed on your own hardware."
+    />
+    <meta property="og:image" content="/og.png" />
+    <meta property="og:url" content="https://attack.fm/audiobooks/" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <script>
+      // Resolve the theme BEFORE first paint. Doing this in React would let the
+      // document flash the default dark ground at a reader who chose light.
+      (function () {
+        try {
+          var saved = localStorage.getItem('attackfm-site-theme');
+          if (saved === 'light' || saved === 'dark') {
+            document.documentElement.setAttribute('data-theme', saved);
+          } else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
+            // No stored choice: follow the system, dark being the fallback.
+            document.documentElement.setAttribute('data-theme', 'light');
+          }
+        } catch (e) {
+          /* private mode: keep the dark default */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/audiobooks.tsx"></script>
+  </body>
+</html>
