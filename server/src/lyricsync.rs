@@ -392,6 +392,99 @@ pub async fn sweep(state: Arc<AppState>) {
     SWEEPING.store(false, Ordering::SeqCst);
 }
 
+/// The stored words as an LRC body, in the A2 dialect: a line stamp, then a
+/// stamp before every word.
+///
+/// This is the format the app's own parser reads back (it stopped discarding
+/// A2 tags when word timing arrived), so a file written here plays word by
+/// word on a fresh install with no server at all - which is the point. The
+/// hub spends minutes per song working this out; keeping it only in the hub's
+/// database means losing it to a re-import, a rebuild, or somebody else's
+/// player.
+fn to_lrc(body: &str) -> String {
+    let Ok(Value::Array(items)) = serde_json::from_str::<Value>(body) else {
+        return String::new();
+    };
+    let stamp = |ms: i64| {
+        let cs = (ms.max(0) as f64 / 10.0).round() as i64;
+        format!("{:02}:{:02}.{:02}", cs / 6000, (cs / 100) % 60, cs % 100)
+    };
+    let mut out = String::from("[re:AttackFM]\n");
+    for line in items {
+        let at = line.get("startMs").and_then(|v| v.as_i64()).unwrap_or(0);
+        let text = line.get("text").and_then(|v| v.as_str()).unwrap_or("").trim();
+        if text.is_empty() {
+            continue;
+        }
+        out.push_str(&format!("[{}]", stamp(at)));
+        match line.get("words").and_then(|w| w.as_array()) {
+            Some(words) if !words.is_empty() => {
+                for w in words {
+                    let Some(pair) = w.as_array() else { continue };
+                    let (Some(t), Some(word)) =
+                        (pair.first().and_then(|v| v.as_i64()), pair.get(1).and_then(|v| v.as_str()))
+                    else {
+                        continue;
+                    };
+                    out.push_str(&format!("<{}> {} ", stamp(t), word));
+                }
+            }
+            // A line the aligner could not time still belongs in the file.
+            _ => out.push_str(text),
+        }
+        out.push('\n');
+    }
+    out
+}
+
+/// `POST /api/lyrics/write-tags` - put the timings into the FILES.
+///
+/// Admin, because it rewrites the library's own files. Skips anything whose
+/// tag already carries word stamps, so running it twice costs one read per
+/// track and changes nothing.
+pub async fn write_tags(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let caller = auth::require_caller(&state.db, &headers)
+        .map_err(|s| (s, "sign in first".to_string()))?;
+    if !caller.is_admin {
+        return Err((StatusCode::FORBIDDEN, "only an admin can rewrite the library's files".into()));
+    }
+    let mut written = 0;
+    let mut skipped = 0;
+    for track_id in state.db.tracks_with_lyric_words() {
+        let (Some(body), Some(rel)) =
+            (state.db.lyric_words(track_id), state.db.track_rel_path(track_id))
+        else {
+            continue;
+        };
+        let path = state.music_root.join(&rel);
+        if !path.is_file() {
+            continue;
+        }
+        if state.db.track(track_id).is_some_and(|t| t.lyrics.contains("]<")
+            || t.lyrics.contains("] <"))
+        {
+            skipped += 1;
+            continue;
+        }
+        let lrc = to_lrc(&body);
+        if lrc.trim().is_empty() {
+            continue;
+        }
+        match crate::audiobooks::write_lyrics_tag(&path, &lrc) {
+            Ok(()) => {
+                written += 1;
+                // The index reads the tag; keep the row honest without a rescan.
+                let _ = state.db.set_track_lyrics(track_id, &lrc);
+            }
+            Err(_) => skipped += 1,
+        }
+    }
+    Ok(Json(json!({ "written": written, "skipped": skipped })))
+}
+
 /// `GET /api/lyrics/{track_id}` - the timed words for one song, or 404.
 pub async fn get(
     State(state): State<Arc<AppState>>,

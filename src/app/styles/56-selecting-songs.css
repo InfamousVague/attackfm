@@ -72,3 +72,35 @@ body:has(.npScreen[data-docked]) .selectBar {
 .artistLink:active {
   opacity: 0.7;
 }
+
+/* ---- A line the library says -------------------------------------------- */
+
+/* A words hit is a QUOTE first and a track second - the line is what was
+   searched for, and the record it came from is the footnote. Inverted from
+   every other search row on purpose. */
+.spokenRow {
+  display: grid;
+  grid-template-columns: 1.4rem 1fr;
+  align-items: start;
+  gap: var(--glacier-space-2);
+  text-align: start;
+}
+
+.spokenRow__mark {
+  display: inline-flex;
+  padding-block-start: 0.15rem;
+  color: var(--glacier-text-subtle, var(--glacier-text-muted));
+}
+
+.spokenRow__line {
+  display: block;
+  color: var(--glacier-text-primary);
+  font-size: 0.95rem;
+  line-height: 1.4;
+  /* Two lines of a sentence is enough to recognise it; the rest is on the
+     page it came from. */
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}

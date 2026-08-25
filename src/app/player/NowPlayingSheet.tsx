@@ -148,6 +148,7 @@ function BookWords({
   playing,
   stalled,
   onJump,
+  onKeep,
 }: {
   items: ReadingItem[];
   positionSec: number;
@@ -155,6 +156,8 @@ function BookWords({
   /** Waiting on bytes. The clock below must not run through it. */
   stalled: boolean;
   onJump: (timeSec: number) => void;
+  /** Hold a line to keep it - the passage, with its moment. */
+  onKeep?: (timeSec: number, text: string) => void;
 }) {
   const [fineNow, setFineNow] = useState(positionSec);
   const anchor = useRef({ pos: positionSec, at: performance.now() });
@@ -283,6 +286,15 @@ function BookWords({
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') onJump(l.time);
+              }}
+              onContextMenu={(e) => {
+                // Hold a line to KEEP it: the words, the moment, and a way
+                // back. The same gesture that opens a menu on every other
+                // list in the app, answering the one thing a reader wants
+                // from a page of prose.
+                if (l.kind !== 'line' || !onKeep) return;
+                e.preventDefault();
+                onKeep(l.time, l.text);
               }}
             >
               {i === at && l.kind === 'line' && nowWords ? (
@@ -866,7 +878,47 @@ export function NowPlayingSheet({
       trackId: hereId,
       positionMs: Math.round(position * 1000),
       label: bookFaces.find((f) => f.here)?.title || track.title,
+      quote: lineAt(position),
     });
+  };
+
+  /**
+   * Keep a passage: a bookmark whose label IS the line.
+   *
+   * The same store the transport's bookmark writes to - a kept passage and a
+   * kept place are the same kind of thing, and one list is better than two.
+   * What differs is where the words come from: a held line knows exactly
+   * which sentence was meant, so it does not have to be looked up.
+   */
+  const keepPassage = (timeSec: number, text: string) => {
+    const id = track ? trackIdFromPath(track.path) : null;
+    if (!bookSession || id === null || !track) return;
+    toggleBookmark({
+      server: bookSession.url,
+      trackId: id,
+      positionMs: Math.round(timeSec * 1000),
+      label: bookFaces.find((f) => f.here)?.title || track.title,
+      quote: text.trim() || undefined,
+    });
+    setBookmarkTick((n) => n + 1);
+    fireNativeHaptic('medium');
+  };
+
+  /**
+   * The sentence being read at a moment, from whatever words this track has.
+   *
+   * The reading flow is already the merged, ordered text (transcript lines for
+   * a book, aligned lyric lines for a song), so the line under a timestamp is
+   * a walk down it - the same walk the face does to decide what to light.
+   */
+  const lineAt = (seconds: number): string | undefined => {
+    let said: string | undefined;
+    for (const item of readingFlow) {
+      if (item.kind !== 'line') continue;
+      if (item.time <= seconds + 0.25) said = item.text;
+      else break;
+    }
+    return said?.trim() || undefined;
   };
 
   /** Go to a kept place, in this file or in another of the book's sections. */
@@ -1191,6 +1243,7 @@ export function NowPlayingSheet({
               playing={playing}
               stalled={buffering}
               onJump={commitSeek}
+              onKeep={keepPassage}
             />
           ) : artView === 'chapters' && bookFaces.length > 0 ? (
             <ChapterArt
@@ -1445,6 +1498,9 @@ export function NowPlayingSheet({
                         <Bookmark size={13} aria-hidden />
                         <span className="npMarks__label">{b.label}</span>
                         <span className="npMarks__at">{formatClock(b.positionMs / 1000)}</span>
+                        {/* What was being read there. Ten places in one chapter
+                            are ten identical rows without it. */}
+                        {b.quote && <span className="npMarks__quote">“{b.quote}”</span>}
                       </button>
                       <button
                         type="button"

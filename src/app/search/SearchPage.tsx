@@ -1,7 +1,23 @@
+import { searchSpoken, type SpokenHit } from './spokenSearch.ts';
+import { setPendingSeek } from '../player/pendingSeek.ts';
+import { formatClock } from '../ux/format.ts';
 import { TrackMenu } from '../library/TrackMenu.tsx';
 import { AlbumMenu } from '../albumArtist/AlbumMenu.tsx';
 import { SearchField, SegmentedControl, Text } from '@glacier/react';
-import { BookAudio, Compass, Disc3, ListMusic, Music, Plus, Search, Tag, User, Users } from '@glacier/icons';
+import {
+  BookAudio,
+  BookOpenText,
+  Compass,
+  Disc3,
+  ListMusic,
+  Music,
+  Plus,
+  Quote,
+  Search,
+  Tag,
+  User,
+  Users,
+} from '@glacier/icons';
 import {
   useCallback,
   useEffect,
@@ -239,6 +255,29 @@ export function SearchPage({
   });
 
   const searching = parsed.active;
+
+  /*
+   * The words INSIDE the audio - the one lane the client cannot answer.
+   *
+   * Asked a beat after typing stops rather than per keystroke: it is a real
+   * request to a real server across a possibly-slow link, and the answer is
+   * worth waiting a moment for. Every other lane stays instant and local.
+   */
+  const [spoken, setSpoken] = useState<SpokenHit[]>([]);
+  useEffect(() => {
+    if (!searching) {
+      setSpoken([]);
+      return;
+    }
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(() => {
+      void searchSpoken(parsed.raw, tracks, ctrl.signal).then(setSpoken).catch(() => {});
+    }, 350);
+    return () => {
+      window.clearTimeout(timer);
+      ctrl.abort();
+    };
+  }, [searching, parsed.raw, tracks]);
   const claimed = plugin.exclusive;
 
   /* -------------------------------------------------------------- verbs --- */
@@ -1011,6 +1050,41 @@ export function SearchPage({
             <div className="searchRows">{s.items.map((i) => renderRow(i, rowCtx))}</div>
           </section>
         ))}
+
+        {searching && spoken.length > 0 && (
+          <section className="searchSection" role="group" aria-label="Heard in your library">
+            <Heading icon={<Quote size={15} />} count={spoken.length}>
+              Heard in your library
+            </Heading>
+            <div className="searchRows">
+              {spoken.map((h, i) => (
+                <button
+                  key={`${h.trackId}-${h.startMs}-${i}`}
+                  type="button"
+                  className="searchRow spokenRow"
+                  onClick={() => {
+                    if (!h.track) return;
+                    // The moment, not the track: leave word for the deck so the
+                    // book's own resume cannot overrule the line just chosen.
+                    setPendingSeek(h.track.path, h.startMs);
+                    onPlay(h.track, [h.track]);
+                  }}
+                >
+                  <span className="spokenRow__mark" aria-hidden>
+                    {h.kind === 'book' ? <BookOpenText size={15} /> : <Music size={15} />}
+                  </span>
+                  <span className="searchRow__text">
+                    <span className="spokenRow__line">“{h.text}”</span>
+                    <span className="searchRow__sub">
+                      {h.title}
+                      {h.artist ? ` · ${h.artist}` : ''} · {formatClock(h.startMs / 1000)}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
 
         {searching && !claimed && on('catalog') && catalog === null && server && (
           <p className="searchNote" role="status">

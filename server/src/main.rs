@@ -32,6 +32,7 @@ mod transcribe;
 mod audiobooks;
 mod chapter_blurbs;
 mod lyricsync;
+mod spoken;
 mod auth;
 mod canvas;
 mod collector;
@@ -761,6 +762,9 @@ async fn main() {
         .route("/api/transcribe/redo", post(transcribe::redo))
         .route("/api/lyrics/{track_id}", get(lyricsync::get))
         .route("/api/lyrics/sweep", post(lyricsync::run_now))
+        .route("/api/words", get(spoken::search))
+        .route("/api/words/reindex", post(spoken::reindex))
+        .route("/api/lyrics/write-tags", post(lyricsync::write_tags))
         .route("/api/transcribe/status", get(transcribe::status))
         .route("/api/transcribe/jobs", get(transcribe::jobs))
         .route("/api/transcribe/{track_id}", get(transcribe::get).post(transcribe::queue))
