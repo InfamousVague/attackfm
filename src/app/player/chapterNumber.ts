@@ -82,6 +82,28 @@ export function chapterNumbers(
   const heard = Array.isArray(spoken) ? (spoken as readonly (number | null)[]) : null;
   const one = heard ? null : (spoken as { index: number; number: number } | null | undefined) ?? null;
 
+  /*
+   * NOTHING HEARD, SO THE FIRST SECTION IS THE INTRO.
+   *
+   * Where no transcript has told us what the narrator says, the tags are all
+   * there is - and a bought audiobook opens with the publisher's card, which
+   * whoever ripped it numbered as chapter one. The whole book then reads one
+   * ahead of itself: what the listener calls chapter nine is labelled ten, for
+   * thirteen hours, and every surface agrees with every other because they all
+   * count from the same wrong place.
+   *
+   * The tags cannot tell that card from a real first chapter - both say
+   * "Chapter 1" - so this stops trying to and takes the shape the books
+   * actually have: the opening section is the intro, and the counting starts
+   * after it. A book with no front matter loses a place by this, which is the
+   * cost of guessing; a reading that has been transcribed does not guess at all
+   * and the branch below still wins, because the narrator saying "chapter one"
+   * over chapter one is worth more than anything a filename claims.
+   */
+  if (!heard && !one) {
+    return titles.map((_, i) => (i === 0 ? null : i));
+  }
+
   const anchor = heard
     ? heard.findIndex((n) => n !== null)
     : one
@@ -170,4 +192,20 @@ export function spokenChapterNumber(opening: string): number | null {
   const head = opening.trim().toLowerCase().slice(0, 60);
   const m = /^(?:and\s+now,?\s+)?chapter\s+([a-z]+(?:[-\s][a-z]+)?|\d{1,4})\b/.exec(head);
   return m ? spokenNumber(m[1]!) : null;
+}
+
+/**
+ * What an unnumbered opening section should be CALLED.
+ *
+ * A section carrying no number keeps its own name where it has a real one - a
+ * Preamble, an Author's Note, Opening Credits - because that name says more
+ * than any word this could supply. The exception is the one that caused all
+ * this: a publisher's card tagged "Chapter 1", whose name is not a name at all
+ * but the wrong number. That is where "Intro" goes, because leaving it would
+ * put a second Chapter 1 in a book that already has one.
+ */
+export function frontMatterTitle(raw: string, index: number): string {
+  const name = (raw ?? '').trim();
+  if (index !== 0) return name;
+  return !name || statedChapterNumber(name) !== null ? 'Intro' : name;
 }
