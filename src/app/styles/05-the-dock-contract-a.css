@@ -322,6 +322,30 @@ body:has(.appNavBar) .playerBarShell > * {
  * pointer-events off because a plate below the screen is still a plate, and
  * its buttons would go on taking presses aimed at the nav above them.
  */
+/*
+ * No clocks on the strip.
+ *
+ * The kit's bar prints the elapsed time at one end of the seek bar and what is
+ * left at the other. On a compact strip that is three things competing for one
+ * line - and the two that lose are the title and the bar itself, which are the
+ * reasons anybody looks at it. The full player still has both; this is the
+ * strip, where the position is what the bar's own fill already says.
+ *
+ * Matched on the CSS-module PREFIX rather than the whole class. The kit hashes
+ * these (`_times_bo40x_48`), and the hash changes every time the kit is
+ * rebuilt and re-vendored - a rule pinned to it would stop working silently,
+ * on a rebuild that had nothing to do with the strip. `_times_` and `_clock_`
+ * are the module's own names and survive that.
+ *
+ * `_seek_` is deliberately NOT in this list: that is the scrubber, not a
+ * clock, and it is flex:1 - so removing the clocks beside it is what lets the
+ * bar take the whole width rather than leaving two gaps where they were.
+ */
+.playerBarShell [class*="_times_"],
+.playerBarShell [class*="_clock_"] {
+  display: none;
+}
+
 .playerBarShell[data-dismissed] {
   --player-ease: var(--glacier-duration-normal);
   transform: translateY(calc(100% + var(--app-nav-height) + var(--app-nav-gap, 0px)));
