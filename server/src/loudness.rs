@@ -200,15 +200,6 @@ pub struct Measured {
     pub wave: Vec<u8>,
 }
 
-/// Measures one file. None when ffmpeg fails, times out, or prints a summary
-/// this cannot read - in every case the caller simply tries again later.
-pub async fn measure(path: &Path) -> Option<Measured> {
-    match measure_reported(path).await {
-        Ok(m) => Some(m),
-        Err(_) => None,
-    }
-}
-
 /// The same, with the reason kept. A job that can only say "it did not work"
 /// is a job nobody can debug from the outside - which is exactly the hole
 /// this fell into on its first deploy, sitting at zero measurements with an
