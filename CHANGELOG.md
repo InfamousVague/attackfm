@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.64
+
+- A bought audiobook opens with the publisher's card, and whoever ripped it numbered that card as chapter one - so the whole book read one ahead of itself, and what you call chapter nine was labelled ten for thirteen hours. The opening section is now the Intro and the counting starts after it. A book whose reading has been transcribed still takes the narrator's word over the filename's, as it did
+
 ## 0.4.63
 
 - Music Date's undo is a third verdict rather than a footnote: the same circle as pass and keep, in the colour those two leave free, standing between them. It was a small grey button off to one side, which next to a red cross and a green heart did not read as a control at all

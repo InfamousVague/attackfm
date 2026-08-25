@@ -1,4 +1,4 @@
-import { chapterNumbers, spokenChapterNumber } from './chapterNumber.ts';
+import { chapterNumbers, frontMatterTitle, spokenChapterNumber } from './chapterNumber.ts';
 import { SpectrumArt } from './SpectrumArt.tsx';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { chapterPreview } from './chapterOpening.ts';
@@ -826,7 +826,9 @@ export function NowPlayingSheet({
             : raw.replace(new RegExp(`^chapter\\s*0*${n}\\b[\\s—–:.-]*`, 'i'), '').trim();
         return {
           n,
-          title: bare || (n === null ? `Chapter ${i + 1}` : `Chapter ${n}`),
+          title:
+            (n === null ? frontMatterTitle(bare, i) : bare) ||
+            (n === null ? `Chapter ${i + 1}` : `Chapter ${n}`),
           blurb: note?.blurb?.trim() || null,
           opening: chapterPreview(markerOpenings?.[i]?.opening ?? ''),
           at: formatClock(c.startMs / 1000),

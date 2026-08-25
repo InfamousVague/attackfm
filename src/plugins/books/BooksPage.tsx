@@ -6,7 +6,7 @@ import type { PluginPageProps } from '../types.ts';
 import { useLibrary } from '../../app/library/library.tsx';
 import { useServerSession } from '../../app/servers/serverSession.tsx';
 import { CoverWall } from '../../app/playlists/CoverWall.tsx';
-import { chapterNumbers } from '../../app/player/chapterNumber.ts';
+import { chapterNumbers, frontMatterTitle } from '../../app/player/chapterNumber.ts';
 import {
   isFavouriteBook,
   shelve,
@@ -1374,9 +1374,11 @@ export function BooksPage({ onPlay }: PluginPageProps) {
    *  is placed rather than numbered. */
   const chapterFigure = useCallback((book: ShelfBook, index: number) => {
     const n = chapterNumbers(book.chapters.map((c) => c.title ?? ''))[index] ?? null;
-    return n === null
-      ? `${index + 1} of ${book.chapters.length}`
-      : `Ch ${n} of ${book.chapters.length}`;
+    if (n !== null) return `Ch ${n} of ${book.chapters.length}`;
+    // Front matter is placed rather than numbered - and the opening section
+    // says what it is, rather than which seat it happens to sit in.
+    const named = frontMatterTitle(book.chapters[index]?.title ?? '', index);
+    return index === 0 && named ? named : `${index + 1} of ${book.chapters.length}`;
   }, []);
 
   /**
