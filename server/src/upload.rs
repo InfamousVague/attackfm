@@ -32,6 +32,11 @@ const ACCEPTED: &[&str] = &[
 /// pushing a disk image at the music folder.
 const MAX_FILE_BYTES: i64 = 2 * 1024 * 1024 * 1024;
 
+/// A ceiling on an uploaded archive. A long book at a sane bitrate is a
+/// gigabyte or two; this leaves room for a boxed series and still refuses
+/// somebody pushing a backup at the audiobook shelf.
+const MAX_ARCHIVE_BYTES: i64 = 8 * 1024 * 1024 * 1024;
+
 #[derive(Deserialize)]
 pub struct InitBody {
     pub filename: String,
@@ -67,6 +72,13 @@ pub(crate) fn safe_component(raw: &str) -> String {
     }
 }
 
+/// Whether an extension names audio this library can actually index. Shared
+/// with the archive reader, so a zip is judged by exactly what a plain upload
+/// would be judged by.
+pub(crate) fn is_audio_ext(ext: &str) -> bool {
+    ACCEPTED.contains(&ext)
+}
+
 fn extension_of(name: &str) -> String {
     name.rsplit('.')
         .next()
@@ -97,7 +109,18 @@ pub async fn init(
     auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
 
     let ext = extension_of(&body.filename);
-    if !ACCEPTED.contains(&ext.as_str()) {
+    // An ARCHIVE is not music, but it is the shape a bought audiobook most
+    // often arrives in - and on a phone it is frequently the only shape the
+    // file manager will hand over. It is accepted here and unpacked at the
+    // finish, into the import doorway rather than into the library.
+    if ext == "zip" {
+        if body.size > MAX_ARCHIVE_BYTES {
+            return Err((
+                StatusCode::PAYLOAD_TOO_LARGE,
+                format!("that archive is bigger than {}", human_bytes(MAX_ARCHIVE_BYTES)),
+            ));
+        }
+    } else if !ACCEPTED.contains(&ext.as_str()) {
         return Err((
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
             format!("{ext:?} is not an audio format this server takes"),
@@ -228,6 +251,15 @@ pub async fn finish(
     }
 
     let ext = extension_of(&original);
+    if ext == "zip" {
+        // The doorway takes it from here: unpacked into import/, queued, and
+        // read by the same filer that reads a folder dropped there by hand.
+        let outcome = crate::ingest::accept_archive(&state, &temp, &original).await;
+        let _ = std::fs::remove_file(&temp);
+        let _ = std::fs::remove_file(temp.with_extension("meta"));
+        let folder = outcome.map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e))?;
+        return Ok(Json(serde_json::json!({ "archive": true, "folder": folder })));
+    }
     let rel = destination_for(&state.music_root, &temp, &original, &ext);
     let dest = state.music_root.join(&rel);
 

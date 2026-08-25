@@ -83,6 +83,172 @@ fn audiobooks_dir(music_root: &Path) -> PathBuf {
 /// exists yet. Every writer that files a book builds its rel_path from this,
 /// because a literal "Audiobooks/" works on a case-insensitive disk by
 /// accident and splits the shelf in two on any other.
+/// Take a ZIP somebody uploaded and lay it out as a pile the doorway can read.
+///
+/// A bought audiobook arrives as a zip far more often than as a tidy folder,
+/// and on a PHONE a zip is frequently the only shape the file manager will
+/// hand over at all - which is the whole reason this exists. The archive is
+/// unpacked into `Audiobooks/import/<name>/` and then treated exactly like a
+/// folder somebody dropped there by hand: the same AI reading, the same
+/// natural ordering, the same two-phase filing under the same lock.
+///
+/// Refused rather than trusted: an entry whose path climbs out of the pile
+/// (`..`, or an absolute path) is what a malicious archive uses to write over
+/// somebody's library, so extraction goes to a staging directory first and
+/// anything that landed outside it takes the whole archive down with it.
+pub async fn accept_archive(
+    state: &Arc<AppState>,
+    archive: &Path,
+    original_name: &str,
+) -> Result<String, String> {
+    let Some(import) = import_dir(&state.music_root).or_else(|| {
+        let d = audiobooks_dir(&state.music_root).join("import");
+        std::fs::create_dir_all(&d).ok().map(|_| d)
+    }) else {
+        return Err("no audiobooks folder to import into".into());
+    };
+
+    let stem = std::path::Path::new(original_name)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "book".into());
+    let name = crate::upload::safe_component(&stem);
+    let name = if name.trim().is_empty() { "book".to_string() } else { name };
+
+    // Staged beside the destination so the move is a rename on one volume.
+    let stage = import.join(format!(".unpacking-{}-{}", name, crate::db::now_ms()));
+    std::fs::create_dir_all(&stage).map_err(|e| format!("cannot make room: {e}"))?;
+
+    let unpacked = unpack(archive, &stage).await;
+    if let Err(e) = unpacked {
+        let _ = std::fs::remove_dir_all(&stage);
+        return Err(e);
+    }
+
+    // Nothing may have escaped. `unzip` and `bsdtar` both refuse the obvious
+    // cases, but the pile is about to be walked by code that trusts it.
+    let canon_stage = stage.canonicalize().map_err(|e| format!("cannot check: {e}"))?;
+    let mut audio = 0usize;
+    for entry in walkdir(&canon_stage) {
+        if entry.is_symlink() {
+            let _ = std::fs::remove_dir_all(&stage);
+            return Err("that archive contains links, which are not unpacked".into());
+        }
+        match entry.canonicalize() {
+            Ok(real) if real.starts_with(&canon_stage) => {}
+            _ => {
+                let _ = std::fs::remove_dir_all(&stage);
+                return Err("that archive tried to write outside its own folder".into());
+            }
+        }
+        if entry.is_file()
+            && entry
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| crate::upload::is_audio_ext(&e.to_lowercase()))
+        {
+            audio += 1;
+        }
+    }
+    if audio == 0 {
+        let _ = std::fs::remove_dir_all(&stage);
+        return Err("no audio inside that archive".into());
+    }
+
+    // A zip is often one folder deep; unwrap it so the pile is the BOOK rather
+    // than a folder containing the book, which is what the reader expects.
+    let inner: Vec<_> = std::fs::read_dir(&stage)
+        .map_err(|e| e.to_string())?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| !p.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.')))
+        .collect();
+    /*
+     * A zip is usually one folder deep, and THAT folder carries the name worth
+     * having: "Nadia Rooke - Tidewater Bell" tells the filer an author and a
+     * title, where the archive is often called `download.zip`. So unwrapping
+     * takes the inner name with it - the first cut kept the zip's own stem and
+     * filed a book by "Unknown Author".
+     */
+    let (source, name) = match inner.as_slice() {
+        [only] if only.is_dir() => {
+            let inner_name = only
+                .file_name()
+                .map(|f| crate::upload::safe_component(&f.to_string_lossy()))
+                .filter(|n| !n.trim().is_empty())
+                .unwrap_or_else(|| name.clone());
+            (only.clone(), inner_name)
+        }
+        _ => (stage.clone(), name),
+    };
+
+    let mut dest = import.join(&name);
+    let mut n = 2;
+    while dest.exists() {
+        dest = import.join(format!("{name} ({n})"));
+        n += 1;
+    }
+    std::fs::rename(&source, &dest).map_err(|e| format!("cannot place the folder: {e}"))?;
+    let _ = std::fs::remove_dir_all(&stage);
+
+    // Straight into the queue: the pile is complete by construction, so the
+    // quiescence wait the sweep uses for hand-dropped folders would only
+    // delay something already known to be finished.
+    let folder = dest
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or(name);
+    {
+        let mut jobs = state.ingest.jobs.lock().await;
+        enqueue_locked_settled(state, &mut jobs, &folder, true);
+    }
+    Ok(folder)
+}
+
+/// Every path under a directory, directories included. Small and iterative -
+/// the pile is a book, not a filesystem.
+fn walkdir(root: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p.clone());
+            }
+            out.push(p);
+        }
+    }
+    out
+}
+
+/// Unpack with whatever this box has. `unzip` is on every Mac and most Linux
+/// images; bsdtar reads zips too and is the fallback.
+async fn unpack(archive: &Path, into: &Path) -> Result<(), String> {
+    for (bin, args) in [
+        ("unzip", vec!["-qq".to_string(), "-o".to_string()]),
+        ("bsdtar", vec!["-xf".to_string()]),
+    ] {
+        let mut cmd = tokio::process::Command::new(bin);
+        cmd.args(&args).arg(archive);
+        if bin == "unzip" {
+            cmd.arg("-d").arg(into);
+        } else {
+            cmd.arg("-C").arg(into);
+        }
+        cmd.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+        match cmd.status().await {
+            Ok(st) if st.success() => return Ok(()),
+            // Not installed - try the next one rather than reporting a failure
+            // that is about this box rather than about the archive.
+            Err(_) => continue,
+            Ok(_) => return Err("that archive could not be opened".into()),
+        }
+    }
+    Err("this server has no way to open a zip".into())
+}
+
 pub(crate) fn audiobooks_component(music_root: &Path) -> String {
     audiobooks_dir(music_root)
         .file_name()
@@ -285,6 +451,20 @@ pub async fn run(
 /// sweep, so the two can never drift on what "queued" means. The caller holds
 /// the jobs lock; a folder already in flight is one errand, not two.
 fn enqueue_locked(state: &Arc<AppState>, jobs: &mut Vec<IngestJob>, folder: &str) -> bool {
+    enqueue_locked_settled(state, jobs, folder, false)
+}
+
+/// `settled` says the pile is COMPLETE by construction rather than by having
+/// sat still - true of an archive this server has just finished unpacking, and
+/// true of nothing somebody dropped in by hand. It skips the quiet wait, which
+/// would otherwise reject a folder whose files were all written seconds ago by
+/// us and make the listener press the button again for no reason.
+fn enqueue_locked_settled(
+    state: &Arc<AppState>,
+    jobs: &mut Vec<IngestJob>,
+    folder: &str,
+    settled: bool,
+) -> bool {
     if jobs
         .iter()
         .any(|j| j.folder == folder && j.state != "done" && j.state != "error")
@@ -303,7 +483,7 @@ fn enqueue_locked(state: &Arc<AppState>, jobs: &mut Vec<IngestJob>, folder: &str
     });
     let worker_state = state.clone();
     let worker_folder = folder.to_string();
-    tokio::spawn(async move { ingest_one(worker_state, id, worker_folder).await });
+    tokio::spawn(async move { ingest_one(worker_state, id, worker_folder, settled).await });
     true
 }
 
@@ -964,7 +1144,7 @@ fn newest_mtime(root: &Path) -> Option<std::time::Duration> {
 
 // --- The errand ---------------------------------------------------------------
 
-async fn ingest_one(state: Arc<AppState>, job_id: String, folder: String) {
+async fn ingest_one(state: Arc<AppState>, job_id: String, folder: String, settled: bool) {
     let _one_at_a_time = state.ingest.worker.lock().await;
 
     let fail = |msg: String| {
@@ -999,7 +1179,7 @@ async fn ingest_one(state: Arc<AppState>, job_id: String, folder: String) {
     // last minute is still arriving, and sorting it now would file a third of
     // a book and sweep the rest into the trash as it landed. Waiting is the
     // whole fix.
-    {
+    if !settled {
         let quiet_pile = pile.clone();
         let newest = tokio::task::spawn_blocking(move || newest_mtime(&quiet_pile))
             .await

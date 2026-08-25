@@ -397,11 +397,27 @@ const UPLOAD_CHUNK = 1024 * 1024;
  * Returns the library path it landed on. Progress is reported as a 0-1
  * fraction so a caller can drive a bar without knowing the chunk size.
  */
+/**
+ * What became of an upload.
+ *
+ * A single audio file is filed on arrival and comes back as a `path`. An
+ * archive cannot be - it is a pile, not a track - so the server unpacks it into
+ * the import queue and answers with the `folder` it became. Callers that only
+ * wanted the bytes moved can ignore all of this; the ones that report back to
+ * a person need to know which of the two happened, because "added" is a lie
+ * about an archive that still has to be filed.
+ */
+export interface UploadOutcome {
+  path?: string;
+  archive?: boolean;
+  folder?: string;
+}
+
 export async function uploadFile(
   session: ServerSession,
   file: { name: string; size: number; slice: (start: number, end: number) => Promise<Uint8Array> },
   options: { signal?: AbortSignal; onProgress?: (fraction: number) => void } = {},
-): Promise<string> {
+): Promise<UploadOutcome> {
   const init = await request<{ uploadId: string }>(session.url, '/api/upload/init', {
     method: 'POST',
     body: JSON.stringify({ filename: file.name, size: file.size }),
@@ -440,10 +456,10 @@ export async function uploadFile(
     options.onProgress?.(file.size > 0 ? offset / file.size : 1);
   }
 
-  const done = await request<{ path: string }>(
+  const done = await request<UploadOutcome>(
     session.url,
     `/api/upload/${init.uploadId}/finish`,
     { method: 'POST', token: session.token, signal: options.signal },
   );
-  return done.path;
+  return done;
 }
