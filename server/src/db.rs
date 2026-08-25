@@ -1212,6 +1212,23 @@ CREATE TABLE IF NOT EXISTS track_loudness (
   measured_at INTEGER NOT NULL
 );
 
+-- The shape of a track, for drawing on a seek bar before a note is played.
+--
+-- `columns` is a fixed-width run of bytes, one per column of the drawing, each
+-- 0-255 for how loud that slice of the track is against the track's own
+-- loudest moment. Fixed width so a song and a twelve-hour book cost the same
+-- and the client never has to know the duration to draw it.
+--
+-- A separate table rather than a column on track_loudness because the two are
+-- filled by the same pass but not always together: every track measured before
+-- this existed has loudness and no shape, and the sweep uses exactly that
+-- difference to find them.
+CREATE TABLE IF NOT EXISTS track_waveform (
+  track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+  columns  BLOB NOT NULL,
+  made_at  INTEGER NOT NULL
+);
+
 -- Which library rows a landed pull became - what lets an adoption find its
 -- pull, and a pull report its real size.
 CREATE TABLE IF NOT EXISTS curator_pull_tracks (
@@ -6360,15 +6377,46 @@ impl Db {
         Ok(())
     }
 
-    /// Live tracks with no loudness reading yet, oldest-added first so a
-    /// library that has been sitting there gets measured before today's
-    /// imports. Books are skipped: nobody normalises a chapter against a song.
+    /// One track's drawn shape. Replaces any earlier one, for the same reason
+    /// the loudness does: a re-measure means the file changed.
+    pub fn save_waveform(&self, track_id: i64, columns: &[u8]) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO track_waveform (track_id, columns, made_at)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(track_id) DO UPDATE SET
+               columns = excluded.columns, made_at = excluded.made_at",
+            params![track_id, columns, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// One track's shape, or None where the sweep has not reached it.
+    pub fn waveform(&self, track_id: i64) -> Option<Vec<u8>> {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT columns FROM track_waveform WHERE track_id = ?1",
+            params![track_id],
+            |r| r.get::<_, Vec<u8>>(0),
+        )
+        .ok()
+    }
+
+    /// Live tracks the analyser still owes something, oldest-added first so a
+    /// library that has been sitting there is served before today's imports.
+    /// Books are skipped: nobody normalises a chapter against a song.
+    ///
+    /// "Something" is loudness OR a drawn shape. One ffmpeg pass produces
+    /// both, so they are asked for together - and the OR is what backfills a
+    /// library that was fully measured before shapes existed, without a
+    /// migration and without a second sweep to maintain.
     pub fn tracks_needing_loudness(&self, limit: i64) -> Vec<(i64, String)> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
             "SELECT t.id, t.rel_path FROM tracks t
               LEFT JOIN track_loudness l ON l.track_id = t.id
-              WHERE t.deleted = 0 AND t.kind = 'music' AND l.track_id IS NULL
+              LEFT JOIN track_waveform w ON w.track_id = t.id
+              WHERE t.deleted = 0 AND t.kind = 'music'
+                AND (l.track_id IS NULL OR w.track_id IS NULL)
               ORDER BY t.added_at ASC LIMIT ?1",
         ) else {
             return Vec::new();

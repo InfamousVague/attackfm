@@ -712,6 +712,7 @@ async fn main() {
         .route("/api/transcode/{id}", get(stream::transcode))
         .route("/api/fx/nodes", get(fx::nodes))
         .route("/api/loudness", get(loudness::table))
+        .route("/api/waveform/{id}", get(loudness::shape))
         .route("/api/tempo", get(features::tempo_table))
         // Before the {track} route: axum would otherwise read "prefetch" as a
         // track id and the i64 extractor would reject it.

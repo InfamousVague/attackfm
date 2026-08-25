@@ -133,6 +133,230 @@
 }
 
 /*
+ * The wide strip, in three columns.
+ *
+ * What you are playing on the left, the scrubber and everything you might do to
+ * it in the middle, the transport out on the right where a hand goes for it.
+ * The middle column is the point of the shape: a seek bar that spans half the
+ * window is not more useful than one that spans a third, it is just harder to
+ * aim, and the width it gives back is what lets the clocks and the options
+ * share one row underneath it.
+ *
+ * THE ONE TRICK. The kit nests the bar three deep - `_center_` holds
+ * `_scrubber_` (clock, seek, clock) above `_controls_`. The clocks therefore
+ * live in a different box from the options they have to sit beside. Rather
+ * than reparent anything, `_scrubber_` is made `display: contents`: its box
+ * disappears and its three children become items of `_center_`'s grid, where
+ * the seek can take the whole top row and the two clocks can take the ends of
+ * the bottom one. `display: contents` removes the BOX, not the node, so
+ * `:first-child` and `:last-child` still tell the two identical clock divs
+ * apart.
+ *
+ * Gated as the exact complement of MOBILE_PLAYER_QUERY (deckShared.ts), which
+ * the touch block below matches. A `pointer: none` device would match neither
+ * and get the kit's own bar - nothing this app ships on is one.
+ *
+ * Selectors match the kit's `_name_` stem, never the hash: the hash changes on
+ * every rebuild and re-vendor. See the note in chapter 05.
+ */
+/* The complement of MOBILE_PLAYER_QUERY, written as two nested negations
+   rather than `(pointer: fine) and (min-width: 541px)`.
+  
+   That first attempt was a NARROWER set than "not the touch strip", and the
+   gap between them is not empty: a `pointer: none` device (a TV, a D-pad, a
+   keyboard-only machine) is neither fine nor coarse, and a window 540.67px
+   wide - Windows at 150% scaling, or any fractional zoom - satisfies neither
+   `max-width: 540px` nor `min-width: 541px`. In that gap React took the wide
+   branch and rendered its own transport while this block never applied, so the
+   kit's play button - the one control it renders whatever you pass it - stood
+   there visible, focusable and announced, a second button called Play.
+  
+   Negating each feature separately keeps this the exact inverse of the JS, so
+   the two can never both be false. Nested rather than Level 4's `not (...)`
+   boolean syntax, which would put a floor under the WebViews this ships in. */
+@media not all and (pointer: coarse) {
+  @media not all and (max-width: 540px) {
+    .appWindow {
+      /* The plate got taller when the wide strip stopped wearing the phone's
+         compact density, and this number was already short of it - 5.75rem
+         against a measured 6.66rem footprint, which is a page's last row sitting
+         under the glass. What a list holds back has to match what the plate
+         actually takes. */
+      --app-player-height: 6.75rem;
+    }
+
+    /* The middle column. `0 1 30%` rather than a width, so it can give ground on
+       a narrow window instead of pushing the title out; the floor stops the
+       options row from crushing before it wraps. */
+    .appPlayer [class*="_center_"] {
+      /* 30% is the wish, `min-content` is the floor. A hand-picked floor was
+         a two-pixel fit at this width - the clocks and six controls need most
+         of what 30% buys - so one plugin button in `player-trailing` would
+         have overlapped them with nothing in the CSS to say why. Asking for
+         min-content instead means the band GROWS when a control is added and
+         the title gives up the width, which is the right loser. */
+      flex: 0 1 30%;
+      min-inline-size: min-content;
+      display: grid;
+      grid-template-columns: auto minmax(min-content, 1fr) auto;
+      grid-template-rows: auto auto;
+      align-items: center;
+      column-gap: var(--glacier-space-2);
+      row-gap: var(--glacier-space-1);
+    }
+
+    .appPlayer [class*="_scrubber_"] {
+      display: contents;
+    }
+
+    /* The seek takes the whole top row, clocks and all. */
+    .appPlayer [class*="_scrubber_"] > [class*="_seek_"] {
+      grid-row: 1;
+      grid-column: 1 / -1;
+    }
+
+    /* Elapsed at one end of the row under it, what is left at the other. */
+    .appPlayer [class*="_scrubber_"] > [class*="_clock_"] {
+      grid-row: 2;
+    }
+
+    .appPlayer [class*="_scrubber_"] > [class*="_clock_"]:first-child {
+      grid-column: 1;
+    }
+
+    .appPlayer [class*="_scrubber_"] > [class*="_clock_"]:last-child {
+      grid-column: 3;
+    }
+
+    /* Everything else you can do to the song, between the two clocks. The kit
+       lays this out as a 1fr-auto-1fr grid to centre a transport that is no
+       longer in it, so it becomes a plain centred row. */
+    .appPlayer [class*="_controls_"] {
+      grid-row: 2;
+      grid-column: 2;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--glacier-space-1);
+      /* Contributes its real width to the column's min-content above, so the
+         floor knows what it is holding. */
+      min-inline-size: min-content;
+    }
+
+    .appPlayer [class*="_rail_"] {
+      display: flex;
+      align-items: center;
+      gap: var(--glacier-space-1);
+      min-inline-size: 0;
+    }
+
+    /* The kit's transport, holding nothing but the play button it renders
+       whatever it is passed. The wide strip's own transport is in the trailing
+       column; this is the husk. */
+    .appPlayer [class*="_transport_"] {
+      display: none;
+    }
+
+    /* The trailing column stops being a quarter of the plate held empty and
+       takes the transport instead.
+  
+       It keeps `1 1 0` to match the track column on the other side, because the
+       two of them are what centre the scrubber: hug the transport's own width
+       here and the middle column is shoved right, ending up nearer the buttons
+       than the title it belongs beside. The transport still sits at the outer
+       edge - the column is a counterweight, not a margin. */
+    /* Said twice, on purpose, and as two rules rather than one list.
+    
+       The rule below hooks the kit's module NAME. If a kit rebuild ever
+       renames `_output_`, that hook stops matching and the column returns to
+       the kit's own `@container` rule - which hides it - taking play and both
+       skips off the strip with nothing else moving and no error anywhere. The
+       second hook names nothing of the kit's: it finds the column by the fact
+       that OUR transport is inside it. An engine without `:has()` simply drops
+       that rule and keeps the first. */
+    .appPlayer [class*="_bar_"] > *:has(.stripTransport) {
+      display: flex;
+      flex: 1 1 0;
+      min-inline-size: min-content;
+      align-items: flex-end;
+      justify-content: center;
+    }
+
+    /* `min-content`, never 0.
+    
+       The transport is three fixed squares and two gaps - about 137px that
+       cannot shrink - and a column allowed to fall below that does not clip
+       it, it lets it OVERFLOW. Because the column is end-aligned the overflow
+       travels leftward, so between roughly 583 and 660px of plate the Previous
+       button is drawn on top of the remaining-time clock: 23px of overlap on a
+       song, 37px on a book, whose clocks are wider. The window's own minimum
+       is 560 (tauri.conf.json) and its default 680, so that band is somewhere
+       a hand can actually drag to, and the browser build has no floor at all.
+    
+       Both rules carry the floor because the `:has()` twin above outranks this
+       one; fixing only this one changes nothing. */
+    .appPlayer [class*="_output_"] {
+      /* The kit throws this column away below a 60rem bar - reasonably, when all
+         it ever held was an output picker nobody asked for. It holds the
+         TRANSPORT now, so it has to survive: a window at 900px would otherwise
+         lose play and both skips with no warning, which is the kind of thing that
+         only shows up on somebody else's screen. Container queries add no
+         specificity, so the class-plus-attribute selector here is enough. */
+      display: flex;
+      flex: 1 1 0;
+      min-inline-size: min-content;
+      align-items: flex-end;
+      justify-content: center;
+    }
+
+    /* With the floor in place the width comes off the track column instead,
+       which is right until its cover - `flex: none` with a square ratio -
+       starts overflowing in turn. The cover goes before it is crushed; the
+       strip keeps the seek, the options and the transport, which is the order
+       things matter in. A container query because the kit makes the bar a
+       container, so this asks about the PLATE rather than the window - the
+       honest question when the plate narrows inside a docked split. */
+    @container (max-width: 40rem) {
+      .appPlayer [class*="_track_"] {
+        display: none;
+      }
+    }
+
+    .stripTransport {
+      display: flex;
+      align-items: center;
+      gap: var(--glacier-space-1);
+    }
+
+    /* Bigger than anything in the options row, because these are the three
+       controls reached for without looking. */
+    .appPlayer .stripTransport button {
+      inline-size: 2.5rem;
+      block-size: 2.5rem;
+    }
+
+    .appPlayer .stripTransport .stripTransport__play {
+      inline-size: 3rem;
+      block-size: 3rem;
+    }
+
+    /* Unavailable, not gone: the control keeps its seat and its focus while
+       the device it commands is out of reach. `disabled` would have blurred it
+       out from under a keyboard the moment a socket dropped. */
+    .appPlayer .stripTransport [data-off] {
+      opacity: 0.45;
+      cursor: default;
+      /* `aria-disabled` keeps the button focusable, which is the point - but it
+         also leaves the kit's `:hover:not(:disabled)` paint and its tap-squash
+         animation live, so a dead control lit up and compressed under every
+         click while doing nothing. The paint said dead and the interaction said
+         alive. Pointer-events settles it without taking the focus back. */
+      pointer-events: none;
+    }
+  }
+}
+
+/*
  * Touch sizing for the strip. Matches MOBILE_PLAYER_QUERY in Player.tsx - the
  * same condition that folds the trailing rail behind the overflow button; the
  * width that buys goes here, into transport buttons at thumb size and a seek
@@ -352,6 +576,14 @@
   }
 
   .appPlayer [class*="_lines_"] {
+    display: none;
+  }
+
+  /* No clocks on the small strip - moved here from chapter 05, which used to
+     hide them at every width. Three things competing for one line, and the two
+     that lose are the title and the bar itself. The wide strip has a second row
+     to give them; this one has no row to give. */
+  .appPlayer [class*="_clock_"] {
     display: none;
   }
 

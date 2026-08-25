@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.57
+
+- The player strip on a desktop window is three columns now: what is playing on the left, a shorter seek bar down the middle, and play and the two skips out on the right at a size worth aiming at. A bar that spans half the window is not more useful than one that spans a third, it is just harder to aim
+- The clock at each end is back. The times left the small strip because a phone has one line to spend and the song's name needed it; the desktop strip has a second row, so they take its two ends with the heart, shuffle, repeat and the rest sitting between them
+- That strip also stops wearing the phone's cramped spacing, and the gap every page holds back for it now matches what the plate actually takes - it was short by about a finger's width, so the last row of a long list sat under the glass
+- Every song shows its own shape on the seek bar - the quiet intro, the loud middle, the long outro - so you can see where you are going instead of guessing. Your hub has been working this out for years and throwing it away: the pass that measures how loud a track is already walks the whole file ten times a second, and now it keeps the curve. It costs two hundred bytes a song, needs no new pass over your library, and fills itself in for tracks already measured
+
 ## 0.4.55
 
 - A car you can ask. Say "play Fleetwood Mac on AttackFM" and it plays them — the artist, not one song of theirs
