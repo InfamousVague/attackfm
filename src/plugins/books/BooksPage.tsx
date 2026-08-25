@@ -378,8 +378,12 @@ function AddBook({ onAdded }: { onAdded: () => void }) {
     setNote(null);
     let done = 0;
     try {
+      // An archive does not land on the shelf, it lands in the import queue -
+      // so the finish line is worded from what the server actually did rather
+      // than from what was picked.
+      let piles = 0;
       for (const file of chosen) {
-        await uploadFile(
+        const outcome = await uploadFile(
           session,
           {
             name: file.name,
@@ -390,6 +394,7 @@ function AddBook({ onAdded }: { onAdded: () => void }) {
             onProgress: (f) => setFraction((done + f) / chosen.length),
           },
         );
+        if (outcome.archive) piles += 1;
         done += 1;
         setFraction(done / chosen.length);
       }
@@ -397,7 +402,17 @@ function AddBook({ onAdded }: { onAdded: () => void }) {
       // of the library - so ask for the walk and the re-sync, or the shelf
       // stays empty behind a book that is already there.
       await onAdded();
-      setNote(chosen.length === 1 ? `Added ${chosen[0]!.name}` : `Added ${chosen.length} files`);
+      setNote(
+        piles === chosen.length
+          ? piles === 1
+            ? 'Unpacked into imports - it reaches the shelf once the filer names it'
+            : `Unpacked ${piles} archives into imports`
+          : piles > 0
+            ? `Added ${chosen.length - piles} of ${chosen.length}; the rest went to imports`
+            : chosen.length === 1
+              ? `Added ${chosen[0]!.name}`
+              : `Added ${chosen.length} files`,
+      );
     } catch (e) {
       // The server refuses for reasons worth repeating verbatim: a format it
       // does not take, a file over the ceiling, a full library quota.
@@ -419,7 +434,13 @@ function AddBook({ onAdded }: { onAdded: () => void }) {
         // The formats the server takes, m4b first - it is what a bought
         // audiobook almost always is. `audio/*` keeps a picker that ignores
         // extensions from showing an empty folder.
-        accept=".m4b,.m4a,.mp3,.aac,.flac,.wav,.aiff,.aif,.ogg,.oga,.opus,audio/*"
+        //
+        // `.zip` is here because a book that is one file is the lucky case: a
+        // ripped or downloaded book is a FOLDER of chapters, and a phone's
+        // file chooser cannot hand over a folder at all. Zipping it is the one
+        // move every phone can make, so the server takes the archive, unpacks
+        // it, and lets the importer file the pile.
+        accept=".m4b,.m4a,.mp3,.aac,.flac,.wav,.aiff,.aif,.ogg,.oga,.opus,.zip,audio/*,application/zip"
         onChange={(e) => void take(e.currentTarget.files)}
       />
       <Button
@@ -1255,9 +1276,11 @@ export function BooksPage({ onPlay }: PluginPageProps) {
               plugin - withdrawn 2026-08-24, so that sentence would now point at
               a page nobody has. The drop folder is the one route that needs no
               plugin at all, so it leads. */}
-          No audiobooks yet. Add one you already own with the button above, or drop files into the
-          library&rsquo;s <strong>Audiobooks</strong> folder and they will be shelved here with
-          their chapters. Downloaders live in Settings, under their own plugins.
+          No audiobooks yet. Add one you already own with the button above &mdash; a single file,
+          or a whole book <strong>zipped</strong>, which is the only way a phone can hand over a
+          folder of chapters. You can also drop files into the library&rsquo;s{' '}
+          <strong>Audiobooks</strong> folder and they will be shelved here with their chapters.
+          Downloaders live in Settings, under their own plugins.
         </Text>
       </div>
     );

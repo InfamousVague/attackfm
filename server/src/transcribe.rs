@@ -575,7 +575,7 @@ async fn run(state: Arc<AppState>, job_id: String, track_id: i64) {
     let mut lines: Vec<Value> = Vec::new();
     let mut words: Vec<Value> = Vec::new();
     let mut open: Option<(i64, i64, String)> = None;
-    let mut close = |open: &mut Option<(i64, i64, String)>,
+    let close = |open: &mut Option<(i64, i64, String)>,
                      words: &mut Vec<Value>,
                      lines: &mut Vec<Value>| {
         if let Some((start, end, text)) = open.take() {

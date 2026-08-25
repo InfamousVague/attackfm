@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.50
+
+- Send a whole book from your phone. A book you own is nearly always a folder of chapters, and no phone can hand a folder to anything - so zip it and add it like any other file: the hub unpacks it, works out what it is, and shelves it under its author with its chapters intact
+
 ## 0.4.49
 
 - Every transcribed book shows how fast its narrator actually reads — "168 wpm, brisk" — beside the chapter count. It is the number that tells you whether to reach for 1.25× before you start rather than ten minutes in
