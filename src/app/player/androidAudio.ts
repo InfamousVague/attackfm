@@ -21,6 +21,7 @@ interface NativeBridge {
   setPlaybackState?: (playing: boolean, positionMs: number) => void;
   /** Present from the widget/Auto-playlists shell; absent before it. */
   setCollections?: (json: string) => void;
+  setBrowseTree?: (json: string) => void;
   /** Told when the page can answer transport commands, so the native side can
    *  hand over anything a car pressed before this page existed. */
   transportReady?: () => void;
@@ -195,6 +196,22 @@ interface TransportHandlers {
   playCollection?: (id: string) => void;
   /** A playlist tapped in the car's browse list, by its own id. */
   playPlaylist?: (id: string) => void;
+  /**
+   * Any other node tapped in the car's browse tree, by its whole media id
+   * (`artist:Fleetwood Mac`, `album:Rumours\u0000Fleetwood Mac`, `book:12`).
+   *
+   * One handler for every scheme rather than one per kind: the car's tree is
+   * built by the page, so the page already knows what each id means, and a new
+   * branch should not need a new method on both sides of a native bridge.
+   */
+  playNode?: (mediaId: string) => void;
+  /**
+   * "Play Fleetwood Mac on AttackFM" - the spoken words, unresolved.
+   *
+   * Resolved here rather than natively because the library, its aliases and
+   * its typo rescue all live on this side.
+   */
+  playSearch?: (query: string) => void;
 }
 
 /*
@@ -230,6 +247,13 @@ export function bindNativeTransport(handlers: TransportHandlers): () => void {
         h.playCollection?.(command.slice('collection:'.length));
       } else if (command.startsWith('playlist:')) {
         h.playPlaylist?.(command.slice('playlist:'.length));
+      } else if (command.startsWith('search:')) {
+        h.playSearch?.(command.slice('search:'.length));
+      } else if (command.includes(':')) {
+        // Anything else with a scheme is a node from the tree this page
+        // published. Kept as a catch-all so a branch added on this side needs
+        // no matching change in Kotlin.
+        h.playNode?.(command);
       }
     }
   };
@@ -275,6 +299,47 @@ export function publishNativeCollections(
         })),
       ),
     );
+  } catch {
+    // Best-effort, like the rest of this bridge.
+  }
+}
+
+/** One row in the car's browse tree. */
+export interface CarNode {
+  /** The whole media id, scheme and all - it travels back verbatim on a tap. */
+  id: string;
+  name: string;
+  subtitle: string;
+  /** A branch the car can open, rather than a row that plays. */
+  browsable?: boolean;
+}
+
+/**
+ * Give the car the whole tree: what each branch contains, in one call.
+ *
+ * Cached natively for the same reason the collections were - Android Auto asks
+ * for the root faster than a WebView stands up, so without a cache a
+ * cold-plugged car sees the built-in three and nothing else. Published whole
+ * on every library change rather than branch by branch, because a tree
+ * half-rewritten is a set of branches that open into the previous library.
+ *
+ * Guarded on the method EXISTING: an over-the-air bundle reaches phones long
+ * before a new APK does, so this runs on shells that have never heard of it.
+ * There the old flat list is still published beside this and still works.
+ */
+export function publishNativeBrowseTree(tree: Record<string, readonly CarNode[]>): void {
+  try {
+    if (typeof window.AFMNative?.setBrowseTree !== 'function') return;
+    const clean: Record<string, unknown[]> = {};
+    for (const [parent, nodes] of Object.entries(tree)) {
+      clean[parent] = nodes.map((n) => ({
+        id: n.id,
+        name: n.name.replace(/\t/g, ' '),
+        subtitle: n.subtitle.replace(/\t/g, ' '),
+        browsable: n.browsable === true,
+      }));
+    }
+    window.AFMNative.setBrowseTree(JSON.stringify(clean));
   } catch {
     // Best-effort, like the rest of this bridge.
   }

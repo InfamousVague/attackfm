@@ -107,6 +107,42 @@ class MainActivity : TauriActivity() {
     }
 
     /**
+     * The whole browse tree for the car, in one call.
+     *
+     * `{ "<parentId>": [ { id, name, subtitle, browsable } ] }`. One call
+     * rather than one per branch because the page rebuilds the tree whole
+     * whenever the library changes, and a car that read a half-written tree
+     * would show branches that open into the previous library.
+     *
+     * Tabs are stripped from every field: the cache under this is
+     * tab-separated, and a song called "a\tb" is not allowed to break the
+     * format carrying it.
+     */
+    @JavascriptInterface
+    fun setBrowseTree(json: String) {
+      val tree = try {
+        val root = org.json.JSONObject(json)
+        val out = LinkedHashMap<String, List<BrowseNode>>()
+        for (parent in root.keys()) {
+          val arr = root.optJSONArray(parent) ?: continue
+          val nodes = (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            val id = o.optString("id")
+            val name = o.optString("name").replace("\t", " ")
+            if (id.isEmpty() || name.isEmpty()) {
+              null
+            } else {
+              BrowseNode(id, name, o.optString("subtitle").replace("\t", " "), o.optBoolean("browsable"))
+            }
+          }
+          out[parent] = nodes
+        }
+        out
+      } catch (_: Exception) { return }
+      PlaybackService.publishBrowseTree(this@MainActivity, tree)
+    }
+
+    /**
      * The page can answer transport commands now.
      *
      * Called when the web layer installs `window.__AFM_TRANSPORT__`. This is
@@ -469,6 +505,10 @@ class MainActivity : TauriActivity() {
     applyOrientationLock()
     // The share that launched us, if that is how we were started.
     shared = linkFrom(intent)
+    // Or the spoken request that did. A cold "play X on AttackFM" arrives
+    // here rather than in onNewIntent - the process did not exist to be
+    // re-entered - and this is the case the whole intent filter is for.
+    playFromSearch(intent)
   }
 
   /**
@@ -499,9 +539,30 @@ class MainActivity : TauriActivity() {
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     setIntent(intent)
+    if (playFromSearch(intent)) return
     val link = linkFrom(intent) ?: return
     shared = link
     deliverShared()
+  }
+
+  /**
+   * Assistant asking for something by name.
+   *
+   * Routed through `deliverTransport` rather than straight at the WebView,
+   * because the whole point of this path is that it arrives when the app is
+   * NOT running: that function already holds a command until a page exists and
+   * brings the app up to make one, which is exactly the behaviour a spoken
+   * request needs. The words themselves are resolved on the page, by the same
+   * search the search screen uses.
+   *
+   * An empty query is a real request - "play music on AttackFM" - and means
+   * shuffle, the same reading the session callback gives it.
+   */
+  private fun playFromSearch(intent: Intent?): Boolean {
+    if (intent?.action != "android.media.action.MEDIA_PLAY_FROM_SEARCH") return false
+    val query = intent.getStringExtra(android.app.SearchManager.QUERY)?.trim().orEmpty()
+    deliverTransport(this, if (query.isEmpty()) "collection:shuffle" else "search:" + query)
+    return true
   }
 
   /** Hands the held share to the page, if there is a page to hand it to. */

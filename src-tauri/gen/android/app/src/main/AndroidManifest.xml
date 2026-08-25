@@ -46,6 +46,21 @@
             </intent-filter>
 
             <!--
+              "Play Fleetwood Mac on AttackFM."
+
+              The session's own onPlayFromSearch only reaches an app that is
+              ALREADY the active media app - which, said to a phone in a
+              pocket, it is not. Assistant reaches a cold app through this
+              intent instead, and without the filter the request goes to
+              whichever app does have it. This is the difference between the
+              app being askable and merely being controllable.
+            -->
+            <intent-filter>
+                <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
+            <!--
               Spotify's own URI scheme, declared by hand because the deep-link
               plugin's config only generates host-based App Links.
 

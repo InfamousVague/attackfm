@@ -76,9 +76,33 @@ class PlaybackService : MediaBrowserServiceCompat() {
       // onLoadChildren for the three ids this service publishes.
       override fun onPlayFromMediaId(mediaId: String?, extras: android.os.Bundle?) {
         if (mediaId == null) return
-        // The id IS the command, for both kinds of row this service publishes.
-        if (mediaId.startsWith("collection:") || mediaId.startsWith("playlist:")) command(mediaId)
+        // The id IS the command. Anything with a scheme is one the page knows
+        // how to obey; a bare id would be a row this service invented, and
+        // there are none.
+        if (mediaId.contains(':')) command(mediaId)
       }
+      /*
+       * "Play Fleetwood Mac on AttackFM".
+       *
+       * The query is handed to the PAGE rather than matched here. The library,
+       * its aliases and its typo rescue all live there - `searchLibrary` is
+       * several hundred lines of ranking that already answers this exact
+       * question for the search screen - and a second matcher in Kotlin would
+       * be a worse one that disagrees with the first. This side's job is to
+       * carry the words across.
+       *
+       * An EMPTY query is not a failure: "play music on AttackFM" is a real
+       * thing to say and Assistant sends it with nothing attached. Shuffling
+       * the library is the honest reading, and it is what the car's own
+       * "Shuffle all" row does.
+       */
+      override fun onPlayFromSearch(query: String?, extras: android.os.Bundle?) {
+        val q = query?.trim().orEmpty()
+        if (q.isEmpty()) command("collection:shuffle") else command("search:" + q)
+      }
+      /** Assistant prepares before it plays; both mean the same thing here. */
+      override fun onPrepareFromSearch(query: String?, extras: android.os.Bundle?) =
+        onPlayFromSearch(query, extras)
     })
     /*
      * Where "open the app" goes from outside it.
@@ -123,51 +147,104 @@ class PlaybackService : MediaBrowserServiceCompat() {
   }
 
   /**
-   * The browse tree: three rows, all playable.
+   * The browse tree.
    *
-   * An empty root technically satisfies Android Auto, but it draws as a blank
-   * screen with the app's name over it - which reads as broken, not minimal.
-   * Three collections the library always has give the car something honest to
-   * offer, and tapping one plays it: the id travels through the session's
-   * onPlayFromMediaId into the page, which builds the queue the same way the
-   * CarPlay bridge does on iOS. A full artist/album tree is a later feature;
-   * this is the difference between "appears with content" and "appears broken".
+   * Every node the car can reach comes from the page, cached in preferences,
+   * because Android Auto binds this service and asks for the root long before
+   * a WebView has stood up - and an answer of "three rows now, four hundred in
+   * a second" draws as the tree twitching. The cache is what lets a car
+   * plugged in cold show the real library immediately.
+   *
+   * A parent with no cached children answers empty rather than guessing, with
+   * ONE exception: a root that has never been published falls back to the
+   * three built-in collections. That is what an older bundle running on this
+   * APK produces, and three honest rows beat a blank screen with the app's
+   * name over it.
    */
   override fun onGetRoot(
     clientPackageName: String,
     clientUid: Int,
     rootHints: android.os.Bundle?,
-  ): BrowserRoot = BrowserRoot(BROWSE_ROOT, null)
+  ): BrowserRoot {
+    // Advertising search is what makes the car offer its own search field and
+    // what tells Assistant this app can be asked for something by name. It is
+    // a root extra rather than a manifest flag, so it travels with the tree.
+    val extras = android.os.Bundle()
+    extras.putBoolean("android.media.browse.SEARCH_SUPPORTED", true)
+    return BrowserRoot(BROWSE_ROOT, extras)
+  }
+
+  private fun mediaItem(node: BrowseNode) =
+    android.support.v4.media.MediaBrowserCompat.MediaItem(
+      android.support.v4.media.MediaDescriptionCompat.Builder()
+        .setMediaId(node.id)
+        .setTitle(node.title)
+        .setSubtitle(node.subtitle)
+        .build(),
+      if (node.browsable) {
+        android.support.v4.media.MediaBrowserCompat.MediaItem.FLAG_BROWSABLE
+      } else {
+        android.support.v4.media.MediaBrowserCompat.MediaItem.FLAG_PLAYABLE
+      },
+    )
 
   override fun onLoadChildren(
     parentId: String,
     result: Result<MutableList<android.support.v4.media.MediaBrowserCompat.MediaItem>>,
   ) {
+    val published = browseChildren(this, parentId)
+    if (published.isNotEmpty()) {
+      result.sendResult(published.map(::mediaItem).toMutableList())
+      return
+    }
     if (parentId != BROWSE_ROOT) {
+      // A branch with nothing in it. Empty is the honest answer - the page
+      // publishes what exists, and inventing a row here would be a dead end
+      // of exactly the kind this feature was written to remove.
       result.sendResult(mutableListOf())
       return
     }
-    fun item(id: String, title: String, subtitle: String) =
-      android.support.v4.media.MediaBrowserCompat.MediaItem(
-        android.support.v4.media.MediaDescriptionCompat.Builder()
-          .setMediaId(id)
-          .setTitle(title)
-          .setSubtitle(subtitle)
-          .build(),
-        android.support.v4.media.MediaBrowserCompat.MediaItem.FLAG_PLAYABLE,
-      )
+    // The floor: no tree has ever been published on this device.
     val rows = mutableListOf(
-      item("collection:liked", "Liked", "Your favourites"),
-      item("collection:all", "All songs", "The whole library"),
-      item("collection:shuffle", "Shuffle all", "Everything, surprised"),
+      mediaItem(BrowseNode("collection:liked", "Liked", "Your favourites", false)),
+      mediaItem(BrowseNode("collection:all", "All songs", "The whole library", false)),
+      mediaItem(BrowseNode("collection:shuffle", "Shuffle all", "Everything, surprised", false)),
     )
-    // The playlists, as the page last published them. Cached in preferences so
-    // a car plugged in before the app has drawn a single frame still gets the
-    // real list - the WebView is slower to stand up than Android Auto is to
-    // ask, and an answer of "three rows now, twelve in a second" draws as the
-    // tree twitching.
-    for (p in collections(this)) rows.add(item(p.first, p.second, p.third))
+    for (p in collections(this)) rows.add(mediaItem(BrowseNode(p.first, p.second, p.third, false)))
     result.sendResult(rows)
+  }
+
+  /**
+   * The car's own search box.
+   *
+   * Distinct from `onPlayFromSearch`, which plays at once. This one lists what
+   * matched so a passenger can choose, and it answers from the cached tree
+   * rather than the page - a car searching does not want to wait for a WebView
+   * that may not be running. Plain contains-matching, deliberately: this is a
+   * filter over a few hundred names the driver can already see, not the
+   * ranked, typo-rescuing search the page does when it is asked to PLAY.
+   */
+  override fun onSearch(
+    query: String,
+    extras: android.os.Bundle?,
+    result: Result<MutableList<android.support.v4.media.MediaBrowserCompat.MediaItem>>,
+  ) {
+    val needle = query.trim().lowercase()
+    if (needle.isEmpty()) {
+      result.sendResult(mutableListOf())
+      return
+    }
+    val seen = HashSet<String>()
+    val hits = mutableListOf<android.support.v4.media.MediaBrowserCompat.MediaItem>()
+    for (parent in browseParents(this)) {
+      for (node in browseChildren(this, parent)) {
+        if (hits.size >= SEARCH_LIMIT) break
+        if (!node.title.lowercase().contains(needle)) continue
+        if (!seen.add(node.id)) continue
+        hits.add(mediaItem(node))
+      }
+    }
+    result.sendResult(hits)
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -489,6 +566,76 @@ class PlaybackService : MediaBrowserServiceCompat() {
       instance?.soften()
     }
 
+    private const val BROWSE_PREFS = "attackfm.browse"
+
+    /** How many rows one car search may return. A driver is not scrolling. */
+    private const val SEARCH_LIMIT = 30
+
+    /**
+     * Store the whole tree at once.
+     *
+     * Written as one preferences file with a key per parent, and a roll of the
+     * parents that exist - so a rebuild can DROP a branch (an artist whose
+     * last song left the library) rather than leaving it behind as a node the
+     * car can still open into nothing. Clearing and rewriting is right because
+     * the page always publishes the whole tree; there is no partial update to
+     * merge.
+     *
+     * Same tab-separated rows as the collections cache under it, for the same
+     * reason: the only reader is a few lines below, and a JSON parser here
+     * would be a dependency for four fields. The page strips tabs.
+     */
+    fun publishBrowseTree(context: Context, tree: Map<String, List<BrowseNode>>) {
+      val prefs = context.getSharedPreferences(BROWSE_PREFS, Context.MODE_PRIVATE)
+      val was = prefs.getStringSet("parents", emptySet()) ?: emptySet()
+      val edit = prefs.edit().clear()
+      edit.putStringSet("parents", tree.keys.toSet())
+      for ((parent, nodes) in tree) {
+        edit.putStringSet(
+          "p:" + parent,
+          nodes.mapIndexed { i, n ->
+            "$i\t${n.id}\t${n.title}\t${n.subtitle}\t${if (n.browsable) "B" else "P"}"
+          }.toSet(),
+        )
+      }
+      edit.apply()
+      /*
+       * Tell every browser what moved.
+       *
+       * A client mid-look redraws; one that has not asked yet finds the fresh
+       * answer when it does. Parents that have GONE are notified too - a car
+       * sitting on an artist page that no longer exists needs to be told, or
+       * it holds the old list until something else makes it ask.
+       */
+      val touched = HashSet<String>(was)
+      touched.addAll(tree.keys)
+      for (parent in touched) instance?.notifyChildrenChanged(parent)
+    }
+
+    /** Every parent the last publish wrote. */
+    fun browseParents(context: Context): Set<String> =
+      context.getSharedPreferences(BROWSE_PREFS, Context.MODE_PRIVATE)
+        .getStringSet("parents", emptySet()) ?: emptySet()
+
+    fun browseChildren(context: Context, parentId: String): List<BrowseNode> =
+      (context.getSharedPreferences(BROWSE_PREFS, Context.MODE_PRIVATE)
+        .getStringSet("p:" + parentId, emptySet()) ?: emptySet())
+        .mapNotNull { row ->
+          val parts = row.split('\t')
+          if (parts.size < 5) {
+            null
+          } else {
+            Pair(
+              parts[0].toIntOrNull() ?: 0,
+              BrowseNode(parts[1], parts[2], parts[3], parts[4] == "B"),
+            )
+          }
+        }
+        // A string SET forgets order; the index prefix is how the page's own
+        // ordering - liked order, album then track number - survives the trip.
+        .sortedBy { it.first }
+        .map { it.second }
+
     private const val COLLECTIONS_PREFS = "attackfm.collections"
 
     /**
@@ -536,6 +683,19 @@ class PlaybackService : MediaBrowserServiceCompat() {
       )
   }
 }
+
+/**
+ * One row in the car's browse tree.
+ *
+ * `browsable` is the whole point of this feature: every node the tree
+ * published before was a leaf, so an artist could be shown and never opened.
+ */
+data class BrowseNode(
+  val id: String,
+  val title: String,
+  val subtitle: String,
+  val browsable: Boolean,
+)
 
 /** One read of everything the home-screen widget prints. */
 data class WidgetState(
