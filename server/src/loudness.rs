@@ -518,7 +518,7 @@ size=N/A time=00:00:08.00 bitrate=N/A speed= 315x elapsed=0:00:00.02
             // No ffmpeg here, or it refused: not this test's business.
             _ => return,
         }
-        let m = measure(&wav).await.expect("a generated tone measures");
+        let m = measure_reported(&wav).await.expect("a generated tone measures");
         // A -9 dBFS sine sits near -21 LUFS; the tolerance is wide because the
         // point is "it read the file and produced a sane number", not a
         // calibration check on ffmpeg's own filter.
