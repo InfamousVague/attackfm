@@ -79,6 +79,15 @@ fn state_lock() -> &'static Mutex<()> {
 /// BUMP THIS only when the shipped frontend cannot function on the older
 /// binary at all, having first checked that it truly cannot rather than merely
 /// prefers not to.
+///
+/// NOT DEAD, despite what the compiler says. Nothing in Rust reads this: its
+/// only reader is `scripts/ship-update.mjs`, which greps this file for the
+/// number and stamps it into every published manifest. Deleting it because
+/// rustc calls it unused would silently take the floor out from under the
+/// guard that stops a bundle landing on a binary too old to run it - and the
+/// failure would not appear until a device somewhere refused an update, or
+/// worse, did not.
+#[allow(dead_code)]
 pub const BUNDLE_REQUIRES: u32 = 1;
 
 pub const NATIVE_GENERATION: u32 = 3;

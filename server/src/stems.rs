@@ -1082,41 +1082,6 @@ async fn block(
         .unwrap())
 }
 
-/// The stem files for a track with some parts left out, in board order.
-///
-/// This is what lets the ordinary player play a song with the vocal removed. It
-/// used to take a whole separate deck to do that - one that seized the output,
-/// paused the real player, and ran its own transport - and the cost was a second
-/// set of controls that had nothing to do with the seek bar you were looking at.
-/// Muting a part is not a different kind of playback; it is the same song with
-/// something taken out, which is exactly what the encoder already does for every
-/// other effect. So the stems are handed to the transcoder as inputs, and the
-/// rest of the player carries on knowing nothing about it.
-///
-/// Empty when the track has not been separated, or when nothing is dropped, or
-/// when every part is - all three of which mean "just play the file", and the
-/// last of which would otherwise be an ffmpeg command with no inputs.
-pub fn kept_stem_paths(state: &AppState, track_id: i64, dropped: &[String]) -> Vec<PathBuf> {
-    if dropped.is_empty() {
-        return Vec::new();
-    }
-    let root = stem_root(state);
-    let mut keep = Vec::new();
-    for stem in STEMS {
-        if dropped.iter().any(|d| d == stem) {
-            continue;
-        }
-        let Some(rel) = state.db.stem_path(track_id, stem, MODEL) else {
-            continue;
-        };
-        let path = root.join(rel);
-        if path.is_file() {
-            keep.push(path);
-        }
-    }
-    keep
-}
-
 /// The part names a client asked to drop, filtered to ones that exist.
 ///
 /// Never interpolated: a name that is not in the registry is discarded rather
