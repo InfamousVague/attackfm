@@ -769,6 +769,7 @@ async fn main() {
         .route("/api/transcribe/redo", post(transcribe::redo))
         .route("/api/lyrics/{track_id}", get(lyricsync::get))
         .route("/api/lyrics/sweep", post(lyricsync::run_now))
+        .route("/api/lyrics/redo", post(lyricsync::redo))
         .route("/api/words", get(spoken::search))
         .route("/api/words/reindex", post(spoken::reindex))
         .route("/api/lyrics/write-tags", post(lyricsync::write_tags))

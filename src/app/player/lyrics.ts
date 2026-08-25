@@ -54,8 +54,26 @@ const LINE_BREAK = /\r\n|\r|\n/;
 
 /** The untimed lines of a plain-text body, blank lines dropped. */
 function plainLines(text: string): string[] {
-  return text.split(LINE_BREAK).filter((l) => l.trim().length > 0);
+  return text
+    .split(LINE_BREAK)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0 && !ID_TAG.test(l));
 }
+
+/*
+ * An LRC header line, and nothing else.
+ *
+ * `[ti:]`, `[ar:]`, `[al:]`, `[by:]`, `[length:]` and friends are the file's
+ * metadata, and `parseLrc` has always dropped them because they carry no time
+ * tag. The PLAIN path did not: a file whose lyrics are unsynced but which still
+ * carries the header - which is most of what a ripper writes - printed
+ * "[ti:Touch Therapy]", "[ar:Zoe Ko]" and the name of the tool that fetched it
+ * as the first three lines of the song.
+ *
+ * Keyed on the colon, which is what makes it metadata. A bracketed line without
+ * one is a section marker - `[Chorus]`, `[Verse 2]` - and belongs to the song.
+ */
+const ID_TAG = /^\[[a-z#][a-z0-9_-]*:[^\]]*\]$/i;
 
 /**
  * A line's time tags: `[mm:ss.xx]` and the hour form `[hh:mm:ss.xx]`, either
