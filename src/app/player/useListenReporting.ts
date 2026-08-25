@@ -8,6 +8,8 @@ import {
 } from '../server.ts';
 import { createListenReporter, type ListenSnapshot } from './listens.ts';
 import { takePendingSeek } from './pendingSeek.ts';
+import { fetchBookShapes, type BookShape } from '../api/books.ts';
+import { skipsCard } from './bookSkips.ts';
 import { usePlayback } from './playback.tsx';
 import type { Track } from '../core/tauri.ts';
 
@@ -193,6 +195,8 @@ export function useListenReporting({
   // short of the end. commitSeek is the same door the scrubber uses, so every
   // clock, crossfade guard and republish rides along.
   const resumedPath = useRef<string | null>(null);
+  /** This track's card and credits, once known - read by the stop below. */
+  const shapeRef = useRef<BookShape | null>(null);
   useEffect(() => {
     /*
      * The deck's duration must belong to THIS book.
@@ -231,35 +235,82 @@ export function useListenReporting({
     // Everything below is the audiobook bookmark, which music has no use for:
     // resuming a song mid-verse is nobody's habit.
     if (track.kind !== 'book') return;
+    // A new track: forget the last one's card and credits until this one's
+    // are known, or the stop below would arm against the wrong numbers.
+    shapeRef.current = null;
     const id = trackIdFromPath(track.path);
     const s = playSessionRef.current;
     if (id === null || !s) return;
     let live = true;
-    /*
-     * This session's own mark outranks the server's, and the network round
-     * trip is what makes either of them land.
-     *
-     * The mark is fresher: coming back to a book left minutes ago, the
-     * server's copy is at best the same number and at worst the one from
-     * before the parting write. But the seek must NOT be applied any sooner
-     * than this - the source is still loading in the same tick the track
-     * changed, and a seek issued then is clobbered by the load (measured: a
-     * synchronous restore left the book playing from the top). The fetch's
-     * own latency is doing real work, so the local mark rides it rather than
-     * skipping it, and a failed lookup still honours what this session knows.
-     */
-    const settle = (serverMs: number | null) => {
+    const settle = (serverMs: number | null, shape: BookShape | null) => {
       if (!live) return;
+      shapeRef.current = shape;
       const local = marks.current.get(track.path);
       const to = (local ?? serverMs ?? 0) / 1000;
-      if (to > 15 && to < duration - 15) commitSeek(to);
+      if (to > 15 && to < duration - 15) {
+        commitSeek(to);
+        return;
+      }
+      /*
+       * Nothing to return to, so this reading is starting rather than
+       * resuming - the only moment the publisher's card matters. A bookmark
+       * always outranks it: somebody forty minutes in wants those forty
+       * minutes, not the top of the book with the preamble trimmed.
+       *
+       * The server's own bounds are re-checked rather than trusted, because a
+       * client should not seek somewhere absurd if a future server sends a
+       * number this one did not expect.
+       */
+      const card = (shape?.openingMs ?? 0) / 1000;
+      if (card > 1 && card < duration / 2) commitSeek(card);
     };
-    void fetchPlayStates(s, { kind: 'book', limit: 2_000 })
-      .then((states) => settle(states.find((st) => st.trackId === id)?.positionMs ?? null))
-      .catch(() => settle(null));
+    void Promise.all([
+      fetchPlayStates(s, { kind: 'book', limit: 2_000 }).catch(() => []),
+      // Only asked for when this listener actually wants the skip - otherwise
+      // opening a book costs a request nobody reads the answer to.
+      skipsCard(id)
+        ? fetchBookShapes(s, [id]).catch((): Record<string, BookShape> => ({}))
+        : Promise.resolve({} as Record<string, BookShape>),
+    ])
+      .then(([states, shapes]) =>
+        settle(
+          states.find((st) => st.trackId === id)?.positionMs ?? null,
+          shapes[String(id)] ?? null,
+        ),
+      )
+      .catch(() => settle(null, null));
     return () => {
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- commitSeek is rebuilt every render; the guard ref keeps this once-per-track
   }, [track, duration]);
+
+  /**
+   * And the other end: stop before the credits.
+   *
+   * Seeking to the end rather than pausing, so the book finishes through the
+   * ordinary end-of-track path - the listen is logged, the bookmark settles
+   * where it should, and a book made of sections advances to the next one.
+   * Pausing on the spot would leave every one of those unfinished and the
+   * shelf would show the book as still in progress forever.
+   *
+   * Guarded by a ref rather than state: this fires from a position tick, and
+   * re-arming on every render would seek repeatedly while the last second
+   * played out.
+   */
+  const cutPath = useRef<string | null>(null);
+  useEffect(() => {
+    const shape = shapeRef.current;
+    if (!track || track.kind !== 'book' || !shape || !(duration > 0)) return;
+    if (cutPath.current === track.path) return;
+    const credits = shape.creditsMs / 1000;
+    if (!(credits > 0) || credits >= duration - 1) return;
+    // A scrub INTO the credits is the listener asking to hear them; only an
+    // arrival there under the deck's own power is the one to cut.
+    if (scrubbing.current) return;
+    if (coarsePosition < credits) return;
+    cutPath.current = track.path;
+    commitSeek(duration);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires on the position tick; the ref keeps it once per track
+  }, [track, duration, coarsePosition]);
 }

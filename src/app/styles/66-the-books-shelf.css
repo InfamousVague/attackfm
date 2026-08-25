@@ -113,6 +113,31 @@
   white-space: nowrap;
 }
 
+/*
+ * The narrator's pace, under the standing line.
+ *
+ * Its own line rather than appended to the standing text: that line already
+ * says two things joined by a middot ("Ch 3 of 24 · 41 min in"), and a third
+ * clause makes a sentence nobody reads to the end of. This is a different KIND
+ * of fact - about the reading rather than about your progress through it - so
+ * it sits apart and quieter.
+ */
+.bookCard__pace {
+  font-size: 0.7rem;
+  color: var(--glacier-text-subtle);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Faint, but not the same faint as the number: this one says a setting is ON,
+   and a setting silently in force is worse than no setting at all. */
+.bookCard__paceSkip {
+  color: var(--glacier-accent-text);
+}
+
+
 /* The chapters list inside a book's modal: a run of rows, the one you are in
    lit with the accent. Each row plays its chapter (a section, or a resume of
    the one file). */
