@@ -209,3 +209,31 @@ export function frontMatterTitle(raw: string, index: number): string {
   if (index !== 0) return name;
   return !name || statedChapterNumber(name) !== null ? 'Intro' : name;
 }
+
+/**
+ * A chapter's WORDS, with any number-label of its own taken off the front.
+ *
+ * A tag reads "Chapter 10" or "Chapter 10 — Entering Safe Room", and the row it
+ * sits on already prints a number. Where the two agree, repeating it is merely
+ * clumsy - "Chapter 4 · Chapter 4". Where they DISAGREE, which is every book
+ * whose card was numbered as chapter one, it is worse than clumsy: the row says
+ * "Chapter 9 · Chapter 10" and offers the reader both a right answer and a
+ * wrong one with nothing to tell them apart.
+ *
+ * So the label comes off whatever number it states, not only a matching one,
+ * and what is left is the actual title. A tag that was nothing but its own
+ * number leaves nothing, which is the correct answer: that chapter has no name,
+ * and the row already knows which chapter it is.
+ */
+export function chapterTitleWords(raw: string): string {
+  const t = (raw ?? '').trim();
+  if (!t) return '';
+  // "Chapter 7", "Ch. 07 - The Vault", "Part 3: ..." - the same forms
+  // `statedChapterNumber` reads, so the two never disagree about what a label is.
+  const named = /^\s*(?:chapters?|chap\.?|ch\.?|parts?|books?)\s*0*\d{1,4}\b[\s\u2014\u2013:.)-]*/i;
+  const stripped = t.replace(named, '');
+  if (stripped !== t) return stripped.trim();
+  // "03 - The Vault" - a bare number that is a label because punctuation and a
+  // word follow it. Never a title that merely opens with a numeral.
+  return t.replace(/^\s*0*\d{1,4}\s*[\u2014\u2013:.)-]\s*/, '').trim();
+}
