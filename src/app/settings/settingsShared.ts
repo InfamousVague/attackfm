@@ -30,7 +30,7 @@ export const PANE_KEYWORDS: Record<string, string> = {
   developer: 'developer dev tools debug build bundle ota cache storage keys performance fps memory test notice flags',
   'local-ai': 'local ai model ollama llm endpoint embeddings curator dj mixes stations health owner report',
   handbook:
-    'handbook guide manual documentation docs how it works help plugin develop developer api build publish gestures',
+    'handbook guide manual documentation docs how it works help plugin develop developer api build publish gestures audiobook audiobooks books read along narrator transcription',
 };
 
 /**
