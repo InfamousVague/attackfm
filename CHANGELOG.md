@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.67
+
+- Lyrics no longer open with the file's own bookkeeping. A song whose words are not timed was printing `[ti:]`, `[ar:]` and the name of whatever fetched them as its first three lines - the timed path had always dropped those, the plain one never did. A bracketed line without a colon is a section marker and stays, so `[Chorus]` is still `[Chorus]`
+- Lyrics can be re-timed. Until now the hub only ever offered itself a song it had no word clocks for, so anything timed by an earlier pass, or against a lyric sheet that has since been corrected, was never looked at again. On the hub: `bash server/relyric.sh` for the library, or `bash server/relyric.sh <track id>` for the one that is wrong. Only the timings are forgotten - the words stay put while it works
+
 ## 0.4.65
 
 - A chapter shows one number, not two. The file's own "Chapter 10" was being printed beside the corrected "Chapter 9" - a right answer and a wrong one side by side, with nothing to tell them apart. A tag that is only a number is dropped now whatever number it claims; one that carries real words keeps them

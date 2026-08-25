@@ -5640,6 +5640,26 @@ impl Db {
             .flatten()
     }
 
+    /// Forget the word clocks for one song, or for every song.
+    ///
+    /// The sweep only ever offers a song it has NO words for, which is right
+    /// while it is working through a library for the first time and wrong
+    /// afterwards: a song aligned by an older pass, or against a lyric sheet
+    /// that has since been corrected, is never looked at again. This is how a
+    /// listener says "that one is wrong, do it properly".
+    ///
+    /// Only the derived clocks go. The lyrics themselves are the source and are
+    /// left alone - throwing those away would mean fetching them again to redo
+    /// work that is only about their timing.
+    pub fn clear_lyric_words(&self, track_id: Option<i64>) -> usize {
+        let lock = self.lock();
+        let done = match track_id {
+            Some(id) => lock.execute("DELETE FROM lyric_words WHERE track_id = ?1", params![id]),
+            None => lock.execute("DELETE FROM lyric_words", []),
+        };
+        done.unwrap_or(0)
+    }
+
     pub fn set_lyric_words(
         &self,
         track_id: i64,

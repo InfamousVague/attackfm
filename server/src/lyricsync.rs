@@ -31,9 +31,10 @@
 //! already said the song matters.
 
 use crate::{auth, transcribe, AppState};
-use axum::extract::{Path as AxumPath, State};
+use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
+use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -512,6 +513,49 @@ pub async fn run_now(
     let waiting = state.db.songs_wanting_lyric_words(5000).len();
     tokio::spawn(sweep(state.clone()));
     Ok(Json(json!({ "started": true, "waiting": waiting })))
+}
+
+/// `POST /api/lyrics/redo` - forget what was worked out and work it out again.
+///
+/// `?id=` for one song, nothing for the whole library. The sweep only offers
+/// songs it has no clocks for, so clearing them IS the requeue - and doing it
+/// this way means a redo goes through exactly the same path a first pass does,
+/// rather than a second code path that could drift from it.
+///
+/// One song is something any signed-in listener can ask for about a song they
+/// are listening to; the whole library is an admin asking for hours of the
+/// box's time, so that half is gated.
+pub async fn redo(
+    State(state): State<Arc<AppState>>,
+    Query(ask): Query<RedoAsk>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let caller = auth::require_caller(&state.db, &headers)
+        .map_err(|s| (s, "sign in first".to_string()))?;
+    if ask.id.is_none() && !caller.is_admin {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "only an admin can re-time the whole library".into(),
+        ));
+    }
+    if !crate::transcribe::whisper_ready(&state) {
+        return Err((
+            StatusCode::PRECONDITION_FAILED,
+            "this server has no speech recogniser or model, so it cannot time lyrics".into(),
+        ));
+    }
+    let cleared = state.db.clear_lyric_words(ask.id);
+    // The sweep picks its own order - liked first, then most played - so a
+    // whole-library redo starts with what the listener actually listens to.
+    tokio::spawn(sweep(state.clone()));
+    let waiting = state.db.songs_wanting_lyric_words(5000).len();
+    Ok(Json(json!({ "cleared": cleared, "waiting": waiting, "started": true })))
+}
+
+#[derive(Deserialize)]
+pub struct RedoAsk {
+    /// One track, or the whole library when absent.
+    id: Option<i64>,
 }
 
 #[cfg(test)]
