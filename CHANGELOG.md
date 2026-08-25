@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.69
+
+- Reading along stops lurching. Following the word through a long passage walks the page down; anything that then pulled it back up was a second rule disagreeing with the first, which is what you saw as the text going too far and coming back. Within a passage the reading now only ever moves forward, and a scroll already on its way is left to arrive instead of being restarted five times a second
+
 ## 0.4.68
 
 - Reading along keeps the words you are hearing in the middle of the screen again. A transcript's passage can be taller than the screen it is drawn on, and centring one of those put its opening line above the top edge, where it faded out - so a long passage appeared to start somewhere you could not see. A passage that fits is centred as before; one that does not now follows the word being spoken, which is the only point in it that is actually where the reading is
