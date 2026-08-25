@@ -30,6 +30,7 @@ import { DevicePicker } from './DevicePicker.tsx';
 import { JamBadge } from './JamBadge.tsx';
 import { VolumeRow } from './VolumeControl.tsx';
 import { LyricsPanel } from './LyricsPanel.tsx';
+import { useTrackShape } from './waveform.ts';
 import type { PauseStyle } from './playback.tsx';
 import {
   FADE_DOWN_MS,
@@ -1070,7 +1071,11 @@ export function NowPlayingSheet({
   const setCanvasReady = (on: boolean) => setReadyCanvas(on ? npCanvas : null);
 
   const beat = useBeat({ meter, active: audible, at: progress });
-  const levels = useLiveLevels({ meter, progress, active: audible });
+  const live = useLiveLevels({ meter, progress, active: audible });
+  // The same shape the strip draws, on the surface with the room to show it.
+  // Falls back to the live meter exactly as the strip does.
+  const shape = useTrackShape(track);
+  const levels = shape ?? live;
   return createPortal(
     <>
       {/* What is behind the sheet, while the sheet is being pushed off it.

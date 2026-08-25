@@ -323,28 +323,21 @@ body:has(.appNavBar) .playerBarShell > * {
  * its buttons would go on taking presses aimed at the nav above them.
  */
 /*
- * No clocks on the strip.
+ * The clocks used to be hidden here, at every width.
  *
- * The kit's bar prints the elapsed time at one end of the seek bar and what is
- * left at the other. On a compact strip that is three things competing for one
- * line - and the two that lose are the title and the bar itself, which are the
- * reasons anybody looks at it. The full player still has both; this is the
- * strip, where the position is what the bar's own fill already says.
+ * They are gone from the SMALL strip for the reason that rule gave: three
+ * things competing for one line, and the two that lose are the title and the
+ * bar itself. But the wide strip now has a second row and gives the clocks its
+ * two ends, so the hide belongs with the rest of the touch sizing and has moved
+ * to chapter 19, inside `(pointer: coarse), (max-width: 540px)`.
  *
- * Matched on the CSS-module PREFIX rather than the whole class. The kit hashes
- * these (`_times_bo40x_48`), and the hash changes every time the kit is
- * rebuilt and re-vendored - a rule pinned to it would stop working silently,
- * on a rebuild that had nothing to do with the strip. `_times_` and `_clock_`
- * are the module's own names and survive that.
- *
- * `_seek_` is deliberately NOT in this list: that is the scrubber, not a
- * clock, and it is flex:1 - so removing the clocks beside it is what lets the
- * bar take the whole width rather than leaving two gaps where they were.
+ * The `_times_` half of it went in the bin rather than moving. `_times_` is a
+ * PlayerCard class, and this app renders PlayerCard nowhere - the old comment
+ * here named `_times_bo40x_48` as "the kit's bar", which is wrong and cost a
+ * later session an hour. The bar is the `cld2u` module; it has `_clock_`, and
+ * no `_times_` at all. Prefix-matching is still the rule for anything reaching
+ * into the kit: the hash changes on every rebuild, the name does not.
  */
-.playerBarShell [class*="_times_"],
-.playerBarShell [class*="_clock_"] {
-  display: none;
-}
 
 .playerBarShell[data-dismissed] {
   --player-ease: var(--glacier-duration-normal);
