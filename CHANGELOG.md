@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.61
+
+- The condensed bar's scrubber is dressed as the full player's: the same wave, the same colour and fill, the same trailing shadow, and it swells by exactly the same sum. They are the same control at two sizes and should not read as two different objects
+
 ## 0.4.60
 
 - Skip-back is on the condensed bar again. It came off when the row under the seek was still carrying icons and the width was genuinely spoken for; with those gone there is room for all three, so all three are there
