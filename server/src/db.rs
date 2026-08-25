@@ -1125,6 +1125,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS spoken_fts USING fts5(
   track_id UNINDEXED,
   start_ms UNINDEXED,
   tokenize = 'unicode61 remove_diacritics 2'
+);
 
 -- What a transcript says about the shape of a reading: how fast it is read,
 -- where the publisher's card ends and where the credits begin. Derived, so it
