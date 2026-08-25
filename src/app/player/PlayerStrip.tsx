@@ -1,6 +1,6 @@
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { ArtistLink } from '../ux/ArtistLink.tsx';
-import { useState, type Dispatch, type MutableRefObject, type ReactNode, type SetStateAction } from 'react';
+import { useRef, useState, type Dispatch, type MutableRefObject, type ReactNode, type SetStateAction } from 'react';
 import {
   ContextMenu,
   CounterBadge,
@@ -44,6 +44,7 @@ import {
   SPIN_DOWN_MS,
   SPIN_UP_MS,
   beatIntensity,
+  chapterIndexAt,
   type ArtView,
 } from './deckShared.ts';
 import type { Track } from '../core/tauri.ts';
@@ -172,6 +173,49 @@ export function PlayerStrip({
    */
   const shape = useTrackShape(dispTrack);
   const levels = shape ?? live;
+
+  /*
+   * A book's bar measures the CHAPTER, not the book.
+   *
+   * The full player has always done this and the strip never did, so the same
+   * moment read two different ways depending on which surface you looked at:
+   * eleven minutes into chapter four, or four hours into the book. The second
+   * is a true number and a useless one - nobody sits down to "hour four", they
+   * sit down to a chapter, and the thing a scrubber is for is the stretch you
+   * are actually in.
+   *
+   * Same window arithmetic as `NowPlayingSheet`, deliberately: chapters come
+   * off the track, so this needs no new prop, and `chapterIndexAt` is the one
+   * shared finder with the second of grace that keeps a jump to a mark from
+   * landing one short.
+   */
+  const chapters = dispTrack?.kind === 'book' ? (dispTrack.chapters ?? []) : [];
+  const chapterWin = (() => {
+    if (chapters.length === 0) return null;
+    const i = chapterIndexAt(chapters, dispPosition * 1000);
+    const start = chapters[i]!.startMs / 1000;
+    const end =
+      i + 1 < chapters.length ? chapters[i + 1]!.startMs / 1000 : Math.max(1, dispDuration);
+    return { start, len: Math.max(1, end - start) };
+  })();
+  /* Frozen for the length of a drag. Without it, dragging past a chapter's
+     mark re-scopes the bar under the finger and the thumb jumps to the far
+     end of a window that changed shape mid-gesture. */
+  const scrubWin = useRef<{ start: number; len: number } | null>(null);
+  const barWin = scrubWin.current ?? chapterWin;
+  const barDuration = barWin ? barWin.len : dispDuration;
+  const barValue = barWin
+    ? Math.min(barWin.len, Math.max(0, dispPosition - barWin.start))
+    : dispPosition;
+  const barScrub = (to: number) => {
+    if (chapterWin && !scrubWin.current) scrubWin.current = chapterWin;
+    onScrubDisp(to + (scrubWin.current?.start ?? 0));
+  };
+  const barSeekEnd = (to: number) => {
+    const start = scrubWin.current?.start ?? chapterWin?.start ?? 0;
+    scrubWin.current = null;
+    onSeekEndDisp(chapters.length > 0 ? to + start : to);
+  };
   // The overflow popover opens on a chooser - Equalizer, Lyrics, Volume -
   // and each pick swaps the panel in behind a back row. Controlled, so every
   // open starts back at the chooser rather than wherever the last visit left
@@ -399,10 +443,10 @@ export function PlayerStrip({
         tone={mobileControls ? 'accent' : undefined}
         fill={mobileControls ? 'solid' : undefined}
         rail={mobileControls ? 'contrast' : undefined}
-        duration={dispDuration}
-        value={dispPosition}
-        onValueChange={onScrubDisp}
-        onSeekEnd={onSeekEndDisp}
+        duration={barDuration}
+        value={barValue}
+        onValueChange={barScrub}
+        onSeekEnd={barSeekEnd}
         playing={dispPlaying}
         onPlayingChange={onPlayingChangeDisp}
         // Skip moves between tracks in the list, not within the current one.

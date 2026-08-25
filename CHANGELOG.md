@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.62
+
+- The player bar measures the CHAPTER of a book, not the whole book, the way the full player always has. The same moment used to read two ways depending on which you looked at - eleven minutes into chapter four, or four hours into the book - and the second is a true number nobody has a use for. Dragging it stays inside the chapter you are in, and the two times either end of it are the chapter's
+
 ## 0.4.61
 
 - The condensed bar's scrubber is dressed as the full player's: the same wave, the same colour and fill, the same trailing shadow, and it swells by exactly the same sum. They are the same control at two sizes and should not read as two different objects
