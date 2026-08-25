@@ -9,8 +9,10 @@ import {
 import {
   bindAudioFocus,
   bindNativeTransport,
+  nativeAccentHex,
   setNativeArtwork,
   setNativeNowPlaying,
+  setNativeNowPlayingExtras,
   setNativePlaybackState,
   setNativePlaying,
 } from './androidAudio.ts';
@@ -25,6 +27,9 @@ export interface SystemTransportControls {
   next: () => void;
   previous: () => void;
   seek: (to: number) => void;
+  /** The heart on Android's home-screen widget. Absent everywhere else: no
+   *  other system transport offers one. */
+  favourite?: () => void;
 }
 
 /**
@@ -43,6 +48,8 @@ export function useSystemNowPlaying({
   duration,
   artwork,
   audible,
+  line = '',
+  favourite = false,
 }: {
   track: Track | null;
   playing: boolean;
@@ -54,6 +61,11 @@ export function useSystemNowPlaying({
   duration: number;
   artwork: string | null;
   audible: boolean;
+  /** The line under the title on Android's widget - a book's chapter. Empty
+   *  for a song, where the album is already one line up. */
+  line?: string;
+  /** Whether this one is kept, for the widget's heart. */
+  favourite?: boolean;
 }): {
   carPlayControls: MutableRefObject<SystemTransportControls | null>;
   positionRef: MutableRefObject<number>;
@@ -181,6 +193,22 @@ export function useSystemNowPlaying({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on identity, state, and length; position rides along
   }, [track, playing, duration]);
 
+  /*
+   * The three things only Android's home-screen widget wants.
+   *
+   * Its own effect rather than a rider on the metadata push above, because
+   * they change on their own clock: a heart is pressed without the song
+   * changing, a chapter turns without either, and the accent moves when the
+   * listener repaints the app while the music plays.
+   *
+   * Cheap enough to send unconditionally - the native side ends every one of
+   * these in a widget push, and refresh() returns before it draws anything
+   * when no widget is placed.
+   */
+  useEffect(() => {
+    setNativeNowPlayingExtras(nativeAccentHex(), track ? line : '', track ? favourite : null);
+  }, [track, line, favourite]);
+
   // Seeks: the coarse clock jumping further than a second of playback could
   // carry it. Scrubs land here through commitSeek's setPosition.
   useEffect(() => {
@@ -249,6 +277,7 @@ export function useSystemNowPlaying({
         next: () => carPlayControls.current?.next(),
         previous: () => carPlayControls.current?.previous(),
         seek: (seconds) => carPlayControls.current?.seek(seconds),
+        favourite: () => carPlayControls.current?.favourite?.(),
       }),
     [],
   );

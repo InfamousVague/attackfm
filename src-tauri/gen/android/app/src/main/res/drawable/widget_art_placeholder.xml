@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What sits in the art slot before a cover arrives, and on the idle face:
+     the app's own plate with the mark, rather than a system media glyph. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+  <item>
+    <shape android:shape="rectangle">
+      <solid android:color="#1FFFFFFF" />
+      <corners android:radius="14dp" />
+    </shape>
+  </item>
+  <item android:gravity="center" android:width="22dp" android:height="22dp">
+    <vector android:width="22dp" android:height="22dp"
+      android:viewportWidth="24" android:viewportHeight="24">
+      <path android:fillColor="#66FFFFFF" android:pathData="M8,5.2 L8,18.8 L18.6,12 Z" />
+    </vector>
+  </item>
+</layer-list>

@@ -1,10 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- updatePeriodMillis is 0 on purpose: the service pushes on every real
-     change, and a timer would only redraw a face that had not moved. -->
+     change, and a timer would only redraw a face that had not moved. While
+     something is actually playing the service also ticks the scrubber on its
+     own - see NowPlayingWidget.TICK_MS.
+
+     Resizable on BOTH axes, and the three faces are chosen from the size the
+     launcher reports: a row, the player folded to two cells, and the cover
+     forward. targetCellWidth/Height and previewLayout are Android 12 and up;
+     older launchers read minWidth/minHeight and the initial layout, which is
+     why the compact face is the initial one. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+  android:description="@string/widget_description"
   android:initialLayout="@layout/widget_now_playing"
-  android:minWidth="250dp"
-  android:minHeight="40dp"
-  android:resizeMode="horizontal"
+  android:minWidth="180dp"
+  android:minHeight="48dp"
+  android:minResizeWidth="180dp"
+  android:minResizeHeight="48dp"
+  android:previewLayout="@layout/widget_now_playing_medium"
+  android:resizeMode="horizontal|vertical"
+  android:targetCellWidth="4"
+  android:targetCellHeight="1"
   android:updatePeriodMillis="0"
-  android:widgetCategory="home_screen" />
+  android:widgetCategory="home_screen|keyguard" />

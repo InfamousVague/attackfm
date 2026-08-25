@@ -19,6 +19,10 @@ interface NativeBridge {
   setArtwork?: (base64: string) => void;
   setSyncing?: (active: boolean) => void;
   setPlaybackState?: (playing: boolean, positionMs: number) => void;
+  /** The home-screen widget's own three: the listener's accent, the line under
+   *  the title, and whether this one is kept (-1 for "not known yet").
+   *  Present from the widget-face shell; absent before it. */
+  setNowPlayingExtras?: (accentHex: string, line: string, favourite: number) => void;
   /** Present from the widget/Auto-playlists shell; absent before it. */
   setCollections?: (json: string) => void;
   setBrowseTree?: (json: string) => void;
@@ -178,6 +182,89 @@ export function setNativePlaybackState(playing: boolean, positionSecs: number): 
 }
 
 /**
+ * What the home-screen widget draws that no other system surface wants.
+ *
+ * The accent is READ FROM THE PAGE rather than hardcoded native-side, because
+ * it is the listener's choice and it is the whole reason the widget looks like
+ * this app: `--glacier-accent-solid` is the same token the play button and the
+ * scrubber wear three inches away inside the app. A computed value the native
+ * side cannot parse (a raw oklch()) is simply dropped there and the brand pink
+ * stands in - see publishExtras.
+ */
+/**
+ * The listener's accent, as a plain #rrggbb the native side can parse.
+ *
+ * TWO conversions, and both are load-bearing.
+ *
+ * First a probe element, because `--glacier-accent-solid` holds whatever the
+ * kit's ramp is written in - today an `oklch()`. Setting it on an element and
+ * reading the COMPUTED colour back makes the browser resolve the custom
+ * property; it does NOT promise a legacy `rgb()` string, and on Chromium it
+ * happily hands back `oklch(0.63 0.22 8)`.
+ *
+ * So then a canvas, which is the one thing in the browser that will state a
+ * colour in plain sRGB bytes whatever space it arrived in. Pulling three
+ * numbers out of the computed string with a regex instead is what shipped a
+ * BLACK play button on the home screen: the first three numbers of that oklch
+ * are 0.63, 0.22 and 8, which round to a colour that is not the accent and is
+ * barely a colour at all.
+ *
+ * Cached on the raw value, so a theme change recomputes and a track change
+ * does not.
+ */
+let accentSeen: { raw: string; hex: string } | null = null;
+
+export function nativeAccentHex(): string {
+  try {
+    const raw = getComputedStyle(document.documentElement)
+      .getPropertyValue('--glacier-accent-solid')
+      .trim();
+    if (!raw) return '';
+    if (accentSeen?.raw === raw) return accentSeen.hex;
+
+    const probe = document.createElement('span');
+    probe.style.cssText = 'position:absolute;opacity:0;pointer-events:none';
+    probe.style.color = raw;
+    document.body.appendChild(probe);
+    const resolved = getComputedStyle(probe).color;
+    probe.remove();
+    if (!resolved) return '';
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return '';
+    // A sentinel first: fillStyle silently KEEPS its old value when handed
+    // something it cannot parse, so an unchanged sentinel is the only way to
+    // tell "refused" from "happens to be that colour".
+    ctx.fillStyle = '#010203';
+    ctx.fillStyle = resolved;
+    if (ctx.fillStyle === '#010203') return '';
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+    const hex =
+      '#' + [r, g, b].map((n) => (n ?? 0).toString(16).padStart(2, '0')).join('');
+    accentSeen = { raw, hex };
+    return hex;
+  } catch {
+    return '';
+  }
+}
+
+export function setNativeNowPlayingExtras(
+  accentHex: string,
+  line: string,
+  favourite: boolean | null,
+): void {
+  try {
+    window.AFMNative?.setNowPlayingExtras?.(accentHex, line, favourite == null ? -1 : favourite ? 1 : 0);
+  } catch {
+    // An older shell has no widget to tell.
+  }
+}
+
+/**
  * Obey the buttons that are not on this screen.
  *
  * A steering wheel, an Android Auto dashboard, the lock screen, the
@@ -192,6 +279,10 @@ interface TransportHandlers {
   next?: () => void;
   previous?: () => void;
   seek?: (seconds: number) => void;
+  /** The heart on the home-screen widget. The page owns what "kept" means, so
+   *  the widget only ever asks - and learns the answer from the extras the
+   *  page publishes back. */
+  favourite?: () => void;
   /** A collection tapped in the car's browse list: 'liked' | 'all' | 'shuffle'. */
   playCollection?: (id: string) => void;
   /** A playlist tapped in the car's browse list, by its own id. */
@@ -240,6 +331,7 @@ export function bindNativeTransport(handlers: TransportHandlers): () => void {
       else if (command === 'pause') h.pause?.();
       else if (command === 'next') h.next?.();
       else if (command === 'previous') h.previous?.();
+      else if (command === 'favourite') h.favourite?.();
       else if (command.startsWith('seek:')) {
         const secs = Number(command.slice(5));
         if (Number.isFinite(secs)) h.seek?.(secs);

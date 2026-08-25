@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Skip back, as the player wears it: the bar and the triangle, filled rather
+     than stroked so it holds at widget sizes. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+  android:width="24dp" android:height="24dp"
+  android:viewportWidth="24" android:viewportHeight="24"
+  android:tint="#FFFFFFFF">
+  <path android:fillColor="#FFFFFFFF" android:pathData="M18.5,5.2 L18.5,18.8 L8.4,12 Z" />
+  <path android:fillColor="#FFFFFFFF" android:pathData="M4.6,5.2 L6.6,5.2 L6.6,18.8 L4.6,18.8 Z" />
+</vector>

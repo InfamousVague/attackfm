@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- THE MEDIUM FACE: the player's own arrangement, folded to two cells.
+
+     Same ids as the compact face next door - see its header for why. What this
+     one adds is the pair the compact has no room for: the clocks at the ends of
+     the scrubber, exactly where Now Playing puts them, and the heart. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/widget_root"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:background="@drawable/widget_bg"
+  android:orientation="vertical"
+  android:padding="16dp">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <ImageView
+      android:id="@+id/widget_art"
+      android:layout_width="58dp"
+      android:layout_height="58dp"
+      android:contentDescription="@null"
+      android:scaleType="fitXY"
+      android:src="@drawable/widget_art_placeholder" />
+
+    <LinearLayout
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_marginStart="14dp"
+      android:layout_weight="1"
+      android:orientation="vertical">
+
+      <TextView
+        android:id="@+id/widget_title"
+        android:text="AttackFM"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="#FFFFFFFF"
+        android:textSize="16sp"
+        android:textStyle="bold" />
+
+      <TextView
+        android:id="@+id/widget_artist"
+        android:text="Nothing playing"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="#A6FFFFFF"
+        android:textSize="13sp" />
+
+      <TextView
+        android:id="@+id/widget_line"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="#8AFFFFFF"
+        android:textSize="11sp"
+        android:visibility="gone" />
+    </LinearLayout>
+
+    <ImageView
+      android:id="@+id/widget_heart"
+      android:layout_width="34dp"
+      android:layout_height="34dp"
+      android:contentDescription="Favourite"
+      android:padding="5dp"
+      android:scaleType="fitCenter"
+      android:src="@drawable/ic_widget_heart" />
+  </LinearLayout>
+
+  <!-- The clocks AND the bar between them: one row, one id, so a track with no
+       duration yet takes the whole thing away rather than leaving two zeros
+       either side of a gap. -->
+  <LinearLayout
+    android:id="@+id/widget_clocks"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="12dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <TextView
+      android:id="@+id/widget_elapsed"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:minWidth="34dp"
+      android:textColor="#8AFFFFFF"
+      android:textSize="11sp" />
+
+    <ImageView
+      android:id="@+id/widget_wave"
+      android:layout_width="0dp"
+      android:layout_height="22dp"
+      android:layout_marginStart="8dp"
+      android:layout_marginEnd="8dp"
+      android:layout_weight="1"
+      android:contentDescription="@null"
+      android:scaleType="fitXY" />
+
+    <TextView
+      android:id="@+id/widget_remaining"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:gravity="end"
+      android:minWidth="38dp"
+      android:textColor="#8AFFFFFF"
+      android:textSize="11sp" />
+  </LinearLayout>
+
+  <LinearLayout
+    android:id="@+id/widget_transport"
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_marginTop="6dp"
+    android:layout_weight="1"
+    android:gravity="center"
+    android:orientation="horizontal">
+
+    <ImageView
+      android:id="@+id/widget_prev"
+      android:layout_width="44dp"
+      android:layout_height="44dp"
+      android:contentDescription="Previous"
+      android:padding="10dp"
+      android:scaleType="fitCenter"
+      android:src="@drawable/ic_widget_prev" />
+
+    <ImageView
+      android:id="@+id/widget_play"
+      android:layout_width="52dp"
+      android:layout_height="52dp"
+      android:layout_marginStart="18dp"
+      android:layout_marginEnd="18dp"
+      android:contentDescription="Play or pause"
+      android:scaleType="fitCenter"
+      android:src="@drawable/widget_play_preview" />
+
+    <ImageView
+      android:id="@+id/widget_next"
+      android:layout_width="44dp"
+      android:layout_height="44dp"
+      android:contentDescription="Next"
+      android:padding="10dp"
+      android:scaleType="fitCenter"
+      android:src="@drawable/ic_widget_next" />
+  </LinearLayout>
+</LinearLayout>
