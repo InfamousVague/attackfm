@@ -683,11 +683,21 @@ export function DatePage() {
           </div>
 
           <div className="dateActions">
-            {/* Between Pass and Keep, and smaller than both: it undoes either,
-                so it belongs to neither side, and it is the one control here
-                that should never be the easiest thing to hit by accident. */}
             <IconButton
-              variant="ghost"
+              variant="outline"
+              className="dateActions__btn dateActions__btn--pass"
+              aria-label={current ? `Pass on ${current.title}` : 'Pass'}
+              disabled={!current}
+              onClick={() => current && verdict(current, 'left')}
+            >
+              <X size={26} />
+            </IconButton>
+            {/* Between the two verdicts, because it undoes either and belongs
+                to neither. A peer of them now rather than a smaller, quieter
+                thing off to one side: it is the third thing you press in here,
+                and it read as a footnote to the row it is actually part of. */}
+            <IconButton
+              variant="outline"
               className="dateActions__btn dateActions__btn--undo"
               aria-label={
                 undos.length > 0
@@ -697,16 +707,7 @@ export function DatePage() {
               disabled={undos.length === 0}
               onClick={undo}
             >
-              <Undo2 size={20} />
-            </IconButton>
-            <IconButton
-              variant="outline"
-              className="dateActions__btn dateActions__btn--pass"
-              aria-label={current ? `Pass on ${current.title}` : 'Pass'}
-              disabled={!current}
-              onClick={() => current && verdict(current, 'left')}
-            >
-              <X size={26} />
+              <Undo2 size={24} />
             </IconButton>
             <IconButton
               variant="outline"
