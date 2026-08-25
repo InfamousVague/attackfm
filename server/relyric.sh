@@ -39,10 +39,39 @@ TOKEN=$(printf '{"username":"%s","password":"%s"}' "$USER" "$PASS" \
 URL="${BASE}/api/lyrics/redo"
 [ -n "${TRACK}" ] && URL="${URL}?id=${TRACK}"
 
-OUT=$(curl -sf -X POST "${URL}" -H "Authorization: Bearer ${TOKEN}") || {
-  echo "the server refused - it may have no speech recogniser or model installed" >&2
-  exit 1
-}
+# Status and body together, so a refusal can say WHICH refusal it was. The
+# first version reported every failure as "no speech recogniser", which is the
+# wrong answer for much the likeliest one: a hub that predates this endpoint
+# and simply 404s.
+RESP=$(curl -s -w '\n%{http_code}' -X POST "${URL}" -H "Authorization: Bearer ${TOKEN}")
+CODE=$(printf '%s' "$RESP" | tail -n1)
+OUT=$(printf '%s' "$RESP" | sed '$d')
+
+case "${CODE}" in
+  200) : ;;
+  404)
+    echo "this hub does not have /api/lyrics/redo yet - it is running a build from" >&2
+    echo "before re-timing existed. Update it first:" >&2
+    echo "    git pull && bash server/home-install.sh" >&2
+    exit 1 ;;
+  412)
+    echo "this hub has no speech recogniser or model, so it cannot time lyrics -" >&2
+    echo "it is the same recogniser that transcribes books." >&2
+    echo >&2
+    echo "Check you are on the right box. A friends/mirror instance holds no" >&2
+    echo "library and has no recogniser; this belongs on the hub your music" >&2
+    echo "actually lives on. \`curl -s localhost:${PORT}/api/server\` names it, and" >&2
+    echo "a hub with nothing to play reports \"tracks\":0." >&2
+    exit 1 ;;
+  403)
+    echo "that account is not an admin. Re-timing the whole library needs one;" >&2
+    echo "a single track does not - try: bash server/relyric.sh <track id>" >&2
+    exit 1 ;;
+  *)
+    echo "the server answered ${CODE}: ${OUT}" >&2
+    exit 1 ;;
+esac
+
 echo "${OUT}"
 
 CLEARED=$(printf '%s' "$OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["cleared"])' 2>/dev/null || echo "?")

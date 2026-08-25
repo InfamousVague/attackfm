@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.68
+
+- Reading along keeps the words you are hearing in the middle of the screen again. A transcript's passage can be taller than the screen it is drawn on, and centring one of those put its opening line above the top edge, where it faded out - so a long passage appeared to start somewhere you could not see. A passage that fits is centred as before; one that does not now follows the word being spoken, which is the only point in it that is actually where the reading is
+
 ## 0.4.67
 
 - Lyrics no longer open with the file's own bookkeeping. A song whose words are not timed was printing `[ti:]`, `[ar:]` and the name of whatever fetched them as its first three lines - the timed path had always dropped those, the plain one never did. A bracketed line without a colon is a section marker and stays, so `[Chorus]` is still `[Chorus]`
