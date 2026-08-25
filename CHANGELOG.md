@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.53
+
+- The handbook catches up with Books: one new page, between The deck and Search, on the shelf, reading along, bookmarks, speed, skipping the publisher's card, finding a spoken line, and adding a book you own
+
 ## 0.4.52
 
 - Unfolded and held upright, the player is simply the screen. It was somewhere you had to go and lift, on the one shape with the height for the artwork, the words and the transport all at once. Turn the same screen sideways and you get the split you always did: the player on the right, your library on the left

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import {
   AppWindow,
   Blocks,
+  BookAudio,
   BookOpen,
   Braces,
   Command,
@@ -9,6 +10,7 @@ import {
   Disc3,
   Download,
   FolderTree,
+  Gauge,
   HardDrive,
   Layers,
   LibraryBig,
@@ -20,14 +22,17 @@ import {
   PackageOpen,
   Palette,
   QrCode,
+  Quote,
   RefreshCw,
   Rocket,
   ScrollText,
   Search,
   Server,
   ShieldCheck,
+  SkipForward,
   Sparkles,
   Telescope,
+  Upload,
 } from '@glacier/icons';
 
 /**
@@ -225,6 +230,56 @@ export const HANDBOOK_PAGES: readonly HandbookPage[] = [
             {
               icon: <MonitorSpeaker size={FACT} />,
               text: 'The queue survives navigation - pages come and go, the deck does not.',
+            },
+          ]}
+        />
+      </>
+    ),
+  },
+  {
+    id: 'books',
+    chapter: 'The app',
+    icon: <BookAudio size={GLYPH} />,
+    title: 'Books',
+    body: (
+      <>
+        <P>
+          Audiobooks keep a shelf of their own, with a seat on the bar - a
+          nightly book is a daily destination, and a twelve-hour reading loose
+          in shuffle would be wrong every place it turned up. Books file under
+          their authors, the hero&rsquo;s one verb is Resume, and a transcribed
+          book&rsquo;s card says how fast its narrator actually reads - 168
+          wpm, brisk - the number that settles 1.25&times; before the book
+          starts rather than ten minutes in.
+        </P>
+        <P>
+          Playing one turns Now Playing into a reader. The hub transcribes a
+          book ahead of time - the shelf&rsquo;s Read along button asks, and a
+          book&rsquo;s hold menu can always ask for a fresh reading - and the
+          words follow the narration word by word. Tap a line to play from its
+          top; hold one to keep it, and the passage joins that book&rsquo;s
+          bookmarks carrying the sentence itself, kept with your account so a
+          place marked on the sofa is there on the bus. Chapters get truthful
+          names and a line each without spoilers, written by the hub&rsquo;s
+          AI - a preamble mislabelled Chapter 1 gets called a preamble.
+        </P>
+        <Facts
+          items={[
+            {
+              icon: <Gauge size={FACT} />,
+              text: 'Speed runs 0.75× to 2× without touching pitch - chapters, bookmarks and the words all stay exactly where they were.',
+            },
+            {
+              icon: <SkipForward size={FACT} />,
+              text: 'Where the transcript can see the publisher’s card and the closing credits, the book’s menu offers to skip both, remembered for that book alone.',
+            },
+            {
+              icon: <Quote size={FACT} />,
+              text: 'Spoken words are searchable: half a remembered line surfaces as “Heard in your library” and plays from the moment it is said.',
+            },
+            {
+              icon: <Upload size={FACT} />,
+              text: 'Add a book puts one you own on the shelf. A phone cannot hand over a folder of chapters, so zip it and add the zip - the hub unpacks it and shelves the book, chapters intact.',
             },
           ]}
         />
