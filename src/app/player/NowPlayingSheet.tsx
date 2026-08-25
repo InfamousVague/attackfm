@@ -1,4 +1,4 @@
-import { chapterNumbers, frontMatterTitle, spokenChapterNumber } from './chapterNumber.ts';
+import { chapterNumbers, chapterTitleWords, frontMatterTitle, spokenChapterNumber } from './chapterNumber.ts';
 import { SpectrumArt } from './SpectrumArt.tsx';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { chapterPreview } from './chapterOpening.ts';
@@ -722,11 +722,12 @@ export function NowPlayingSheet({
       const said = notes?.find((n) => n.idx === i)?.name?.trim();
       if (said) return said;
       const n = nums[i] ?? null;
-      // Front matter keeps its own name and takes no number.
-      if (n === null) return fallback.trim() || `Chapter ${i + 1}`;
-      const bare = fallback
-        .replace(new RegExp(`^chapter\\s*0*${n}\\b[\\s—–:.-]*`, 'i'), '')
-        .trim();
+      // Front matter keeps its own name and takes no number - or is named for
+      // what it is, where the name it came with was a number it has no claim to.
+      if (n === null) return frontMatterTitle(fallback, i) || `Chapter ${i + 1}`;
+      // Whatever number the tag states comes off, not only a matching one:
+      // "Chapter 9 — Chapter 10" is the heading that made this obvious.
+      const bare = chapterTitleWords(fallback);
       return bare ? `Chapter ${n} — ${bare}` : `Chapter ${n}`;
     };
     const heads: ReadingItem[] =
@@ -820,10 +821,10 @@ export function NowPlayingSheet({
         const note = noteFor(track.path, i);
         const n = nums[i] ?? null;
         const raw = (note?.name ?? c.title ?? '').trim();
-        const bare =
-          n === null
-            ? raw
-            : raw.replace(new RegExp(`^chapter\\s*0*${n}\\b[\\s—–:.-]*`, 'i'), '').trim();
+        // Any label of its own comes off, not only one that agrees with the
+        // number this row prints - a tag reading "Chapter 10" beside a row that
+        // knows it is chapter 9 would otherwise offer both answers at once.
+        const bare = n === null ? raw : chapterTitleWords(raw);
         return {
           n,
           title:
@@ -854,10 +855,7 @@ export function NowPlayingSheet({
       // Same reason as the marked branch above: the row prints the number, so
       // a title that opens with its own "Chapter N" would say it twice.
       const raw = (note?.name?.trim() || t.title || '').trim();
-      const bare =
-        n === null
-          ? raw
-          : raw.replace(new RegExp(`^chapter\\s*0*${n}\\b[\\s\u2014\u2013:.-]*`, 'i'), '').trim();
+      const bare = n === null ? raw : chapterTitleWords(raw);
       return {
         n,
         title: bare || (n === null ? `Chapter ${i + 1}` : `Chapter ${n}`),

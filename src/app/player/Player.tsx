@@ -11,7 +11,7 @@ import type { AnalyserMeter, LoudnessMeter, PlayerRepeat } from '@glacier/react'
 import { isIOS, isMobile } from '../core/platform.ts';
 import { useLibrary } from '../library/library.tsx';
 import { useEqualizer } from './equalizer.tsx';
-import { chapterNumbers, frontMatterTitle } from './chapterNumber.ts';
+import { chapterNumbers, chapterTitleWords, frontMatterTitle } from './chapterNumber.ts';
 import { gainFor, useLoudnessMode, useLoudnessTable } from './loudness.ts';
 import { usePlayback } from './playback.tsx';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
@@ -2405,8 +2405,16 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     // or the Intro where the name it came with was a number it has no right to.
     if (n === null) return frontMatterTitle(title ?? '', idx) || `Chapter ${idx + 1} of ${chapters.length}`;
     const ord = `Chapter ${n} of ${chapters.length}`;
-    // The title only adds something when it is not just "Chapter N" again.
-    return title && title.toLowerCase() !== `chapter ${n}` ? `${ord} · ${title}` : ord;
+    /*
+     * The title only adds something when it is WORDS.
+     *
+     * It used to be dropped only when it restated this row's own number, which
+     * left "Chapter 9 of 50 · Chapter 10" on every book whose card was numbered
+     * as chapter one: two answers to the same question, one of them wrong, side
+     * by side. A label is dropped whatever number it states; a real name stays.
+     */
+    const words = chapterTitleWords(title ?? '');
+    return words ? `${ord} · ${words}` : ord;
   })();
   /**
    * How much book is left, not how much file.

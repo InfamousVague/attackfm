@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.65
+
+- A chapter shows one number, not two. The file's own "Chapter 10" was being printed beside the corrected "Chapter 9" - a right answer and a wrong one side by side, with nothing to tell them apart. A tag that is only a number is dropped now whatever number it claims; one that carries real words keeps them
+
 ## 0.4.64
 
 - A bought audiobook opens with the publisher's card, and whoever ripped it numbered that card as chapter one - so the whole book read one ahead of itself, and what you call chapter nine was labelled ten for thirteen hours. The opening section is now the Intro and the counting starts after it. A book whose reading has been transcribed still takes the narrator's word over the filename's, as it did
