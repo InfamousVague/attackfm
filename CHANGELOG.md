@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.52
+
+- Unfolded and held upright, the player is simply the screen. It was somewhere you had to go and lift, on the one shape with the height for the artwork, the words and the transport all at once. Turn the same screen sideways and you get the split you always did: the player on the right, your library on the left
+
 ## 0.4.51
 
 - The small player strip drops its two clocks. The seek bar's own fill already says where you are, and the space goes to the song's name and the bar itself

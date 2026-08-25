@@ -374,6 +374,33 @@ export function Player({
    * thumb-sized transport belongs to touch, not to width - so widening this
    * one condition does not put phone-sized buttons on a desktop.
    */
+  /*
+   * Unfolded and held UPRIGHT: Now Playing is the screen, not a sheet to lift.
+   *
+   * The other two shapes were already decided. Sideways with room, the player
+   * takes the right half and the library keeps the left - a split. A phone in
+   * portrait keeps the strip, and the full player is somewhere you go. This is
+   * the third: a big screen held upright is the one shape with the height for
+   * the artwork, the words and the transport all at once, and none of the
+   * width a second column would need. Making somebody tap to reach it there
+   * was treating the best surface for the player as though it were the worst.
+   *
+   * `min-width: 600px and min-height: 600px` is the same line Android draws
+   * between a phone and everything else - 600dp of SMALLEST width - said in
+   * the two dimensions CSS actually has.
+   *
+   * The aspect halves OVERLAP at exactly 1:1: `min-aspect-ratio: 1/1` and
+   * `max-aspect-ratio: 1/1` are both true on a perfectly square window, so the
+   * two shapes are not the clean partition they look like. Measured, not
+   * assumed - 900x900 matched both. The split wins there (see npDocked below),
+   * because a square has the width for two rooms and nothing is gained by
+   * giving all of it to one. Resolved in the condition rather than by nudging
+   * a ratio to 999/1000, which would only move the seam somewhere less
+   * obvious.
+   */
+  const npBig = useMediaQuery(
+    '(min-width: 600px) and (min-height: 600px) and (max-aspect-ratio: 1/1)',
+  );
   const deskShape = useDesktopLayout();
   const sheetShape = mobileControls || deskShape;
   /*
@@ -396,6 +423,31 @@ export function Player({
   useEffect(() => {
     if (playing) setDockDismissed(false);
   }, [playing]);
+  /*
+   * On that shape the player opens itself, once something has been picked.
+   *
+   * Sharing `dockDismissed` rather than adding a second flag: it already means
+   * "the listener asked for the player to get out of the way during this quiet
+   * spell", which is exactly what closing the full screen means here, and it
+   * is already cleared the moment anything plays. One flag, two shapes - two
+   * flags would be two ways to be dismissed and four states to reason about.
+   */
+  useEffect(() => {
+    // `!npWide` is the tie-break for a square window, where both queries match.
+    if (npBig && !npWide && deckEngaged && !chromeHidden && !dockDismissed) setNpOpen(true);
+  }, [npBig, npWide, deckEngaged, chromeHidden, dockDismissed]);
+  /**
+   * Closing it. On the big upright shape that is a dismissal to be remembered
+   * for the quiet spell, or the effect above would reopen it on the next
+   * render; everywhere else it is just a sheet being put down.
+   */
+  const closeNowPlaying = useCallback(
+    (next: boolean) => {
+      setNpOpen(next);
+      if (!next && npBig) setDockDismissed(true);
+    },
+    [npBig],
+  );
   // The overflow popover state now lives in PlayerStrip.
   // The song being filed into a playlist, or null when that sheet is shut.
   const [filing, setFiling] = useState<Track | null>(null);
@@ -412,7 +464,7 @@ export function Player({
   // allowed anywhere near the page history underneath.
   useSystemBack(npQueue, () => setNpQueue(false));
   useSystemBack(npLyrics, () => setNpLyrics(false));
-  useSystemBack(npOpen, () => setNpOpen(false));
+  useSystemBack(npOpen, () => closeNowPlaying(false));
   // The dim veil, the return-to-app move and the Canvas fetch live in
   // useNpChrome, called below once `audible` and the play session exist.
   // Bumped on every seek so the Connect report effect refires (a seek moves the
@@ -3251,7 +3303,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
           setNpLyrics={setNpLyrics}
           npQueue={npQueue}
           setNpQueue={setNpQueue}
-          setNpOpen={setNpOpen}
+          setNpOpen={closeNowPlaying}
           npArtMenu={npArtMenu}
           artView={wornArtView}
           chooseArtView={chooseArtView}
