@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.60
+
+- Skip-back is on the condensed bar again. It came off when the row under the seek was still carrying icons and the width was genuinely spoken for; with those gone there is room for all three, so all three are there
+
 ## 0.4.59
 
 - The condensed player bar is down to what you actually reach for: the disc, the seek bar with the time at each end of the line under it, and play and skip-forward. The heart, the device picker and the back skip have gone - every one of them is a tap away on the full player, which the strip lifts, and the room they were taking is room the times and the bar were short of
