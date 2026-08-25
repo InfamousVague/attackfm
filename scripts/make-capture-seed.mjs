@@ -85,6 +85,28 @@ const main = async () => {
     // Dark, and the app's own accent: the site and the shots should look like
     // the product's default rather than like somebody's personal theme.
     appearance: { theme: 'dark' },
+    /*
+     * The rest of the app's state the capture depends on, set here so the run
+     * is reproducible rather than depending on however this account last left
+     * the app.
+     *
+     * Three of these are safety, not taste. The now-playing video is Spotify's
+     * Canvas clip and must not appear in anything published. The sound console
+     * remembers the room it was last in, and two of its rooms are the EQ and
+     * the unshipped HiFi chain. The art view decides what the biggest element
+     * on the Now Playing screen is, and a run that does not set it photographs
+     * whatever was there last.
+     *
+     * Developer mode earns its place differently: the Booth has no seat in the
+     * nav without it, which is why a capture without this silently comes back
+     * missing the Booth rather than failing.
+     */
+    prefs: {
+      'attackfm-now-playing-video': 'false',
+      'attackfm-art-view': 'cd',
+      'attackfm-sound-console-room': 'filters',
+      'attackfm-developer-mode': 'on',
+    },
   };
 
   mkdirSync(dirname(OUT), { recursive: true });

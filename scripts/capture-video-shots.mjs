@@ -178,6 +178,41 @@ const clickByContains = (text, scope = 'button,a,[role=button]') =>
     return (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60);
   })()`;
 
+/** Click a CSS selector - steadier than text for anything with a class. */
+const clickSel = (css) =>
+  `(() => {
+    const el = document.querySelector(${JSON.stringify(css)});
+    if (!el) return null;
+    el.click();
+    return ${JSON.stringify(css)};
+  })()`;
+
+/**
+ * A nav destination.
+ *
+ * The phone's bar puts the label in the text of `.appNavBarTab`; anything that
+ * did not fit is behind More. Tried in that order so one call works on either.
+ */
+const nav = (label) =>
+  `(() => {
+    const wanted = ${JSON.stringify(label)}.toLowerCase();
+    const tab = [...document.querySelectorAll('.appNavBarTab')]
+      .find(t => (t.textContent || '').trim().toLowerCase() === wanted);
+    if (tab) { tab.click(); return 'tab:' + wanted; }
+    const more = [...document.querySelectorAll('button,[role=button]')]
+      .find(e => (e.getAttribute('aria-label') || '') === 'More');
+    if (more) {
+      more.click();
+      const item = [...document.querySelectorAll('[role=menuitem]')]
+        .find(e => (e.textContent || '').trim().toLowerCase() === wanted);
+      if (item) { item.click(); return 'more:' + wanted; }
+    }
+    const any = [...document.querySelectorAll('button,a,[role=button]')]
+      .find(e => (e.getAttribute('aria-label') || e.textContent || '').trim().toLowerCase() === wanted);
+    if (any) { any.click(); return 'label:' + wanted; }
+    return null;
+  })()`;
+
 const OUT_ROOT = resolve(root, 'capture');
 const PHONE = { width: 390, height: 844, deviceScaleFactor: 2, mobile: true };
 /** A big screen held upright: >=600 both ways and portrait, which is the shape
@@ -198,7 +233,7 @@ const says = (re) => `${re}.test(document.body.innerText)`;
  */
 const PHONE_SHOTS = [
   { name: 'home', go: `'already here'`, is: says(/listened this week|Playlists/i) },
-  { name: 'allSongs', go: clickByContains('All songs'), is: seen('table'), wait: 2800 },
+  { name: 'allSongs', go: clickSel('.libChip--all'), is: `document.querySelectorAll('tr[class*=interactiveRow]').length >= 2 && /songs/i.test(document.body.innerText)`, wait: 2800 },
   { name: 'search', go: `(() => {
       const f = document.querySelector('input[type=search], input[placeholder*="Search" i]');
       if (!f) return null;
@@ -206,13 +241,30 @@ const PHONE_SHOTS = [
       set.call(f, 'love'); f.dispatchEvent(new Event('input', { bubbles: true }));
       return 'typed';
     })()`, is: says(/result|songs|albums/i), wait: 2600 },
-  { name: 'books', go: clickByContains('Books', 'a,button,[role=button]'), is: says(/book|shelf|chapter/i), wait: 2600 },
-  { name: 'bookPage', go: `(() => {
-      const c = document.querySelector('.bookCard, .trackCard');
-      if (!c) return null; c.click(); return 'opened';
-    })()`, is: says(/chapter/i), wait: 2600 },
-  { name: 'discover', go: clickByContains('Discover', 'a,button,[role=button]'), is: says(/discover|for you|station/i), wait: 3000 },
-  { name: 'booth', go: clickByContains('Discover', 'a,button,[role=button]'), then: clickByContains('Booth'), is: says(/booth|curator|music date/i), wait: 3000, optional: true },
+  { name: 'books', go: nav('Books'), is: says(/book|shelf|chapter/i), wait: 2600 },
+  { name: 'bookPage', go: clickSel('.bookCard'), is: says(/chapter/i), wait: 2600 },
+  /*
+   * An album only gets photographed if the library HAS all of it. An
+   * incomplete record interleaves gap rows carrying "Add {title}" - an acquire
+   * affordance - among the tracks, so "N of M songs" anywhere on the page is
+   * reason enough to skip rather than risk the frame.
+   */
+  { name: 'albumPage', go: clickSel('.trackCard'),
+    is: `!!document.querySelector('.albumPage') && !/\\d+ of \\d+ songs/.test(document.body.innerText)`,
+    wait: 2600, optional: true },
+  /*
+   * Discover is NOT filmed. It carries "Browse the charts", which is an offer
+   * to go and get music - the guard stopped a run on it, which is the system
+   * working. The Booth below covers the same ground (taste, a live set, the
+   * curator) without an acquire affordance anywhere on it.
+   */
+  /* The Booth has no seat in the nav unless developer mode is on - which the
+     seed sets, and which is why a run without it comes back silently missing
+     the Booth rather than failing. Never click the curator status pill: it
+     opens a pane naming a downloader. */
+  { name: 'booth', go: nav('Booth'),
+    is: `(document.querySelector('.boothHead__title')?.textContent||'').trim()==='The Booth' && !document.querySelector('[role=dialog]')`,
+    wait: 4000, optional: true },
   { name: 'stats', go: `(() => {
       const l = [...document.querySelectorAll('a,button,[role=button]')].find(e => /^Library$/i.test((e.textContent||'').trim()));
       if (l) l.click(); return 'library';
@@ -221,9 +273,28 @@ const PHONE_SHOTS = [
 
 /** Everything that needs music actually playing. */
 const PLAYING_SHOTS = [
-  { name: 'nowPlaying', go: `'already open'`, is: seen('.npScreen') },
+  /*
+   * The Canvas backstop, third time lucky. Spotify's looping clip arrives over
+   * https; the app's own artwork video is a blob: URL it made itself. Refusing
+   * any <video>, or any video with a source at all, refused every good frame -
+   * the sheet has one either way. Only a REMOTE source means somebody else's
+   * clip is on screen.
+   */
+  { name: 'nowPlaying', go: `(() => {
+      if (document.querySelector('.npScreen')) return 'already open';
+      const bar = document.querySelector('.playerBarShell');
+      if (!bar) return null;
+      // The shell has no label and no text - the tap target is its dead space,
+      // so the artwork's own wrapper is what answers.
+      (bar.querySelector('img')?.closest('div') || bar).click();
+      return 'lifted';
+    })()`, wait: 3200,
+    is: `!!document.querySelector('.npScreen')
+          && ![...document.querySelectorAll('.npScreen video')]
+               .some(v => /^https?:/.test(v.currentSrc || ''))` },
   { name: 'queue', go: clickByLabel('Queue'), is: `!![...document.querySelectorAll('button,[role=button]')].find(e => /close queue/i.test(e.getAttribute('aria-label')||''))`, close: 'Close queue', wait: 2600 },
   { name: 'chapters', go: clickByLabel('Chapters'), is: `!![...document.querySelectorAll('button,[role=button]')].find(e => /close chapters/i.test(e.getAttribute('aria-label')||''))`, close: 'Close chapters', wait: 2600, optional: true },
+  { name: 'sound', go: clickByLabel('Sound'), is: seen('[aria-label="Search filters"]'), close: 'Close', wait: 2400, optional: true },
   { name: 'devices', go: clickByLabel('Playing on'), is: says(/this device|playing on|connect/i), close: 'Close', wait: 2200, optional: true },
 ];
 
@@ -241,9 +312,53 @@ const BOOK_SHOTS = [
 
 const UNFOLDED_SHOTS = [
   { name: 'unfoldedNowPlaying', go: `'shape change'`, is: seen('.npScreen'), wait: 2600 },
-  { name: 'unfoldedLibrary', go: clickByContains('Library', 'a,button,[role=button]'), is: says(/Playlists|All songs/i), wait: 2600 },
-  { name: 'unfoldedBooks', go: clickByContains('Books', 'a,button,[role=button]'), is: says(/book|chapter/i), wait: 2600, optional: true },
+  { name: 'unfoldedLibrary', go: nav('Library'), is: says(/Playlists|All songs/i), wait: 2600 },
+  { name: 'unfoldedBooks', go: nav('Books'), is: says(/book|chapter/i), wait: 2600, optional: true },
 ];
+
+/*
+ * Checked immediately before EVERY shutter, and fatal.
+ *
+ * The seed disables the acquiring plugins, but that is not a guarantee on its
+ * own: prefsSync adopts the registry's copy of `attackfm-plugins-disabled` and
+ * overwrites the local one, so a stored blob that re-enables the importer would
+ * quietly re-enable it mid-run. A frame is cheap to re-take and impossible to
+ * un-publish, so the words and the nodes are both looked for every time.
+ *
+ * `Add a book` is allowed through by name: it uploads a file the listener
+ * already has and names no source. Everything else matching "Add …" is either a
+ * gap row on an incomplete album or an acquire affordance.
+ */
+const GUARD = `(() => {
+  const words = /spotiflac|spotify|deezer|librivox|audible|import|invite|pairing|recent pulls|browse the charts/i;
+  const hit = document.body.innerText.match(words);
+  if (hit) return 'text: ' + hit[0];
+  const node = document.querySelector(
+    '.booksImport__head, .bookJob, .jamLive__code, input[type=password], [aria-label^="Add all"]');
+  if (node) return 'node: ' + (node.className || node.tagName);
+  /*
+   * "Add …" is mostly innocent and the first cut of this was not: it stopped a
+   * run on "Add The Clockwork Meridian to favourites", which is the heart. What
+   * is being looked for is the GAP row on an incomplete album - a bare "Add
+   * {title}" that offers to go and fetch it - and "Add all". So the ordinary
+   * verbs are named and everything else in that shape is refused.
+   */
+  const benign = /(to favourites|to playlist|a book|to the queue|to up next)$/i;
+  const adds = [...document.querySelectorAll('[aria-label^="Add "]')]
+    .map(e => e.getAttribute('aria-label') || '')
+    .filter(l => !benign.test(l));
+  if (adds.length) return 'affordance: ' + adds[0];
+  return '';
+})()`;
+
+/** The prefs that decide what may be photographed, re-applied per group. */
+const reassert = (seed) =>
+  `(() => {
+    localStorage.setItem('attackfm-plugins-disabled', ${JSON.stringify(JSON.stringify(seed.disabled ?? []))});
+    const prefs = ${JSON.stringify(seed.prefs ?? {})};
+    for (const k of Object.keys(prefs)) localStorage.setItem(k, prefs[k]);
+    return Object.keys(prefs).length + ' prefs';
+  })()`;
 
 let outDir = '';
 const taken = [];
@@ -273,7 +388,26 @@ async function take(cdp, session, shot) {
       await sleep(shot.wait ?? 2200);
     }
     const right = await evaluate(cdp, session, shot.is);
-    if (!right) throw new Error('reached something, but not the intended screen');
+    if (!right) {
+      /*
+       * "not the intended screen" on its own sends the next person guessing,
+       * which cost several rounds here. The probe says what WAS on screen, so
+       * a skip in the manifest is evidence rather than a mystery.
+       */
+      const probe = await evaluate(cdp, session, `JSON.stringify({
+        np: !!document.querySelector('.npScreen'),
+        strip: !!document.querySelector('.playerBarShell'),
+        vid: [...document.querySelectorAll('.npScreen video')].map(v => v.currentSrc || '(no src)'),
+        head: document.body.innerText.trim().replace(/\\s+/g, ' ').slice(0, 70),
+      })`);
+      throw new Error(`not the intended screen — ${probe}`);
+    }
+    const leak = await evaluate(cdp, session, GUARD);
+    if (leak) {
+      // Not a skip. Something that must never be filmed is on screen, and the
+      // run stops so it can be understood rather than quietly worked around.
+      throw Object.assign(new Error(`ACQUISITION UI ON SCREEN (${leak})`), { fatal: true });
+    }
     await shoot(cdp, session, shot.name);
     if (shot.close) {
       await evaluate(cdp, session, clickByLabel(shot.close));
@@ -288,6 +422,7 @@ async function take(cdp, session, shot) {
     })()`);
     await sleep(400);
   } catch (error) {
+    if (error.fatal) throw error;
     // A library without a jam, a book nobody has transcribed, a panel that moved
     // - none of those should cost the other twenty-five shots.
     skipped.push({ name: shot.name, why: error.message });
@@ -321,6 +456,8 @@ const main = async () => {
       localStorage.setItem('attackfm-server-session', ${JSON.stringify(JSON.stringify(seed.session))});
       localStorage.setItem('attackfm-plugins-disabled', ${JSON.stringify(JSON.stringify(seed.disabled))});
       localStorage.setItem('attackfm-appearance-v2', ${JSON.stringify(JSON.stringify(seed.appearance))});
+      const prefs = ${JSON.stringify(seed.prefs ?? {})};
+      for (const k of Object.keys(prefs)) localStorage.setItem(k, prefs[k]);
       return 'ok';
     })()`);
     await cdp.send('Page.navigate', { url: APP }, session);
@@ -336,14 +473,16 @@ const main = async () => {
          ? document.body.innerText.match(/.{0,40}(spotiflac|spotify import|audible|librivox|downloads).{0,40}/i)[0] : ''`);
     if (leaked) throw new Error(`acquisition UI on screen: "${leaked}"`);
 
+    await evaluate(cdp, session, reassert(seed));
     console.log('\nphone');
     for (const shot of PHONE_SHOTS) await take(cdp, session, shot);
 
     // Put music on, from the song list, then everything that needs it.
+    await evaluate(cdp, session, reassert(seed));
     console.log('\nplaying');
-    await evaluate(cdp, session, clickByContains('Library', 'a,button,[role=button]'));
+    await evaluate(cdp, session, nav('Library'));
     await sleep(1800);
-    await evaluate(cdp, session, clickByContains('All songs'));
+    await evaluate(cdp, session, clickSel('.libChip--all'));
     await sleep(2800);
     const played = await evaluate(cdp, session, playATrack);
     console.log(`  play: ${played ?? 'nothing'}`);
@@ -359,10 +498,11 @@ const main = async () => {
     for (const shot of PLAYING_SHOTS) await take(cdp, session, shot);
 
     // A book, for the surfaces only a book has.
+    await evaluate(cdp, session, reassert(seed));
     console.log('\nbook');
     await evaluate(cdp, session, clickByLabel('Close now playing'));
     await sleep(1200);
-    const toBooks = await evaluate(cdp, session, clickByContains('Books', 'a,button,[role=button]'));
+    const toBooks = await evaluate(cdp, session, nav('Books'));
     await sleep(2600);
     if (toBooks) {
       await evaluate(cdp, session, `(() => { const c = document.querySelector('.bookCard, .trackCard'); if (c) c.click(); return !!c; })()`);
@@ -385,6 +525,7 @@ const main = async () => {
       for (const shot of BOOK_SHOTS) await take(cdp, session, shot);
     }
 
+    await evaluate(cdp, session, reassert(seed));
     console.log('\nunfolded');
     await setViewport(cdp, session, UNFOLDED);
     // The shape is read at mount, so the app is reloaded into it rather than
