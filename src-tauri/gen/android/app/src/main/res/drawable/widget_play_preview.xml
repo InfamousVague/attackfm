@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The play disc, as a still.
+     The live one is painted per push so it can wear the accent the listener
+     chose and swap for a pause; this flat copy exists only so the widget
+     PICKER has something to show - a slot that fills itself at runtime is an
+     empty hole in a preview, and the preview is where somebody decides
+     whether to place this at all. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+  android:width="52dp" android:height="52dp"
+  android:viewportWidth="52" android:viewportHeight="52">
+  <path android:fillColor="#FFFC427B"
+    android:pathData="M26,3 A23,23 0 1 1 25.99,3 Z" />
+  <path android:fillColor="#FFFFFFFF" android:pathData="M21,17.5 L36,26 L21,34.5 Z" />
+</vector>

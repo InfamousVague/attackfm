@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The heart, outlined. The provider swaps the fill for the accent when the
+     song is already kept, which is the same two states the player shows. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+  android:width="24dp" android:height="24dp"
+  android:viewportWidth="24" android:viewportHeight="24">
+  <path
+    android:strokeColor="#FFFFFFFF"
+    android:strokeWidth="1.9"
+    android:strokeLineJoin="round"
+    android:strokeLineCap="round"
+    android:fillColor="#00000000"
+    android:pathData="M19,7.5 C19,5.6 17.4,4 15.4,4 C13.9,4 12.6,4.9 12,6.2 C11.4,4.9 10.1,4 8.6,4 C6.6,4 5,5.6 5,7.5 C5,12 12,19 12,19 C12,19 19,12 19,7.5 Z" />
+</vector>

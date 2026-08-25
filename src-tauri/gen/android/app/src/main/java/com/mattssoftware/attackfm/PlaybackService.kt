@@ -257,6 +257,9 @@ class PlaybackService : MediaBrowserServiceCompat() {
       ACTION_PAUSE -> command("pause")
       ACTION_NEXT -> command("next")
       ACTION_PREVIOUS -> command("previous")
+      // The heart on the widget. Routed like every other button - the page
+      // owns what "kept" means and answers by publishing the new state back.
+      ACTION_FAVOURITE -> command("favourite")
       // The paused notification swiped away: the listener is done. This is the
       // one moment the controls should actually disappear.
       ACTION_STOP -> {
@@ -410,6 +413,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
     // promising controls that reach nothing - lastState going NONE is what
     // flips it to the tap-to-open face.
     lastState = PlaybackStateCompat.STATE_NONE
+    retick()
     NowPlayingWidget.refresh(this)
   }
 
@@ -434,6 +438,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
     const val ACTION_NEXT = "attackfm.next"
     const val ACTION_PREVIOUS = "attackfm.previous"
     const val ACTION_STOP = "attackfm.stop"
+    const val ACTION_FAVOURITE = "attackfm.favourite"
 
     /** The live service's session, so MainActivity can feed it without binding. */
     private var active: MediaSessionCompat? = null
@@ -443,6 +448,11 @@ class PlaybackService : MediaBrowserServiceCompat() {
     private var lastAlbum: String? = null
     private var lastDuration = 0L
     private var lastPosition = 0L
+    /** When [lastPosition] was true, on the monotonic clock. */
+    private var lastPositionAt = 0L
+    private var lastLine: String? = null
+    private var lastAccent: Int? = null
+    private var lastFavourite: Boolean? = null
     /** The cover for the CURRENT song, decoded from bytes the web layer sent.
      *  Cleared the moment a different song is published, so a slow art fetch
      *  can never dress the next track in the last one's sleeve. */
@@ -513,6 +523,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
       lastState =
         if (playing) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED
       lastPosition = positionMs
+      lastPositionAt = android.os.SystemClock.elapsedRealtime()
       active?.setPlaybackState(
         PlaybackStateCompat.Builder()
           .setActions(
@@ -531,6 +542,37 @@ class PlaybackService : MediaBrowserServiceCompat() {
       )
       instance?.refreshNotification()
       instance?.let { NowPlayingWidget.refresh(it) }
+      retick()
+    }
+
+    /*
+     * THE SCRUBBER'S OWN HEARTBEAT.
+     *
+     * A RemoteViews face is a still image: nothing on the home screen redraws
+     * because time passed. The position it prints is extrapolated and so always
+     * right, but it is only ever REPAINTED when something pushes - and the page
+     * pushes on state changes and on seeks, which during an album is almost
+     * never. Without this the bar would freeze at whichever second the track
+     * started and only jump when the song changed.
+     *
+     * Stopped the moment the music does, and free when no widget is placed:
+     * refresh returns on an empty id list before it draws anything.
+     */
+    private val ticker = android.os.Handler(android.os.Looper.getMainLooper())
+    private val tick = object : Runnable {
+      override fun run() {
+        val here = instance ?: return
+        if (lastState != PlaybackStateCompat.STATE_PLAYING) return
+        NowPlayingWidget.refresh(here)
+        ticker.postDelayed(this, NowPlayingWidget.TICK_MS)
+      }
+    }
+
+    private fun retick() {
+      ticker.removeCallbacks(tick)
+      if (lastState == PlaybackStateCompat.STATE_PLAYING) {
+        ticker.postDelayed(tick, NowPlayingWidget.TICK_MS)
+      }
     }
 
     fun start(context: Context) {
@@ -672,15 +714,60 @@ class PlaybackService : MediaBrowserServiceCompat() {
         .sortedBy { it.first }
         .map { it.second }
 
-    /** What the widget draws, read in one piece. */
-    fun widgetSnapshot(): WidgetState =
-      WidgetState(
+    /**
+     * What the widget draws, read in one piece.
+     *
+     * The POSITION is extrapolated rather than reported. The page publishes on
+     * state changes and on seeks, not on every tick (useSystemNowPlaying sends
+     * a coarse position only when it jumps more than a couple of seconds), so
+     * `lastPosition` is a stamp with an age. Carrying it forward by the clock
+     * while playing is exactly what PlaybackStateCompat's rate of 1 tells the
+     * system to do with the same number - this only does it for a surface that
+     * cannot extrapolate on its own.
+     */
+    fun widgetSnapshot(): WidgetState {
+      val playing = lastState == PlaybackStateCompat.STATE_PLAYING
+      val ran = if (playing) android.os.SystemClock.elapsedRealtime() - lastPositionAt else 0L
+      val at = (lastPosition + ran).coerceAtMost(
+        if (lastDuration > 0) lastDuration else Long.MAX_VALUE,
+      )
+      return WidgetState(
         title = lastTitle,
         artist = lastArtist,
+        line = lastLine,
         art = lastArt,
-        playing = lastState == PlaybackStateCompat.STATE_PLAYING,
+        playing = playing,
         live = lastState != PlaybackStateCompat.STATE_NONE,
+        positionMs = at.coerceAtLeast(0L),
+        durationMs = lastDuration,
+        accent = lastAccent,
+        favourite = lastFavourite,
       )
+    }
+
+    /**
+     * What the page knows and the notification never needed: the listener's
+     * accent, the line under the title, and whether this one is kept.
+     *
+     * One call rather than three because they change together - a new track
+     * carries a new line and a new heart - and every one of them ends in the
+     * same widget push.
+     */
+    fun publishExtras(context: Context, accentHex: String?, line: String?, favourite: Boolean?) {
+      lastAccent = accentHex?.let { hex ->
+        try {
+          android.graphics.Color.parseColor(if (hex.startsWith("#")) hex else "#" + hex)
+        } catch (e: IllegalArgumentException) {
+          // A colour the page computed in a space this cannot parse (oklch
+          // straight out of a custom property) is not worth failing over; the
+          // brand's own pink is the honest fallback.
+          null
+        }
+      } ?: lastAccent
+      lastLine = line
+      lastFavourite = favourite
+      NowPlayingWidget.refresh(context)
+    }
   }
 }
 
@@ -701,7 +788,20 @@ data class BrowseNode(
 data class WidgetState(
   val title: String?,
   val artist: String?,
+  /** The third line, when there is something truer than the album to say -
+   *  a book's chapter. Null for a song. */
+  val line: String?,
   val art: android.graphics.Bitmap?,
   val playing: Boolean,
   val live: Boolean,
+  /** Extrapolated to NOW, not the last number the page sent - see
+   *  [PlaybackService.widgetSnapshot]. */
+  val positionMs: Long,
+  val durationMs: Long,
+  /** The accent the listener chose, as the page computed it. Null until the
+   *  page has said, which is when the widget falls back to the brand's own. */
+  val accent: Int?,
+  /** Whether the song is already kept. Null means the page has not said, and
+   *  the heart stays off the face rather than guessing. */
+  val favourite: Boolean?,
 )

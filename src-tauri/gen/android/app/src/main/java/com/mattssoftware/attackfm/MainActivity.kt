@@ -60,6 +60,28 @@ class MainActivity : TauriActivity() {
     }
 
     /**
+     * What only the home-screen widget wants: the listener's accent, the line
+     * under the title, and whether this one is kept.
+     *
+     * Separate from setNowPlaying because none of it is metadata a car or a
+     * lock screen has any use for, and because it changes on its own clock -
+     * a heart is pressed without the song changing.
+     *
+     * `favourite` is an Int rather than a Boolean so the page can say "I do not
+     * know": -1 leaves the heart off the widget entirely, which is the honest
+     * face before the library has answered. A bridge cannot carry a nullable.
+     */
+    @JavascriptInterface
+    fun setNowPlayingExtras(accentHex: String, line: String, favourite: Int) {
+      PlaybackService.publishExtras(
+        this@MainActivity,
+        accentHex.ifBlank { null },
+        line.ifBlank { null },
+        if (favourite < 0) null else favourite > 0,
+      )
+    }
+
+    /**
      * The cover, as bytes. The web layer already holds the image (cached,
      * authenticated, resized); base64 keeps the bridge a string pipe and
      * spares this side a network stack. Decode failures drop silently -

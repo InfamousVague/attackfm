@@ -15,6 +15,18 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.73
+
+- The widget names the chapter the way the player does. It was counting rows, and a book whose publisher numbered its own front matter as chapter one reads one ahead that way - the sheet said Chapter 2 while the home screen said Chapter 3, about the same second of the same recording
+
+## 0.4.72
+
+- The widget's play button wears your accent again, and its cover is back. Both were the same shape of mistake: a colour read out of the theme by counting numbers in it rather than asking the browser what colour it was, and a cover given a full height and no width at all
+
+## 0.4.71
+
+- The home-screen widget is the player now, not a notification in a box. It wears the accent you chose, the cover with the app's own corners, and the scrubber's squiggle - and it comes in three sizes: a row, the player folded to two cells, and a cover-forward face with the times and a heart. Android only for the moment
+
 ## 0.4.70
 
 - Catch me up. Come back to a book after three weeks and press one button: the app reads back everything that has happened up to your bookmark and stops there. Not one word past where you stopped - the recap is built only from the chapters you have finished and the words you actually heard, so it cannot spoil what is coming. It is in the chapter list in the player, and on the book's own sheet on the shelf, where you would find it before pressing play. Needs a server with a transcript of the book and an AI model set up; without either it says so plainly

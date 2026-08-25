@@ -1,4 +1,5 @@
 <resources>
     <string name="app_name">"AttackFM"</string>
     <string name="main_activity_title">"AttackFM"</string>
+    <string name="widget_description">"Now playing, with a scrubber and the transport. Resize it for the cover and the times."</string>
 </resources>

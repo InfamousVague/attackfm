@@ -54,6 +54,7 @@ import {
   SPIN_UP_MS,
   TRACK_ART,
   chapterBreakAfter,
+  chapterIndexAt,
   readArtView,
   readBookArtView,
   readBookSpeed,
@@ -1212,6 +1213,30 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   // further down (after the handlers exist) so the hook's mount-once
   // listeners always act through fresh closures; positionRef is shared with
   // the other side channels here.
+  /*
+   * The line under the title on Android's home-screen widget.
+   *
+   * The BOOK's number, not the row's - the same `chapterNumbers` the sheet
+   * reads, so the widget and the player never disagree about which chapter you
+   * are in. Counting rows instead is off by one for every book whose publisher
+   * numbered its own front matter as chapter one, which is most of them: the
+   * sheet said "Chapter 2 of 5" while the home screen said "Chapter 3 of 5",
+   * about the same second of the same recording.
+   *
+   * Front matter has no number at all, and gets its name instead. A song has
+   * nothing to put here: its album is already a line up.
+   */
+  const widgetLine = (() => {
+    if (track?.kind !== 'book') return '';
+    const marks = track.chapters ?? [];
+    if (marks.length === 0) return track.album || '';
+    const here = chapterIndexAt(marks, position * 1000);
+    const numbers = chapterNumbers(marks.map((c) => c.title ?? ''));
+    const n = numbers[here] ?? null;
+    if (n === null) return frontMatterTitle(marks[here]?.title ?? '', here);
+    return `Chapter ${n} of ${marks.length}`;
+  })();
+
   const { carPlayControls, positionRef } = useSystemNowPlaying({
     track,
     playing,
@@ -1221,6 +1246,8 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     duration,
     artwork,
     audible,
+    line: widgetLine,
+    favourite: favorite,
   });
 
   // Push EQ edits onto the live filters as they happen.
@@ -3005,6 +3032,9 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     next: skipForward,
     previous: skipBack,
     seek: commitSeek,
+    // The widget's heart presses the app's own, haptics and undo included -
+    // the same handler the sheet's heart calls.
+    favourite: toggleFavoriteFelt,
   };
 
   // The listening log - play counts, listen events, and the audiobook
