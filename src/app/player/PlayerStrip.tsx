@@ -384,12 +384,21 @@ export function PlayerStrip({
           )
         }
         /*
-         * The seek bar has to be a shape that READS the samples it is given.
-         * The kit's default paints a plain run and ignores `levels` entirely,
-         * which is why the stored shape arrived and drew nothing: the data was
-         * there, the drawing was not asked for it.
+         * The condensed bar's scrubber is dressed as the full player's.
+         *
+         * Same shape, tone, fill, rail, tracer and the same intensity sum -
+         * `NowPlayingSheet` sets exactly these, and the two are the same
+         * control at two sizes, so a listener moving between them should not
+         * meet two different objects. The desktop bar is left with the kit's
+         * own dressing, as it was.
+         *
+         * `swell` is the kit's smooth wave behind the playhead, not its
+         * `waveform` shape - which is the one that paints the stored levels.
          */
-        shape="waveform"
+        shape={mobileControls ? 'swell' : undefined}
+        tone={mobileControls ? 'accent' : undefined}
+        fill={mobileControls ? 'solid' : undefined}
+        rail={mobileControls ? 'contrast' : undefined}
         duration={dispDuration}
         value={dispPosition}
         onValueChange={onScrubDisp}
@@ -647,8 +656,14 @@ export function PlayerStrip({
         // The shadow trailing the beat under the played run; nothing is drawn
         // without a beat to trail, so it is safe to leave on.
         tracer
-        // The bar moves as hard as the station is playing.
-        intensity={beatIntensity(volume, muted, systemVolume)}
+        // The bar moves as hard as the station is playing - and on the
+        // condensed bar it moves by exactly the sum the full player uses, so
+        // the same song does not swell differently in the two places.
+        intensity={
+          mobileControls
+            ? Math.min(3, beatIntensity(volume, muted, systemVolume) * 1.6)
+            : beatIntensity(volume, muted, systemVolume)
+        }
       />
       </div>
   );
