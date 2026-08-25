@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.49
+
+- Every transcribed book shows how fast its narrator actually reads — "168 wpm, brisk" — beside the chapter count. It is the number that tells you whether to reach for 1.25× before you start rather than ten minutes in
+- Skip the publisher's card. Most readings open with a minute of "this is a LibriVox recording" and close with a list of who made it; where a transcript can see both, the book's menu offers to start after the first and stop before the second, remembered for that book
+
 ## 0.4.48
 
 - Search now finds words INSIDE your music and books. Type a half-remembered line and the results include the moment it is sung or spoken - tap one and it plays from exactly there, not from the top of a twelve-hour book
