@@ -250,10 +250,63 @@ function BookWords({
     const slot = slotRef.current;
     const now = nowRef.current;
     if (!slot || !now) return;
-    const top = now.offsetTop - slot.clientHeight / 2 + now.offsetHeight / 2;
+    /*
+     * Measured from the two boxes as they actually sit, not from `offsetTop`.
+     *
+     * `offsetTop` is relative to whichever ancestor happens to be positioned,
+     * which is a fact about the STYLESHEET rather than about this component: a
+     * `position: relative` added anywhere between the roll and the slot moves
+     * the origin and the arithmetic silently stops centring anything. Rects
+     * are relative to the viewport, so their difference is the distance to
+     * travel whatever the ancestry looks like.
+     */
+    const slotBox = slot.getBoundingClientRect();
+    // No height yet - the sheet is mid-open, or this ran before layout. Trying
+    // to centre against zero would scroll the line to the very top, which is
+    // exactly the failure this replaces. The next position tick re-runs it.
+    if (slotBox.height < 1) return;
+    const nowBox = now.getBoundingClientRect();
+
+    /*
+     * A chunk taller than the slot cannot BE centred.
+     *
+     * A transcript's chunk is a whole passage, and a long one fills the slot
+     * and then some. Centring its middle puts its opening line above the top
+     * edge where the mask fades it away - the reading appears to start
+     * somewhere you cannot see, and the words light up off-screen for the
+     * first half of it. That is the state this fixes.
+     *
+     * For a chunk that fits, the chunk is the thing to centre and it is
+     * centred. For one that does not, the word being spoken is - it is the
+     * only point in a long passage that is actually "where the reading is",
+     * and following it keeps the voice on the slot's middle exactly as a short
+     * chunk does. Falling back to the chunk's top covers a chunk with no word
+     * clocks, which is read downward from its first line.
+     */
+    const room = slotBox.height;
+    const tall = nowBox.height > room * 0.8;
+    const litBox = tall ? now.querySelector('[data-lit]')?.getBoundingClientRect() : undefined;
+
+    const centreOf = (box: DOMRect) => box.top + box.height / 2 - (slotBox.top + room / 2);
+    const target = litBox
+      ? centreOf(litBox)
+      : tall
+        ? nowBox.top - (slotBox.top + room * 0.18)
+        : centreOf(nowBox);
+
+    /*
+     * Inside a tall chunk this runs on every word, and a smooth scroll
+     * restarted every fifth of a second never arrives anywhere - it crawls.
+     * So the reading is left alone until it has drifted a fifth of the slot
+     * from the middle, and then moved in one go. A chunk that fits is placed
+     * exactly, because that only happens when the chunk itself changes.
+     */
+    const slack = litBox ? room * 0.2 : 1;
+    if (Math.abs(target) < slack) return;
+
     const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    slot.scrollTo({ top, behavior: still ? 'auto' : 'smooth' });
-  }, [at, browsing, items]);
+    slot.scrollTo({ top: slot.scrollTop + target, behavior: still ? 'auto' : 'smooth' });
+  }, [at, lit, browsing, items]);
 
   return (
     <div
