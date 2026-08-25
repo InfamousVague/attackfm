@@ -222,40 +222,18 @@ export function PlayerStrip({
    * `[aria-label^="Repeat"]`, and a reworded label here would walk straight
    * out from behind that rule.
    */
-  const wideShuffleRepeat = (
-    <>
-      <IconButton
-        variant="ghost"
-        size="sm"
-        aria-label="Shuffle"
-        aria-pressed={shuffle}
-        data-on={shuffle || undefined}
-        skeleton={listLoading}
-        onClick={() => setShuffle((on) => !on)}
-      >
-        <Shuffle size={16} />
-      </IconButton>
-      <IconButton
-        variant="ghost"
-        size="sm"
-        // Three states cannot be said with a pressed flag alone, so the label
-        // names the mode - the kit's own reasoning, and its own wording.
-        aria-label={`Repeat: ${repeat}`}
-        aria-pressed={repeat !== 'off'}
-        data-on={repeat !== 'off' || undefined}
-        skeleton={listLoading}
-        onClick={() => setRepeat((r) => (r === 'off' ? 'all' : r === 'all' ? 'one' : 'off'))}
-      >
-        {repeat === 'one' ? <Repeat1 size={16} /> : <Repeat size={16} />}
-      </IconButton>
-    </>
-  );
-
   /*
    * The transport, for the kit's `actions` slot - which renders into the bar's
    * trailing column, the one this app has always left empty because it passes
-   * no output or quality props. That column is a quarter of the strip standing
-   * vacant, and it is exactly where the request wants the transport.
+   * no output or quality props.
+   *
+   * This is the COMPACT strip's transport. The kit puts play and the skips in
+   * the middle of the row under the seek, between the two rails; the compact
+   * bar wants them out on the right, big enough to hit without looking, with
+   * the row under the seek left to the clocks and the couple of icons that
+   * belong there. A child cannot leave its parent's box, so the strip does not
+   * ask the kit for these at all - each is gated on its own prop - and renders
+   * its own here instead.
    *
    * `role="group"` because the kit's `_transport_` carried one and this
    * replaces it. Its own note calls that a contract rather than an accident -
@@ -270,7 +248,7 @@ export function PlayerStrip({
    * keyboard user stood on play would throw them silently back to the top of
    * the document. The click is already a no-op without the handler.
    */
-  const wideTransport = (
+  const compactTransport = (
     <div className="stripTransport" role="group" aria-label="Playback controls">
       <IconButton
         variant="ghost"
@@ -410,12 +388,8 @@ export function PlayerStrip({
          * The kit's default paints a plain run and ignores `levels` entirely,
          * which is why the stored shape arrived and drew nothing: the data was
          * there, the drawing was not asked for it.
-         *
-         * Wide only. The phone's strip is 350px of bar under a thumb and its
-         * present look is deliberate; the shape is for the window with room to
-         * show one.
          */
-        shape={mobileControls ? undefined : 'waveform'}
+        shape="waveform"
         duration={dispDuration}
         value={dispPosition}
         onValueChange={onScrubDisp}
@@ -424,17 +398,17 @@ export function PlayerStrip({
         onPlayingChange={onPlayingChangeDisp}
         // Skip moves between tracks in the list, not within the current one.
         //
-        // Withheld on the wide strip, where these four controls are rendered by
-        // this file instead so they can sit in two different places: the skips
-        // out on the trailing column with play, shuffle and repeat down among
-        // the options. Each is gated on its own prop, so not passing them is
-        // how they are dropped.
-        onSkipBack={mobileControls ? onSkipBackDisp : undefined}
-        onSkipForward={mobileControls ? onSkipForwardDisp : undefined}
-        shuffle={mobileControls ? shuffle : undefined}
-        onShuffleChange={mobileControls ? setShuffle : undefined}
-        repeat={mobileControls ? repeat : undefined}
-        onRepeatChange={mobileControls ? setRepeat : undefined}
+        // Withheld on the COMPACT strip, whose skips are rendered by this file
+        // instead so they can sit out on the right rather than in the middle of
+        // the row under the seek. Each is gated on its own prop, so not passing
+        // them is how they are dropped. The desktop bar is untouched and keeps
+        // the kit's own.
+        onSkipBack={mobileControls ? undefined : onSkipBackDisp}
+        onSkipForward={mobileControls ? undefined : onSkipForwardDisp}
+        shuffle={shuffle}
+        onShuffleChange={setShuffle}
+        repeat={repeat}
+        onRepeatChange={setRepeat}
         favorite={favorite}
         onFavoriteChange={toggleFavoriteFelt}
         // The mic sits just right of the heart, in the strip's leading rail:
@@ -446,8 +420,6 @@ export function PlayerStrip({
         // the options; the heart the kit renders keeps the leading rail.
         leading={
           mobileControls ? undefined : (
-          <>
-          {wideShuffleRepeat}
           <Popover
             placement="top"
             aria-label="Lyrics"
@@ -471,12 +443,11 @@ export function PlayerStrip({
               />
             </div>
           </Popover>
-          </>
           )
         }
         // The vacant trailing column, finally spent: the kit renders whatever
-        // this holds into `_output_`, out past the seek and the options.
-        actions={mobileControls ? undefined : wideTransport}
+        // this holds into `_output_`, out past the seek and the icons.
+        actions={mobileControls ? compactTransport : undefined}
         levels={levels}
         beat={beat}
         // The equalizer and the custom volume fader share the trailing rail; the

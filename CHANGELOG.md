@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.58
+
+- The three-column strip is on the SMALL player bar, where it was meant to be, and the desktop bar is back to what it was. The compact strip now reads left to right the way it should: the disc, then the seek bar with the elapsed and remaining times at either end of the row beneath it and the heart and device picker between them, then play and the two skips out on the right at thumb size
+- The queue button leaves that row. Two clocks, the icons and a thumb-sized transport do not fit across a phone together, and the queue is the one of the three that is a whole screen elsewhere - tapping the strip still lifts it
+
 ## 0.4.57
 
 - The player strip on a desktop window is three columns now: what is playing on the left, a shorter seek bar down the middle, and play and the two skips out on the right at a size worth aiming at. A bar that spans half the window is not more useful than one that spans a third, it is just harder to aim
