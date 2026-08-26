@@ -17,6 +17,8 @@ and where that library came from is not the app's story to tell.
 
 ## 0.4.75
 
+- The lit tab on the phone's nav bar slides. It was one background fading out where you left and another fading in where you landed, which reads as two lights blinking rather than one thing moving - there is a single plate now, and it travels, with a little spring as it lands. The desktop rail always had this; the phone bar lost it years ago when it stopped being a stock component
+
 - The widget's picture actually reaches the home screen. Two faults, both only findable on a real launcher: it was setting a property on part of the old layout that the new one does not have, and its invisible buttons were built from a kind of view Android refuses to inflate inside a widget at all. Either one showed as "Can't load widget" and neither leaves a trace in the app's own log
 
 ## 0.4.74

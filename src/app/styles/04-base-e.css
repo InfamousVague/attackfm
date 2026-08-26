@@ -147,6 +147,10 @@ body:has(.npScreen[data-docked]) .appNavScrim {
 
 /* A flanking tab: glyph over a small label, lit crimson when it is the page. */
 .appNavBarTab {
+  /* Above the sliding plate, which is absolutely positioned in the same bar
+     and would otherwise paint over these. */
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -179,7 +183,7 @@ body:has(.npScreen[data-docked]) .appNavScrim {
   background: none;
   cursor: pointer;
   color: var(--glacier-text-subtle);
-  transition: background-color 0.16s var(--glacier-ease-out, ease), color 0.15s ease;
+  transition: color 0.15s ease;
 }
 
 /*
@@ -224,9 +228,112 @@ body:has(.npScreen[data-docked]) .appNavScrim {
    from its label, "Discover" lit twice as wide as "Booth" and the shape read
    as a stretched box no matter how super its ellipse was. Fixed, every tab's
    plate is the same object. */
+/*
+ * The lit tab keeps the INK. The fill moved out to .appNavBarPill, which is one
+ * plate for the whole bar so it can slide from tab to tab instead of one
+ * background fading out while another fades in - see nav/useNavPill.ts.
+ *
+ * The colour still transitions here, so the glyph and its name warm up as the
+ * plate arrives rather than snapping the instant the tab is pressed.
+ */
 .appNavBarTab[data-active] {
-  background: color-mix(in srgb, var(--glacier-accent-solid) 16%, transparent);
   color: var(--glacier-accent-text);
+}
+
+/*
+ * THE PLATE.
+ *
+ * Absolutely positioned in the bar (which is itself absolute, so it is the
+ * containing block) and driven entirely by four custom properties the hook
+ * measures off the live tab. Nothing here computes a position: the bar spaces
+ * its tabs with space-between and its last button is a menu rather than a
+ * destination, so arithmetic would drift the moment a seat folded away.
+ */
+.appNavBarPill {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  /* Behind the tabs, which sit above it on z-index below. Without a stacking
+     order a positioned element paints OVER its static siblings, and the plate
+     would cover the very glyph it is meant to light. */
+  z-index: 0;
+  inline-size: var(--app-nav-pill-w, 0);
+  block-size: var(--app-nav-pill-h, 0);
+  transform: translate3d(var(--app-nav-pill-x, 0), var(--app-nav-pill-y, 0), 0);
+  background: color-mix(in srgb, var(--glacier-accent-solid) 16%, transparent);
+  /* The same corner the tab wore when it carried its own fill. A plate that
+     travelled as a rounded rectangle between two squircles would change shape
+     on the way, which is the one thing a moving object must not do - the
+     @supports twin below is the other half, exactly as on the tab. */
+  border-radius: 1.4rem;
+  pointer-events: none;
+  opacity: 0;
+}
+
+/* Only once the hook has measured a tab. Before that the plate has no size and
+   no place, and showing it would be a dark square in the corner of the bar. */
+.appNavBar[data-pill] .appNavBarPill {
+  opacity: 1;
+}
+
+/*
+ * The glide, and ONLY once there is somewhere to glide from.
+ *
+ * data-pill-moving is set on the second placement onward, so a cold start, a
+ * rotation and the first paint after a fold all park the plate silently. An
+ * unconditional transition animates from 0,0 on mount - the plate flies in
+ * across the bar every time the app opens.
+ */
+.appNavBar[data-pill-moving] .appNavBarPill {
+  /*
+   * THE SPRING, not the kit's ease-out.
+   *
+   * --glacier-ease-out is cubic-bezier(0.16, 1, 0.3, 1) - an expo curve that
+   * is 83% of the way there in the first eighth of its duration. Measured on
+   * this very bar: 45ms after the press the plate had already crossed four
+   * fifths of the gap and the remaining 300ms was sub-pixel settling. That is
+   * the right curve for something ARRIVING and the wrong one for something you
+   * are meant to watch travel - it reads as a jump followed by nothing, which
+   * is the complaint this whole change exists to answer.
+   *
+   * The spring accelerates, overshoots a touch and settles, so the eye follows
+   * the plate from one tab to the next.
+   *
+   * Only the transform springs. Width would overshoot too, and while every tab
+   * in this bar is the same fixed square today, a plate that visibly breathed
+   * wider than the tab it landed on would be a strange thing to have shipped
+   * the day that stops being true.
+   */
+  transition:
+    transform 0.32s var(--glacier-ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)),
+    inline-size 0.2s var(--glacier-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .appNavBar[data-pill-moving] .appNavBarPill {
+    transition: none;
+  }
+}
+
+/*
+ * The ⋮ trigger while its menu is open.
+ *
+ * Not the accent plate: that one is the sliding mark for where you ARE, and an
+ * open menu is not a place. A plain raised fill says "this button is pressed"
+ * without competing with the tab that is genuinely lit - and when the page you
+ * are on does live in the menu, the trigger takes data-active like any other
+ * seat and the real plate slides onto it.
+ */
+.appNavBarPlugins__trigger[data-open]:not([data-active]) {
+  background: var(--glacier-surface-raised);
+  color: var(--glacier-text-primary);
+}
+
+@supports (corner-shape: superellipse(2.5)) {
+  .appNavBarPill {
+    border-radius: 50%;
+    corner-shape: superellipse(2.5);
+  }
 }
 
 /*
