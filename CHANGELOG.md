@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.78
+
+- Canvas clips are their own plugin now, called SpotifyCanvas. Everything that was sitting in Settings as a second tab named Spotify has moved into it, under a tab called Canvas, so nothing in the rail is named twice. Switch it on under Settings, Plugins if you want the short looping videos behind the player. Leave it off and every song shows its cover, which is the way it arrives.
+
 ## 0.4.77
 
 - A Spotify pane in Settings, for the owner of the server. Paste the session cookie that lets this hub ask for Canvas clips, see at a glance whether one is set, turn the stand-in loops on if you want them back, and press one button to go looking for every song's clip again. The cookie used to live only in whatever launched the server, which is why it vanished when the box was rebuilt and every song quietly lost its Canvas; it is kept in the database now, so a redeploy carries it. It is never shown back — it is a live login to your Spotify account
