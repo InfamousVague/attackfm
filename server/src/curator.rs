@@ -1249,15 +1249,39 @@ async fn curate_cycle(state: &Arc<AppState>) {
         // Fresh finds: what arrived this week, in arrival order - chronology
         // IS the ranking for a list whose point is newness. Adopted collector
         // pulls land here beside anyone's imports.
-        let arrivals = state
+        //
+        // ORDERED BY ARRIVAL, but CHOSEN for this listener. Taking the newest
+        // N globally and writing them into every shelf made one list and gave
+        // everybody a copy of it - the only row in a per-user table that was
+        // byte-identical across all four listeners, which is how it was found.
+        //
+        // A wider window scored to taste and then re-sorted by arrival keeps
+        // what the list is for (what turned up lately) while making it answer
+        // to who is reading it. Ties on score go to the newer track because
+        // the last sort is by arrival, not by rank.
+        let recent = state
             .db
-            .recent_track_ids(now_ms() - 7 * 24 * 60 * 60 * 1000, LIST_LEN as i64);
+            .recent_track_ids(now_ms() - 21 * 24 * 60 * 60 * 1000, (LIST_LEN * 6) as i64);
+        let mut arrivals: Vec<(usize, f32, i64)> = recent
+            .iter()
+            .enumerate()
+            .filter_map(|(pos, id)| {
+                let f = by_id.get(id)?;
+                (!f.quarantined).then(|| (pos, crate::taste::score(f, &taste), *id))
+            })
+            .collect();
+        // Best for them first, then keep only as many as the list holds...
+        arrivals.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        arrivals.truncate(LIST_LEN);
+        // ...and show them newest first, which is what "fresh" means.
+        arrivals.sort_by_key(|(pos, _, _)| *pos);
+        let arrivals: Vec<i64> = arrivals.into_iter().map(|(_, _, id)| id).collect();
         if arrivals.len() >= 8 {
             let _ = state.db.put_curated(
                 user,
                 "fresh-finds",
                 "Fresh finds",
-                "New in the library this week.",
+                "New in the library lately, the ones most likely to be yours.",
                 &arrivals,
             );
         }
