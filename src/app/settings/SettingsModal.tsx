@@ -3,7 +3,7 @@
 // GeneralPane / PlaybackPane / PluginsPane (+ pluginRepos) / MobileSettings,
 // shared bits in settingsShared.ts, useMediaQuery deduped into ux/.
 import { SearchField, TabbedModal } from '@glacier/react';
-import { Bell, Blocks, BookOpen, Bot, CircleUserRound, HardDrive, Info, Library, Music2, Palette, Play, Server, Shield, Stethoscope, Terminal } from '@glacier/icons';
+import { Bell, Blocks, BookOpen, Bot, CircleUserRound, HardDrive, Info, Library, Palette, Play, Server, Shield, Stethoscope, Terminal } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { APP_VERSION } from '../core/version.ts';
 import { noteSettingsPane, recentPanes, type RecentPane } from './settingsRecency.ts';
@@ -16,7 +16,6 @@ import { AboutSettings } from './AboutSettings.tsx';
 import { DiagnosticsPane } from './DiagnosticsPane.tsx';
 import { DeveloperPane, developerSummary } from './DeveloperPane.tsx';
 import { LocalAiPane, localAiSummary } from './LocalAiPane.tsx';
-import { SpotifyPane } from './SpotifyPane.tsx';
 import { useDeveloperMode } from './developerMode.ts';
 import { diagEntries } from '../diag/diagLog.ts';
 import { HandbookPane } from './handbook/HandbookPane.tsx';
@@ -269,22 +268,12 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
           },
         ]
       : []),
-    // Spotify, beside Local AI and gated the same way: both are the OWNER's
-    // configuration of the box rather than a listener's preference, and every
-    // route either pane calls is admin-gated server-side as well.
-    ...(session?.isAdmin
-      ? [
-          {
-            id: 'spotify',
-            label: 'Spotify',
-            icon: <Music2 size={16} />,
-            content: <SpotifyPane />,
-            summary: 'Canvas clips',
-            tint: 'orange' as const,
-            group: 2,
-          },
-        ]
-      : []),
+    // Canvas used to sit here, as a second core tab called "Spotify" - beside
+    // the importer's own tab of that name, which is two tabs sharing one word
+    // for different jobs. It is the SpotifyCanvas plugin now (plugins-repo/),
+    // which is the right shape for it: an optional errand the box runs against
+    // somebody else's service with the owner's own credential, off until asked
+    // for, exactly like the importer it sat next to.
     // The importer contributes Downloads here, exactly where it has always
     // sat; any plugin's tabs land in this run of the rail.
     ...pluginSections.map((s) => ({ ...s, tint: 'orange' as const, group: 2 })),

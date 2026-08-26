@@ -36,6 +36,22 @@
       "public": true
     },
     {
+      "id": "spotify-canvas",
+      "name": "SpotifyCanvas",
+      "version": "1.0.0",
+      "description": "Plays the short looping clip Spotify carries for a song behind the full player.",
+      "author": "AttackFM",
+      "tags": [
+        "Now Playing",
+        "Artwork"
+      ],
+      "entry": "spotify-canvas-1.0.0.js",
+      "api": 1,
+      "bytes": 6468,
+      "sha256": "80c659e2ab1b368958c42b1f287bfa0bbb3127ea12a643bca8c9e1abef21f185",
+      "requiresServer": true
+    },
+    {
       "id": "spotify-import",
       "name": "Music import",
       "version": "1.5.0",
