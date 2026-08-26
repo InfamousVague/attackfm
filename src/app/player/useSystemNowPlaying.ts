@@ -1,4 +1,4 @@
-import { useEffect, useRef, type MutableRefObject } from 'react';
+import { useCallback, useEffect, useRef, type MutableRefObject } from 'react';
 import { isIOS } from '../core/platform.ts';
 import { onCarPlayRemote, pushCarPlayNowPlaying } from './carplay.ts';
 import {
@@ -10,6 +10,7 @@ import {
   bindAudioFocus,
   bindNativeTransport,
   nativeAccentHex,
+  setNativeWidgetShot,
   setNativeArtwork,
   setNativeNowPlaying,
   setNativeNowPlayingExtras,
@@ -209,6 +210,49 @@ export function useSystemNowPlaying({
     setNativeNowPlayingExtras(nativeAccentHex(), track ? line : '', track ? favourite : null);
   }, [track, line, favourite]);
 
+  /*
+   * The widget's photograph.
+   *
+   * Everything it prints is read at the moment the shutter opens, through a ref
+   * rather than a dependency: the request arrives from the launcher on its own
+   * schedule, and a handler rebuilt on every position tick would be a new
+   * closure four times a second for a thing that fires once a minute.
+   */
+  const faceNow = useRef({ track, playing, position, duration, artwork, line, favourite });
+  faceNow.current = { track, playing, position, duration, artwork, line, favourite };
+
+  const takeWidgetShot = useCallback(
+    async (face: string, width: number, height: number, scale: number) => {
+      const now = faceNow.current;
+      if (!now.track) return;
+      /*
+       * Imported here rather than at the top, and the reason is import ORDER
+       * rather than size. The OTA build inlines every chunk into one file, so
+       * this saves nothing there - but keeping the face and its rasteriser out
+       * of the module graph the deck loads at boot means a fault in either of
+       * them cannot stop the player mounting. Nothing about a home screen
+       * should be able to do that.
+       */
+      const { widgetShot } = await import('../widget/widgetShot.tsx');
+      const png = await widgetShot({
+        face: face as 'compact' | 'medium' | 'large',
+        width,
+        height,
+        scale,
+        title: now.track.title,
+        artist: now.track.artist,
+        line: now.line ?? '',
+        art: now.artwork,
+        playing: now.playing,
+        positionSecs: now.position,
+        durationSecs: now.duration,
+        favourite: now.favourite ?? null,
+      });
+      if (png) setNativeWidgetShot(face, png);
+    },
+    [],
+  );
+
   // Seeks: the coarse clock jumping further than a second of playback could
   // carry it. Scrubs land here through commitSeek's setPosition.
   useEffect(() => {
@@ -278,8 +322,9 @@ export function useSystemNowPlaying({
         previous: () => carPlayControls.current?.previous(),
         seek: (seconds) => carPlayControls.current?.seek(seconds),
         favourite: () => carPlayControls.current?.favourite?.(),
+        widgetShot: (face, w, h, scale) => void takeWidgetShot(face, w, h, scale),
       }),
-    [],
+    [takeWidgetShot],
   );
 
   return { carPlayControls, positionRef };

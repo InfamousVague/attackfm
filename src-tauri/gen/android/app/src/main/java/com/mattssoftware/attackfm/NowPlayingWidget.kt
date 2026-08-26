@@ -120,10 +120,58 @@ class NowPlayingWidget : AppWidgetProvider() {
       }
 
       for (id in ids) {
-        val chosen = faceFor(context, manager.getAppWidgetOptions(id))
-        manager.updateAppWidget(id, face(context, chosen.layout, state, chosen, cover, disc))
+        val options = manager.getAppWidgetOptions(id)
+        val chosen = faceFor(context, options)
+        /*
+         * Ask for a fresh picture, then draw whatever we have.
+         *
+         * Never the other way round and never blocking on it: the page answers
+         * on its own schedule (and cannot answer at all when the app is not
+         * running), so a widget that waited would be a blank widget. The
+         * request lands, the answer arrives later, and WidgetShots.receive
+         * calls back in here to draw it.
+         */
+        if (state.live && state.title != null) {
+          WidgetShots.request(context, chosen.id, boxWidthDp(context, options), boxHeightDp(context, options), false)
+        }
+        val shot = if (state.live && state.title != null) WidgetShots.latest(context, chosen.id) else null
+        manager.updateAppWidget(
+          id,
+          if (shot != null) picture(context, chosen, shot, state)
+          else face(context, chosen.layout, state, chosen, cover, disc),
+        )
       }
     }
+
+    private fun boxWidthDp(context: Context, options: Bundle): Int {
+      val landscape =
+        context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+      val key =
+        if (landscape) AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH
+        else AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH
+      // The reported box is bigger than the drawn one - see faceFor - so the
+      // picture is asked for at the size the plate actually gets.
+      return (options.getInt(key, 320) - PLATE_INSET_DP).coerceIn(120, 720)
+    }
+
+    private fun boxHeightDp(context: Context, options: Bundle): Int {
+      val landscape =
+        context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+      val key =
+        if (landscape) AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT
+        else AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT
+      return (options.getInt(key, 100) - PLATE_INSET_DP).coerceIn(60, 720)
+    }
+
+    /**
+     * How much of the reported box the launcher keeps for itself.
+     *
+     * Measured, like the thresholds in faceFor: a Pixel reports 360x224dp for a
+     * plate that draws at roughly 260x190, and the difference is the launcher's
+     * own padding. A picture rendered at the reported size and then squeezed
+     * into the real one is a soft, slightly wrong-shaped picture.
+     */
+    private const val PLATE_INSET_DP = 34
 
     /**
      * Which face fits the box the launcher gave this one.
@@ -177,10 +225,43 @@ class NowPlayingWidget : AppWidgetProvider() {
       return face
     }
 
-    private enum class Face(val layout: Int) {
-      COMPACT(R.layout.widget_now_playing),
-      MEDIUM(R.layout.widget_now_playing_medium),
-      LARGE(R.layout.widget_now_playing_large),
+    private enum class Face(val layout: Int, val shotLayout: Int, val id: String) {
+      COMPACT(R.layout.widget_now_playing, R.layout.widget_shot_compact, "compact"),
+      MEDIUM(R.layout.widget_now_playing_medium, R.layout.widget_shot_medium, "medium"),
+      LARGE(R.layout.widget_now_playing_large, R.layout.widget_shot_large, "large"),
+    }
+
+    /**
+     * The face as a PHOTOGRAPH, when the page has taken one.
+     *
+     * This is what the widget wears whenever it can. The layout beside it -
+     * the one built out of RemoteViews primitives - is the floor: what a
+     * launcher gets before the app has ever been up to draw anything, and
+     * after a reboot with nothing playing. It is not a second design being
+     * kept in step; it is the face for "there is no picture yet".
+     *
+     * The buttons are invisible Views laid over the image, and where they sit
+     * is a contract with WidgetFace.tsx - see widget_shot_compact.xml.
+     */
+    private fun picture(
+      context: Context,
+      which: Face,
+      shot: android.graphics.Bitmap,
+      state: WidgetState,
+    ): RemoteViews {
+      val views = RemoteViews(context.packageName, which.shotLayout)
+      views.setImageViewBitmap(R.id.widget_shot, shot)
+      views.setOnClickPendingIntent(R.id.widget_prev, action(context, PlaybackService.ACTION_PREVIOUS))
+      views.setOnClickPendingIntent(
+        R.id.widget_play,
+        action(context, if (state.playing) PlaybackService.ACTION_PAUSE else PlaybackService.ACTION_PLAY),
+      )
+      views.setOnClickPendingIntent(R.id.widget_next, action(context, PlaybackService.ACTION_NEXT))
+      if (state.favourite != null) {
+        views.setOnClickPendingIntent(R.id.widget_heart, action(context, PlaybackService.ACTION_FAVOURITE))
+      }
+      openTheApp(context, views)
+      return views
     }
 
     private fun face(

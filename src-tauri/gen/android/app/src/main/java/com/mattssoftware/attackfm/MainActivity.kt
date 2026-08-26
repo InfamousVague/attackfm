@@ -71,6 +71,18 @@ class MainActivity : TauriActivity() {
      * know": -1 leaves the heart off the widget entirely, which is the honest
      * face before the library has answered. A bridge cannot carry a nullable.
      */
+    /**
+     * A photograph of the widget's face, from the page that drew it.
+     *
+     * The launcher cannot run the kit, so it is shown a picture instead - see
+     * WidgetShots and src/app/widget/shot.ts. Base64 because the bridge is a
+     * string pipe, the same reason the cover travels that way.
+     */
+    @JavascriptInterface
+    fun setWidgetShot(face: String, base64: String) {
+      WidgetShots.receive(this@MainActivity, face, base64)
+    }
+
     @JavascriptInterface
     fun setNowPlayingExtras(accentHex: String, line: String, favourite: Int) {
       PlaybackService.publishExtras(
