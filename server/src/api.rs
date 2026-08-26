@@ -153,7 +153,9 @@ pub async fn library(
     headers: HeaderMap,
     Query(params): Query<HashMap<String, String>>,
 ) -> ApiResult {
-    auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    // Bound, not discarded. The library a caller may see depends on who they
+    // are: an unadopted collector audition belongs to exactly one listener.
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
 
     let since: i64 = params.get("since").and_then(|s| s.parse().ok()).unwrap_or(0);
     let limit: i64 = params
@@ -162,7 +164,7 @@ pub async fn library(
         .unwrap_or(5000)
         .clamp(1, 20_000);
 
-    let (tracks, removed, page_rev) = state.db.tracks_since(since, limit);
+    let (tracks, removed, page_rev) = state.db.tracks_since(caller.id, since, limit);
     let more = (tracks.len() as i64 + removed.len() as i64) >= limit;
 
     Ok(Json(json!({

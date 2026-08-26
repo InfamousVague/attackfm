@@ -1077,19 +1077,47 @@ async fn curate_cycle(state: &Arc<AppState>) {
     let by_id: HashMap<i64, &TrackFeatures> = all.iter().map(|f| (f.track_id, f)).collect();
 
     for user in listeners {
-        // Taste is read from heavy rotation rather than the raw log: playing
-        // one song forty times should weigh more than forty different songs
-        // heard once, and top_plays already counts that way.
-        let top: Vec<i64> = state
-            .db
-            .top_plays(user, since, 60)
-            .into_iter()
-            .map(|(id, _)| id)
-            .collect();
-        if top.len() < 4 {
+        /*
+         * Taste comes from VERDICTS now, not from play starts.
+         *
+         * The old line here was `top_plays(user, since, 60)` - the sixty tracks
+         * this listener started most often, every one weighted 1.0. It could
+         * not tell a song played forty times and finished from one played
+         * forty times and skipped at eight seconds, and it never once consulted
+         * `favorites`. Both facts were in the database the whole time; see
+         * taste.rs for what reading them actually buys.
+         *
+         * `top_plays` survives only as the fallback for a listener whose
+         * `listen_events` are thin - a hub that predates the ledger, or an
+         * account that has only ever used a client that does not report. Those
+         * synthetic verdicts are marked completed with an empty context, which
+         * is exactly the old behaviour: a play is a play.
+         */
+        let since_secs = (now_ms() - crate::taste::WINDOW_DAYS * 86_400_000) / 1000;
+        let mut verdicts = state.db.taste_verdicts(user, since_secs, 4000);
+        if verdicts.len() < 8 {
+            let top = state.db.top_plays(user, since, 60);
+            if top.len() < 4 {
+                continue;
+            }
+            verdicts = top
+                .into_iter()
+                .map(|(id, _)| crate::taste::Verdict {
+                    track_id: id,
+                    at: since_secs,
+                    ms_listened: 30_000,
+                    duration_ms: None,
+                    completed: true,
+                    skipped: false,
+                    context: String::new(),
+                    hearted: false,
+                })
+                .collect();
+        }
+        let taste = crate::taste::build(user, &verdicts, &by_id, now_ms() / 1000);
+        if taste.heard.len() < 4 {
             continue;
         }
-        let taste = taste_from(&top, &by_id);
 
         // Everything they have NOT been playing lately, scored against them.
         let fresh: Vec<(f32, &TrackFeatures)> = all
@@ -1097,7 +1125,7 @@ async fn curate_cycle(state: &Arc<AppState>) {
             // Quarantined = a collector audition nobody has adopted: not part
             // of the library yet, so it seeds and fills no list.
             .filter(|f| !taste.heard.contains(&f.track_id) && !f.quarantined)
-            .map(|f| (score(f, &taste), f))
+            .map(|f| (crate::taste::score(f, &taste), f))
             .collect();
         if fresh.len() < 8 {
             continue;
@@ -1110,7 +1138,7 @@ async fn curate_cycle(state: &Arc<AppState>) {
         // ramp so the list flows instead of lurching.
         let mut lane: Vec<(f32, &TrackFeatures)> = fresh
             .iter()
-            .filter(|(_, f)| match (taste.tempo, f.bpm) {
+            .filter(|(_, f)| match (taste.tempo_center(), f.bpm) {
                 (Some(t), Some(b)) => (t - b).abs() <= 12.0,
                 _ => false,
             })
@@ -1125,7 +1153,7 @@ async fn curate_cycle(state: &Arc<AppState>) {
         });
 
         // The lyrical echo: nearest to their centre of gravity in words alone.
-        let echo: Vec<(f32, &TrackFeatures)> = match &taste.centroid {
+        let echo: Vec<(f32, &TrackFeatures)> = match &taste.lyric {
             Some(c) => fresh
                 .iter()
                 .filter_map(|(_, f)| f.lyric_vec.as_ref().map(|v| (cosine(c, v), *f)))
@@ -1134,12 +1162,8 @@ async fn curate_cycle(state: &Arc<AppState>) {
         };
         let echo_ids = take_spread(echo, LIST_LEN);
 
-        let tempo_label = taste.tempo.map(|t| t.round() as i64);
-        let top_genre = taste
-            .genres
-            .iter()
-            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(g, _)| g.clone());
+        let tempo_label = taste.tempo_center().map(|t| t.round() as i64);
+        let top_genre = taste.favourite_tags(1).first().map(|(g, _)| g.clone());
 
         // Names: the model writes them when there is one, else they say
         // plainly what the maths did. Either way the ids are the maths'.
@@ -1223,7 +1247,7 @@ async fn curate_cycle(state: &Arc<AppState>) {
             let ranked: Vec<(f32, &TrackFeatures)> = pool
                 .iter()
                 .filter(|f| fits(f))
-                .map(|f| (score(f, &taste), *f))
+                .map(|f| (crate::taste::score(f, &taste), *f))
                 .collect();
             let ids = take_spread(ranked, LIST_LEN);
             if ids.len() >= 8 {
@@ -1236,17 +1260,11 @@ async fn curate_cycle(state: &Arc<AppState>) {
         // "Shoegaze, Alternative" feeds both camps), each mix drawn from what
         // you have NOT been playing lately - a mix that mirrors the last week
         // back is a playlist you already made yourself.
-        let mut camps: HashMap<String, f32> = HashMap::new();
-        for (tag, share) in &taste.genres {
-            for part in tag.split(',') {
-                let g = part.trim().to_string();
-                if !g.is_empty() {
-                    *camps.entry(g).or_insert(0.0) += share;
-                }
-            }
-        }
-        let mut top_camps: Vec<(String, f32)> = camps.into_iter().collect();
-        top_camps.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        // Already split and already signed: `favourite_tags` hands back the
+        // tags this listener actually leans toward, strongest first, and omits
+        // the ones they push away. The comma-splitting that used to happen
+        // here was undoing a whole-string genre key that no longer exists.
+        let top_camps: Vec<(String, f32)> = taste.favourite_tags(6);
         for (n, (camp, _)) in top_camps.iter().take(3).enumerate() {
             let ranked: Vec<(f32, &TrackFeatures)> = fresh
                 .iter()
@@ -1268,8 +1286,12 @@ async fn curate_cycle(state: &Arc<AppState>) {
 
         // The decade station: where your rotation lives in time, heard tracks
         // welcome - a station is a place, not a surprise.
-        let mut years: Vec<i64> = top
+        // `heard` minus `rejected`: where their rotation lives in time should
+        // not be decided by the songs they skipped out of.
+        let mut years: Vec<i64> = taste
+            .heard
             .iter()
+            .filter(|id| !taste.rejected.contains(id))
             .filter_map(|id| by_id.get(id))
             .filter_map(|f| f.year)
             .collect();
@@ -1279,7 +1301,7 @@ async fn curate_cycle(state: &Arc<AppState>) {
             let ranked: Vec<(f32, &TrackFeatures)> = pool
                 .iter()
                 .filter(|f| f.year.is_some_and(|y| (d0..d0 + 10).contains(&y)))
-                .map(|f| (score(f, &taste), *f))
+                .map(|f| (crate::taste::score(f, &taste), *f))
                 .collect();
             let ids = take_spread(ranked, LIST_LEN);
             if ids.len() >= 8 {
