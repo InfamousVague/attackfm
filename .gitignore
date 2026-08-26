@@ -6,6 +6,7 @@ src-tauri/target
 
 # Deploy credentials for scripts/redeploy.mjs.
 .env
+.env.*
 
 # The server's own build output and its runtime state - the SQLite index, the
 # extracted cover-art cache, in-flight uploads, and any music kept locally
