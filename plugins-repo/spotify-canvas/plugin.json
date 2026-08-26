@@ -1,0 +1,13 @@
+{
+  "id": "spotify-canvas",
+  "name": "SpotifyCanvas",
+  "version": "1.0.0",
+  "description": "Plays the short looping clip Spotify carries for a song behind the full player.",
+  "author": "AttackFM",
+  "tags": [
+    "Now Playing",
+    "Artwork"
+  ],
+  "entry": "plugin.ts",
+  "requiresServer": true
+}
