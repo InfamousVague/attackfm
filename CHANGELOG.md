@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.75
+
+- The widget's picture actually reaches the home screen. Two faults, both only findable on a real launcher: it was setting a property on part of the old layout that the new one does not have, and its invisible buttons were built from a kind of view Android refuses to inflate inside a widget at all. Either one showed as "Can't load widget" and neither leaves a trace in the app's own log
+
 ## 0.4.74
 
 - The home-screen widget is not an imitation of the app any more - it is a photograph of it. The player draws the widget's face with its own components, the real scrubber and the real buttons in the accent you chose, and hands Android the picture; a launcher cannot run any of that itself, which is why every music widget on your home screen looks like a system notification instead of like its app. Presses still land natively, so it stays as quick as it was

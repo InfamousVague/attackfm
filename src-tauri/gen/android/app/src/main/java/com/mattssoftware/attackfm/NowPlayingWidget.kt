@@ -151,7 +151,7 @@ class NowPlayingWidget : AppWidgetProvider() {
         else AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH
       // The reported box is bigger than the drawn one - see faceFor - so the
       // picture is asked for at the size the plate actually gets.
-      return (options.getInt(key, 320) - PLATE_INSET_DP).coerceIn(120, 720)
+      return options.getInt(key, 320).coerceIn(120, 720)
     }
 
     private fun boxHeightDp(context: Context, options: Bundle): Int {
@@ -160,18 +160,19 @@ class NowPlayingWidget : AppWidgetProvider() {
       val key =
         if (landscape) AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT
         else AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT
-      return (options.getInt(key, 100) - PLATE_INSET_DP).coerceIn(60, 720)
+      return options.getInt(key, 100).coerceIn(60, 720)
     }
 
-    /**
-     * How much of the reported box the launcher keeps for itself.
+    /*
+     * The picture is asked for at the size the launcher REPORTS, and the
+     * ImageView stretches it into whatever the plate actually gets.
      *
-     * Measured, like the thresholds in faceFor: a Pixel reports 360x224dp for a
-     * plate that draws at roughly 260x190, and the difference is the launcher's
-     * own padding. A picture rendered at the reported size and then squeezed
-     * into the real one is a soft, slightly wrong-shaped picture.
+     * An earlier cut subtracted a measured 34dp of launcher padding, which is
+     * right for a four-by-two and wrong for a row: the same launcher keeps
+     * about 34dp there and about 4 here. A constant that is only true at one
+     * size is worse than no constant - the aspect error from stretching is a
+     * few percent, and the error from insetting by the wrong number is not.
      */
-    private const val PLATE_INSET_DP = 34
 
     /**
      * Which face fits the box the launcher gave this one.
@@ -260,7 +261,7 @@ class NowPlayingWidget : AppWidgetProvider() {
       if (state.favourite != null) {
         views.setOnClickPendingIntent(R.id.widget_heart, action(context, PlaybackService.ACTION_FAVOURITE))
       }
-      openTheApp(context, views)
+      openTheApp(context, views, R.id.widget_open, R.id.widget_open_bottom)
       return views
     }
 
@@ -400,7 +401,7 @@ class NowPlayingWidget : AppWidgetProvider() {
         )
       }
 
-      openTheApp(context, views)
+      openTheApp(context, views, R.id.widget_art)
     }
 
     /**
@@ -414,9 +415,18 @@ class NowPlayingWidget : AppWidgetProvider() {
      */
     private const val WAVE_PX = 560
 
-    /** The plate itself always opens the app - words and art are a doorway,
-     *  whichever face is showing. */
-    private fun openTheApp(context: Context, views: RemoteViews) {
+    /**
+     * The plate itself always opens the app - words and art are a doorway,
+     * whichever face is showing.
+     *
+     * `also` names the ids that exist in THIS layout and nowhere else. A
+     * RemoteViews action against a view the inflated layout does not contain
+     * is not ignored: it throws inside the launcher, and every face using it
+     * renders as "Can't load widget" with nothing in the app's own log. The
+     * picture layouts have no widget_art, and that one line took the whole
+     * widget down.
+     */
+    private fun openTheApp(context: Context, views: RemoteViews, vararg also: Int) {
       val open = PendingIntent.getActivity(
         context,
         0,
@@ -426,7 +436,7 @@ class NowPlayingWidget : AppWidgetProvider() {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
       )
       views.setOnClickPendingIntent(R.id.widget_root, open)
-      views.setOnClickPendingIntent(R.id.widget_art, open)
+      for (id in also) views.setOnClickPendingIntent(id, open)
     }
 
     /**

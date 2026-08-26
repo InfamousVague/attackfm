@@ -12,7 +12,12 @@
      puts the press somewhere the button is not.
 
      Compact: the controls sit at the trailing end of the single row, above the
-     scrubber. The row is the top ~72% of the face. -->
+     scrubber. The row is the top ~72% of the face.
+
+     THE TARGETS ARE FrameLayouts AND HAVE TO BE. RemoteViews inflates only a
+     fixed list of classes, and a plain <View> is not on it - the launcher
+     throws "Class not allowed to be inflated android.view.View" and shows
+     "Can't load widget" instead of the face. FrameLayout is on the list. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
   android:id="@+id/widget_root"
   android:layout_width="match_parent"
@@ -37,27 +42,27 @@
       android:orientation="horizontal">
 
       <!-- The cover and the words: a press anywhere here opens the app. -->
-      <View
+      <FrameLayout
         android:id="@+id/widget_open"
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_weight="56" />
 
-      <View
+      <FrameLayout
         android:id="@+id/widget_prev"
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_weight="14"
         android:contentDescription="Previous" />
 
-      <View
+      <FrameLayout
         android:id="@+id/widget_play"
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_weight="16"
         android:contentDescription="Play or pause" />
 
-      <View
+      <FrameLayout
         android:id="@+id/widget_next"
         android:layout_width="0dp"
         android:layout_height="match_parent"
@@ -66,14 +71,14 @@
     </LinearLayout>
 
     <!-- The scrubber is not a control here; a press on it opens the app. -->
-    <View
+    <FrameLayout
       android:id="@+id/widget_open_bottom"
       android:layout_width="match_parent"
       android:layout_height="0dp"
       android:layout_weight="28" />
   </LinearLayout>
 
-  <View
+  <FrameLayout
     android:id="@+id/widget_heart"
     android:layout_width="0dp"
     android:layout_height="0dp"
