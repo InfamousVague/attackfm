@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- maximum-scale=1 / user-scalable=no: this is an app shell, not a
+         document - without them iOS zooms the whole page whenever a focused
+         input's font is under 16px, and leaves it zoomed. viewport-fit=cover
+         is what makes env(safe-area-inset-*) report real values, so the
+         notch/home-indicator padding in app.css actually engages. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>AttackFM demo</title>
+    <style>
+      /* Pre-tokens paint so the first frame is never a white flash. */
+      html { background: #0f0f10; }
+      html[data-theme='light'] { background: #ffffff; }
+    </style>
+  </head>
+  <body>
+    <!-- The track-length map, blocking on purpose: the shim below rewrites
+         media URLs synchronously and must already have it. -->
+    <script src="/demo-hub/media/streams.js"></script>
+    <script>
+      /*
+       * THE DEMO SHIM.
+       *
+       * This is the real app, booted against a fixture hub so the marketing
+       * site can show actual screens instead of screenshots that go stale. It
+       * runs as a CLASSIC script, which the HTML spec guarantees executes
+       * before the deferred module entry below - the same ordering index.html
+       * already depends on for the bundle election.
+       *
+       * Three jobs, in order, all of which must happen before any app module
+       * evaluates:
+       */
+      (function () {
+        // Same origin, always: public/demo-hub in dev, emitted beside the build in prod.
+        var HUB = new URL('/demo-hub', location.href).href.replace(/\/$/, '');
+
+        /*
+         * 0. NOTHING THIS PAGE STORES IS REAL STORAGE.
+         *
+         * attack.fm also serves the actual web app at /listen, from THIS
+         * ORIGIN - so the demo and a real signed-in session share one
+         * localStorage and one IndexedDB. Left alone, a visitor scrolling past
+         * these frames would have their own `attackfm-server-session`
+         * overwritten with the demo's, and be signed out of their library by a
+         * marketing page.
+         *
+         * So the demo gets its own storage, which lives for as long as the
+         * frame does and is thrown away with it. IndexedDB is simply taken
+         * away: every read and write of the library cache is already wrapped
+         * in a catch (it has to be - private browsing takes it away too), so
+         * the app degrades to fetching, which is what a demo wants anyway.
+         */
+        try {
+          var cell = Object.create(null);
+          var memory = {
+            getItem: function (k) { return k in cell ? cell[k] : null; },
+            setItem: function (k, v) { cell[k] = String(v); },
+            removeItem: function (k) { delete cell[k]; },
+            clear: function () { cell = Object.create(null); },
+            key: function (i) { return Object.keys(cell)[i] ?? null; },
+          };
+          Object.defineProperty(memory, 'length', { get: function () { return Object.keys(cell).length; } });
+          Object.defineProperty(window, 'localStorage', { configurable: true, value: memory });
+          Object.defineProperty(window, 'sessionStorage', { configurable: true, value: memory });
+          Object.defineProperty(window, 'indexedDB', { configurable: true, value: undefined });
+        } catch (e) {}
+
+        // 1. A session, so MobileAuthGate lets the app through (it returns its
+        //    children the moment a stored server exists) and every request()
+        //    is built against our own origin rather than somebody's hub.
+        //    The stream token's shape is `user.epoch.expiry.sig` and the app
+        //    reads that third field: anything it cannot parse counts as
+        //    already expired, so the app renews it against /api/me - and a
+        //    plain 'demo' string sent every cover URL through a renewal that
+        //    answered with the empty-object fallback, putting `t=undefined`
+        //    into the src of every sleeve on the page. Give it an expiry it
+        //    can read, far enough out never to come up.
+        var session = {
+          url: HUB, token: 'demo', streamToken: 'demo.0.99999999999.demo',
+          username: 'demo', isAdmin: false,
+        };
+        try {
+          localStorage.setItem('attackfm-server-session', JSON.stringify(session));
+          localStorage.setItem('attackfm-sessions', JSON.stringify({ byUrl: { [HUB]: session }, primary: HUB }));
+          // Nothing here should nag: no onboarding, no update sheet, no tour.
+          localStorage.setItem('attackfm-onboarding-skipped', '1');
+          localStorage.setItem('attackfm-verbose-notices', 'false');
+        } catch (e) {}
+
+        /*
+         * 2. DENY BY DEFAULT.
+         *
+         * The whole risk of running the real app on a marketing page is that
+         * something in it reaches a live host - a plugin repository, the OTA
+         * registry, an art CDN - from attack.fm, carrying whatever it thinks
+         * its credentials are. So the demo cannot make an off-origin request
+         * at all: everything else is refused here rather than trusted not to
+         * be attempted.
+         *
+         * Requests to the fixture hub are rewritten to static files, because
+         * request() appends query strings (`/api/library?since=0`) that a file
+         * server cannot match.
+         */
+        var realFetch = window.fetch.bind(window);
+        window.fetch = function (input, init) {
+          var raw = typeof input === 'string' ? input : (input && input.url) || String(input);
+          var url;
+          try { url = new URL(raw, location.href); } catch (e) { return Promise.reject(new Error('demo: unparseable ' + raw)); }
+          if (url.origin !== location.origin) {
+            return Promise.reject(new Error('demo: refused off-origin ' + url.origin));
+          }
+          var here = url.pathname.replace(/\/+$/, '');
+          var hubPath = new URL(HUB).pathname.replace(/\/+$/, '');
+          if (here.indexOf(hubPath + '/api/') === 0) {
+            var rest = here.slice((hubPath + '/api/').length);
+            /*
+             * Covers are already files at the path the app asks for.
+             *
+             * artUrl() builds `<hub>/api/art/<artId>?t=...`, and the fixture
+             * writes each sleeve to exactly that name - so art passes straight
+             * through, query string and all, rather than being folded into
+             * `art.json`. (Most covers never reach here anyway: an <img> src
+             * is not a fetch. This is for the surfaces that read the bytes -
+             * the blur wash, the colour sampler.)
+             */
+            if (rest.indexOf('art/') === 0) return realFetch(input, init);
+            var name = rest.split('/')[0];
+            return realFetch(hubPath + '/api/' + name + '.json', { cache: 'no-store' }).then(function (r) {
+              if (r.ok) return r;
+              /*
+               * An endpoint with no fixture answers {} rather than 404.
+               *
+               * The app asks for a lot on boot and most callers guard a failed
+               * read - but not all of them, and one that does not takes the
+               * whole render down with it (fetchRemotePlaylists returns
+               * reply.playlists, which is undefined for any shape but the
+               * right one, and the crash lands three files away). An empty
+               * object is the shape every one of them survives.
+               */
+              return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+            });
+          }
+          return realFetch(input, init);
+        };
+
+        /*
+         * 3. THE AUDIO, WHICH IS SILENCE AND IS ALWAYS MUTED.
+         *
+         * The page shows the app really playing - the seek bar moves, the disc
+         * turns, the waveform runs - and all of that is driven by a real
+         * <audio> element's clock, so there has to be something for it to
+         * play. It cannot be the music: these are other people's recordings
+         * and this is a public page. So every media URL is rewritten to one
+         * silent file, long enough to outlast the longest record here.
+         *
+         * Muted is not a courtesy, it is the mechanism. A marketing page that
+         * can make a sound is a marketing page that WILL make a sound on
+         * somebody, so `muted` is pinned true at the prototype and cannot be
+         * unset by anything the app does; that is also what lets playback
+         * start without a click, since muted autoplay needs no gesture.
+         *
+         * Both doors are covered: assigning `.src` and setting the attribute.
+         * React writes media sources through setAttribute, and patching only
+         * the property would have looked like it worked right up until the
+         * built page.
+         */
+        /*
+         * Which silence a stream URL plays.
+         *
+         * One file per track LENGTH, keyed by track id - the transport reads
+         * its duration off the media element, so a single long file would make
+         * every song claim that length and contradict the running time printed
+         * next to it. `__demoStreams` is written by the fixture build and
+         * loaded by the blocking <script> above, so the map is already here
+         * when the first source is assigned.
+         */
+        var STREAMS = window.__demoStreams || {};
+        function silence(url) {
+          var id = /\/api\/stream\/(\d+)/.exec(String(url));
+          var secs = id && STREAMS[id[1]];
+          return secs ? HUB + '/media/' + secs + '.m4a' : null;
+        }
+        function quiet(el, url) {
+          /*
+           * Muted at the moment a source is attached, and only then.
+           *
+           * An earlier version pinned `muted` true on the prototype so nothing
+           * could ever unset it. That broke playback outright: React reads and
+           * writes `muted` as an ordinary DOM prop, and a property that lies
+           * about its own value leaves the reconciler writing a source into an
+           * element it then treats as already wrong - both decks ended up with
+           * no source at all. The silence file is the real guarantee that this
+           * page cannot make a sound; `muted` here only buys the other thing
+           * it is needed for, which is autoplay without a gesture.
+           */
+          try { el.muted = true; el.volume = 0; } catch (e) {}
+          return silence(url) || url;
+        }
+        try {
+          var proto = window.HTMLMediaElement && window.HTMLMediaElement.prototype;
+          var srcProp = proto && Object.getOwnPropertyDescriptor(proto, 'src');
+          if (srcProp && srcProp.set) {
+            Object.defineProperty(proto, 'src', {
+              configurable: true,
+              enumerable: srcProp.enumerable,
+              get: function () { return srcProp.get.call(this); },
+              set: function (value) { srcProp.set.call(this, quiet(this, value)); },
+            });
+          }
+          // Both doors: React writes media sources through setAttribute, so
+          // patching only the property would have looked right in dev and
+          // failed in the built page.
+          var setAttribute = Element.prototype.setAttribute;
+          Element.prototype.setAttribute = function (name, value) {
+            if (name === 'src' && this instanceof window.HTMLMediaElement) {
+              return setAttribute.call(this, name, quiet(this, value));
+            }
+            return setAttribute.call(this, name, value);
+          };
+        } catch (e) {}
+
+        /*
+         * 5. THE RECIPE: which screen this frame is showing.
+         *
+         * `?screen=` names one. The site mounts the same build several times
+         * over and each frame drives itself here - there is no harness on the
+         * live page, so whatever a frame is meant to show it has to reach on
+         * its own, through the app's own surfaces.
+         *
+         * Everything below is best-effort by construction. A recipe that
+         * cannot find what it wants gives up and leaves the app on its home
+         * screen, which is a perfectly good frame; the failure mode of a
+         * marketing page must never be a broken one.
+         */
+        var SCREEN = (new URLSearchParams(location.search).get('screen') || 'home').toLowerCase();
+        var CALM = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        /** Poll for something to appear. Resolves with it, or null on timeout. */
+        function until(find, ms) {
+          var deadline = Date.now() + (ms || 8000);
+          return new Promise(function (resolve) {
+            (function look() {
+              var found;
+              try { found = find(); } catch (e) { found = null; }
+              if (found) return resolve(found);
+              if (Date.now() > deadline) return resolve(null);
+              setTimeout(look, 120);
+            })();
+          });
+        }
+        function after(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+        /**
+         * A tap, as the app understands one.
+         *
+         * The cards are wired to the pointer sequence rather than to `click` -
+         * they have to be, because a hold on one opens a menu - so calling
+         * el.click() on a card does nothing at all. This sends the real
+         * sequence at the element's centre, on whatever is actually on top
+         * there, which is also how a finger would land.
+         */
+        function tap(el) {
+          if (!el) return false;
+          var box = el.getBoundingClientRect();
+          var x = box.left + box.width / 2;
+          var y = box.top + box.height / 2;
+          var target = document.elementFromPoint(x, y) || el;
+          var shared = {
+            bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y,
+            pointerId: 1, pointerType: 'touch', isPrimary: true, button: 0,
+          };
+          function fire(name) {
+            var init = Object.assign({}, shared, { buttons: name === 'pointerup' ? 0 : 1 });
+            target.dispatchEvent(new PointerEvent(name, init));
+          }
+          fire('pointerdown');
+          fire('pointerup');
+          target.dispatchEvent(new MouseEvent('click', shared));
+          return true;
+        }
+
+        var text = function (el) { return (el.innerText || '').replace(/\s+/g, ' ').trim(); };
+
+        /** A card under a named shelf - the shelves differ in what a tap does,
+         *  so which shelf it came from is part of the address. */
+        function cardIn(shelfTitle, index) {
+          var shelves = [].slice.call(document.querySelectorAll('.homeShelf'));
+          for (var i = 0; i < shelves.length; i++) {
+            var head = shelves[i].querySelector('.homeShelfTitle');
+            if (!head || text(head).toLowerCase() !== shelfTitle.toLowerCase()) continue;
+            // Artist shelves use a round card of their own, not a track card.
+            var cards = shelves[i].querySelectorAll('.trackCard, .artistCard');
+            return cards[index || 0] || null;
+          }
+          return null;
+        }
+
+        /** One of the four tiles at the top of the library, by its label.
+         *  Matched on `.libChip__name` and not on the tile's own text: a tile
+         *  reads "208 ALL SONGS 208 songs", so the label is in the middle of
+         *  it and matching the tile's text from the front never hits. */
+        function tileNamed(name) {
+          var labels = [].slice.call(document.querySelectorAll('.libChip__name'));
+          for (var i = 0; i < labels.length; i++) {
+            if (text(labels[i]).toUpperCase() === name.toUpperCase()) {
+              return labels[i].closest('.libChip') || labels[i];
+            }
+          }
+          return null;
+        }
+
+        /**
+         * The slow drift.
+         *
+         * A frame that never moves photographs as a screenshot, which is the
+         * thing this page exists to stop being. It runs on the page's own
+         * scroller (`.homePage` and its kin are the scroller, not the body),
+         * eases at both ends, and reverses rather than jumping back.
+         */
+        function drift(node, opts) {
+          if (CALM || !node) return;
+          var settings = opts || {};
+          var pause = settings.pause == null ? 2600 : settings.pause;
+          var speed = settings.speed == null ? 22 : settings.speed; // px/second
+          var down = true;
+          var last = Date.now();
+          var holdUntil = last + pause;
+          /*
+           * setInterval, not requestAnimationFrame.
+           *
+           * rAF is the usual right answer and it is the wrong one here: it does
+           * not run in a frame that is not being presented, which is every
+           * frame on this page while the reader is somewhere else on it, and
+           * it does not run in a headless browser either - so the drift could
+           * not be verified from outside at all. An interval is throttled in a
+           * background tab rather than stopped, which for a scroll this slow
+           * is exactly the behaviour wanted.
+           */
+          setInterval(function () {
+            var now = Date.now();
+            var dt = Math.min(now - last, 200);
+            last = now;
+            var span = node.scrollHeight - node.clientHeight;
+            if (span < 40 || now < holdUntil) return;
+            node.scrollTop += (down ? 1 : -1) * speed * (dt / 1000);
+            if (down && node.scrollTop >= span - 1) { down = false; holdUntil = now + pause; }
+            if (!down && node.scrollTop <= 1) { down = true; holdUntil = now + pause; }
+          }, 33);
+        }
+
+        /** Whatever is actually scrolling right now. */
+        function scroller() {
+          var candidates = [].slice.call(document.querySelectorAll(
+            '.homePage, .songsPage, .albumPage, [class*="Page"]',
+          ));
+          for (var i = 0; i < candidates.length; i++) {
+            var el = candidates[i];
+            if (el.scrollHeight - el.clientHeight > 40 && el.clientHeight > 200) return el;
+          }
+          return document.scrollingElement;
+        }
+
+        var RECIPES = {
+          /** The library as it opens. */
+          home: async function () {
+            await until(function () { return cardIn('Recently added'); }, 12000);
+            drift(scroller());
+          },
+
+          /*
+           * An artist, open.
+           *
+           * Not an album page: every card on the library's shelves PLAYS what
+           * it shows - that is the whole tap contract, with the menu on a hold
+           * - so there is no card anywhere on this screen that navigates to a
+           * record. The artist page is the one detail page a single tap
+           * reaches, and it carries the albums anyway.
+           */
+          artist: async function () {
+            var card = await until(function () { return cardIn('Artists'); }, 12000);
+            tap(card);
+            await after(1200);
+            drift(scroller());
+          },
+
+          /** Every song, as a table. */
+          songs: async function () {
+            var tile = await until(function () { return tileNamed('ALL SONGS'); }, 12000);
+            tap(tile);
+            await after(900);
+            drift(scroller(), { speed: 30 });
+          },
+
+          /** Playing, with the sheet up. */
+          playing: async function () {
+            var card = await until(function () { return cardIn('Liked songs'); }, 12000);
+            tap(card);
+            var bar = await until(function () { return document.querySelector('.playerBarShell'); }, 9000);
+            // The sheet is what the bar opens, and only once something is on
+            // the deck - opening it over an empty player would show the frame
+            // this page least wants to show.
+            await after(700);
+            if (bar) bar.click();
+          },
+
+          /*
+           * The DJ's set, with the patter showing.
+           *
+           * The tile hands the whole set to the deck, so what is playing is a
+           * DJ pick - but the sheet alone cannot say so, and a frame that
+           * looks exactly like the one above it is a wasted frame. The queue
+           * is where the set is legible: the runs, and the line the DJ wrote
+           * over each of them.
+           */
+          dj: async function () {
+            var tile = await until(function () { return tileNamed('DJ'); }, 12000);
+            tap(tile);
+            /*
+             * The pause is the point: the line the DJ wrote over this run
+             * appears as a toast the moment the set starts, and it is the one
+             * place the shipping app prints it. Anyone who reaches this frame
+             * early reads it; everyone else gets the set itself, below.
+             */
+            var bar = await until(function () { return document.querySelector('.playerBarShell'); }, 12000);
+            await after(6500);
+            if (bar) bar.click();
+            var queue = await until(function () {
+              return document.querySelector('[aria-label="Queue"]');
+            }, 6000);
+            await after(600);
+            if (queue) queue.click();
+            await after(900);
+            drift(scroller(), { speed: 16 });
+          },
+        };
+
+        window.addEventListener('load', function () {
+          var run = RECIPES[SCREEN] || RECIPES.home;
+          // A recipe that throws must not take the frame down with it.
+          Promise.resolve()
+            .then(run)
+            .catch(function () {})
+            .then(function () {
+              /*
+               * Reduced motion means reduced motion.
+               *
+               * The recipe still walks to its screen - a reader who asked for
+               * stillness should see the same thing everyone else does, not an
+               * empty library - but once it is there, the deck stops. That
+               * settles the spinning sleeve, the running seek bar and the
+               * waveform in one go, and leaves a real song on a real screen,
+               * paused. The drift is already off; see CALM above.
+               */
+              if (!CALM) return;
+              [].forEach.call(document.querySelectorAll('audio, video'), function (el) {
+                try { el.pause(); } catch (e) {}
+              });
+            });
+        });
+
+        // 4. No sockets. Connect would dial the hub forever from a page whose
+        //    hub is a folder of JSON.
+        window.WebSocket = function () {
+          return { close: function () {}, send: function () {}, addEventListener: function () {},
+                   removeEventListener: function () {}, readyState: 3 };
+        };
+        window.EventSource = window.WebSocket;
+      })();
+    </script>
+
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <!--
+      The boot loader: which frontend actually runs.
+
+      It sits at the END of <body> on purpose. Vite's built entry is a module
+      script, and module scripts are DEFERRED - they execute only once the
+      document is parsed - so a classic inline script here still runs first and
+      can take the tag out before it ever executes. That is the only window in
+      which the choice can be made.
+
+      The embedded bundle is the floor. Without Tauri (a browser, the dev
+      server), or with no downloaded bundle, or if anything at all goes wrong
+      asking, this puts the embedded tag back exactly as Vite wrote it. The
+      swap happens only on the narrow happy path, and every launch that takes
+      it is recorded as a wager settled by bundle_boot_ok - see bundle.rs.
+    -->
+    <script>
+      (function () {
+        // The app's own entry, which is NOT simply the first module script.
+        // Vite injects its client (`/@vite/client`) ahead of /src/main.tsx, so
+        // taking the first one made the dev server look like a built bundle:
+        // the loader published `/@vite/client` as the chosen frontend, and
+        // main.tsx - seeing a name that was not its own - correctly concluded
+        // it was the losing half of a double boot and stood down. A black page
+        // on every dev launch, from a guard that is right in production.
+        var tags = document.querySelectorAll('script[type="module"][src]');
+        var moduleTag = null;
+        for (var i = 0; i < tags.length; i++) {
+          var src = tags[i].getAttribute('src') || '';
+          // Served from source: this is the dev server and there is no bundle
+          // to swap, whichever order the tags happen to be in.
+          if (src.indexOf('/src/') === 0) return;
+          // Vite's own machinery, never the app.
+          if (src.indexOf('/@') === 0) continue;
+          moduleTag = tags[i];
+          break;
+        }
+        if (!moduleTag) return;
+
+        var embeddedJs = moduleTag.getAttribute('src');
+        var cssTag = document.querySelector('link[rel="stylesheet"][href*="app.css"]');
+        // Removed before it runs; re-added below on whichever path we take.
+        moduleTag.remove();
+
+        // What the binary underneath can do. The launch-time update check is
+        // only safe from generation 2, where `bundle_state` stopped being able
+        // to quarantine the bundle asking it - so the frontend has to be able
+        // to tell, and an older binary ships an older copy of this file that
+        // never sets it. Absent therefore means "assume the worst", which is
+        // exactly right.
+        function run(js, css, version, generation) {
+          window.__afmNativeGeneration = generation || 0;
+          // Which frontend is the real one. Removing the loser's tag below does
+          // NOT stop it running - a prepared module script evaluates even after
+          // its element is gone - so the loser has to be told to stand down;
+          // see the guard at the top of main.tsx.
+          window.__afmFrontend = js;
+          if (css) {
+            var link = document.createElement('link');
+            link.rel = 'stylesheet';
+            // Same crossorigin the module tag below takes, and the same the
+            // embedded <link> is written with. Without it the stylesheet is
+            // the one request in this file fetched under different rules than
+            // everything around it.
+            link.crossOrigin = 'anonymous';
+            // The embedded sheet stays until the bundle's has actually landed.
+            // Dropping it first is what turns a failed stylesheet into a
+            // BRICK rather than a blemish: the module still boots, so
+            // bundle_boot_ok records the wager as won and the bundle is never
+            // quarantined - leaving a working app with no styles at all, every
+            // image at its natural size, and no way out but a reinstall.
+            link.onload = function () {
+              if (cssTag) cssTag.remove();
+            };
+            link.onerror = function () {
+              // Keep the embedded sheet and drop the one that failed, so the
+              // app is merely a version behind on looks instead of unusable.
+              link.remove();
+            };
+            document.head.appendChild(link);
+            link.href = css;
+          }
+          var tag = document.createElement('script');
+          tag.type = 'module';
+          tag.crossOrigin = 'anonymous';
+          tag.src = js;
+          window.__afmBundleVersion = version || null;
+          document.head.appendChild(tag);
+        }
+
+        var core = window.__TAURI__ && window.__TAURI__.core;
+        if (!core || !core.invoke) {
+          run(embeddedJs, null, null, 0);
+          return;
+        }
+
+        var settled = false;
+        // A hung IPC must not mean a blank app: if the answer has not arrived
+        // in a second, boot embedded and carry on.
+        var guard = setTimeout(function () {
+          if (settled) return;
+          settled = true;
+          run(embeddedJs, null, null, 0);
+        }, 1000);
+
+        // ONE call, not two. This used to ask `bundle_state` and then
+        // `bundle_begin_boot`, which meant a window between "the last wager was
+        // judged" and "this one is placed" that any other caller could land in
+        // - and `bundle_state` was itself destructive, so any of them could
+        // quarantine the bundle about to run. `bundle_claim_boot` does both
+        // halves under one lock and is the only thing that can quarantine
+        // anything. Five over-the-air versions were spent trying to sequence
+        // around the old shape from up here; it could not be done.
+        //
+        // Older binaries have no such command and answer with an error, which
+        // lands in the catch below and boots embedded - correct, and no worse
+        // than they already were.
+        core
+          .invoke('bundle_claim_boot')
+          .then(function (state) {
+            if (settled) return;
+            settled = true;
+            clearTimeout(guard);
+            // The generation belongs to the BINARY, not to whichever frontend
+            // ends up running - so it is reported even when falling back to
+            // embedded. Passing 0 here would tell a perfectly capable build
+            // that it was an old one, and switch off the launch check on every
+            // device that happens to be running its embedded bundle.
+            var gen = state && state.nativeGeneration;
+            if (!state || !state.dir || !state.active) {
+              run(embeddedJs, null, null, gen);
+              return;
+            }
+            var dir = state.dir;
+            run(
+              core.convertFileSrc(dir + '/app.js'),
+              core.convertFileSrc(dir + '/app.css'),
+              state.active,
+              gen
+            );
+          })
+          .catch(function () {
+            if (settled) return;
+            settled = true;
+            clearTimeout(guard);
+            run(embeddedJs, null, null, 0);
+          });
+      })();
+    </script>
+  </body>
+</html>
