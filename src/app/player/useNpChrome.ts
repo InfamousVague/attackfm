@@ -124,6 +124,20 @@ export function useNpChrome({
     // the last one looping. A song with no clip already falls back to the
     // blurred cover, so off is a path the screen was always able to draw.
     if (!npOpen || !track || !playSession || !nowPlayingVideoEnabled()) return;
+    /*
+     * NEVER FOR A BOOK.
+     *
+     * A Canvas is looked up by title and artist, and a book has both - so
+     * "Dungeon Crawler Carl" by "Matt Dinniman" matches something on Spotify
+     * and a music video ends up looping behind a chapter of prose. It is not a
+     * near-miss that needs a better match: a book has no Canvas to be right
+     * about, so the only correct number of lookups is zero.
+     *
+     * Returning here leaves `npCanvas` null, which is the path the screen
+     * already draws for a song without a clip - the cover, blurred, under the
+     * read-along text. Nothing new has to work for this to look right.
+     */
+    if (track.kind === 'book') return;
     const controller = new AbortController();
     void fetchCanvas(
       playSession,
@@ -177,7 +191,7 @@ export function useNpChrome({
       if (!controller.signal.aborted) setNpCanvas(kept ?? url);
     });
     return () => controller.abort();
-  }, [npOpen, track?.title, track?.artist, playSession]);
+  }, [npOpen, track?.title, track?.artist, track?.kind, playSession]);
 
   return { npDimmed, setNpDimmed, pokeNpDim, npCanvas };
 }
