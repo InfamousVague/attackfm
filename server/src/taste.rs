@@ -1000,3 +1000,100 @@ mod tests {
         );
     }
 }
+
+/// An offline check against a real database, run by hand:
+///
+///     AFM_EVAL_DB=/path/to/attackfm.db cargo test --release eval_against_real -- --ignored --nocapture
+///
+/// It answers the only question that matters about this rework: does the new
+/// model rank what a listener will actually finish above what they will skip,
+/// better than the model it replaces? It trains on the older half of each
+/// listener's history and is scored on the newer half, which they have not
+/// been shown.
+#[cfg(test)]
+mod eval {
+    use super::*;
+    use crate::db::Db;
+
+    /// Area under the ROC curve: the probability that a randomly chosen
+    /// liked track outranks a randomly chosen disliked one. 0.5 is a coin.
+    fn auc(mut rows: Vec<(f32, bool)>) -> f32 {
+        rows.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        let pos = rows.iter().filter(|(_, y)| *y).count() as f32;
+        let neg = rows.len() as f32 - pos;
+        if pos == 0.0 || neg == 0.0 {
+            return f32::NAN;
+        }
+        let mut rank_sum = 0.0f32;
+        for (i, (_, y)) in rows.iter().enumerate() {
+            if *y {
+                rank_sum += (i + 1) as f32;
+            }
+        }
+        (rank_sum - pos * (pos + 1.0) / 2.0) / (pos * neg)
+    }
+
+    #[test]
+    #[ignore]
+    fn eval_against_real() {
+        let Ok(path) = std::env::var("AFM_EVAL_DB") else {
+            eprintln!("set AFM_EVAL_DB");
+            return;
+        };
+        let db = Db::open(std::path::Path::new(&path)).unwrap();
+        let all = db.all_features();
+        let by_id: HashMap<i64, &TrackFeatures> = all.iter().map(|f| (f.track_id, f)).collect();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let users: Vec<(i64, String)> =
+            db.list_users().into_iter().map(|(id, name, _)| (id, name)).collect();
+
+        println!("\n{:<18} {:>7} {:>9} {:>9}  {}", "listener", "test n", "OLD auc", "NEW auc", "weights");
+        println!("{}", "-".repeat(78));
+        for (uid, name) in users {
+            let mut vs = db.taste_verdicts(uid, 0, 20_000);
+            if vs.len() < 40 {
+                continue;
+            }
+            vs.sort_by_key(|v| v.at);
+            let cut = vs.len() / 2;
+            let (train, test) = vs.split_at(cut);
+
+            let taste = build(uid, train, &by_id, now);
+
+            // The model being replaced: an unweighted centroid over play
+            // starts, scored with the fixed 0.45/0.30/0.25.
+            let starts: Vec<(i64, f32)> = train.iter().map(|v| (v.track_id, 1.0)).collect();
+            let old = crate::curator::taste_from_weighted(&starts, &by_id);
+
+            let mut old_rows = Vec::new();
+            let mut new_rows = Vec::new();
+            for v in test {
+                let Some(f) = by_id.get(&v.track_id) else { continue };
+                let liked = v.sentiment() > 0.25;
+                let disliked = v.sentiment() < -0.25;
+                if !liked && !disliked {
+                    continue; // ambiguous middle teaches nothing about ranking
+                }
+                old_rows.push((crate::curator::score(f, &old), liked));
+                new_rows.push((score(f, &taste), liked));
+            }
+            if new_rows.len() < 20 {
+                continue;
+            }
+            let w = taste.weights;
+            println!(
+                "{:<18} {:>7} {:>9.3} {:>9.3}  ly{:.2} so{:.2} te{:.2} ta{:.2} en{:.2}",
+                name,
+                new_rows.len(),
+                auc(old_rows),
+                auc(new_rows),
+                w.lyric, w.sonic, w.tempo, w.tags, w.energy
+            );
+        }
+        println!();
+    }
+}
