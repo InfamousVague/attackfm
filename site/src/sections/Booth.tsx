@@ -64,7 +64,7 @@ export function Booth() {
             <Point icon={Sparkles}>
               The DJ says why, in its own words, as each run comes up
             </Point>
-            <Point icon={Radio}>Smart shuffle slips in songs the server thinks belong next</Point>
+            <Point icon={Radio}>Auto DJ keeps going when the queue runs out, picking what fits</Point>
             <Point icon={ListMusic}>Every pick is a file you already own; nothing is streamed in</Point>
           </ul>
         </Reveal>
