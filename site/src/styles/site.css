@@ -368,6 +368,7 @@ a {
   display: none;
   gap: 1.6rem;
   margin-inline-start: auto;
+  position: relative;
 }
 
 .nav__link {
@@ -378,26 +379,54 @@ a {
   transition: color 0.2s var(--site-ease);
 }
 
-.nav__link::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  bottom: -6px;
-  width: 100%;
-  height: 2px;
-  background: var(--glacier-accent-9);
-  border-radius: 2px;
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform 0.28s var(--site-ease);
-}
-
 .nav__link:hover {
   color: var(--glacier-text);
 }
 
-.nav__link:hover::after {
-  transform: scaleX(1);
+.nav__link[aria-current] {
+  color: var(--glacier-text);
+}
+
+/*
+ * ONE marker for the whole row, not an underline per link.
+ *
+ * Per-link underlines can only cross-fade: the old one shrinks while the new
+ * one grows, and the eye reads two separate events. A single element that
+ * travels reads as one - the same object moving - which is the entire reason
+ * to animate it.
+ *
+ * Width animates alongside the transform because the labels are words of
+ * different lengths ("Library" against "Self-hosted"), so a fixed-width marker
+ * would sit wrong under half the row. Width is not a compositor-friendly
+ * property, but this is one 2px-tall element moving on a deliberate gesture,
+ * not something running on every frame of a scroll.
+ */
+.nav__marker {
+  position: absolute;
+  left: 0;
+  bottom: -6px;
+  height: 2px;
+  width: 0;
+  border-radius: 2px;
+  background: var(--glacier-accent-9);
+  pointer-events: none;
+  opacity: 0;
+  will-change: transform, width;
+}
+
+/* Armed only after the first placement, so the marker appears under the right
+   link instead of flying in from the left edge on load. */
+.nav__marker[data-armed] {
+  transition:
+    transform 0.34s var(--site-ease),
+    width 0.34s var(--site-ease),
+    opacity 0.2s var(--site-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav__marker[data-armed] {
+    transition: opacity 0.2s linear;
+  }
 }
 
 .nav__actions {
