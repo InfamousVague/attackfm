@@ -3,7 +3,7 @@
 // GeneralPane / PlaybackPane / PluginsPane (+ pluginRepos) / MobileSettings,
 // shared bits in settingsShared.ts, useMediaQuery deduped into ux/.
 import { SearchField, TabbedModal } from '@glacier/react';
-import { Bell, Blocks, BookOpen, Bot, CircleUserRound, HardDrive, Info, Library, Palette, Play, Server, Shield, Stethoscope, Terminal } from '@glacier/icons';
+import { Bell, Blocks, BookOpen, Bot, CircleUserRound, HardDrive, Info, Library, Music2, Palette, Play, Server, Shield, Stethoscope, Terminal } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { APP_VERSION } from '../core/version.ts';
 import { noteSettingsPane, recentPanes, type RecentPane } from './settingsRecency.ts';
@@ -16,6 +16,7 @@ import { AboutSettings } from './AboutSettings.tsx';
 import { DiagnosticsPane } from './DiagnosticsPane.tsx';
 import { DeveloperPane, developerSummary } from './DeveloperPane.tsx';
 import { LocalAiPane, localAiSummary } from './LocalAiPane.tsx';
+import { SpotifyPane } from './SpotifyPane.tsx';
 import { useDeveloperMode } from './developerMode.ts';
 import { diagEntries } from '../diag/diagLog.ts';
 import { HandbookPane } from './handbook/HandbookPane.tsx';
@@ -263,6 +264,22 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
             icon: <Bot size={16} />,
             content: <LocalAiPane />,
             summary: localAiSummary(),
+            tint: 'orange' as const,
+            group: 2,
+          },
+        ]
+      : []),
+    // Spotify, beside Local AI and gated the same way: both are the OWNER's
+    // configuration of the box rather than a listener's preference, and every
+    // route either pane calls is admin-gated server-side as well.
+    ...(session?.isAdmin
+      ? [
+          {
+            id: 'spotify',
+            label: 'Spotify',
+            icon: <Music2 size={16} />,
+            content: <SpotifyPane />,
+            summary: 'Canvas clips',
             tint: 'orange' as const,
             group: 2,
           },

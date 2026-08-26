@@ -76,6 +76,24 @@ fn settings_json() -> Value {
         ("refinementModel", "AFM_REFINEMENT_MODEL", Some("gemma4:12b")),
     ];
     let mut out = serde_json::Map::new();
+    /*
+     * The Spotify cookie is reported as a BOOLEAN and never as itself.
+     *
+     * It is a live session credential for the owner's Spotify account - anyone
+     * holding it can act as them - so the pane is told whether one is set and
+     * nothing more. There is no read path for the value anywhere in this
+     * server: it goes in through save_settings and comes out only as a request
+     * header inside the fetcher.
+     */
+    out.insert(
+        "spotifyCookieSet".into(),
+        json!(crate::ai::setting("spotifyCookie", "AFM_SPOTIFY_SP_DC").is_some()),
+    );
+    out.insert(
+        "canvasStock".into(),
+        json!(crate::ai::setting("canvasStock", "AFM_CANVAS_STOCK")
+            .is_some_and(|v| v != "false" && v != "0")),
+    );
     let mut overrides = serde_json::Map::new();
     let mut env_defaults = serde_json::Map::new();
     for (name, env, fallback) in strings {
