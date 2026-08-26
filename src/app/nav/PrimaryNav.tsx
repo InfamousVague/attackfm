@@ -1,4 +1,5 @@
 import { NavBar, NavBarItem } from '@glacier/react';
+import { useNavPill } from './useNavPill.ts';
 import { CircleUserRound, Compass, Disc3, LibraryBig, UsersRound } from '@glacier/icons';
 import { useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
@@ -92,6 +93,10 @@ export function PrimaryNav({
    * top of ⋮ is the thing that comes out of it first.
    */
   const barRef = useRef<HTMLElement | null>(null);
+  // The lit plate slides between tabs rather than blinking from one to the
+  // next - see useNavPill. Bar only; the desktop rail is a kit NavBar and
+  // already has the kit's own sliding indicator.
+  useNavPill(barRef);
   const dests = useMemo<NavDest[]>(() => {
     const list: NavDest[] = [
       {
@@ -271,6 +276,10 @@ export function PrimaryNav({
   // up out of the bar - so the core tabs stay put however many plugins are on.
   return (
     <nav className="appNavBar" aria-label="Primary" ref={barRef}>
+      {/* The lit plate. One element for the whole bar, parked over the current
+          tab and slid when it changes - decoration only, so it is hidden from
+          assistive tech, which reads aria-current on the tab itself. */}
+      <span className="appNavBarPill" aria-hidden="true" />
       {/* As many as there is room for, in priority order, and the rest fold
           into the ⋮ beside them. The bar used to hold a hand-kept four
           regardless of width, which meant a wide phone left room going spare

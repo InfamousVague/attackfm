@@ -79,7 +79,18 @@ export function NavMoreMenu({
       <button
         type="button"
         className="appNavBarTab appNavBarPlugins__trigger"
-        data-active={onMenuDest || open || undefined}
+        /*
+         * TWO different states, and they were one attribute.
+         *
+         * data-active means "this is the page you are on", and the bar's lit
+         * plate is now a single element that slides to whichever tab has it -
+         * so it has to be true of exactly one button. Merely having the menu
+         * OPEN is not a location, and while it shared this attribute the plate
+         * had two candidates and the trigger stole the mark from the tab you
+         * were actually on.
+         */
+        data-active={onMenuDest || undefined}
+        data-open={open || undefined}
         aria-label="More"
         aria-haspopup="menu"
         aria-expanded={open}
