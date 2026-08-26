@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- See widget_shot_compact.xml. Large: the transport is spread across the
+     bottom ~18%, with the heart at the leading edge. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/widget_root"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent">
+
+  <ImageView
+    android:id="@+id/widget_shot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:contentDescription="Now playing"
+    android:scaleType="fitXY" />
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <View
+      android:id="@+id/widget_open"
+      android:layout_width="match_parent"
+      android:layout_height="0dp"
+      android:layout_weight="82" />
+
+    <LinearLayout
+      android:layout_width="match_parent"
+      android:layout_height="0dp"
+      android:layout_weight="18"
+      android:orientation="horizontal">
+
+      <View
+        android:id="@+id/widget_heart"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="16"
+        android:contentDescription="Favourite" />
+
+      <View
+        android:id="@+id/widget_prev"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="24"
+        android:contentDescription="Previous" />
+
+      <View
+        android:id="@+id/widget_play"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="20"
+        android:contentDescription="Play or pause" />
+
+      <View
+        android:id="@+id/widget_next"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="24"
+        android:contentDescription="Next" />
+
+      <View
+        android:id="@+id/widget_open_bottom"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="16" />
+    </LinearLayout>
+  </LinearLayout>
+</FrameLayout>

@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- THE PICTURE, AND WHERE ITS BUTTONS ARE.
+
+     The face itself is a photograph taken by the page (src/app/widget/) - the
+     launcher cannot run the kit that drew it, so it is shown the result. What
+     the launcher CAN do is take a press, so this lays invisible targets over
+     the places the picture happens to have buttons.
+
+     THAT MAKES THIS FILE HALF OF A CONTRACT. The other half is FACE_GEOMETRY in
+     WidgetFace.tsx, which is where a button's position is actually decided.
+     Weights here mirror the arrangement there; changing one without the other
+     puts the press somewhere the button is not.
+
+     Compact: the controls sit at the trailing end of the single row, above the
+     scrubber. The row is the top ~72% of the face. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/widget_root"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent">
+
+  <ImageView
+    android:id="@+id/widget_shot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:contentDescription="Now playing"
+    android:scaleType="fitXY" />
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <LinearLayout
+      android:layout_width="match_parent"
+      android:layout_height="0dp"
+      android:layout_weight="72"
+      android:orientation="horizontal">
+
+      <!-- The cover and the words: a press anywhere here opens the app. -->
+      <View
+        android:id="@+id/widget_open"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="56" />
+
+      <View
+        android:id="@+id/widget_prev"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="14"
+        android:contentDescription="Previous" />
+
+      <View
+        android:id="@+id/widget_play"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="16"
+        android:contentDescription="Play or pause" />
+
+      <View
+        android:id="@+id/widget_next"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="14"
+        android:contentDescription="Next" />
+    </LinearLayout>
+
+    <!-- The scrubber is not a control here; a press on it opens the app. -->
+    <View
+      android:id="@+id/widget_open_bottom"
+      android:layout_width="match_parent"
+      android:layout_height="0dp"
+      android:layout_weight="28" />
+  </LinearLayout>
+
+  <View
+    android:id="@+id/widget_heart"
+    android:layout_width="0dp"
+    android:layout_height="0dp"
+    android:visibility="gone" />
+</FrameLayout>

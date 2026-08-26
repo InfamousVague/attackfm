@@ -23,6 +23,9 @@ interface NativeBridge {
    *  the title, and whether this one is kept (-1 for "not known yet").
    *  Present from the widget-face shell; absent before it. */
   setNowPlayingExtras?: (accentHex: string, line: string, favourite: number) => void;
+  /** A photograph of the widget's face, as a base64 PNG. See widget/shot.ts for
+   *  why the home screen is shown a picture rather than a layout. */
+  setWidgetShot?: (face: string, base64: string) => void;
   /** Present from the widget/Auto-playlists shell; absent before it. */
   setCollections?: (json: string) => void;
   setBrowseTree?: (json: string) => void;
@@ -191,6 +194,17 @@ export function setNativePlaybackState(playing: boolean, positionSecs: number): 
  * side cannot parse (a raw oklch()) is simply dropped there and the brand pink
  * stands in - see publishExtras.
  */
+/** Hand a finished widget photograph to the native side, which caches it and
+ *  pushes it at the launcher. */
+export function setNativeWidgetShot(face: string, dataUrl: string): void {
+  try {
+    // The bridge is a string pipe; the data: prefix is this side's business.
+    window.AFMNative?.setWidgetShot?.(face, dataUrl.slice(dataUrl.indexOf(',') + 1));
+  } catch {
+    // An older shell has no widget to tell.
+  }
+}
+
 /**
  * The listener's accent, as a plain #rrggbb the native side can parse.
  *
@@ -283,6 +297,14 @@ interface TransportHandlers {
    *  the widget only ever asks - and learns the answer from the extras the
    *  page publishes back. */
   favourite?: () => void;
+  /**
+   * "Take a picture of the widget at this size."
+   *
+   * The launcher is the only thing that knows how big the box is, and it can
+   * only say so when something changes - a placement, a drag, a rotation - so
+   * the request comes FROM the native side rather than the page guessing.
+   */
+  widgetShot?: (face: string, width: number, height: number, scale: number) => void;
   /** A collection tapped in the car's browse list: 'liked' | 'all' | 'shuffle'. */
   playCollection?: (id: string) => void;
   /** A playlist tapped in the car's browse list, by its own id. */
@@ -332,6 +354,11 @@ export function bindNativeTransport(handlers: TransportHandlers): () => void {
       else if (command === 'next') h.next?.();
       else if (command === 'previous') h.previous?.();
       else if (command === 'favourite') h.favourite?.();
+      else if (command.startsWith('widget:')) {
+        // widget:<face>:<wdp>x<hdp>@<density>
+        const m = /^widget:([a-z]+):(\d+)x(\d+)@([\d.]+)$/.exec(command);
+        if (m) h.widgetShot?.(m[1]!, Number(m[2]), Number(m[3]), Number(m[4]));
+      }
       else if (command.startsWith('seek:')) {
         const secs = Number(command.slice(5));
         if (Number.isFinite(secs)) h.seek?.(secs);

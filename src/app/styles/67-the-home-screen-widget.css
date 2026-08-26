@@ -1,0 +1,207 @@
+/* ---------------------------------------------------------------------------
+ * The home-screen widget's face
+ *
+ * Never on screen: this is mounted off-canvas, photographed, and the picture is
+ * what Android's launcher draws - see src/app/widget/shot.ts. Solid surfaces
+ * throughout, because an SVG foreignObject has no backdrop to filter and a home
+ * screen has nothing behind the plate anyway.
+ *
+ * Sizes are in px rather than rem on purpose. The photograph is taken at a
+ * pixel size the launcher asked for, and a face built on the listener's root
+ * font size would come out a different shape on every device.
+ * ------------------------------------------------------------------------ */
+
+.wface {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  background: var(--glacier-surface-raised);
+  color: var(--glacier-text-primary);
+  font-family: var(--glacier-font-sans);
+}
+
+/*
+ * THE BUDGETS ARE REAL AND THEY ARE TIGHT.
+ *
+ * A four-cell widget on a Pixel is about 330dp wide and 86, 156 or 300dp tall
+ * depending on how far it has been dragged. Every number below is spent against
+ * that: a face whose parts add up to more than its box does not scroll, it
+ * CROPS - the first cut lost the top of the cover on the medium face and
+ * squeezed the title to three letters on the compact one.
+ */
+.wface[data-face='compact'] {
+  gap: 6px;
+  padding: 10px 14px;
+  border-radius: 26px;
+}
+
+.wface[data-face='medium'] {
+  gap: 6px;
+  padding: 12px 16px;
+  border-radius: 30px;
+}
+
+.wface[data-face='large'] {
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 32px;
+}
+
+.wface__row {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 13px;
+  min-height: 0;
+}
+
+/* Fixed, not flexible. Given `flex: 1` the row takes the slack, and when there
+   is no slack it takes the OVERFLOW instead - which crops the top off the cover
+   rather than shrinking anything. */
+.wface[data-face='medium'] .wface__row {
+  flex: none;
+  height: 46px;
+}
+
+.wface__art {
+  flex: none;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--glacier-surface-sunken);
+}
+
+.wface[data-face='compact'] .wface__art { width: 40px; height: 40px; border-radius: 12px; }
+.wface[data-face='medium'] .wface__art { width: 46px; height: 46px; }
+
+.wface[data-face='large'] .wface__art {
+  width: auto;
+  height: 0;
+  flex: 1;
+  aspect-ratio: 1;
+  border-radius: 20px;
+}
+
+.wface__art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.wface__artEmpty {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(140deg, var(--glacier-surface-sunken), var(--glacier-accent-3));
+}
+
+.wface__words {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+
+.wface[data-face='large'] .wface__words {
+  flex: none;
+  align-items: center;
+  text-align: center;
+}
+
+.wface__title {
+  overflow: hidden;
+  font-size: 14.5px;
+  font-weight: 650;
+  letter-spacing: -0.012em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wface[data-face='medium'] .wface__title,
+.wface[data-face='large'] .wface__title { font-size: 17px; }
+
+.wface__artist,
+.wface__line {
+  overflow: hidden;
+  color: var(--glacier-text-secondary);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wface__line {
+  color: var(--glacier-text-muted);
+  font-size: 11.5px;
+}
+
+.wface__scrub {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+}
+
+/* The kit's bar sizes itself from its own tokens; inside a face the height is
+   part of a budget, so it is pinned. */
+.wface [role='slider'],
+.wface [class*='seek'] {
+  height: 16px;
+}
+
+.wface[data-face='compact'] [role='slider'],
+.wface[data-face='compact'] [class*='seek'] {
+  height: 13px;
+}
+
+.wface__times {
+  display: flex;
+  justify-content: space-between;
+  color: var(--glacier-text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.wface__transport {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+/* The compact face keeps its controls IN the row, so they must not push the
+   words down to nothing - the title is the thing being read. */
+.wface[data-face='compact'] .wface__transport { gap: 2px; }
+.wface[data-face='compact'] .wface__words { flex: 1; min-width: 0; }
+
+.wface__transport--wide {
+  justify-content: space-between;
+  width: 100%;
+}
+
+/* The player's own accent disc. A gradient rather than a flat fill, which is
+   what the play button wears three inches away inside the app. */
+.wface__disc {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklch, var(--glacier-accent-solid) 88%, white),
+    var(--glacier-accent-solid)
+  );
+  box-shadow: 0 2px 10px color-mix(in oklch, var(--glacier-accent-solid) 45%, transparent);
+  color: #fff;
+}
+
+.wface[data-face='large'] .wface__disc { width: 50px; height: 50px; }
+.wface[data-face='compact'] .wface__disc { width: 34px; height: 34px; }
+
+.wface__spacer { width: 34px; }

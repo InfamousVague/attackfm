@@ -56,6 +56,9 @@ src-tauri/gen/android/app/src/main/java/com/mattssoftware/attackfm/generated/
 !src-tauri/gen/android/app/src/main/res/layout/widget_now_playing.xml
 !src-tauri/gen/android/app/src/main/res/layout/widget_now_playing_medium.xml
 !src-tauri/gen/android/app/src/main/res/layout/widget_now_playing_large.xml
+!src-tauri/gen/android/app/src/main/res/layout/widget_shot_compact.xml
+!src-tauri/gen/android/app/src/main/res/layout/widget_shot_medium.xml
+!src-tauri/gen/android/app/src/main/res/layout/widget_shot_large.xml
 !src-tauri/gen/android/app/src/main/res/drawable/
 !src-tauri/gen/android/app/src/main/res/drawable/widget_bg.xml
 !src-tauri/gen/android/app/src/main/res/drawable/widget_art_placeholder.xml

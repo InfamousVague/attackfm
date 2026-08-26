@@ -414,6 +414,9 @@ class PlaybackService : MediaBrowserServiceCompat() {
     // flips it to the tap-to-open face.
     lastState = PlaybackStateCompat.STATE_NONE
     retick()
+    // The kept pictures are of a song that is no longer playing; the idle face
+    // is drawn from primitives and needs none of them.
+    WidgetShots.clear(this)
     NowPlayingWidget.refresh(this)
   }
 
