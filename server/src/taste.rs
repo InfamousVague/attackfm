@@ -531,6 +531,72 @@ pub fn score(f: &TrackFeatures, taste: &UserTaste) -> f32 {
         .clamp(0.0, 1.0)
 }
 
+/// Score something that is NOT in the library yet - a Deezer candidate for the
+/// Date deck, which has a title, an artist and maybe a preview clip.
+///
+/// The library scorer cannot be reused because a candidate has no
+/// `TrackFeatures` row: no measured energy, no sonic vector, no genre string.
+/// What it does have is an embedding of its words, a tempo measured off the
+/// preview, and the artist it was suggested FROM - and that seed artist is
+/// usually one the listener owns, so their tags are a real signal about the
+/// candidate rather than the flat 0.5 the old path substituted.
+///
+/// The terms it cannot answer stay neutral and their weight is redistributed
+/// across the ones it can, so a candidate is never punished for the
+/// server simply not knowing something about it.
+pub fn score_candidate(
+    taste: &UserTaste,
+    lyric_vec: Option<&[f32]>,
+    bpm: Option<f64>,
+    seed_tags: &[String],
+) -> f32 {
+    let w = taste.weights;
+    let mut total = 0.0f32;
+    let mut used = 0.0f32;
+
+    if let (Some(c), Some(v)) = (&taste.lyric, lyric_vec) {
+        total += w.lyric * ((crate::curator::cosine(c, v) + 1.0) / 2.0);
+        used += w.lyric;
+    }
+    if let (Some((med, spread)), Some(b)) = (taste.tempo, bpm) {
+        let t = (-(((med - b).abs() / spread.max(1.0)) as f32)).exp().clamp(0.0, 1.0);
+        total += w.tempo * t;
+        used += w.tempo;
+    }
+    if !taste.tags.is_empty() && !seed_tags.is_empty() {
+        let hits: Vec<f32> = seed_tags.iter().filter_map(|t| taste.tags.get(t).copied()).collect();
+        if !hits.is_empty() {
+            let mean = hits.iter().sum::<f32>() / hits.len() as f32;
+            total += w.tags * ((mean + 1.0) / 2.0);
+            used += w.tags;
+        }
+    }
+    if used <= 0.0 {
+        return 0.5;
+    }
+    (total / used).clamp(0.0, 1.0)
+}
+
+/// Every tag the library associates with one artist, for seeding a candidate.
+pub fn artist_tags(feats: &HashMap<i64, &TrackFeatures>, artist: &str) -> Vec<String> {
+    let want = artist.trim().to_lowercase();
+    if want.is_empty() {
+        return Vec::new();
+    }
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for f in feats.values() {
+        if f.artist.trim().to_lowercase() != want {
+            continue;
+        }
+        for t in tags_of(f) {
+            *counts.entry(t).or_insert(0) += 1;
+        }
+    }
+    let mut v: Vec<(String, usize)> = counts.into_iter().collect();
+    v.sort_by(|a, b| b.1.cmp(&a.1));
+    v.into_iter().take(8).map(|(t, _)| t).collect()
+}
+
 /// Learn which terms actually predict THIS listener's outcomes.
 ///
 /// HOW, AND WHY NOT SOMETHING CLEVERER.
