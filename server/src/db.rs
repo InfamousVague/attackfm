@@ -7408,10 +7408,42 @@ pub fn kind_for(rel_path: &str) -> &'static str {
 /// and a folder that looks exactly right on disk.
 pub fn book_prefix(rel_path: &str) -> Option<&str> {
     const FOLDER: &str = "Audiobooks/";
-    if rel_path.len() >= FOLDER.len() && rel_path[..FOLDER.len()].eq_ignore_ascii_case(FOLDER) {
+    // Compared as BYTES, not by slicing the &str. `rel_path[..11]` panics when
+    // byte 11 lands inside a multi-byte character, which is not a rare shape -
+    // any library with a Japanese, Cyrillic or accented folder near the root
+    // has one. It took down a tokio worker on
+    // `アトラスサウンドチーム, ATLUS GAME MUSIC` during the 2026-08-26 migration.
+    //
+    // FOLDER is pure ASCII, so a byte-wise ASCII-insensitive compare is exactly
+    // equivalent for every path that could match, and simply returns false -
+    // rather than panicking - for every path that could not.
+    let head = rel_path.as_bytes().get(..FOLDER.len())?;
+    if head.eq_ignore_ascii_case(FOLDER.as_bytes()) {
         Some(&rel_path[FOLDER.len()..])
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod book_prefix_utf8 {
+    use super::book_prefix;
+
+    #[test]
+    fn multibyte_near_the_prefix_length_does_not_panic() {
+        // Byte 11 falls inside the third character here; the old slice paniced.
+        assert_eq!(book_prefix("アトラスサウンドチーム/01 track.flac"), None);
+        assert_eq!(book_prefix("Ünderscore/x.flac"), None);
+        assert_eq!(book_prefix("短/a.m4b"), None);
+    }
+
+    #[test]
+    fn still_matches_either_case() {
+        assert_eq!(book_prefix("Audiobooks/A/B.m4b"), Some("A/B.m4b"));
+        assert_eq!(book_prefix("audiobooks/A/B.m4b"), Some("A/B.m4b"));
+        assert_eq!(book_prefix("AUDIOBOOKS/A/B.m4b"), Some("A/B.m4b"));
+        assert_eq!(book_prefix("Music/A/B.flac"), None);
+        assert_eq!(book_prefix("short"), None);
     }
 }
 
