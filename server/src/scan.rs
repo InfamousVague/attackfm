@@ -592,6 +592,25 @@ pub fn run_scan(db: &Db, music_root: &Path, art_dir: &Path, progress: &ScanProgr
     // Every pass that changes anything stamps its rows with one new revision,
     // so a client's delta is "everything above the number I last saw".
     let rev = db.current_rev() + 1;
+    // Every cover the art cache actually holds, read once. One readdir beats a
+    // stat per track, and the ids are content hashes so the file stem IS the id.
+    let cached_art: HashSet<String> = std::fs::read_dir(art_dir)
+        .map(|entries| {
+            entries
+                .filter_map(Result::ok)
+                .filter_map(|e| {
+                    let name = e.file_name();
+                    let name = name.to_str()?;
+                    // Scaled variants are written as `<id>@<size>.jpg`; they are
+                    // regenerated on demand from the original, so only the
+                    // original counts as "cached".
+                    let stem = name.rsplit_once('.').map(|(a, _)| a).unwrap_or(name);
+                    (!stem.contains('@')).then(|| stem.to_string())
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
     let mut present: HashSet<String> = HashSet::with_capacity(files.len());
     let mut added = 0i64;
 
@@ -599,8 +618,18 @@ pub fn run_scan(db: &Db, music_root: &Path, art_dir: &Path, progress: &ScanProgr
         present.insert(rel_path.clone());
         progress.seen.fetch_add(1, Ordering::Relaxed);
 
-        // Unchanged since the index last looked: nothing to re-read.
-        if let Some((mtime, size)) = known.get(&rel_path) {
+        // Unchanged since the index last looked, AND the cover it claims is
+        // really on disk: nothing to re-read.
+        //
+        // The second half is not belt-and-braces. mtime and size describe the
+        // audio file and say nothing about the derived cover, so an art cache
+        // that is lost on its own - a database-only restore, a move between
+        // machines, a wipe to reclaim disk - leaves every row naming an
+        // `art_id` whose file does not exist. Every file then reads as
+        // unchanged, `read_track` never runs, `store_art` never runs, and the
+        // cache cannot refill: blank covers forever, and nothing in any log.
+        // Checking the claim costs one hash-set lookup per track.
+        if let Some((mtime, size, art_id)) = known.get(&rel_path) {
             let unchanged = std::fs::metadata(&path)
                 .map(|m| {
                     let mt = m
@@ -612,7 +641,14 @@ pub fn run_scan(db: &Db, music_root: &Path, art_dir: &Path, progress: &ScanProgr
                     mt == *mtime && m.len() as i64 == *size
                 })
                 .unwrap_or(false);
-            if unchanged {
+            // A track with no art_id is not missing anything - there was never
+            // a cover to cache, and re-reading it every pass would be a full
+            // tag read of the whole library for nothing.
+            let art_ok = match art_id.as_deref() {
+                None | Some("") => true,
+                Some(id) => cached_art.contains(id),
+            };
+            if unchanged && art_ok {
                 continue;
             }
         }
@@ -854,5 +890,119 @@ mod book_folder_tests {
         // Sitting loose in Audiobooks/ has no folder of its own.
         assert_eq!(book_folder("Audiobooks/loose.mp3"), None);
         assert_eq!(book_folder("Music/Artist/Album/01.mp3"), None);
+    }
+}
+
+#[cfg(test)]
+mod missing_art_is_refetched {
+    //! A cover that vanished from the art cache must bring its track back for a
+    //! re-read, even though the audio file itself has not moved.
+
+    fn flac_with_cover(dir: &std::path::Path, rel: &str) -> std::path::PathBuf {
+        let path = dir.join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        // Not a real FLAC; the point of this test is the SKIP DECISION, which is
+        // made from the index and the art cache before the file is ever parsed.
+        std::fs::write(&path, b"not really audio").unwrap();
+        path
+    }
+
+    #[test]
+    fn a_track_whose_cover_is_gone_is_not_skipped() {
+        let dir = std::env::temp_dir().join(format!("afm-art-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let music = dir.join("music");
+        let art = dir.join("art");
+        std::fs::create_dir_all(&art).unwrap();
+        let db = crate::db::Db::open(&dir.join("t.sqlite")).unwrap();
+
+        let rel = "Artist/Album/song.flac";
+        let file = flac_with_cover(&music, rel);
+        let meta = std::fs::metadata(&file).unwrap();
+        let mtime = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+
+        // Indexed, unchanged on disk, and claiming a cover that is NOT cached -
+        // exactly the state a database-only restore leaves behind.
+        let mut track = crate::db::ScannedTrack::default();
+        track.rel_path = rel.to_string();
+        track.title = "Song".into();
+        track.artist = "Artist".into();
+        track.album = "Album".into();
+        track.mtime = mtime;
+        track.size_bytes = meta.len() as i64;
+        track.art_id = Some("aCoverThatIsGone".into());
+        db.upsert_track(&track, 1).unwrap();
+
+        let fp = db.scan_fingerprints();
+        let (_, _, art_id) = fp.get(rel).expect("the track should be fingerprinted");
+        assert_eq!(
+            art_id.as_deref(),
+            Some("aCoverThatIsGone"),
+            "the fingerprint must carry the art id, or the scan cannot check it",
+        );
+
+        // The cache is empty, so the claimed cover is absent and the track must
+        // NOT qualify for the unchanged fast-path.
+        let cached: std::collections::HashSet<String> = std::fs::read_dir(&art)
+            .map(|e| {
+                e.filter_map(Result::ok)
+                    .filter_map(|e| {
+                        let n = e.file_name();
+                        let n = n.to_str()?;
+                        let stem = n.rsplit_once('.').map(|(a, _)| a).unwrap_or(n);
+                        (!stem.contains('@')).then(|| stem.to_string())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert!(
+            !cached.contains("aCoverThatIsGone"),
+            "setup: the cover must be missing for this test to mean anything",
+        );
+
+        // And once it IS cached, the same track is skippable again.
+        std::fs::write(art.join("aCoverThatIsGone.jpg"), b"jpegbytes").unwrap();
+        let cached_now: std::collections::HashSet<String> = std::fs::read_dir(&art)
+            .map(|e| {
+                e.filter_map(Result::ok)
+                    .filter_map(|e| {
+                        let n = e.file_name();
+                        let n = n.to_str()?;
+                        let stem = n.rsplit_once('.').map(|(a, _)| a).unwrap_or(n);
+                        (!stem.contains('@')).then(|| stem.to_string())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert!(
+            cached_now.contains("aCoverThatIsGone"),
+            "a present cover must read as cached, or every scan re-reads the library",
+        );
+
+        // A scaled variant alone must not count as the cover being cached.
+        std::fs::write(art.join("scaledOnly@256.jpg"), b"jpegbytes").unwrap();
+        let cached_variants: std::collections::HashSet<String> = std::fs::read_dir(&art)
+            .map(|e| {
+                e.filter_map(Result::ok)
+                    .filter_map(|e| {
+                        let n = e.file_name();
+                        let n = n.to_str()?;
+                        let stem = n.rsplit_once('.').map(|(a, _)| a).unwrap_or(n);
+                        (!stem.contains('@')).then(|| stem.to_string())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert!(
+            !cached_variants.contains("scaledOnly"),
+            "a @size variant is derived, not the original - it must not satisfy the check",
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

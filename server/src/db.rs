@@ -1846,16 +1846,31 @@ impl Db {
 
     // --- library ----------------------------------------------------------
 
-    /// Every indexed path with the mtime and size the index believes it has, so
-    /// the scanner can skip files that have not moved since last time.
-    pub fn scan_fingerprints(&self) -> std::collections::HashMap<String, (i64, i64)> {
+    /// Every indexed path with the mtime and size the index believes it has, and
+    /// the cover it believes was cached, so the scanner can skip files that have
+    /// not moved since last time.
+    ///
+    /// THE ART ID IS HERE FOR A REASON. mtime and size describe the audio file;
+    /// they say nothing about the derived cover sitting in the art cache, which
+    /// is a separate directory that can be lost on its own - restored from a
+    /// backup that only covered the database, moved between machines, wiped to
+    /// reclaim disk. When that happens every row still names an `art_id`, the
+    /// files are all "unchanged", and the scanner skips every one of them, so
+    /// the cache can never refill. The library then shows blank covers forever
+    /// with nothing in any log to say why. Carrying the id lets the scan check
+    /// the claim instead of trusting it.
+    pub fn scan_fingerprints(
+        &self,
+    ) -> std::collections::HashMap<String, (i64, i64, Option<String>)> {
         let conn = self.lock();
-        let Ok(mut stmt) =
-            conn.prepare("SELECT rel_path, mtime, size_bytes FROM tracks WHERE deleted = 0")
+        let Ok(mut stmt) = conn
+            .prepare("SELECT rel_path, mtime, size_bytes, art_id FROM tracks WHERE deleted = 0")
         else {
             return Default::default();
         };
-        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, (r.get(1)?, r.get(2)?))));
+        let rows = stmt.query_map([], |r| {
+            Ok((r.get::<_, String>(0)?, (r.get(1)?, r.get(2)?, r.get(3)?)))
+        });
         rows.map(|r| r.filter_map(Result::ok).collect())
             .unwrap_or_default()
     }
