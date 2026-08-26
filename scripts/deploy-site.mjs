@@ -208,7 +208,9 @@ if (code !== '200') fail(`attack.fm answered ${code}, expected 200.`);
 // Prove the bytes on the wire are the ones just built, not a cached older page.
 const served = spawnSync('curl', ['-s', '-m', '25', 'https://attack.fm'], { encoding: 'utf8' });
 const body = String(served.stdout ?? '');
-const built = /src="([^"]*index-[^"]*\.js)"/.exec(html)?.[1];
+// The entry is named for its rollup input, which is `main` - this looked for
+// `index-*.js` and so never matched, quietly turning the freshness check off.
+const built = /<script[^>]+type="module"[^>]+src="([^"]+\.js)"/.exec(html)?.[1];
 if (built && !body.includes(built)) {
   fail(`attack.fm is serving a different bundle than was just built (expected ${built}).`);
 }
