@@ -34,6 +34,7 @@ import { installTapHaptics, useHapticsPref } from './core/haptics.ts';
 import { installOverlayGuard } from './core/overlayGuard.ts';
 import { DownloadNotices } from './notify/DownloadNotices.tsx';
 import { VerboseNotices } from './notify/VerboseNotices.tsx';
+import { FriendNotices } from './notify/FriendNotices.tsx';
 import { NotifyBell } from './notify/NotifyBell.tsx';
 import { CarPlayBridge } from './player/CarPlayBridge.tsx';
 import { installSheetDismiss } from './player/playerDismiss.ts';
@@ -637,7 +638,11 @@ export function App() {
                         which is what makes "the notifications" a place rather
                         than something you had to be on the right screen to
                         catch. */}
-                    <NotifyBell iconSize={16} onOpenDownloads={() => goTab('downloads')} />
+                    <NotifyBell
+                      iconSize={16}
+                      onOpenDownloads={() => goTab('downloads')}
+                      onOpenFriends={() => goTab('friends')}
+                    />
                     <IconButton
                       variant="ghost"
                       size="sm"
@@ -697,7 +702,11 @@ export function App() {
                       slides Play and Shuffle in and out of this slot, and a
                       bell placed ahead of them would shift sideways every time
                       a page scrolled. Last means it never moves. */}
-                  <NotifyBell iconSize={18} onOpenDownloads={() => goTab('downloads')} />
+                  <NotifyBell
+                    iconSize={18}
+                    onOpenDownloads={() => goTab('downloads')}
+                    onOpenFriends={() => goTab('friends')}
+                  />
                 </span>
               </header>
             )}
@@ -816,6 +825,11 @@ export function App() {
             {/* Same depth as DownloadNotices for the same reasons: inside the
                 plugin providers, under ToastProvider. Headless. */}
             <VerboseNotices />
+            {/* Not beside VerboseNotices in spirit: that one is behind the
+                device's verbose switch because it is chatter about the
+                machine's own work. A friend request is addressed to you and
+                waits for an answer, so it rings either way. */}
+            <FriendNotices />
             {/* Music Date, fullscreen: over everything, chrome gone - no nav
                 bar, no player strip, just the introductions. A floating
                 chevron (and the system back) is the way out. */}

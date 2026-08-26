@@ -20,10 +20,17 @@ use axum::Json;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+/// How long a "this song has no Canvas" answer stands before it is worth
+/// asking again. An artist who puts a Canvas on a back-catalogue track should
+/// be found eventually; asking every boot is what this replaced.
+pub const MISS_RETRY_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+
 /// Per-track memory of what Spotify answered: `Some(url)` for a clip, `None`
-/// for "asked, there is none". Cleared on restart; canvases barely change.
+/// for "asked, there is none". Cleared on restart - the durable half is the
+/// sidecar for a hit and `canvas_misses` for a no.
 #[derive(Default)]
 pub struct CanvasCache {
     inner: Mutex<HashMap<String, Option<String>>>,
@@ -69,12 +76,38 @@ pub async fn canvas(
         if sidecar_for(&state, id).is_some_and(|p| p.exists()) {
             return Ok(Json(json!({ "url": media_path(id) })));
         }
+        /*
+         * A known miss, remembered across restarts. Answered without touching
+         * Spotify at all - which is the whole point of writing them down - and
+         * re-asked only once the sweep's retry window has passed.
+         */
+        if state
+            .db
+            .canvas_miss_age(id, crate::db::now_ms())
+            .is_some_and(|age| age < MISS_RETRY_MS)
+        {
+            return Ok(Json(json!({ "url": stock_or_nothing(Some(id), title, artist) })));
+        }
     }
 
-    let sp_dc = std::env::var("AFM_SPOTIFY_SP_DC").unwrap_or_default();
+    /*
+     * THROUGH THE SETTINGS OVERLAY, not straight off the environment.
+     *
+     * This read `std::env::var` directly, which is the one shape that cannot
+     * survive the box being rebuilt: the cookie lives in whatever launched the
+     * process, so a re-install, a move to another machine, or an install script
+     * that never asked for it leaves the server permanently cookie-less - and
+     * silently, because a missing cookie is indistinguishable from a song with
+     * no Canvas. Every card in the library quietly fell back to a stand-in.
+     *
+     * `ai::setting` resolves the owner's saved value first and the environment
+     * second, which is the same door every other operator knob already uses, so
+     * the cookie can be set from the app and is carried by the database rather
+     * than by a shell.
+     */
+    let sp_dc = crate::ai::setting("spotifyCookie", "AFM_SPOTIFY_SP_DC").unwrap_or_default();
     if sp_dc.is_empty() || title.is_empty() {
-        // No cookie, no Spotify - but no black wall either.
-        return Ok(Json(json!({ "url": stock_canvas(q.track_id, title, artist) })));
+        return Ok(Json(json!({ "url": stock_or_nothing(q.track_id, title, artist) })));
     }
 
     // The in-memory map still absorbs repeat asks for tracks that have NO clip
@@ -92,26 +125,148 @@ pub async fn canvas(
     if let (Some(url), Some(id)) = (remote.as_deref(), q.track_id) {
         if let Some(dest) = sidecar_for(&state, id) {
             if store_canvas(url, &dest).await {
+                let _ = state.db.clear_canvas_miss(id);
                 state.canvas.put(key, Some(media_path(id)));
                 return Ok(Json(json!({ "url": media_path(id) })));
             }
         }
     }
 
-    // Spotify answered "no such clip": the stock loop stands in, and the
-    // cache keeps that answer so a canvas-less song costs one lookup per
-    // boot exactly as before.
-    let answer = remote.or_else(|| Some(stock_canvas(q.track_id, title, artist)));
+    // Spotify answered "no such clip". Written DOWN this time, not just held
+    // in memory: a miss that only lived until the next restart meant the whole
+    // canvas-less half of a library was looked up again on every boot.
+    if remote.is_none() {
+        if let Some(id) = q.track_id {
+            let _ = state.db.mark_canvas_miss(id);
+        }
+    }
+    let answer = remote.or_else(|| stock_or_nothing(q.track_id, title, artist));
     state.canvas.put(key, answer.clone());
     Ok(Json(json!({ "url": answer })))
 }
 
 
+/*
+ * THE STAND-IN IS OFF UNLESS ASKED FOR.
+ *
+ * A song with no Canvas used to get one of five shipped loops - a turntable, a
+ * metronome - chosen by hash. The intent was that an unconfigured server show
+ * something rather than a black wall, and on a screen that is only ever a
+ * Canvas that is right. On the Date deck it is not: the card's face is the
+ * COVER, and a generic clip fading in over it a second later replaces the one
+ * thing on the card that is actually about this record with a video that is
+ * about nothing. Matt, on seeing it: "I don't want that."
+ *
+ * So the fallback became a choice, and the default is the cover. A server that
+ * wants the loops - the App-Review box, which has no cookie and would otherwise
+ * show covers alone - turns `canvasStock` on, or sets AFM_CANVAS_STOCK=1.
+ */
+fn stock_or_nothing(track_id: Option<i64>, title: &str, artist: &str) -> Option<String> {
+    if !crate::ai::setting("canvasStock", "AFM_CANVAS_STOCK")
+        .is_some_and(|v| v != "false" && v != "0")
+    {
+        return None;
+    }
+    Some(stock_canvas(track_id, title, artist))
+}
+
+/*
+ * THE RE-CACHE SWEEP.
+ *
+ * Canvases used to arrive only when a card asked for one, which meant the first
+ * sight of every song was a cover with a clip landing on top of it a second
+ * later - and after a restart, or a move to another box, every song was a first
+ * sight again. This walks the library in the background and fetches them ahead
+ * of being asked, so the deck finds the clip already beside the song.
+ *
+ * SLOWLY, and most-recently-played first. Spotify is being asked one search per
+ * track by a cookie belonging to a real account; a library of six thousand
+ * songs swept as fast as the network allows is how that cookie stops working.
+ * The pace below is a few hundred an hour, which clears a big library in a day
+ * of uptime and is indistinguishable from somebody using the web player.
+ */
+static SWEEPING: AtomicBool = AtomicBool::new(false);
+
+/// Between two Spotify lookups. Deliberately unhurried - see above.
+const SWEEP_GAP: std::time::Duration = std::time::Duration::from_secs(9);
+
+/// How many to take in one pass before going back to sleep, so a sweep started
+/// at boot cannot run forever holding the flag.
+const SWEEP_BATCH: i64 = 400;
+
+pub async fn sweep(state: Arc<AppState>) {
+    if SWEEPING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    sweep_inner(&state).await;
+    SWEEPING.store(false, Ordering::SeqCst);
+}
+
+async fn sweep_inner(state: &Arc<AppState>) {
+    let sp_dc = crate::ai::setting("spotifyCookie", "AFM_SPOTIFY_SP_DC").unwrap_or_default();
+    if sp_dc.is_empty() {
+        // Nothing to do, and nothing to complain about: a server with no cookie
+        // is a server whose owner has not linked Spotify.
+        return;
+    }
+    let wanted = state.db.tracks_wanting_canvas(SWEEP_BATCH, MISS_RETRY_MS);
+    if wanted.is_empty() {
+        return;
+    }
+    let mut got = 0usize;
+    let mut asked = 0usize;
+    for (id, title, artist) in wanted {
+        // The file is the truth: a clip already beside the song needs nothing,
+        // and this is also how a sweep resumed after a restart skips its own
+        // earlier work without keeping a cursor.
+        if sidecar_for(state, id).is_some_and(|p| p.exists()) {
+            continue;
+        }
+        if title.trim().is_empty() || artist.trim().is_empty() {
+            continue;
+        }
+        asked += 1;
+        match fetch_canvas(&sp_dc, &title, &artist, state).await {
+            Some(url) => {
+                if let Some(dest) = sidecar_for(state, id) {
+                    if store_canvas(&url, &dest).await {
+                        let _ = state.db.clear_canvas_miss(id);
+                        got += 1;
+                    }
+                }
+            }
+            None => {
+                let _ = state.db.mark_canvas_miss(id);
+            }
+        }
+        tokio::time::sleep(SWEEP_GAP).await;
+    }
+    if asked > 0 {
+        println!("[canvas] swept {asked} tracks, kept {got} clips");
+    }
+}
+
+/// `POST /api/canvas/resweep` - forget every recorded miss and go again.
+///
+/// The one button for "these stopped working": a cookie that had expired, a
+/// library that moved, or simply a suspicion that more of them exist now. It
+/// does NOT delete the clips already kept - those are the good outcome - only
+/// the noes, which are the answers worth re-asking.
+pub async fn resweep(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    auth::require_admin(&state.db, &headers)
+        .map_err(|s| (s, "only an admin can do that".into()))?;
+    let forgotten = state.db.forget_canvas_misses().unwrap_or(0);
+    let st = state.clone();
+    tokio::spawn(async move { sweep(st).await });
+    Ok(Json(json!({ "started": true, "forgotten": forgotten })))
+}
+
 /// The stock loop for a song no Canvas exists for: one of the shipped clips
 /// under /api/assets/canvas, chosen by a stable hash so the same song wears
-/// the same loop every open, on every device. This is what an unconfigured
-/// server (no sp_dc - the App-Review box) shows instead of a black wall,
-/// and what every canvas-less track shows instead of nothing.
+/// the same loop every open, on every device.
 fn stock_canvas(track_id: Option<i64>, title: &str, artist: &str) -> String {
     const STOCK: [&str; 5] = [
         "glass-heart",
