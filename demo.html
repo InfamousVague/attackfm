@@ -16,6 +16,34 @@
       /* Pre-tokens paint so the first frame is never a white flash. */
       html { background: #0f0f10; }
       html[data-theme='light'] { background: #ffffff; }
+
+      /*
+       * NO SCROLLBARS, anywhere in this frame.
+       *
+       * The frames on attack.fm are portraits of the app, and the page drifts
+       * them continuously - which on macOS means the overlay scrollbar never
+       * gets its idle moment and simply stays on screen, a grey bar down the
+       * side of every device. It is also the one piece of chrome that gives
+       * away that a phone on a marketing page is a web page in a box.
+       *
+       * Both properties, because they cover different engines: the standard
+       * one is Chrome 121+ and Firefox, the pseudo-element is WebKit and
+       * older Chrome. !important because the app styles its own scrollbars
+       * and those rules are more specific than anything a bare `*` can be.
+       *
+       * This is demo-only. The app keeps its scrollbars where it is being
+       * USED; nobody scrolls a picture.
+       */
+      * {
+        scrollbar-width: none !important;
+        -ms-overflow-style: none !important;
+      }
+
+      *::-webkit-scrollbar {
+        width: 0 !important;
+        height: 0 !important;
+        display: none !important;
+      }
     </style>
   </head>
   <body>
