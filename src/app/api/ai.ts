@@ -26,11 +26,11 @@ export interface AiSettings {
   timeoutSecs: number;
   chatEnabled: boolean;
   embeddingsEnabled: boolean;
-  /** Whether a Spotify session cookie is configured. Never the cookie itself -
-   *  there is no read path for it anywhere on the server. */
-  spotifyCookieSet: boolean;
-  /** Whether a song with no Canvas gets a shipped stand-in loop. */
-  canvasStock: boolean;
+  /* The Canvas keys the server also answers here - spotifyCookieSet,
+     canvasStock - are deliberately absent: they are read and written by the
+     SpotifyCanvas plugin, which declares its own narrow types against the same
+     endpoint (plugins-repo/spotify-canvas/canvas.ts). Naming them again here
+     would be a second copy of a shape nothing in the app reads. */
   /** Keys the owner has overridden in the app (server_prefs); absent = env. */
   overrides: Partial<Record<keyof Omit<AiSettings, 'overrides' | 'envDefaults'>, true>>;
   /** What the environment would give if every override were cleared. */
@@ -39,11 +39,6 @@ export interface AiSettings {
 
 /** A settings write: `null` clears that override so the env decides again. */
 export type AiSettingsPatch = Partial<{
-  /** The owner's Spotify session cookie, for Canvas clips. Write-only: it is
-   *  never read back, and the settings answer carries only whether one is set. */
-  spotifyCookie: string | null;
-  /** Whether a song with no Canvas gets one of the shipped stand-in loops. */
-  canvasStock: boolean | null;
   url: string | null;
   chatModel: string | null;
   embedModel: string | null;
@@ -146,19 +141,3 @@ export function runAi(session: ServerSession, what: AiRunWhat): Promise<{ ok: bo
   });
 }
 
-/**
- * Forget every "this song has no Canvas" answer and sweep the library again.
- *
- * The one button for "these stopped working": a cookie that had expired, a
- * library that moved, or simply more clips existing now than when each song was
- * last asked about. Clips already kept are untouched - those are the good
- * outcome - only the noes, which are the answers worth re-asking.
- */
-export function resweepCanvases(
-  session: ServerSession,
-): Promise<{ started: boolean; forgotten: number }> {
-  return request(session.url, '/api/canvas/resweep', {
-    method: 'POST',
-    token: session.token,
-  });
-}
