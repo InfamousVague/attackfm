@@ -23,10 +23,14 @@ import { useHasDownloadQueue } from '../../plugins/runtime/pluginHooks.tsx';
 export function NotifyBell({
   iconSize = 16,
   onOpenDownloads,
+  onOpenFriends,
 }: {
   /** 16 in the desktop title bar, 18 in the mobile header - the house sizes. */
   iconSize?: number;
   onOpenDownloads: () => void;
+  /** Where a friend-request row goes. Optional: a surface without a Friends
+   *  page simply leaves those rows unpressable. */
+  onOpenFriends?: () => void;
 }) {
   const items = useNotices();
   const unread = useUnreadNotices();
@@ -211,13 +215,22 @@ export function NotifyBell({
                 key={n.id}
                 notice={n}
                 unseen={fresh.has(n.id)}
-                // A row kept from a time when the importer was installed must
-                // not still look pressable once it is gone: the page is gated
-                // on the same flag, so the press would land on nothing.
-                canOpen={hasQueue}
+                /*
+                 * PER DOOR, because there is more than one now.
+                 *
+                 * A row kept from a time when the importer was installed must
+                 * not still look pressable once it is gone: the Downloads page
+                 * is gated on the same flag, so the press would land on
+                 * nothing. That gate is about DOWNLOADS though, and applying
+                 * it to every row made a friend request unpressable whenever
+                 * the download queue happened to be empty - which is nearly
+                 * always.
+                 */
+                canOpen={n.door === 'downloads' ? hasQueue : onOpenFriends != null}
                 onOpen={() => {
                   setOpen(false);
                   if (n.door === 'downloads') onOpenDownloads();
+                  else if (n.door === 'friends') onOpenFriends?.();
                 }}
               />
             ))}
@@ -254,7 +267,7 @@ function NoticeRow({
   onOpen,
 }: {
   canOpen: boolean;
-  notice: { id: string; at: number; kind: string; title: string; body: string; art: string | null; door: 'downloads' | null };
+  notice: { id: string; at: number; kind: string; title: string; body: string; art: string | null; door: 'downloads' | 'friends' | null };
   unseen: boolean;
   onOpen: () => void;
 }) {

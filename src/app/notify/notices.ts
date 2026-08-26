@@ -53,7 +53,7 @@ export interface Notice {
   /** Cover for the row, already an app URL. Null draws the kind's glyph. */
   art: string | null;
   /** Where a press lands, or null for a line of news with nowhere to go. */
-  door: 'downloads' | null;
+  door: 'downloads' | 'friends' | null;
   read: boolean;
 }
 
@@ -105,7 +105,7 @@ function load(): Notice[] {
         title: typeof e.title === 'string' ? e.title : '',
         body: typeof e.body === 'string' ? e.body : '',
         art: typeof e.art === 'string' ? e.art : null,
-        door: e.door === 'downloads' ? 'downloads' : null,
+        door: e.door === 'downloads' || e.door === 'friends' ? e.door : null,
         read: e.read === true,
       }));
   } catch {

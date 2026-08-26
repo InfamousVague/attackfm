@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.76
+
+- Your covers stay your covers. A song with no Spotify Canvas was being given one of five stock loops - a turntable, a metronome - which faded in over the album art a second after it appeared, on Music Date most of all. The stand-in is off now: no Canvas means the cover, which is the thing on the card actually about that record
+- Canvases are fetched before they are asked for, and remembered. The server now walks the library in the background and keeps each clip beside its song, so a card opens with the Canvas already there instead of the cover being replaced a moment later - and a song Spotify has none for is written down rather than looked up again on every restart
+- Somebody asking to be friends reaches the bell. The notification kind has been in the settings list since the ring existed and nothing ever raised one, so the only way to find out was to open Friends and look. Requests show as rows you can tap through, and take themselves away once answered - on this device or any other
+
 ## 0.4.75
 
 - The lit tab on the phone's nav bar slides. It was one background fading out where you left and another fading in where you landed, which reads as two lights blinking rather than one thing moving - there is a single plate now, and it travels, with a little spring as it lands. The desktop rail always had this; the phone bar lost it years ago when it stopped being a stock component

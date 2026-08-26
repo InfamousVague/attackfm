@@ -1112,6 +1112,21 @@ CREATE TABLE IF NOT EXISTS chapter_blurbs (
 -- `start_ms`/`end_ms` are the window inside the track, and they are what makes
 -- the spoiler bound enforceable by SQL rather than by trust: the recap takes
 -- rows that END at or before the bookmark and no others.
+-- Songs Spotify has NO Canvas for.
+--
+-- The clip itself is kept as a sidecar beside the audio, so a hit is remembered
+-- by the file existing. A MISS had nowhere to live but a HashMap cleared on
+-- every restart, which meant a library of canvas-less songs paid for a Spotify
+-- lookup each, every boot, forever - and until each answer came back the card
+-- showed a stand-in. Remembering the noes is what stops that.
+--
+-- `checked_at` so a sweep can eventually re-ask: an artist who releases a
+-- Canvas next year should not be written off permanently by one lookup today.
+CREATE TABLE IF NOT EXISTS canvas_misses (
+  track_id   INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+  checked_at INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS book_recap_parts (
   track_id   INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
   idx        INTEGER NOT NULL,
@@ -5691,6 +5706,73 @@ impl Db {
             .unwrap_or(0)
     }
 
+    // --- Canvas ------------------------------------------------------------
+
+    /// Whether this track has been looked up and found to have no Canvas, and
+    /// how long ago. `None` means never asked.
+    pub fn canvas_miss_age(&self, track_id: i64, now: i64) -> Option<i64> {
+        self.lock()
+            .query_row(
+                "SELECT checked_at FROM canvas_misses WHERE track_id = ?1",
+                params![track_id],
+                |r| r.get::<_, i64>(0),
+            )
+            .ok()
+            .map(|at| now - at)
+    }
+
+    pub fn mark_canvas_miss(&self, track_id: i64) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO canvas_misses (track_id, checked_at) VALUES (?1, ?2)
+             ON CONFLICT(track_id) DO UPDATE SET checked_at = excluded.checked_at",
+            params![track_id, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// A clip arrived after all; the track is no longer a known miss.
+    pub fn clear_canvas_miss(&self, track_id: i64) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "DELETE FROM canvas_misses WHERE track_id = ?1",
+            params![track_id],
+        )?;
+        Ok(())
+    }
+
+    /// Forget every recorded miss, so the sweep asks about all of them again.
+    /// The kept clips are untouched - only the noes are worth re-asking.
+    pub fn forget_canvas_misses(&self) -> rusqlite::Result<usize> {
+        self.lock().execute("DELETE FROM canvas_misses", [])
+    }
+
+    /// Songs worth asking Spotify about, most recently listened first.
+    ///
+    /// Recency first because a sweep over a big library takes hours and the
+    /// songs somebody actually plays are the ones whose cards get looked at.
+    /// Known misses younger than `retry_after_ms` are left out; the rest come
+    /// back so a Canvas released since is eventually found.
+    pub fn tracks_wanting_canvas(&self, limit: i64, retry_after_ms: i64) -> Vec<(i64, String, String)> {
+        let cutoff = now_ms() - retry_after_ms;
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT t.id, t.title, t.artist
+               FROM tracks t
+               LEFT JOIN canvas_misses m ON m.track_id = t.id
+               LEFT JOIN (SELECT track_id, MAX(updated_at) AS seen
+                            FROM play_state GROUP BY track_id) p ON p.track_id = t.id
+              WHERE t.deleted = 0 AND t.kind = 'music'
+                AND t.title <> '' AND t.artist <> ''
+                AND (m.track_id IS NULL OR m.checked_at < ?2)
+              ORDER BY COALESCE(p.seen, 0) DESC, t.id DESC
+              LIMIT ?1",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![limit, cutoff], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
     // --- The catch-up ------------------------------------------------------
 
     /// Every stored recap part for a set of tracks, in reading order:
@@ -7852,5 +7934,98 @@ mod book_bookmarks_are_not_crowded_out {
 
         // The cap is still a cap: it bounds the read, it just is not reached.
         assert_eq!(db.play_states(user, 10, Some("book")).len(), 10);
+    }
+}
+
+#[cfg(test)]
+mod canvas_misses_survive_a_restart {
+    //! A song Spotify has no Canvas for.
+    //!
+    //! The clip for a HIT is remembered by the file kept beside the song. A
+    //! MISS had nowhere to live but a HashMap cleared on every restart, so the
+    //! canvas-less half of a library was looked up again on every boot - one
+    //! Spotify request each, every time, and a stand-in on the card until each
+    //! answer came back. Writing the noes down is what stops that.
+
+    #[test]
+    fn a_no_is_remembered_and_can_be_forgotten_on_purpose() {
+        let dir = std::env::temp_dir().join(format!("afm-canvas-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = super::Db::open(&dir.join("t.sqlite")).unwrap();
+
+        let add = |rel: &str| -> i64 {
+            db.lock()
+                .execute(
+                    "INSERT INTO tracks (rel_path,title,artist,album_artist,album,added_at,rev,kind)
+                     VALUES (?1,?1,'Vane','Vane','al',0,0,'music')",
+                    super::params![rel],
+                )
+                .unwrap();
+            db.lock().last_insert_rowid()
+        };
+        let a = add("a.flac");
+        let b = add("b.flac");
+
+        let now = super::now_ms();
+        assert!(db.canvas_miss_age(a, now).is_none(), "never asked");
+
+        db.mark_canvas_miss(a).unwrap();
+        assert!(
+            db.canvas_miss_age(a, super::now_ms()).is_some_and(|age| age < 5_000),
+            "a no, just recorded",
+        );
+
+        // The queue skips a fresh miss and keeps offering everything else.
+        let want: Vec<i64> = db
+            .tracks_wanting_canvas(50, 30 * 24 * 60 * 60 * 1000)
+            .into_iter()
+            .map(|(id, _, _)| id)
+            .collect();
+        assert!(!want.contains(&a), "a fresh no is not re-asked");
+        assert!(want.contains(&b), "everything else still is");
+
+        // A clip that turns up later clears the no.
+        db.clear_canvas_miss(a).unwrap();
+        assert!(db.canvas_miss_age(a, super::now_ms()).is_none());
+
+        // And the one button for "these stopped working" forgets them all.
+        db.mark_canvas_miss(a).unwrap();
+        db.mark_canvas_miss(b).unwrap();
+        assert_eq!(db.forget_canvas_misses().unwrap(), 2);
+        assert_eq!(db.tracks_wanting_canvas(50, 30 * 24 * 60 * 60 * 1000).len(), 2);
+    }
+
+    /// The retry window is what stops a no being permanent: an artist who adds
+    /// a Canvas to a back-catalogue track should be found eventually.
+    #[test]
+    fn an_old_no_is_asked_again() {
+        let dir = std::env::temp_dir().join(format!("afm-canvas-old-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = super::Db::open(&dir.join("t.sqlite")).unwrap();
+        db.lock()
+            .execute(
+                "INSERT INTO tracks (rel_path,title,artist,album_artist,album,added_at,rev,kind)
+                 VALUES ('x.flac','x','Vane','Vane','al',0,0,'music')",
+                [],
+            )
+            .unwrap();
+        let id = db.lock().last_insert_rowid();
+
+        // Recorded a year ago.
+        db.lock()
+            .execute(
+                "INSERT INTO canvas_misses (track_id, checked_at) VALUES (?1, ?2)",
+                super::params![id, super::now_ms() - 365 * 24 * 60 * 60 * 1000],
+            )
+            .unwrap();
+
+        let month = 30 * 24 * 60 * 60 * 1000;
+        assert_eq!(
+            db.tracks_wanting_canvas(50, month).len(),
+            1,
+            "past the retry window it is offered again",
+        );
     }
 }

@@ -467,6 +467,26 @@ async fn main() {
             }
         });
     }
+
+    /*
+     * Canvas clips, fetched ahead of being asked for.
+     *
+     * Its own task rather than a step in the sweep above: that one is the local
+     * model's queue and runs as fast as the box allows, and this one is
+     * deliberately slow because every step is a request to Spotify carrying the
+     * owner's own cookie. Started well after boot, so a restart does not spend
+     * its first minute on clips.
+     */
+    {
+        let st = state.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(150)).await;
+            loop {
+                canvas::sweep(st.clone()).await;
+                tokio::time::sleep(std::time::Duration::from_secs(1800)).await;
+            }
+        });
+    }
     scan::spawn_scan(
         db.clone(),
         music_root.clone(),
@@ -579,6 +599,7 @@ async fn main() {
         // Spotify Canvas for the playing track (inert without AFM_SPOTIFY_SP_DC).
         .route("/api/canvas", get(canvas::canvas))
         .route("/api/canvas/media/{id}", get(canvas::media))
+        .route("/api/canvas/resweep", post(canvas::resweep))
         .route("/api/me", get(api::me))
         .route("/api/library", get(api::library))
         .route("/api/library/missing", post(api::library_missing))

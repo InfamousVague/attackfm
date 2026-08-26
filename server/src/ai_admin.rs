@@ -290,6 +290,21 @@ pub struct SettingsPatch {
     chat_enabled: Option<Option<bool>>,
     #[serde(default, deserialize_with = "explicit")]
     embeddings_enabled: Option<Option<bool>>,
+    /*
+     * Not AI, but the same problem and so the same door.
+     *
+     * The Spotify session cookie used to be read straight off the environment,
+     * which meant it lived in whatever launched the process and was lost the
+     * moment the box was rebuilt - silently, because a missing cookie looks
+     * exactly like a library of songs that have no Canvas. Kept here it is in
+     * the database, which is the thing that survives a reinstall.
+     */
+    #[serde(default, deserialize_with = "explicit")]
+    spotify_cookie: Option<Option<String>>,
+    /// Whether a song with no Canvas gets one of the shipped stand-in loops.
+    /// Off unless asked for: the card's own cover is the better face.
+    #[serde(default, deserialize_with = "explicit")]
+    canvas_stock: Option<Option<bool>>,
 }
 
 /// `POST /api/ai/settings` - take a value over, or hand it back to the unit file.
@@ -336,6 +351,12 @@ pub async fn save_settings(
     }
     if let Some(v) = patch.chat_enabled {
         apply("chatEnabled", v.map(|b| b.to_string()));
+    }
+    if let Some(v) = patch.spotify_cookie {
+        apply("spotifyCookie", v);
+    }
+    if let Some(v) = patch.canvas_stock {
+        apply("canvasStock", v.map(|b| b.to_string()));
     }
     if let Some(v) = patch.embeddings_enabled {
         apply("embeddingsEnabled", v.map(|b| b.to_string()));
