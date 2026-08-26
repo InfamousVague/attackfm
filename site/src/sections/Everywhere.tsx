@@ -57,7 +57,7 @@ export function Everywhere() {
           <p className="eyebrow">On every screen</p>
           <h2 className="h2">One library. Every screen you own.</h2>
           <p className="lead">
-            The same app, laid out for the machine it is on — a shelf of records on a phone, the
+            The same app, laid out for the machine it is on: a shelf of records on a phone, the
             whole table across a desktop. Both are below, both are running.
           </p>
         </Reveal>
