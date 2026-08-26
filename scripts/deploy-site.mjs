@@ -153,7 +153,13 @@ ssh(
    # two trees share a document root but not a release clock.
    # deadcatbounce is the same arrangement: a separate game, published by its
    # own repo's scripts/deploy.mjs, sharing only this document root.
-   sudo rsync -a --delete --exclude 'listen' --exclude 'listen/**' --exclude 'art' --exclude 'art/**' --exclude 'deadcatbounce' --exclude 'deadcatbounce/**' ${STAGE}/ ${REMOTE}/
+   #
+   # EVERY PATTERN IS ANCHORED with a leading slash, and that is load-bearing.
+   # An rsync exclude without one matches a path component at ANY depth, so
+   # bare 'art' - meant for the shared artwork published at /art below - also
+   # matched demo-hub/api/art, and the marketing page went out with every album
+   # cover 404ing inside its live frames.
+   sudo rsync -a --delete --exclude '/listen' --exclude '/listen/**' --exclude '/art' --exclude '/art/**' --exclude '/deadcatbounce' --exclude '/deadcatbounce/**' ${STAGE}/ ${REMOTE}/
    sudo chown -R root:root ${REMOTE}
    # Caddy runs as its own user and only needs to read.
    sudo find ${REMOTE} -type d -exec chmod 755 {} +
