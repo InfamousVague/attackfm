@@ -1,82 +1,72 @@
 /**
- * The screenshot manifest.
+ * The page's remaining fixed images.
  *
- * Every image on the page is named here rather than inline in a component, so a
- * re-capture is a change to ONE file. `scripts/capture-site-shots.mjs` produces
- * these from a real signed-in app; re-run it rather than editing screens by hand.
- *
- * Rule for this file: nothing that shows music being acquired. The importer is a
- * private plugin of Matt's, not part of the product. The capture script disables
- * those plugins outright, which is a stronger guarantee than avoiding their
- * screens by hand - see EXCLUDED at the bottom.
+ * Almost nothing is left here on purpose: every screen on the home page is now
+ * the app itself, running (components/Frame.tsx). What stays is the one shot
+ * the demo cannot produce and the covers behind the hero.
  */
 
 export interface Shot {
-  /** Path under site/public, or null while the capture is pending. */
-  src: string | null;
+  src: string;
   /** Alt text - these carry real meaning, so they are written, not derived. */
   alt: string;
-  /** Shown in the placeholder while src is null. */
-  label: string;
 }
 
-const shot = (file: string, label: string, alt: string): Shot => ({
-  src: `/shots/${file}.png`,
-  label,
-  alt,
-});
-
 export const SHOTS = {
-  home: shot('home', 'Home', 'The AttackFM library screen: Liked, All songs, On repeat and a DJ set, above a shelf of playlists'),
-  library: shot('library', 'Library', 'The full song list, showing four thousand tracks with artwork, album and date added'),
-  nowPlaying: shot('nowPlaying', 'Now Playing', 'The now playing screen, artwork spinning as a record above the transport controls'),
-  booth: shot('booth', 'The Booth', 'The Booth, showing Music Date, a live DJ set, and what the curator has read across the library'),
-  stats: shot('stats', 'Listening', 'Listening statistics for the week: 21.2 hours, 656 plays, 372 songs and 277 artists, with the top artist and album'),
-  desktop: shot('desktop', 'Desktop', 'AttackFM running full width on a desktop, with playlists and listening stats'),
-  desktopAlbum: shot('desktopAlbum', 'Playlist', 'A playlist open on the desktop, its tracks listed beside the player bar'),
   /*
-   * Reading along, from a phone rather than the capture script - it is the one
-   * screen the script cannot produce, because it needs a real book that a real
-   * hub has really transcribed, and the capture library has neither.
+   * Reading along, photographed from a phone.
    *
-   * A .jpg, and so an explicit src rather than the `shot()` helper: it is a
-   * photograph of dense text where PNG buys nothing and costs five times the
-   * bytes. Its device is a different shape from the captured set, which is why
-   * it is framed `phone--native` on the page instead of the 9/19.5 frame that
-   * would crop the transport away.
+   * The demo hub is a music library; read-along needs a book a hub has
+   * actually transcribed, which is not something a folder of fixture JSON can
+   * stand in for. A .jpg because it is dense text where PNG buys nothing and
+   * costs five times the bytes, and framed `phone--native` because the device
+   * it came off is a different shape from the 9/19.5 frame.
    */
   reading: {
     src: '/shots/reading.jpg',
-    label: 'Reading along',
     alt: 'An audiobook playing on a phone: the words fill the screen with the sentence being read held bright and the word being spoken underlined, above the chapter line, the time left in the book, and a waveform scrubber',
   },
 } satisfies Record<string, Shot>;
 
-export type ShotKey = keyof typeof SHOTS;
-
 /**
- * Cover art for the hero wall - real sleeves from a real library, one per album,
- * downscaled because they sit behind a blur and are never seen at full size.
+ * Cover art for the hero wall.
+ *
+ * The app's own set, read straight out of src/assets - the same sleeves the
+ * demo library plays, so the wall behind the headline and the records inside
+ * the frame are one collection rather than two. `eager` because they are the
+ * first thing painted; the wall is the hero's ground.
  */
-export const WALL: string[] = Array.from(
-  { length: 24 },
-  (_, i) => `/wall/cover-${String(i).padStart(2, '0')}.jpg`,
-);
+const COVERS = import.meta.glob('../../src/assets/wall/*.jpg', {
+  eager: true,
+  import: 'default',
+}) as Record<string, string>;
+
+/*
+ * cover-01 to cover-04 are NOT sleeves.
+ *
+ * They are AttackFM's own tile illustrations - the heart on Liked, the ring on
+ * Downloads, the node graph on the DJ - which live in this folder because the
+ * app draws them at cover size. In a wall that is meant to read as somebody's
+ * record collection they read as the odd ones out, so the wall starts at 05.
+ */
+const NOT_SLEEVES = /cover-0[1-4]\.jpg$/;
+
+export const WALL: string[] = Object.keys(COVERS)
+  .filter((path) => !NOT_SLEEVES.test(path))
+  .sort()
+  .map((path) => COVERS[path]!);
 
 /**
- * Surfaces that must NEVER be captured for this site:
+ * Surfaces that must NEVER appear on this site:
  * - the Downloads page and any import job list
  * - the Discover page's "add this playlist" affordances
  * - Settings panes naming the importer, or any plugin repository
  * - anything showing a Spotify link, mirror or sync
  *
- * Two more were captured and then deliberately dropped:
- * - the LYRICS panel, which reproduces a copyrighted lyric sheet in full
- * - the EQUALISER popover, which surfaces unshipped "HiFi chain" work
- * - the QUEUE panel, which only ever holds explicitly-added songs and so always
- *   photographs as an empty state
- * - the PROFILE tab, which without a registry account signed in is an
- *   account-creation form with a password field
+ * The demo enforces most of this by construction rather than by care: its hub
+ * is a folder of JSON with no importer behind it, and demo.html refuses every
+ * off-origin request outright, so there is nothing for an acquisition surface
+ * to talk to even if one rendered.
  */
 export const EXCLUDED = [
   'downloads',

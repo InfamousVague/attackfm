@@ -1,14 +1,21 @@
+import { useCallback, useState } from 'react';
 import {
-  BadgeCheck,
+  Check,
+  Copy,
   FolderTree,
+  GitBranch,
   HardDrive,
   KeyRound,
   RefreshCw,
   Server,
-  Share2,
+  Terminal,
   Users,
 } from '@glacier/icons';
 import { Reveal } from '../components/Reveal.tsx';
+
+const REPO = 'https://github.com/InfamousVague/attackfm';
+const INSTALL =
+  'curl -fsSL https://raw.githubusercontent.com/InfamousVague/attackfm/main/server/install.sh | sudo sh';
 
 /**
  * The topology, drawn rather than described.
@@ -67,12 +74,7 @@ function Topology() {
       ].map((node) => (
         <g key={node.label}>
           <circle cx={node.x} cy={node.y} r="7" className="topo__node" />
-          <text
-            x={node.x}
-            y={node.y - 15}
-            className="topo__label"
-            textAnchor="middle"
-          >
+          <text x={node.x} y={node.y - 15} className="topo__label" textAnchor="middle">
             {node.label}
           </text>
         </g>
@@ -80,6 +82,73 @@ function Topology() {
     </svg>
   );
 }
+
+/** The server one-liner, with a copy button that reports what it did. */
+function InstallLine() {
+  const [copied, setCopied] = useState(false);
+
+  const copy = useCallback(() => {
+    // Clipboard access can be refused (insecure context, denied permission);
+    // failing silently would leave the button looking broken.
+    navigator.clipboard
+      .writeText(INSTALL)
+      .then(() => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => setCopied(false));
+  }, []);
+
+  return (
+    <div className="install">
+      <span className="install__prompt" aria-hidden="true">
+        <Terminal size={15} />
+      </span>
+      <code className="install__code">{INSTALL}</code>
+      <button
+        type="button"
+        className="iconBtn install__copy"
+        onClick={copy}
+        aria-label="Copy install command"
+      >
+        {copied ? <Check size={16} /> : <Copy size={16} />}
+      </button>
+    </div>
+  );
+}
+
+const FACTS = [
+  {
+    icon: Server,
+    title: 'One binary',
+    body: 'Drop it on a Mac, a Linux box or a spare machine under the desk. It scans your folder and starts serving.',
+  },
+  {
+    icon: FolderTree,
+    title: 'Your folder structure',
+    body: 'It reads the folders you already keep. Nothing has to be rearranged to suit a database.',
+  },
+  {
+    icon: HardDrive,
+    title: 'Your files, untouched',
+    body: 'Originals stay exactly as they are. Transcoding happens on the way out, when a device needs it.',
+  },
+  {
+    icon: KeyRound,
+    title: 'Accounts you control',
+    body: 'Sign-in runs through your own registry, with invites you issue and can revoke.',
+  },
+  {
+    icon: Users,
+    title: 'Friends',
+    body: 'Invite people to your server. Share a queue and listen together, in time.',
+  },
+  {
+    icon: RefreshCw,
+    title: 'Updates over the air',
+    body: 'The app refreshes itself from your hub, so a fix reaches every device without a store review.',
+  },
+];
 
 export function Yours() {
   return (
@@ -101,38 +170,7 @@ export function Yours() {
         </Reveal>
 
         <div className="grid yours__grid">
-          {[
-            {
-              icon: Server,
-              title: 'One binary',
-              body: 'Drop it on a Mac, a Linux box or a spare machine under the desk. It scans your folder and starts serving.',
-            },
-            {
-              icon: FolderTree,
-              title: 'Your folder structure',
-              body: 'It reads the folders you already keep. Nothing has to be rearranged to suit a database.',
-            },
-            {
-              icon: HardDrive,
-              title: 'Your files, untouched',
-              body: 'Originals stay exactly as they are. Transcoding happens on the way out when a device needs it.',
-            },
-            {
-              icon: KeyRound,
-              title: 'Accounts you control',
-              body: 'Sign-in runs through your own registry, with invites you issue and can revoke.',
-            },
-            {
-              icon: Users,
-              title: 'Friends',
-              body: 'Invite people to your server. Share a queue and listen together, in time.',
-            },
-            {
-              icon: RefreshCw,
-              title: 'Updates over the air',
-              body: 'The app refreshes itself from your hub, so a fix reaches every device without a store review.',
-            },
-          ].map((item, i) => (
+          {FACTS.map((item, i) => (
             <Reveal key={item.title} delay={i * 70}>
               <article className="card">
                 <span className="card__icon">
@@ -145,28 +183,20 @@ export function Yours() {
           ))}
         </div>
 
-        <Reveal delay={80}>
-          <div className="stats">
-            {[
-              { value: '8', label: 'Audio formats read' },
-              { value: '3', label: 'Platforms' },
-              { value: '15 GB', label: 'On-device cache' },
-              { value: '0', label: 'Monthly fee' },
-            ].map((stat) => (
-              <div className="stat" key={stat.label}>
-                <div className="stat__value">{stat.value}</div>
-                <div className="stat__label">{stat.label}</div>
-              </div>
-            ))}
-          </div>
-        </Reveal>
-
-        <Reveal delay={140} className="center">
-          <p className="pill" style={{ marginTop: '1.5rem' }}>
-            <BadgeCheck size={15} />
-            Runs on hardware you already have
-            <Share2 size={15} />
+        {/* The install line lives here rather than in a section of its own: the
+            claim above is "you run the server", and this is what running it
+            actually looks like. */}
+        <Reveal delay={80} className="stack center yours__install">
+          <h3 className="h3">Start the server</h3>
+          <p className="body">
+            The installer sets up the service and, if you point a domain at the box, HTTPS with it.
+            Then sign in from any device and your library is there.
           </p>
+          <InstallLine />
+          <a className="btn btn--ghost" href={REPO}>
+            <GitBranch size={17} />
+            Source on GitHub
+          </a>
         </Reveal>
       </div>
     </section>

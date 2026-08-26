@@ -32,7 +32,7 @@
   --site-glow-soft: color-mix(in oklch, var(--glacier-accent-9) 22%, transparent);
 
   /* How dark the artwork wall is pushed so text stays legible on top of it. */
-  --site-wall-dim: 0.34;
+  --site-wall-dim: 0.22;
   --site-wall-veil: oklch(0.145 0.008 285);
 
   --site-max: 74rem;
@@ -58,7 +58,7 @@
   /* Light mode is a LIGHT page, not a dimmed dark one: the artwork wall is
      lifted and veiled in white so covers read as a soft texture rather than a
      dark slab sitting in the middle of a bright document. */
-  --site-wall-dim: 0.18;
+  --site-wall-dim: 0.14;
   --site-wall-veil: oklch(0.985 0.002 285);
 }
 
@@ -128,10 +128,6 @@ a {
 .section {
   position: relative;
   padding-block: clamp(5rem, 12vh, 9rem);
-}
-
-.section--tight {
-  padding-block: clamp(3rem, 7vh, 5rem);
 }
 
 /* A hairline that fades out at both ends - a full-width rule reads as a table
@@ -266,7 +262,6 @@ a {
 
   /* Ambient loops are decoration; a reader who asked for stillness gets it. */
   .wall__col,
-  .marquee__track,
   .eq__bar,
   .pulse,
   .aurora__blob {
@@ -537,7 +532,10 @@ a {
   z-index: 1;
   pointer-events: none;
   background:
-    radial-gradient(120% 90% at 50% 30%, transparent, var(--site-wall-veil) 72%),
+    /* The left half carries the headline, so it is veiled harder than the
+       right - the wall should be scenery beside the type, not behind it. */
+    linear-gradient(to right, var(--site-wall-veil) 8%, transparent 62%),
+    radial-gradient(120% 90% at 50% 30%, transparent, var(--site-wall-veil) 78%),
     linear-gradient(to bottom, transparent 55%, var(--site-ground) 96%);
 }
 
@@ -645,8 +643,9 @@ a {
 
 /* --- device frames ---------------------------------------------------------- */
 
-/* Screenshots are the product. The frames stay quiet so the pixels inside them
-   are what the eye lands on. */
+/* The audiobooks page's one photograph still needs a phone around it; the home
+   page's devices are .frame, above. Either way the chrome stays quiet so the
+   screen inside it is what the eye lands on. */
 .phone {
   position: relative;
   border-radius: 2.4rem;
@@ -672,32 +671,125 @@ a {
   object-position: top center;
 }
 
-.laptop {
+/* A soft brand glow pooled under a device, so it sits on the page rather than
+   floating on it. */
+/* --- live frames ------------------------------------------------------------
+
+   The devices on this page are iframes running the real app (components/
+   Frame.tsx). Two things are load-bearing here.
+
+   The iframe is laid out at the DEVICE's pixel size and scaled down, rather
+   than being given the frame's width and left to reflow: a phone frame in a
+   marketing column is about 280px wide, and an app told it has 280px of
+   viewport is not the app anyone will install - it is the app at its narrowest
+   breakpoint, which is a different product. The scale factor is measured in
+   JS and arrives as --frame-scale.
+
+   And nothing in them takes a pointer. These are moving portraits; the control
+   the reader is being offered is Download, not this.
+   -------------------------------------------------------------------------- */
+
+.frame {
   position: relative;
+  border-radius: 2.4rem;
+  padding: 0.55rem;
+  background: linear-gradient(160deg, var(--site-rail-strong), var(--site-rail));
+  box-shadow:
+    0 40px 80px -40px rgb(0 0 0 / 0.75),
+    0 0 0 1px var(--site-glass-line);
+}
+
+.frame--desktop {
   border-radius: 0.9rem;
   padding: 0.5rem;
-  background: linear-gradient(160deg, var(--site-rail-strong), var(--site-rail));
   box-shadow:
     0 40px 90px -45px rgb(0 0 0 / 0.8),
     0 0 0 1px var(--site-glass-line);
 }
 
-.laptop__screen {
-  border-radius: 0.55rem;
+.frame__glass {
+  position: relative;
   overflow: hidden;
+  border-radius: 2rem;
+  /* The frame's height follows from the device it is showing, so the box is
+     the right shape before the iframe has loaded anything at all - no reflow
+     when a frame finally boots halfway down the page. */
+  aspect-ratio: var(--frame-w) / var(--frame-h);
   background: var(--site-ground-2);
-  aspect-ratio: 16 / 10;
 }
 
-.laptop__screen img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: top center;
+.frame--desktop .frame__glass {
+  border-radius: 0.55rem;
 }
 
-/* A soft brand glow pooled under a device, so it sits on the page rather than
-   floating on it. */
+.frame__screen {
+  position: absolute;
+  inset: 0;
+  width: calc(var(--frame-w) * 1px);
+  height: calc(var(--frame-h) * 1px);
+  border: 0;
+  transform: scale(var(--frame-scale, 1));
+  transform-origin: top left;
+  pointer-events: none;
+  /* Until the app inside has painted, this is a dark rectangle either way -
+     fading it in stops the frame flashing its own ground over the page's. */
+  opacity: 0;
+  transition: opacity 600ms var(--site-ease);
+}
+
+.frame[data-ready] .frame__screen {
+  opacity: 1;
+}
+
+/* Two devices, one claim: the desktop lies back and the phone stands in front
+   of its lower-left corner, close enough to read as the same app on both. */
+.stage {
+  position: relative;
+  margin-top: clamp(2rem, 5vw, 3.5rem);
+  /* The phone stands PAST the bottom of the desktop it leans on, so the stage
+     has to reserve that overhang or the cards below collide with it. */
+  margin-bottom: clamp(4rem, 9vw, 7rem);
+}
+
+/* Inset, so the phone has a margin to stand in rather than covering the table. */
+.stage__desktop {
+  width: 88%;
+  margin-left: auto;
+}
+
+.stage__phone {
+  position: absolute;
+  left: 0;
+  bottom: -12%;
+  width: 19%;
+  min-width: 8.5rem;
+}
+
+/* Narrow: the two devices stack instead of leaning on each other. Overlapping
+   them here put the phone across the middle of a desktop that is already only
+   a couple of hundred pixels tall, and the arrangement stopped reading as two
+   machines at all. */
+@media (max-width: 46rem) {
+  .stage {
+    margin-bottom: clamp(2rem, 6vw, 3rem);
+  }
+
+  .stage__desktop {
+    width: 100%;
+  }
+
+  .stage__phone {
+    position: static;
+    width: 62%;
+    margin: 1.25rem auto 0;
+  }
+}
+
+.yours__install {
+  margin-top: clamp(2.5rem, 6vw, 4rem);
+  gap: 1rem;
+}
+
 .deviceGlow {
   position: absolute;
   inset: auto 8% -8%;
@@ -729,32 +821,6 @@ a {
 
 .row__media {
   position: relative;
-}
-
-/* --- marquee ---------------------------------------------------------------- */
-
-.marquee {
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
-  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
-}
-
-.marquee__track {
-  display: flex;
-  gap: 1rem;
-  width: max-content;
-  animation: marquee var(--marquee-dur, 46s) linear infinite;
-}
-
-.marquee:hover .marquee__track {
-  animation-play-state: paused;
-}
-
-@keyframes marquee {
-  to {
-    /* The track holds the same content twice; -50% is one full copy. */
-    transform: translate3d(-50%, 0, 0);
-  }
 }
 
 .shot {
@@ -799,41 +865,6 @@ a {
     height: 100%;
     opacity: 1;
   }
-}
-
-/* --- stats ------------------------------------------------------------------ */
-
-.stats {
-  display: grid;
-  gap: 1px;
-  background: var(--site-rail);
-  border: 1px solid var(--site-rail);
-  border-radius: 1.15rem;
-  overflow: hidden;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
-}
-
-.stat {
-  background: var(--site-ground);
-  padding: 1.6rem 1.4rem;
-  text-align: center;
-}
-
-.stat__value {
-  font-size: clamp(1.9rem, 3.4vw, 2.6rem);
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-
-.stat__label {
-  margin-top: 0.5rem;
-  font-family: var(--glacier-font-mono);
-  font-size: 0.7rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--glacier-text-muted);
 }
 
 /* --- footer ----------------------------------------------------------------- */
@@ -1117,85 +1148,6 @@ a {
   background: color-mix(in oklch, var(--glacier-text) 8%, transparent);
 }
 
-/* --- screenshot placeholder -------------------------------------------------- */
-
-/* Deliberate, legible, and obviously not a bug - see components/Device.tsx. */
-.shotPending {
-  width: 100%;
-  height: 100%;
-  display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: 0.6rem;
-  color: var(--glacier-text-subtle);
-  background:
-    repeating-linear-gradient(
-      45deg,
-      transparent,
-      transparent 9px,
-      color-mix(in oklch, var(--glacier-text) 4%, transparent) 9px,
-      color-mix(in oklch, var(--glacier-text) 4%, transparent) 18px
-    ),
-    var(--site-ground-2);
-  font-family: var(--glacier-font-mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  text-align: center;
-  padding: 1rem;
-}
-
-/* --- composed device groups --------------------------------------------------- */
-
-.stackShots {
-  position: relative;
-  padding-bottom: 2rem;
-}
-
-.stackShots__back {
-  width: 100%;
-}
-
-/* The phone overlaps the laptop's lower-left corner, so the two read as one
-   product rather than two unrelated pictures. */
-.stackShots__front {
-  position: absolute;
-  left: 4%;
-  bottom: -1rem;
-  width: 32%;
-  max-width: 11rem;
-}
-
-@media (max-width: 40rem) {
-  .stackShots__front {
-    position: static;
-    width: 58%;
-    margin: -2rem auto 0;
-  }
-}
-
-.pairShots {
-  display: flex;
-  gap: 1rem;
-  align-items: flex-start;
-  justify-content: center;
-}
-
-.pairShots .phone {
-  flex: 1 1 0;
-  max-width: 15rem;
-}
-
-.pairShots__offset {
-  margin-top: 2.5rem;
-}
-
-@media (max-width: 34rem) {
-  .pairShots__offset {
-    display: none;
-  }
-}
-
 .tilt {
   max-width: 19rem;
   margin-inline: auto;
@@ -1216,18 +1168,14 @@ a {
   margin-bottom: clamp(2.5rem, 6vw, 4rem);
 }
 
-.everywhere__stage {
-  position: relative;
-  max-width: 58rem;
-  margin-inline: auto;
-}
-
-.everywhere__phone {
-  position: absolute;
-  right: -1rem;
-  bottom: -2.5rem;
-  width: 22%;
-  max-width: 9.5rem;
+/* Both card grids hold SIX cards, and auto-fit puts four on a wide screen -
+   leaving a second row with two in it and a hole where four should be. Three
+   columns divides six evenly; below that the auto-fit rule takes over again. */
+@media (min-width: 62rem) {
+  .everywhere__grid,
+  .yours__grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
 @media (max-width: 46rem) {
@@ -1292,14 +1240,6 @@ a {
   margin-bottom: clamp(2rem, 5vw, 3rem);
 }
 
-/* --- get ---------------------------------------------------------------------- */
-
-.get {
-  position: relative;
-  overflow: hidden;
-  isolation: isolate;
-}
-
 .install {
   display: flex;
   align-items: center;
@@ -1340,19 +1280,6 @@ a {
   flex: none;
 }
 
-.get__buttons {
-  justify-content: center;
-  margin-top: 1.75rem;
-}
-
-.get__note {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  margin-top: 1.25rem;
-  font-size: 0.9rem;
-}
-
 /* --- footer ------------------------------------------------------------------- */
 
 .footer__mark {
@@ -1372,27 +1299,6 @@ a {
   font-size: 0.85rem;
   color: var(--glacier-text-subtle);
   max-width: 46rem;
-}
-
-/* --- gallery ------------------------------------------------------------------ */
-
-.gallery {
-  overflow: hidden;
-}
-
-/* The band is sized by HEIGHT and lets each shot keep its own aspect ratio, so
-   phone and desktop captures can sit in one row without being distorted. */
-.gallery__item {
-  margin: 0;
-  height: clamp(18rem, 40vh, 27rem);
-}
-
-.gallery__item img {
-  height: 100%;
-  width: auto;
-  max-width: none;
-  object-fit: contain;
-  background: var(--site-ground-2);
 }
 
 /* --- downloads ---------------------------------------------------------------- */
@@ -1444,15 +1350,6 @@ a {
   color: var(--glacier-accent-11);
   text-decoration: underline;
   text-underline-offset: 2px;
-}
-
-/* The recorded Now Playing clip fills its phone frame exactly like a still. */
-.phone__video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: top center;
-  display: block;
 }
 
 /* ---- The audiobooks page --------------------------------------------------

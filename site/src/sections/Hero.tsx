@@ -1,14 +1,8 @@
 import { Apple, Download, Play, ServerCog } from '@glacier/icons';
 import wordmark from '../../../src/assets/attack-white.png';
-import cover1 from '../../../src/assets/wall/cover-01.jpg';
-import cover2 from '../../../src/assets/wall/cover-02.jpg';
-import cover3 from '../../../src/assets/wall/cover-03.jpg';
-import cover4 from '../../../src/assets/wall/cover-04.jpg';
-import { PhoneShot } from '../components/Device.tsx';
+import { Frame } from '../components/Frame.tsx';
 import { Reveal } from '../components/Reveal.tsx';
-import { SHOTS, WALL } from '../shots.ts';
-
-const FALLBACK = [cover1, cover2, cover3, cover4];
+import { WALL } from '../shots.ts';
 
 /**
  * The drifting wall of album art.
@@ -19,7 +13,6 @@ const FALLBACK = [cover1, cover2, cover3, cover4];
  * per frame.
  */
 function Wall() {
-  const covers = WALL.length ? WALL : FALLBACK;
   const columns = 6;
 
   return (
@@ -29,10 +22,7 @@ function Wall() {
           // Each column gets its own offset slice so neighbours never show the
           // same cover side by side, and its own duration so the columns do not
           // visibly march in lockstep.
-          const slice = Array.from(
-            { length: 8 },
-            (_, i) => covers[(col * 3 + i) % covers.length]!,
-          );
+          const slice = Array.from({ length: 8 }, (_, i) => WALL[(col * 3 + i) % WALL.length]!);
           return (
             <div
               key={col}
@@ -76,8 +66,7 @@ export function Hero() {
           <Reveal delay={160}>
             <p className="lead hero__lead">
               A player and a server you run yourself. The files stay on your hardware, and every
-              device you own plays from it. The DJ picks by how a record actually sounds, working
-              from a fingerprint it measured off the audio.
+              device you own plays from them.
             </p>
           </Reveal>
 
@@ -110,8 +99,14 @@ export function Hero() {
           </Reveal>
         </div>
 
+        {/* Eager, and the only frame that is: it is above the fold, so waiting
+            to be scrolled to would mean waiting forever. */}
         <Reveal delay={220} variant="scale" className="hero__device">
-          <PhoneShot shot={SHOTS.nowPlaying} />
+          <Frame
+            eager
+            screen="playing"
+            description="AttackFM playing on a phone: the sleeve turning as a record, the song and artist beneath it, and a seek bar running."
+          />
           <div className="deviceGlow" />
         </Reveal>
       </div>

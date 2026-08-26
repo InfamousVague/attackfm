@@ -80,10 +80,25 @@ if (spawnSync('sshpass', ['-V'], { stdio: 'ignore' }).status !== 0) {
 }
 
 step('Building the site');
-run('npx', ['vite', 'build', '--config', 'vite.site.config.ts'], { cwd: root });
+/*
+ * `npm run site:build`, not a bare vite build.
+ *
+ * The page's screens are the real app running against a fixture hub, and that
+ * takes three steps in order: generate the fixtures, build the site (which
+ * copies them out of site/public and empties dist-site on the way), then build
+ * the demo into dist-site/demo. Running only the middle one - which is what
+ * this used to do - published a page whose every device frame was a 404.
+ */
+run('npm', ['run', 'site:build'], { cwd: root });
 
 if (!existsSync(resolve(DIST, 'index.html'))) {
   fail(`Build produced no index.html in ${DIST}.`);
+}
+
+// The frames are the page. Publishing without them is worse than not
+// publishing: the copy still says "both are running" beside four empty slabs.
+for (const required of ['demo/index.html', 'demo-hub/api/library.json', 'demo-hub/media/streams.js']) {
+  if (!existsSync(resolve(DIST, required))) fail(`Build produced no ${required} - the live frames would 404.`);
 }
 
 // Kept for the post-deploy check further down: the built index names the hashed

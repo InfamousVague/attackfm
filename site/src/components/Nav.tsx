@@ -12,10 +12,9 @@ import { useTheme } from '../theme.ts';
  * anywhere else, which is exactly the behaviour wanted in both places.
  */
 const LINKS = [
-  { href: '/#library', label: 'Library' },
-  { href: '/#booth', label: 'The Booth' },
+  { href: '/#dj', label: 'The DJ' },
   { href: '/audiobooks/', label: 'Audiobooks' },
-  { href: '/#everywhere', label: 'Everywhere' },
+  { href: '/#everywhere', label: 'Every screen' },
   { href: '/#yours', label: 'Self-hosted' },
   { href: '/#download', label: 'Download' },
 ];

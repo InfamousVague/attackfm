@@ -24,7 +24,7 @@
     "android:emulator": "\"$HOME/Library/Android/sdk/emulator/emulator\" -avd attackfm -netdelay none -netspeed full",
     "ship": "node scripts/ship-update.mjs",
     "site:dev": "vite --config vite.site.config.ts",
-    "site:build": "vite build --config vite.site.config.ts",
+    "site:build": "npm run demo:fixtures && vite build --config vite.site.config.ts && npm run demo:build",
     "site:preview": "vite preview --config vite.site.config.ts",
     "site:deploy": "node scripts/deploy-site.mjs",
     "listen:deploy": "node scripts/deploy-listen.mjs",
@@ -32,7 +32,9 @@
     "filters:check": "node scripts/check-filters.mjs",
     "prefs:check": "node scripts/check-prefs.mjs",
     "ai-ui:check": "node scripts/check-ai-glacier.mjs",
-    "check:styles": "node scripts/check-style-guard.mjs"
+    "check:styles": "node scripts/check-style-guard.mjs",
+    "demo:fixtures": "node scripts/make-demo-fixtures.mjs",
+    "demo:build": "vite build --config vite.demo.config.ts"
   },
   "dependencies": {
     "@glacier/icons": "file:./vendor/@glacier/icons",
