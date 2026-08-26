@@ -47,8 +47,8 @@
       ],
       "entry": "spotify-canvas-1.0.0.js",
       "api": 1,
-      "bytes": 6468,
-      "sha256": "80c659e2ab1b368958c42b1f287bfa0bbb3127ea12a643bca8c9e1abef21f185",
+      "bytes": 6456,
+      "sha256": "ea4da787b91e0cdd064af5ffe99395f56dd154cd3ebb17cb6cc31b0703745cfb",
       "requiresServer": true
     },
     {

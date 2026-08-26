@@ -48,7 +48,7 @@ export function CanvasSettings() {
     return (
       <div className="prefsBody">
         <Text tone="muted" size="sm">
-          Canvas clips are fetched by your server &mdash; connect one under Settings &rarr; Server
+          Canvas clips are fetched by your server. Connect one under Settings &rarr; Server
           first.
         </Text>
       </div>
@@ -105,7 +105,7 @@ export function CanvasSettings() {
           <Input
             type="password"
             value={cookie}
-            placeholder={linked ? 'A cookie is set — paste to replace' : 'sp_dc value'}
+            placeholder={linked ? 'A cookie is set, paste to replace' : 'sp_dc value'}
             aria-label="Spotify session cookie"
             autoComplete="off"
             spellCheck={false}
