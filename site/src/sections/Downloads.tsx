@@ -155,7 +155,7 @@ export function Downloads() {
             <a className="downloads__link" href="/listen/">
               open AttackFM in your browser
             </a>
-            . Same app, same server, nothing to download — you’ll want a desktop-sized
+            . Same app, same server, nothing to download, though you’ll want a desktop-sized
             window, and offline downloads stay with the installed builds.
           </p>
         </Reveal>

@@ -55,7 +55,7 @@ export function Booth() {
           </h2>
           <p className="body">
             Most shuffles read tags. This one reads the audio. The server measures a fingerprint off
-            every recording — its texture, its energy, how it sits in a room — then weighs that
+            every recording (its texture, its energy, how it sits in a room), then weighs that
             against the words and against what you have played before, and builds a set out of your
             own library.
           </p>
@@ -65,7 +65,7 @@ export function Booth() {
               The DJ says why, in its own words, as each run comes up
             </Point>
             <Point icon={Radio}>Smart shuffle slips in songs the server thinks belong next</Point>
-            <Point icon={ListMusic}>Every pick is a file you already own — nothing is streamed in</Point>
+            <Point icon={ListMusic}>Every pick is a file you already own; nothing is streamed in</Point>
           </ul>
         </Reveal>
 
