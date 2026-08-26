@@ -50,6 +50,7 @@ mod enrichment;
 mod features;
 mod loudness;
 mod stations;
+mod taste;
 mod stems;
 mod friends;
 mod home;

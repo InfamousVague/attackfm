@@ -2054,10 +2054,33 @@ impl Db {
     /// included. Folding tombstone revs in matters: a page of nothing but
     /// deletions once reported rev == since with more == true, which a
     /// paging client reads as "ask again from the same place", forever.
-    pub fn tracks_since(&self, since: i64, limit: i64) -> (Vec<Track>, Vec<i64>, i64) {
+    /// SCOPED TO THE CALLER, and that is a privacy fix rather than a tidy-up.
+    ///
+    /// A collector audition is a track the server bought speculatively FOR one
+    /// listener; until they adopt it, it carries `curator_user_id = <them>` and
+    /// `curator_promoted = 0`. This query used to hand every such row to every
+    /// client and leave the filtering to the browser - `DatePage.tsx` did
+    /// `.filter((t) => !status || t.curatorUserId === status.userId)`, which
+    /// fails OPEN: `status` comes from a separate request, and any failure of
+    /// that request left `status` null and showed one person's auditions to
+    /// everybody.
+    ///
+    /// Filtering here instead means the bytes never leave the server, so no
+    /// client bug can leak them and no client has to be trusted to try. It also
+    /// makes the Date deck per-user for free: a client can only ever be dealt
+    /// its own cards, because it is only ever sent its own cards.
+    ///
+    /// Adoption bumps `rev`, so a track that becomes visible later arrives on
+    /// the next page like any other change.
+    pub fn tracks_since(&self, user_id: i64, since: i64, limit: i64) -> (Vec<Track>, Vec<i64>, i64) {
         let conn = self.lock();
         let sql = format!(
-            "SELECT {} FROM tracks WHERE rev > ?1 ORDER BY rev, id LIMIT ?2",
+            "SELECT {} FROM tracks
+             WHERE rev > ?1
+               AND (curator_user_id IS NULL
+                    OR COALESCE(curator_promoted, 0) = 1
+                    OR curator_user_id = ?3)
+             ORDER BY rev, id LIMIT ?2",
             Self::TRACK_COLS
         );
         let Ok(mut stmt) = conn.prepare(&sql) else {
@@ -2066,7 +2089,7 @@ impl Db {
         let mut live = Vec::new();
         let mut removed = Vec::new();
         let mut max_rev = since;
-        let rows = stmt.query_map(params![since, limit], |r| {
+        let rows = stmt.query_map(params![since, limit, user_id], |r| {
             let deleted: i64 = r.get(10)?;
             Ok((deleted != 0, Self::read_track(r)?))
         });
@@ -2850,6 +2873,51 @@ impl Db {
         stmt.query_map(params![user_id, limit], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)? as f32)))
             .map(|rows| rows.filter_map(Result::ok).collect())
             .unwrap_or_default()
+    }
+
+    /// Every verdict one listener has passed in the window, richest form.
+    ///
+    /// This is the query the curation half should always have been running.
+    /// `weighted_recent_listens` above collapses a listener's history into one
+    /// number per track with a fixed rubric baked into SQL - completed 1.0,
+    /// skipped 0.15, capped at 3 - which cannot express WHEN it happened, HOW
+    /// MUCH was heard against the track's real length, or WHICH SURFACE
+    /// offered it. All three columns were already being written; none of them
+    /// could get out through that function.
+    ///
+    /// So this one hands back the rows and lets `taste.rs` decide what they
+    /// mean. Books are excluded: an audiobook's completion curve has nothing
+    /// to say about which song to play next.
+    pub fn taste_verdicts(&self, user_id: i64, since: i64, limit: i64) -> Vec<crate::taste::Verdict> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT le.track_id, le.started_at, le.ms_listened, le.duration_ms,
+                    le.completed, le.skipped, le.context,
+                    EXISTS(SELECT 1 FROM favorites f
+                           WHERE f.user_id = le.user_id AND f.track_id = le.track_id)
+             FROM listen_events le
+             JOIN tracks t ON t.id = le.track_id AND t.deleted = 0
+                          AND COALESCE(t.kind, 'music') <> 'book'
+             WHERE le.user_id = ?1 AND le.started_at >= ?2
+             ORDER BY le.started_at DESC
+             LIMIT ?3",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, since, limit], |r| {
+            Ok(crate::taste::Verdict {
+                track_id: r.get(0)?,
+                at: r.get(1)?,
+                ms_listened: r.get(2)?,
+                duration_ms: r.get(3).ok(),
+                completed: r.get::<_, i64>(4)? != 0,
+                skipped: r.get::<_, i64>(5)? != 0,
+                context: r.get::<_, String>(6).unwrap_or_default(),
+                hearted: r.get::<_, i64>(7)? != 0,
+            })
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
     }
 
     pub fn recent_plays(&self, user_id: i64, limit: i64) -> Vec<i64> {
@@ -8027,5 +8095,87 @@ mod canvas_misses_survive_a_restart {
             1,
             "past the retry window it is offered again",
         );
+    }
+}
+
+#[cfg(test)]
+mod audition_visibility {
+    //! An unadopted collector audition belongs to exactly one listener, and
+    //! must not reach anybody else's client. This used to be enforced in the
+    //! browser (`DatePage.tsx` filtered `forYou` by `curatorUserId`), which
+    //! failed open whenever the request that told it who you were failed.
+
+    use super::*;
+
+    fn track(rel: &str, title: &str) -> ScannedTrack {
+        ScannedTrack {
+            rel_path: rel.into(),
+            title: title.into(),
+            artist: "A".into(),
+            album: "Al".into(),
+            duration_ms: Some(200_000),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn one_listeners_audition_is_invisible_to_another() {
+        let dir = std::env::temp_dir().join(format!("afm-vis-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = Db::open(&dir.join("t.sqlite")).unwrap();
+        let alice = db.create_user("alice", "x", true).unwrap();
+        let bob = db.create_user("bob", "x", false).unwrap();
+
+        db.upsert_track(&track("shared.flac", "Shared"), 1).unwrap();
+        db.upsert_track(&track("audition.flac", "Audition"), 2).unwrap();
+        let audition = db.track_id_by_path("audition.flac").expect("indexed");
+
+        // Mark it as an unadopted audition bought for alice.
+        db.lock()
+            .execute(
+                "UPDATE tracks SET curator_user_id = ?1, curator_promoted = 0, rev = 3 WHERE id = ?2",
+                params![alice, audition],
+            )
+            .unwrap();
+
+        let titles = |uid: i64| -> Vec<String> {
+            db.tracks_since(uid, 0, 100).0.into_iter().map(|t| t.title).collect()
+        };
+
+        let seen_by_alice = titles(alice);
+        let seen_by_bob = titles(bob);
+
+        assert!(seen_by_alice.contains(&"Audition".to_string()), "the buyer sees their own card");
+        assert!(
+            !seen_by_bob.contains(&"Audition".to_string()),
+            "another listener must NEVER be sent it: {seen_by_bob:?}"
+        );
+        assert!(seen_by_bob.contains(&"Shared".to_string()), "the ordinary library is unaffected");
+    }
+
+    #[test]
+    fn adoption_makes_it_visible_to_everyone_on_the_next_page() {
+        let dir = std::env::temp_dir().join(format!("afm-vis2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = Db::open(&dir.join("t.sqlite")).unwrap();
+        let alice = db.create_user("alice", "x", true).unwrap();
+        let bob = db.create_user("bob", "x", false).unwrap();
+
+        db.upsert_track(&track("a.flac", "Audition"), 1).unwrap();
+        let id = db.track_id_by_path("a.flac").unwrap();
+        db.lock()
+            .execute(
+                "UPDATE tracks SET curator_user_id = ?1, curator_promoted = 0, rev = 2 WHERE id = ?2",
+                params![alice, id],
+            )
+            .unwrap();
+        assert!(db.tracks_since(bob, 0, 100).0.is_empty(), "hidden while pending");
+
+        db.promote_curator_track(id);
+        let seen: Vec<String> =
+            db.tracks_since(bob, 0, 100).0.into_iter().map(|t| t.title).collect();
+        assert_eq!(seen, vec!["Audition".to_string()], "adopted tracks join the library");
     }
 }
