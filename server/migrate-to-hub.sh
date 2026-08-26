@@ -30,6 +30,13 @@
 
 set -euo pipefail
 
+# NEVER DIE SILENTLY. `set -e` plus a command substitution that fails inside an
+# assignment exits with no output whatsoever - which is exactly what this script
+# did on the first Mac it ran on, three times in a row, leaving nothing to debug
+# from. An ERR trap costs one line and turns every future version of that bug
+# into a line number.
+trap 'rc=$?; printf "\n\033[31m✗\033[0m migrate-to-hub.sh failed at line $LINENO (exit $rc)\n   command: %s\n\n" "$BASH_COMMAND" >&2; exit $rc' ERR
+
 # --- where things are ------------------------------------------------------
 
 # The destination's PUBLIC address, deliberately. This Mac is behind CGNAT, but
@@ -90,9 +97,14 @@ plist_env() {
 # The server's own environment, read off the live process. `ps -E` shows the
 # environment only for processes you own, which is exactly the case here: the
 # server runs as the person running this script.
+# Never fatal. The server may be running as another user (a LaunchDaemon rather
+# than a LaunchAgent), and then `ps -E` cannot read its environment and exits
+# non-zero - which under `set -e` took the whole script down without a word.
+# An unreadable environment is a perfectly ordinary answer here: it just means
+# the next source down gets asked.
 proc_env() {
-	ps -wwwE -o command= -p "$SERVER_PID" 2>/dev/null \
-		| tr ' ' '\n' | sed -n "s/^$1=//p" | head -1
+	{ ps -wwwE -o command= -p "$SERVER_PID" 2>/dev/null || true; } \
+		| tr ' ' '\n' | sed -n "s/^$1=//p" | head -1 || true
 }
 
 find_plist() {
@@ -112,24 +124,40 @@ find_plist() {
 
 load_config() {
 	MUSIC_DIR="${MUSIC_DIR:-}"; DATA_DIR="${DATA_DIR:-}"; CONFIG_FROM=""
-	SERVER_PID="$(pgrep -n -f 'attackfm-server' 2>/dev/null || true)"
+	# Prefer a real install over a dev build. A `cargo run` copy of the server
+	# points at scratch directories, and quietly migrating those instead of the
+	# library is the worst outcome available here - it would look like it worked.
+	SERVER_PID=""
+	local _pid _cmd
+	for _pid in $(pgrep -f 'attackfm-server' 2>/dev/null || true); do
+		_cmd="$(ps -o command= -p "$_pid" 2>/dev/null || true)"
+		case "$_cmd" in
+			*target/debug*|*target/release*) continue ;;
+		esac
+		SERVER_PID="$_pid"; break
+	done
 
 	if [ -n "$SERVER_PID" ] && [ -z "$MUSIC_DIR" ]; then
-		MUSIC_DIR="$(proc_env AFM_MUSIC_DIR)"
-		DATA_DIR="$(proc_env AFM_DATA_DIR)"
+		MUSIC_DIR="$(proc_env AFM_MUSIC_DIR || true)"
+		DATA_DIR="$(proc_env AFM_DATA_DIR || true)"
 		[ -n "$MUSIC_DIR" ] && CONFIG_FROM="the running server (pid $SERVER_PID)"
 	fi
 
 	PLIST="$(find_plist || true)"
 	if [ -z "$MUSIC_DIR" ] && [ -n "$PLIST" ]; then
-		MUSIC_DIR="$(plist_env "$PLIST" AFM_MUSIC_DIR)"
-		DATA_DIR="$(plist_env "$PLIST" AFM_DATA_DIR)"
+		MUSIC_DIR="$(plist_env "$PLIST" AFM_MUSIC_DIR || true)"
+		DATA_DIR="$(plist_env "$PLIST" AFM_DATA_DIR || true)"
 		[ -n "$MUSIC_DIR" ] && CONFIG_FROM="$PLIST"
 	fi
 
 	[ -n "$MUSIC_DIR" ] && [ -z "$CONFIG_FROM" ] && CONFIG_FROM="the environment you passed"
 
 	if [ -z "$MUSIC_DIR" ] || [ ! -d "$MUSIC_DIR" ]; then
+		say ""
+		say "  ${DIM}searched:${R}"
+		say "  ${DIM}  running server pid : ${SERVER_PID:-none found}${R}"
+		say "  ${DIM}  plist              : ${PLIST:-none found}${R}"
+		say "  ${DIM}  MUSIC_DIR read as  : ${MUSIC_DIR:-empty}${R}"
 		die "Could not work out where the library is.
 
     Looked at: the running attackfm-server process, and any attackfm plist in
