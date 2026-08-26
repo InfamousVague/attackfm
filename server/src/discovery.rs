@@ -586,7 +586,9 @@ pub async fn listen_cycle(state: &Arc<AppState>, user: i64) -> bool {
     if waiting.is_empty() {
         return false;
     }
-    let Some(taste) = taste_for(state, user) else { return false };
+    let Some((taste, all)) = crate::curator::user_taste_for(state, user) else { return false };
+    let by_id: std::collections::HashMap<i64, &crate::db::TrackFeatures> =
+        all.iter().map(|f| (f.track_id, f)).collect();
     let c = client(20);
 
     for cand in waiting {
@@ -603,15 +605,13 @@ pub async fn listen_cycle(state: &Arc<AppState>, user: i64) -> bool {
             crate::tempo::analyze_url(&cand.preview).await
         };
 
-        let score = crate::curator::score_parts(
-            &taste,
-            vec.as_deref(),
-            bpm,
-            // A candidate carries no genre from this endpoint; the artist it
-            // hangs off is the genre signal, and it is already why it is here.
-            None,
-        ) as f64
-            + pop_nudge(cand.popularity);
+        // The seed artist IS the genre signal, as the old comment said - so
+        // now it is actually used instead of being noted and then passed as
+        // None, which made a quarter of the score a constant.
+        let tags = crate::taste::artist_tags(&by_id, &cand.seed);
+        let score =
+            crate::taste::score_candidate(&taste, vec.as_deref(), bpm, &tags) as f64
+                + pop_nudge(cand.popularity);
 
         let _ = state.db.save_discovery_features(user, &cand.ext_id, bpm, vec.as_deref(), score);
         tokio::time::sleep(GAP).await;
@@ -644,10 +644,24 @@ pub fn rescore(state: &Arc<AppState>, user: i64) {
     if pool.is_empty() {
         return;
     }
-    let Some(taste) = taste_for(state, user) else { return };
+    let Some((taste, all)) = crate::curator::user_taste_for(state, user) else { return };
+    let by_id: std::collections::HashMap<i64, &crate::db::TrackFeatures> =
+        all.iter().map(|f| (f.track_id, f)).collect();
+    // The seed artist's tags stand in for the candidate's own, which this
+    // endpoint never supplies. A quarter of every score used to be the literal
+    // constant 0.5 because `None` was passed for genre here; the seed is the
+    // reason the candidate is in the pool at all, so its tags are the closest
+    // honest answer available.
+    let mut seed_tags: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
     for d in pool {
-        let score = crate::curator::score_parts(&taste, d.lyric_vec.as_deref(), d.bpm, None) as f64
-            + pop_nudge(d.popularity);
+        let tags = seed_tags
+            .entry(d.seed.to_lowercase())
+            .or_insert_with(|| crate::taste::artist_tags(&by_id, &d.seed))
+            .clone();
+        let score =
+            crate::taste::score_candidate(&taste, d.lyric_vec.as_deref(), d.bpm, &tags) as f64
+                + pop_nudge(d.popularity);
         state.db.set_discovery_score(user, &d.ext_id, score);
     }
 }

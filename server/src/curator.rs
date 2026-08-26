@@ -1002,6 +1002,45 @@ pub(crate) fn taste_for(state: &Arc<AppState>, user: i64) -> Option<Taste> {
 /// library row - a candidate from the catalogue, which has no track id and may
 /// be missing any of the three. Each term falls back to a neutral 0.5, so a
 /// candidate is never punished for what could not be measured.
+/// The new per-user model for one listener, or None when they have not given
+/// the machine anything to go on yet.
+///
+/// The verdict ledger first, play starts only as the fallback for an account
+/// whose client never reported listens. Same order as `taste_for` above, which
+/// this replaces everywhere the richer model can be used.
+pub(crate) fn user_taste_for(
+    state: &Arc<AppState>,
+    user: i64,
+) -> Option<(crate::taste::UserTaste, Vec<TrackFeatures>)> {
+    let since_secs = (now_ms() - crate::taste::WINDOW_DAYS * 86_400_000) / 1000;
+    let mut verdicts = state.db.taste_verdicts(user, since_secs, 4000);
+    if verdicts.len() < 8 {
+        let top = state.db.top_plays(user, now_ms() - WINDOW_30D_MS, 60);
+        if top.len() < TASTE_MIN_TRACKS {
+            return None;
+        }
+        verdicts = top
+            .into_iter()
+            .map(|(id, _)| crate::taste::Verdict {
+                track_id: id,
+                at: since_secs,
+                ms_listened: 30_000,
+                duration_ms: None,
+                completed: true,
+                skipped: false,
+                context: String::new(),
+                hearted: false,
+            })
+            .collect();
+    }
+    let all = state.db.all_features();
+    let taste = {
+        let by_id: HashMap<i64, &TrackFeatures> = all.iter().map(|f| (f.track_id, f)).collect();
+        crate::taste::build(user, &verdicts, &by_id, now_ms() / 1000)
+    };
+    Some((taste, all))
+}
+
 pub(crate) fn score_parts(
     taste: &Taste,
     lyric_vec: Option<&[f32]>,
