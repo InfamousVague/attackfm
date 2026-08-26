@@ -69,20 +69,119 @@ die()  { printf '\n%s✗%s %s\n\n' "$RED" "$R" "$*" >&2; exit 1; }
 
 # --- reading this Mac's own configuration ----------------------------------
 
-# The plist is the source of truth for where the library is, because it is what
-# the running server was actually told. Asking it beats asking the person: the
-# answer cannot drift from what is being served.
+# WHERE THE LIBRARY IS, asked in order of how much the answer can be trusted.
+#
+# The first version of this only read one plist path, and fell over on the very
+# first machine it met - the install there predates that layout. So ask several
+# sources, best first, and say which one answered. The ordering is the point:
+#
+#   1. the RUNNING PROCESS. Whatever is actually serving is by definition
+#      correct, and cannot have drifted from a config file someone edited.
+#   2. a launchd plist, wherever it lives - the label's usual path, then any
+#      attackfm plist in the agent/daemon directories.
+#   3. what the person tells us, via MUSIC_DIR= / DATA_DIR= in the environment.
+#
+# Only if all three come up empty is this a failure, and then it says what to
+# pass rather than what it could not find.
 plist_env() {
-	/usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:$1" "$PLIST" 2>/dev/null || true
+	/usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:$2" "$1" 2>/dev/null || true
+}
+
+# The server's own environment, read off the live process. `ps -E` shows the
+# environment only for processes you own, which is exactly the case here: the
+# server runs as the person running this script.
+proc_env() {
+	ps -wwwE -o command= -p "$SERVER_PID" 2>/dev/null \
+		| tr ' ' '\n' | sed -n "s/^$1=//p" | head -1
+}
+
+find_plist() {
+	local p
+	for p in "$HOME/Library/LaunchAgents/$LABEL.plist" \
+	         "/Library/LaunchAgents/$LABEL.plist" \
+	         "/Library/LaunchDaemons/$LABEL.plist"; do
+		[ -f "$p" ] && { printf '%s' "$p"; return 0; }
+	done
+	for p in "$HOME"/Library/LaunchAgents/*attackfm*.plist \
+	         /Library/LaunchAgents/*attackfm*.plist \
+	         /Library/LaunchDaemons/*attackfm*.plist; do
+		[ -f "$p" ] && { printf '%s' "$p"; return 0; }
+	done
+	return 1
 }
 
 load_config() {
-	[ -f "$PLIST" ] || die "No $PLIST - is the server installed on this Mac? (server/home-install.sh)"
-	MUSIC_DIR="$(plist_env AFM_MUSIC_DIR)"
-	DATA_DIR="$(plist_env AFM_DATA_DIR)"
-	[ -n "$MUSIC_DIR" ] && [ -d "$MUSIC_DIR" ] || die "AFM_MUSIC_DIR ('$MUSIC_DIR') is not a directory."
-	[ -n "$DATA_DIR" ]  && [ -d "$DATA_DIR" ]  || die "AFM_DATA_DIR ('$DATA_DIR') is not a directory."
+	MUSIC_DIR="${MUSIC_DIR:-}"; DATA_DIR="${DATA_DIR:-}"; CONFIG_FROM=""
+	SERVER_PID="$(pgrep -n -f 'attackfm-server' 2>/dev/null || true)"
+
+	if [ -n "$SERVER_PID" ] && [ -z "$MUSIC_DIR" ]; then
+		MUSIC_DIR="$(proc_env AFM_MUSIC_DIR)"
+		DATA_DIR="$(proc_env AFM_DATA_DIR)"
+		[ -n "$MUSIC_DIR" ] && CONFIG_FROM="the running server (pid $SERVER_PID)"
+	fi
+
+	PLIST="$(find_plist || true)"
+	if [ -z "$MUSIC_DIR" ] && [ -n "$PLIST" ]; then
+		MUSIC_DIR="$(plist_env "$PLIST" AFM_MUSIC_DIR)"
+		DATA_DIR="$(plist_env "$PLIST" AFM_DATA_DIR)"
+		[ -n "$MUSIC_DIR" ] && CONFIG_FROM="$PLIST"
+	fi
+
+	[ -n "$MUSIC_DIR" ] && [ -z "$CONFIG_FROM" ] && CONFIG_FROM="the environment you passed"
+
+	if [ -z "$MUSIC_DIR" ] || [ ! -d "$MUSIC_DIR" ]; then
+		die "Could not work out where the library is.
+
+    Looked at: the running attackfm-server process, and any attackfm plist in
+    ~/Library/LaunchAgents, /Library/LaunchAgents and /Library/LaunchDaemons.
+
+    Tell it directly instead - point these at the folders the server uses:
+
+        MUSIC_DIR=/path/to/music DATA_DIR=/path/to/attackfm-data \\
+          bash server/migrate-to-hub.sh ${1:-preflight}"
+	fi
+	# The data directory is the one thing worth guessing at, because it sits
+	# beside the music by convention and a wrong guess is caught immediately by
+	# the existence check below.
+	[ -z "$DATA_DIR" ] && DATA_DIR="$(dirname "$MUSIC_DIR")/attackfm-data"
+	[ -d "$DATA_DIR" ] || die "Data directory '$DATA_DIR' does not exist - pass DATA_DIR=... explicitly."
 	DB="$DATA_DIR/attackfm.db"
+	[ -f "$DB" ] || warn "No attackfm.db in $DATA_DIR yet - the database step will be skipped."
+}
+
+# --- starting and stopping the local server ---------------------------------
+
+# Stopping it matters more than how it is stopped: the cutover's whole guarantee
+# is that nothing writes to the library or the database while the last delta and
+# the snapshot are taken. launchd is the polite route when there is a plist to
+# name; a plain signal is the honest fallback when there is not, and either way
+# the check afterwards is the same - is the process gone.
+server_running() {
+	pgrep -f 'attackfm-server' >/dev/null 2>&1
+}
+
+server_label() {
+	[ -n "$PLIST" ] && basename "$PLIST" .plist || printf '%s' "$LABEL"
+}
+
+stop_server() {
+	if [ -n "$PLIST" ]; then
+		launchctl bootout "gui/$(id -u)/$(server_label)" 2>/dev/null || true
+	fi
+	local n=0
+	while server_running && [ "$n" -lt 10 ]; do
+		[ "$n" -eq 3 ] && pkill -f 'attackfm-server' 2>/dev/null || true
+		sleep 1; n=$(( n + 1 ))
+	done
+	server_running && die "The server would not stop. Nothing has been changed." || true
+}
+
+start_hint() {
+	if [ -n "$PLIST" ]; then
+		printf 'launchctl bootstrap gui/$(id -u) %s' "$PLIST"
+	else
+		printf 'however you normally start it on this Mac'
+	fi
 }
 
 # --- ssh ------------------------------------------------------------------
@@ -172,7 +271,8 @@ do_preflight() {
 	step "This Mac"
 	say "  music   $MUSIC_DIR"
 	say "  data    $DATA_DIR"
-	say "  server  $(launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1 && echo running || echo 'not running')"
+	say "  server  $(server_running && echo running || echo 'not running')"
+	say "  ${DIM}(read from $CONFIG_FROM)${R}"
 
 	step "Measuring the library (this walks the tree; give it a minute)"
 	# -L so the audiobooks symlink is measured as its contents, matching what
@@ -241,8 +341,7 @@ do_cutover() {
 	read -r yn; case "$yn" in [Yy]*) ;; *) die "Nothing done." ;; esac
 
 	step "Stopping the local server"
-	launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
-	sleep 2
+	stop_server
 	ok "stopped - nothing can write to the library or the database now"
 
 	step "Final delta of the library"
@@ -259,7 +358,7 @@ do_cutover() {
 	rm -f "$snap"
 	sqlite3 "$DB" ".backup '$snap'"
 	[ "$(sqlite3 "$snap" 'pragma integrity_check;' | head -1)" = "ok" ] \
-		|| die "The snapshot did not verify. Nothing has been sent; the local server is still stopped - restart it with: launchctl bootstrap gui/\$(id -u) $PLIST"
+		|| die "The snapshot did not verify. Nothing has been sent; the local server is still stopped - restart it with: $(start_hint)"
 	ok "$(du -h "$snap" | cut -f1), integrity ok"
 
 	step "Sending the database and the rest of the data directory"
@@ -306,7 +405,7 @@ do_cutover() {
 	say "  ${B}This Mac's server is still stopped.${R} That is deliberate: two servers"
 	say "  writing to two copies of the same library is how they diverge. Start it"
 	say "  again only if you are rolling back:"
-	say "     ${DIM}launchctl bootstrap gui/\$(id -u) $PLIST${R}"
+	say "     ${DIM}$(start_hint)${R}"
 }
 
 do_status() {
@@ -314,7 +413,7 @@ do_status() {
 	ensure_key
 	step "Here"
 	say "  library  $(du -shL "$MUSIC_DIR" 2>/dev/null | cut -f1)"
-	say "  server   $(launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1 && echo running || echo stopped)"
+	say "  server   $(server_running && echo running || echo stopped)"
 	[ -f "$DB" ] && say "  tracks   $(sqlite3 "$DB" 'select count(*) from tracks;' 2>/dev/null)"
 	step "Hub ($DEST_HOST)"
 	hub "echo \"  library  \$(du -sh $DEST_MUSIC 2>/dev/null | cut -f1)\"
