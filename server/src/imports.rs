@@ -1691,4 +1691,36 @@ mod failure_text_tests {
         assert!(diag.is_empty());
         assert_eq!(failure_reason(&diag, &tail), "something unexpected happened");
     }
+
+    /*
+     * The switch is the whole point of the feature, and it is one `matches!`
+     * away from silently doing nothing - a typo in the accepted spellings, or
+     * a check placed after the AFM_SPOTIFLAC branch, and a box declared a
+     * non-downloader keeps downloading. Env vars are process-global, so these
+     * run in one test rather than several racing ones.
+     */
+    #[test]
+    fn afm_imports_off_disables_the_downloader() {
+        // A path that certainly exists, so the ONLY thing that can make
+        // find_spotiflac answer None is the switch.
+        std::env::set_var("AFM_SPOTIFLAC", "/bin/sh");
+        std::env::remove_var("AFM_IMPORTS");
+        assert!(find_spotiflac().is_some(), "unset means the box still downloads");
+
+        for spelling in ["off", "OFF", "0", "false", "No", " off "] {
+            std::env::set_var("AFM_IMPORTS", spelling);
+            assert!(
+                find_spotiflac().is_none(),
+                "AFM_IMPORTS={spelling:?} should stop this box downloading",
+            );
+        }
+
+        // Anything else is on: a box is only a non-downloader when it says so.
+        for spelling in ["on", "1", "true", "yes", ""] {
+            std::env::set_var("AFM_IMPORTS", spelling);
+            assert!(find_spotiflac().is_some(), "AFM_IMPORTS={spelling:?} should leave it on");
+        }
+        std::env::remove_var("AFM_IMPORTS");
+        std::env::remove_var("AFM_SPOTIFLAC");
+    }
 }
