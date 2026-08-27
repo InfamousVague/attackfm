@@ -84,6 +84,12 @@ DEF_EMBED="$(prev AFM_AI_EMBED_MODEL)"; DEF_EMBED="${DEF_EMBED:-nomic-embed-text
 DEF_PUBLIC="$(prev AFM_PUBLIC_URL)"
 DEF_SPOT_ID="$(prev AFM_SPOTIFY_CLIENT_ID)"
 DEF_SPOT_SECRET="$(prev AFM_SPOTIFY_CLIENT_SECRET)"
+# Carried through rather than asked about: the trust link to another server is
+# set by hand, and this plist is REWRITTEN whole on every run - so a key this
+# script does not read back is silently dropped the next time the server is
+# updated. That is how a setting disappears without anyone touching it.
+DEF_TRUST_URL="$(prev AFM_TRUST_MEMBERS_OF)"
+DEF_TRUST_TOKEN="$(prev AFM_TRUST_TOKEN)"
 
 # --- music dir -------------------------------------------------------------
 bold "Where does the music live?"
@@ -287,6 +293,8 @@ cat > "$PLIST" <<PLIST
     <key>AFM_ASSETS_BAKED</key><string>$HERE/assets/artwork</string>
     <key>AFM_SPOTIFY_CLIENT_ID</key><string>$SPOT_ID</string>
     <key>AFM_SPOTIFY_CLIENT_SECRET</key><string>$SPOT_SECRET</string>
+    <key>AFM_TRUST_MEMBERS_OF</key><string>$DEF_TRUST_URL</string>
+    <key>AFM_TRUST_TOKEN</key><string>$DEF_TRUST_TOKEN</string>
   </dict>
 </dict></plist>
 PLIST
