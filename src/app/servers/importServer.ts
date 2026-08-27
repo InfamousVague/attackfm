@@ -31,7 +31,7 @@
 
 import { useMemo, useSyncExternalStore } from 'react';
 import type { ServerSession } from '../server.ts';
-import { mirrorList, subscribeMirrors } from './mirrors.ts';
+import { healthOf, mirrorList, subscribeMirrors } from './mirrors.ts';
 import { allSessions, normalise, subscribeSessions } from './sessions.ts';
 import { useServerSession } from './serverSession.tsx';
 
@@ -179,8 +179,72 @@ export function importTargets(session: ServerSession | null): ImportTarget[] {
  * why, which is the worst failure this feature can have - it looks exactly
  * like the importer being broken.
  */
+/**
+ * Every box this device could actually send an import to, credentials and all.
+ */
+function knownServers(session: ServerSession | null): ServerSession[] {
+  const out: ServerSession[] = [];
+  const seen = new Set<string>();
+  const add = (s: ServerSession) => {
+    const key = normalise(s.url);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(s);
+  };
+  if (session) add(session);
+  for (const m of mirrorList()) {
+    const { url, token, streamToken, username, isAdmin } = m;
+    add({ url, token, streamToken, username, isAdmin });
+  }
+  for (const s of allSessions()) add(s);
+  return out;
+}
+
+/**
+ * Where imports go when nobody has chosen: the signed-in server, unless it has
+ * SAID it cannot download and exactly one other box has said it can.
+ *
+ * The hub and the downloader are usually different machines, and the app knew
+ * that and picked the hub anyway - so a pasted link went to the box with no
+ * downloader, failed, and left the listener to discover a setting they had no
+ * reason to look for. The servers now say which they are in `/api/server`, and
+ * this believes them.
+ *
+ * Two restraints, both deliberate, and they are not symmetric.
+ *
+ * MOVING requires the signed-in box to have said `imports === false` outright.
+ * An older server does not carry the field at all, and reading that silence as
+ * "cannot download" would move imports off a box that has been fetching them
+ * perfectly well.
+ *
+ * ARRIVING only requires a candidate not to have said no. Once the current box
+ * has explicitly refused, leaving the import there is certain to fail, so an
+ * unknown box is strictly the better bet - and it is the ordinary case while a
+ * second server is still a version behind and not yet advertising.
+ *
+ * And EXACTLY one candidate either way: with two there is no answer that is not
+ * a guess about which library the music should land in, and guessing that
+ * silently is how songs end up somewhere nobody looks.
+ */
+function automaticTarget(session: ServerSession | null): ServerSession | null {
+  if (!session) return null;
+  if (healthOf(session.url)?.imports !== false) return session;
+  const able = knownServers(session).filter(
+    (s) => normalise(s.url) !== normalise(session.url) && healthOf(s.url)?.imports !== false,
+  );
+  return able.length === 1 ? able[0]! : session;
+}
+
+/** True when the target was worked out rather than chosen, so the picker can
+ *  say so instead of looking like somebody set it. */
+export function importServerIsAutomatic(session: ServerSession | null): boolean {
+  if (chosen || !session) return false;
+  const auto = automaticTarget(session);
+  return !!auto && normalise(auto.url) !== normalise(session.url);
+}
+
 export function resolveImportServer(session: ServerSession | null): ServerSession | null {
-  if (!chosen) return session;
+  if (!chosen) return automaticTarget(session);
   const key = normalise(chosen);
   if (session && normalise(session.url) === key) return session;
 

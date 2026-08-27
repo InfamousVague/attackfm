@@ -40,6 +40,20 @@ pub async fn server_info(State(state): State<Arc<AppState>>) -> ApiResult {
         "needsSetup": state.db.user_count() == 0,
         "transcode": state.ffmpeg,
         "tracks": state.db.track_count(),
+        /*
+         * Whether this box downloads, said WITHOUT a sign-in.
+         *
+         * The app has to pick which of several servers runs an import, and
+         * until now the only way to learn that a box had a downloader was
+         * `/api/curator/pulls`, which needs a caller. So the picker offered
+         * every server it knew equally, the default fell to whichever one you
+         * happened to be signed into, and an import sent to a box with no
+         * downloader failed after the round trip instead of never being sent
+         * there. This is already public information in every practical sense -
+         * it is what the box does with a link, not who may ask it - and the
+         * probe that keeps the server list fresh reads it for free.
+         */
+        "imports": crate::imports::find_spotiflac().is_some(),
     })))
 }
 

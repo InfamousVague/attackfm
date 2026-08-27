@@ -11,6 +11,7 @@ import {
   useImportServer,
   useImportTargets,
   useOrphanedImportChoice,
+  importServerIsAutomatic,
 } from './importServer.ts';
 import { usePeerSyncStatus, type PeerSyncStatus } from './peerSyncStatus.ts';
 import { useServerSession } from './serverSession.tsx';
@@ -39,6 +40,10 @@ export function ImportServerPicker() {
   // ran on the signed-in box and the picker showed that box, so a choice that
   // had quietly lapsed looked exactly like a choice never made.
   const orphan = useOrphanedImportChoice();
+  // Worked out rather than chosen, because the signed-in box said it does not
+  // download. Said out loud: a setting nobody touched that is not on its
+  // default is otherwise indistinguishable from one somebody set and forgot.
+  const automatic = importServerIsAutomatic(session);
 
   const health = target ? healthOf(target.url) : null;
   const band = health?.latencyMs != null ? latencyBand(health.latencyMs).label : null;
@@ -57,7 +62,7 @@ export function ImportServerPicker() {
     <PaneSection
       title="Where downloads run"
       description="Imports are fetched by one server and land in its library. Pick the box with the downloader installed — it copies finished songs across to your library afterwards, so both end up with the file."
-      footer={pickerFooter(session, target, peerSync, fault, orphan)}
+      footer={pickerFooter(session, target, peerSync, fault, orphan, automatic)}
     >
       <SettingRow
         id="import-server"
@@ -100,6 +105,7 @@ function pickerFooter(
   peerSync: PeerSyncStatus | null,
   fault: ImportServerFault | null,
   orphan: string | null,
+  automatic: boolean,
 ): ReactNode {
   /*
    * A pin that lapsed, said out loud.
@@ -115,6 +121,14 @@ function pickerFooter(
         imports are running on{' '}
         {target ? importServerHost(target.url) : 'the server you are signed into'}. Add it again
         under Settings, Servers, or pick a different box above.
+      </Text>
+    );
+  }
+  if (automatic && target) {
+    return (
+      <Text tone="muted" size="xs">
+        Chosen for you: the server you are signed into does not download, and{' '}
+        {importServerHost(target.url)} does. Pick another above to override it.
       </Text>
     );
   }
