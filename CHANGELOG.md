@@ -29,6 +29,10 @@ and where that library came from is not the app's story to tell.
 - Adding your own server really does work without a code now. 0.4.85 said so and meant it, but the Link button stayed greyed out until you typed one anyway, so there was no way to press it.
 - Signing in no longer gives up when it cannot reach your server first. If the address check comes back empty you can still try your username and password, and you get told what actually went wrong instead of a button that will not move.
 
+## 0.4.86
+
+- Album art is a fifth larger everywhere it is laid out in a grid — your shelves, Discover, an artist's records, the booth's mixes and the results when you search your own library
+
 ## 0.4.85
 
 - You can choose which of your servers downloads an import. Point it at the box that has the downloader and it fetches there, then copies each finished song to your main server on its own, so both hold it and playback still takes whichever is nearer
