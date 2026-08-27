@@ -7512,13 +7512,15 @@ impl Db {
             .unwrap_or_default()
     }
 
-    /// Point a pull at a different download - used when an offer nobody took
-    /// falls back to this box's own queue.
-    pub fn set_pull_job(&self, pull_id: i64, job_id: &str) -> rusqlite::Result<()> {
-        self.lock().execute(
-            "UPDATE curator_pulls SET job_id = ?1 WHERE id = ?2",
-            params![job_id, pull_id],
-        )?;
+    /// Drop a pull entirely, as though it had never been raised.
+    ///
+    /// Not `fail_pull`: a failure is a claim about the SONG and blocks it for
+    /// thirty days. A want that no peer ever came for says nothing about the
+    /// song, so the row goes and the candidate returns to the pool. The paths
+    /// and tracks tables cascade.
+    pub fn forget_pull(&self, pull_id: i64) -> rusqlite::Result<()> {
+        self.lock()
+            .execute("DELETE FROM curator_pulls WHERE id = ?1", params![pull_id])?;
         Ok(())
     }
 
