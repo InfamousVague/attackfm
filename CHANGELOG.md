@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.81
+
+- Turning down a card on Music Date sticks now, and gives the space back. A pass used to be remembered only on the device you swiped on, so the same song came back on your phone after you had already said no on your laptop, and the file it had fetched stayed on the server forever. It is written down against your account the moment you swipe, and the download is removed
+- The Music Date card counts your own finds. It was showing every audition the server had ever fetched for anybody, so the number on the card and the number on the shelf below it disagreed
+
 ## 0.4.80
 
 - Music Date has a card in the library row, where the DJ card used to be. It shows how many finds are waiting and opens the deck straight from your shelves, instead of the wide banner it was sitting in. The DJ set has not gone anywhere it was not already: it lives in the Booth
