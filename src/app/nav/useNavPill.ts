@@ -38,6 +38,42 @@ const SAME = (a: Spot | null, b: Spot | null): boolean =>
   Math.abs(a.w - b.w) < 0.5 &&
   Math.abs(a.h - b.h) < 0.5;
 
+/**
+ * Where `el` sits inside `bar`, in the coordinates the plate is driven in.
+ *
+ * offsetLeft is measured against the nearest POSITIONED ancestor rather than
+ * against the bar - and the \u22ee has one of its own. It lives inside
+ * .appNavMore__anchor, which is relative so the menu can hang off it, so the
+ * trigger reported an offsetLeft of 0 while sitting 293px along the bar.
+ * Reading it directly therefore sent the plate to the far LEFT of the bar
+ * whenever you opened a destination that lives in the menu - the one case
+ * where the plate has furthest to travel and is most obviously wrong.
+ *
+ * Walking the offsetParent chain adds up offsets the browser has already
+ * computed, so a nested tab lands in exactly the space a direct child reports
+ * and the four custom properties keep their meaning. Deliberately NOT
+ * getBoundingClientRect: that returns the PAINTED box, so any transform above
+ * the bar would feed the plate a position the layout never had, and the plate
+ * is a layout object - it has to agree with the tabs, not with the compositor.
+ */
+function offsetWithin(bar: HTMLElement, el: HTMLElement): { x: number; y: number } | null {
+  let x = 0;
+  let y = 0;
+  let node: HTMLElement | null = el;
+  while (node && node !== bar) {
+    x += node.offsetLeft;
+    y += node.offsetTop;
+    node = node.offsetParent as HTMLElement | null;
+  }
+  /*
+   * Ran out of chain without meeting the bar. A hidden element has no
+   * offsetParent at all, so this is what display:none looks like from here -
+   * and a coordinate summed from a partial walk would park the plate somewhere
+   * that means nothing. Treated exactly like having no lit tab.
+   */
+  return node === bar ? { x, y } : null;
+}
+
 export function useNavPill(barRef: React.RefObject<HTMLElement | null>): void {
   const at = useRef<Spot | null>(null);
 
@@ -60,9 +96,17 @@ export function useNavPill(barRef: React.RefObject<HTMLElement | null>): void {
       return;
     }
 
+    const where = offsetWithin(bar, tab);
+    if (!where) {
+      bar.removeAttribute('data-pill');
+      bar.removeAttribute('data-pill-moving');
+      at.current = null;
+      return;
+    }
+
     const spot: Spot = {
-      x: tab.offsetLeft,
-      y: tab.offsetTop,
+      x: where.x,
+      y: where.y,
       w: tab.offsetWidth,
       h: tab.offsetHeight,
     };
