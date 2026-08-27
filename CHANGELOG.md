@@ -15,6 +15,14 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.79
+
+- Everything the app suggests now sits on Library. The mixes it builds out of your own music, and Music Date, live under your shelves instead of on a page of their own. Discover has gone: looking for music you do not own yet is a search, and the search field has a Discover setting for exactly that
+- What it suggests is learned from what you do, not from what you start. Finishing a song counts for it, skipping one after a few seconds counts against it, and a song you hearted counts for more. All three used to weigh the same, so a song you kept skipping slowly turned into a song it thought you liked
+- Two people on one server get different shelves. Every mix is built for whoever is reading it, Fresh finds included, which was the one list everybody was being handed a copy of
+- Music Date judges a card against your taste. A quarter of every card's score used to be the same number for every listener and every song
+- A listener the app knows little about is no longer guessed at. New accounts get the same sensible mixes everyone starts with, and their own taste takes over as they listen
+
 ## 0.4.78
 
 - Canvas clips are their own plugin now, called SpotifyCanvas. Everything that was sitting in Settings as a second tab named Spotify has moved into it, under a tab called Canvas, so nothing in the rail is named twice. Switch it on under Settings, Plugins if you want the short looping videos behind the player. Leave it off and every song shows its cover, which is the way it arrives.
