@@ -84,10 +84,9 @@ DEF_EMBED="$(prev AFM_AI_EMBED_MODEL)"; DEF_EMBED="${DEF_EMBED:-nomic-embed-text
 DEF_PUBLIC="$(prev AFM_PUBLIC_URL)"
 DEF_SPOT_ID="$(prev AFM_SPOTIFY_CLIENT_ID)"
 DEF_SPOT_SECRET="$(prev AFM_SPOTIFY_CLIENT_SECRET)"
-# Carried through rather than asked about: the trust link to another server is
-# set by hand, and this plist is REWRITTEN whole on every run - so a key this
-# script does not read back is silently dropped the next time the server is
-# updated. That is how a setting disappears without anyone touching it.
+# Read back so the answers survive: this plist is REWRITTEN whole on every run,
+# so a key the script does not carry forward disappears the next time the server
+# is updated, with nobody having touched it.
 DEF_TRUST_URL="$(prev AFM_TRUST_MEMBERS_OF)"
 DEF_TRUST_TOKEN="$(prev AFM_TRUST_TOKEN)"
 
@@ -211,6 +210,43 @@ SPOT_ID="${SPOT_ID:-$DEF_SPOT_ID}"
 read -r -p "  Client secret [${DEF_SPOT_SECRET:+kept}]: " SPOT_SECRET
 SPOT_SECRET="${SPOT_SECRET:-$DEF_SPOT_SECRET}"
 
+# --- share another server's members (optional) -------------------------------
+bold "Share another server's members (optional)"
+say "Point this at your other server and anyone allowed in THERE is allowed in"
+say "here too, with no second invite. They get an ordinary account: they can"
+say "play this library, and queue downloads onto this machine."
+say ""
+say "The token is an ADMIN token on that other server - it is only ever used to"
+say "ask 'is this person one of yours', and the answer is a plain yes or no."
+say "Get one by signing in to it:"
+say ""
+say "  curl -s -X POST https://YOUR-OTHER-SERVER/api/auth/login \\"
+say "    -H 'content-type: application/json' \\"
+say "    -d '{\"username\":\"you\",\"password\":\"...\"}'"
+say ""
+say "and copying the \"token\" out of the reply. Enter to skip, or type 'none' to"
+say "stop sharing."
+read -r -p "  Other server URL [${DEF_TRUST_URL:-skip}]: " TRUST_URL
+TRUST_URL="${TRUST_URL:-$DEF_TRUST_URL}"
+case "$TRUST_URL" in
+  none|NONE) TRUST_URL=""; TRUST_TOKEN="" ;;
+  "") TRUST_TOKEN="$DEF_TRUST_TOKEN" ;;
+  *)
+    case "$TRUST_URL" in
+      http://*|https://*) ;;
+      *) TRUST_URL="https://$TRUST_URL"; say "  (reading that as $TRUST_URL)" ;;
+    esac
+    read -r -p "  Admin token on it [${DEF_TRUST_TOKEN:+kept}]: " TRUST_TOKEN
+    TRUST_TOKEN="${TRUST_TOKEN:-$DEF_TRUST_TOKEN}"
+    # Half a link trusts nobody, and looks exactly like a typo in the URL. Say
+    # so here rather than leaving it to be discovered as "the invite still asks".
+    if [ -z "$TRUST_TOKEN" ]; then
+      say "  No token, so nothing is shared - both halves are needed."
+      TRUST_URL=""
+    fi
+    ;;
+esac
+
 # --- install the binary ----------------------------------------------------
 bold "Installing"
 mkdir -p "$(dirname "$BIN_DST")" "$LOG_DIR"
@@ -293,8 +329,8 @@ cat > "$PLIST" <<PLIST
     <key>AFM_ASSETS_BAKED</key><string>$HERE/assets/artwork</string>
     <key>AFM_SPOTIFY_CLIENT_ID</key><string>$SPOT_ID</string>
     <key>AFM_SPOTIFY_CLIENT_SECRET</key><string>$SPOT_SECRET</string>
-    <key>AFM_TRUST_MEMBERS_OF</key><string>$DEF_TRUST_URL</string>
-    <key>AFM_TRUST_TOKEN</key><string>$DEF_TRUST_TOKEN</string>
+    <key>AFM_TRUST_MEMBERS_OF</key><string>$TRUST_URL</string>
+    <key>AFM_TRUST_TOKEN</key><string>$TRUST_TOKEN</string>
   </dict>
 </dict></plist>
 PLIST
