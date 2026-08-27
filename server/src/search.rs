@@ -450,11 +450,36 @@ pub(crate) fn spotiflac_python() -> Option<std::path::PathBuf> {
         }
     }
     if let Some(bin) = crate::imports::find_spotiflac() {
+        /*
+         * The script's own shebang, first.
+         *
+         * `spotiflac` is a generated console script whose first line names the
+         * exact interpreter its package was installed into - which is the one
+         * question being asked here. Guessing at a pipx layout instead found a
+         * REAL directory on this hub whose `python3` was a dangling symlink to
+         * a version that had been removed: the guess resolved, `exists()` said
+         * no, and the collector quietly stopped buying because a search it
+         * could not run returned nothing. The shebang cannot drift like that,
+         * because it is what actually runs the binary.
+         */
+        if let Ok(head) = std::fs::read_to_string(&bin) {
+            if let Some(shebang) = head.lines().next().and_then(|l| l.strip_prefix("#!")) {
+                let py = std::path::PathBuf::from(shebang.split_whitespace().next().unwrap_or(""));
+                if py.exists() {
+                    return Some(py);
+                }
+            }
+        }
         if let Some(local) = bin.parent().and_then(|p| p.parent()) {
             let py = local.join("pipx/venvs/spotiflac/bin/python3");
             if py.exists() {
                 return Some(py);
             }
+        }
+        // A venv's own bin directory, which is where a non-pipx install puts
+        // both the script and its python.
+        if let Some(py) = bin.parent().map(|d| d.join("python3")).filter(|p| p.exists()) {
+            return Some(py);
         }
     }
     let fallback =
@@ -471,9 +496,23 @@ pub(crate) fn spotiflac_python() -> Option<std::path::PathBuf> {
 /// returns tracks alone simply yields no album rows.
 const SPOTIFLAC_SEARCH_PY: &str = r#"
 import sys, asyncio, json
-try:
-    from SpotiFLAC.providers.spotify_metadata import SpotifyMetadataClient
-except Exception:
+SpotifyMetadataClient = None
+# The class has moved twice and kept the same shape. 3.x puts it in .client;
+# 2.x had it under .providers. Silence on all of them means SpotiFLAC is not
+# importable at all, which is reported the same way as an empty result - the
+# Rust side deliberately cannot tell "broke" from "found nothing", so the
+# collector treats it as "ask again later" rather than condemning the song.
+for _mod, _name in (
+    ("SpotiFLAC.client", "SpotifyMetadataClient"),
+    ("SpotiFLAC.providers.spotify_metadata", "SpotifyMetadataClient"),
+    ("SpotiFLAC.core.spotify_metadata", "SpotifyMetadataClient"),
+):
+    try:
+        SpotifyMetadataClient = getattr(__import__(_mod, fromlist=[_name]), _name)
+        break
+    except Exception:
+        pass
+if SpotifyMetadataClient is None:
     print(json.dumps({"tracks": [], "albums": []})); sys.exit(0)
 q = sys.argv[1] if len(sys.argv) > 1 else ""
 m = SpotifyMetadataClient()
