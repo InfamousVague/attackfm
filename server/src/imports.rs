@@ -444,6 +444,25 @@ fn staged_audio_files(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// Why this box will not download, in the words that fit the reason.
+///
+/// The two cases need different sentences and used to share one. A server that
+/// was DECLARED a non-downloader answering "SpotiFLAC is not installed" sends
+/// its owner off to install something that is already there, and says nothing
+/// about the actual problem, which is that the import arrived at the wrong
+/// box. The fix for that is a setting in the app, not a package on the server.
+pub(crate) fn no_downloader_here() -> String {
+    if imports_disabled() {
+        "This server is not the downloader (AFM_IMPORTS=off). Pick the server that is, \
+         under Settings, Downloads, \"Download on\"."
+            .to_string()
+    } else {
+        "SpotiFLAC is not installed on the server (pipx install SpotiFLAC on the box, \
+         or set AFM_SPOTIFLAC)."
+            .to_string()
+    }
+}
+
 /// Whether this box is deliberately NOT a downloader.
 ///
 /// `AFM_IMPORTS=off` (also 0/false/no) makes the server answer "no downloader
@@ -907,9 +926,7 @@ async fn run_job(
     let _ = std::fs::remove_dir_all(&staging);
     std::fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
 
-    let program = find_spotiflac().ok_or_else(|| {
-        "SpotiFLAC is not installed on the server (pipx install SpotiFLAC on the box, or set AFM_SPOTIFLAC).".to_string()
-    })?;
+    let program = find_spotiflac().ok_or_else(no_downloader_here)?;
 
     // A Deezer link becomes a Spotify or Tidal one here; anything else passes
     // through untouched.
@@ -1699,6 +1716,23 @@ mod failure_text_tests {
      * non-downloader keeps downloading. Env vars are process-global, so these
      * run in one test rather than several racing ones.
      */
+    /// The continuation backslashes in `no_downloader_here` strip the newline
+    /// AND the next line's indentation, which is one missing space away from
+    /// "that is,under Settings". Asserted whole rather than by substring.
+    #[test]
+    fn the_refusal_says_which_problem_it_is() {
+        std::env::set_var("AFM_IMPORTS", "off");
+        assert_eq!(
+            no_downloader_here(),
+            "This server is not the downloader (AFM_IMPORTS=off). Pick the server that is, under Settings, Downloads, \"Download on\".",
+        );
+        std::env::remove_var("AFM_IMPORTS");
+        assert_eq!(
+            no_downloader_here(),
+            "SpotiFLAC is not installed on the server (pipx install SpotiFLAC on the box, or set AFM_SPOTIFLAC).",
+        );
+    }
+
     #[test]
     fn afm_imports_off_disables_the_downloader() {
         // A path that certainly exists, so the ONLY thing that can make

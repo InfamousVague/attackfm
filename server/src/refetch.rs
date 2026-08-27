@@ -332,7 +332,7 @@ async fn fetch_one(
     service: &str,
 ) -> Result<PathBuf, String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let program = find_spotiflac().ok_or_else(|| "SpotiFLAC is not installed here.".to_string())?;
+    let program = find_spotiflac().ok_or_else(crate::imports::no_downloader_here)?;
     let input = spotiflac_input(url).await?;
 
     let mut args: Vec<String> = vec![input, dir.display().to_string()];
