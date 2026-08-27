@@ -7272,12 +7272,17 @@ impl Db {
     pub fn open_pulls(&self) -> Vec<(i64, i64, String)> {
         let conn = self.lock();
         let mut stmt = match conn.prepare(
-            "SELECT id, user_id, job_id FROM curator_pulls WHERE state = 'queued' AND job_id != ''",
+            "SELECT id, user_id, job_id FROM curator_pulls
+             WHERE state = 'queued' AND job_id != '' AND job_id NOT IN (?1, ?2)",
         ) {
             Ok(s) => s,
             Err(_) => return Vec::new(),
         };
-        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        // Delegated pulls are settled by arrival, not by a local job - walking
+        // them here would only ever find nothing and age them out.
+        stmt.query_map(params![Self::PULL_OFFERED, Self::PULL_TAKEN], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })
             .map(|rows| rows.filter_map(Result::ok).collect())
             .unwrap_or_default()
     }
@@ -7315,6 +7320,113 @@ impl Db {
             params![bytes, pull_id],
         )?;
         Ok(())
+    }
+
+    /*
+     * A delegated pull's `job_id`, while the download is somewhere other than
+     * this box's own queue.
+     *
+     * The field holds a local job id in the ordinary case, and the settle loop
+     * looks that id up in the in-memory queue. A pull being fetched by a PEER
+     * has no such id - the job exists on another machine - so it carries one of
+     * these two words instead, and is settled by the tracks turning up rather
+     * than by a job finishing. Words rather than a new column because `job_id`
+     * already means "where the download is", and local ids are timestamps.
+     */
+    pub const PULL_OFFERED: &str = "peer";
+    pub const PULL_TAKEN: &str = "peer:taken";
+
+    /// Take one offered pull for a peer to download. At most one, oldest
+    /// first, and marked taken in the same lock so two peers asking at once
+    /// cannot both get it.
+    pub fn claim_offered_pull(&self) -> Option<(i64, String, String, String)> {
+        let conn = self.lock();
+        let row = conn
+            .query_row(
+                "SELECT id, url, title, artist FROM curator_pulls
+                 WHERE state = 'queued' AND job_id = ?1
+                 ORDER BY created_at LIMIT 1",
+                params![Self::PULL_OFFERED],
+                |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                    ))
+                },
+            )
+            .ok()?;
+        conn.execute(
+            "UPDATE curator_pulls SET job_id = ?1 WHERE id = ?2",
+            params![Self::PULL_TAKEN, row.0],
+        )
+        .ok()?;
+        Some(row)
+    }
+
+    /// Pulls that are out with a peer: id, user, marker, url, title, artist,
+    /// and when they were raised.
+    pub fn delegated_pulls(&self) -> Vec<(i64, i64, String, String, String, String, i64)> {
+        let conn = self.lock();
+        let mut stmt = match conn.prepare(
+            "SELECT id, user_id, job_id, url, title, artist, created_at FROM curator_pulls
+             WHERE state = 'queued' AND job_id IN (?1, ?2)",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        stmt.query_map(params![Self::PULL_OFFERED, Self::PULL_TAKEN], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+            ))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    /// Recently added tracks no audition has claimed - the pool a delegated
+    /// pull is matched against when its files arrive from the peer.
+    pub fn recent_unowned_tracks(&self, since_ms: i64) -> Vec<(i64, String, String)> {
+        let conn = self.lock();
+        let mut stmt = match conn.prepare(
+            "SELECT id, title, artist FROM tracks
+             WHERE added_at >= ?1 AND curator_user_id IS NULL",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        stmt.query_map(params![since_ms], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Point a pull at a different download - used when an offer nobody took
+    /// falls back to this box's own queue.
+    pub fn set_pull_job(&self, pull_id: i64, job_id: &str) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "UPDATE curator_pulls SET job_id = ?1 WHERE id = ?2",
+            params![job_id, pull_id],
+        )?;
+        Ok(())
+    }
+
+    /// The account a peer files someone else's download under. The owner is
+    /// the only account a sync box can assume exists.
+    pub fn first_admin_id(&self) -> Option<i64> {
+        self.lock()
+            .query_row(
+                "SELECT id FROM users WHERE is_admin = 1 ORDER BY id LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .ok()
     }
 
     pub fn fail_pull(&self, pull_id: i64) -> rusqlite::Result<()> {

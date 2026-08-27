@@ -92,6 +92,7 @@ pub fn spawn(state: Arc<AppState>) {
         tokio::time::sleep(Duration::from_secs(60)).await;
         loop {
             settle_pulls(&state).await;
+            settle_delegated(&state).await;
             pull_cycle(&state).await;
             tune_cycle(&state);
             // The small-artist sources fill the same pool the Deezer harvest
@@ -101,6 +102,15 @@ pub fn spawn(state: Arc<AppState>) {
         }
     });
 }
+
+/// How long an offered download waits for a peer before this box does it
+/// itself. Long enough that a peer on its idle minute still gets there first,
+/// short enough that a hub with no peer is not visibly stalled.
+const OFFER_GRACE_MS: i64 = 10 * 60 * 1000;
+/// How far back to look for a delegated pull's tracks arriving. Matches the
+/// window `land_pull` will stamp within, so a longer one would only find rows
+/// it then refuses.
+const ARRIVAL_WINDOW_MS: i64 = 60 * 60 * 1000;
 
 /// Walks pulls whose import is still out and settles the finished ones:
 /// a done job stamps its tracks as auditions, a failed or vanished one is
@@ -129,6 +139,65 @@ async fn settle_pulls(state: &Arc<AppState>) {
                 let _ = state.db.fail_pull_if_stale(pull_id, now_ms() - STALE_PULL_MS);
             }
         }
+    }
+}
+
+/// Which of the recently arrived tracks are the ones this pull went for.
+///
+/// Both halves must agree. Title alone matches every cover and every remaster
+/// in the window; artist alone matches the rest of an album, which is how a
+/// pull for one song could stamp twelve.
+fn arrival_match(arrivals: &[(i64, String, String)], title: &str, artist: &str) -> Vec<i64> {
+    arrivals
+        .iter()
+        .filter(|(_, t, a)| same_title(t, title) && same_artist(a, artist))
+        .map(|(id, _, _)| *id)
+        .collect()
+}
+
+/// Settles the pulls that are out with a peer.
+///
+/// These have no local job to ask, so arrival IS the completion signal: the
+/// peer downloads, peersync copies the files up, the scanner files them, and
+/// the tracks appear here moments later. Matching is by artist and title
+/// against tracks added inside the last hour that no audition already owns -
+/// the same hour `land_pull` itself insists on. A song somebody added by hand
+/// in that window could in principle be matched instead; the cost of that is
+/// one track showing up in Music Date, which is where it would have gone.
+async fn settle_delegated(state: &Arc<AppState>) {
+    let rows = state.db.delegated_pulls();
+    if rows.is_empty() {
+        return;
+    }
+    let arrivals = state.db.recent_unowned_tracks(now_ms() - ARRIVAL_WINDOW_MS);
+    for (pull_id, user_id, marker, url, title, artist, created_at) in rows {
+        let landed = arrival_match(&arrivals, &title, &artist);
+        if !landed.is_empty() {
+            let _ = state.db.land_pull(pull_id, user_id, &landed);
+            continue;
+        }
+
+        // Offered, nobody took it, and this box can fetch after all.
+        if marker == crate::db::Db::PULL_OFFERED
+            && now_ms() - created_at > OFFER_GRACE_MS
+            && crate::imports::find_spotiflac().is_some()
+        {
+            let via = state
+                .db
+                .user_by_id(user_id)
+                .map(|u| format!("the collector · for {}", u.username))
+                .unwrap_or_else(|| "the collector".to_string());
+            if let Ok(job_id) = crate::imports::enqueue_internal(
+                state, &url, &title, &artist, "collector", user_id, &via,
+            )
+            .await
+            {
+                let _ = state.db.set_pull_job(pull_id, &job_id);
+            }
+            continue;
+        }
+
+        let _ = state.db.fail_pull_if_stale(pull_id, now_ms() - STALE_PULL_MS);
     }
 }
 
@@ -226,6 +295,39 @@ async fn buy(state: &Arc<AppState>, user: i64, d: &DiscoveryRow) -> bool {
         .user_by_id(user)
         .map(|u| format!("the collector · for {}", u.username))
         .unwrap_or_else(|| "the collector".to_string());
+    /*
+     * A box in collector mode offers the download to a PEER before doing it
+     * itself.
+     *
+     * That is the setup this exists for: the hub decides what is worth having
+     * (it holds the listening, the taste vectors and the discovery pool), and
+     * another box holds the downloader and the disk. The want is recorded here
+     * with no job behind it; a peer claims it, fetches it, and its finished
+     * import is copied back up by peersync like any other. Nothing waits on the
+     * hub being able to reach the peer, which is the direction that actually
+     * fails.
+     *
+     * If no peer takes it, `settle_delegated` gives up waiting and this box
+     * downloads it after all - so a hub with no peer still stocks itself, just
+     * a few minutes later.
+     */
+    if crate::imports::imports_mode() == crate::imports::ImportsMode::CollectorOnly {
+        return state
+            .db
+            .record_pull(
+                user,
+                &d.ext_id,
+                "track",
+                &d.title,
+                &d.artist,
+                &hit.url,
+                &reason,
+                d.score as f64,
+                crate::db::Db::PULL_OFFERED,
+            )
+            .is_ok();
+    }
+
     match crate::imports::enqueue_internal(
         state, &hit.url, &d.title, &d.artist, "collector", user, &via,
     )
@@ -344,6 +446,25 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 
 use crate::auth;
+
+/// Hands one wanted download to a peer that has asked for work.
+///
+/// Ordinary caller auth, exactly like `/api/library/missing` and the upload
+/// routes the same peer already uses - this is one more call on a channel that
+/// is already trusted, not a new door.
+pub async fn claim(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    auth::require_caller(&state.db, &headers)
+        .map_err(|s| (s, "sign in first".to_string()))?;
+    let Some((id, url, title, artist)) = state.db.claim_offered_pull() else {
+        return Ok(Json(serde_json::json!({ "pull": null })));
+    };
+    Ok(Json(serde_json::json!({
+        "pull": { "id": id, "url": url, "title": title, "artist": artist }
+    })))
+}
 
 /// `GET /api/curator/pulls` - the collector accounting for itself: the dials,
 /// the ledger against the cap, and what it bought lately. `userId` is how the
@@ -566,4 +687,69 @@ pub async fn settings(
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     }
     Ok(Json(json!({ "ok": true })))
+}
+
+#[cfg(test)]
+mod delegation_tests {
+    use super::*;
+
+    fn db() -> crate::db::Db {
+        let dir = std::env::temp_dir().join(format!("afm-delegate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        crate::db::Db::open(&dir.join("t.sqlite")).unwrap()
+    }
+
+    fn offer(db: &crate::db::Db, ext: &str, title: &str, artist: &str) -> i64 {
+        db.record_pull(
+            db.first_admin_id().unwrap(),
+            ext,
+            "track",
+            title,
+            artist,
+            "https://open.spotify.com/track/x",
+            "",
+            0.9,
+            crate::db::Db::PULL_OFFERED,
+        )
+        .unwrap()
+    }
+
+    /// An offer goes to exactly ONE peer. Two boxes asking in the same second
+    /// both downloading the same song is the whole reason claiming marks the
+    /// row rather than just reading it.
+    #[test]
+    fn an_offer_is_taken_once() {
+        let db = db();
+        let me = db.create_user("collector-test", "x", true).unwrap();
+        assert_eq!(db.first_admin_id(), Some(me), "the peer files downloads under the owner");
+        offer(&db, "a", "Blue in Green", "Miles Davis");
+        offer(&db, "b", "So What", "Miles Davis");
+
+        let first = db.claim_offered_pull().expect("one offer");
+        let second = db.claim_offered_pull().expect("the other offer");
+        assert_ne!(first.0, second.0, "the same pull was handed out twice");
+        assert!(db.claim_offered_pull().is_none(), "nothing is left to take");
+
+        // Taken, but still open: they are settled by the tracks arriving.
+        assert_eq!(db.delegated_pulls().len(), 2);
+        assert!(
+            db.open_pulls().is_empty(),
+            "a delegated pull has no local job for the settle loop to find",
+        );
+    }
+
+    /// The arrival match needs both halves to agree.
+    #[test]
+    fn only_the_right_arrival_lands_a_pull() {
+        let arrivals = vec![
+            (10, "Blue in Green".to_string(), "Miles Davis".to_string()),
+            // Same title, different record: a cover in the same window.
+            (11, "Blue in Green".to_string(), "Bill Evans".to_string()),
+            // Same artist, the rest of the album arriving alongside it.
+            (12, "So What".to_string(), "Miles Davis".to_string()),
+        ];
+        assert_eq!(arrival_match(&arrivals, "Blue in Green", "Miles Davis"), vec![10]);
+        assert!(arrival_match(&arrivals, "Flamenco Sketches", "Miles Davis").is_empty());
+    }
 }
