@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.84
+
+- Opening something from the More menu now slides the lit plate onto the More button, instead of sending it to the far left of the bar. The plate was reading the button's position against the menu's anchor rather than against the bar, so it was told the button sat at zero
+
 ## 0.4.83
 
 - The Server pane says what the box itself is doing: CPU load against its core count, and memory in use, beside the disk reading in the same graded plate. Each stays hidden rather than showing a zero when the hub cannot report it. Needs the hub updated
