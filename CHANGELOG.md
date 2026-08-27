@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.87
+
+- If you picked a server to download on and this device can no longer sign into it, the Downloads tab says so now, and names the server your imports are running on instead. It used to quietly fall back to the server you are signed into, which looked exactly like the setting having no effect at all.
+
 ## 0.4.86
 
 - Adding your own server really does work without a code now. 0.4.85 said so and meant it, but the Link button stayed greyed out until you typed one anyway, so there was no way to press it.
