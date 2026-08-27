@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.86
+
+- Adding your own server really does work without a code now. 0.4.85 said so and meant it, but the Link button stayed greyed out until you typed one anyway, so there was no way to press it.
+- Signing in no longer gives up when it cannot reach your server first. If the address check comes back empty you can still try your username and password, and you get told what actually went wrong instead of a button that will not move.
+
 ## 0.4.85
 
 - You can choose which of your servers downloads an import. Point it at the box that has the downloader and it fetches there, then copies each finished song to your main server on its own, so both hold it and playback still takes whichever is nearer
