@@ -16,7 +16,7 @@ import {
 } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { useLibrary } from '../library/library.tsx';
-import { DjLauncher } from '../booth/DjLauncher.tsx';
+import { MusicDateChip } from '../library/MusicDateChip.tsx';
 import { usePlaylists, type Playlist } from './playlists.tsx';
 import { PluginFence, usePlugins } from '../../plugins/runtime.tsx';
 import type { PluginPlaylistTile } from '../../plugins/types.ts';
@@ -499,7 +499,7 @@ export function PlaylistShowcase({
               {onRepeatCount === null ? 'Your most played' : songCount(onRepeatCount)}
             </span>
           </button>
-          <DjLauncher onPlay={(track, queue) => onPlay(track, queue ?? [track])} />
+          <MusicDateChip />
         </div>
       </section>
 
