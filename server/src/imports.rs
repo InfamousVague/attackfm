@@ -444,7 +444,36 @@ fn staged_audio_files(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// Whether this box is deliberately NOT a downloader.
+///
+/// `AFM_IMPORTS=off` (also 0/false/no) makes the server answer "no downloader
+/// here" to everything that asks - imports, refetch, the search results'
+/// importable flags, and the collector's own pulls - even with SpotiFLAC
+/// sitting on the disk.
+///
+/// It exists because ROLE and CAPABILITY are different questions, and only the
+/// first one has a right answer. Where a hub and a home box both happen to
+/// have SpotiFLAC installed, an import routed to the wrong one SUCCEEDS: it
+/// downloads, files the song into that box's library, and reports done. There
+/// is nothing on screen to notice, and the music is simply in the wrong place -
+/// which is worse than an error, because an error gets fixed. Declaring the
+/// hub a non-downloader turns a silent misfile into an immediate refusal that
+/// names itself.
+///
+/// Checked inside `find_spotiflac` rather than at each call site so the answer
+/// cannot differ between the importer, the collector and the search results -
+/// they all funnel through here, and `importable` in the collector status is
+/// derived from it, so the app is told too without any extra plumbing.
+fn imports_disabled() -> bool {
+    std::env::var("AFM_IMPORTS")
+        .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false" | "no"))
+        .unwrap_or(false)
+}
+
 pub(crate) fn find_spotiflac() -> Option<PathBuf> {
+    if imports_disabled() {
+        return None;
+    }
     if let Ok(explicit) = std::env::var("AFM_SPOTIFLAC") {
         let p = PathBuf::from(explicit);
         if p.is_file() {
