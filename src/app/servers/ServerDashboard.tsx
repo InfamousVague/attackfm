@@ -9,15 +9,7 @@ import {
   StatusDot,
   Text,
 } from '@glacier/react';
-import {
-  Activity,
-  Database,
-  HardDrive,
-  Music,
-  RefreshCw,
-  Server,
-  Users,
-} from '@glacier/icons';
+import { Activity, Cpu, Database, HardDrive, MemoryStick, Music, RefreshCw, Server, Users } from '@glacier/icons';
 import { useCallback, useEffect, useState } from 'react';
 import {
   fetchScanStatus,
@@ -112,6 +104,44 @@ export function Connected() {
       : null;
   const diskTone = disk === null ? 'accent' : disk.usedFraction > 0.9 ? 'danger' : disk.usedFraction > 0.7 ? 'warning' : 'accent';
 
+  /*
+   * What the box itself is doing.
+   *
+   * LOAD PER CORE, not raw load. "4.0" is a machine in trouble on a two-core VPS
+   * and an idle one on a sixteen-core Mac, so the raw figure cannot be graded -
+   * or even usefully read - without the core count beside it. Both are shown:
+   * the fraction drives the meter, the raw number is what you would compare
+   * against anything else you know about the box.
+   *
+   * Absent, not zero, when the hub does not report them: an older server sends
+   * none of these fields, and a load of 0.0 is a real and healthy reading.
+   */
+  const cpu =
+    stats?.loadAvg1 != null && stats.cpuCount != null && stats.cpuCount > 0
+      ? {
+          load1: stats.loadAvg1,
+          load5: stats.loadAvg5,
+          load15: stats.loadAvg15,
+          cores: stats.cpuCount,
+          // Capped for the bar only - a box CAN be loaded past its core count,
+          // and the number beside it still says so.
+          usedFraction: Math.min(1, stats.loadAvg1 / stats.cpuCount),
+        }
+      : null;
+  const cpuTone =
+    cpu === null ? 'accent' : cpu.usedFraction > 0.9 ? 'danger' : cpu.usedFraction > 0.7 ? 'warning' : 'accent';
+
+  const mem =
+    stats?.memTotalBytes != null && stats.memAvailableBytes != null && stats.memTotalBytes > 0
+      ? {
+          total: stats.memTotalBytes,
+          available: stats.memAvailableBytes,
+          usedFraction: (stats.memTotalBytes - stats.memAvailableBytes) / stats.memTotalBytes,
+        }
+      : null;
+  const memTone =
+    mem === null ? 'accent' : mem.usedFraction > 0.9 ? 'danger' : mem.usedFraction > 0.75 ? 'warning' : 'accent';
+
   return (
     <div className="prefsBody">
       <div className="prefsSection">
@@ -196,7 +226,63 @@ export function Connected() {
                 The library itself is {sizeLabel}
                 {stats && stats.quotaBytes > 0 ? ` of a ${gbLabel(stats.quotaBytes)} quota` : ''}.
               </Text>
+        )}
+
+        {/* The box itself. Same plate and the same graded tone as Disk, because
+            they answer the same question - is this machine coping - and giving
+            them different looks would suggest otherwise. Each is absent rather
+            than zeroed when the hub does not report it. */}
+        {cpu && (
+          <div className="serverDisk">
+            <span className="serverDisk__head">
+              <Cpu size={14} aria-hidden="true" />
+              <Text size="sm" weight="medium">
+                CPU
+              </Text>
+              <Text size="sm" tone="muted" className="serverDisk__free">
+                {cpu.load1.toFixed(2)} load on {cpu.cores} {cpu.cores === 1 ? 'core' : 'cores'}
+              </Text>
+            </span>
+            <Meter
+              aria-label="CPU load"
+              value={Math.round(cpu.usedFraction * 100)}
+              max={100}
+              segments={20}
+              size="sm"
+              tone={cpuTone}
+            />
+            {cpu.load5 != null && cpu.load15 != null && (
+              <Text size="xs" tone="subtle">
+                {cpu.load5.toFixed(2)} over five minutes, {cpu.load15.toFixed(2)} over fifteen.
+              </Text>
             )}
+          </div>
+        )}
+
+        {mem && (
+          <div className="serverDisk">
+            <span className="serverDisk__head">
+              <MemoryStick size={14} aria-hidden="true" />
+              <Text size="sm" weight="medium">
+                Memory
+              </Text>
+              <Text size="sm" tone="muted" className="serverDisk__free">
+                {gbLabel(mem.available)} free of {gbLabel(mem.total)}
+              </Text>
+            </span>
+            <Meter
+              aria-label="Memory used"
+              value={Math.round(mem.usedFraction * 100)}
+              max={100}
+              segments={20}
+              size="sm"
+              tone={memTone}
+            />
+            <Text size="xs" tone="subtle">
+              Free counts what the system would hand back on demand, not only what is untouched.
+            </Text>
+          </div>
+        )}
           </div>
         )}
 

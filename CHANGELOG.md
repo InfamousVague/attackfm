@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.83
+
+- The Server pane says what the box itself is doing: CPU load against its core count, and memory in use, beside the disk reading in the same graded plate. Each stays hidden rather than showing a zero when the hub cannot report it. Needs the hub updated
+
 ## 0.4.82
 
 - Music Date shows how many are left to meet at the top, counting down as you meet them, over a bar that leans whichever way the sitting is leaning. It starts dead centre, and every verdict tugs it one way or the other.

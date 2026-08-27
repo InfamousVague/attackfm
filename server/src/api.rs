@@ -302,6 +302,98 @@ pub async fn scan_now(State(state): State<Arc<AppState>>, headers: HeaderMap) ->
 /// `-kP` output is two lines: a header, then
 /// `filesystem 1024-blocks used available capacity mount`. Best-effort: a
 /// container without `df` just reports no disk numbers rather than an error.
+/*
+ * How hard the box is working, for the Server pane.
+ *
+ * Deliberately the same shape as `disk_space` below: ask the operating system
+ * the way a person at a terminal would, parse the answer, and treat "no answer"
+ * as "nothing to show" rather than an error. No new dependency - a metrics
+ * crate for three numbers would be a lot of supply chain for a readout.
+ */
+
+/// One, five and fifteen minute load averages.
+///
+/// `getloadavg` is POSIX and works the same on the Mac the home hub runs on and
+/// the Linux box the registry runs on, which is the whole reason to use it
+/// rather than read /proc: one implementation, no cfg, no second code path to
+/// keep honest.
+fn load_average() -> Option<[f64; 3]> {
+    let mut out = [0f64; 3];
+    // SAFETY: getloadavg writes at most `n` doubles into the pointer it is
+    // given, and it is given exactly the length of the array it is writing to.
+    let got = unsafe { libc::getloadavg(out.as_mut_ptr(), 3) };
+    if got == 3 { Some(out) } else { None }
+}
+
+/// Total and available bytes of RAM, or None where we cannot tell.
+///
+/// AVAILABLE, not "free". Both systems keep memory busy on purpose - caches and
+/// buffers that are handed back the moment anything wants them - so a "free"
+/// figure on a healthy box reads alarmingly close to zero and means nothing.
+/// Available is the number that answers "could this machine do more work".
+#[cfg(target_os = "linux")]
+fn memory() -> Option<(i64, i64)> {
+    let text = std::fs::read_to_string("/proc/meminfo").ok()?;
+    let field = |name: &str| -> Option<i64> {
+        text.lines()
+            .find(|l| l.starts_with(name))?
+            .split_whitespace()
+            .nth(1)?
+            .parse::<i64>()
+            .ok()
+            .map(|kb| kb * 1024)
+    };
+    Some((field("MemTotal:")?, field("MemAvailable:")?))
+}
+
+#[cfg(target_os = "macos")]
+fn memory() -> Option<(i64, i64)> {
+    let total: i64 = String::from_utf8_lossy(
+        &std::process::Command::new("sysctl")
+            .args(["-n", "hw.memsize"])
+            .stdin(std::process::Stdio::null())
+            .output()
+            .ok()?
+            .stdout,
+    )
+    .trim()
+    .parse()
+    .ok()?;
+
+    let out = std::process::Command::new("vm_stat")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    // The header names the page size: "Mach Virtual Memory Statistics:
+    // (page size of 16384 bytes)". Read it rather than assuming 4096 - Apple
+    // silicon uses 16k, and assuming would under-report by a factor of four.
+    let page: i64 = text
+        .lines()
+        .next()
+        .and_then(|l| l.split("page size of ").nth(1))
+        .and_then(|rest| rest.split_whitespace().next())
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(4096);
+    let pages = |name: &str| -> i64 {
+        text.lines()
+            .find(|l| l.starts_with(name))
+            .and_then(|l| l.split(':').nth(1))
+            .map(|v| v.trim().trim_end_matches('.'))
+            .and_then(|v| v.parse::<i64>().ok())
+            .unwrap_or(0)
+    };
+    // Free plus the pages the system would reclaim without hesitating.
+    let available = (pages("Pages free") + pages("Pages inactive") + pages("Pages speculative"))
+        * page;
+    Some((total, available))
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn memory() -> Option<(i64, i64)> {
+    None
+}
+
 fn disk_space(path: &std::path::Path) -> Option<(i64, i64)> {
     let out = std::process::Command::new("df")
         .arg("-kP")
@@ -333,6 +425,11 @@ pub async fn stats(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Ap
 
     let used = state.db.total_bytes();
     let disk = disk_space(&state.music_root);
+    let load = load_average();
+    let mem = memory();
+    // Cores, so a load figure means something: 4.0 is a busy laptop and an idle
+    // sixteen-core box, and the pane divides by this to say which.
+    let cpus = std::thread::available_parallelism().map(|n| n.get() as i64).unwrap_or(0);
     let (queued, downloading) = {
         let jobs = state.imports.jobs.lock().await;
         (
@@ -352,6 +449,14 @@ pub async fn stats(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Ap
         "quotaBytes": state.library_quota_bytes,
         "diskTotalBytes": disk.map(|(total, _)| total),
         "diskFreeBytes": disk.map(|(_, free)| free),
+        // Nulls where the box will not say, so the pane can leave a row out
+        // rather than draw a confident zero.
+        "cpuCount": if cpus > 0 { json!(cpus) } else { json!(null) },
+        "loadAvg1": load.map(|l| (l[0] * 100.0).round() / 100.0),
+        "loadAvg5": load.map(|l| (l[1] * 100.0).round() / 100.0),
+        "loadAvg15": load.map(|l| (l[2] * 100.0).round() / 100.0),
+        "memTotalBytes": mem.map(|(total, _)| total),
+        "memAvailableBytes": mem.map(|(_, avail)| avail),
         "transcode": state.ffmpeg,
         "importsQueued": queued,
         "importsActive": downloading,
@@ -621,4 +726,42 @@ pub async fn revoke_streams(
     // its TTL - purge it so the revoke means now.
     state.stream_tokens.purge_user(user_id);
     Ok(Json(json!({ "ok": true })))
+}
+
+#[cfg(test)]
+mod host_readings {
+    //! The three numbers the Server pane shows about the box itself.
+    //!
+    //! Worth testing because they are the kind of thing that returns a
+    //! confident, plausible, wrong number: a page size assumed at 4k instead of
+    //! Apple's 16k under-reports memory by a factor of four, and nothing about
+    //! the readout would look broken.
+
+    #[test]
+    fn the_box_reports_a_plausible_load() {
+        let load = super::load_average().expect("POSIX getloadavg should answer");
+        for v in load {
+            assert!(v.is_finite(), "load must be a number, got {v}");
+            assert!(v >= 0.0, "load cannot be negative, got {v}");
+            // A machine running tests is busy, not on fire.
+            assert!(v < 1024.0, "load is implausible: {v}");
+        }
+    }
+
+    #[test]
+    fn memory_is_read_at_the_right_scale() {
+        let Some((total, available)) = super::memory() else {
+            // An unsupported platform answers None, which the pane handles.
+            return;
+        };
+        // The factor-of-four page-size bug lands here: a machine with 16GB
+        // reporting 4GB would sail past a "greater than zero" check.
+        assert!(total > 1 << 30, "total RAM under a gigabyte is not credible: {total}");
+        assert!(total < 1 << 44, "total RAM over 16TB is not credible: {total}");
+        assert!(available > 0, "no memory available at all is not credible");
+        assert!(
+            available <= total,
+            "available ({available}) cannot exceed total ({total})",
+        );
+    }
 }

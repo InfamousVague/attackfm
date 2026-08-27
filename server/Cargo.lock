@@ -80,7 +80,7 @@ dependencies = [
 
 [[package]]
 name = "attackfm-server"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "afm-identity",
  "argon2",
