@@ -1,7 +1,7 @@
 import { type CSSProperties } from 'react';
 import dateChip from '../../assets/chip-music-date.webp';
 import { Button } from '@glacier/react';
-import { useLibrary } from './library.tsx';
+import { useMyAuditions } from './myAuditions.ts';
 import { LibChipMosaic, LibChipStat } from './LibChipFace.tsx';
 import { musicDateDoorOpen, openMusicDate } from '../nav/musicDateDoor.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
@@ -20,14 +20,17 @@ import { useServerSession } from '../servers/serverSession.tsx';
  */
 export function MusicDateChip() {
   const { session } = useServerSession();
-  const { forYou } = useLibrary();
+  const { mine } = useMyAuditions();
 
   // Nothing to open, so nothing to show. Same rule the banner had: a door onto
   // an empty room is worse than no door.
   if (!session || !musicDateDoorOpen()) return null;
 
-  const covers = forYou.map((t) => t.artwork).filter((a): a is string => !!a);
-  const waiting = forYou.length;
+  // `mine`, never the whole `forYou` array: this chip showed 767 while the
+  // shelf below it showed 220, because one filtered by owner and the other
+  // counted every audition the client had ever been sent.
+  const covers = mine.map((t) => t.artwork).filter((a): a is string => !!a);
+  const waiting = mine.length;
 
   return (
     <Button

@@ -362,6 +362,59 @@ pub struct DateDone {
     pub passed: Vec<i64>,
 }
 
+
+/// Record what a listener decided, and reclaim the disk a pass frees.
+///
+/// Shared by `/api/date/verdict` (one swipe, as it happens) and
+/// `/api/date/done` (the whole sitting, plus a harvest). The split matters:
+/// verdicts used to reach the server ONLY when a deck ran completely dry, so a
+/// listener who swiped through six cards and closed the app had told the
+/// server nothing at all, and the same six came back on the next device.
+///
+/// A pass is the one verdict that can free space, because an unadopted
+/// audition exists for exactly one listener and for exactly this purpose.
+/// `discard_audition` refuses anything else - see its ownership test - so the
+/// unlink here cannot reach a track that is genuinely part of a library.
+fn apply_verdicts(state: &Arc<AppState>, user: i64, body: &DateDone) -> (usize, u64) {
+    for id in &body.kept {
+        state.db.record_date_verdict(user, *id, "kept");
+    }
+    let mut freed: u64 = 0;
+    let mut discarded = 0usize;
+    for id in &body.passed {
+        state.db.record_date_verdict(user, *id, "passed");
+        let Some(rel) = state.db.discard_audition(user, *id) else { continue };
+        discarded += 1;
+        // resolve_in_root, not a bare join: the path comes out of the database
+        // and this is an unlink. Anything climbing out of the music root is
+        // refused rather than followed.
+        if let Some(abs) = crate::stream::resolve_in_root(&state.music_root, &rel) {
+            freed += std::fs::metadata(&abs).map(|m| m.len()).unwrap_or(0);
+            if let Err(e) = std::fs::remove_file(&abs) {
+                eprintln!("[collector] could not remove passed audition {rel}: {e}");
+            }
+        }
+    }
+    if discarded > 0 {
+        println!(
+            "[collector] {discarded} audition(s) passed on and removed, {:.1} MB reclaimed",
+            freed as f64 / 1_048_576.0
+        );
+    }
+    (discarded, freed)
+}
+
+/// `POST /api/date/verdict` - one swipe, recorded now rather than at the end.
+pub async fn date_verdict(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<DateDone>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let (discarded, freed) = apply_verdicts(&state, caller.id, &body);
+    Ok(Json(serde_json::json!({ "discarded": discarded, "freedBytes": freed })))
+}
+
 /// `POST /api/date/done` - the deck ran out; go and get more, now.
 ///
 /// The page has always ended on "the DJ fetches more as it learns what you
@@ -380,6 +433,24 @@ pub async fn date_done(
     Json(body): Json<DateDone>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+
+    /*
+     * THE VERDICTS ARE WRITTEN DOWN NOW, and a pass reclaims its disk.
+     *
+     * Both halves used to be dropped on the floor. `kept` and `passed` were
+     * read to build seeds and then forgotten, so the only memory of a pass was
+     * one browser's localStorage: a second device re-dealt every card that had
+     * already been turned down, and the file it had fetched sat there forever.
+     * On the hub this was written against that was 766 unadopted auditions
+     * holding 19.1GB, none of which anything was ever going to clear.
+     *
+     * A pass is the one verdict that can free space, because an unadopted
+     * audition exists for exactly one listener and for exactly this purpose.
+     * `discard_audition` refuses to touch anything else - see its ownership
+     * test - so the unlink below cannot reach a track that is genuinely part
+     * of somebody's library.
+     */
+    apply_verdicts(&state, caller.id, &body);
 
     // Just-passed artists are excluded rather than down-weighted: a pass is a
     // small, cheap "not this", and the honest reading of it is "look elsewhere"

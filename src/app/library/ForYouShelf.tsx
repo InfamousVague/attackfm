@@ -1,11 +1,7 @@
 import { ScrollArea, Text } from '@glacier/react';
-import { useRefreshNonce } from '../nav/pageRefresh.tsx';
 import { Sparkles } from '@glacier/icons';
-import { useEffect, useMemo, useState } from 'react';
-import { useLibrary } from './library.tsx';
+import { useMyAuditions } from './myAuditions.ts';
 import { useCardArt } from '../ux/artLoad.ts';
-import { useServerSession } from '../servers/serverSession.tsx';
-import { fetchCollectorStatus, type CollectorStatus } from '../server.ts';
 import { TrackMenu } from './TrackMenu.tsx';
 import type { Track } from '../core/tauri.ts';
 
@@ -48,34 +44,9 @@ export function ForYouShelf({
 }: {
   onPlay: (track: Track, queue: Track[]) => void;
 }) {
-  const { forYou } = useLibrary();
-  const { session } = useServerSession();
-  // Pull-to-refresh re-runs the fetch below - see nav/pageRefresh.tsx.
-  const refreshNonce = useRefreshNonce();
-  const [status, setStatus] = useState<CollectorStatus | null>(null);
-
-  // Refreshed when the quarantine changes size - a landing or an adoption is
-  // exactly when the ledger moved.
-  useEffect(() => {
-    if (!session) {
-      setStatus(null);
-      return;
-    }
-    const ctrl = new AbortController();
-    void fetchCollectorStatus(session, ctrl.signal)
-      .then(setStatus)
-      .catch(() => {
-        // An older server has no collector; the shelf simply never shows.
-      });
-    return () => ctrl.abort();
-  }, [session, forYou.length, refreshNonce]);
-
-  const mine = useMemo(() => {
-    if (!status) return [];
-    return forYou
-      .filter((t) => t.curatorUserId === status.userId)
-      .sort((a, b) => b.addedAt - a.addedAt);
-  }, [forYou, status]);
+  // The owner filter and the ledger both live in useMyAuditions now, so the
+  // Music Date chip cannot disagree with this shelf about the same number.
+  const { mine, status } = useMyAuditions();
 
   const halted = status?.halted === 'cap';
   if (mine.length === 0 && !halted) return null;

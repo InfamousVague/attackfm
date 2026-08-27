@@ -467,6 +467,25 @@ CREATE TABLE IF NOT EXISTS spotify_synced (
   PRIMARY KEY (user_id, key)
 );
 
+-- What a listener decided about an audition on Music Date.
+--
+-- There was no such table, which is why a pass cost nothing and changed
+-- nothing: the deck's verdicts were read once inside the request that reported
+-- them and then dropped, and the only record of a pass lived in one browser's
+-- localStorage. A second device re-dealt every card that had already been
+-- turned down, and the file sat on the disk forever.
+--
+-- Keyed on (user_id, track_id) because an audition belongs to exactly one
+-- listener: there is no second opinion to record.
+CREATE TABLE IF NOT EXISTS date_verdicts (
+  user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  track_id INTEGER NOT NULL,
+  verdict  TEXT    NOT NULL,
+  at       INTEGER NOT NULL,
+  PRIMARY KEY (user_id, track_id)
+);
+CREATE INDEX IF NOT EXISTS date_verdicts_user ON date_verdicts(user_id, at DESC);
+
 CREATE TABLE IF NOT EXISTS plays (
   id        INTEGER PRIMARY KEY,
   user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -7047,6 +7066,76 @@ impl Db {
     /// Adoption: a completed listen or a heart on an auditioning track moves it
     /// into the library proper, whoever did the listening - wanted is wanted.
     /// The rev bump is what carries the change to every synced client.
+    /// Write down what a listener decided about one audition.
+    pub fn record_date_verdict(&self, user_id: i64, track_id: i64, verdict: &str) {
+        let conn = self.lock();
+        let _ = conn.execute(
+            "INSERT INTO date_verdicts (user_id, track_id, verdict, at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(user_id, track_id) DO UPDATE SET verdict = excluded.verdict, at = excluded.at",
+            params![user_id, track_id, verdict, now_ms()],
+        );
+    }
+
+    /// Auditions this listener has already judged, so the deck never re-deals
+    /// a card they have turned down - on this device or any other.
+    pub fn date_judged(&self, user_id: i64) -> std::collections::HashSet<i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare("SELECT track_id FROM date_verdicts WHERE user_id = ?1")
+        else {
+            return std::collections::HashSet::new();
+        };
+        stmt.query_map(params![user_id], |r| r.get::<_, i64>(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Turn down an audition: tombstone the row and hand back the file to
+    /// delete, if and only if this listener is the one it was fetched for.
+    ///
+    /// THE OWNERSHIP TEST IS THE SAFETY. A track is only discardable while it
+    /// is an UNADOPTED audition belonging to the caller - `curator_user_id =
+    /// them AND curator_promoted = 0`. Anything else is either somebody else's
+    /// audition or a real part of the library, and the WHERE clause refuses
+    /// both. That is what makes deleting the file safe to do automatically:
+    /// nothing else on the server can be referring to it, because until it is
+    /// adopted it was never part of anyone's library but this one deck.
+    ///
+    /// The path comes back rather than being unlinked here so the caller does
+    /// the filesystem work outside the database lock, and so a delete that
+    /// fails leaves a tombstoned row rather than a live row pointing at a file
+    /// that is already gone.
+    pub fn discard_audition(&self, user_id: i64, track_id: i64) -> Option<String> {
+        let rev = self.current_rev() + 1;
+        let conn = self.lock();
+        let path: String = conn
+            .query_row(
+                "SELECT rel_path FROM tracks
+                 WHERE id = ?1 AND deleted = 0
+                   AND curator_user_id = ?2 AND COALESCE(curator_promoted, 0) = 0",
+                params![track_id, user_id],
+                |r| r.get(0),
+            )
+            .ok()?;
+        let changed = conn
+            .execute(
+                "UPDATE tracks SET deleted = 1, rev = ?1
+                 WHERE id = ?2 AND curator_user_id = ?3 AND COALESCE(curator_promoted, 0) = 0",
+                params![rev, track_id, user_id],
+            )
+            .unwrap_or(0);
+        if changed == 0 {
+            return None;
+        }
+        // The pull that brought it is finished with, one way or the other.
+        let _ = conn.execute(
+            "UPDATE curator_pulls SET state = 'passed' WHERE state = 'landed' AND id IN (
+               SELECT pt.pull_id FROM curator_pull_tracks pt WHERE pt.track_id = ?1
+             )",
+            params![track_id],
+        );
+        Some(path)
+    }
+
     pub fn promote_curator_track(&self, track_id: i64) -> bool {
         let rev = self.current_rev() + 1;
         let conn = self.lock();
@@ -8177,5 +8266,110 @@ mod audition_visibility {
         let seen: Vec<String> =
             db.tracks_since(bob, 0, 100).0.into_iter().map(|t| t.title).collect();
         assert_eq!(seen, vec!["Audition".to_string()], "adopted tracks join the library");
+    }
+}
+
+#[cfg(test)]
+mod discarding_auditions {
+    //! `discard_audition` is the one path that deletes a listener's files, so
+    //! what it REFUSES matters more than what it does.
+
+    use super::*;
+
+    fn track(rel: &str) -> ScannedTrack {
+        ScannedTrack {
+            rel_path: rel.into(),
+            title: rel.into(),
+            artist: "A".into(),
+            duration_ms: Some(1000),
+            ..Default::default()
+        }
+    }
+
+    fn db_with(dir: &str) -> (Db, std::path::PathBuf) {
+        let d = std::env::temp_dir().join(format!("{dir}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let db = Db::open(&d.join("t.sqlite")).unwrap();
+        (db, d)
+    }
+
+    fn make_audition(db: &Db, owner: i64, rel: &str) -> i64 {
+        db.upsert_track(&track(rel), 1).unwrap();
+        let id = db.track_id_by_path(rel).unwrap();
+        db.lock()
+            .execute(
+                "UPDATE tracks SET curator_user_id = ?1, curator_promoted = 0 WHERE id = ?2",
+                params![owner, id],
+            )
+            .unwrap();
+        id
+    }
+
+    #[test]
+    fn the_owner_can_discard_their_own_pending_audition() {
+        let (db, _d) = db_with("afm-disc1");
+        let me = db.create_user("me", "x", true).unwrap();
+        let id = make_audition(&db, me, "audition.flac");
+
+        assert_eq!(db.discard_audition(me, id), Some("audition.flac".into()));
+        let gone: i64 = db
+            .lock()
+            .query_row("SELECT deleted FROM tracks WHERE id = ?1", params![id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(gone, 1, "tombstoned, so every client drops it");
+    }
+
+    #[test]
+    fn nobody_can_discard_somebody_elses_audition() {
+        let (db, _d) = db_with("afm-disc2");
+        let alice = db.create_user("alice", "x", true).unwrap();
+        let bob = db.create_user("bob", "x", false).unwrap();
+        let id = make_audition(&db, alice, "hers.flac");
+
+        assert_eq!(db.discard_audition(bob, id), None, "not bob's to throw away");
+        let alive: i64 = db
+            .lock()
+            .query_row("SELECT deleted FROM tracks WHERE id = ?1", params![id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(alive, 0, "and it is untouched");
+    }
+
+    #[test]
+    fn an_adopted_track_is_library_and_cannot_be_discarded() {
+        let (db, _d) = db_with("afm-disc3");
+        let me = db.create_user("me", "x", true).unwrap();
+        let id = make_audition(&db, me, "kept.flac");
+        db.promote_curator_track(id);
+
+        assert_eq!(db.discard_audition(me, id), None, "adopted music is not an audition");
+    }
+
+    #[test]
+    fn an_ordinary_library_track_is_never_discardable() {
+        let (db, _d) = db_with("afm-disc4");
+        let me = db.create_user("me", "x", true).unwrap();
+        db.upsert_track(&track("mine.flac"), 1).unwrap();
+        let id = db.track_id_by_path("mine.flac").unwrap();
+
+        assert_eq!(db.discard_audition(me, id), None, "it was never an audition");
+    }
+
+    #[test]
+    fn a_verdict_is_remembered_so_the_card_is_not_dealt_twice() {
+        let (db, _d) = db_with("afm-disc5");
+        let me = db.create_user("me", "x", true).unwrap();
+        let a = make_audition(&db, me, "a.flac");
+        let b = make_audition(&db, me, "b.flac");
+
+        db.record_date_verdict(me, a, "passed");
+        db.record_date_verdict(me, b, "kept");
+        let judged = db.date_judged(me);
+        assert!(judged.contains(&a) && judged.contains(&b));
+        assert!(db.date_judged(db.create_user("other", "x", false).unwrap()).is_empty());
+
+        // Changing your mind overwrites rather than duplicating.
+        db.record_date_verdict(me, a, "kept");
+        assert_eq!(db.date_judged(me).len(), 2);
     }
 }

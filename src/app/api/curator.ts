@@ -205,3 +205,33 @@ export async function fetchDiscover(session: ServerSession): Promise<Suggestion[
   });
   return reply.suggestions;
 }
+
+/**
+ * One swipe, told to the server as it happens.
+ *
+ * `dateDone` above only fires when a deck runs completely dry, which meant a
+ * listener who turned down six cards and closed the app had told the server
+ * nothing: the passes lived in one browser's localStorage, the next device
+ * dealt the same six again, and the files stayed on the disk. This reports
+ * each verdict on its own so a pass is durable the moment it is made.
+ *
+ * Deliberately fire-and-forget at the call site: a swipe must never wait on
+ * the network, and a verdict that fails to send is re-sent by `dateDone` when
+ * the deck empties.
+ */
+export async function dateVerdict(
+  session: ServerSession,
+  kept: number[],
+  passed: number[],
+): Promise<{ discarded: number; freedBytes: number }> {
+  const out = await request<{ discarded?: number; freedBytes?: number }>(
+    session.url,
+    '/api/date/verdict',
+    {
+      token: session.token,
+      method: 'POST',
+      body: JSON.stringify({ kept, passed }),
+    },
+  );
+  return { discarded: out.discarded ?? 0, freedBytes: out.freedBytes ?? 0 };
+}

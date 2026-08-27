@@ -14,6 +14,7 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import {
   artSized,
   dateDone,
+  dateVerdict,
   fetchCollectorStatus,
   trackIdFromPath,
   type CollectorStatus,
@@ -486,7 +487,13 @@ export function DatePage() {
           favorited = true;
         }
         const id = trackIdFromPath(track.path);
-        if (id !== null) sessionKept.current.push(id);
+        if (id !== null) {
+          sessionKept.current.push(id);
+          // Told now, not at the end of the deck. Fire and forget: a swipe must
+          // never wait on the network, and anything that fails to send is
+          // re-sent by dateDone when the deck empties.
+          if (session) void dateVerdict(session, [id], []).catch(() => {});
+        }
       } else {
         fireNativeHaptic('light');
         const id = trackIdFromPath(track.path);
@@ -494,6 +501,14 @@ export function DatePage() {
           passedRef.current.add(id);
           writePassed(passedRef.current);
           sessionPassed.current.push(id);
+          /*
+           * A pass now COSTS the server something and frees something: it
+           * writes the verdict down, tombstones the audition and deletes the
+           * file it fetched. Until this call existed a pass was remembered
+           * only in this browser's localStorage, so the same card came back on
+           * every other device and the disk never came back at all.
+           */
+          if (session) void dateVerdict(session, [], [id]).catch(() => {});
         }
       }
       // Everything advances NOW, inside the gesture: the deck (so the next
@@ -507,7 +522,7 @@ export function DatePage() {
       speak(deck.find((t) => t.path !== track.path) ?? null);
       setDrag(null);
     },
-    [deck, isFavorite, toggleFavorite, speak],
+    [deck, isFavorite, toggleFavorite, speak, session],
   );
 
   /**
