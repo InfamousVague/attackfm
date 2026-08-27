@@ -108,9 +108,40 @@ FRESH="$REPO/server/target/release/attackfm-server"
 # the server until something restarted it again.
 if [ -n "$TRUST_ASKED" ]; then
   say "→ Updating the trust link…"
+  # Whichever agent this machine actually has. The legacy one counts: its env
+  # is read the same way, and telling somebody to run the installer when a
+  # working server is sitting right there invites a SECOND one.
   PLIST="$HOME/Library/LaunchAgents/$INSTALL_LABEL.plist"
+  [ -f "$PLIST" ] || PLIST="$HOME/Library/LaunchAgents/$LEGACY_LABEL.plist"
   if [ ! -f "$PLIST" ]; then
-    err "  ✗ No agent plist at $PLIST — run server/home-install.sh once first."
+    err "  ✗ No AttackFM agent for $(whoami) in ~/Library/LaunchAgents."
+    err ""
+    # "Run the installer" is the WRONG advice when a server is already up: it
+    # would build a second one beside the first and they would fight over the
+    # port. So say what is actually here before suggesting anything.
+    # pgrep -x, not a grep over command lines: any shell whose arguments merely
+    # MENTION attackfm-server matches the latter, so the check reported "a
+    # server IS running" at a terminal that had only ever talked about one.
+    pids="$(pgrep -x attackfm-server 2>/dev/null | head -3)"
+    running=""
+    [ -n "$pids" ] && running="$(ps -o user=,pid=,comm= -p $pids 2>/dev/null)"
+    if [ -n "$running" ]; then
+      err "  But a server IS running on this machine:"
+      printf '%s\n' "$running" | sed 's/^/     /'
+      err ""
+      err "  It was not started by this script's agent, so its settings live"
+      err "  somewhere else. Check, in order:"
+      err "     ls ~/Library/LaunchAgents | grep -i attack     # another label?"
+      err "     ls /Library/LaunchAgents /Library/LaunchDaemons | grep -i attack"
+      err "  and note the USER in the first column above - if it is not"
+      err "  $(whoami), run this again as them."
+    else
+      err "  And no attackfm-server process is running here either, so this is"
+      err "  probably not the machine that serves your library. The one you"
+      err "  want answers on port 8788 locally."
+      err ""
+      err "  If this really is a fresh box: bash server/home-install.sh"
+    fi
     hold; exit 1
   fi
   set_env() {  # key, value - Set if it is there, Add if it is not
