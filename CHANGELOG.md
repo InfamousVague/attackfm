@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.82
+
+- Music Date shows how many are left to meet at the top, counting down as you meet them, over a bar that leans whichever way the sitting is leaning. It starts dead centre, and every verdict tugs it one way or the other.
+- The Music Date card was still counting songs you had already passed on, so it could promise a pile and open on an empty deck. The card, the shelf and the deck all count the same thing now: what is actually still waiting.
+
 ## 0.4.81
 
 - Turning down a card on Music Date sticks now, and gives the space back. A pass used to be remembered only on the device you swiped on, so the same song came back on your phone after you had already said no on your laptop, and the file it had fetched stayed on the server forever. It is written down against your account the moment you swipe, and the download is removed
