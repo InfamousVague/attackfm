@@ -210,13 +210,96 @@ pub fn spawn(state: Arc<AppState>) {
         state.db.peer_sync_reclaim_stuck();
         tokio::time::sleep(BOOT_DELAY).await;
         loop {
-            let worked = cycle(&state, hub).await;
+            let took = take_a_want(&state, hub).await;
+            let worked = cycle(&state, hub).await || took;
             tokio::select! {
                 _ = tokio::time::sleep(if worked { BUSY } else { IDLE }) => {}
                 _ = state.peersync.notify.notified() => {}
             }
         }
     });
+}
+
+/// Asks the hub whether its collector wants anything downloaded here.
+///
+/// The other direction of the same arrangement. A hub that refuses pasted links
+/// (`AFM_IMPORTS=collector`) still decides what is worth having - it holds the
+/// listening and the taste - but has no downloader worth using. It records the
+/// want; this box, which has SpotiFLAC and the disk, comes and takes it.
+///
+/// A PULL rather than the hub pushing, for two reasons. The peer already holds
+/// a credential for the hub and the hub holds none for the peer, so nothing new
+/// has to be configured or kept secret. And inbound-to-peer is the leg that
+/// actually fails here - a home box behind a tunnel - while this direction is
+/// the one already proven by every upload.
+///
+/// The finished import needs no special handling afterwards: `on_job_finished`
+/// puts its files in the outbox like any other, they go up, and the hub matches
+/// them to the pull when they land.
+async fn take_a_want(state: &Arc<AppState>, hub: &Hub) -> bool {
+    // Nothing to download with, or already busy: leave the want for the next
+    // wave. Claiming is destructive - it takes the row off the hub's offer -
+    // so it must not happen unless this box can act on it now.
+    if crate::imports::find_spotiflac().is_none() {
+        return false;
+    }
+    {
+        let jobs = state.imports.jobs.lock().await;
+        if jobs
+            .iter()
+            .any(|j| j.state == "queued" || j.state == "downloading")
+        {
+            return false;
+        }
+    }
+    let Some(owner) = state.db.first_admin_id() else {
+        return false;
+    };
+
+    let reply = http()
+        .post(format!("{}/api/collector/claim", hub.url))
+        .bearer_auth(&hub.token)
+        .send()
+        .await;
+    let Ok(reply) = reply else { return false };
+    if !reply.status().is_success() {
+        return false;
+    }
+    let Ok(body) = reply.json::<serde_json::Value>().await else {
+        return false;
+    };
+    let pull = &body["pull"];
+    let (Some(url), Some(title), Some(artist)) = (
+        pull["url"].as_str(),
+        pull["title"].as_str(),
+        pull["artist"].as_str(),
+    ) else {
+        return false;
+    };
+
+    match crate::imports::enqueue_internal(
+        state,
+        url,
+        title,
+        artist,
+        "collector",
+        owner,
+        &format!("the collector · for {}", host_of(&hub.url)),
+    )
+    .await
+    {
+        Ok(_) => {
+            eprintln!("[peersync] fetching {title} - {artist} for {}", host_of(&hub.url));
+            true
+        }
+        // The hub has already marked it taken. It ages out there rather than
+        // being handed straight back, which is what stops a box that cannot
+        // download this particular link from claiming it every minute forever.
+        Err(e) => {
+            eprintln!("[peersync] could not take {title}: {e}");
+            false
+        }
+    }
 }
 
 /// A finished import owes the hub its files.
