@@ -17,6 +17,16 @@ export interface ServerStats {
   quotaBytes: number;
   diskTotalBytes: number | null;
   diskFreeBytes: number | null;
+  /* What the box itself is doing. Null where it will not say - an older hub
+     sends none of these, and a platform we cannot read memory on sends the
+     memory pair as null while still answering for load. Every reader has to
+     treat "absent" and "zero" as different things. */
+  cpuCount: number | null;
+  loadAvg1: number | null;
+  loadAvg5: number | null;
+  loadAvg15: number | null;
+  memTotalBytes: number | null;
+  memAvailableBytes: number | null;
   transcode: boolean;
   importsQueued: number;
   importsActive: number;
