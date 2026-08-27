@@ -2,6 +2,7 @@ import {
   Button,
   IconButton,
   SeekBar,
+  SegmentedBar,
   createAnalyserMeter,
   useBeat,
   useLiveLevels,
@@ -10,14 +11,13 @@ import {
 import { Heart, Play, Undo2, X } from '@glacier/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLibrary } from '../library/library.tsx';
+import { useMyAuditions } from '../library/myAuditions.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import {
   artSized,
   dateDone,
   dateVerdict,
-  fetchCollectorStatus,
   trackIdFromPath,
-  type CollectorStatus,
 } from '../server.ts';
 import { DATE_CACHE_TARGET, setDateDeck, sweepIfIdle } from '../downloads/autoCache.ts';
 import { warmArt, warmDateCanvas } from './dateCanvas.ts';
@@ -57,9 +57,12 @@ interface Verdict {
  * which is exactly what adopts an audition), swipe left to pass. A pass deletes
  * nothing: the song stays in the library, it just stops being offered here.
  *
- * No headings, no captions, no names on the card - the whole point is meeting
- * the MUSIC, art and sound only, the way the metaphor's namesake shows a face
- * before a biography.
+ * No captions and no names on the CARD - the whole point is meeting the MUSIC,
+ * art and sound only, the way the metaphor's namesake shows a face before a
+ * biography. The page around it does speak: a count of who is still waiting,
+ * ticking down, over a bar that leans whichever way this sitting is leaning.
+ * That is chrome about the SITTING, not about the song in front of you, which
+ * is why it may sit above a card that still says nothing about itself.
  *
  * Three structural rules, all learned the hard way:
  *
@@ -105,25 +108,12 @@ interface Slot {
 }
 
 export function DatePage() {
-  const { forYou, isFavorite, toggleFavorite } = useLibrary();
+  const { isFavorite, toggleFavorite } = useLibrary();
   const { session } = useServerSession();
 
-  const [status, setStatus] = useState<CollectorStatus | null>(null);
-  useEffect(() => {
-    if (!session) return;
-    let live = true;
-    void fetchCollectorStatus(session)
-      .then((s) => {
-        if (live) setStatus(s);
-      })
-      .catch(() => {
-        // An older server: the deck still works, it just cannot filter to this
-        // listener's own pulls.
-      });
-    return () => {
-      live = false;
-    };
-  }, [session]);
+  // The deck, and the collector ledger behind it. Shared with the chip and the
+  // For You shelf so all three count one thing - see library/myAuditions.ts.
+  const { mine } = useMyAuditions();
 
   // Passes survive relaunch; this visit's verdicts live in `gone` so the deck
   // moves the moment a card is judged, without waiting on any sync.
@@ -133,6 +123,18 @@ export function DatePage() {
   // been answered.
   const sessionKept = useRef<number[]>([]);
   const sessionPassed = useRef<number[]>([]);
+  /*
+   * The same two numbers again, as STATE, purely so the tally at the top can
+   * re-render when they change.
+   *
+   * The refs above stay the source of truth for what is SENT: they are read
+   * inside the deck-emptied effect and inside callbacks that must never see a
+   * stale closure, which is exactly what a ref is for. A ref cannot drive a
+   * paint, though, so the bar reads this instead. The two move together at
+   * four sites - a keep, a pass, an undo, and the end of a sitting - and that
+   * is the whole contract between them.
+   */
+  const [tally, setTally] = useState({ kept: 0, passed: 0 });
   /** null before the deck has ever emptied, then how the ask went. */
   const [refill, setRefill] = useState<'asking' | 'asked' | 'failed' | null>(null);
   const askedFor = useRef<string>('');
@@ -154,17 +156,20 @@ export function DatePage() {
    */
   const [undos, setUndos] = useState<Verdict[]>([]);
 
-  const deck = useMemo(() => {
-    const passed = passedRef.current;
-    return forYou
-      .filter((t) => !status || t.curatorUserId === status.userId)
-      .filter((t) => !isFavorite(t.path) && !gone.has(t.path))
-      .filter((t) => {
-        const id = trackIdFromPath(t.path);
-        return id === null || !passed.has(id);
-      })
-      .sort((a, b) => b.addedAt - a.addedAt);
-  }, [forYou, status, isFavorite, gone]);
+  /*
+   * The deck is the shared definition minus this sitting's in-flight verdicts.
+   *
+   * `mine` already applies every durable filter - owner, hearted, and the
+   * persisted pass ledger - and it is the SAME list the Music Date chip counts
+   * (see library/myAuditions.ts). `gone` is the only thing this page knows
+   * that the chip does not: the cards judged since it opened, held locally so
+   * the deck advances the instant a verdict lands rather than waiting on the
+   * ledger write and the re-render behind it.
+   *
+   * This page used to re-derive all four filters itself. Two copies of one
+   * rule is how the chip came to promise 172 songs over an empty deck.
+   */
+  const deck = useMemo(() => mine.filter((t) => !gone.has(t.path)), [mine, gone]);
 
   // The next stretch of cards, kept on the phone. Handed to the device cache
   // as a ranking signal rather than pinned here: that cache already owns the
@@ -465,6 +470,7 @@ export function DatePage() {
         // The sitting is over; the next one starts from a clean slate.
         sessionKept.current = [];
         sessionPassed.current = [];
+        setTally({ kept: 0, passed: 0 });
       })
       .catch(() => {
         if (live) setRefill('failed');
@@ -489,6 +495,7 @@ export function DatePage() {
         const id = trackIdFromPath(track.path);
         if (id !== null) {
           sessionKept.current.push(id);
+          setTally((t) => ({ ...t, kept: t.kept + 1 }));
           // Told now, not at the end of the deck. Fire and forget: a swipe must
           // never wait on the network, and anything that fails to send is
           // re-sent by dateDone when the deck empties.
@@ -501,6 +508,7 @@ export function DatePage() {
           passedRef.current.add(id);
           writePassed(passedRef.current);
           sessionPassed.current.push(id);
+          setTally((t) => ({ ...t, passed: t.passed + 1 }));
           /*
            * A pass now COSTS the server something and frees something: it
            * writes the verdict down, tombstones the audition and deletes the
@@ -552,12 +560,14 @@ export function DatePage() {
       if (id !== null) {
         const at = sessionKept.current.lastIndexOf(id);
         if (at !== -1) sessionKept.current.splice(at, 1);
+        setTally((t) => ({ ...t, kept: Math.max(0, t.kept - 1) }));
       }
     } else if (id !== null) {
       passedRef.current.delete(id);
       writePassed(passedRef.current);
       const at = sessionPassed.current.lastIndexOf(id);
       if (at !== -1) sessionPassed.current.splice(at, 1);
+      setTally((t) => ({ ...t, passed: Math.max(0, t.passed - 1) }));
     }
 
     setGone((prev) => {
@@ -627,10 +637,51 @@ export function DatePage() {
     );
   }
 
+  /*
+   * The tug-of-war, and where it starts.
+   *
+   * At rest the bar is dead centre: one unit each side, so the first verdict
+   * pulls it off centre rather than filling it up from nothing. That is a
+   * deliberate fiction about proportion and it is safe because the counts
+   * printed under it say 0 and 0 - the bar shows which way this sitting is
+   * GOING, the numbers say how far it has got.
+   *
+   * Pass is the left slice and Keep the right, because that is which way you
+   * swipe for each, and the tones are the ones the two buttons already wear.
+   */
+  const judged = tally.kept + tally.passed;
+  const split: { value: number; tone: 'danger' | 'success'; label: string }[] = [
+    { value: judged === 0 ? 1 : tally.passed, tone: 'danger', label: 'Passed' },
+    { value: judged === 0 ? 1 : tally.kept, tone: 'success', label: 'Kept' },
+  ];
+
   return (
     <div className="homePage datePage">
       {current || outgoing ? (
         <>
+          {/* How many are still waiting, and how this sitting is going. The
+              card itself stays wordless; this is the page around it. */}
+          <header className="dateTally">
+            <p className="dateTally__count">
+              <span className="dateTally__n">{deck.length}</span> left to meet
+            </p>
+            <SegmentedBar
+              className="dateTally__bar"
+              size="sm"
+              rounded
+              data={split}
+              aria-label={
+                judged === 0
+                  ? 'Nothing judged yet this sitting'
+                  : `${tally.kept} kept, ${tally.passed} passed this sitting`
+              }
+            />
+            <p className="dateTally__split" aria-hidden>
+              <span className="dateTally__passed">{tally.passed} passed</span>
+              <span className="dateTally__kept">{tally.kept} kept</span>
+            </p>
+          </header>
+
           <div className="dateStack">
             {upcoming && (
               <div key={upcoming.path} className="dateCard dateCard--under" aria-hidden>

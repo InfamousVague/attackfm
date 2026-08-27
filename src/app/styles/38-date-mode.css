@@ -6,6 +6,57 @@
   justify-content: center;
 }
 
+/* ---- the tally ------------------------------------------------------------
+   The only words on this page. A count of who is still waiting, ticking down
+   as they are met, over a bar that leans whichever way the sitting leans.
+
+   Sized and spaced to stay SECONDARY: the card is what you are here for, and a
+   header that competes with it would be the caption this page spent its whole
+   design avoiding. Hence a small count, a 6px bar, and a fixed width matched
+   to the card's own so the three read as one column. */
+.dateTally {
+  inline-size: min(100%, 24rem);
+  margin-inline: auto;
+  margin-block-end: var(--glacier-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-2);
+}
+
+.dateTally__count {
+  margin: 0;
+  text-align: center;
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+}
+
+/* The number is the thing that moves, so it is the thing that is legible.
+   Tabular figures because it counts DOWN - proportional digits make the line
+   twitch sideways every time it passes a 1. */
+.dateTally__n {
+  font-size: var(--glacier-font-size-lg);
+  font-weight: 650;
+  color: var(--glacier-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.dateTally__split {
+  margin: 0;
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--glacier-font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The two ends carry the two verdicts' own colours, the same ones the buttons
+   below wear, so the row under the bar names the halves without a legend. */
+.dateTally__passed {
+  color: #ff5f6d;
+}
+.dateTally__kept {
+  color: #37d67a;
+}
+
 .dateStack {
   position: relative;
   inline-size: min(100%, 24rem);
