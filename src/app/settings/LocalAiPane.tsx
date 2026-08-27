@@ -467,7 +467,21 @@ export function LocalAiPane() {
             {totals.avgMs != null ? `, ${(totals.avgMs / 1000).toFixed(1)}s average` : ''}.
           </Text>
         )}
-      </PaneSection>
+              {(totals.unattributed?.length ?? 0) > 0 && (
+          <Text size="sm" className="localAi__drift">
+            {/*
+              * The pane names functions by the schema id each one passes when it
+              * calls the model. When a prompt is renamed or versioned and this
+              * list is not, its row reads "never run" forever while the work
+              * carries on - which is exactly what happened to three of them.
+              * Anything recorded under an unknown id is shown here rather than
+              * dropped, so the next drift is visible instead of silent.
+              */}
+            Work recorded under {totals.unattributed?.map((u) => u.id).join(', ')}, which no
+            function above claims — the list of names has drifted from the code.
+          </Text>
+        )}
+        </PaneSection>
 
       <PaneSection
         title="The curator"

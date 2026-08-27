@@ -42,14 +42,25 @@ type Reply = Result<Json<Value>, StatusCode>;
 /// nobody scrolls to the bottom of the page. Older rows are one tap away.
 const AI_PAGE: i64 = 8;
 
+/*
+ * These ids MUST be the exact `schema_name` each feature passes to `chat_json`,
+ * because that string is the statistics key. Three of them had drifted with the
+ * prompts they name - a v1 that became v3, a rename, a dropped suffix - and the
+ * only symptom was three rows reading "never run" forever while the work they
+ * describe was happening every few minutes. Nothing failed and nothing warned.
+ *
+ * `unattributed` below is the guard: anything recorded under an id that is not
+ * in this table is reported rather than dropped, so the next drift shows up as
+ * a row nobody named instead of as silence.
+ */
 const FUNCTIONS: &[(&str, &str, &str, &str)] = &[
     // id, label, uses, which model setting drives it
     ("embed", "Lyric and descriptor embeddings", "embed", "embedModel"),
     ("attackfm_fast_profile_v4", "Fast song profile", "chat", "fastModel"),
     ("attackfm_fast_profile_repair_v1", "Profile repair", "chat", "fastModel"),
-    ("attackfm_refinement_patch_v1", "Evidence audit", "chat", "refinementModel"),
-    ("attackfm_specific_tags_v1", "Specific tag decisions", "chat", "fastModel"),
-    ("attackfm_trait_analysis_v1", "DJ trait analysis", "chat", "chatModel"),
+    ("attackfm_refinement_patch_v3", "Evidence audit", "chat", "refinementModel"),
+    ("attackfm_specific_tag_registry_v1", "Specific tag decisions", "chat", "fastModel"),
+    ("attackfm_trait_analysis", "DJ trait analysis", "chat", "chatModel"),
 ];
 
 fn model_for(which: &str) -> Option<String> {
@@ -252,6 +263,14 @@ pub async fn report(State(state): State<Arc<AppState>>, headers: HeaderMap) -> R
         })
     };
 
+    // Recorded work that no row above claims - see the note on FUNCTIONS.
+    let named: std::collections::HashSet<&str> = FUNCTIONS.iter().map(|f| f.0).collect();
+    let unattributed: Vec<serde_json::Value> = stats
+        .iter()
+        .filter(|(id, _)| !named.contains(id.as_str()))
+        .map(|(id, stat)| json!({ "id": id, "calls": stat.calls, "lastAt": stat.last_at }))
+        .collect();
+
     Ok(Json(json!({
         "settings": settings_json(),
         // Never probed on the way in - see the note above. The pane shows this
@@ -263,6 +282,7 @@ pub async fn report(State(state): State<Arc<AppState>>, headers: HeaderMap) -> R
             "failures": total_failures,
             "avgMs": (total_calls > 0).then(|| (total_ms / total_calls) as i64),
             "sinceBoot": crate::ai::since_boot_secs(),
+            "unattributed": unattributed,
         },
         "curator": curator,
         // The FIRST page, at the same size every later page uses - the pane

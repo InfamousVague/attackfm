@@ -96,6 +96,14 @@
   margin-block-start: var(--glacier-space-2);
 }
 
+/* A name in this list no longer matches the code. Warning-coloured, not
+   danger: nothing is broken, but a row is lying about being idle. */
+.localAi__drift {
+  display: block;
+  margin-block-start: var(--glacier-space-2);
+  color: var(--glacier-warning-text, var(--glacier-text-muted));
+}
+
 /* ---- function statistics -------------------------------------------------- */
 
 .localAi__fnStat {
