@@ -219,3 +219,13 @@
   gap: var(--glacier-space-2);
 }
 
+
+/* Connect and forget, side by side on a saved-server row. The forget is the
+   quiet one: a saved server is usually something you want, and the X is for
+   the box that moved or the hub you left. */
+.serversPage__savedActions {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  flex: none;
+}

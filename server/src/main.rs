@@ -19,6 +19,9 @@
 //! | `AFM_PLUGINS_DIR` | `<data>/plugins` | The plugin repository served at `/plugins`. |
 //! | `AFM_ASSETS_DIR` | `<data>/assets` | Drop folder for generated artwork, served at `/api/assets` (checkout set beneath). |
 //! | `AFM_PUBLIC_URL` | *(empty)* | The public origin, e.g. `https://matt.attack.fm` - needed for the Spotify OAuth redirect. |
+//! | `AFM_PEER_SYNC_URL` | *(empty)* | The hub this box copies finished imports to. Empty means this box IS a hub and syncs to nobody. |
+//! | `AFM_PEER_SYNC_TOKEN` | *(empty)* | A session token on that hub. Give the peer its OWN hub account: revoking a user drops every session it holds, so a shared token dies the moment that person signs out somewhere. |
+//! | `AFM_PEER_SYNC_CONCURRENCY` | `2` | Files in flight to the hub at once. Chunks within one file are always sequential. |
 
 mod ai;
 mod ai_admin;
@@ -61,6 +64,7 @@ mod jams;
 mod library_search;
 mod listens;
 mod pair;
+mod peersync;
 mod playlist_covers;
 mod push;
 mod radio;
@@ -147,6 +151,10 @@ pub struct AppState {
     pub filing: Arc<tokio::sync::Mutex<()>>,
     /// One library being pulled into this one, and how far along it is.
     pub mirror: Arc<mirror::MirrorState>,
+    /// The outbox a PEER keeps for its hub: files this box downloaded that the
+    /// library server has not been given yet. Inert unless AFM_PEER_SYNC_URL
+    /// says this box is a peer - see peersync.rs.
+    pub peersync: Arc<peersync::PeerSyncState>,
     /// The home feed's per-user mix cache (AI curation on a long TTL).
     pub home: Arc<home::HomeState>,
     /// The DJ's suggested stations, cached per listener - see stations.rs.
@@ -415,6 +423,7 @@ async fn main() {
         spotify_sync: Arc::new(spotify_sync::SpotifySyncState::default()),
         filing: Arc::new(tokio::sync::Mutex::new(())),
         mirror: Arc::new(mirror::MirrorState::default()),
+        peersync: Arc::new(peersync::PeerSyncState::default()),
         home: home::HomeState::new(),
         stations: stations::StationState::new(),
         discover: discover::DiscoverState::new(),
@@ -498,6 +507,9 @@ async fn main() {
     // The import runner: downloads links onto this box and indexes them as
     // they land, so every device's catalog follows.
     imports::spawn_scheduler(state.clone());
+    // And, on a peer, the outbox that carries what it downloaded up to the hub.
+    // A no-op on a box with no hub configured.
+    peersync::spawn(state.clone());
 
     // The curator: enriches the library with tempo and lyric vectors, and
     // rebuilds each listener's playlists from what they actually play.
@@ -704,6 +716,9 @@ async fn main() {
         .route("/api/hot/summary", get(hot::summary))
         .route("/api/mirror/start", post(mirror::start))
         .route("/api/mirror/status", get(mirror::status))
+        // What this box still owes its hub, and the button that tries again.
+        .route("/api/peersync", get(peersync::status))
+        .route("/api/peersync/retry", post(peersync::retry))
         .route("/api/curator/pulls/settings", post(collector::settings))
         .route("/api/dj", get(dj::station))
         .route("/api/dj/stations", get(stations::stations))

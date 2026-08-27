@@ -195,6 +195,17 @@ export const SETTINGS_INDEX: SettingEntry[] = [
     keywords:
       'wifi wi-fi cellular mobile data 4g 5g lte metered roaming allowance bill cap data saver background download',
   },
+  {
+    id: 'import-server',
+    // The NAMESPACED section id, because pluginHooks builds a plugin pane's id
+    // as `${plugin.id}:${section.id}`. A bare 'downloads' here matches nothing
+    // and both search surfaces drop the entry silently and forever - which is
+    // also, used correctly, what makes it disappear when the plugin is off.
+    pane: 'spotify-import:downloads',
+    label: 'Where downloads run',
+    description: 'Which server fetches imported links, before the songs are copied across to your library.',
+    keywords: 'import download server which box spotiflac peer hub mirror where runs downloader sync copy',
+  },
 ];
 
 /** Does one row answer this query? Same AND-across-words rule as the panes. */

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useServerSession } from './serverSession.tsx';
 import { MirrorSection, ServerSettings } from './ServerSettings.tsx';
 import { ServersPanel } from './ServersPage.tsx';
+import { SyncToHubSection } from './SyncToHubSection.tsx';
 import { SubNav } from '../settings/kit/settingsKit.tsx';
 
 /**
@@ -16,7 +17,9 @@ import { SubNav } from '../settings/kit/settingsKit.tsx';
  * - THIS SERVER: the box you are on. Its numbers, its disk, its scan, its
  *   people, and the way out.
  * - NETWORK: the other boxes. Which one actually serves a song, how near each
- *   is, how much of your library it holds, and the mirror copier.
+ *   is, how much of your library it holds, the mirror copier, and - when the
+ *   box running your imports is not the one holding your library - what it
+ *   still owes the library.
  *
  * The chunks switch on SubNav tabs rather than a SegmentedControl: a
  * segmented control answers "which value", tabs answer "which page", and
@@ -60,6 +63,7 @@ export function ServersSettings() {
         <>
           <ServersPanel />
           <MirrorSection />
+          <SyncToHubSection />
         </>
       )}
     </div>

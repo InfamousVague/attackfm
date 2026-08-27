@@ -1,6 +1,6 @@
 import { Download, ListMusic } from '@glacier/icons';
 import { isTauri } from '@attackfm/app/tauri';
-import { useServerSession } from '@attackfm/app/serverSession';
+import { useImportServer } from '@attackfm/app/importServer';
 import type { AcquireHandler, PaletteContext, Plugin, PluginCommand } from '../../src/plugins/types.ts';
 import { useDownloads } from '@attackfm/app/importsBridge';
 import { isMusicImportLink } from './musicImport.ts';
@@ -19,11 +19,13 @@ function useImportCommands({ query, close }: PaletteContext): readonly PluginCom
   // The hooks are called first, unconditionally, so the early returns below
   // can never change this instance's hook order.
   const { enqueue } = useDownloads();
-  const { session } = useServerSession();
+  // The server that would actually run this, which is not necessarily the one
+  // the app is signed into - the downloader lives on whichever box has it.
+  const target = useImportServer();
   // No engine, no command. The engine is EITHER local (a desktop with the
-  // subprocess) OR the hub (any device signed into a server). A plain browser
+  // subprocess) OR a server (any device signed into one). A plain browser
   // with neither would be a button wired to nothing.
-  if (!isTauri() && !session) return [];
+  if (!isTauri() && !target) return [];
   const link = isMusicImportLink(query) ? query.trim() : null;
   if (!link) return [];
   // A pasted link is an action, not a search: exclusive drops the song rows.
@@ -51,8 +53,8 @@ function useImportCommands({ query, close }: PaletteContext): readonly PluginCom
  */
 function useDownloadHandlers(): readonly AcquireHandler[] {
   const { enqueue } = useDownloads();
-  const { session } = useServerSession();
-  if (!isTauri() && !session) return [];
+  const target = useImportServer();
+  if (!isTauri() && !target) return [];
   return [
     {
       id: 'download',
@@ -80,7 +82,7 @@ export const spotifyImport: Plugin = {
     'Downloads pasted Spotify, Apple Music, Tidal, Deezer, YT Music, and Qobuz links into the library.',
   icon: <Download size={22} />,
   author: 'AttackFM',
-  version: '1.5.0',
+  version: '1.6.0',
   tags: ['Importer', 'Downloads'],
   // The engine runs where the music lives. On a desktop that is the local
   // SpotiFLAC subprocess; signed into a server it is the hub, which downloads

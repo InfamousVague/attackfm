@@ -778,6 +778,11 @@ pub fn spawn_scheduler(state: Arc<AppState>) {
                 // Hand the outcome back to the mirror that raised it, if any.
                 // A no-op for an ordinary pasted link.
                 crate::spotify_sync::on_job_finished(&run_state, &id).await;
+                // The files also belong on the hub, if this box is a peer.
+                // Rows and a poke only: this still holds the job's download
+                // slot, and PLAYLIST_SLOTS is 1, so a megabyte-paced upload
+                // here would wedge every playlist import queued behind it.
+                crate::peersync::on_job_finished(&run_state, &id).await;
                 // The slot is freed and the scheduler re-poked by _guard's Drop.
             });
             }

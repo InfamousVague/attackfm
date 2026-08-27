@@ -1,25 +1,25 @@
 import { Button, Label, Text } from '@glacier/react';
 import { useDownloads } from '@attackfm/app/importsBridge';
-import { useServerSession } from '@attackfm/app/serverSession';
+import { ImportServerPicker, useImportServer } from '@attackfm/app/importServer';
 
 /**
  * The Downloads tab. Once the seat of the local engine's knobs - SpotiFLAC
  * install state, quality, services, the output folder - it slimmed to a
- * status pane when the engine moved to the hub: downloads run where the music
- * lives, so the machine-local configuration went with them. What remains is
- * what a listener still owns from here: watching the queue and clearing the
- * finished cards.
+ * status pane when the engine moved onto a server: downloads run where the
+ * engine is, so the machine-local configuration went with them. What remains
+ * is what a listener still owns from here: which server does the fetching, and
+ * watching the queue.
  */
 export function DownloadsSettings() {
-  const { session } = useServerSession();
+  const target = useImportServer();
   const { jobs, active, clearFinished } = useDownloads();
   const finished = jobs.length - active.length;
 
-  if (!session) {
+  if (!target) {
     return (
       <div className="prefsBody">
         <Text tone="muted" size="sm">
-          Imports run on your server - connect one under Settings &rarr; Server first.
+          Imports run on a server - connect one under Settings &rarr; Server first.
         </Text>
       </div>
     );
@@ -27,14 +27,11 @@ export function DownloadsSettings() {
 
   return (
     <div className="prefsBody">
-      <div className="prefsSection">
-        <Label>Where downloads run</Label>
-        <Text tone="muted" size="sm">
-          Links you import are downloaded by {session.url.replace(/^https?:\/\//, '')}{' '}
-          straight into its library, then synced to every signed-in device. Paste a
-          link in search, or use the get-this buttons around the app.
-        </Text>
-      </div>
+      {/* The picker ships from core, not from this bundle: it speaks the
+          settings kit (whose CSS a plugin cannot import) and it carries the
+          `import-server` search anchor, which must not live in a bundle that
+          can be a version behind the app. */}
+      <ImportServerPicker />
       <div className="prefsSection">
         <Label>Queue</Label>
         <Text tone="muted" size="sm">

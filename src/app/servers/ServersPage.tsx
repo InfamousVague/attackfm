@@ -4,7 +4,7 @@ import { StorageManager } from '../downloads/StorageManager.tsx';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useServerSession } from './serverSession.tsx';
 import { useRegistry } from './registrySession.tsx';
-import { fetchSavedServers } from './serverSync.ts';
+import { fetchSavedServers, forgetServerEverywhere } from './serverSync.ts';
 import type { Membership } from './registry.ts';
 import {
   enterServer,
@@ -364,6 +364,7 @@ function ServerCard({
  * avoid.
  */
 function AddServer({ onAdded }: { onAdded: () => void }) {
+  const { session: registry } = useRegistry();
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState('');
   const [code, setCode] = useState('');
@@ -372,12 +373,29 @@ function AddServer({ onAdded }: { onAdded: () => void }) {
 
   const submit = async () => {
     const clean = url.trim().replace(/\/+$/, '');
-    if (!clean || !code.trim()) return;
+    if (!clean) return;
     setBusy(true);
     setError(null);
     try {
       const withScheme = /^https?:\/\//.test(clean) ? clean : `https://${clean}`;
-      const session = await pairClaim(withScheme, code.trim());
+      /*
+       * An address is usually enough.
+       *
+       * This used to DEMAND a six-digit pairing code, which meant adding your
+       * own second box required walking to it and opening its settings first -
+       * and there is no reason to prove you are you to a server your account
+       * already belongs to. `/api/registry/enter` is that proof, and it is the
+       * same call the saved-servers list below has always used to connect.
+       *
+       * The code stays as the fallback rather than being removed: it is the
+       * only way in when there is no registry session (signed out, or a server
+       * your account has never joined), which is exactly when a stranger's box
+       * needs one.
+       */
+      const session =
+        code.trim() || !registry
+          ? await pairClaim(withScheme, code.trim())
+          : await enterServer(withScheme, registry.token);
       addMirror({
         url: withScheme,
         token: session.token,
@@ -410,7 +428,9 @@ function AddServer({ onAdded }: { onAdded: () => void }) {
     <section className="serversPage__add">
       <Text>Add a server</Text>
       <Text size="sm" tone="muted">
-        On the other server, open Settings and tap “Link a device” for a six-digit code.
+        {registry
+          ? 'The address is enough for a server your account already belongs to. For anyone else\u2019s, open its Settings and tap \u201cLink a device\u201d for a code.'
+          : 'On the other server, open Settings and tap \u201cLink a device\u201d for a six-digit code.'}
       </Text>
       <Field label="Address">
         <Input
@@ -419,7 +439,7 @@ function AddServer({ onAdded }: { onAdded: () => void }) {
           onChange={(e) => setUrl(e.target.value)}
         />
       </Field>
-      <Field label="Code">
+      <Field label={registry ? 'Code (only if it is not yours)' : 'Code'}>
         <Input
           placeholder="123456"
           inputMode="numeric"
@@ -480,6 +500,30 @@ function SavedServers({ linked, onLinked }: { linked: string[]; onLinked: () => 
   }
   if (missing.length === 0) return null;
 
+  /*
+   * Dropping a server saved to the account.
+   *
+   * Until now this list was connect-only, so a server you had left - a box that
+   * moved, a friend's hub you no longer use - came back on every new device
+   * with no way to refuse it. The call to forget it centrally already existed
+   * (serverSync.forgetServerEverywhere, which is what the Profile card uses);
+   * this list simply never offered it. Dropped from local state at once rather
+   * than waiting for a refetch, because the registry write is fire-and-forget
+   * and a row that lingers reads as a failed tap.
+   */
+  const forget = async (m: Membership) => {
+    setBusy(m.serverUrl);
+    setError(null);
+    try {
+      await forgetServerEverywhere(m.serverUrl);
+      setSaved((prev) => prev.filter((x) => x.serverUrl !== m.serverUrl));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not forget that server.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const connect = async (m: Membership) => {
     setBusy(m.serverUrl);
     setError(null);
@@ -517,9 +561,20 @@ function SavedServers({ linked, onLinked }: { linked: string[]; onLinked: () => 
               {m.role === 'owner' ? ' · you host this' : ''}
             </Text>
           </span>
-          <Button variant="soft" disabled={busy !== null} onClick={() => void connect(m)}>
-            {busy === m.serverUrl ? 'Connecting…' : 'Connect'}
-          </Button>
+          <span className="serversPage__savedActions">
+            <Button variant="soft" disabled={busy !== null} onClick={() => void connect(m)}>
+              {busy === m.serverUrl ? 'Connecting…' : 'Connect'}
+            </Button>
+            <button
+              type="button"
+              className="serverCard__forget"
+              aria-label={`Forget ${m.serverName || m.serverUrl}`}
+              disabled={busy !== null}
+              onClick={() => void forget(m)}
+            >
+              <X size={16} />
+            </button>
+          </span>
         </div>
       ))}
       {error && (
