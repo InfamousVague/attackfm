@@ -720,6 +720,8 @@ async fn main() {
         .route("/api/mirror/status", get(mirror::status))
         // What this box still owes its hub, and the button that tries again.
         .route("/api/collector/claim", post(collector::claim))
+        .route("/api/collector/claimed", post(collector::claimed))
+        .route("/api/collector/release", post(collector::release))
         .route("/api/peersync", get(peersync::status))
         .route("/api/peersync/retry", post(peersync::retry))
         .route("/api/curator/pulls/settings", post(collector::settings))

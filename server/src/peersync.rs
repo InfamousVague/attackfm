@@ -185,7 +185,11 @@ impl PeerSyncState {
 
 /// What became of one file.
 enum Outcome {
-    Done,
+    /// Carries the rel_path the HUB filed it under, which is not necessarily
+    /// the one this box holds - the hub re-derives the path from the file's own
+    /// tags and suffixes a collision. A delegated pull is settled on that exact
+    /// string, so it has to come back from the hub rather than be assumed.
+    Done(String),
     /// Worth trying again: the network, a timeout, a hub that lost the id.
     Transient(String),
     /// Not worth trying again by itself - the same bytes would be rejected the
@@ -277,6 +281,8 @@ async fn take_a_want(state: &Arc<AppState>, hub: &Hub) -> bool {
         return false;
     };
 
+    let pull_id = pull["id"].as_i64().unwrap_or(0);
+
     match crate::imports::enqueue_internal(
         state,
         url,
@@ -288,17 +294,72 @@ async fn take_a_want(state: &Arc<AppState>, hub: &Hub) -> bool {
     )
     .await
     {
-        Ok(_) => {
+        Ok(job_id) => {
+            // Written BEFORE anything can finish: the upload reports against
+            // this mapping, and a job that beat the write would deliver a file
+            // the hub could never tie to its pull.
+            let _ = state.db.meta_set(&claim_key(&job_id), &pull_id.to_string());
             eprintln!("[peersync] fetching {title} - {artist} for {}", host_of(&hub.url));
             true
         }
-        // The hub has already marked it taken. It ages out there rather than
-        // being handed straight back, which is what stops a box that cannot
-        // download this particular link from claiming it every minute forever.
+        /*
+         * Hand it straight back.
+         *
+         * The claim is destructive - the hub took the row off its offer queue
+         * the moment it answered - so a box that cannot start the download has
+         * quietly eaten somebody's want. enqueue_internal's one refusal is the
+         * box-wide library quota, which is not a fact about this song and will
+         * refuse the next one too, so a peer at quota would otherwise drain the
+         * hub's offers one per wave and download none of them.
+         */
         Err(e) => {
             eprintln!("[peersync] could not take {title}: {e}");
+            let _ = http()
+                .post(format!("{}/api/collector/release", hub.url))
+                .bearer_auth(&hub.token)
+                .json(&serde_json::json!({ "pullId": pull_id }))
+                .send()
+                .await;
             false
         }
+    }
+}
+
+/// The pull a claimed job is working for, remembered across a restart.
+///
+/// A key per job rather than a table: the mapping is wanted exactly once, by
+/// exactly one reader, and a job that never finishes should cost nothing to
+/// forget.
+fn claim_key(job_id: &str) -> String {
+    format!("peer.claim.{job_id}")
+}
+
+/// Tell the hub which file a claimed pull turned into, naming it as the hub
+/// itself filed it. Nothing to say for an ordinary upload.
+async fn report_delivery(state: &Arc<AppState>, hub: &'static Hub, job_id: &str, filed: &str) {
+    if job_id.is_empty() || filed.is_empty() {
+        return;
+    }
+    let Some(pull) = state
+        .db
+        .meta_get(&claim_key(job_id))
+        .and_then(|v| v.parse::<i64>().ok())
+    else {
+        return;
+    };
+    let sent = http()
+        .post(format!("{}/api/collector/claimed", hub.url))
+        .bearer_auth(&hub.token)
+        .json(&serde_json::json!({ "pullId": pull, "path": filed }))
+        .send()
+        .await;
+    match sent {
+        // Left in place on failure: the row is 'done' and will not be pushed
+        // again, so the next finished file for the same job is the only other
+        // chance to mention this pull. An unreported pull is not lost, it is
+        // downloaded again by the hub once its patience runs out.
+        Ok(r) if r.status().is_success() => {}
+        _ => eprintln!("[peersync] could not tell {} about pull {pull}", host_of(&hub.url)),
     }
 }
 
@@ -479,8 +540,9 @@ async fn push_one(state: &Arc<AppState>, hub: &'static Hub, row: PeerSyncRow) {
     let rel = row.rel_path.as_str();
     let name = rel.rsplit('/').next().unwrap_or(rel);
     match outcome {
-        Outcome::Done => {
+        Outcome::Done(filed) => {
             state.db.peer_sync_finish(rel, "done", "");
+            report_delivery(state, hub, &row.job_id, &filed).await;
             state.db.record_activity(NewActivity {
                 source: "peersync",
                 kind: "sync",
@@ -634,7 +696,15 @@ async fn transfer(state: &Arc<AppState>, hub: &'static Hub, row: &PeerSyncRow) -
         Err(e) => return Outcome::Transient(format!("the hub did not answer the finish ({e})")),
     };
     match reply.status() {
-        StatusCode::OK => Outcome::Done,
+        StatusCode::OK => {
+            let filed = reply
+                .json::<serde_json::Value>()
+                .await
+                .ok()
+                .and_then(|b| b["path"].as_str().map(str::to_string))
+                .unwrap_or_default();
+            Outcome::Done(filed)
+        }
         StatusCode::UNAUTHORIZED => Outcome::Stalled(unauthorized_reason()),
         StatusCode::INSUFFICIENT_STORAGE => Outcome::Stalled(no_room_reason()),
         // Both mean the hub's copy is not what this box holds. Drop the handle

@@ -107,10 +107,9 @@ pub fn spawn(state: Arc<AppState>) {
 /// itself. Long enough that a peer on its idle minute still gets there first,
 /// short enough that a hub with no peer is not visibly stalled.
 const OFFER_GRACE_MS: i64 = 10 * 60 * 1000;
-/// How far back to look for a delegated pull's tracks arriving. Matches the
-/// window `land_pull` will stamp within, so a longer one would only find rows
-/// it then refuses.
-const ARRIVAL_WINDOW_MS: i64 = 60 * 60 * 1000;
+/// How long a pull a peer actually TOOK waits before this box does it anyway.
+/// Generous: a peer downloading a real album is not late, it is working.
+const TAKEN_GRACE_MS: i64 = 2 * 60 * 60 * 1000;
 
 /// Walks pulls whose import is still out and settles the finished ones:
 /// a done job stamps its tracks as auditions, a failed or vanished one is
@@ -125,7 +124,13 @@ async fn settle_pulls(state: &Arc<AppState>) {
         let job = jobs.iter().find(|j| j.id == job_id);
         match job {
             Some(j) if j.state == "done" => {
-                let _ = state.db.land_pull(pull_id, user_id, &j.track_ids);
+                // A job that finished having gained nothing new still closes
+                // its pull: land_pull only marks it landed when something took
+                // the stamp, so say so explicitly rather than leaving the pull
+                // open against a job that is never going to change again.
+                if state.db.land_pull(pull_id, user_id, &j.track_ids).unwrap_or(0) == 0 {
+                    let _ = state.db.mark_pull_landed(pull_id);
+                }
             }
             Some(j) if j.state == "error" => {
                 let _ = state.db.fail_pull(pull_id);
@@ -142,46 +147,46 @@ async fn settle_pulls(state: &Arc<AppState>) {
     }
 }
 
-/// Which of the recently arrived tracks are the ones this pull went for.
-///
-/// Both halves must agree. Title alone matches every cover and every remaster
-/// in the window; artist alone matches the rest of an album, which is how a
-/// pull for one song could stamp twelve.
-fn arrival_match(arrivals: &[(i64, String, String)], title: &str, artist: &str) -> Vec<i64> {
-    arrivals
-        .iter()
-        .filter(|(_, t, a)| same_title(t, title) && same_artist(a, artist))
-        .map(|(id, _, _)| *id)
-        .collect()
-}
-
 /// Settles the pulls that are out with a peer.
 ///
-/// These have no local job to ask, so arrival IS the completion signal: the
-/// peer downloads, peersync copies the files up, the scanner files them, and
-/// the tracks appear here moments later. Matching is by artist and title
-/// against tracks added inside the last hour that no audition already owns -
-/// the same hour `land_pull` itself insists on. A song somebody added by hand
-/// in that window could in principle be matched instead; the cost of that is
-/// one track showing up in Music Date, which is where it would have gone.
+/// These have no local job to ask, so the peer TELLS us: when its upload
+/// finishes, the hub replies with the rel_path it filed the file under, and the
+/// peer reports that back against the pull. Settling is then an exact lookup.
+///
+/// It matched by artist and title once, against everything recently added. That
+/// was wrong in a way worth recording: any track that happened to arrive in the
+/// window with a similar name was annexed as one listener's private audition -
+/// hidden from every other client, and UNLINKED FROM DISK if that listener
+/// swiped past it in Music Date. A pull now lands on the files it was told
+/// about, or on nothing at all.
 async fn settle_delegated(state: &Arc<AppState>) {
-    let rows = state.db.delegated_pulls();
-    if rows.is_empty() {
-        return;
-    }
-    let arrivals = state.db.recent_unowned_tracks(now_ms() - ARRIVAL_WINDOW_MS);
-    for (pull_id, user_id, marker, url, title, artist, created_at) in rows {
-        let landed = arrival_match(&arrivals, &title, &artist);
-        if !landed.is_empty() {
-            let _ = state.db.land_pull(pull_id, user_id, &landed);
+    for (pull_id, user_id, marker, url, title, artist, created_at) in state.db.delegated_pulls() {
+        // Has the peer said what it delivered, and has it arrived?
+        let ids = state.db.pull_path_track_ids(pull_id);
+        if !ids.is_empty() && state.db.land_pull(pull_id, user_id, &ids).unwrap_or(0) > 0 {
             continue;
         }
 
-        // Offered, nobody took it, and this box can fetch after all.
-        if marker == crate::db::Db::PULL_OFFERED
-            && now_ms() - created_at > OFFER_GRACE_MS
-            && crate::imports::find_spotiflac().is_some()
-        {
+        /*
+         * Nothing is coming. Two ways that happens, one grace each:
+         *
+         * - nobody claimed the offer, so no peer is listening. A peer's idle
+         *   wave is a minute, so ten is already generous.
+         * - a peer took it and never delivered - it could not download it, or
+         *   it went away mid-job. Longer, because a real album takes a while,
+         *   and re-downloading something already in flight only costs bandwidth
+         *   (the hub's own precheck refuses the duplicate).
+         *
+         * Either way this box finishes the errand itself if it can, which takes
+         * the pull off the delegated path entirely: job_id becomes a real local
+         * id and the ordinary settle loop owns it from then on.
+         */
+        let waited = now_ms() - created_at;
+        let give_up = match marker.as_str() {
+            m if m == crate::db::Db::PULL_OFFERED => waited > OFFER_GRACE_MS,
+            _ => waited > TAKEN_GRACE_MS,
+        };
+        if give_up && crate::imports::find_spotiflac().is_some() {
             let via = state
                 .db
                 .user_by_id(user_id)
@@ -466,6 +471,53 @@ pub async fn claim(
     })))
 }
 
+/// A peer reporting what a claimed pull actually produced, as the rel_path the
+/// hub itself replied with when the upload finished. This is what a delegated
+/// pull settles on - see `settle_delegated` for why it is not a name match.
+pub async fn claimed(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<ClaimedBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    auth::require_caller(&state.db, &headers)
+        .map_err(|s| (s, "sign in first".to_string()))?;
+    let path = body.path.trim();
+    if body.pull_id <= 0 || path.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "pullId and path are required".into()));
+    }
+    state
+        .db
+        .record_pull_path(body.pull_id, path)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaimedBody {
+    pub pull_id: i64,
+    /// Empty when the peer could not start the download at all: the pull goes
+    /// back on the offer queue rather than sitting claimed by nobody until it
+    /// ages out.
+    #[serde(default)]
+    pub path: String,
+}
+
+/// A peer handing a claim back, having failed to start it.
+pub async fn release(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<ClaimedBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    auth::require_caller(&state.db, &headers)
+        .map_err(|s| (s, "sign in first".to_string()))?;
+    state
+        .db
+        .release_claimed_pull(body.pull_id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
 /// `GET /api/curator/pulls` - the collector accounting for itself: the dials,
 /// the ledger against the cap, and what it bought lately. `userId` is how the
 /// client matches quarantined tracks to "mine".
@@ -693,8 +745,11 @@ pub async fn settings(
 mod delegation_tests {
     use super::*;
 
-    fn db() -> crate::db::Db {
-        let dir = std::env::temp_dir().join(format!("afm-delegate-{}", std::process::id()));
+    /// A database of its own per test. Sharing one path across tests in the
+    /// same process is two connections to one file and cargo runs them at the
+    /// same time: the second gets "database is locked", not a real failure.
+    fn db(name: &str) -> crate::db::Db {
+        let dir = std::env::temp_dir().join(format!("afm-delegate-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         crate::db::Db::open(&dir.join("t.sqlite")).unwrap()
@@ -720,7 +775,7 @@ mod delegation_tests {
     /// row rather than just reading it.
     #[test]
     fn an_offer_is_taken_once() {
-        let db = db();
+        let db = db("claim");
         let me = db.create_user("collector-test", "x", true).unwrap();
         assert_eq!(db.first_admin_id(), Some(me), "the peer files downloads under the owner");
         offer(&db, "a", "Blue in Green", "Miles Davis");
@@ -739,17 +794,73 @@ mod delegation_tests {
         );
     }
 
-    /// The arrival match needs both halves to agree.
+    /// A delegated pull lands on the file the peer NAMED, and a pull that
+    /// gained nothing stays open instead of closing over an empty hand.
+    ///
+    /// The second half is the one that bit: land_pull used to mark a pull
+    /// 'landed' whatever it stamped, and pulled_ext_ids blocks every state but
+    /// 'failed' - so a pull that stamped nothing silently retired its candidate
+    /// for good, with no track and no card to show for it.
     #[test]
-    fn only_the_right_arrival_lands_a_pull() {
-        let arrivals = vec![
-            (10, "Blue in Green".to_string(), "Miles Davis".to_string()),
-            // Same title, different record: a cover in the same window.
-            (11, "Blue in Green".to_string(), "Bill Evans".to_string()),
-            // Same artist, the rest of the album arriving alongside it.
-            (12, "So What".to_string(), "Miles Davis".to_string()),
-        ];
-        assert_eq!(arrival_match(&arrivals, "Blue in Green", "Miles Davis"), vec![10]);
-        assert!(arrival_match(&arrivals, "Flamenco Sketches", "Miles Davis").is_empty());
+    fn a_delegated_pull_lands_on_the_file_it_was_told_about() {
+        let db = db("land");
+        let me = db.create_user("collector-test", "x", true).unwrap();
+        let first = offer(&db, "a", "Blue in Green", "Miles Davis");
+        let second = offer(&db, "b", "Blue in Green", "Miles Davis");
+        // A report only counts against a pull a peer actually took.
+        db.claim_offered_pull().expect("first");
+        db.claim_offered_pull().expect("second");
+
+        let mut track = crate::db::ScannedTrack::default();
+        track.rel_path = "Miles Davis/Kind of Blue/03 Blue in Green.flac".to_string();
+        track.title = "Blue in Green".to_string();
+        track.artist = "Miles Davis".to_string();
+        db.upsert_track(&track, 1).unwrap();
+
+        // Nothing is owed until a peer says what it delivered.
+        assert!(db.pull_path_track_ids(first).is_empty(), "no report, no tracks");
+
+        db.record_pull_path(first, &track.rel_path).unwrap();
+        let ids = db.pull_path_track_ids(first);
+        assert_eq!(ids.len(), 1, "the reported path resolves to its track");
+        assert_eq!(db.land_pull(first, me, &ids).unwrap(), 1, "it takes the stamp");
+
+        /*
+         * The same file reported against a second pull - two listeners offered
+         * the same recording, one copy delivered. It is already an audition, so
+         * nothing takes the stamp, and the pull must stay open rather than
+         * retire its candidate having gained nothing.
+         */
+        db.record_pull_path(second, &track.rel_path).unwrap();
+        let ids = db.pull_path_track_ids(second);
+        assert_eq!(ids.len(), 1, "the path still resolves");
+        assert_eq!(db.land_pull(second, me, &ids).unwrap(), 0, "somebody already has it");
+        assert!(
+            db.delegated_pulls().iter().any(|r| r.0 == second),
+            "a pull that gained nothing is still open",
+        );
+        assert!(
+            !db.delegated_pulls().iter().any(|r| r.0 == first),
+            "the one that landed is settled",
+        );
+    }
+
+    /// A claim the peer could not start goes back on the offer queue rather
+    /// than sitting taken by nobody until it ages out.
+    #[test]
+    fn an_unstartable_claim_is_handed_back() {
+        let db = db("release");
+        db.create_user("collector-test", "x", true).unwrap();
+        let pull = offer(&db, "a", "So What", "Miles Davis");
+
+        db.claim_offered_pull().expect("claimable");
+        assert!(db.claim_offered_pull().is_none(), "taken, so not on offer");
+
+        db.release_claimed_pull(pull).unwrap();
+        assert_eq!(
+            db.claim_offered_pull().map(|c| c.0),
+            Some(pull),
+            "handed back, so the next peer can take it",
+        );
     }
 }
