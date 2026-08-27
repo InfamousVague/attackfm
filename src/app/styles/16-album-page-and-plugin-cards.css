@@ -232,7 +232,7 @@
    the whole body of work, so it wraps and is read rather than skimmed past. */
 .artistDisc {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
   gap: var(--glacier-space-4) var(--glacier-space-3);
 }
 

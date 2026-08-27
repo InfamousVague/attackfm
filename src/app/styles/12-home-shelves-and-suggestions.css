@@ -328,7 +328,7 @@
   display: grid;
   /* Covers ~33% smaller than the home shelves: a narrower column min packs more
      per row, and the square cover fills the column, so it shrinks with it. */
-  grid-template-columns: repeat(auto-fill, minmax(6.375rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(7.65rem, 1fr));
   gap: var(--glacier-space-4) var(--glacier-space-3);
 }
 
@@ -341,6 +341,6 @@
 /* Set cards get more room than chart tiles: a mosaic needs the width to read
    as four covers, not four thumbnails. */
 .discoverGrid--sets {
-  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(10.2rem, 1fr));
 }
 
