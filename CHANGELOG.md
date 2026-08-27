@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.90
+
+- The curator now tells you where its downloading happens, when that server last collected any, and how many songs arrived in the last day
+- A pick waiting for a download server says it is waiting, rather than looking like it is already being fetched
+- A remote server's two progress bars are told apart: how much of your library is there, and how full its disk is
+
 ## 0.4.89
 
 - Album art is a fifth larger everywhere it is laid out in a grid — your shelves, Discover, an artist's records, the booth's mixes and the results when you search your own library
