@@ -75,7 +75,7 @@ Environment variables only, so the systemd unit is the whole deployment story.
 | `AFM_SCAN_MINUTES` | `15` | Re-walk interval. 0 turns the timer off. |
 | `AFM_TRUST_MEMBERS_OF` | – | Another server's URL. Anyone who is a member THERE is admitted here without an invite. Needs `AFM_TRUST_TOKEN` as well; both or neither. |
 | `AFM_TRUST_TOKEN` | – | An **admin** token on that server, used only to ask whether a registry account is one of its members. The answer is a bare boolean. |
-| `AFM_IMPORTS` | on | Who this box downloads for. `off` refuses everyone - imports, refetch and the collector's own pulls - even with SpotiFLAC installed, so a misrouted import fails loudly instead of filing into the wrong library. `collector` refuses only pasted links: the collector still stocks the box, offering each download to a peer that has a downloader before falling back to fetching it here. `collector` is what a hub wants; `off` is for a box that should never fetch at all. |
+| `AFM_IMPORTS` | on | Who this box downloads for. `off` refuses everyone - imports, refetch and the collector's own pulls - even with SpotiFLAC installed, so a misrouted import fails loudly instead of filing into the wrong library. `collector` refuses only pasted links: the collector still chooses what to acquire, but offers each download to a peer that has a downloader and never fetches anything itself. An offer nobody takes within a day is forgotten, so the song returns to the pool rather than being condemned. `collector` is what a hub with a separate download box wants; `off` is for a box that should take no part in downloading at all. |
 
 ## Modules
 

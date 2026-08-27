@@ -103,13 +103,15 @@ pub fn spawn(state: Arc<AppState>) {
     });
 }
 
-/// How long an offered download waits for a peer before this box does it
-/// itself. Long enough that a peer on its idle minute still gets there first,
-/// short enough that a hub with no peer is not visibly stalled.
-const OFFER_GRACE_MS: i64 = 10 * 60 * 1000;
-/// How long a pull a peer actually TOOK waits before this box does it anyway.
-/// Generous: a peer downloading a real album is not late, it is working.
-const TAKEN_GRACE_MS: i64 = 2 * 60 * 60 * 1000;
+/// How long a delegated pull waits for a peer to deliver it before the hub
+/// forgets it ever asked. Long enough to cover a home server that is off for
+/// the night, short enough that the pool moves on.
+const UNANSWERED_MS: i64 = 24 * 60 * 60 * 1000;
+/// How many wants may be outstanding at once. Offers accumulate while no peer
+/// is listening - one every cycle, per listener - and a queue that grows all
+/// week is not a queue, it is a backlog nobody asked for. At the cap the
+/// collector simply stops raising new ones until the peer catches up.
+const OUTSTANDING_OFFERS: usize = 20;
 
 /// Walks pulls whose import is still out and settles the finished ones:
 /// a done job stamps its tracks as auditions, a failed or vanished one is
@@ -159,50 +161,35 @@ async fn settle_pulls(state: &Arc<AppState>) {
 /// hidden from every other client, and UNLINKED FROM DISK if that listener
 /// swiped past it in Music Date. A pull now lands on the files it was told
 /// about, or on nothing at all.
+///
+/// NOTHING IS DOWNLOADED HERE when nobody answers. A first version had this box
+/// fetch the song itself after ten minutes, so that a hub with no peer still
+/// stocked its own shelves. That served an operator nobody has been: setting
+/// collector mode is itself the statement that this box does not download, and
+/// on the box it was written for the local downloader cannot reach a provider
+/// at all - so every fallback was a guaranteed failure that then condemned its
+/// candidate for a month. An unanswered offer is now simply forgotten, which
+/// puts the song back in the pool to be offered again when a peer is listening.
 async fn settle_delegated(state: &Arc<AppState>) {
-    for (pull_id, user_id, marker, url, title, artist, created_at) in state.db.delegated_pulls() {
-        // Has the peer said what it delivered, and has it arrived?
+    for (pull_id, user_id, _marker, _url, _title, _artist, created_at) in state.db.delegated_pulls()
+    {
         let ids = state.db.pull_path_track_ids(pull_id);
         if !ids.is_empty() && state.db.land_pull(pull_id, user_id, &ids).unwrap_or(0) > 0 {
             continue;
         }
-
         /*
-         * Nothing is coming. Two ways that happens, one grace each:
+         * FORGOTTEN, not failed.
          *
-         * - nobody claimed the offer, so no peer is listening. A peer's idle
-         *   wave is a minute, so ten is already generous.
-         * - a peer took it and never delivered - it could not download it, or
-         *   it went away mid-job. Longer, because a real album takes a while,
-         *   and re-downloading something already in flight only costs bandwidth
-         *   (the hub's own precheck refuses the duplicate).
-         *
-         * Either way this box finishes the errand itself if it can, which takes
-         * the pull off the delegated path entirely: job_id becomes a real local
-         * id and the ordinary settle loop owns it from then on.
+         * `fail_pull` means "the catalogue does not have this song", and
+         * pulled_ext_ids honours that for thirty days. "No peer was listening"
+         * is not a fact about the song, and burning a good candidate for a
+         * month because a home server was switched off overnight is exactly the
+         * damage this distinction avoids. Dropping the row lets the ordinary
+         * scoring offer it again; the paths and tracks tables cascade with it.
          */
-        let waited = now_ms() - created_at;
-        let give_up = match marker.as_str() {
-            m if m == crate::db::Db::PULL_OFFERED => waited > OFFER_GRACE_MS,
-            _ => waited > TAKEN_GRACE_MS,
-        };
-        if give_up && crate::imports::find_spotiflac().is_some() {
-            let via = state
-                .db
-                .user_by_id(user_id)
-                .map(|u| format!("the collector · for {}", u.username))
-                .unwrap_or_else(|| "the collector".to_string());
-            if let Ok(job_id) = crate::imports::enqueue_internal(
-                state, &url, &title, &artist, "collector", user_id, &via,
-            )
-            .await
-            {
-                let _ = state.db.set_pull_job(pull_id, &job_id);
-            }
-            continue;
+        if now_ms() - created_at > UNANSWERED_MS {
+            let _ = state.db.forget_pull(pull_id);
         }
-
-        let _ = state.db.fail_pull_if_stale(pull_id, now_ms() - STALE_PULL_MS);
     }
 }
 
@@ -217,6 +204,11 @@ async fn pull_cycle(state: &Arc<AppState>) {
     // The budget is global (it is one disk): at the cap the collector stops
     // whole, and the For-you shelf carries the message.
     if state.db.collector_ledger_bytes() >= cap_bytes(state) {
+        return;
+    }
+    // Nobody is taking what has already been offered; adding to the pile helps
+    // no one.
+    if state.db.delegated_pulls().len() >= OUTSTANDING_OFFERS {
         return;
     }
     // People first: a human's import in flight means the queue is not ours.
@@ -861,6 +853,19 @@ mod delegation_tests {
             db.claim_offered_pull().map(|c| c.0),
             Some(pull),
             "handed back, so the next peer can take it",
+        );
+
+        /*
+         * And a want nobody ever came for is FORGOTTEN, not failed. fail_pull
+         * would leave a 'failed' row, which pulled_ext_ids honours for thirty
+         * days - condemning a perfectly good song because a home server was off
+         * for the night. Dropping the row is what puts it back in the pool.
+         */
+        db.forget_pull(pull).unwrap();
+        assert!(db.delegated_pulls().is_empty(), "the row is gone");
+        assert!(
+            !db.pulled_ext_ids(db.first_admin_id().unwrap(), 0).contains("a"),
+            "and nothing is left blocking the candidate",
         );
     }
 }
