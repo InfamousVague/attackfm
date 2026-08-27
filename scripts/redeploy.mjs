@@ -322,7 +322,10 @@ function deployAssets(env) {
   console.log(`\n${c.green('✓')} Artwork published.\n`);
 }
 
-const mode = process.argv[2] ?? 'deploy';
+// The MODE is the first bare word, not simply argv[2]: flags are passed
+// through `npm run redeploy -- --keep`, which lands the flag in argv[2] and
+// made the one documented flag fail as an unknown mode.
+const mode = process.argv.slice(2).find((a) => !a.startsWith('-')) ?? 'deploy';
 const env = loadEnv();
 checkTools();
 
