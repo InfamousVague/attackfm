@@ -456,7 +456,15 @@ function AddServer({ onAdded }: { onAdded: () => void }) {
         <Button variant="ghost" onClick={() => setOpen(false)} disabled={busy}>
           Cancel
         </Button>
-        <Button onClick={() => void submit()} disabled={busy || !url.trim() || !code.trim()}>
+        {/* The code is required only when there is nothing else to prove you
+            with. submit() has taken an address alone since `enterServer` was
+            added, and the label above says so - but this stayed
+            `|| !code.trim()`, so the button sat dead over copy promising it
+            was optional, and the owner of the box could not add the box. */}
+        <Button
+          onClick={() => void submit()}
+          disabled={busy || !url.trim() || (!registry && !code.trim())}
+        >
           {busy ? 'Linking…' : 'Link'}
         </Button>
       </div>

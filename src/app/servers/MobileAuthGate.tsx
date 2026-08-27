@@ -388,7 +388,7 @@ function ConnectScreen({ onBack }: { onBack?: () => void }) {
       setProbing(true);
       void fetchServerInfo(origin, controller.signal)
         .then((found) => setInfo(found))
-        .catch(() => setError('No AttackFM server answered at that address.'))
+        .catch(() => setError('No AttackFM server answered at that address. You can still try to sign in.'))
         .finally(() => setProbing(false));
     }, 600);
     return () => {
@@ -465,12 +465,28 @@ function ConnectScreen({ onBack }: { onBack?: () => void }) {
                 : `Found ${info.name} · ${info.tracks.toLocaleString()} tracks`}
             </Banner>
           )}
-          {error && <Banner tone="danger">{error}</Banner>}
+          {error && <Banner tone="warning">{error}</Banner>}
+          {/*
+            The probe INFORMS this step; it does not gate it.
+
+            This was `disabled={!info}`, which made a failed probe final: the
+            button stayed dead and the only thing left to press was "Log in
+            with a code" - so an owner who could not be probed could not use
+            their own password on their own server. And the probe fails for
+            reasons that have nothing to do with the credentials, the loudest
+            being that a RELEASE Android build refuses cleartext entirely, so
+            every http:// address answers "no server answered".
+
+            An address that parses is enough to try. The credentials step is
+            already written for a null probe - it falls back to the typed URL
+            and to plain Sign in - and a real attempt returns a real error,
+            which is worth more than a button that will not move.
+          */}
           <Button
             variant="solid"
             size="lg"
             className="loginGate__submit"
-            disabled={!info || busy}
+            disabled={!normalizeServerUrl(url) || busy}
             onClick={() => setStep('credentials')}
           >
             Continue
