@@ -340,16 +340,23 @@ export const HANDBOOK_PAGES: readonly HandbookPage[] = [
     ),
   },
   {
-    id: 'discover',
+    id: 'suggestions',
     chapter: 'The app',
     icon: <Telescope size={GLYPH} />,
-    title: 'Discover',
+    title: 'What it suggests',
     body: (
       <>
         <P>
-          The discover feed is built and cached on the server - heroes, sets,
-          things adjacent to what the house has been playing - which is why it
-          appears when a server is connected and steps aside when one is not.
+          Everything the machine picks for you sits on Library, under your own
+          shelves. The mixes are built on the server from your listening and
+          contain only music you already own, so they play the instant you tap
+          them; Music Date is the deck of things the collector went and fetched
+          on your behalf, waiting on a listen to earn a place.
+        </P>
+        <P>
+          There is no separate Discover page. Looking for music you do not own
+          yet is a search - the search field takes a Discover scope, which looks
+          outward instead of at your shelves.
         </P>
         <Facts
           items={[
@@ -359,7 +366,7 @@ export const HANDBOOK_PAGES: readonly HandbookPage[] = [
             },
             {
               icon: <Blocks size={FACT} />,
-              text: 'Discover is itself a plugin page - proof the seam is wide enough for real features.',
+              text: 'Suggestions are per listener: two people on one server get different shelves.',
             },
           ]}
         />
