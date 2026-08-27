@@ -452,6 +452,12 @@ fn staged_audio_files(dir: &Path) -> Vec<PathBuf> {
 /// about the actual problem, which is that the import arrived at the wrong
 /// box. The fix for that is a setting in the app, not a package on the server.
 pub(crate) fn no_downloader_here() -> String {
+    if imports_mode() == ImportsMode::CollectorOnly {
+        return "This server only downloads for its own collector \
+                (AFM_IMPORTS=collector). Pick the server that takes links, \
+                under Settings, Downloads, \"Download on\"."
+            .to_string();
+    }
     if imports_disabled() {
         "This server is not the downloader (AFM_IMPORTS=off). Pick the server that is, \
          under Settings, Downloads, \"Download on\"."
@@ -463,30 +469,61 @@ pub(crate) fn no_downloader_here() -> String {
     }
 }
 
-/// Whether this box is deliberately NOT a downloader.
+/// What this box will download, and for whom.
 ///
-/// `AFM_IMPORTS=off` (also 0/false/no) makes the server answer "no downloader
-/// here" to everything that asks - imports, refetch, the search results'
-/// importable flags, and the collector's own pulls - even with SpotiFLAC
-/// sitting on the disk.
+/// `AFM_IMPORTS` exists because ROLE and CAPABILITY are different questions,
+/// and only the first one has a right answer. Where a hub and a home box both
+/// happen to have SpotiFLAC installed, an import routed to the wrong one
+/// SUCCEEDS: it downloads, files the song into that box's library, and reports
+/// done. There is nothing on screen to notice, and the music is simply in the
+/// wrong place - which is worse than an error, because an error gets fixed.
+/// Declaring a box a non-downloader turns a silent misfile into an immediate
+/// refusal that names itself.
 ///
-/// It exists because ROLE and CAPABILITY are different questions, and only the
-/// first one has a right answer. Where a hub and a home box both happen to
-/// have SpotiFLAC installed, an import routed to the wrong one SUCCEEDS: it
-/// downloads, files the song into that box's library, and reports done. There
-/// is nothing on screen to notice, and the music is simply in the wrong place -
-/// which is worse than an error, because an error gets fixed. Declaring the
-/// hub a non-downloader turns a silent misfile into an immediate refusal that
-/// names itself.
+/// WHERE EACH MODE IS ENFORCED, which is the part worth getting right:
 ///
-/// Checked inside `find_spotiflac` rather than at each call site so the answer
-/// cannot differ between the importer, the collector and the search results -
-/// they all funnel through here, and `importable` in the collector status is
-/// derived from it, so the app is told too without any extra plumbing.
+/// `Off` is checked inside `find_spotiflac`, so the answer cannot differ
+/// between the importer, the collector and the search results - they all
+/// funnel through there, and `importable` in the collector status is derived
+/// from it, so the app is told too without any extra plumbing.
+///
+/// `CollectorOnly` deliberately does NOT go there. It is checked at the
+/// `enqueue` handler, the one door a pasted link comes through. Putting it in
+/// `find_spotiflac` would take the downloader away from the collector as well,
+/// which is the exact thing this mode exists to avoid.
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub(crate) enum ImportsMode {
+    /// Anyone may download here.
+    On,
+    /// The COLLECTOR may download here; a pasted link may not.
+    ///
+    /// The middle setting exists because "off" turned out to be two decisions
+    /// wearing one word. Declaring the hub a non-downloader correctly sent
+    /// pasted links to the box that fetches - and silently stopped the curator,
+    /// which downloads through the same door, so Music Date stopped being
+    /// refilled and nothing said why. They are separate errands: one is a
+    /// person choosing where their music lands, the other is the server
+    /// stocking its own shelves.
+    CollectorOnly,
+    /// Nothing downloads here.
+    Off,
+}
+
+pub(crate) fn imports_mode() -> ImportsMode {
+    match std::env::var("AFM_IMPORTS")
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "off" | "0" | "false" | "no" => ImportsMode::Off,
+        "collector" | "curator" => ImportsMode::CollectorOnly,
+        _ => ImportsMode::On,
+    }
+}
+
 fn imports_disabled() -> bool {
-    std::env::var("AFM_IMPORTS")
-        .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false" | "no"))
-        .unwrap_or(false)
+    imports_mode() == ImportsMode::Off
 }
 
 pub(crate) fn find_spotiflac() -> Option<PathBuf> {
@@ -1458,6 +1495,13 @@ pub async fn enqueue(
     Json(body): Json<EnqueueBody>,
 ) -> Result<Json<ImportJob>, ApiError> {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    // Refused HERE rather than by withholding the binary, which is the whole
+    // point of the middle mode: `find_spotiflac` still answers, so the
+    // collector keeps stocking the shelves and the search results keep marking
+    // songs fetchable - only the pasted-link door is shut.
+    if imports_mode() == ImportsMode::CollectorOnly {
+        return Err((StatusCode::FORBIDDEN, no_downloader_here()));
+    }
     let url = body.url.trim().to_string();
     if url.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "a link to import is required".into()));
@@ -1716,44 +1760,61 @@ mod failure_text_tests {
      * non-downloader keeps downloading. Env vars are process-global, so these
      * run in one test rather than several racing ones.
      */
-    /// The continuation backslashes in `no_downloader_here` strip the newline
-    /// AND the next line's indentation, which is one missing space away from
-    /// "that is,under Settings". Asserted whole rather than by substring.
+    /*
+     * ONE test for the whole switch, deliberately.
+     *
+     * Environment variables are process-global and cargo runs tests in
+     * parallel, so three tests each setting AFM_IMPORTS raced and two of them
+     * failed on whatever the third had just written. Splitting them read
+     * better and did not work; this is the shape that can actually be trusted.
+     *
+     * AFM_SPOTIFLAC points at a file that certainly exists, so the only thing
+     * that can make find_spotiflac answer None is the switch itself - which
+     * also pins the gate as sitting AHEAD of that branch.
+     */
     #[test]
-    fn the_refusal_says_which_problem_it_is() {
-        std::env::set_var("AFM_IMPORTS", "off");
-        assert_eq!(
-            no_downloader_here(),
-            "This server is not the downloader (AFM_IMPORTS=off). Pick the server that is, under Settings, Downloads, \"Download on\".",
-        );
+    fn the_imports_switch() {
+        std::env::set_var("AFM_SPOTIFLAC", "/bin/sh");
+
+        // Unset, and anything unrecognised, means a normal downloader.
+        for spelling in ["", "on", "1", "true", "yes"] {
+            std::env::set_var("AFM_IMPORTS", spelling);
+            assert_eq!(imports_mode(), ImportsMode::On, "{spelling:?}");
+            assert!(find_spotiflac().is_some(), "{spelling:?}");
+        }
         std::env::remove_var("AFM_IMPORTS");
+        assert_eq!(imports_mode(), ImportsMode::On, "unset is on");
         assert_eq!(
             no_downloader_here(),
             "SpotiFLAC is not installed on the server (pipx install SpotiFLAC on the box, or set AFM_SPOTIFLAC).",
         );
-    }
 
-    #[test]
-    fn afm_imports_off_disables_the_downloader() {
-        // A path that certainly exists, so the ONLY thing that can make
-        // find_spotiflac answer None is the switch.
-        std::env::set_var("AFM_SPOTIFLAC", "/bin/sh");
-        std::env::remove_var("AFM_IMPORTS");
-        assert!(find_spotiflac().is_some(), "unset means the box still downloads");
-
+        // Off stops everything, including the collector.
         for spelling in ["off", "OFF", "0", "false", "No", " off "] {
             std::env::set_var("AFM_IMPORTS", spelling);
+            assert_eq!(imports_mode(), ImportsMode::Off, "{spelling:?}");
+            assert!(find_spotiflac().is_none(), "{spelling:?} should stop downloading");
+        }
+        assert_eq!(
+            no_downloader_here(),
+            "This server is not the downloader (AFM_IMPORTS=off). Pick the server that is, under Settings, Downloads, \"Download on\".",
+        );
+
+        // Collector mode keeps the binary - the curator downloads through the
+        // same door - and shuts only the pasted-link one.
+        for spelling in ["collector", "Collector", "curator", " collector "] {
+            std::env::set_var("AFM_IMPORTS", spelling);
+            assert_eq!(imports_mode(), ImportsMode::CollectorOnly, "{spelling:?}");
             assert!(
-                find_spotiflac().is_none(),
-                "AFM_IMPORTS={spelling:?} should stop this box downloading",
+                find_spotiflac().is_some(),
+                "{spelling:?}: the collector still needs the downloader",
             );
         }
+        assert_eq!(
+            no_downloader_here(),
+            "This server only downloads for its own collector (AFM_IMPORTS=collector). Pick the server that takes links, under Settings, Downloads, \"Download on\".",
+        );
 
-        // Anything else is on: a box is only a non-downloader when it says so.
-        for spelling in ["on", "1", "true", "yes", ""] {
-            std::env::set_var("AFM_IMPORTS", spelling);
-            assert!(find_spotiflac().is_some(), "AFM_IMPORTS={spelling:?} should leave it on");
-        }
         std::env::remove_var("AFM_IMPORTS");
         std::env::remove_var("AFM_SPOTIFLAC");
     }

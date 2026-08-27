@@ -53,7 +53,12 @@ pub async fn server_info(State(state): State<Arc<AppState>>) -> ApiResult {
          * it is what the box does with a link, not who may ask it - and the
          * probe that keeps the server list fresh reads it for free.
          */
-        "imports": crate::imports::find_spotiflac().is_some(),
+        // What a PASTED LINK can expect, which is what the app is choosing
+        // between. A box in collector mode still downloads - for itself - but
+        // it will refuse a link, so advertising true would send every import
+        // to a door that is shut.
+        "imports": crate::imports::imports_mode() == crate::imports::ImportsMode::On
+            && crate::imports::find_spotiflac().is_some(),
     })))
 }
 
