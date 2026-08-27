@@ -1,6 +1,6 @@
 import { NavBar, NavBarItem } from '@glacier/react';
 import { useNavPill } from './useNavPill.ts';
-import { CircleUserRound, Compass, Disc3, LibraryBig, UsersRound } from '@glacier/icons';
+import { CircleUserRound, Disc3, LibraryBig, UsersRound } from '@glacier/icons';
 import { useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { atSize, useNavSeats, type NavDest } from './navSeats.ts';
@@ -47,15 +47,20 @@ export function PrimaryNav({
   // there is nothing to download, so the tab is absent rather than a dead end.
   const dl = useDownloadsOptional();
   const hasDownloads = dl !== null;
-  // Discover appears whenever there is ANY way to acquire music - an importer
-  // to download through, or a Buy handler to purchase through. Only a build with
-  // no acquire handlers at all (the plugin-free App-Review server) hides it.
+  // Discover is gone as a destination: its personal half (the curated mixes,
+  // Music Date, the audition shelf) moved onto Library, and looking for music
+  // you do not own is what the search page's Discover scope is for.
+  //
+  // `useAcquire` stays called here even though no seat depends on it now.
   // Called unconditionally. It used to sit behind `hasDownloads ||`, so the
   // hook ran or did not depending on whether an importer was loaded - and the
   // day that flipped mid-session React would have found a different hook order
   // than it left. Nothing below may be added while that is still true.
   const acquire = useAcquire();
-  const canDiscover = hasDownloads || acquire.hasAny;
+  // Both are still read for their hooks' sake rather than for a seat: see the
+  // note above about hook order. Neither gates anything now.
+  void acquire;
+  void hasDownloads;
   // The Booth is a workshop, not a destination: it is behind developer mode now
   // rather than holding a seat (or a menu row) for everybody.
   const showBooth = useDeveloperMode();
@@ -69,8 +74,7 @@ export function PrimaryNav({
   const libraryActive =
     tab === 'library' ||
     tab === 'home' ||
-    (tab !== 'discover' &&
-      tab !== 'downloads' &&
+    (tab !== 'downloads' &&
       tab !== 'friends' &&
       tab !== 'profile' &&
       tab !== 'search' &&
@@ -116,15 +120,6 @@ export function PrimaryNav({
         go: () => onTab(booksPage.key),
       });
     }
-    if (canDiscover) {
-      list.push({
-        key: 'discover',
-        label: 'Discover',
-        icon: <Compass size={18} />,
-        active: tab === 'discover',
-        go: () => onTab('discover'),
-      });
-    }
     // Friends before Profile: they are the two "people" seats and the one you
     // visit is other people's, not your own.
     list.push({
@@ -162,7 +157,7 @@ export function PrimaryNav({
       });
     }
     return list;
-  }, [pages, booksPage, canDiscover, libraryActive, tab, onTab, showBooth]);
+  }, [pages, booksPage, libraryActive, tab, onTab, showBooth]);
 
   const seats = useNavSeats(barRef, dests.length);
   /*
@@ -191,14 +186,6 @@ export function PrimaryNav({
         active={libraryActive}
         onClick={() => onTab('library')}
       />
-      {canDiscover && (
-        <NavBarItem
-          icon={<Compass size={18} />}
-          label="Discover"
-          active={tab === 'discover'}
-          onClick={() => onTab('discover')}
-        />
-      )}
       {/* Downloads is NOT a nav destination. On the phone it is an icon on the
           library page (where the music it is fetching ends up); on the desktop
           it is the chip above the player strip, and only while something is

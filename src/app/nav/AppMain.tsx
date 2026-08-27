@@ -15,7 +15,6 @@ import { PlaylistPage } from '../playlists/PlaylistPage.tsx';
 import { MixPage } from '../playlists/MixPage.tsx';
 import { SongPage, type SongCollection } from '../library/SongPage.tsx';
 import { LibraryView } from '../library/LibraryView.tsx';
-import { DiscoverPage } from '../../plugins/discover/DiscoverPage.tsx';
 import { BoothPage } from '../booth/BoothPage.tsx';
 import { FriendsPage } from '../profile/FriendsPage.tsx';
 import { ProfilePage } from '../profile/ProfilePage.tsx';
@@ -111,9 +110,16 @@ export function AppMain({
   // that should not be here.
   const hasDownloads = useDownloadsOptional() !== null;
   const hasQueue = useHasDownloadQueue();
-  // Discover is reachable whenever there is any acquire handler (import or buy),
-  // matching the nav gate; the plugin-free App-Review build has neither.
-  const canDiscover = hasDownloads || useAcquire().hasAny;
+  // Discover is gone as a destination, so nothing here gates on it any more.
+  //
+  // `useAcquire` is still CALLED, and unconditionally, which the line it
+  // replaces was not: `hasDownloads || useAcquire().hasAny` short-circuits, so
+  // the hook ran or did not depending on whether an importer happened to be
+  // loaded - and the render where that flipped would have found a different
+  // hook order than the one before it. PrimaryNav carries a comment about
+  // having fixed exactly this; this copy was missed. Removing the last reader
+  // is the moment to stop it being a live trap rather than a dormant one.
+  useAcquire();
   /*
    * Which surface, if any, gets the header's shadow - and what re-arms it.
    *
@@ -145,7 +151,7 @@ export function AppMain({
             : null
     : activePage
       ? `page:${activePage.key}`
-      : tab === 'home' || tab === 'library' || tab === 'discover'
+      : tab === 'home' || tab === 'library'
         ? tab
         : null;
 
@@ -216,12 +222,6 @@ export function AppMain({
           onOpenDownloads={hasQueue ? onOpenDownloads : undefined}
           onOpenStats={onOpenStats}
         />
-      ) : tab === 'discover' && canDiscover ? (
-        // Discover: what you do NOT have - the server's curated charts and a
-        // live search across Spotify + Deezer, each a one-tap add. Gated on any
-        // acquire handler (import or buy), so a build with no way to add through
-        // (the plugin-free App-Review server) never surfaces it.
-        <DiscoverPage onPlay={onPlay} onOpenArtist={onOpenArtist} />
       ) : tab === 'booth' && showBooth ? (
         // The Booth: the taste engine's one body - the DJ conversation, the
         // mixes it built, what it is doing right now, and its own preferences.

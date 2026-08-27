@@ -1,4 +1,7 @@
 import { SearchEntry } from '../search/SearchEntry.tsx';
+import { CuratorShelves } from './HomePage.tsx';
+import { ForYouShelf } from './ForYouShelf.tsx';
+import { MusicDateInvite } from './MusicDateInvite.tsx';
 import { Button, IconButton, ScrollArea } from '@glacier/react';
 import { Download } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -258,6 +261,11 @@ export function LibraryView({
     <div className="homePage libraryPage" ref={setRippleRoot}>
       {/* Search, where people look for it: on the page, not behind an icon. */}
       <SearchEntry />
+      {/* Music Date. It used to live on Discover, which is gone - and Library
+          is the better home regardless: the deck is auditions the collector
+          fetched FOR YOU, which is a fact about your library rather than
+          somebody else's charts. */}
+      <MusicDateInvite />
       {/* The desktop's copy of the action row. Everywhere else these two live
           in the app header (see App.tsx) - but the desktop has no such header,
           it has a title bar and a rail, so the page keeps them. */}
@@ -297,6 +305,19 @@ export function LibraryView({
             onOpenArtist={onOpenArtist}
             onOpenSongs={onOpenSongs}
           />
+
+          {/* What the curator made FROM this library: mixes whose every track
+              is already owned, so they play the instant they are tapped. They
+              were moved out to Discover once and have come back, which is the
+              right way round - a mix of your own music is the one recommended
+              thing that works on day one, and it belongs beside the music it
+              is made of. */}
+          <CuratorShelves onPlay={onPlay} onOpenArtist={onOpenArtist} />
+
+          {/* And what the collector went and FETCHED, still waiting on a
+              listen to earn its place. Below the mixes deliberately: these are
+              the least certain rows on the page. */}
+          <ForYouShelf onPlay={onPlay} />
 
           {/* Under the playlists, because both are "things you chose" - a list
               you built and a book you kept - and above the shelves the library
