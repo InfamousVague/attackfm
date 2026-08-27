@@ -602,6 +602,8 @@ async fn main() {
         // first (owner) arrival. This is how an invited friend enters under
         // their own account rather than the owner's.
         .route("/api/registry/enter", post(registry_auth::enter))
+        // The answering half of a trust link; admin-gated, see member_check.
+        .route("/api/registry/member/{sub}", get(registry_auth::member_check))
         // Bind your registry identity to your existing local account here (the
         // owner's migration path), keeping all your data.
         .route("/api/registry/link", post(registry_auth::link))

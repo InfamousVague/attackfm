@@ -178,6 +178,66 @@ pub async fn link(
     Ok(Json(json!({ "ok": true, "handle": claims.handle })))
 }
 
+/// `GET /api/registry/member/:sub` - is this registry account a member here?
+///
+/// The answering half of a trust link. A second server that has been told to
+/// trust this one asks before admitting somebody, so a listener invited to the
+/// hub does not need a second invite to the box beside it.
+///
+/// ADMIN-GATED, and that is the whole security story: this is a membership
+/// oracle, and left open it would let anyone enumerate who belongs to a server
+/// by walking registry subject ids. The asking server holds an admin token for
+/// this one, which is a deliberate statement by the operator that the two boxes
+/// are theirs. Answers a bare boolean - never a handle, never a user id - so a
+/// compromised trust link leaks the least that still works.
+pub async fn member_check(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    axum::extract::Path(sub): axum::extract::Path<i64>,
+) -> ApiResult {
+    auth::require_admin(&state.db, &headers)
+        .map_err(|s| (s, "admin only".to_string()))?;
+    Ok(Json(json!({ "member": state.db.registry_member(sub).is_some() })))
+}
+
+/// Where this server borrows its membership list from, if anywhere.
+///
+/// `AFM_TRUST_MEMBERS_OF` is the other box's URL and `AFM_TRUST_TOKEN` an admin
+/// token on it. Both or neither, the same shape peersync uses - a flag that can
+/// disagree with the configuration is one more state to get wrong.
+fn trusted_server() -> Option<(String, String)> {
+    let url = std::env::var("AFM_TRUST_MEMBERS_OF").unwrap_or_default();
+    let url = url.trim().trim_end_matches('/').to_string();
+    let token = std::env::var("AFM_TRUST_TOKEN").unwrap_or_default().trim().to_string();
+    if url.is_empty() || token.is_empty() {
+        return None;
+    }
+    Some((url, token))
+}
+
+/// Whether the trusted server says this registry account is one of theirs.
+///
+/// Any failure is a NO. An unreachable partner, a rejected token, a garbled
+/// answer - none of them are evidence of membership, and admitting on a
+/// timeout would turn one flaky link into an open door.
+async fn vouched_for(sub: i64) -> bool {
+    let Some((url, token)) = trusted_server() else { return false };
+    let Ok(client) = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    else {
+        return false;
+    };
+    let reply = client
+        .get(format!("{url}/api/registry/member/{sub}"))
+        .bearer_auth(&token)
+        .send()
+        .await;
+    let Ok(reply) = reply.and_then(|r| r.error_for_status()) else { return false };
+    let Ok(body) = reply.json::<Value>().await else { return false };
+    body.get("member").and_then(|v| v.as_bool()).unwrap_or(false)
+}
+
 /// `POST /api/registry/enter` - trade a registry identity for a session here.
 pub async fn enter(
     State(state): State<Arc<AppState>>,
@@ -204,6 +264,14 @@ pub async fn enter(
     // A server with no owner yet crowns its first arrival.
     if !state.db.has_any_admin() {
         let user = admit(&state, sub, &handle, true)?;
+        return Ok(Json(session_json(&state, &user)?));
+    }
+
+    // Borrowed membership: a box told to trust another admits that one's
+    // members without a second invite. Checked before the invite path so the
+    // ordinary case for a pair of servers needs no code at all.
+    if vouched_for(sub).await {
+        let user = admit(&state, sub, &handle, false)?;
         return Ok(Json(session_json(&state, &user)?));
     }
 
@@ -293,7 +361,7 @@ pub async fn enter(
 
 #[cfg(test)]
 mod invite_target_tests {
-    use super::{request_origin, same_server};
+    use super::{request_origin, same_server, trusted_server};
     use axum::http::{HeaderMap, HeaderName};
 
     fn headers(pairs: &[(&str, &str)]) -> HeaderMap {
@@ -366,5 +434,34 @@ mod invite_target_tests {
         assert!(!same_server("https://matt.attack.fm", "https://someone.attack.fm"));
         // Scheme and port are part of the address, not decoration.
         assert!(!same_server("http://matt.attack.fm", "https://matt.attack.fm"));
+    }
+
+    /// Both or neither. A half-configured trust link that silently behaved as
+    /// "trust nobody" would look identical to a typo in the URL, and a
+    /// half-configured one that behaved as "trust everybody" would be a hole.
+    #[test]
+    fn a_trust_link_needs_both_halves() {
+        for (url, token) in [
+            ("", ""),
+            ("https://hub.example", ""),
+            ("", "tok"),
+            ("   ", "tok"),
+        ] {
+            std::env::set_var("AFM_TRUST_MEMBERS_OF", url);
+            std::env::set_var("AFM_TRUST_TOKEN", token);
+            assert!(trusted_server().is_none(), "({url:?}, {token:?}) must not be a trust link");
+        }
+
+        std::env::set_var("AFM_TRUST_MEMBERS_OF", "https://hub.example/");
+        std::env::set_var("AFM_TRUST_TOKEN", " tok ");
+        let (url, token) = trusted_server().expect("both halves set");
+        // The trailing slash goes here rather than at the call site:
+        // "https://hub/" + "/api/..." is a 404 that reads like a version
+        // mismatch on the other end rather than a typo in a unit file.
+        assert_eq!(url, "https://hub.example");
+        assert_eq!(token, "tok");
+
+        std::env::remove_var("AFM_TRUST_MEMBERS_OF");
+        std::env::remove_var("AFM_TRUST_TOKEN");
     }
 }
