@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.89
+
+- Album art is a fifth larger everywhere it is laid out in a grid — your shelves, Discover, an artist's records, the booth's mixes and the results when you search your own library
+
 ## 0.4.88
 
 - Imports now find the server that can actually fetch them. If the server you are signed into does not do downloads and one of your others does, that is where a pasted link goes, and the Downloads tab says so. Pick a different one there whenever you want.
@@ -28,10 +32,6 @@ and where that library came from is not the app's story to tell.
 
 - Adding your own server really does work without a code now. 0.4.85 said so and meant it, but the Link button stayed greyed out until you typed one anyway, so there was no way to press it.
 - Signing in no longer gives up when it cannot reach your server first. If the address check comes back empty you can still try your username and password, and you get told what actually went wrong instead of a button that will not move.
-
-## 0.4.86
-
-- Album art is a fifth larger everywhere it is laid out in a grid — your shelves, Discover, an artist's records, the booth's mixes and the results when you search your own library
 
 ## 0.4.85
 
