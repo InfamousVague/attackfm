@@ -199,6 +199,34 @@ export function resolveImportServer(session: ServerSession | null): ServerSessio
   return session;
 }
 
+/**
+ * A choice this device cannot honour, or null when it is being honoured.
+ *
+ * `resolveImportServer` degrades to the session server when the chosen box has
+ * no credentials here, and that is the right call - returning null would stop
+ * every import dead. But it is SILENT, and silence is indistinguishable from
+ * the pin never having been set: every import runs on the hub, the picker
+ * shows the hub, and nothing anywhere says a choice was made and dropped.
+ *
+ * That is not a hypothetical. Sign out of the peer, forget its mirror, or
+ * restore this device from a backup that carried the CHOICE (localStorage)
+ * without the CREDENTIALS (a different key), and imports move box without a
+ * word. The fallback stays; what changes is that the picker can now say it is
+ * happening.
+ */
+export function orphanedImportChoice(session: ServerSession | null): string | null {
+  if (!chosen) return null;
+  const resolved = resolveImportServer(session);
+  if (resolved && normalise(resolved.url) === normalise(chosen)) return null;
+  return chosen;
+}
+
+export function useOrphanedImportChoice(): string | null {
+  const { session } = useServerSession();
+  const v = useSyncExternalStore(subscribeImportServer, snapshot, snapshot);
+  return useMemo(() => orphanedImportChoice(session), [session, v]);
+}
+
 export function useImportServer(): ServerSession | null {
   const { session } = useServerSession();
   const v = useSyncExternalStore(subscribeImportServer, snapshot, snapshot);

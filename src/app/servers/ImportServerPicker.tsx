@@ -10,6 +10,7 @@ import {
   setImportServerUrl,
   useImportServer,
   useImportTargets,
+  useOrphanedImportChoice,
 } from './importServer.ts';
 import { usePeerSyncStatus, type PeerSyncStatus } from './peerSyncStatus.ts';
 import { useServerSession } from './serverSession.tsx';
@@ -34,6 +35,10 @@ export function ImportServerPicker() {
   const target = useImportServer();
   const peerSync = usePeerSyncStatus(target);
   const fault = importServerFault();
+  // A pin this device can no longer honour. Silent until now: imports simply
+  // ran on the signed-in box and the picker showed that box, so a choice that
+  // had quietly lapsed looked exactly like a choice never made.
+  const orphan = useOrphanedImportChoice();
 
   const health = target ? healthOf(target.url) : null;
   const band = health?.latencyMs != null ? latencyBand(health.latencyMs).label : null;
@@ -52,7 +57,7 @@ export function ImportServerPicker() {
     <PaneSection
       title="Where downloads run"
       description="Imports are fetched by one server and land in its library. Pick the box with the downloader installed — it copies finished songs across to your library afterwards, so both end up with the file."
-      footer={pickerFooter(session, target, peerSync, fault)}
+      footer={pickerFooter(session, target, peerSync, fault, orphan)}
     >
       <SettingRow
         id="import-server"
@@ -94,7 +99,25 @@ function pickerFooter(
   target: ServerSession | null,
   peerSync: PeerSyncStatus | null,
   fault: ImportServerFault | null,
+  orphan: string | null,
 ): ReactNode {
+  /*
+   * A pin that lapsed, said out loud.
+   *
+   * Ahead of everything except a live rejection, because it changes what every
+   * other line here MEANS: the copy-to-hub backlog below belongs to the box
+   * imports are actually running on, which is not the one that was chosen.
+   */
+  if (orphan) {
+    return (
+      <Text tone="danger" size="xs">
+        You chose {importServerHost(orphan)}, but this device has no sign-in for it any more, so
+        imports are running on{' '}
+        {target ? importServerHost(target.url) : 'the server you are signed into'}. Add it again
+        under Settings, Servers, or pick a different box above.
+      </Text>
+    );
+  }
   // A rejection is not routed around on purpose (see noteImportServerRejected):
   // the peer is usually the ONLY box with the downloader, so moving imports
   // silently would run them where they cannot possibly work.
