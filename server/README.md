@@ -73,6 +73,7 @@ Environment variables only, so the systemd unit is the whole deployment story.
 | `AFM_SERVER_NAME` | `AttackFM` | Shown in the client's server settings. |
 | `AFM_QUOTA_GB` | `0` | Library ceiling in GB, refused at upload. 0 = none. |
 | `AFM_SCAN_MINUTES` | `15` | Re-walk interval. 0 turns the timer off. |
+| `AFM_IMPORTS` | on | `off` declares this box a non-downloader: imports, refetch and the collector's pulls all refuse, even with SpotiFLAC installed. For a hub that should never fetch, so a misrouted import fails loudly instead of filing into the wrong library. |
 
 ## Modules
 
