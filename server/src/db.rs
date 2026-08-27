@@ -7467,6 +7467,15 @@ impl Db {
             params![Self::PULL_TAKEN, row.0],
         )
         .ok()?;
+        // When a download box last showed up. With the downloading happening on
+        // another machine there is otherwise NOTHING here that distinguishes
+        // "the peer is working through them" from "nobody has ever answered",
+        // and those look identical from the offers alone.
+        let _ = conn.execute(
+            "INSERT INTO meta (k, v) VALUES ('collector.peer_seen_at', ?1)
+             ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+            params![now_ms().to_string()],
+        );
         Some(row)
     }
 
@@ -7510,6 +7519,20 @@ impl Db {
         stmt.query_map(params![since_ms], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
             .map(|rows| rows.filter_map(Result::ok).collect())
             .unwrap_or_default()
+    }
+
+    /// How many of this listener's pulls actually landed since `since_ms` -
+    /// the plain answer to "is it working".
+    pub fn pulls_landed_since(&self, user_id: i64, since_ms: i64) -> i64 {
+        self.lock()
+            .query_row(
+                "SELECT COUNT(*) FROM curator_pulls
+                 WHERE user_id = ?1 AND created_at >= ?2
+                   AND state IN ('landed', 'promoted', 'passed')",
+                params![user_id, since_ms],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
     }
 
     /// Drop a pull entirely, as though it had never been raised.
@@ -7649,10 +7672,10 @@ impl Db {
         &self,
         user_id: i64,
         limit: i64,
-    ) -> Vec<(String, String, String, String, i64, String)> {
+    ) -> Vec<(String, String, String, String, i64, String, String)> {
         let conn = self.lock();
         let mut stmt = match conn.prepare(
-            "SELECT title, artist, kind, state, created_at, reason
+            "SELECT title, artist, kind, state, created_at, reason, job_id
              FROM curator_pulls WHERE user_id = ?1 ORDER BY created_at DESC LIMIT ?2",
         ) {
             Ok(s) => s,
@@ -7666,6 +7689,7 @@ impl Db {
                 r.get(3)?,
                 r.get(4)?,
                 r.get(5)?,
+                r.get(6)?,
             ))
         })
         .map(|rows| rows.filter_map(Result::ok).collect())

@@ -193,10 +193,25 @@
   background: var(--glacier-danger-solid, var(--glacier-accent-solid));
 }
 
-.serverCard__disk {
+/* A bar plus the words that say what it measures. */
+.serverCard__gauge {
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-1);
+}
+
+/*
+ * Library coverage is drawn hollow and disk usage solid, because the two sat
+ * one above the other as identical pink bars and there was no way to tell
+ * which was which - or that they were measuring different things at all.
+ */
+.serverCard__bar[data-kind='held'] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--glacier-border);
+}
+
+.serverCard__bar[data-kind='held'] .serverCard__barFill {
+  background: var(--glacier-accent-soft);
 }
 
 .serverCard__manage {

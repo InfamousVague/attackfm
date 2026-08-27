@@ -667,14 +667,24 @@ pub async fn status(
         .db
         .recent_pulls(caller.id, 20)
         .into_iter()
-        .map(|(title, artist, kind, pull_state, at, reason)| {
+        .map(|(title, artist, kind, pull_state, at, reason, job)| {
             json!({
                 "title": title,
                 "artist": artist,
                 "kind": kind,
-                // The client's vocabulary: a queued pull reads as landed-in-
-                // progress rather than exposing the queue's internals.
+                /*
+                 * The client's vocabulary, and WHERE the download is, which
+                 * used to be the same word for three different situations.
+                 *
+                 * Since the collector can hand its downloading to another box,
+                 * a "queued" pull is one of three things: nobody has taken it,
+                 * a peer is fetching it, or this box is. They fail in different
+                 * places and want different words, and collapsing them is why
+                 * there was no way to see whether any of this was working.
+                 */
                 "state": match pull_state.as_str() {
+                    "queued" if job == crate::db::Db::PULL_OFFERED => "offered",
+                    "queued" if job == crate::db::Db::PULL_TAKEN => "fetching",
                     "queued" => "queued",
                     "promoted" => "promoted",
                     "failed" => "failed",
@@ -693,6 +703,19 @@ pub async fn status(
         "capBytes": cap,
         "exploration": exploration,
         "importable": crate::search::spotiflac_python().is_some(),
+        // Where the downloading happens, and whether the box doing it is
+        // actually showing up. Null rather than 0 for "no peer has ever taken
+        // one", which is a different thing from "a peer took one long ago".
+        "delegates": crate::imports::imports_mode() == crate::imports::ImportsMode::CollectorOnly,
+        "downloadsHere": crate::imports::find_spotiflac().is_some()
+            && crate::imports::imports_mode() != crate::imports::ImportsMode::CollectorOnly,
+        "peerSeenAt": state
+            .db
+            .meta_get("collector.peer_seen_at")
+            .and_then(|v| v.parse::<i64>().ok())
+            .map(serde_json::Value::from)
+            .unwrap_or(serde_json::Value::Null),
+        "landedToday": state.db.pulls_landed_since(caller.id, crate::db::now_ms() - 86_400_000),
         "recent": recent,
     })))
 }

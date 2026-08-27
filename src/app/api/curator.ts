@@ -18,11 +18,23 @@ export interface CollectorStatus {
   exploration: number;
   /** Whether this box can actually import (the downloader tool is present). */
   importable: boolean;
+  /** This box hands its collector's downloads to a peer rather than fetching. */
+  delegates: boolean;
+  /** This box does its own fetching. */
+  downloadsHere: boolean;
+  /** When a download box last took work, or null if none ever has. */
+  peerSeenAt: number | null;
+  /** Pulls raised in the last day that actually arrived. */
+  landedToday: number;
   recent: {
     title: string;
     artist: string;
     kind: 'track' | 'album';
-    state: 'queued' | 'landed' | 'promoted' | 'failed';
+    /**
+     * Where the download is, not just how far along it is. 'offered' means no
+     * download box has taken it; 'fetching' means one has and is working on it.
+     */
+    state: 'offered' | 'fetching' | 'queued' | 'landed' | 'promoted' | 'failed';
     at: number;
     /** Why the curator chose it, when the model wrote one. */
     reason: string;
