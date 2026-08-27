@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.85
+
+- You can choose which of your servers downloads an import. Point it at the box that has the downloader and it fetches there, then copies each finished song to your main server on its own, so both hold it and playback still takes whichever is nearer
+- Settings › Servers › Network shows what is still waiting to copy across, and names anything that is struggling instead of leaving it to sit there
+- Adding a server no longer demands a six-digit code. The address alone is enough for a server your account already belongs to; the code is still there for someone else's
+- Servers saved to your account can be removed. One you had left came back on every new device with no way to refuse it
+
 ## 0.4.84
 
 - Opening something from the More menu now slides the lit plate onto the More button, instead of sending it to the far left of the bar. The plate was reading the button's position against the menu's anchor rather than against the bar, so it was told the button sat at zero
