@@ -1,4 +1,5 @@
 import { type CSSProperties } from 'react';
+import dateChip from '../../assets/chip-music-date.webp';
 import { Button } from '@glacier/react';
 import { useLibrary } from './library.tsx';
 import { LibChipMosaic, LibChipStat } from './LibChipFace.tsx';
@@ -36,16 +37,11 @@ export function MusicDateChip() {
       // Rose into coral. Liked is already the pink one (338 into 300, which
       // runs toward magenta); this leans the other way, toward warm, so the
       // two are not mistaken for each other at a glance.
-      style={{ '--libChipHue': 352, '--libChipHue2': 18 } as CSSProperties}
+      style={{ '--libChipHue': 352, '--libChipHue2': 18, '--art': `url("${dateChip}")` } as CSSProperties}
       onClick={openMusicDate}
       aria-label="Open Music Date"
     >
-      {/* The artwork slot the other chips fill with a painted face is
-          deliberately empty until one is drawn for this card: a missing import
-          fails the build, and a stretched placeholder looks worse than the
-          gradient does on its own. Add it as
-          `<img className="libChip__art" src={dateChip} alt="" loading="lazy" />`
-          once src/assets/chip-music-date.webp exists. */}
+      <img className="libChip__art" src={dateChip} alt="" loading="lazy" />
       <LibChipMosaic covers={covers} />
       <LibChipStat value={waiting > 0 ? String(waiting) : undefined} />
       <span className="libChip__name">Music Date</span>
