@@ -425,6 +425,33 @@ pub fn spawn_prefetch(state: Arc<AppState>) {
     });
 }
 
+/// Which device demucs runs on.
+///
+/// This used to be the literal `mps` with a comment promising that a machine
+/// without Metal "falls back to CPU by itself, which is slow but not wrong".
+/// It does not. On Linux torch raises `PyTorch is not linked with support for
+/// mps devices` and the separation fails outright - so the moment the hub
+/// moved off the Mac, every stem job died on its first tensor and stems looked
+/// like a feature that had simply stopped existing.
+///
+/// mps is still right where it applies, and it applies exactly where the OS
+/// says it might, so the default follows the platform. The override is for the
+/// case neither branch can guess: a Linux box with a CUDA card, where `cuda`
+/// is worth an order of magnitude over the honest default.
+fn separator_device() -> String {
+    if let Ok(explicit) = std::env::var("AFM_DEMUCS_DEVICE") {
+        let trimmed = explicit.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+    if cfg!(target_os = "macos") {
+        "mps".to_string()
+    } else {
+        "cpu".to_string()
+    }
+}
+
 /// The demucs binary, from the venv the installer makes or from PATH.
 fn separator_bin() -> Option<PathBuf> {
     if let Ok(explicit) = std::env::var("AFM_DEMUCS") {
@@ -475,10 +502,8 @@ async fn separate(
     let run = tokio::process::Command::new(python)
         .arg("-n")
         .arg(MODEL)
-        // Metal. On a machine without it demucs falls back to CPU by itself,
-        // which is slow but not wrong.
         .arg("-d")
-        .arg("mps")
+        .arg(separator_device())
         .arg("--out")
         .arg(&scratch)
         .arg(&source)
