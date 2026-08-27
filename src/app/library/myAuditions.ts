@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { fetchCollectorStatus, type CollectorStatus } from '../server.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useLibrary } from './library.tsx';
 import { useRefreshNonce } from '../nav/pageRefresh.tsx';
+import { passedSet, passedVersion, subscribePassed } from '../date/datePassed.ts';
+import { trackIdFromPath } from '../server.ts';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -19,9 +21,21 @@ import type { Track } from '../core/tauri.ts';
  * had the owner filter and the Music Date chip did not, so the shelf said 220
  * and the chip said 767 on the same screen, both from the same array. One
  * definition, used by both.
+ *
+ * The definition did not go far enough, and the same bug came back wearing a
+ * different number: the chip said "172 waiting" over a Music Date that opened
+ * on its empty state. Owner was the only filter here, but a song stops
+ * auditioning for two more reasons - you PASSED it (remembered in the ledger,
+ * across launches) or you KEPT it (which is what a heart means here). Both are
+ * verdicts, and a song that has had a verdict is not waiting for one.
+ *
+ * So this is the deck, and Music Date's own deck is now this list minus the
+ * cards judged in the current sitting. A counter somewhere else in the app
+ * cannot drift from the room it opens, because there is nothing else to
+ * count.
  */
 export function useMyAuditions(): { mine: Track[]; status: CollectorStatus | null } {
-  const { forYou } = useLibrary();
+  const { forYou, isFavorite } = useLibrary();
   const { session } = useServerSession();
   // Pull-to-refresh re-runs the fetch below - see nav/pageRefresh.tsx.
   const refreshNonce = useRefreshNonce();
@@ -43,15 +57,28 @@ export function useMyAuditions(): { mine: Track[]; status: CollectorStatus | nul
     return () => ctrl.abort();
   }, [session, forYou.length, refreshNonce]);
 
+  // Passes are remembered across launches, so the count has to move when one
+  // is written - otherwise it only corrects itself on the next full reload,
+  // which is precisely how it came to claim 172 over an empty deck.
+  useSyncExternalStore(subscribePassed, passedVersion, passedVersion);
+
   const mine = useMemo(() => {
     // No status means no answer about who you are, and the safe reading of
     // that is NONE rather than ALL: showing somebody else's auditions is the
     // failure this is here to avoid, and an empty shelf is the mild one.
     if (!status) return [];
+    const passed = passedSet();
     return forYou
       .filter((t) => t.curatorUserId === status.userId)
+      .filter((t) => !isFavorite(t.path))
+      .filter((t) => {
+        const id = trackIdFromPath(t.path);
+        return id === null || !passed.has(id);
+      })
       .sort((a, b) => b.addedAt - a.addedAt);
-  }, [forYou, status]);
+    // passedVersion is not read here, but a change to it must recompute this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [forYou, status, isFavorite, passedVersion()]);
 
   return { mine, status };
 }
