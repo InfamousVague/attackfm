@@ -1365,6 +1365,22 @@ CREATE TABLE IF NOT EXISTS curator_pull_tracks (
   PRIMARY KEY (pull_id, track_id)
 );
 
+-- What a PEER reported it delivered for a delegated pull, as the hub's own
+-- rel_path (the peer learns it from the upload's reply, since the hub re-derives
+-- the path from the file's tags and may suffix a collision).
+--
+-- This exists because the first version settled a delegated pull by MATCHING
+-- artist and title against everything recently added, which quietly annexed
+-- whatever else happened to arrive: an unrelated upload became one listener's
+-- private audition, vanished from every other client, and was unlinked from
+-- disk if that listener swiped past it. A pull now lands on exactly the files
+-- it was told about, or on nothing.
+CREATE TABLE IF NOT EXISTS curator_pull_paths (
+  pull_id  INTEGER NOT NULL REFERENCES curator_pulls(id) ON DELETE CASCADE,
+  rel_path TEXT    NOT NULL,
+  PRIMARY KEY (pull_id, rel_path)
+);
+
 -- The collector's per-listener dials. A row appears the first time a dial is
 -- touched or tuned; absence means the defaults (enabled, exploration 0.5).
 CREATE TABLE IF NOT EXISTS collector_state (
@@ -4091,9 +4107,29 @@ impl Db {
         let now = now_ms();
         self.lock()
             .execute(
-                "INSERT OR IGNORE INTO peer_sync_queue
+                /*
+                 * ON CONFLICT rather than OR IGNORE, and the guard matters.
+                 *
+                 * The table is keyed by rel_path and never pruned, so a row
+                 * that has already been sent stays forever - and OR IGNORE
+                 * meant the SECOND time a file was owed to the hub (a delegated
+                 * pull that resolved to something this box already held, or a
+                 * row left 'failed' by a transfer that died) nothing was
+                 * queued at all. Silence, and a hub that waits for a file
+                 * nobody is going to send.
+                 *
+                 * The WHERE keeps that from touching a transfer in flight:
+                 * only a settled row is re-armed, so an 'uploading' row keeps
+                 * its upload_id and its resume point.
+                 */
+                "INSERT INTO peer_sync_queue
                    (rel_path, track_id, job_id, state, size_bytes, queued_at, updated_at)
-                 VALUES (?1, ?2, ?3, 'pending', ?4, ?5, ?5)",
+                 VALUES (?1, ?2, ?3, 'pending', ?4, ?5, ?5)
+                 ON CONFLICT(rel_path) DO UPDATE SET
+                   state = 'pending', job_id = excluded.job_id, track_id = excluded.track_id,
+                   size_bytes = excluded.size_bytes, attempts = 0, next_try_at = 0,
+                   error = '', upload_id = '', sent_bytes = 0, updated_at = excluded.updated_at
+                 WHERE peer_sync_queue.state IN ('done', 'failed', 'skipped')",
                 params![rel_path, track_id, job_id, size_bytes, now],
             )
             .unwrap_or(0)
@@ -7291,10 +7327,16 @@ impl Db {
     /// auditions, remember which they were, and settle the pull's real size.
     /// Only rows nobody already owns take the stamp - an import that resolved
     /// to a track a person had added stays theirs.
-    pub fn land_pull(&self, pull_id: i64, user_id: i64, track_ids: &[i64]) -> rusqlite::Result<()> {
+    /// Returns HOW MANY tracks took the stamp, which is not always the count
+    /// handed in: a row somebody already owns, or one that is not newly added,
+    /// is deliberately left alone. The caller decides what a zero means - for a
+    /// local job it means "done, nothing new", for a delegated one it means the
+    /// files have not actually arrived yet and the pull must keep waiting.
+    pub fn land_pull(&self, pull_id: i64, user_id: i64, track_ids: &[i64]) -> rusqlite::Result<usize> {
         let rev = self.current_rev() + 1;
         let conn = self.lock();
         let mut bytes = 0i64;
+        let mut stamped = 0usize;
         for id in track_ids {
             let changed = conn.execute(
                 "UPDATE tracks SET curator_user_id = ?1, curator_promoted = 0, rev = ?2
@@ -7302,6 +7344,7 @@ impl Db {
                 params![user_id, rev, id, now_ms() - 60 * 60 * 1000],
             )?;
             if changed > 0 {
+                stamped += 1;
                 conn.execute(
                     "INSERT OR IGNORE INTO curator_pull_tracks (pull_id, track_id) VALUES (?1, ?2)",
                     params![pull_id, id],
@@ -7315,9 +7358,71 @@ impl Db {
                     .unwrap_or(0);
             }
         }
-        conn.execute(
-            "UPDATE curator_pulls SET state = 'landed', bytes = ?1 WHERE id = ?2",
-            params![bytes, pull_id],
+        // Only a pull that actually gained something is landed. Marking one
+        // 'landed' with nothing behind it used to block its candidate for good:
+        // pulled_ext_ids blocks every state except 'failed', so the listener
+        // could never be offered that recording again and never got a card.
+        if stamped > 0 {
+            conn.execute(
+                "UPDATE curator_pulls SET state = 'landed', bytes = ?1 WHERE id = ?2",
+                params![bytes, pull_id],
+            )?;
+        }
+        Ok(stamped)
+    }
+
+    /// Settle a pull that finished without gaining anything - every track it
+    /// resolved to was already in the library. The local path calls this so a
+    /// finished job still closes its pull, which is what it has always done.
+    pub fn mark_pull_landed(&self, pull_id: i64) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "UPDATE curator_pulls SET state = 'landed' WHERE id = ?1",
+            params![pull_id],
+        )?;
+        Ok(())
+    }
+
+    /// A peer says this pull produced this file, named as the HUB's own
+    /// rel_path. Idempotent: a repeated report is the same row.
+    pub fn record_pull_path(&self, pull_id: i64, rel_path: &str) -> rusqlite::Result<()> {
+        // Only against a pull somebody actually took. The route is open to any
+        // signed-in caller, like the rest of the peer channel, and a report is
+        // what decides which file becomes an audition - so it may not name a
+        // pull that is merely on offer, already landed, or in the local queue.
+        self.lock().execute(
+            "INSERT OR IGNORE INTO curator_pull_paths (pull_id, rel_path)
+             SELECT ?1, ?2 WHERE EXISTS (
+               SELECT 1 FROM curator_pulls WHERE id = ?1 AND state = 'queued' AND job_id = ?3
+             )",
+            params![pull_id, rel_path, Self::PULL_TAKEN],
+        )?;
+        Ok(())
+    }
+
+    /// The live track ids a delegated pull was told about, in the order the
+    /// paths were reported. A path with no live row yet simply is not there.
+    pub fn pull_path_track_ids(&self, pull_id: i64) -> Vec<i64> {
+        let conn = self.lock();
+        let mut stmt = match conn.prepare(
+            "SELECT t.id FROM curator_pull_paths p
+             JOIN tracks t ON t.rel_path = p.rel_path AND t.deleted = 0
+             WHERE p.pull_id = ?1",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        stmt.query_map(params![pull_id], |r| r.get(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Hand a claimed pull back to the offer queue - the peer took it and could
+    /// not start it. Guarded on the marker so it can never resurrect a pull
+    /// that has since been landed or given to the local queue.
+    pub fn release_claimed_pull(&self, pull_id: i64) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "UPDATE curator_pulls SET job_id = ?1 WHERE id = ?2 AND job_id = ?3",
+            params![Self::PULL_OFFERED, pull_id, Self::PULL_TAKEN],
         )?;
         Ok(())
     }

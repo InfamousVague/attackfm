@@ -1610,6 +1610,18 @@ pub async fn retry(
     headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    /*
+     * The same door as `enqueue`, and it needs the same lock.
+     *
+     * A box only becomes a non-downloader after it has been one, so its old
+     * cards are still sitting there - including the failure that literally
+     * reads "Retry to resume." Refusing new links while a tap on that button
+     * downloads the song here anyway is not a gate, it is a detour, and it
+     * files the track into exactly the library the setting exists to protect.
+     */
+    if imports_mode() == ImportsMode::CollectorOnly {
+        return Err((StatusCode::FORBIDDEN, no_downloader_here()));
+    }
     state
         .imports
         .update(&id, |j| {
