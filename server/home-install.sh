@@ -67,7 +67,22 @@ fi
 # --- previous answers become defaults -------------------------------------
 # The plist is the memory: a re-run reads what it set last time, so updating
 # never re-interrogates you about paths that have not moved.
-prev() { /usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:$1" "$PLIST" 2>/dev/null || true; }
+#
+# PlistBuddy announces a missing FILE on stdout - "File Doesn't Exist, Will
+# Create: /Users/.../com.mattssoftware.attackfm-server.plist" - so `2>/dev/null`
+# does not catch it and the caller gets that sentence back as if it were the
+# saved answer. On a first run every default became that string: the music
+# folder prompt offered the path of the plist, and pressing enter would have
+# accepted it. Missing file means no memory, which is a return, not a message.
+# (A missing KEY in a plist that does exist goes to stderr, so it is already
+# handled - but the grep below keeps both cases honest.)
+prev() {
+  [ -f "$PLIST" ] || return 0
+  /usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:$1" "$PLIST" 2>/dev/null \
+    | grep -v "Does Not Exist" \
+    | grep -v "File Doesn't Exist" \
+    || true
+}
 DEF_MUSIC="$(prev AFM_MUSIC_DIR)"
 DEF_DATA="$(prev AFM_DATA_DIR)"
 DEF_PORT="$(prev AFM_PORT)"; DEF_PORT="${DEF_PORT:-8788}"
