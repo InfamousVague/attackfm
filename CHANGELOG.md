@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.80
+
+- Music Date has a card in the library row, where the DJ card used to be. It shows how many finds are waiting and opens the deck straight from your shelves, instead of the wide banner it was sitting in. The DJ set has not gone anywhere it was not already: it lives in the Booth
+
 ## 0.4.79
 
 - Everything the app suggests now sits on Library. The mixes it builds out of your own music, and Music Date, live under your shelves instead of on a page of their own. Discover has gone: looking for music you do not own yet is a search, and the search field has a Discover setting for exactly that
