@@ -32,6 +32,16 @@ import { useServerSession } from '../app/servers/serverSession.tsx';
 import { usePlaylists } from '../app/playlists/playlists.tsx';
 import { EQ_BANDS, EQ_PRESETS, useEqualizer } from '../app/player/equalizer.tsx';
 import * as fxChain from '../app/player/fxChain.ts';
+import {
+  importServerUrl,
+  importTargets,
+  noteImportServerRejected,
+  setImportServerUrl,
+  subscribeImportServer,
+  useImportServer,
+  useImportTargets,
+} from '../app/servers/importServer.ts';
+import { ImportServerPicker } from '../app/servers/ImportServerPicker.tsx';
 
 export const HOST_API_VERSION = 1;
 
@@ -79,6 +89,22 @@ export function installHostRuntime(): PluginHost {
       // Added for the 2026-08 plugin batch (additive - the table only grows).
       '@attackfm/app/playlists': { usePlaylists },
       '@attackfm/app/equalizer': { EQ_BANDS, EQ_PRESETS, useEqualizer },
+      // Which server runs an import, and the picker that chooses it. The
+      // downloader lives on ONE box and the library usually on another, so an
+      // importer that assumed the session server could only ever drive half of
+      // that pair. The picker ships from core because a plugin can import
+      // neither the settings kit nor its CSS, and because the row's search
+      // anchor must not live in a bundle that can be a version behind.
+      '@attackfm/app/importServer': {
+        useImportServer,
+        useImportTargets,
+        importTargets,
+        importServerUrl,
+        setImportServerUrl,
+        subscribeImportServer,
+        noteImportServerRejected,
+        ImportServerPicker,
+      },
     },
   };
   (globalThis as { __ATTACKFM_HOST__?: PluginHost }).__ATTACKFM_HOST__ = host;

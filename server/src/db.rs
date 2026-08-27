@@ -166,6 +166,52 @@ pub struct ActivityRow {
     pub detail: Option<String>,
 }
 
+/// One file the peer owes the hub, as the outbox holds it.
+pub struct PeerSyncRow {
+    pub rel_path: String,
+    pub track_id: i64,
+    pub job_id: String,
+    pub state: String,
+    pub upload_id: String,
+    pub sent_bytes: i64,
+    pub size_bytes: i64,
+    pub attempts: i64,
+    pub next_try_at: i64,
+    pub error: String,
+    pub queued_at: i64,
+    /// Epoch milliseconds, like every other clock in this table.
+    pub updated_at: i64,
+}
+
+/// The outbox at a glance - what the status route reports.
+pub struct PeerSyncCounts {
+    pub pending: i64,
+    pub uploading: i64,
+    pub done: i64,
+    pub skipped: i64,
+    pub failed: i64,
+}
+
+const PEER_SYNC_COLS: &str = "rel_path, track_id, job_id, state, upload_id, sent_bytes, \
+                              size_bytes, attempts, next_try_at, error, queued_at, updated_at";
+
+fn peer_sync_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<PeerSyncRow> {
+    Ok(PeerSyncRow {
+        rel_path: r.get(0)?,
+        track_id: r.get(1)?,
+        job_id: r.get(2)?,
+        state: r.get(3)?,
+        upload_id: r.get(4)?,
+        sent_bytes: r.get(5)?,
+        size_bytes: r.get(6)?,
+        attempts: r.get(7)?,
+        next_try_at: r.get(8)?,
+        error: r.get(9)?,
+        queued_at: r.get(10)?,
+        updated_at: r.get(11)?,
+    })
+}
+
 pub struct User {
     pub id: i64,
     pub username: String,
@@ -1327,6 +1373,39 @@ CREATE TABLE IF NOT EXISTS collector_state (
   exploration REAL NOT NULL DEFAULT 0.5,
   tuned_at    INTEGER NOT NULL DEFAULT 0
 );
+
+-- The peer-sync outbox: files this box downloaded that the hub has not got
+-- yet. Its own table on purpose - Db::open only ever runs CREATE TABLE IF NOT
+-- EXISTS, so a new TABLE lands on a deployed database and a new COLUMN
+-- silently never would.
+--
+-- Keyed by rel_path, not by import job id. A job card is mutable and
+-- disposable - a retry blanks its files, a remove deletes it, and boot
+-- rewrites an interrupted job to error - so a queue pointing at one would lose
+-- the push the moment the listener tidied their download list.
+CREATE TABLE IF NOT EXISTS peer_sync_queue (
+  rel_path    TEXT    PRIMARY KEY,
+  track_id    INTEGER NOT NULL DEFAULT 0,
+  job_id      TEXT    NOT NULL DEFAULT '',
+  -- pending | uploading | done | skipped | failed
+  state       TEXT    NOT NULL DEFAULT 'pending',
+  -- The hub's upload id, held across restarts. /api/upload/init always mints a
+  -- fresh id over a fresh empty file, so a forgotten id both restarts the
+  -- transfer from zero AND orphans the bytes already on the hub's disk, where
+  -- nothing reaps them.
+  upload_id   TEXT    NOT NULL DEFAULT '',
+  sent_bytes  INTEGER NOT NULL DEFAULT 0,
+  size_bytes  INTEGER NOT NULL DEFAULT 0,
+  attempts    INTEGER NOT NULL DEFAULT 0,
+  -- Backoff ladder: 1m, 5m, 15m, 1h, then 6h forever. Unlike spotify_items
+  -- this one never goes dormant: a hub that was off for a weekend must still
+  -- catch up by itself when it comes back, with nobody pressing a button.
+  next_try_at INTEGER NOT NULL DEFAULT 0,
+  error       TEXT    NOT NULL DEFAULT '',
+  queued_at   INTEGER NOT NULL DEFAULT 0,
+  updated_at  INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS peer_sync_due ON peer_sync_queue(state, next_try_at);
 "#;
 
 pub(crate) fn now_ms() -> i64 {
@@ -3988,6 +4067,189 @@ impl Db {
             .optional()
             .ok()
             .flatten()
+    }
+
+    // --- the peer-sync outbox -------------------------------------------------
+    //
+    // A peer downloads, the hub keeps the library. Everything below is the
+    // durable half of that: rows survive a restart, so a box that went down
+    // mid-transfer still owes the hub the same files when it comes back.
+
+    /// Put a landed file in the outbox. `false` when it was already there.
+    ///
+    /// INSERT OR IGNORE rather than a replace: re-importing the same link -
+    /// which happens every time a playlist is re-synced - must not queue the
+    /// file a second time, and must not blank the upload id of a push already
+    /// halfway to the hub.
+    pub fn peer_sync_enqueue(
+        &self,
+        rel_path: &str,
+        track_id: i64,
+        job_id: &str,
+        size_bytes: i64,
+    ) -> bool {
+        let now = now_ms();
+        self.lock()
+            .execute(
+                "INSERT OR IGNORE INTO peer_sync_queue
+                   (rel_path, track_id, job_id, state, size_bytes, queued_at, updated_at)
+                 VALUES (?1, ?2, ?3, 'pending', ?4, ?5, ?5)",
+                params![rel_path, track_id, job_id, size_bytes, now],
+            )
+            .unwrap_or(0)
+            > 0
+    }
+
+    /// The next files owed to the hub - oldest first, so a backlog drains in
+    /// the order it was downloaded.
+    pub fn peer_sync_due(&self, now_ms_val: i64, limit: usize) -> Vec<PeerSyncRow> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(&format!(
+            "SELECT {PEER_SYNC_COLS} FROM peer_sync_queue
+              WHERE state = 'pending' AND next_try_at <= ?1
+              ORDER BY queued_at LIMIT ?2"
+        )) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![now_ms_val, limit as i64], peer_sync_from_row)
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Take a row for this worker. The `state = 'pending'` guard is what makes
+    /// it a claim rather than a wish: the retry route can poke the queue in the
+    /// middle of a wave, and two tasks uploading one file would interleave
+    /// their PUTs against a single upload id and hand the hub a hole.
+    pub fn peer_sync_claim(&self, rel_path: &str) -> bool {
+        self.lock()
+            .execute(
+                "UPDATE peer_sync_queue SET state = 'uploading', updated_at = ?2
+                  WHERE rel_path = ?1 AND state = 'pending'",
+                params![rel_path, now_ms()],
+            )
+            .unwrap_or(0)
+            == 1
+    }
+
+    /// Remember the hub's upload id and how far the transfer has got. Written
+    /// before the first byte moves: an id minted and forgotten is bytes on the
+    /// hub's disk that nothing on either box can find again.
+    pub fn peer_sync_progress(&self, rel_path: &str, upload_id: &str, sent: i64) {
+        let _ = self.lock().execute(
+            "UPDATE peer_sync_queue SET upload_id = ?2, sent_bytes = ?3, updated_at = ?4
+              WHERE rel_path = ?1",
+            params![rel_path, upload_id, sent, now_ms()],
+        );
+    }
+
+    /// A transient failure: back to pending, one step down the ladder.
+    ///
+    /// The upload id is deliberately KEPT - it is the resume handle, and the
+    /// next attempt asks the hub how much of it landed rather than starting a
+    /// 40 MB FLAC again.
+    pub fn peer_sync_defer(&self, rel_path: &str, error: &str) {
+        const LADDER_MS: [i64; 4] = [60_000, 300_000, 900_000, 3_600_000];
+        // Six hours, forever. Never dormant: a hub that was off all weekend
+        // must be caught up when it returns without anyone asking.
+        const TAIL_MS: i64 = 21_600_000;
+        let conn = self.lock();
+        let attempts: i64 = conn
+            .query_row(
+                "SELECT attempts FROM peer_sync_queue WHERE rel_path = ?1",
+                params![rel_path],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let wait = LADDER_MS.get(attempts as usize).copied().unwrap_or(TAIL_MS);
+        let _ = conn.execute(
+            "UPDATE peer_sync_queue SET state = 'pending', attempts = attempts + 1,
+                                        next_try_at = ?2, error = ?3, updated_at = ?4
+              WHERE rel_path = ?1",
+            params![rel_path, now_ms() + wait, error, now_ms()],
+        );
+    }
+
+    /// Settle a row: `done`, `skipped` (the hub already has it) or `failed`.
+    pub fn peer_sync_finish(&self, rel_path: &str, state: &str, error: &str) {
+        let _ = self.lock().execute(
+            "UPDATE peer_sync_queue SET state = ?2, error = ?3, updated_at = ?4
+              WHERE rel_path = ?1",
+            params![rel_path, state, error, now_ms()],
+        );
+    }
+
+    /// Throw away the resume handle - for when the hub says it no longer knows
+    /// the id. The row stays queued; the next attempt re-inits from zero.
+    pub fn peer_sync_reset(&self, rel_path: &str) {
+        let _ = self.lock().execute(
+            "UPDATE peer_sync_queue SET upload_id = '', sent_bytes = 0, updated_at = ?2
+              WHERE rel_path = ?1",
+            params![rel_path, now_ms()],
+        );
+    }
+
+    /// At boot: an `uploading` row is a lie, because nothing is uploading.
+    pub fn peer_sync_reclaim_stuck(&self) -> usize {
+        self.lock()
+            .execute(
+                "UPDATE peer_sync_queue SET state = 'pending', updated_at = ?1
+                  WHERE state = 'uploading'",
+                params![now_ms()],
+            )
+            .unwrap_or(0)
+    }
+
+    pub fn peer_sync_counts(&self) -> PeerSyncCounts {
+        let conn = self.lock();
+        let of = |state: &str| -> i64 {
+            conn.query_row(
+                "SELECT COUNT(*) FROM peer_sync_queue WHERE state = ?1",
+                params![state],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
+        };
+        PeerSyncCounts {
+            pending: of("pending"),
+            uploading: of("uploading"),
+            done: of("done"),
+            skipped: of("skipped"),
+            failed: of("failed"),
+        }
+    }
+
+    /// What the status pane shows: anything failed first, because that is the
+    /// only state a person can do something about, then the newest work.
+    pub fn peer_sync_recent(&self, limit: usize) -> Vec<PeerSyncRow> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(&format!(
+            "SELECT {PEER_SYNC_COLS} FROM peer_sync_queue
+              ORDER BY (state = 'failed') DESC, updated_at DESC LIMIT ?1"
+        )) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![limit as i64], peer_sync_from_row)
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Queue failed pushes again - one path, or all of them.
+    ///
+    /// The upload id is cleared here, unlike in `peer_sync_defer`: a terminal
+    /// failure means the hub-side temp is not to be trusted (a finish that
+    /// returned 422 has already deleted it), so the retry starts clean.
+    pub fn peer_sync_retry(&self, rel_path: Option<&str>) -> usize {
+        let conn = self.lock();
+        let sql = "UPDATE peer_sync_queue
+                      SET state = 'pending', attempts = 0, next_try_at = 0,
+                          error = '', upload_id = '', sent_bytes = 0, updated_at = ?1
+                    WHERE state = 'failed'";
+        match rel_path {
+            Some(rel) => conn
+                .execute(&format!("{sql} AND rel_path = ?2"), params![now_ms(), rel])
+                .unwrap_or(0),
+            None => conn.execute(sql, params![now_ms()]).unwrap_or(0),
+        }
     }
 
     /// The honest sibling of `set_playlist_tracks`: same wholesale replace, but
