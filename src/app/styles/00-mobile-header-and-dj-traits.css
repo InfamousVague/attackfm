@@ -245,7 +245,10 @@ img {
      ~5.9rem on a phone (one more card in every row), the OLD 6.35rem almost
      exactly at a 1280px desktop (nothing moves there), and ~7.4rem unfolded,
      where fixed little squares used to float in white space. */
-  --card-track: clamp(5.9rem, 4.6rem + 2.2vw, 7.4rem);
+  /* Matt asked for the artwork 20% larger: every stop of the clamp is
+     scaled, not just the cap, so the growth holds on a phone and unfolded
+     alike rather than only where the old ceiling bound. */
+  --card-track: clamp(7.08rem, 5.52rem + 2.64vw, 8.88rem);
   /* A mix. Sized as a song card and a playlist tile are, rather than the wider
      hero it used to be: the mixes sit between the playlists and the shelves,
      and three different widths down one page read as three different kinds of
@@ -254,7 +257,7 @@ img {
   /* An artist: a round portrait. Wider than it used to be - a circle reads
      smaller than a square of the same measure, so matching the release cards
      numerically made the faces look shrunken beside them. */
-  --card-artist: 6.5rem;
+  --card-artist: 7.8rem;
 }
 
 /*

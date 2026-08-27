@@ -556,7 +556,7 @@ button.boothDate {
 
 .boothMixes .homeShelfRow {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(10.2rem, 1fr));
   gap: var(--glacier-space-3);
 }
 
