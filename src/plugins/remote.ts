@@ -368,10 +368,31 @@ function isNewerVersion(a: string, b: string): boolean {
   return false;
 }
 
+/**
+ * Install the defaults, and keep EVERYTHING installed up to date.
+ *
+ * The second half was missing, and it made publishing a fix pointless. Only
+ * `DEFAULT_PLUGINS` was ever considered, so a plugin the user installed
+ * themselves stayed on whatever version they first got: the importer's picker
+ * shipped in 1.6.0, the repository served 1.6.0, and devices holding 1.5.x
+ * carried on without it forever, with no way to tell from inside the app that
+ * a newer bundle even existed. Removing and re-adding was the only cure, and
+ * nothing anywhere said so.
+ *
+ * A version bump in the repository is a statement that the new bundle is the
+ * one to run. Nothing about "the user installed this one by hand" argues for
+ * pinning them to a version with known bugs in it - and the guard below is
+ * unchanged, so a current install is still left alone.
+ */
 export async function ensureDefaultPlugins(extraSources: readonly string[] = []): Promise<boolean> {
-  const installedVer = new Map(readInstalled().map((p) => [p.id, p.version]));
+  const installed = readInstalled();
+  const installedVer = new Map(installed.map((p) => [p.id, p.version]));
   const removed = readRemovedDefaultPlugins();
-  const candidates = new Set(DEFAULT_PLUGINS.filter((id) => !removed.includes(id)));
+  const candidates = new Set([
+    ...DEFAULT_PLUGINS.filter((id) => !removed.includes(id)),
+    // Anything already here, so a published fix reaches the devices running it.
+    ...installed.map((p) => p.id),
+  ]);
   if (candidates.size === 0) return false;
 
   // The best (newest) listing for each default across every source, so source

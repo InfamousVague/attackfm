@@ -108,6 +108,14 @@ export interface Health {
   /** False after a probe that failed - unreachable from this network. */
   ok: boolean;
   checkedAt: number;
+  /**
+   * Whether that box downloads imports, or null when it did not say.
+   *
+   * NULL IS NOT FALSE and callers must keep them apart: servers older than
+   * 0.1.25 do not carry the field, and reading their silence as "cannot
+   * download" would move imports off a box that has been fetching them fine.
+   */
+  imports: boolean | null;
 }
 
 const health = new Map<string, Health>();
@@ -131,18 +139,33 @@ export async function probe(url: string, signal?: AbortSignal): Promise<number |
       cache: 'no-store',
     });
     if (!res.ok) throw new Error(String(res.status));
-    await res.arrayBuffer();
+    // Read as JSON rather than discarding the bytes: the body still has to be
+    // consumed for the timing to mean anything, and it carries whether this
+    // box downloads - which decides where an import can be sent.
+    const info = (await res.json().catch(() => null)) as { imports?: unknown } | null;
     const sample = performance.now() - started;
     const prior = health.get(url);
     const smoothed =
       prior?.latencyMs == null ? sample : prior.latencyMs * (1 - EWMA_ALPHA) + sample * EWMA_ALPHA;
-    health.set(url, { latencyMs: smoothed, ok: true, checkedAt: Date.now() });
+    health.set(url, {
+      latencyMs: smoothed,
+      ok: true,
+      checkedAt: Date.now(),
+      imports: typeof info?.imports === 'boolean' ? info.imports : null,
+    });
     return smoothed;
   } catch (err) {
     // Keep the last known latency: a box that just failed one probe from a
     // flaky network has not become permanently far away.
     const prior = health.get(url);
-    health.set(url, { latencyMs: prior?.latencyMs ?? null, ok: false, checkedAt: Date.now() });
+    health.set(url, {
+      latencyMs: prior?.latencyMs ?? null,
+      ok: false,
+      checkedAt: Date.now(),
+      // A failed probe says nothing about what the box can do; keep what it
+      // last told us rather than downgrading it to "unknown".
+      imports: prior?.imports ?? null,
+    });
     // This catch used to swallow the reason, and the grey dot's "unreachable"
     // was everything the device could say afterwards. The reason is the only
     // part anyone can act on, so it goes in the log the listener can hand over.
