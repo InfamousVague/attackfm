@@ -18,6 +18,35 @@
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
 
+# --- optional: set the trust link while we are here --------------------------
+#
+# Sharing another server's members needs two values in the agent's plist, and
+# the only other way to set them is home-install.sh, which asks a page of
+# questions about paths that have not moved. This takes them as arguments so a
+# token can be pasted in one line:
+#
+#   bash server/update-server.command --trust-url https://matt.attack.fm \
+#                                     --trust-token <admin token on it>
+#
+#   bash server/update-server.command --trust-off      # stop sharing
+#
+# Written with PlistBuddy onto the EXISTING plist rather than by regenerating
+# it: home-install.sh rewrites that file whole, and reproducing it here would
+# be a second copy of the truth about what the agent needs. Nothing happens
+# without the flags, so double-clicking behaves exactly as before.
+TRUST_URL=""; TRUST_TOKEN=""; TRUST_OFF=""; TRUST_ASKED=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --trust-url)   TRUST_URL="$2"; TRUST_ASKED=1; shift 2 ;;
+    --trust-token) TRUST_TOKEN="$2"; TRUST_ASKED=1; shift 2 ;;
+    --trust-off)   TRUST_OFF=1; TRUST_ASKED=1; shift ;;
+    -h|--help)
+      echo "usage: update-server.command [--trust-url URL --trust-token TOKEN | --trust-off]"
+      exit 0 ;;
+    *) echo "unknown option: $1"; exit 2 ;;
+  esac
+done
+
 # home-install.sh's agent (the copied binary) and the older hand-rolled one.
 INSTALL_LABEL="com.mattssoftware.attackfm-server"
 LEGACY_LABEL="fm.attack.server"
@@ -74,6 +103,44 @@ FRESH="$REPO/server/target/release/attackfm-server"
 #    before the kickstart; the legacy agent (if its plist survives) is booted
 #    out entirely so two services never fight over the port with different
 #    generations of the code.
+# Applied BEFORE the agent is booted out and back in below, because that
+# bootstrap is what reads the plist - a value written after it would not reach
+# the server until something restarted it again.
+if [ -n "$TRUST_ASKED" ]; then
+  say "→ Updating the trust link…"
+  PLIST="$HOME/Library/LaunchAgents/$INSTALL_LABEL.plist"
+  if [ ! -f "$PLIST" ]; then
+    err "  ✗ No agent plist at $PLIST — run server/home-install.sh once first."
+    hold; exit 1
+  fi
+  set_env() {  # key, value - Set if it is there, Add if it is not
+    /usr/libexec/PlistBuddy -c "Set :EnvironmentVariables:$1 $2" "$PLIST" 2>/dev/null \
+      || /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:$1 string $2" "$PLIST" >/dev/null 2>&1
+  }
+  if [ -n "$TRUST_OFF" ]; then
+    set_env AFM_TRUST_MEMBERS_OF ""
+    set_env AFM_TRUST_TOKEN ""
+    ok "  Sharing turned off."
+  else
+    # Half a link trusts nobody and looks exactly like a typo in the URL, so
+    # say which half is missing rather than writing it and moving on.
+    if [ -z "$TRUST_URL" ] || [ -z "$TRUST_TOKEN" ]; then
+      err "  ✗ Both --trust-url and --trust-token are needed (or --trust-off)."
+      hold; exit 1
+    fi
+    case "$TRUST_URL" in
+      http://*|https://*) ;;
+      *) TRUST_URL="https://$TRUST_URL" ;;
+    esac
+    TRUST_URL="${TRUST_URL%/}"
+    set_env AFM_TRUST_MEMBERS_OF "$TRUST_URL"
+    set_env AFM_TRUST_TOKEN "$TRUST_TOKEN"
+    # The token is never echoed - this window is a screen share waiting to
+    # happen, and it is an admin credential on the other box.
+    ok "  Members of $TRUST_URL will be let in here too."
+  fi
+fi
+
 say "→ Installing & restarting…"
 if [ -f "$HOME/Library/LaunchAgents/$LEGACY_LABEL.plist" ] && [ -f "$HOME/Library/LaunchAgents/$INSTALL_LABEL.plist" ]; then
   err "  Both the old ($LEGACY_LABEL) and new ($INSTALL_LABEL) agents exist."
