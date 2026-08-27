@@ -694,6 +694,7 @@ async fn main() {
         .route("/api/curator", get(curator::feed))
         .route("/api/curator/pulls", get(collector::status))
         .route("/api/date/done", post(collector::date_done))
+        .route("/api/date/verdict", post(collector::date_verdict))
         .route("/api/albums/gaps", get(albums::gaps))
         .route("/api/album/tracks", get(albums::tracks))
         .route("/api/app/bundle", get(appbundle::manifest))
