@@ -93,6 +93,10 @@ pub fn spawn(state: Arc<AppState>) {
         loop {
             settle_pulls(&state).await;
             settle_delegated(&state).await;
+            // Cheap, and it rides a timer that already exists: the AI
+            // counters are per-process, so without this a restart erases
+            // every sign that any of it has ever worked.
+            crate::ai::flush_last_runs(&state.db);
             pull_cycle(&state).await;
             tune_cycle(&state);
             // The small-artist sources fill the same pool the Deezer harvest

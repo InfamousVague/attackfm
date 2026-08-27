@@ -214,6 +214,9 @@ fn activity_json(rows: Vec<ActivityRow>) -> Vec<Value> {
 pub async fn report(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Reply {
     require_admin(&state.db, &headers)?;
     let stats = crate::ai::stats_snapshot();
+    // Survives a restart, so "never run" means never rather than "not in the
+    // ninety seconds since the last deploy".
+    let ever = crate::ai::stored_last_runs(&state.db);
     let mut total_calls = 0u64;
     let mut total_failures = 0u64;
     let mut total_ms = 0u64;
@@ -233,6 +236,9 @@ pub async fn report(State(state): State<Arc<AppState>>, headers: HeaderMap) -> R
                 "failures": stat.failures,
                 "avgMs": (stat.calls > 0).then(|| (stat.total_ms / stat.calls) as i64),
                 "lastAt": (stat.last_at > 0).then_some(stat.last_at),
+                // The last time this ran AT ALL, restarts included. The pane
+                // reads it only when there is nothing since boot to show.
+                "everAt": ever.get(*id).copied().filter(|v| *v > 0),
                 "lastOk": stat.last_ok,
             })
         })

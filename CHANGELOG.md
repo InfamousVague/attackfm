@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.91
+
+- Local AI now says when each function last ran even if the server has restarted since, instead of reporting everything as never run
+- A model is recognised as in use whether or not its name carries a tag, so the embedding model no longer looks idle while it is embedding
+
 ## 0.4.90
 
 - The curator now tells you where its downloading happens, when that server last collected any, and how many songs arrived in the last day
