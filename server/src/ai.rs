@@ -141,6 +141,92 @@ fn record(id: &str, ok: bool, ms: u64) {
     entry.last_ok = Some(ok);
 }
 
+/// Where the durable half of the statistics lives.
+///
+/// The counters above are per-process on purpose - a box that was healthy for a
+/// month should not hide an endpoint failing this morning - but that made a
+/// restart look exactly like a feature that has never worked. Everything read
+/// "never run" a minute after a deploy, on a server whose models were resident
+/// in memory from work it had just finished.
+///
+/// So the last time each function ran is kept as well. Only the timestamp:
+/// merged with `max`, it needs no delta tracking and cannot double-count, and
+/// "last used four minutes ago" is the whole of what the reader was asking.
+const LAST_RUN_KEY: &str = "ai.lastrun";
+
+/// When each function last ran, across restarts.
+pub fn stored_last_runs(db: &crate::db::Db) -> HashMap<String, i64> {
+    db.meta_get(LAST_RUN_KEY)
+        .and_then(|raw| serde_json::from_str::<HashMap<String, i64>>(&raw).ok())
+        .unwrap_or_default()
+}
+
+/// Fold this process's activity into the stored record. Called from a loop that
+/// already runs on a timer rather than from `record`, which is on the hot path
+/// of every embedding.
+pub fn flush_last_runs(db: &crate::db::Db) {
+    let live = stats_snapshot();
+    if live.is_empty() {
+        return;
+    }
+    let mut stored = stored_last_runs(db);
+    if merge_last_runs(&mut stored, live.iter().map(|(id, s)| (id.as_str(), s.last_at))) {
+        if let Ok(raw) = serde_json::to_string(&stored) {
+            let _ = db.meta_set(LAST_RUN_KEY, &raw);
+        }
+    }
+}
+
+/// Fold live timestamps into the stored ones, newest wins. Returns whether
+/// anything moved, so an idle server does not rewrite the same row every cycle.
+fn merge_last_runs<'a>(
+    stored: &mut HashMap<String, i64>,
+    live: impl Iterator<Item = (&'a str, i64)>,
+) -> bool {
+    let mut changed = false;
+    for (id, at) in live {
+        if at > stored.get(id).copied().unwrap_or(0) {
+            stored.insert(id.to_string(), at);
+            changed = true;
+        }
+    }
+    changed
+}
+
+#[cfg(test)]
+mod last_run_tests {
+    use super::*;
+
+    /// The merge takes the NEWEST of the two and reports whether it moved.
+    ///
+    /// Both halves matter. Taking the newest is what lets a per-process counter
+    /// be folded into a durable record without tracking deltas or
+    /// double-counting; reporting no change is what keeps an idle server from
+    /// rewriting the same row every five minutes forever.
+    #[test]
+    fn last_runs_keep_the_newest_and_report_movement() {
+        let mut stored: HashMap<String, i64> = HashMap::new();
+        stored.insert("embed".into(), 500);
+        stored.insert("chat".into(), 900);
+
+        assert!(
+            merge_last_runs(&mut stored, [("embed", 700), ("audit", 100)].into_iter()),
+            "a newer run and an unseen function both count as movement",
+        );
+        assert_eq!(stored.get("embed"), Some(&700), "newer wins");
+        assert_eq!(stored.get("audit"), Some(&100), "a first run is recorded");
+        assert_eq!(stored.get("chat"), Some(&900), "untouched by this pass");
+
+        // A restart: the process has no history, so every live value is 0 and
+        // must not erase what is on disk.
+        assert!(
+            !merge_last_runs(&mut stored, [("embed", 0), ("chat", 0)].into_iter()),
+            "a fresh process reports nothing newer, so nothing is written",
+        );
+        assert_eq!(stored.get("embed"), Some(&700), "the record survives a restart");
+    }
+}
+
 /// Every function that has actually run, by id.
 pub fn stats_snapshot() -> HashMap<String, FnStat> {
     stats().read().map(|g| g.clone()).unwrap_or_default()

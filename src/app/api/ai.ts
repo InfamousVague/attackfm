@@ -70,6 +70,12 @@ export interface AiFunction {
   failures: number;
   avgMs: number | null;
   lastAt: number | null;
+  /**
+   * When this last ran at ALL, restarts included. `calls` and `lastAt` measure
+   * only the current process, so on a freshly deployed server every function
+   * reads as though it had never worked; this is what says otherwise.
+   */
+  everAt: number | null;
   lastOk: boolean | null;
 }
 

@@ -79,6 +79,38 @@ function ago(seconds: number | null): string {
   return `${Math.floor(d / 86_400)}d ago`;
 }
 
+/**
+ * What a function has been doing, in one phrase.
+ *
+ * Three different situations used to share the words "never run": it has never
+ * worked, it has not been needed since the server restarted, and the server
+ * restarted ninety seconds ago. Only the first is a problem, and it was the
+ * reading everybody got - a freshly deployed box reported six dead functions
+ * while its models were still resident from the work it had just finished.
+ */
+function activity(fn: { calls: number; lastAt: number | null; everAt: number | null }): string {
+  if (fn.calls > 0) {
+    return `${fn.calls} call${fn.calls === 1 ? '' : 's'}, ${ago(fn.lastAt)}`;
+  }
+  if (fn.everAt) return `last used ${ago(fn.everAt)}, before this restart`;
+  return 'never run';
+}
+
+/**
+ * Whether a named model and one the endpoint lists are the same thing.
+ *
+ * Ollama reports its default tag explicitly (`nomic-embed-text:latest`) while
+ * the setting naming it is almost always written bare, so comparing the strings
+ * marked the embedding model "not in use" on a server that was embedding with
+ * it. An explicit tag on BOTH sides still has to match - `qwen3.5:9b` and
+ * `qwen3.5:32b` are not each other.
+ */
+function sameModel(named: string | null | undefined, listed: string): boolean {
+  if (!named) return false;
+  const bare = (v: string) => v.trim().replace(/:latest$/, '');
+  return bare(named) === bare(listed);
+}
+
 function duration(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
@@ -387,7 +419,17 @@ export function LocalAiPane() {
               // The useful reading is not the list - it is whether what you
               // NAMED is on it. A typo in a model tag otherwise shows up much
               // later as a feature that quietly never runs.
-              const used = [settings.chatModel, settings.embedModel, settings.fastModel, settings.refinementModel].includes(m);
+              // Compared by TAG-INSENSITIVE name. Ollama reports its default
+              // tag explicitly - `nomic-embed-text:latest` - while the setting
+              // that names it is almost always written bare, so an exact match
+              // marked the embedding model unused on a server that was
+              // embedding with it at that moment.
+              const used = [
+                settings.chatModel,
+                settings.embedModel,
+                settings.fastModel,
+                settings.refinementModel,
+              ].some((named) => sameModel(named, m));
               return (
                 <Pill key={m} size="sm" variant={used ? 'solid' : 'soft'} tone={used ? 'accent' : 'neutral'}>{m}</Pill>
               );
@@ -406,7 +448,7 @@ export function LocalAiPane() {
             id={`ai-fn-${fn.id}`}
             icon={fn.uses === 'embed' ? <Zap size={16} /> : <Bot size={16} />}
             label={fn.label}
-            hint={`${fn.model ?? 'no model'}${fn.calls ? ` · ${fn.calls} call${fn.calls === 1 ? '' : 's'}, ${ago(fn.lastAt)}` : ' · never run'}`}
+            hint={`${fn.model ?? 'no model'} · ${activity(fn)}`}
             value={
               fn.calls === 0 ? (
                 <Text tone="muted" size="xs">—</Text>
