@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.88
+
+- Imports now find the server that can actually fetch them. If the server you are signed into does not do downloads and one of your others does, that is where a pasted link goes, and the Downloads tab says so. Pick a different one there whenever you want.
+- Plugins you installed yourself now update themselves, the way the built-in ones always have. Until now they stayed on the version you first installed, so a fix could be published and never reach you, and the only cure was removing the plugin and adding it back.
+
 ## 0.4.87
 
 - If you picked a server to download on and this device can no longer sign into it, the Downloads tab says so now, and names the server your imports are running on instead. It used to quietly fall back to the server you are signed into, which looked exactly like the setting having no effect at all.
