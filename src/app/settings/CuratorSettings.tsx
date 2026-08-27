@@ -1,5 +1,5 @@
 import { Label, Skeleton, Switch, Text } from '@glacier/react';
-import { Check, Disc3, Music, X } from '@glacier/icons';
+import { Check, Disc3, CloudDownload, Hourglass, Music, X } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { useServerSession } from '../servers/serverSession.tsx';
 import {
@@ -23,6 +23,25 @@ import { formatBytes } from '../ux/format.ts';
  * The off switch stops the DOWNLOADING only. The mixes, the suggestions and
  * the enrichment keep running - they spend nothing but electricity.
  */
+
+/**
+ * What each pull is doing, in the reader's terms. Only the states that are
+ * genuinely ambiguous get a word - a landed pull is just the song.
+ */
+const WHERE: Partial<Record<string, string>> = {
+  offered: 'waiting for a download box',
+  fetching: 'downloading elsewhere',
+  queued: 'downloading here',
+  failed: 'could not be fetched',
+};
+
+/** How the delegating case reads, which depends entirely on the clock. */
+function peerNote(seenAt: number | null): string {
+  if (seenAt == null) {
+    return 'Downloads are handed to another server, and none has ever collected any. Picks are waiting.';
+  }
+  return `Downloads are handed to another server, which last collected one ${timeAgo(seenAt)}.`;
+}
 
 function timeAgo(ms: number): string {
   const mins = Math.max(0, Math.round((Date.now() - ms) / 60_000));
@@ -123,10 +142,32 @@ export function CuratorSettings() {
             Reach: {(status.exploration * 100).toFixed(0)}% adventurous — it tunes itself from what
             you keep and what you skip.
           </Text>
+          {/*
+            * Where the downloading actually happens.
+            *
+            * The collector can hand its downloads to another box, which meant
+            * this pane could show a healthy budget, a full list of picks and
+            * no way at all to tell whether a single one of them had been
+            * fetched - the work was happening on a machine this page never
+            * mentioned. These two sentences are the whole answer: who does the
+            * downloading, and whether anything arrived.
+            */}
+          <Text tone="muted" size="sm">
+            {status.delegates
+              ? peerNote(status.peerSeenAt)
+              : status.downloadsHere
+                ? 'This server downloads its own picks.'
+                : 'This server is not set up to download, and no other box has been given the job.'}
+          </Text>
+          <Text tone="muted" size="sm">
+            {status.landedToday > 0
+              ? `${status.landedToday} arrived in the last day.`
+              : 'Nothing has arrived in the last day.'}
+          </Text>
           {!status.importable && (
             <Text size="sm" className="curatorWarn">
-              The server has no downloader tool installed, so pulls will fail — check the home-hub
-              setup.
+              The server cannot look anything up — the SpotiFLAC tool is missing, so it can neither
+              find music nor ask for it.
             </Text>
           )}
         </div>
@@ -143,6 +184,10 @@ export function CuratorSettings() {
                     <X size={14} />
                   ) : r.state === 'promoted' ? (
                     <Check size={14} />
+                  ) : r.state === 'offered' ? (
+                    <Hourglass size={14} />
+                  ) : r.state === 'fetching' ? (
+                    <CloudDownload size={14} />
                   ) : r.kind === 'album' ? (
                     <Disc3 size={14} />
                   ) : (
@@ -153,7 +198,11 @@ export function CuratorSettings() {
                   <span className="curatorPull__title">
                     {r.title} · {r.artist}
                   </span>
-                  {r.reason && <span className="curatorPull__reason">{r.reason}</span>}
+                  <span className="curatorPull__reason">
+                    {WHERE[r.state] ?? ''}
+                    {WHERE[r.state] && r.reason ? ' · ' : ''}
+                    {r.reason}
+                  </span>
                 </span>
                 <span className="curatorPull__when">{timeAgo(r.at)}</span>
               </li>

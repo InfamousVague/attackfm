@@ -325,13 +325,25 @@ function ServerCard({
         </div>
       </div>
 
+      {/*
+        * Two bars on one card measure two unrelated things - how much of your
+        * library is here, and how full the disk is - and they used to be drawn
+        * identically, stacked, with a caption under the second one only. The
+        * pair read as one broken control. This one says what it is and is
+        * drawn as an outline; the disk below is solid.
+        */}
       {!row.primary && libraryTotal > 0 && (
-        <div className="serverCard__bar" role="img" aria-label={`${pct}% of your library is here`}>
-          <span className="serverCard__barFill" style={{ inlineSize: `${pct}%` }} />
+        <div className="serverCard__gauge">
+          <div className="serverCard__bar" data-kind="held" role="img" aria-label={`${pct}% of your library is here`}>
+            <span className="serverCard__barFill" style={{ inlineSize: `${pct}%` }} />
+          </div>
+          <Text size="sm" tone="muted">
+            {pct}% of your library is here
+          </Text>
         </div>
       )}
       {ceiling > 0 && (
-        <div className="serverCard__disk">
+        <div className="serverCard__gauge">
           <div className="serverCard__bar" data-kind="disk">
             <span
               className="serverCard__barFill"
