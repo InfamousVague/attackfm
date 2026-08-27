@@ -83,7 +83,18 @@ export interface AiReport {
   settings: AiSettings;
   health: AiHealth;
   functions: AiFunction[];
-  totals: { calls: number; failures: number; avgMs: number | null; sinceBoot: number };
+  totals: {
+    calls: number;
+    failures: number;
+    avgMs: number | null;
+    sinceBoot: number;
+    /**
+     * Work recorded under an id no function above claims - which means the two
+     * have drifted apart and some row is reading "never run" while its job is
+     * being done. Normally empty.
+     */
+    unattributed?: { id: string; calls: number; lastAt: number }[];
+  };
   /** Mirror of the curator's live status object. */
   curator: { phase: string; lastCurated: number; ai: boolean; chat: boolean; embeddings: boolean } | null;
   /** The FIRST page of AI activity, newest first. Page size is the server's
