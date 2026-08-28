@@ -84,7 +84,7 @@ export function HomePage({
   const mixHold = useHoldToMenu((from) => from.closest('.mixCardMenuTarget'));
   const showCurator = section === 'curator' || section === 'all';
   const showHistory = section === 'history' || section === 'all';
-  const { tracks, favoriteTracks } = useLibrary();
+  const { tracks, favoriteTracks, forYou } = useLibrary();
   const { session } = useServerSession();
   // The entrance wave, when this page stands alone; embedded, the Library
   // page's own observer covers these shelves (first registration wins).
@@ -106,7 +106,7 @@ export function HomePage({
     skelFeed,
     skelCurator,
     anySkeleton,
-  } = useHomeFeed(tracks, session);
+  } = useHomeFeed(tracks, session, forYou);
 
   // The home search filters the local library in place: while it holds a query
   // the shelves stand aside and the matches take the page.

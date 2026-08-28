@@ -1429,6 +1429,8 @@ mod ranking_tests {
         TrackFeatures {
             track_id: 1,
             bpm: Some(bpm),
+            curator_user_id: None,
+            added_at: 0,
             lyric_vec: None,
             genre: "test".into(),
             ai_genres: Vec::new(),

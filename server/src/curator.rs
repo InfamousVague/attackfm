@@ -1158,12 +1158,28 @@ async fn curate_cycle(state: &Arc<AppState>) {
             continue;
         }
 
+        /*
+         * WHOSE music this listener's lists may draw on.
+         *
+         * `quarantined` is a global fact - "nobody has adopted this yet" - and
+         * every list here used it alone, so the collector could spend a week
+         * fetching music chosen for this exact person and not one track of it
+         * could appear in anything it built for them. The pulls sat in the For
+         * you shelf and nowhere else, which made the curator look like it only
+         * ever reshuffled the library you already had.
+         *
+         * An audition belonging to THIS listener is theirs to be offered; one
+         * fetched for somebody else still is not, because a pull is chosen
+         * against its owner's taste and adopting it is their gesture to make.
+         */
+        let available = |f: &TrackFeatures| !f.quarantined || f.curator_user_id == Some(user);
+
         // Everything they have NOT been playing lately, scored against them.
         let fresh: Vec<(f32, &TrackFeatures)> = all
             .iter()
-            // Quarantined = a collector audition nobody has adopted: not part
-            // of the library yet, so it seeds and fills no list.
-            .filter(|f| !taste.heard.contains(&f.track_id) && !f.quarantined)
+            // Not what they have been playing, and nothing that belongs to
+            // another listener's unfinished audition - see `available`.
+            .filter(|f| !taste.heard.contains(&f.track_id) && available(f))
             .map(|f| (crate::taste::score(f, &taste), f))
             .collect();
         if fresh.len() < 8 {
@@ -1261,13 +1277,13 @@ async fn curate_cycle(state: &Arc<AppState>) {
         // the last sort is by arrival, not by rank.
         let recent = state
             .db
-            .recent_track_ids(now_ms() - 21 * 24 * 60 * 60 * 1000, (LIST_LEN * 6) as i64);
+            .recent_track_ids(now_ms() - 21 * 24 * 60 * 60 * 1000, (LIST_LEN * 6) as i64, user);
         let mut arrivals: Vec<(usize, f32, i64)> = recent
             .iter()
             .enumerate()
             .filter_map(|(pos, id)| {
                 let f = by_id.get(id)?;
-                (!f.quarantined).then(|| (pos, crate::taste::score(f, &taste), *id))
+                available(f).then(|| (pos, crate::taste::score(f, &taste), *id))
             })
             .collect();
         // Best for them first, then keep only as many as the list holds...
@@ -1286,11 +1302,49 @@ async fn curate_cycle(state: &Arc<AppState>) {
             );
         }
 
+        /*
+         * JUST DOWNLOADED - what the collector actually went and got.
+         *
+         * The families above all answer "out of the music that is here, what
+         * suits you". None of them can answer "what did you buy me this week",
+         * because an unadopted pull is spread thin across a whole library's
+         * worth of candidates and rarely wins a seat on merit alone. So the one
+         * thing the collector does that is visibly ITS work had no list of its
+         * own, and the shelf looked like a library reshuffler.
+         *
+         * Arrival order, newest first: for a list whose entire point is that
+         * these are new, when they landed IS the ranking. No taste scoring
+         * either - these were already chosen for this listener when the
+         * collector decided to spend the disk on them, and scoring them a
+         * second time here would just bury the newest arrivals under whatever
+         * happened to match last month's listening.
+         *
+         * Four is enough to draw it. The bar elsewhere is eight because those
+         * lists pick from the whole library and a short one means the maths
+         * found nothing; here a short list means the collector has fetched four
+         * things, which is worth showing rather than hiding until it has eight.
+         */
+        let mut pulls: Vec<&TrackFeatures> = all
+            .iter()
+            .filter(|f| f.quarantined && f.curator_user_id == Some(user))
+            .collect();
+        pulls.sort_by_key(|f| std::cmp::Reverse(f.added_at));
+        let pull_ids: Vec<i64> = pulls.iter().take(LIST_LEN).map(|f| f.track_id).collect();
+        if pull_ids.len() >= 4 {
+            let _ = state.db.put_curated(
+                user,
+                "collector-pulls",
+                "Just downloaded",
+                "Fetched for you and not heard yet. Play it through to keep it.",
+                &pull_ids,
+            );
+        }
+
         // The mood lists, from the analyser's audio character (features.rs).
         // Whole library including what you play on repeat - a mood list is
         // something to put ON, not a discovery engine - ranked to taste so
         // the top of each list is still yours.
-        let pool: Vec<&TrackFeatures> = all.iter().filter(|f| !f.quarantined).collect();
+        let pool: Vec<&TrackFeatures> = all.iter().filter(|f| available(f)).collect();
         let moods: [(&str, &str, &str, fn(&TrackFeatures) -> bool); 4] = [
             ("mood-chill", "Chill", "Low energy, easy pace.", |f| {
                 f.energy.is_some_and(|e| e <= 0.4) && f.bpm.is_none_or(|b| b < 105.0)

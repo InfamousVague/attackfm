@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.100
+
+- The curator's playlists can finally contain the music the collector went and downloaded for you. Every list drew only on tracks you already owned, because an unadopted download is flagged "nobody has adopted this yet" and that flag never said WHO it was fetched for, so all of them were refused. Your own downloads now count as yours; another listener's still do not
+- A new list, Just downloaded: what the collector has fetched for you and you have not heard yet, newest first. Playing it through is what keeps a track
+- The home shelf can now resolve those downloads at all. It looked them up in the library, which deliberately holds them back, so a list of new arrivals resolved to nothing and the shelf hid itself rather than showing it. Needs the hub updated
+
 ## 0.4.98
 
 - The scrubber answers your thumb now: the music coming loose as you take hold, and the set-down when you let go
