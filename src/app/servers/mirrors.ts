@@ -15,6 +15,7 @@
 //! ONE session server. A mirror is a delivery route, never a second opinion
 //! about what the library contains.
 
+import { noteServerAnswered, noteServerSilent } from '../api/reachability.ts';
 import type { RemoteTrack, ServerSession } from '../server.ts';
 import { loadCachedIndex, syncLibrary } from '../server.ts';
 import { fold } from '../core/fold.ts';
@@ -423,7 +424,18 @@ export function startMirrorHeartbeat(session: ServerSession): () => void {
     // The session server is probed even with NO mirrors configured: the
     // header's dot reads this heartbeat, and skipping the probe left the
     // dot inventing a green it had never once verified.
-    await probeAll([session.url, ...mirrors.map((m) => m.url)], control.signal);
+    //
+    // And it FEEDS REACHABILITY - the once-a-second probe is the most
+    // frequent network traffic in the app, and for a long time it taught the
+    // down-flag nothing because it is a raw fetch that request() never sees.
+    // The flag flipped only after two JSON calls timed out, which offline
+    // could take arbitrarily long, and every gate that declines the local
+    // copy in the server's favour kept declining into a void. Two silent
+    // beats now settle it.
+    const home = await probe(session.url, control.signal);
+    if (home === null) noteServerSilent();
+    else noteServerAnswered();
+    await probeAll(mirrors.map((m) => m.url), control.signal);
     if (mirrors.length === 0) return;
     if (stopped) return;
     if (Date.now() - lastHoldings > HOLDINGS_EVERY_MS) {

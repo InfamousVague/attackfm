@@ -39,6 +39,78 @@ function store(): Promise<Cache> | null {
   }
 }
 
+/*
+ * The IndexedDB fallback, for exactly the engines the comment above names.
+ *
+ * The Cache API is gated on isSecureContext, and a WKWebView serving the app
+ * from a custom scheme may not grant it - in which place every rung of the
+ * cover ladder silently held nothing and airplane mode blanked the shelves
+ * over bytes this module believed it had kept. IndexedDB has no such gate.
+ * Same keys, same blobs; only the shelf they sit on differs.
+ */
+const IDB_NAME = 'attackfm-art';
+const IDB_STORE = 'covers';
+
+function idb(): Promise<IDBDatabase | null> {
+  if (typeof indexedDB === 'undefined') return Promise.resolve(null);
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = () => {
+        if (!req.result.objectStoreNames.contains(IDB_STORE)) {
+          req.result.createObjectStore(IDB_STORE);
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+      req.onblocked = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+function idbGet(db: IDBDatabase, key: string): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    try {
+      const req = db.transaction(IDB_STORE).objectStore(IDB_STORE).get(key);
+      req.onsuccess = () => resolve(req.result instanceof Blob ? req.result : null);
+      req.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+function idbFirstWithPrefix(db: IDBDatabase, prefix: string): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    try {
+      const range = IDBKeyRange.bound(prefix, prefix + '\uffff');
+      const req = db.transaction(IDB_STORE).objectStore(IDB_STORE).openCursor(range);
+      req.onsuccess = () => {
+        const cur = req.result;
+        resolve(cur && cur.value instanceof Blob ? cur.value : null);
+      };
+      req.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+function idbPut(db: IDBDatabase, key: string, blob: Blob): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).put(blob, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+}
+
 /**
  * The stable identity of a cover, pulled back out of whatever URL a surface
  * happens to be holding.
@@ -75,8 +147,22 @@ export function artKey(url: string | null): string | null {
  */
 export async function rememberArt(url: string): Promise<'held' | 'kept' | 'no'> {
   const key = artKey(url);
-  const cache = key ? store() : null;
-  if (!key || !cache) return 'no';
+  if (!key) return 'no';
+  const cache = store();
+  if (!cache) {
+    // No Cache API on this engine: the IDB shelf, same contract.
+    const db = await idb();
+    if (!db) return 'no';
+    try {
+      if (await idbGet(db, key)) return 'held';
+      const res = await fetch(url);
+      if (!res.ok || !/^image\//i.test(res.headers.get('content-type') ?? '')) return 'no';
+      await idbPut(db, key, await res.blob());
+      return 'kept';
+    } catch {
+      return 'no';
+    }
+  }
   try {
     const c = await cache;
     if (await c.match(key)) return 'held'; // already held; do not re-fetch
@@ -104,8 +190,20 @@ const live = new Map<string, string>();
 
 export async function cachedArt(url: string): Promise<string | null> {
   const key = artKey(url);
-  const cache = key ? store() : null;
-  if (!key || !cache) return null;
+  if (!key) return null;
+  const cache = store();
+  if (!cache) {
+    const db = await idb();
+    if (!db) return null;
+    const id = key.slice(0, key.lastIndexOf('@'));
+    const blob = (await idbGet(db, key)) ?? (await idbFirstWithPrefix(db, `${id}@`));
+    if (!blob) return null;
+    const previous = live.get(key);
+    if (previous) URL.revokeObjectURL(previous);
+    const fresh = URL.createObjectURL(blob);
+    live.set(key, fresh);
+    return fresh;
+  }
   try {
     const c = await cache;
     /*

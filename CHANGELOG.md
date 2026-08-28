@@ -15,6 +15,14 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.104
+
+- Airplane mode works now: cached and saved songs play, and covers come from the device instead of vanishing
+- The app notices the network is gone immediately instead of waiting for two requests to time out, so the effects rack stops routing cached songs to a server that cannot answer
+- Offline, one uncached song no longer wedges the queue — playback skips ahead to the next song on the device
+- Album covers on tables, the queue, album and artist pages, and search now fall back to the kept copy; playlist mosaics too
+- The device cache can no longer go invisible for a whole session when its first directory read fails at boot
+
 ## 0.4.103
 
 - Station cards wear play and shuffle on their face now; adding to the queue moved into the held menu

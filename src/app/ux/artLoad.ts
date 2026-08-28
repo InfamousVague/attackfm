@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { serverSeemsDown } from '../api/reachability.ts';
 import { artSized } from '../server.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
@@ -31,7 +31,7 @@ export interface ArtLoadProps {
   className: string;
   'data-loading': true | undefined;
   onLoad: () => void;
-  onError: () => void;
+  onError: (e?: { currentTarget?: HTMLImageElement }) => void;
 }
 
 /**
@@ -42,8 +42,10 @@ export interface ArtLoadProps {
  */
 export function useArtLoad(src: string | null | undefined, className: string): ArtLoadProps {
   const [loaded, setLoaded] = useState(false);
+  const recovered = useRef(false);
   useEffect(() => {
     setLoaded(false);
+    recovered.current = false;
     if (!src) return;
     const timer = window.setTimeout(() => setLoaded(true), REVEAL_TIMEOUT_MS);
     return () => window.clearTimeout(timer);
@@ -53,16 +55,37 @@ export function useArtLoad(src: string | null | undefined, className: string): A
     className: `${className} artPop`,
     'data-loading': waiting || undefined,
     // Every cover this hook draws is kept, which is most of them: thumbs,
-    // grid cells, hero images. This hook cannot SERVE the copy back - the
-    // caller owns the src and this only reports - but holding it is what
-    // lets the surfaces that do own their src (useCardArt) find one.
+    // grid cells, hero images.
     onLoad: () => {
       setLoaded(true);
       if (src) void rememberArt(src);
     },
-    // An error ends the skeleton too: whatever the img falls back to (its
-    // alt, a glyph behind it) is the final answer, not a thing to shimmer at.
-    onError: () => setLoaded(true),
+    /*
+     * On error, the kept copy - served IMPERATIVELY through the event's own
+     * element.
+     *
+     * This hook's callers all own their src (<img {...art} src={mine}>), so a
+     * src in the returned props would be spread over and lost; the old answer
+     * was to shrug ("whatever the img falls back to is the final answer"),
+     * which meant every table thumb, queue row, album page and search tile
+     * dropped its cover in airplane mode while the bytes sat in the art
+     * cache. Writing the element's src directly sidesteps the ownership
+     * problem for all seventeen call sites at once: the swap fires the img's
+     * own onLoad, which ends the skeleton the ordinary way. Tried once per
+     * src, so a cached copy that itself fails cannot loop.
+     */
+    onError: (e?: { currentTarget?: HTMLImageElement }) => {
+      const img = e?.currentTarget;
+      if (img && src && !recovered.current) {
+        recovered.current = true;
+        void cachedArt(src).then((url) => {
+          if (url) img.src = url;
+          else setLoaded(true);
+        });
+        return;
+      }
+      setLoaded(true);
+    },
   };
 }
 
@@ -219,17 +242,27 @@ export function useTileArt(urls: readonly (string | null)[]): {
     const images = wanted.map((u) => {
       const img = new Image();
       img.onload = done;
-      // One rung of fallback per cover: a mirror that holds the song serves
-      // its copy when the session server's art will not come; a second
-      // failure counts the cover done like before.
+      // The kept copy first, then a mirror, then done. The device's own art
+      // cache used to be missing from this ladder entirely - a mirror is
+      // another server, and in airplane mode every server is equally gone,
+      // so playlist mosaics went blank over bytes already on the device.
       img.onerror = () => {
-        const mirror = session ? artFallbackUrl(session, u) : null;
-        if (mirror && img.src !== mirror) {
-          img.onerror = done;
-          img.src = mirror;
-        } else {
-          done();
-        }
+        img.onerror = () => {
+          const mirror = session ? artFallbackUrl(session, u) : null;
+          if (mirror && img.src !== mirror) {
+            img.onerror = done;
+            img.src = mirror;
+          } else {
+            done();
+          }
+        };
+        void cachedArt(u).then((kept) => {
+          if (kept) {
+            img.src = kept;
+          } else if (img.onerror) {
+            (img.onerror as () => void)();
+          }
+        });
       };
       img.src = u;
       return img;
