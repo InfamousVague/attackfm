@@ -1,0 +1,178 @@
+/**
+ * The album's colour, made wearable.
+ *
+ * The Now Playing sheet paints its chrome - the play circle, the seek bar,
+ * the saved heart, the lit shuffle/repeat - in the kit accent, which is the
+ * same colour whatever is playing. This asks the cover instead: pull the hue
+ * the artwork is actually about, then dress it as a PASTEL - light and soft
+ * by construction, because the sheet floors these tokens over a dark blurred
+ * cover where a dark or shouty accent disappears or fights the art.
+ *
+ * Only the HUE is taken from the art. Saturation and lightness are pinned to
+ * a pastel band rather than sampled, which is what "match the album but keep
+ * it pastel and not too dark" cashes out to: a black-metal cover and a neon
+ * one land in the same band, told apart by hue alone. Art with no hue to
+ * speak of - greyscale covers, near-black photography - returns null and the
+ * sheet keeps the kit accent, because a hue invented from noise dresses the
+ * screen in a colour the album never was.
+ *
+ * The read itself rides the same fetch -> ImageBitmap -> canvas path the
+ * lock-screen artwork uses (androidAudio.ts): bytes first, so the canvas is
+ * never tainted whatever protocol served the cover (https, asset, blob).
+ */
+
+/**
+ * The whole accent ramp, re-grounded in the album's hue, as CSS custom
+ * properties ready to spread onto an element's style. The FULL ramp, not
+ * just the three tokens the sheet's own CSS names: kit components on the
+ * sheet (the SeekBar's accent tone, chips, borders) drink from the numbered
+ * steps and the -soft/-contrast/-border aliases directly, and a partial
+ * override would leave them kit-blue in a sea of pastel.
+ */
+export type ArtTint = Record<string, string>;
+
+/** Enough covers to flip through an album run without refetching. */
+const CACHE_CAP = 24;
+const cache = new Map<string, ArtTint | null>();
+
+/** 30-degree hue buckets: coarse enough to gather an album's family of
+ * shades, fine enough that teal and blue do not vote as one. */
+const BUCKETS = 12;
+
+/**
+ * Below this share of a fully-saturated frame, the art has no opinion about
+ * hue and we decline to invent one. Tuned low: even moody covers usually
+ * carry a corner of colour, and the fallback is the kit accent, not grey.
+ */
+const MIN_VOTE = 2.5;
+
+async function readTint(url: string): Promise<ArtTint | null> {
+  const blob = await (await fetch(url)).blob();
+  const bitmap = await createImageBitmap(blob);
+  const side = 40;
+  const canvas = document.createElement('canvas');
+  canvas.width = side;
+  canvas.height = side;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) {
+    bitmap.close();
+    return null;
+  }
+  ctx.drawImage(bitmap, 0, 0, side, side);
+  bitmap.close();
+  const { data } = ctx.getImageData(0, 0, side, side);
+
+  /* One pass of hue voting. A pixel's vote is its saturation damped by how
+     far it sits from mid-lightness: full colour in the mids speaks loudest,
+     while near-black and near-white pixels - whose hue channel is mostly
+     quantisation noise - barely whisper. */
+  const votes = new Float32Array(BUCKETS);
+  const sinSum = new Float32Array(BUCKETS);
+  const cosSum = new Float32Array(BUCKETS);
+  for (let i = 0; i < data.length; i += 4) {
+    const r = (data[i] ?? 0) / 255;
+    const g = (data[i + 1] ?? 0) / 255;
+    const b = (data[i + 2] ?? 0) / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    const d = max - min;
+    if (d < 0.04) continue;
+    const sat = d / (1 - Math.abs(2 * l - 1) || 1);
+    let h: number;
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+    else if (max === g) h = ((b - r) / d + 2) / 6;
+    else h = ((r - g) / d + 4) / 6;
+    const w = sat * (1 - Math.abs(l - 0.5) * 1.6);
+    if (w <= 0) continue;
+    const bucket = Math.min(BUCKETS - 1, Math.floor(h * BUCKETS));
+    votes[bucket] = (votes[bucket] ?? 0) + w;
+    const rad = h * Math.PI * 2;
+    sinSum[bucket] = (sinSum[bucket] ?? 0) + Math.sin(rad) * w;
+    cosSum[bucket] = (cosSum[bucket] ?? 0) + Math.cos(rad) * w;
+  }
+
+  /* The winning bucket plus its two neighbours: a hue family, not a slice.
+     Neighbours matter because a hue sitting on a bucket edge splits its own
+     vote, and because circular means across the family keep an orange-red
+     cover from snapping to whichever side of the boundary won. */
+  let best = 0;
+  let bestScore = -1;
+  for (let i = 0; i < BUCKETS; i += 1) {
+    const score =
+      (votes[i] ?? 0) +
+      (votes[(i + 1) % BUCKETS] ?? 0) * 0.5 +
+      (votes[(i + BUCKETS - 1) % BUCKETS] ?? 0) * 0.5;
+    if (score > bestScore) {
+      bestScore = score;
+      best = i;
+    }
+  }
+  if ((votes[best] ?? 0) < MIN_VOTE) return null;
+
+  let sy = 0;
+  let cx = 0;
+  for (const j of [best, (best + 1) % BUCKETS, (best + BUCKETS - 1) % BUCKETS]) {
+    sy += sinSum[j] ?? 0;
+    cx += cosSum[j] ?? 0;
+  }
+  const hue = ((Math.atan2(sy, cx) * 180) / Math.PI + 360) % 360;
+
+  return ramp(hue);
+}
+
+/**
+ * The pastel band, spelled out as a dark-theme accent ramp. Only the HUE
+ * varies per album; every lightness and saturation is pinned, which is what
+ * keeps the promise: pastel and not too dark, whatever the record. Steps
+ * follow the kit's dark-scale shape (1 darkest wash, 9 the solid, 12 near
+ * white), with 9 lifted into pastel; `contrast` - the glyph ON the solid -
+ * goes dark, because the solid is light.
+ */
+function ramp(hue: number): ArtTint {
+  const h = hue.toFixed(0);
+  const steps: Array<[number, number, number]> = [
+    [1, 30, 10],
+    [2, 28, 12],
+    [3, 30, 16],
+    [4, 32, 19],
+    [5, 34, 22],
+    [6, 36, 26],
+    [7, 40, 33],
+    [8, 45, 42],
+    [9, 58, 76],
+    [10, 60, 80],
+    [11, 68, 80],
+    [12, 70, 92],
+  ];
+  const vars: ArtTint = {};
+  for (const [n, sat, light] of steps) {
+    vars[`--glacier-accent-${n}`] = `hsl(${h} ${sat}% ${light}%)`;
+  }
+  vars['--glacier-accent-solid'] = `hsl(${h} 58% 76%)`;
+  vars['--glacier-accent-text'] = `hsl(${h} 68% 80%)`;
+  vars['--glacier-accent-contrast'] = `hsl(${h} 30% 13%)`;
+  vars['--glacier-on-accent'] = `hsl(${h} 30% 13%)`;
+  vars['--glacier-accent-soft'] = `hsl(${h} 58% 76% / 0.16)`;
+  vars['--glacier-accent-border'] = `hsl(${h} 45% 55% / 0.5)`;
+  return vars;
+}
+
+/** The cover's pastel, or null for "keep the kit accent". Cached per URL;
+ * never throws - a cover that will not fetch or decode simply has no say. */
+export async function artTint(url: string): Promise<ArtTint | null> {
+  const hit = cache.get(url);
+  if (hit !== undefined) return hit;
+  let tint: ArtTint | null = null;
+  try {
+    tint = await readTint(url);
+  } catch {
+    tint = null;
+  }
+  if (cache.size >= CACHE_CAP) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  cache.set(url, tint);
+  return tint;
+}

@@ -63,6 +63,16 @@
   color: var(--glacier-accent-solid);
 }
 
+/* With an album tint on the sheet (the pastel the sheet root derives from
+   the cover), the WHOLE transport row wears it, not just the lit toggles -
+   the buttons ask to match the record. Hierarchy survives on weight alone:
+   the solid circle against ghost glyphs. Gated on the attribute so a sheet
+   without a tint - greyscale art - keeps its white glyphs rather than
+   turning kit-blue. */
+.npScreen[data-arttint] .npScreen__transport {
+  color: var(--glacier-accent-text);
+}
+
 /* The secondary action row under the transport: the device hand-off and the
    equalizer, centred and quieter than the controls above them. */
 .npScreen__actions {
