@@ -15,7 +15,8 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { installSheetDismiss } from './playerDismiss.ts';
 import { fireFelt, fireNativeHaptic } from '../core/haptics.ts';
-import type { Dispatch, ReactNode, SetStateAction } from 'react';
+import type { CSSProperties, Dispatch, ReactNode, SetStateAction } from 'react';
+import { artTint, type ArtTint } from './artTint.ts';
 import { createPortal } from 'react-dom';
 import { ContextMenu, CounterBadge, IconButton, MenuItem, Popover, SeekBar, useBeat, useLiveLevels } from '@glacier/react';
 import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
@@ -1204,6 +1205,29 @@ export function NowPlayingSheet({
     [setNpOpen, setNpLyrics, npDocked, onUndock],
   );
 
+  /* The album's pastel, re-grounding the sheet's accent tokens - the play
+     circle, the seek bar, the saved heart and the lit toggles all drink from
+     them, so one override recolours the lot. It lands INLINE on the sheet
+     root deliberately: this element also scopes data-theme="dark", whose
+     token block would otherwise redefine the accent ramp straight back to
+     kit blue (the nested-data-theme trap) - an inline custom property
+     outranks any stylesheet, including that one. Null - greyscale art, art
+     that will not decode, no art - means the kit accent stands. */
+  const [tint, setTint] = useState<ArtTint | null>(null);
+  useEffect(() => {
+    if (!artwork) {
+      setTint(null);
+      return undefined;
+    }
+    let live = true;
+    void artTint(artwork).then((t) => {
+      if (live) setTint(t);
+    });
+    return () => {
+      live = false;
+    };
+  }, [artwork]);
+
   const [readyCanvas, setReadyCanvas] = useState<string | null>(null);
   const canvasReady = readyCanvas !== null && readyCanvas === npCanvas;
   const setCanvasReady = (on: boolean) => setReadyCanvas(on ? npCanvas : null);
@@ -1227,6 +1251,8 @@ export function NowPlayingSheet({
       <div
         ref={sheetRef}
         className="npScreen"
+        data-arttint={tint ? '' : undefined}
+        style={tint ? (tint as CSSProperties) : undefined}
       data-reading={
         (track?.kind === 'book' && artView === 'chapters' && readingFlow.length > 0) || undefined
       }
