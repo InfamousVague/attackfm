@@ -874,10 +874,19 @@ export function App() {
                 role="dialog"
                 aria-label="Search"
               >
-                {/* No bar, no X: this is the search PAGE wearing the screen,
-                    not a card visiting it - only the ATTACK header stays
-                    above. The drag-down that works from anywhere on it (and
-                    the system back, and Escape) is the whole way out. */}
+                {/* The drawer's handle: a visible way out, and the honest
+                    hint that this is a sheet you can pull. The gesture has
+                    always worked from anywhere on the page (dragAnywhere,
+                    above); the pill is affordance, not new machinery - plus
+                    one tap target for the people who tap handles. */}
+                <button
+                  type="button"
+                  className="searchSummon__handle"
+                  aria-label="Close search"
+                  onClick={() => setSearchOpen(false)}
+                >
+                  <span aria-hidden="true" />
+                </button>
                 <PluginHookScope>
                   <SearchPage
                     initialFilter={searchOpenWith.scope}

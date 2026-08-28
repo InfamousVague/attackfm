@@ -1,12 +1,13 @@
 import { NavBar, NavBarItem } from '@glacier/react';
 import { useNavPill } from './useNavPill.ts';
-import { CircleUserRound, Disc3, LibraryBig, UsersRound } from '@glacier/icons';
+import { CircleUserRound, Disc3, LibraryBig, Search, UsersRound } from '@glacier/icons';
 import { useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { atSize, useNavSeats, type NavDest } from './navSeats.ts';
 import { useAcquire, usePluginPages } from '../../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import { NavMoreMenu } from './NavMoreMenu.tsx';
+import { openSearchPage } from '../search/SearchEntry.tsx';
 import { useDeveloperMode } from '../settings/developerMode.ts';
 
 /**
@@ -110,6 +111,21 @@ export function PrimaryNav({
         active: libraryActive,
         go: () => onTab('library'),
       },
+      /*
+       * Search, back in the bar - by request, fourth time around (a tab, a
+       * pull-down summons, an icon, a bar on the page, and now an icon
+       * again beside the bars). Never ACTIVE, because it is not a place: it
+       * opens the drawer over whatever you were doing and gives the page
+       * back when it closes. openSearchPage is the same global door the
+       * on-page bars use, so there is still exactly one way in.
+       */
+      {
+        key: 'search',
+        label: 'Search',
+        icon: <Search size={18} />,
+        active: false,
+        go: () => openSearchPage(),
+      },
     ];
     if (booksPage) {
       list.push({
@@ -191,10 +207,10 @@ export function PrimaryNav({
           it is the chip above the player strip, and only while something is
           actually in flight. A queue you visit occasionally does not deserve a
           permanent seat in a bar of four. */}
-      {/* No Search station. It was a tab, then a pull-down summons, then an
-          icon here - and it is now a bar on Library and Discover themselves,
-          which is where people look when they want to look something up. The
-          legacy /search route still opens the page, through useNavStack. */}
+      {/* Search's seat lives in `dests` above, beside Library - restored by
+          request after a spell as only the on-page bars. Both doors stay:
+          the bars are where you look when you are already on the page, the
+          seat is for everywhere else. */}
       {/* Developer mode only, on the rail as in the bar. */}
       {showBooth && (
         <NavBarItem

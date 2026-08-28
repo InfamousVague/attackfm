@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.107
+
+- Search has its seat back in the bar, beside Library
+- The search page is a drawer now, with a handle: pull it down or tap the pill to put it away
+
 ## 0.4.106
 
 - Play and Shuffle live inside a station or mix's own page now, at the top where a playlist has them; the card face is clean again and Add keeps a copy
