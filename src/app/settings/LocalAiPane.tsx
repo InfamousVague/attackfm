@@ -3,6 +3,7 @@ import {
   Pill,
   Button,
   Input,
+  Select,
   Spinner,
   Switch,
   Text,
@@ -109,6 +110,9 @@ function ago(seconds: number | null): string {
  * machine first. Saying so under the tile is better than a spinner that ends
  * while nothing has visibly changed.
  */
+/** The picker's escape hatch: a model the list cannot offer. */
+const TYPE_IT = '\u0000type';
+
 const ACTIONS: {
   what: AiRunWhat;
   label: string;
@@ -206,6 +210,13 @@ export function LocalAiPane() {
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
   /**
+   * Fields the reader has switched to free text. Per field, and never reset by
+   * a reload: choosing "Type a name…" and having the box turn back into a
+   * dropdown under your hands is the kind of thing that makes a pane feel
+   * broken.
+   */
+  const [typing, setTyping] = useState<Record<string, boolean>>({});
+  /**
    * The feed, one page per entry, oldest page last.
    *
    * Kept as a stack rather than a single page so going back is free: the pages
@@ -220,7 +231,17 @@ export function LocalAiPane() {
   const [paging, setPaging] = useState(false);
   const alive = useRef(true);
 
-  useEffect(() => () => { alive.current = false; }, []);
+  useEffect(() => {
+    // Re-armed on the way IN, not just cleared on the way out. React runs
+    // effects twice in development against the SAME component instance, so a
+    // ref that is only ever set false stays false for the second mount - and
+    // every guarded setState after it is dropped. The pane sat on "Reading the
+    // report…" forever with a 200 in the network log.
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   const load = useCallback(async () => {
     if (!session) return;
@@ -380,6 +401,11 @@ export function LocalAiPane() {
   }
 
   const { settings, functions, totals, curator } = report;
+  /*
+   * The URL is a URL, not a model. Only the four model fields become pickers,
+   * and only when the endpoint actually enumerated something.
+   */
+  const installed = report.installed ?? [];
   const configured = !!settings.url && !!settings.chatModel;
   const shown = pages[page] ?? [];
 
@@ -453,6 +479,7 @@ export function LocalAiPane() {
           const owned = settings.overrides[field.key] === true;
           const fromEnv = settings.envDefaults[field.key];
           const shown = draft[field.key] ?? saved;
+          const choosable = field.key !== 'url' && installed.length > 0;
           const dirty = draft[field.key] !== undefined && draft[field.key] !== saved;
           return (
             <div className="localAi__field" key={field.key} data-setting={`ai-${field.key}`}>
@@ -466,22 +493,74 @@ export function LocalAiPane() {
               </div>
               <Text tone="muted" size="xs">{field.hint}</Text>
               <div className="localAi__fieldRow">
-                <Input
-                  value={shown}
-                  placeholder={String(fromEnv ?? field.placeholder)}
-                  spellCheck={false}
-                  autoCapitalize="off"
-                  aria-label={field.label}
-                  onChange={(e) => setDraft((d) => ({ ...d, [field.key]: e.currentTarget.value }))}
-                />
-                <Button
-                  size="sm"
-                  variant="soft"
-                  disabled={!dirty || saving === field.key}
-                  onClick={() => void save({ [field.key]: draft[field.key] } as AiSettingsPatch, field.key)}
-                >
-                  {saving === field.key ? <Spinner size="sm" /> : 'Save'}
-                </Button>
+                {/*
+                  * A PICKER when the box has told us what it has, a text field
+                  * when it has not.
+                  *
+                  * Naming a model used to be typing a string and hoping - and
+                  * the one thing that makes it fail is invisible until much
+                  * later, when the feature that needed it quietly never runs.
+                  * The endpoint knows the answer, so the list is the control.
+                  * TYPE IT stays for the case the list cannot cover: a model
+                  * pulled since the pane was opened, or an endpoint that will
+                  * not enumerate.
+                  */}
+                {choosable && !typing[field.key] ? (
+                  <Select
+                    fullWidth
+                    /* Resolved to the LISTED spelling, not the saved one: the
+                       setting says `nomic-embed-text` where the endpoint calls
+                       it `nomic-embed-text:latest`, and Select matches option
+                       values exactly - so the saved model would show as
+                       nothing chosen. */
+                    value={installed.find((m) => sameModel(shown, m)) ?? shown}
+                    placeholder={String(fromEnv ?? field.placeholder)}
+                    aria-label={field.label}
+                    options={[
+                      /*
+                       * A model that is NAMED but not on the box gets its own
+                       * option, said out loud. Without it the picker falls back
+                       * to its placeholder and the pane quietly shows a model
+                       * nobody chose - which is the precise failure this whole
+                       * screen exists to catch: a name that does not match
+                       * anything, and a feature that silently never runs.
+                       */
+                      ...(shown && !installed.some((m) => sameModel(shown, m))
+                        ? [{ value: shown, label: `${shown} — not on this server` }]
+                        : []),
+                      ...installed.map((m) => ({ value: m, label: m })),
+                      { value: TYPE_IT, label: 'Type a name…' },
+                    ]}
+                    onValueChange={(v: string) => {
+                      if (v === TYPE_IT) {
+                        setTyping((t) => ({ ...t, [field.key]: true }));
+                        return;
+                      }
+                      setDraft((d) => ({ ...d, [field.key]: v }));
+                      void save({ [field.key]: v } as AiSettingsPatch, field.key);
+                    }}
+                  />
+                ) : (
+                  <Input
+                    value={shown}
+                    placeholder={String(fromEnv ?? field.placeholder)}
+                    spellCheck={false}
+                    autoCapitalize="off"
+                    aria-label={field.label}
+                    onChange={(e) => setDraft((d) => ({ ...d, [field.key]: e.currentTarget.value }))}
+                  />
+                )}
+                {(!choosable || typing[field.key]) && (
+                  <Button
+                    size="sm"
+                    variant="soft"
+                    disabled={!dirty || saving === field.key}
+                    onClick={() => void save({ [field.key]: draft[field.key] } as AiSettingsPatch, field.key)}
+                  >
+                    {saving === field.key ? <Spinner size="sm" /> : 'Save'}
+                  </Button>
+                )}
+                {saving === field.key && choosable && !typing[field.key] && <Spinner size="sm" aria-label="" />}
                 {owned && (
                   <Button
                     size="sm"

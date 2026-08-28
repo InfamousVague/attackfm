@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.95
+
+- Models are chosen from a list of what your server actually has, instead of typed from memory
+- A model that is named but missing says so in the list, rather than looking like nothing is set
+- Local AI and Developer settings no longer get stuck on "Reading the report…" after being reopened
+
 ## 0.4.94
 
 - Your download server now says when it is not taking on new music for you, and why, instead of leaving the curator's requests unanswered in silence

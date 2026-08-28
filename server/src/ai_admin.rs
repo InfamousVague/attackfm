@@ -215,6 +215,48 @@ fn activity_json(rows: Vec<ActivityRow>) -> Vec<Value> {
         .collect()
 }
 
+/// The models this endpoint HAS, for the pickers - on a short leash.
+///
+/// The full probe is deliberately not run on the way in, because it reports
+/// latency and reachability and a cold or absent Ollama makes that slow. This
+/// is the cheap half of the same call and the pane needs it up front: without
+/// the list there is nothing to choose FROM, and naming a model becomes typing
+/// a string and hoping. Two seconds, and an empty list on anything else - the
+/// pickers fall back to a plain text box, which is exactly what they were.
+async fn installed_models() -> Vec<String> {
+    let Some(base) = crate::ai::setting("url", "AFM_AI_URL") else {
+        return Vec::new();
+    };
+    let base = base.trim_end_matches('/').to_string();
+    let Ok(http) = reqwest::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+    else {
+        return Vec::new();
+    };
+    let Ok(response) = http.get(format!("{base}/v1/models")).send().await else {
+        return Vec::new();
+    };
+    if !response.status().is_success() {
+        return Vec::new();
+    }
+    let Ok(body) = response.json::<Value>().await else {
+        return Vec::new();
+    };
+    body.get("data")
+        .and_then(Value::as_array)
+        .map(|rows| {
+            let mut names: Vec<String> = rows
+                .iter()
+                .filter_map(|r| r.get("id").and_then(Value::as_str))
+                .map(str::to_string)
+                .collect();
+            names.sort();
+            names
+        })
+        .unwrap_or_default()
+}
+
 /// `GET /api/ai` - everything the pane draws, in one request.
 ///
 /// One request rather than four because every part of it is cheap and the pane
@@ -273,6 +315,8 @@ pub async fn report(State(state): State<Arc<AppState>>, headers: HeaderMap) -> R
 
     Ok(Json(json!({
         "settings": settings_json(),
+        // What is on the box, so a model can be CHOSEN rather than spelled.
+        "installed": installed_models().await,
         // Never probed on the way in - see the note above. The pane shows this
         // as "not checked yet" until somebody presses the button.
         "health": { "checkedAt": null, "reachable": null, "latencyMs": null, "models": [], "error": null },
