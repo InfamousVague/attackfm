@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Pill,
   Button,
@@ -8,11 +8,27 @@ import {
   Text,
   useToast,
 } from '@glacier/react';
-import { Activity, ArrowLeft, ArrowRight, Bot, CircleCheck, CircleX, Play, RotateCcw, Zap } from 'lucide-react';
-import { PaneSection, SettingRow, SettingsCallout, SettingsEmpty } from './kit/settingsKit.tsx';
+import {
+  Activity,
+  ArrowLeft,
+  ArrowRight,
+  Bot,
+  CircleCheck,
+  CircleX,
+  CloudDownload,
+  Compass,
+  HeartHandshake,
+  Hourglass,
+  Play,
+  RotateCcw,
+  Shuffle,
+  Sparkles,
+  Zap,
+} from '@glacier/icons';
+import { IconTile, PaneSection, SettingRow, SettingsCallout, SettingsEmpty } from './kit/settingsKit.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { fetchAiActivity, fetchAiReport, probeAi, runAi, setAiSettings } from '../api/ai.ts';
-import type { AiHealth, AiReport, AiSettingsPatch } from '../api/ai.ts';
+import type { AiHealth, AiReport, AiRunWhat, AiSettingsPatch } from '../api/ai.ts';
 import type { ActivityEvent } from '../api/activity.ts';
 import { ServerError } from '../api/http.ts';
 
@@ -47,13 +63,13 @@ const TEXT_FIELDS = [
   {
     key: 'chatModel' as const,
     label: 'Chat model',
-    hint: 'Writes playlist names and the DJ’s analysis. Deliberately not defaulted: assuming one means every cycle waits out a timeout against a model nobody pulled.',
+    hint: 'Writes playlist names and the DJ’s analysis. Not defaulted on purpose — a guess costs every cycle a timeout.',
     placeholder: 'qwen3.5:9b',
   },
   {
     key: 'embedModel' as const,
     label: 'Embedding model',
-    hint: 'Reads lyrics and descriptors into vectors. This is the half that actually drives recommendations.',
+    hint: 'Reads lyrics into vectors. The half that drives recommendations.',
     placeholder: 'nomic-embed-text',
   },
   {
@@ -65,7 +81,7 @@ const TEXT_FIELDS = [
   {
     key: 'refinementModel' as const,
     label: 'Audit model',
-    hint: 'Goes back over a profile and removes what the evidence does not support. Bigger and slower on purpose.',
+    hint: 'Removes what the evidence does not support. Bigger and slower on purpose.',
     placeholder: 'gemma4:12b',
   },
 ];
@@ -78,6 +94,52 @@ function ago(seconds: number | null): string {
   if (d < 86_400) return `${Math.floor(d / 3600)}h ago`;
   return `${Math.floor(d / 86_400)}d ago`;
 }
+
+/**
+ * The things you can ask this server to do, as one-tap tiles.
+ *
+ * Every one of these already ran on a timer somewhere - a harvest every six
+ * hours, mixes rebuilt once a day, a buying pass every five minutes. What was
+ * missing was a door: no way to say "do it now", and no way to watch while it
+ * happened. The `what` is the string the server matches on.
+ *
+ * `patience` is the honest bit. These passes take minutes - a harvest paces
+ * itself at 700ms a call so the catalogue does not throttle it - and one of
+ * them cannot deliver its result at all without a download finishing on another
+ * machine first. Saying so under the tile is better than a spinner that ends
+ * while nothing has visibly changed.
+ */
+const ACTIONS: {
+  what: AiRunWhat;
+  label: string;
+  patience: string;
+  icon: ReactNode;
+}[] = [
+  {
+    what: 'discover',
+    label: 'Find me new music',
+    patience: 'Looks for artists around what you play, then listens to what it finds. A minute or two.',
+    icon: <Compass size={20} />,
+  },
+  {
+    what: 'mix',
+    label: 'Make me a new mix',
+    patience: 'Rereads your last month and rebuilds the mixes on your home screen.',
+    icon: <Shuffle size={20} />,
+  },
+  {
+    what: 'dates',
+    label: 'Top up Music Date',
+    patience: 'Finds something you do not own and asks for it. The card appears once it has downloaded.',
+    icon: <HeartHandshake size={20} />,
+  },
+  {
+    what: 'curate',
+    label: 'Full pass',
+    patience: 'Everything at once: reads the library, rebuilds the lists, looks for more. The long one.',
+    icon: <Sparkles size={20} />,
+  },
+];
 
 /**
  * What a function has been doing, in one phrase.
@@ -118,6 +180,18 @@ function duration(seconds: number): string {
   return h < 48 ? `${h}h` : `${Math.floor(h / 24)}d`;
 }
 
+/*
+ * A note on what this pane no longer says out loud.
+ *
+ * Several sections opened with a paragraph explaining WHY they work as they do:
+ * that the statistics are per-process so a month of health cannot hide an
+ * endpoint failing this morning; that the curator stands down while anybody is
+ * playing, which is why a pass can sit unfinished on a busy hub; that health is
+ * probed on demand because a cold model takes seconds to answer. All true, all
+ * worth knowing, and all of it was the first thing a reader met on a phone,
+ * above the controls. It lives here now, where the next person to change this
+ * file will find it, and the pane says the short half.
+ */
 export function LocalAiPane() {
   const { session } = useServerSession();
   const { toast } = useToast();
@@ -173,6 +247,22 @@ export function LocalAiPane() {
   }, [session]);
 
   useEffect(() => { void load(); }, [load]);
+
+  /*
+   * Follow along.
+   *
+   * These passes run for minutes, so the pane has to keep asking or the step
+   * line freezes at whatever it said when the page loaded. Only while something
+   * IS running - an idle server is not polled at all - and one more read after
+   * it finishes, which is what replaces the running card with the outcome in
+   * the feed without the reader having to do anything.
+   */
+  const isRunning = report?.running != null;
+  useEffect(() => {
+    if (!isRunning || !session) return;
+    const id = window.setInterval(() => { void load(); }, 3000);
+    return () => window.clearInterval(id);
+  }, [isRunning, session, load]);
 
   const save = async (patch: AiSettingsPatch, which: string) => {
     if (!session) return;
@@ -234,17 +324,30 @@ export function LocalAiPane() {
     }
   };
 
-  const curateNow = async () => {
+  const start = async (what: AiRunWhat, label: string) => {
     if (!session) return;
     setRunning(true);
     try {
-      await runAi(session, 'curate');
-      toast({ message: 'Curation pass started — it reports into Recent activity below' });
-      // Not awaited to completion - the pass runs for minutes on the server and
-      // reports through the feed. One refresh a beat later picks up the start.
-      window.setTimeout(() => { void load(); }, 1500);
+      await runAi(session, what);
+      toast({ message: `${label} — follow it below` });
+      // Not awaited: the pass runs for minutes on the server. The poll below
+      // picks it up and keeps the step line moving.
+      window.setTimeout(() => { void load(); }, 800);
     } catch (e) {
-      toast({ message: `Could not start it — ${e instanceof Error ? e.message : 'the server refused it'}`, tone: 'danger' });
+      /*
+       * Two refusals worth telling apart, because they mean opposite things.
+       * 409 is the server saying it is already busy - not a fault, and the
+       * running card below is about to explain it. 400 is a hub too old to
+       * know this action at all, which the pane's 404 "needs rebuilding" path
+       * does not cover because the route exists and only the word is unknown.
+       */
+      const status = e instanceof ServerError ? e.status : 0;
+      if (status === 409) toast({ message: 'Already working on something — one at a time' });
+      else if (status === 400) {
+        toast({ message: 'This server is too old for that one — rebuild the hub', tone: 'danger' });
+      } else {
+        toast({ message: `Could not start it — ${e instanceof Error ? e.message : 'the server refused it'}`, tone: 'danger' });
+      }
     } finally {
       if (alive.current) setRunning(false);
     }
@@ -283,8 +386,60 @@ export function LocalAiPane() {
   return (
     <div className="prefsBody localAiPane">
       <PaneSection
+        title="Ask for something"
+        description="Each of these already runs on its own schedule. This is the door to doing it now."
+      >
+        {report.running ? (
+          /*
+           * The running card REPLACES the grid rather than sitting beside it.
+           * Only one pass runs at a time, so four tiles that would all be
+           * refused is not a choice, it is four ways to be told no.
+           */
+          <div className="aiRun" data-what={report.running.what}>
+            <IconTile variant="accent" size="lg">
+              {ACTIONS.find((a) => a.what === report.running?.what)?.icon ?? <Sparkles size={20} />}
+            </IconTile>
+            <div className="aiRun__text">
+              <Text weight="medium">{report.running.label}</Text>
+              <Text tone="muted" size="sm">
+                {report.running.step}
+              </Text>
+            </div>
+            <div className="aiRun__clock">
+              <Spinner size="sm" aria-label="" />
+              <Text tone="muted" size="xs">
+                {duration(Math.max(0, Math.floor((Date.now() - report.running.startedAt) / 1000)))}
+              </Text>
+            </div>
+          </div>
+        ) : (
+          <div className="aiActions">
+            {ACTIONS.map((a) => (
+              <button
+                key={a.what}
+                type="button"
+                className="aiAction"
+                data-setting={`ai-do-${a.what}`}
+                disabled={running || !configured}
+                onClick={() => void start(a.what, a.label)}
+              >
+                <IconTile variant="accent" size="lg">{a.icon}</IconTile>
+                <span className="aiAction__label">{a.label}</span>
+                <span className="aiAction__patience">{a.patience}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {!configured && (
+          <Text tone="muted" size="sm">
+            Name an endpoint and a chat model below to switch these on.
+          </Text>
+        )}
+      </PaneSection>
+
+      <PaneSection
         title="Endpoint"
-        description="An OpenAI-compatible server, usually Ollama, on this machine or your network. Nothing here leaves it."
+        description="Usually Ollama, on this machine or your network. Nothing here leaves it."
       >
         {!configured && (
           <SettingsCallout tone="accent" icon={<Bot size={16} />}>
@@ -365,7 +520,7 @@ export function LocalAiPane() {
         />
       </PaneSection>
 
-      <PaneSection title="What the model is used for" description="Turn a half off and the features that need it stand down cleanly rather than waiting out timeouts.">
+      <PaneSection title="What the model is used for" description="Turn a half off and whatever needs it stands down cleanly.">
         <SettingRow
           id="ai-chat-enabled"
           label="Chat"
@@ -392,7 +547,7 @@ export function LocalAiPane() {
         />
       </PaneSection>
 
-      <PaneSection title="Health" description="Asked on demand, not on the way in — a cold model can take seconds to answer and this pane should not.">
+      <PaneSection title="Health" description="Asked on demand — a cold model can take seconds to answer.">
         <div className="localAi__health" data-state={health ? (health.reachable ? 'ok' : 'bad') : 'unknown'}>
           <span className="localAi__healthMark" aria-hidden>
             {health ? (health.reachable ? <CircleCheck size={18} /> : <CircleX size={18} />) : <Activity size={18} />}
@@ -440,7 +595,7 @@ export function LocalAiPane() {
 
       <PaneSection
         title="Functions"
-        description={`Since the server last started — ${duration(totals.sinceBoot)} ago. Live readings, not a lifetime average: a box that was healthy for a month should not hide an endpoint failing this morning.`}
+        description={`Counted since the server started, ${duration(totals.sinceBoot)} ago.`}
       >
         {functions.map((fn) => (
           <SettingRow
@@ -467,27 +622,32 @@ export function LocalAiPane() {
             {totals.avgMs != null ? `, ${(totals.avgMs / 1000).toFixed(1)}s average` : ''}.
           </Text>
         )}
-              {(totals.unattributed?.length ?? 0) > 0 && (
+        {/*
+          * The pane names functions by the schema id each one passes when it
+          * calls the model. When a prompt is renamed or versioned and this list
+          * is not, its row reads "never run" forever while the work carries on -
+          * which is exactly what happened to three of them. Anything recorded
+          * under an unknown id is shown here rather than dropped, so the next
+          * drift is visible instead of silent.
+          */}
+        {(totals.unattributed?.length ?? 0) > 0 && (
           <Text size="sm" className="localAi__drift">
-            {/*
-              * The pane names functions by the schema id each one passes when it
-              * calls the model. When a prompt is renamed or versioned and this
-              * list is not, its row reads "never run" forever while the work
-              * carries on - which is exactly what happened to three of them.
-              * Anything recorded under an unknown id is shown here rather than
-              * dropped, so the next drift is visible instead of silent.
-              */}
             Work recorded under {totals.unattributed?.map((u) => u.id).join(', ')}, which no
             function above claims — the list of names has drifted from the code.
           </Text>
         )}
-        </PaneSection>
+      </PaneSection>
 
       <PaneSection
         title="The curator"
-        description="The loop that listens to the library. It stands down whenever anybody is playing, which is why a pass can sit unfinished for a long time on a busy hub."
+        description="The loop that listens to the library. It stands down while anybody is playing."
         footer={
-          <Button size="sm" variant="soft" disabled={running || !configured} onClick={() => void curateNow()}>
+          <Button
+            size="sm"
+            variant="soft"
+            disabled={running || !configured || report.running != null}
+            onClick={() => void start('curate', 'Full pass')}
+          >
             {running ? <Spinner size="sm" /> : <><Play size={14} /> Run a pass now</>}
           </Button>
         }

@@ -255,6 +255,31 @@ async fn pull_cycle(state: &Arc<AppState>) {
     }
 }
 
+/// One listener asking for more to choose from: look for candidates around what
+/// they have been playing, then let the buying pass consider them.
+///
+/// The same two steps `date_done` runs when somebody reaches the end of the
+/// deck, reached from Settings instead of from the deck. Returns how many
+/// candidates the pool holds afterwards, because the honest report is about the
+/// POOL - a buying pass raises at most one download and the card it becomes
+/// does not exist until that download lands, minutes later, on another machine.
+pub(crate) async fn top_up(state: &Arc<AppState>, user: i64) -> i64 {
+    let since = now_ms() - WINDOW_30D_MS;
+    let seeds: Vec<(String, i64)> = state
+        .db
+        .top_artists(user, since, 8)
+        .into_iter()
+        .map(|(name, weight)| (name, weight))
+        .collect();
+    if !seeds.is_empty() {
+        crate::discovery::harvest_seeded(state, user, seeds).await;
+    }
+    crate::ai::task_step("choosing something to fetch");
+    pull_cycle(state).await;
+    let (pool, _) = state.db.discovery_counts(user);
+    pool
+}
+
 /// Resolve a candidate to a link the importer takes and raise the job.
 /// True when a job went up (whatever becomes of it).
 async fn buy(state: &Arc<AppState>, user: i64, d: &DiscoveryRow) -> bool {

@@ -225,6 +225,102 @@ mod last_run_tests {
         );
         assert_eq!(stored.get("embed"), Some(&700), "the record survives a restart");
     }
+
+    /// The box is claimed once, and freed by DROPPING the guard - including
+    /// when the job panics, which is the case a release-at-the-end call misses
+    /// and which would otherwise wedge every future action behind a job that
+    /// is not running.
+    #[test]
+    fn the_box_is_claimed_once_and_freed_by_unwinding() {
+        let held = claim_task("discover", "Finding new music", "asking").expect("free to start");
+        assert!(claim_task("mix", "Building", "reading").is_none(), "one at a time");
+        assert_eq!(current_task().map(|t| t.what), Some("discover".to_string()));
+
+        drop(held);
+        assert!(current_task().is_none(), "dropping the guard frees the box");
+
+        // The panic case, which is the whole reason this is a guard.
+        let _ = std::panic::catch_unwind(|| {
+            let _held = claim_task("curate", "Full pass", "reading").expect("free again");
+            panic!("the pass blew up");
+        });
+        assert!(
+            current_task().is_none(),
+            "a job that panicked must not leave the box claimed forever",
+        );
+        assert!(claim_task("mix", "Building", "reading").is_some(), "and the next one can start");
+        drop(claim_task("x", "y", "z"));
+    }
+}
+
+/// The one job this box is doing on somebody's behalf right now.
+///
+/// The passes behind these buttons run for minutes - a harvest paces itself at
+/// 700ms a call by design, a mix rereads a month of listening - so the honest
+/// interface is not a spinner that ends, it is a thing you can watch. The step
+/// is rewritten as the work moves, and the pane polls it.
+#[derive(Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Running {
+    /// The `what` that started it, so the pane can light the right tile.
+    pub what: String,
+    pub label: String,
+    /// Where it has got to, in the reader's words.
+    pub step: String,
+    pub started_at: i64,
+}
+
+static RUNNING: OnceLock<RwLock<Option<Running>>> = OnceLock::new();
+
+fn running_slot() -> &'static RwLock<Option<Running>> {
+    RUNNING.get_or_init(|| RwLock::new(None))
+}
+
+/// Held for as long as a pass is running; releases the box when dropped.
+///
+/// A guard rather than a `release_task()` call at the end of the job, because
+/// the end of the job is exactly where it would not be reached: a panic
+/// anywhere in a harvest would leave the slot filled forever, and every action
+/// after it would be refused as "already working on something" with nothing
+/// actually running. Unwinding drops this; so does an early return.
+pub struct TaskGuard(());
+
+impl Drop for TaskGuard {
+    fn drop(&mut self) {
+        if let Ok(mut guard) = running_slot().write() {
+            *guard = None;
+        }
+    }
+}
+
+/// Claim the box for a job. None when something else already has it - one at a
+/// time, because these passes all compete for the same model and the same
+/// rate-limited catalogue, and two at once is slower than either alone.
+pub fn claim_task(what: &str, label: &str, step: &str) -> Option<TaskGuard> {
+    let mut guard = running_slot().write().ok()?;
+    if guard.is_some() {
+        return None;
+    }
+    *guard = Some(Running {
+        what: what.to_string(),
+        label: label.to_string(),
+        step: step.to_string(),
+        started_at: crate::db::now_ms(),
+    });
+    Some(TaskGuard(()))
+}
+
+/// Rewrite what the running job is doing. Silent when nothing is running.
+pub fn task_step(step: &str) {
+    if let Ok(mut guard) = running_slot().write() {
+        if let Some(run) = guard.as_mut() {
+            run.step = step.to_string();
+        }
+    }
+}
+
+pub fn current_task() -> Option<Running> {
+    running_slot().read().ok().and_then(|g| g.clone())
 }
 
 /// Every function that has actually run, by id.

@@ -284,6 +284,10 @@ pub async fn report(State(state): State<Arc<AppState>>, headers: HeaderMap) -> R
             "sinceBoot": crate::ai::since_boot_secs(),
             "unattributed": unattributed,
         },
+        // What is being done right now, if anything - the thing the pane polls
+        // so a pass that takes minutes is something to watch rather than a
+        // button that went quiet.
+        "running": crate::ai::current_task(),
         "curator": curator,
         // The FIRST page, at the same size every later page uses - the pane
         // pages from here rather than fetching its own page one, so opening
@@ -446,45 +450,121 @@ pub struct RunWhat {
 /// and they take one song at a time. That is right for a shared box and
 /// maddening when you are sitting in front of it wanting to know whether the
 /// model you just configured works at all. This is the "go on then" button.
+/// What each button does, and what it says while doing it.
+///
+/// One table rather than five match arms of near-identical spawn code: they all
+/// claim the box, narrate, run, record and release in exactly the same order,
+/// and the only things that differ are the words and the closure in the middle.
+struct Task {
+    what: &'static str,
+    label: &'static str,
+    /// What the reader is told the moment it starts.
+    opening: &'static str,
+}
+
+const TASKS: &[Task] = &[
+    Task { what: "discover", label: "Finding new music", opening: "asking about artists like the ones you play" },
+    Task { what: "mix", label: "Building your mixes", opening: "reading what you have been playing" },
+    Task { what: "dates", label: "Topping up Music Date", opening: "looking for something you do not own" },
+    Task { what: "curate", label: "Full curation pass", opening: "reading the library" },
+];
+
 pub async fn run(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     Json(body): Json<RunWhat>,
 ) -> Reply {
-    require_admin(&state.db, &headers)?;
-    match body.what.as_str() {
-        "curate" => {
-            let st = state.clone();
-            // Spawned, not awaited: a curation pass can run for minutes and the
-            // caller is a settings pane, not a job runner. It reports through
-            // the activity feed like every other pass.
-            tokio::spawn(async move {
-                st.db.record_activity(NewActivity {
-                    source: "ai",
-                    kind: "curate",
-                    state: "started",
-                    key: "ai:curate:manual",
-                    title: "Curation pass started",
-                    body: "Asked for from Settings",
-                    track_id: None,
-                    detail: None,
-                });
-                let did = crate::curator::run_once(st.clone()).await;
-                st.db.record_activity(NewActivity {
-                    source: "ai",
-                    kind: "curate",
-                    state: "done",
-                    key: "ai:curate:manual",
-                    title: "Curation pass finished",
-                    body: if did { "Work was done" } else { "Nothing needed doing" },
-                    track_id: None,
-                    detail: None,
-                });
-            });
-            Ok(Json(json!({ "ok": true })))
-        }
-        _ => Err(StatusCode::BAD_REQUEST),
-    }
+    let caller = require_admin(&state.db, &headers)?;
+    let Some(task) = TASKS.iter().find(|t| t.what == body.what) else {
+        return Err(StatusCode::BAD_REQUEST);
+    };
+
+    /*
+     * One at a time, and the refusal is an answer rather than an error.
+     *
+     * These passes share a model, a rate-limited catalogue and a download slot,
+     * so two at once finish later than either alone would. CONFLICT rather than
+     * a spawn-anyway, so the pane can say which job is in the way instead of
+     * appearing to start a second one that then does nothing.
+     */
+    let Some(hold) = crate::ai::claim_task(task.what, task.label, task.opening) else {
+        return Err(StatusCode::CONFLICT);
+    };
+
+    let st = state.clone();
+    let user = caller.id;
+    let what = task.what;
+    let label = task.label;
+    // Spawned, not awaited: these run for minutes and the caller is a settings
+    // pane, not a job runner. Progress is the running task plus the feed.
+    tokio::spawn(async move {
+        // Moved in so the box is freed when this future ends, however it ends.
+        let _hold = hold;
+        let key = format!("ai:{what}:{}", crate::db::now_ms());
+        st.db.record_activity(NewActivity {
+            source: "ai",
+            kind: what,
+            state: "started",
+            key: &key,
+            title: label,
+            body: "Asked for from Settings",
+            track_id: None,
+            detail: None,
+        });
+
+        let outcome = match what {
+            "discover" => {
+                let before = st.db.discovery_counts(user).0;
+                let since = crate::db::now_ms() - 30 * 24 * 60 * 60 * 1000;
+                let seeds = st.db.top_artists(user, since, 8);
+                if seeds.is_empty() {
+                    "Nothing to go on yet - play a few things first.".to_string()
+                } else {
+                    crate::discovery::harvest_seeded(&st, user, seeds).await;
+                    crate::ai::task_step("listening to what came back");
+                    crate::discovery::listen_cycle(&st, user).await;
+                    let after = st.db.discovery_counts(user).0;
+                    match after - before {
+                        0 => format!("Nothing new this time - {after} still waiting to be judged."),
+                        n => format!("{n} more to consider, {after} in the pool."),
+                    }
+                }
+            }
+            "mix" => match crate::home::rebuild_mixes(&st, user).await {
+                0 => "No mixes came back - there may not be enough listening yet.".to_string(),
+                n => format!("{n} mixes rebuilt. They are on your home screen."),
+            },
+            "dates" => {
+                crate::ai::task_step("looking for something you do not own");
+                let pool = crate::collector::top_up(&st, user).await;
+                format!(
+                    "{pool} candidates in the pool. Anything bought has to download \
+                     before it becomes a card, so give it a few minutes."
+                )
+            }
+            _ => {
+                crate::ai::task_step("reading the library");
+                if crate::curator::run_once(st.clone()).await {
+                    "Work was done".to_string()
+                } else {
+                    "Nothing needed doing".to_string()
+                }
+            }
+        };
+
+        st.db.record_activity(NewActivity {
+            source: "ai",
+            kind: what,
+            state: "done",
+            key: &key,
+            title: label,
+            body: &outcome,
+            track_id: None,
+            detail: None,
+        });
+    });
+
+    Ok(Json(json!({ "ok": true })))
 }
 
 #[derive(Deserialize)]

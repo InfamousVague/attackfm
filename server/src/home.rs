@@ -178,6 +178,34 @@ pub async fn feed(
 /// a background regeneration kicked whenever the cache has gone stale. The
 /// heuristic battery is only computed on the branches that actually return it,
 /// so a warm AI cache does not pay for a fallback it never uses.
+/// Build this listener's mixes NOW, ignoring the cache and its day-long clock.
+///
+/// `mixes_for` deliberately serves a cache and only rebuilds in the background
+/// when it has gone stale, which is right for a page load and useless as an
+/// action: pressing "make me a new mix" and being handed yesterday's is not an
+/// answer. This awaits the build instead of spawning it, so the caller knows
+/// when it is done and what it produced.
+///
+/// Returns how many mixes came out. Zero means the model declined or there was
+/// not enough listening to work from - the caller says so rather than implying
+/// something new is waiting.
+pub async fn rebuild_mixes(state: &Arc<AppState>, user: i64) -> usize {
+    let Some(url) = ai_url() else { return 0 };
+    // Drop the entry outright rather than marking it stale: a rebuild that
+    // fails should leave the next page load to try again, not serve an empty
+    // list it thinks is fresh.
+    state.home.per_user.lock().await.remove(&user);
+    let built = ai_mixes(state, user, &url).await.unwrap_or_default();
+    let n = built.len();
+    if n > 0 {
+        state.home.per_user.lock().await.insert(
+            user,
+            CachedMixes { mixes: built, built_at: std::time::Instant::now(), refreshing: false },
+        );
+    }
+    n
+}
+
 async fn mixes_for(state: &Arc<AppState>, user: i64) -> Vec<Mix> {
     let Some(url) = ai_url() else { return heuristic_mixes(state, user) };
 
