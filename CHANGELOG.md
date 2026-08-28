@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.112
+
+- While Now Playing is up, the song's colour becomes the app's primary colour - the sound console, stems, queue and every panel opened from the sheet wear it too
+- The colour picker now chases the most vibrant colour on the cover, not the most common one - a purple jacket on a tan photo reads as purple now, not peach
+
 ## 0.4.111
 
 - The icon on the play button runs light now, not dark

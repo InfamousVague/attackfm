@@ -63,6 +63,37 @@
   color: var(--glacier-accent-solid);
 }
 
+/* While the song tint stands at :root (data-song-tint rides along with the
+   inline ramp NowPlayingSheet writes there), any element that scopes its own
+   theme would silently revert to kit blue: the token layer re-declares the
+   whole accent ramp under [data-theme] / [data-accent] scopes, and a scoped
+   DECLARATION beats an inherited value every time - the nested-data-theme
+   trap, third appearance in this file's history. Forcing the accent tokens
+   back to `inherit` inside those scopes lets the root ramp flow through to
+   the portalled rooms (sound console, stems, queue) that stamp a theme on
+   their own subtree. Inline styles - the sheet root's own copy of the ramp -
+   still outrank this, as they should. */
+:root[data-song-tint] :is([data-theme], [data-accent], [data-theme-preset]) {
+  --glacier-accent-1: inherit;
+  --glacier-accent-2: inherit;
+  --glacier-accent-3: inherit;
+  --glacier-accent-4: inherit;
+  --glacier-accent-5: inherit;
+  --glacier-accent-6: inherit;
+  --glacier-accent-7: inherit;
+  --glacier-accent-8: inherit;
+  --glacier-accent-9: inherit;
+  --glacier-accent-10: inherit;
+  --glacier-accent-11: inherit;
+  --glacier-accent-12: inherit;
+  --glacier-accent-solid: inherit;
+  --glacier-accent-text: inherit;
+  --glacier-accent-contrast: inherit;
+  --glacier-on-accent: inherit;
+  --glacier-accent-soft: inherit;
+  --glacier-accent-border: inherit;
+}
+
 /* With an album tint on the sheet (the pastel the sheet root derives from
    the cover), the WHOLE transport row wears it, not just the lit toggles -
    the buttons ask to match the record. Hierarchy survives on weight alone:
