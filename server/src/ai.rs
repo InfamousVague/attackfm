@@ -127,6 +127,15 @@ pub fn mark_boot() {
     let _ = BOOTED.get_or_init(Instant::now);
 }
 
+/// Seconds to allow one call, given the operator's budget and what is being
+/// asked for. 500 tokens is the ordinary ask, so that gets exactly the
+/// configured timeout and anything larger gets proportionally more. Never less
+/// than configured, and never more than half an hour.
+fn call_budget_secs(configured: u64, max_tokens: i64) -> u64 {
+    let want = configured.saturating_mul(max_tokens.max(0) as u64) / 500;
+    want.clamp(configured, 1800)
+}
+
 fn record(id: &str, ok: bool, ms: u64) {
     let Ok(mut guard) = stats().write() else {
         return;
@@ -224,6 +233,30 @@ mod last_run_tests {
             "a fresh process reports nothing newer, so nothing is written",
         );
         assert_eq!(stored.get("embed"), Some(&700), "the record survives a restart");
+    }
+
+    /// A bigger ask gets proportionally longer, and the ordinary one is
+    /// unchanged.
+    ///
+    /// The numbers this exists for, measured on the box it was written against
+    /// (Xeon E-2286G, no GPU): qwen3.5:9b does 5.2 tokens a second, gemma4:12b
+    /// 2.4. The evidence audit asks for 1200 tokens where everything else asks
+    /// 500, so on gemma that is eight minutes of generation - and it was being
+    /// given the same five minutes as a call less than half its size. It could
+    /// not finish, ever, and reported as an unreachable endpoint.
+    #[test]
+    fn a_bigger_ask_gets_proportionally_longer() {
+        assert_eq!(call_budget_secs(300, 500), 300, "the ordinary ask is unchanged");
+        assert_eq!(call_budget_secs(300, 1200), 720, "the audit gets its eight minutes");
+        assert_eq!(call_budget_secs(75, 500), 75, "the default is unchanged too");
+
+        // Never SHORTER than the operator asked for, whatever the arithmetic.
+        assert_eq!(call_budget_secs(300, 100), 300, "a small ask still gets the floor");
+        assert_eq!(call_budget_secs(300, 0), 300);
+
+        // And a ceiling, so a misconfigured budget cannot wedge a worker for
+        // an afternoon on one song.
+        assert_eq!(call_budget_secs(900, 1200), 1800, "clamped at half an hour");
     }
 
     /// The box is claimed once, and freed by DROPPING the guard - including
@@ -330,6 +363,9 @@ pub fn stats_snapshot() -> HashMap<String, FnStat> {
 
 #[derive(Clone)]
 pub struct AiClient {
+    /// The configured per-call budget. Held as well as being set on the client
+    /// because a call asking for more tokens needs proportionally more of it.
+    timeout_secs: u64,
     base_url: String,
     chat_model: String,
     embed_model: String,
@@ -374,6 +410,7 @@ impl AiClient {
             .build()
             .ok()?;
         Some(Self {
+            timeout_secs: timeout,
             base_url,
             chat_model,
             embed_model,
@@ -459,9 +496,22 @@ impl AiClient {
         // return empty content. Deliberate analysis calls retain a low budget.
         body["reasoning_effort"] = json!(if reasoning { "low" } else { "none" });
         let endpoint = format!("{}/v1/chat/completions", self.base_url);
+        /*
+         * The budget scales with what is being asked for.
+         *
+         * The timeout sat on the HTTP client, so every call got the same
+         * seconds however many tokens it wanted - and the evidence audit asks
+         * for 1200 where everything else asks for 500. Measured on the box this
+         * was written against: qwen3.5:9b manages 5.2 tokens a second on CPU
+         * and gemma4:12b 2.4, so 1200 tokens is around eight minutes of
+         * generation against a five minute ceiling. The audit could not finish,
+         * ever, and reported as an unreachable endpoint when it gave up.
+         */
+        let budget = Duration::from_secs(call_budget_secs(self.timeout_secs, max_tokens));
         let mut response = self
             .http
             .post(&endpoint)
+            .timeout(budget)
             .json(&body)
             .send()
             .await
