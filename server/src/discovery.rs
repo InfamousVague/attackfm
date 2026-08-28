@@ -822,7 +822,12 @@ async fn build_new_music(state: &Arc<AppState>, user: i64) -> Option<Vec<serde_j
          Answer with STRICT JSON only: [{{\"title\":\"...\",\"blurb\":\"...\",\"ids\":[N,...]}}] using ONLY the numbers N above.",
         lines.join("\n"),
     );
-    let reply: serde_json::Value = client(120)
+    // Generous, because nothing waits on it: the list is built in the
+    // background and served from cache. Two minutes was cutting it fine -
+    // grouping sixty candidates into named sets is several hundred tokens of
+    // JSON, and the box this runs on manages about five a second on CPU, so
+    // the model was being cut off mid-array and the whole build discarded.
+    let reply: serde_json::Value = client(600)
         .post(format!("{}/v1/chat/completions", url.trim_end_matches('/')))
         .json(&json!({ "model": model, "messages": [{ "role": "user", "content": prompt }], "temperature": 0.8 }))
         .send()
