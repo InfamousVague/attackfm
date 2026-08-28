@@ -1,6 +1,7 @@
 import { SearchEntry } from '../search/SearchEntry.tsx';
 import { CuratorShelves } from './HomePage.tsx';
 import { ForYouShelf } from './ForYouShelf.tsx';
+import { NewMusicShelf } from './NewMusicShelf.tsx';
 import { Button, IconButton, ScrollArea } from '@glacier/react';
 import { Download } from '@glacier/icons';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -312,6 +313,12 @@ export function LibraryView({
               listen to earn its place. Below the mixes deliberately: these are
               the least certain rows on the page. */}
           <ForYouShelf onPlay={onPlay} />
+
+          {/* And one step further out again: what it has only FOUND. Nothing
+              here is on the disk, so the shelf sits below the one that is -
+              the order down this page is how certain each row is, and this is
+              the least certain of all. */}
+          <NewMusicShelf />
 
           {/* Under the playlists, because both are "things you chose" - a list
               you built and a book you kept - and above the shelves the library

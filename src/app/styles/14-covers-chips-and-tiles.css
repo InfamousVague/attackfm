@@ -506,3 +506,130 @@
   --slider-thumb: var(--vol-thumb);
   --slider-track: 0.3125rem;
 }
+
+/* A new-music mosaic: the same square as a mix, but the art comes from the
+   catalogue rather than the library, and a set can be short of four covers. */
+.newMixCover {
+  place-items: center;
+  background: var(--glacier-surface-sunken);
+  color: var(--glacier-text-subtle);
+}
+
+.newMixCover[data-count='1'] {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+.newMixCover[data-count='2'] {
+  grid-template-rows: 1fr;
+}
+
+.newMixCover[data-count='3'] img:first-child {
+  grid-row: span 2;
+}
+
+.newMixCover img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+/* ---- what one new-music set holds ---------------------------------------- */
+
+.newMusicList {
+  list-style: none;
+  margin: var(--glacier-space-3) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+}
+
+.newMusicRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  min-inline-size: 0;
+}
+
+/* The art IS the preview button - there is no room on a phone for a separate
+   one, and a cover you can press is the same affordance every music app has
+   taught people. */
+.newMusicRow__art {
+  position: relative;
+  flex: none;
+  inline-size: 3rem;
+  block-size: 3rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--glacier-radius-md);
+  overflow: hidden;
+  background: var(--glacier-surface-sunken);
+  cursor: pointer;
+}
+
+.newMusicRow__art:disabled {
+  cursor: default;
+}
+
+.newMusicRow__art img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.newMusicRow__play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: rgb(0 0 0 / 0.45);
+  opacity: 0;
+  transition: opacity 0.15s var(--glacier-ease-out);
+}
+
+.newMusicRow__art:hover .newMusicRow__play,
+.newMusicRow__art:focus-visible .newMusicRow__play,
+.newMusicRow[data-playing] .newMusicRow__play {
+  opacity: 1;
+}
+
+.newMusicRow__text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.newMusicRow__title,
+.newMusicRow__sub {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.newMusicRow__sub {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.newMusicRow__add {
+  flex: none;
+  inline-size: 2rem;
+  block-size: 2rem;
+  display: grid;
+  place-items: center;
+  border-radius: var(--glacier-radius-full);
+  border: var(--glacier-hairline) solid var(--glacier-border);
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.newMusicRow__add[data-state='added'] {
+  color: var(--glacier-success-text);
+  border-color: var(--glacier-success-border);
+  cursor: default;
+}

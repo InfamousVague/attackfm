@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.96
+
+- New music for you: the curator's finds, grouped into named sets on your Library page — songs you do not own yet, each with why it is there and a button to go and get it
+- Tap a song's cover to hear the catalogue's thirty-second clip without stopping what is playing
+
 ## 0.4.95
 
 - Models are chosen from a list of what your server actually has, instead of typed from memory
