@@ -3002,7 +3002,19 @@ impl Db {
     /// So this one hands back the rows and lets `taste.rs` decide what they
     /// mean. Books are excluded: an audiobook's completion curve has nothing
     /// to say about which song to play next.
-    pub fn taste_verdicts(&self, user_id: i64, since: i64, limit: i64) -> Vec<crate::taste::Verdict> {
+    /// `since` is epoch MILLISECONDS - started_at's own unit. The returned
+    /// `Verdict.at` is unix SECONDS, which is what the taste math runs on.
+    ///
+    /// The conversion happens HERE, at the boundary, because it went missing
+    /// entirely once: started_at (ms) was poured straight into `at` (documented
+    /// as seconds), so `now_secs - at` was hugely negative, `.max(0)` clamped
+    /// it to zero days, and every verdict scored recency 1.0. The 21-day
+    /// half-life - the thing that makes taste follow what a listener has been
+    /// playing LATELY rather than everything they ever played - had silently
+    /// never applied. The window filter was the same bug in the other
+    /// direction: a seconds cutoff against a milliseconds column matches every
+    /// row ever written.
+    pub fn taste_verdicts(&self, user_id: i64, since_ms: i64, limit: i64) -> Vec<crate::taste::Verdict> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
             "SELECT le.track_id, le.started_at, le.ms_listened, le.duration_ms,
@@ -3018,10 +3030,10 @@ impl Db {
         ) else {
             return Vec::new();
         };
-        stmt.query_map(params![user_id, since, limit], |r| {
+        stmt.query_map(params![user_id, since_ms, limit], |r| {
             Ok(crate::taste::Verdict {
                 track_id: r.get(0)?,
-                at: r.get(1)?,
+                at: r.get::<_, i64>(1)? / 1000,
                 ms_listened: r.get(2)?,
                 duration_ms: r.get(3).ok(),
                 completed: r.get::<_, i64>(4)? != 0,
@@ -8300,6 +8312,57 @@ mod pull_retry_window {
         assert_eq!(job, "job9");
         assert!(db.pulled_ext_ids(user, cutoff).contains("old-fail"), "re-armed rows block again");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod taste_verdict_units {
+    //! started_at is epoch MILLISECONDS; the taste math runs on SECONDS.
+    //!
+    //! The conversion went missing once, and the failure was perfectly silent:
+    //! `now_secs - at_ms` is hugely negative, `.max(0)` reads it as "today",
+    //! and every verdict scores recency 1.0 - the 21-day half-life never
+    //! applied to anything, so taste weighed a listen from six months ago
+    //! exactly like last night's. The window filter matched every row ever
+    //! written for the same reason. This pins both conversions at the one
+    //! boundary they now live at.
+
+    #[test]
+    fn verdicts_come_back_in_seconds_and_the_window_is_milliseconds() {
+        let dir = std::env::temp_dir().join(format!("afm-taste-units-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = super::Db::open(&dir.join("t.sqlite")).unwrap();
+        let user = db.create_user("units", "x", true).unwrap();
+        db.lock()
+            .execute(
+                "INSERT INTO tracks (id, rel_path, title, artist, album_artist, album, added_at, rev)
+                 VALUES (7, 'a.flac', 'T', 'A', 'A', 'Al', 0, 1)",
+                [],
+            )
+            .unwrap();
+
+        let now_ms = super::now_ms();
+        let recent_ms = now_ms - 2 * 86_400_000; // two days ago
+        let ancient_ms = now_ms - 400 * 86_400_000; // outside any window
+        let tags = (String::from("T"), String::from("A"), String::from("Al"), String::new());
+        db.insert_listen(user, 7, &tags, recent_ms, 200_000, Some(210_000), true, false, "home")
+            .unwrap();
+        db.insert_listen(user, 7, &tags, ancient_ms, 200_000, Some(210_000), true, false, "home")
+            .unwrap();
+
+        // The window is in the column's own unit, so the ancient row is out.
+        let window_ms = now_ms - 180 * 86_400_000;
+        let got = db.taste_verdicts(user, window_ms, 100);
+        assert_eq!(got.len(), 1, "a ms window must exclude the 400-day-old row");
+
+        // And `at` is seconds, so recency actually decays: two days into a
+        // 21-day half-life is ~0.94, not the 1.0 the ms-as-seconds bug froze
+        // every verdict at.
+        let v = &got[0];
+        assert!((v.at - recent_ms / 1000).abs() <= 1, "at is unix seconds");
+        let r = v.weight(now_ms / 1000) / (v.sentiment() * v.confidence());
+        assert!((0.90..0.98).contains(&r), "recency should be ~0.94, got {r}");
     }
 }
 

@@ -1012,8 +1012,8 @@ pub(crate) fn user_taste_for(
     state: &Arc<AppState>,
     user: i64,
 ) -> Option<(crate::taste::UserTaste, Vec<TrackFeatures>)> {
-    let since_secs = (now_ms() - crate::taste::WINDOW_DAYS * 86_400_000) / 1000;
-    let mut verdicts = state.db.taste_verdicts(user, since_secs, 4000);
+    let since_ms = now_ms() - crate::taste::WINDOW_DAYS * 86_400_000;
+    let mut verdicts = state.db.taste_verdicts(user, since_ms, 4000);
     if verdicts.len() < 8 {
         let top = state.db.top_plays(user, now_ms() - WINDOW_30D_MS, 60);
         if top.len() < TASTE_MIN_TRACKS {
@@ -1023,7 +1023,10 @@ pub(crate) fn user_taste_for(
             .into_iter()
             .map(|(id, _)| crate::taste::Verdict {
                 track_id: id,
-                at: since_secs,
+                // Stamped NOW, not at the window's edge: these stand in for
+                // recent listening, and dating them 180 days back would decay
+                // them to nothing the moment recency actually works.
+                at: now_ms() / 1000,
                 ms_listened: 30_000,
                 duration_ms: None,
                 completed: true,
@@ -1132,8 +1135,8 @@ async fn curate_cycle(state: &Arc<AppState>) {
          * synthetic verdicts are marked completed with an empty context, which
          * is exactly the old behaviour: a play is a play.
          */
-        let since_secs = (now_ms() - crate::taste::WINDOW_DAYS * 86_400_000) / 1000;
-        let mut verdicts = state.db.taste_verdicts(user, since_secs, 4000);
+        let since_ms = now_ms() - crate::taste::WINDOW_DAYS * 86_400_000;
+        let mut verdicts = state.db.taste_verdicts(user, since_ms, 4000);
         if verdicts.len() < 8 {
             let top = state.db.top_plays(user, since, 60);
             if top.len() < 4 {
@@ -1143,7 +1146,7 @@ async fn curate_cycle(state: &Arc<AppState>) {
                 .into_iter()
                 .map(|(id, _)| crate::taste::Verdict {
                     track_id: id,
-                    at: since_secs,
+                    at: now_ms() / 1000,
                     ms_listened: 30_000,
                     duration_ms: None,
                     completed: true,
