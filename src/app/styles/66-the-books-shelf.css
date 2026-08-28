@@ -497,11 +497,17 @@
   display: flex;
   flex-direction: column;
   gap: 0.1rem;
-  /* Its own ceiling, so a book with thirty kept places cannot push the
-     chapters out of reach - both lists stay reachable in one door. */
-  max-block-size: min(30vh, 11rem);
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  /*
+   * No ceiling of its own any more, and no scroller: the panel scrolls, once.
+   *
+   * The cap that was here existed for a real worry - a book with thirty kept
+   * places pushing the chapters out of reach - but it bought that by claiming
+   * 30vh whatever the screen was, and stacked on the chapter list's 60vh it is
+   * what sent the panel off the top of the phone. A book with thirty bookmarks
+   * now puts the chapters further DOWN one scroll, which is a worse afternoon
+   * than a short list and a much better one than a panel whose first row is
+   * behind the clock.
+   */
 }
 
 /* Go and remove are two targets, so the row is a grid of two buttons rather
@@ -590,15 +596,35 @@
 .npChapters {
   inline-size: min(23rem, calc(100vw - var(--glacier-space-6)));
   padding: var(--glacier-space-4);
+  /*
+   * ONE scroller, and a ceiling that knows where the top of the screen is.
+   *
+   * The two lists inside used to cap themselves independently - bookmarks at
+   * 30vh, chapters at 60vh - which is ninety before the Catch-me-up row, the
+   * heading and this padding are counted. The panel hangs UPWARDS off the
+   * controls, so everything over the viewport went off the top: on a phone the
+   * first row sat under the clock and the battery.
+   *
+   * Neither list caps itself now. The panel takes the room it actually has -
+   * the screen, less the notch, less the controls it is anchored to - and
+   * scrolls as one, which is also the only way two stacked scrollers stop
+   * fighting a thumb for the same drag.
+   */
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  /* env() rather than --app-safe-top, which would read as the tidier of the
+     two and would never resolve: the token is declared on .appWindow and the
+     kit portals this panel to document.body, outside it. */
+  max-block-size: calc(100dvh - env(safe-area-inset-top, 0px) - 12rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .npChapters__list {
   display: flex;
   flex-direction: column;
   gap: var(--glacier-space-2);
-  max-block-size: min(60vh, 26rem);
-  overflow-y: auto;
-  overscroll-behavior: contain;
 }
 
 .npChapters__row {
