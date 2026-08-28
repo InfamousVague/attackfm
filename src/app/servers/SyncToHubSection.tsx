@@ -25,9 +25,34 @@ export function SyncToHubSection() {
 
   // A hub has no outbox. Saying "0 waiting to copy" on the box everything is
   // already on would be pure noise, so the section is simply not there.
-  if (!target || !status?.configured) return null;
+  if (!target) return null;
 
-  const { counts, stall, recent, hub } = status;
+  /*
+   * NOT configured is the one state worth showing.
+   *
+   * This returned null for it, which meant the download server having no way
+   * to reach your library rendered as an empty space - the same empty space as
+   * everything being fine. It is also the state that silently breaks the
+   * curator handing downloads over: a box that cannot copy back never asks for
+   * work in the first place, so the hub offers into nothing and no screen
+   * anywhere says why.
+   */
+  if (!status?.configured) {
+    return (
+      <div className="prefsSection">
+        <Label>Copying to your library</Label>
+        <Text tone="danger" size="sm">
+          {importServerHost(target.url)} has not been told where your library is, so nothing it
+          downloads can be copied back — and it will not take on new music for you either.
+        </Text>
+        <Text tone="muted" size="xs">
+          Set AFM_PEER_SYNC_URL and AFM_PEER_SYNC_TOKEN on that server and restart it.
+        </Text>
+      </div>
+    );
+  }
+
+  const { counts, stall, recent, hub, claiming } = status;
   const waiting = counts.pending + counts.uploading;
   const failed = recent.filter((r) => r.state === 'failed');
   /*
@@ -51,6 +76,14 @@ export function SyncToHubSection() {
         {importServerHost(target.url)} downloads your imports and then copies each finished song to{' '}
         {hub || 'your library'}, so both servers end up holding it.
       </Text>
+
+      {/* Why it is not taking work for the curator, when it is not. The
+          downloading happens here, so this is the only place that knows. */}
+      {claiming?.why ? (
+        <Text tone="warning" size="sm">
+          Not taking new music for you: {claiming.why}
+        </Text>
+      ) : null}
 
       {stall ? (
         <Text tone="danger" size="sm">

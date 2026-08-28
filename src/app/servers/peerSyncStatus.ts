@@ -47,6 +47,12 @@ export interface PeerSyncStatus {
   counts: PeerSyncCounts;
   stall: PeerSyncStall | null;
   recent: PeerSyncItem[];
+  /**
+   * Whether this box is taking downloads on the hub's behalf, and why not when
+   * it is not. The hub can see that its offers are going unanswered but never
+   * why; only the box that would do the downloading knows that.
+   */
+  claiming: { canDownload: boolean; why: string } | null;
 }
 
 const EMPTY_COUNTS: PeerSyncCounts = { pending: 0, uploading: 0, done: 0, skipped: 0, failed: 0 };
@@ -61,6 +67,8 @@ export async function fetchPeerSyncStatus(target: ServerSession): Promise<PeerSy
     counts: { ...EMPTY_COUNTS, ...(raw.counts ?? {}) },
     stall: raw.stall ?? null,
     recent: raw.recent ?? [],
+    // Absent on a server too old to report it - not the same as "fine".
+    claiming: raw.claiming ?? null,
   };
 }
 
