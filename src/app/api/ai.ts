@@ -100,6 +100,26 @@ export interface AiReport {
   installed: string[];
   /** Null when the box is idle. Present while a pass is in flight. */
   running: AiRunning | null;
+  /**
+   * The mood profile read off the last three weeks of listening, or null when
+   * there is not enough of it yet - which the Taste page says in words. The
+   * centroids stay on the server; the pane gets what a person reads.
+   */
+  mood?: {
+    builtAt: number;
+    evidence: number;
+    clusters: {
+      name: string;
+      blurb: string;
+      share: number;
+      bpm: number | null;
+      energy: number | null;
+      tags: string[];
+      exemplars: string[];
+      /** UTC quarter-day listening shape [0-6, 6-12, 12-18, 18-24). */
+      hours: [number, number, number, number];
+    }[];
+  } | null;
   totals: {
     calls: number;
     failures: number;

@@ -255,3 +255,35 @@
 .localAi__event[data-state='failed'] .localAi__eventDot {
   background: var(--glacier-danger-solid);
 }
+
+/* ---- the Taste page ------------------------------------------------------- */
+
+.aiMoods {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  margin-block: var(--glacier-space-3);
+}
+
+.aiMood {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  padding: var(--glacier-space-3);
+  border: 1px solid var(--glacier-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+}
+
+.aiMood__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--glacier-space-2);
+}
+
+.aiMood__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--glacier-space-1);
+}
