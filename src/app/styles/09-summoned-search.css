@@ -19,11 +19,15 @@
   /* A DRAWER now, by request - the square-flat page it briefly was said
      nothing about the pull-down that dismisses it, and a gesture nothing
      advertises is a gesture nobody finds. Rounded shoulders and a hairline
-     say "sheet"; the handle below says "pull me". Still solid ground (a
-     surface you type into must not compete with what is behind it), still
-     no backdrop-filter - the blur lives on the layer behind, where it is
-     cheap. */
-  background: var(--glacier-bg);
+     say "sheet"; the handle below says "pull me". Glass, also by request -
+     the nav bar's own recipe (thick, blur-lg, saturate), so the two pieces
+     of floating chrome are the same material. Thick is the near-opaque
+     grade: a surface you type into still must not compete with what is
+     behind it, and the drag compensation below keeps the per-frame cost
+     off the gesture. */
+  background: var(--glacier-glass-thick);
+  backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glacier-blur-lg)) saturate(var(--glacier-glass-saturate));
   border-start-start-radius: var(--glacier-radius-xl, 1.25rem);
   border-start-end-radius: var(--glacier-radius-xl, 1.25rem);
   border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
@@ -91,14 +95,18 @@
 }
 
 .searchSummon[data-dragging] {
-  /* The only line of this block that was ever about the DRAG: without it the
-     translate eases and the sheet lags the thumb.
-     Everything else here existed to compensate for glass - killing the
-     backdrop-filter for per-frame cost, and forcing an opaque ground so the
-     85%-translucent surface did not go see-through mid-drag. The sheet is
-     solid and square at rest now, so both are moot, and the radius/shadow
-     that came with them were the card look this surface no longer wears. */
+  /* No easing while a finger is down - without this the translate eases and
+     the sheet lags the thumb. */
   transition: none;
+  /* Glass is back at rest, so its two drag compensations come back with it
+     (this block once carried exactly these, then shed them while the sheet
+     was solid): a backdrop-filter on an element translating every frame
+     re-samples the backdrop every frame, and with the blur gone the 85%
+     ground would go see-through mid-drag - so the drag rides on solid
+     paint, near enough in tone that the swap does not read. */
+  background: var(--glacier-bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -104,20 +104,14 @@ export function PrimaryNav({
   useNavPill(barRef);
   const dests = useMemo<NavDest[]>(() => {
     const list: NavDest[] = [
-      {
-        key: 'library',
-        label: 'Library',
-        icon: <LibraryBig size={18} />,
-        active: libraryActive,
-        go: () => onTab('library'),
-      },
       /*
        * Search, back in the bar - by request, fourth time around (a tab, a
        * pull-down summons, an icon, a bar on the page, and now an icon
-       * again beside the bars). Never ACTIVE, because it is not a place: it
-       * opens the drawer over whatever you were doing and gives the page
-       * back when it closes. openSearchPage is the same global door the
-       * on-page bars use, so there is still exactly one way in.
+       * again beside the bars) - and FIRST, also by request. Never ACTIVE,
+       * because it is not a place: it opens the drawer over whatever you
+       * were doing and gives the page back when it closes. openSearchPage
+       * is the same global door the on-page bars use, so there is still
+       * exactly one way in.
        */
       {
         key: 'search',
@@ -125,6 +119,13 @@ export function PrimaryNav({
         icon: <Search size={18} />,
         active: false,
         go: () => openSearchPage(),
+      },
+      {
+        key: 'library',
+        label: 'Library',
+        icon: <LibraryBig size={18} />,
+        active: libraryActive,
+        go: () => onTab('library'),
       },
     ];
     if (booksPage) {
