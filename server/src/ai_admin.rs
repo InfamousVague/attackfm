@@ -61,6 +61,7 @@ const FUNCTIONS: &[(&str, &str, &str, &str)] = &[
     ("attackfm_refinement_patch_v3", "Evidence audit", "chat", "refinementModel"),
     ("attackfm_specific_tag_registry_v1", "Specific tag decisions", "chat", "fastModel"),
     ("attackfm_trait_analysis", "DJ trait analysis", "chat", "chatModel"),
+    ("attackfm_mood_names_v1", "Mood naming", "chat", "chatModel"),
 ];
 
 fn model_for(which: &str) -> Option<String> {
@@ -265,7 +266,7 @@ async fn installed_models() -> Vec<String> {
 /// - it can take seconds against a cold Ollama, and a settings pane that takes
 /// eight seconds to appear is worse than one with a "check now" button.
 pub async fn report(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Reply {
-    require_admin(&state.db, &headers)?;
+    let caller = require_admin(&state.db, &headers)?;
     let stats = crate::ai::stats_snapshot();
     // Survives a restart, so "never run" means never rather than "not in the
     // ninety seconds since the last deploy".
@@ -332,6 +333,19 @@ pub async fn report(State(state): State<Arc<AppState>>, headers: HeaderMap) -> R
         // so a pass that takes minutes is something to watch rather than a
         // button that went quiet.
         "running": crate::ai::current_task(),
+        // The mood profile for the pane's Taste page, centroids stripped -
+        // they are a few KB of floats per cluster that only the scorer reads.
+        "mood": crate::mood::load(&state, caller.id).map(|p| json!({
+            "builtAt": p.built_at,
+            "evidence": p.evidence,
+            "clusters": p.clusters.iter().map(|c| json!({
+                "name": c.name, "blurb": c.blurb, "share": c.share,
+                "bpm": c.bpm, "energy": c.energy, "tags": c.tags,
+                "exemplars": state.db.titles_for(&c.exemplar_ids).into_iter()
+                    .map(|(a, t)| format!("{t} — {a}")).collect::<Vec<_>>(),
+                "hours": c.hours,
+            })).collect::<Vec<_>>(),
+        })),
         "curator": curator,
         // The FIRST page, at the same size every later page uses - the pane
         // pages from here rather than fetching its own page one, so opening
@@ -574,10 +588,39 @@ pub async fn run(
                     }
                 }
             }
-            "mix" => match crate::home::rebuild_mixes(&st, user).await {
-                0 => "No mixes came back - there may not be enough listening yet.".to_string(),
-                n => format!("{n} mixes rebuilt. They are on your home screen."),
-            },
+            "mix" => {
+                /*
+                 * "Make me a new mix" now means the whole programme: read the
+                 * mood off recent listening, rebuild the blended stations on
+                 * it, then the daily mixes. Mood first because the stations
+                 * are shaped by it - rebuilding them against yesterday's
+                 * profile and then refreshing the profile would be the work
+                 * in the wrong order.
+                 */
+                crate::ai::task_step("reading the mood of your last three weeks");
+                let profile = crate::mood::rebuild(&st, user).await;
+                let stations = match &profile {
+                    Some(prof) => {
+                        crate::ai::task_step("building a station for each mood");
+                        crate::programmer::rebuild_now(&st, user, prof)
+                    }
+                    None => 0,
+                };
+                crate::ai::task_step("rebuilding the daily mixes");
+                let mixes = crate::home::rebuild_mixes(&st, user).await;
+                match (profile, stations, mixes) {
+                    (None, _, 0) => {
+                        "Not enough recent listening to work from yet - play a few things first."
+                            .to_string()
+                    }
+                    (None, _, m) => format!("{m} mixes rebuilt. Not enough listening yet to read a mood."),
+                    (Some(prof), st_n, m) => format!(
+                        "Read {} moods off your last three weeks, built {st_n} station{} on them, and rebuilt {m} mixes.",
+                        prof.clusters.len(),
+                        if st_n == 1 { "" } else { "s" },
+                    ),
+                }
+            }
             "dates" => {
                 crate::ai::task_step("looking for something you do not own");
                 let pool = crate::collector::top_up(&st, user).await;

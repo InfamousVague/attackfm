@@ -1541,12 +1541,26 @@ async fn name_lists(
 
 /// One pass over the discovery pool for every recent listener.
 async fn discovery_cycle(state: &Arc<AppState>) -> bool {
+    // The charts first: one server-wide fetch on its own twice-a-day clock,
+    // fanned to every listener's pool, so the taste walk below never runs on
+    // a pool the trending lane has not had its chance to feed.
+    crate::trending::cycle(state).await;
     let since = now_ms() - WINDOW_30D_MS;
     let mut worked = false;
     for user in state.db.listeners_since(since) {
         crate::discovery::harvest(state, user).await;
         crate::discovery::prune_owned(state, user);
         if crate::discovery::listen_cycle(state, user).await {
+            worked = true;
+        }
+        // The listener's own layer over all of it: the mood profile daily,
+        // and the blended stations the moment a fresh profile exists.
+        if crate::mood::cycle(state, user).await {
+            note_cycle(state, "mood", "Read the mood of the last three weeks", "From your own listening");
+            worked = true;
+        }
+        if crate::programmer::cycle(state, user).await {
+            note_cycle(state, "stations", "Rebuilt your stations", "One per mood, new music tucked in");
             worked = true;
         }
     }

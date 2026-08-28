@@ -58,7 +58,7 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-fn client(secs: u64) -> reqwest::Client {
+pub(crate) fn client(secs: u64) -> reqwest::Client {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(secs))
         .user_agent("AttackFM/0.1 (personal music server)")
@@ -199,7 +199,7 @@ fn title_key(title: &str) -> String {
     fold(&out)
 }
 
-fn key_of(artist: &str, title: &str) -> String {
+pub(crate) fn key_of(artist: &str, title: &str) -> String {
     format!("{}|{}", fold(artist), title_key(title))
 }
 
@@ -255,7 +255,7 @@ fn library_seed_artists(state: &Arc<AppState>, limit: i64) -> Vec<(String, i64)>
 }
 
 /// The whole library as comparison keys - what a candidate is tested against.
-fn owned_keys(state: &Arc<AppState>) -> HashSet<String> {
+pub(crate) fn owned_keys(state: &Arc<AppState>) -> HashSet<String> {
     state
         .db
         .owned_names()
@@ -598,6 +598,8 @@ pub async fn listen_cycle(state: &Arc<AppState>, user: i64) -> bool {
     let Some((taste, all)) = crate::curator::user_taste_for(state, user) else { return false };
     let by_id: std::collections::HashMap<i64, &crate::db::TrackFeatures> =
         all.iter().map(|f| (f.track_id, f)).collect();
+    let lanes = state.db.discovery_lanes(user);
+    let mood = crate::mood::load(state, user);
     let c = client(20);
 
     for cand in waiting {
@@ -618,9 +620,8 @@ pub async fn listen_cycle(state: &Arc<AppState>, user: i64) -> bool {
         // now it is actually used instead of being noted and then passed as
         // None, which made a quarter of the score a constant.
         let tags = crate::taste::artist_tags(&by_id, &cand.seed);
-        let score =
-            crate::taste::score_candidate(&taste, vec.as_deref(), bpm, &tags) as f64
-                + pop_nudge(cand.popularity);
+        let score = crate::taste::score_candidate(&taste, vec.as_deref(), bpm, &tags) as f64
+            + score_extras(lanes.get(&cand.ext_id), cand.popularity, mood.as_ref(), vec.as_deref(), bpm);
 
         let _ = state.db.save_discovery_features(user, &cand.ext_id, bpm, vec.as_deref(), score);
         tokio::time::sleep(GAP).await;
@@ -641,6 +642,39 @@ fn pop_nudge(popularity: f64) -> f64 {
     0.05 * (1.0 - popularity.clamp(0.0, 1.0))
 }
 
+/// What sits on TOP of the taste score: the lane's own nudge plus the mood
+/// term. One function so listen_cycle and rescore cannot drift apart.
+///
+/// The nudge is lane-aware because the lanes disagree about fame on purpose.
+/// The taste walk and the scene engine exist to find SMALL artists, so their
+/// candidates keep the inverted nudge. The trending and fresh lanes exist to
+/// answer "what is popping off" - inverting fame there would penalise a
+/// candidate for the very thing it was harvested for, so they get a small
+/// bonus scaled by their own chart standing instead. Same ceiling either way:
+/// the nudge never outweighs taste.
+///
+/// The mood term is the profile's vote, +/-0.10 around neutral: a candidate
+/// near a mood the listener is actually living in right now outranks one near
+/// nothing, and one that matches none of the current moods is gently held
+/// back. No profile, no term - scoring stays exactly what it was.
+fn score_extras(
+    lane: Option<&(String, f64)>,
+    popularity: f64,
+    mood: Option<&crate::mood::MoodProfile>,
+    vec: Option<&[f32]>,
+    bpm: Option<f64>,
+) -> f64 {
+    let nudge = match lane.map(|(l, r)| (l.as_str(), *r)) {
+        Some(("trending" | "fresh", rank)) => 0.05 * rank.clamp(0.0, 1.0),
+        _ => pop_nudge(popularity),
+    };
+    let mood_term = match mood {
+        Some(p) => (crate::mood::affinity(p, vec, bpm) - 0.5) * 0.2,
+        None => 0.0,
+    };
+    nudge + mood_term
+}
+
 /// Rescores everything already listened to. Taste moves; a pool scored against
 /// last month's listening would slowly stop being about you.
 /// Called from the collector's cycle, once per listener per pass, so the pool
@@ -656,6 +690,8 @@ pub fn rescore(state: &Arc<AppState>, user: i64) {
     let Some((taste, all)) = crate::curator::user_taste_for(state, user) else { return };
     let by_id: std::collections::HashMap<i64, &crate::db::TrackFeatures> =
         all.iter().map(|f| (f.track_id, f)).collect();
+    let lanes = state.db.discovery_lanes(user);
+    let mood = crate::mood::load(state, user);
     // The seed artist's tags stand in for the candidate's own, which this
     // endpoint never supplies. A quarter of every score used to be the literal
     // constant 0.5 because `None` was passed for genre here; the seed is the
@@ -668,9 +704,9 @@ pub fn rescore(state: &Arc<AppState>, user: i64) {
             .entry(d.seed.to_lowercase())
             .or_insert_with(|| crate::taste::artist_tags(&by_id, &d.seed))
             .clone();
-        let score =
-            crate::taste::score_candidate(&taste, d.lyric_vec.as_deref(), d.bpm, &tags) as f64
-                + pop_nudge(d.popularity);
+        let score = crate::taste::score_candidate(&taste, d.lyric_vec.as_deref(), d.bpm, &tags)
+            as f64
+            + score_extras(lanes.get(&d.ext_id), d.popularity, mood.as_ref(), d.lyric_vec.as_deref(), d.bpm);
         state.db.set_discovery_score(user, &d.ext_id, score);
     }
 }
@@ -805,12 +841,57 @@ async fn new_music_lists(state: &Arc<AppState>, user: i64) -> Vec<serde_json::Va
 /// The model groups the discovery pool into a few themed playlists of unowned
 /// music; every ext_id is validated back against the pool, and the full track is
 /// attached so the client can preview or import it.
+fn nm_item(d: &crate::db::DiscoveryRow) -> serde_json::Value {
+    json!({
+        "id": d.ext_id, "title": d.title, "artist": d.artist, "cover": d.cover,
+        "url": d.url, "preview": d.preview, "seed": d.seed, "bpm": d.bpm,
+        "lyricsRead": d.lyric_vec.is_some(), "score": d.score,
+    })
+}
+
 async fn build_new_music(state: &Arc<AppState>, user: i64) -> Option<Vec<serde_json::Value>> {
     let url = nm_ai_url()?;
     let model = nm_ai_model()?;
-    let pool = state.db.top_discoveries(user, 60);
+    let pool = state.db.top_discoveries(user, 90);
     if pool.len() < 6 {
         return None;
+    }
+
+    /*
+     * The two lane lists come out in CODE, before the model sees anything.
+     *
+     * "Popping off right now" and "Fresh this week" are facts about where a
+     * candidate came from, not a vibe for a model to intuit - the chart lane
+     * and the fresh-release lane already are those playlists. Building them
+     * here costs zero tokens on a box that generates five a second, they
+     * cannot be mis-grouped, and the model's slow call is saved for the one
+     * job only it can do: hearing the moods in the taste-walk finds.
+     */
+    let lanes = state.db.discovery_lanes(user);
+    let mut lead = Vec::new();
+    for (lane, id, title, blurb) in [
+        ("trending", "nm-popping", "Popping off right now", "What everyone is suddenly playing - the cuts of it near your taste."),
+        ("fresh", "nm-fresh", "Fresh this week", "Just released, and already moving."),
+    ] {
+        let items: Vec<serde_json::Value> = pool
+            .iter()
+            .filter(|d| lanes.get(&d.ext_id).is_some_and(|(l, _)| l == lane))
+            .take(12)
+            .map(nm_item)
+            .collect();
+        if items.len() >= 4 {
+            lead.push(json!({ "id": id, "title": title, "blurb": blurb, "items": items }));
+        }
+    }
+
+    // The model groups what is left - the taste and scene finds.
+    let pool: Vec<crate::db::DiscoveryRow> = pool
+        .into_iter()
+        .filter(|d| !lanes.get(&d.ext_id).is_some_and(|(l, _)| l == "trending" || l == "fresh"))
+        .take(60)
+        .collect();
+    if pool.len() < 6 {
+        return (!lead.is_empty()).then_some(lead);
     }
     let mut lines = Vec::new();
     for (i, d) in pool.iter().enumerate() {
@@ -859,13 +940,7 @@ async fn build_new_music(state: &Arc<AppState>, user: i64) -> Option<Vec<serde_j
                     .filter_map(|k| usize::try_from(k).ok())
                     .filter(|k| *k >= 1 && *k <= n && used.insert(*k))
                     .filter_map(|k| pool.get(k - 1))
-                    .map(|d| {
-                        json!({
-                            "id": d.ext_id, "title": d.title, "artist": d.artist, "cover": d.cover,
-                            "url": d.url, "preview": d.preview, "seed": d.seed, "bpm": d.bpm,
-                            "lyricsRead": d.lyric_vec.is_some(), "score": d.score,
-                        })
-                    })
+                    .map(nm_item)
                     .collect()
             })
             .unwrap_or_default();
@@ -874,7 +949,9 @@ async fn build_new_music(state: &Arc<AppState>, user: i64) -> Option<Vec<serde_j
         }
         out.push(json!({ "id": format!("nm-{i}"), "title": title, "blurb": blurb, "items": items }));
     }
-    (!out.is_empty()).then_some(out)
+    let mut all = lead;
+    all.extend(out);
+    (!all.is_empty()).then_some(all)
 }
 
 /// `GET /api/discoveries` - the best of what this listener does not own.
