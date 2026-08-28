@@ -1,7 +1,8 @@
 import { Button, Text, useToast } from '@glacier/react';
-import { ListMusic, Plus } from '@glacier/icons';
+import { ListMusic, Play, Plus, Shuffle } from '@glacier/icons';
 import { useMemo } from 'react';
 import { mosaicArts, useArtLoad, useTileArt } from '../ux/artLoad.ts';
+import { shuffled } from '../ux/shuffle.ts';
 import { formatClock, formatTotal } from '../ux/format.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
 import { TrackMenu } from '../library/TrackMenu.tsx';
@@ -28,11 +29,12 @@ import type { Track } from '../core/tauri.ts';
  * reorder, remove, suggestions), and a list you do not own can do none of it.
  * Sharing the look without sharing the machinery is the honest half.
  *
- * The one verb it has is ADD, where the page it mirrors has Play and Shuffle.
- * These lists are not yours and the curator's keeps regenerating underneath
- * you, so the useful thing to offer is a copy that stops moving and becomes a
- * playlist you can edit - fork-on-edit, made a button. Rows still play; it is
- * only the header that differs, because playing a mix never needed a copy.
+ * The header carries Play and Shuffle like the page it mirrors, then ADD.
+ * Add exists because these lists are not yours and the curator's keep
+ * regenerating underneath you - a copy stops moving and becomes a playlist
+ * you can edit, fork-on-edit made a button. For a while Add was the ONLY
+ * header verb, which made keeping a copy read as the point of the page; the
+ * stations landing here is what surfaced that.
  */
 export function MixPage({
   title,
@@ -131,7 +133,32 @@ export function MixPage({
           </Text>
 
           <div className="playlistHead__actions">
-            <Button variant="solid" size="sm" onClick={saveCopy} disabled={tracks.length === 0}>
+            {/* Play and Shuffle lead, matching the playlist page this mirrors
+                - a station or mix is for turning ON, and for a while the only
+                header verb here was Add, which made keeping a copy read as
+                the point of the page. Add stays, demoted to the outline. */}
+            <Button
+              variant="solid"
+              size="sm"
+              disabled={tracks.length === 0}
+              onClick={() => tracks[0] && onPlay(tracks[0], tracks)}
+            >
+              <Play size={15} />
+              Play
+            </Button>
+            <Button
+              variant="soft"
+              size="sm"
+              disabled={tracks.length === 0}
+              onClick={() => {
+                const order = shuffled(tracks);
+                if (order[0]) onPlay(order[0], order);
+              }}
+            >
+              <Shuffle size={15} />
+              Shuffle
+            </Button>
+            <Button variant="outline" size="sm" onClick={saveCopy} disabled={tracks.length === 0}>
               <Plus size={15} />
               Add
             </Button>
