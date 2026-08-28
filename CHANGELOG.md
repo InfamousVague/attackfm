@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.105
+
+- Two more stations on the Library shelf, built around the artists you play most: their records as the spine, the library that lives near them, and new music where it leans their way
+- Type anything into search and start a station on it — your library, tuned to whatever you asked for
+
 ## 0.4.104
 
 - Airplane mode works now: cached and saved songs play, and covers come from the device instead of vanishing
