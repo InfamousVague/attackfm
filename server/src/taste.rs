@@ -788,6 +788,8 @@ mod tests {
         TrackFeatures {
             track_id: id,
             bpm: Some(bpm),
+            curator_user_id: None,
+            added_at: 0,
             lyric_vec: vec,
             genre: genre.into(),
             ai_genres: Vec::new(),

@@ -4794,7 +4794,8 @@ impl Db {
                      (t.curator_user_id IS NOT NULL AND COALESCE(t.curator_promoted, 0) = 0),
                      f.audio_fingerprint, COALESCE(f.audio_fingerprint_dims,0),
                      COALESCE(f.ai_genres,''), COALESCE(f.ai_sonic_traits,''),
-                     COALESCE(p.canonical_profile,'')
+                     COALESCE(p.canonical_profile,''),
+                     t.curator_user_id, t.added_at
              FROM tracks t LEFT JOIN track_features f ON f.track_id = t.id
              LEFT JOIN song_profile_layers p ON p.track_id = t.id
              WHERE t.deleted = 0",
@@ -4849,6 +4850,8 @@ impl Db {
                 lyrical_vec: decode(r.get(15)?, r.get(16)?),
                 community_vec: decode(r.get(17)?, r.get(18)?),
                 quarantined: r.get::<_, i64>(19)? != 0,
+                curator_user_id: r.get(25)?,
+                added_at: r.get(26).unwrap_or(0),
                 audio_fingerprint: decode(r.get(20)?, r.get(21)?),
             })
         })
@@ -7724,19 +7727,28 @@ impl Db {
         .unwrap_or_default()
     }
 
-    /// What arrived lately: live, non-quarantined rows, newest first - the
-    /// Fresh-finds list is this, in arrival order.
-    pub fn recent_track_ids(&self, since_ms: i64, limit: i64) -> Vec<i64> {
+    /// What arrived lately, newest first - the Fresh-finds list is this, in
+    /// arrival order.
+    ///
+    /// `for_user` is whose shelf is being built, and it decides which unadopted
+    /// collector pulls count as arrivals. Their own do: the collector fetched
+    /// those FOR them, and a list of what turned up lately that silently omits
+    /// everything the collector went and got is not the list it claims to be.
+    /// Another listener's do not - that pull was chosen against somebody else's
+    /// taste, and adopting it is their gesture to make.
+    pub fn recent_track_ids(&self, since_ms: i64, limit: i64, for_user: i64) -> Vec<i64> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
             "SELECT id FROM tracks
              WHERE deleted = 0 AND added_at >= ?1
-               AND (curator_user_id IS NULL OR COALESCE(curator_promoted, 0) = 1)
+               AND (curator_user_id IS NULL
+                    OR COALESCE(curator_promoted, 0) = 1
+                    OR curator_user_id = ?3)
              ORDER BY added_at DESC LIMIT ?2",
         ) else {
             return Vec::new();
         };
-        stmt.query_map(params![since_ms, limit], |r| r.get(0))
+        stmt.query_map(params![since_ms, limit, for_user], |r| r.get(0))
             .map(|rows| rows.filter_map(Result::ok).collect())
             .unwrap_or_default()
     }
@@ -8082,6 +8094,14 @@ pub struct TrackFeatures {
     /// Collector quarantine: an unadopted audition must not seed anyone's
     /// mixes - it is not part of the library yet.
     pub quarantined: bool,
+    /// WHOSE audition it is, when it is one. `quarantined` is a global fact -
+    /// "somebody has not adopted this yet" - and on its own it cannot tell the
+    /// listener the collector fetched a track FOR from everyone else, so every
+    /// list simply refused all of them. Carrying the owner lets a listener's own
+    /// pulls into their own lists while another's stay out of them.
+    pub curator_user_id: Option<i64>,
+    /// When the row landed. Arrival IS the ranking for a list about newness.
+    pub added_at: i64,
 }
 
 /// One playlist the curator built.
@@ -8799,6 +8819,53 @@ mod audition_visibility {
         let seen: Vec<String> =
             db.tracks_since(bob, 0, 100).0.into_iter().map(|t| t.title).collect();
         assert_eq!(seen, vec!["Audition".to_string()], "adopted tracks join the library");
+    }
+
+    /// Arrivals are per-listener, because "what turned up lately" that omits
+    /// everything the collector bought for you is not what it says it is - and
+    /// that omission is exactly why a shelf built on this looked like it only
+    /// ever reshuffled music the listener already owned.
+    #[test]
+    fn my_own_pull_is_an_arrival_and_someone_elses_is_not() {
+        let dir = std::env::temp_dir().join(format!("afm-arrivals-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = Db::open(&dir.join("t.sqlite")).unwrap();
+        let alice = db.create_user("alice", "x", true).unwrap();
+        let bob = db.create_user("bob", "x", false).unwrap();
+
+        for (path, title) in [("own.flac", "Mine"), ("theirs.flac", "Theirs"), ("lib.flac", "Library")] {
+            db.upsert_track(&track(path, title), 1).unwrap();
+        }
+        let mine = db.track_id_by_path("own.flac").unwrap();
+        let theirs = db.track_id_by_path("theirs.flac").unwrap();
+        for (owner, id) in [(alice, mine), (bob, theirs)] {
+            db.lock()
+                .execute(
+                    "UPDATE tracks SET curator_user_id = ?1, curator_promoted = 0 WHERE id = ?2",
+                    params![owner, id],
+                )
+                .unwrap();
+        }
+        // Everything landed just now, so a window of any width holds all three.
+        let titles = |uid: i64| -> Vec<String> {
+            db.recent_track_ids(0, 100, uid)
+                .into_iter()
+                .filter_map(|id| db.track_rel_path(id))
+                .collect()
+        };
+
+        let for_alice = titles(alice);
+        assert!(for_alice.contains(&"own.flac".to_string()), "my own pull is an arrival: {for_alice:?}");
+        assert!(
+            !for_alice.contains(&"theirs.flac".to_string()),
+            "somebody else's unadopted pull is not mine to be offered: {for_alice:?}"
+        );
+        assert!(for_alice.contains(&"lib.flac".to_string()), "the shared library is unaffected");
+
+        let for_bob = titles(bob);
+        assert!(for_bob.contains(&"theirs.flac".to_string()), "and the rule is symmetric: {for_bob:?}");
+        assert!(!for_bob.contains(&"own.flac".to_string()), "not the other way round: {for_bob:?}");
     }
 }
 

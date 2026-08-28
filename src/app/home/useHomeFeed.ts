@@ -20,7 +20,21 @@ import type { ResolvedMix } from './homeCards.tsx';
 
 const REFRESH_MS = 5 * 60 * 1000;
 
-export function useHomeFeed(tracks: Track[], session: ServerSession | null) {
+export function useHomeFeed(
+  tracks: Track[],
+  session: ServerSession | null,
+  /**
+   * The collector's unadopted auditions, which the library deliberately keeps
+   * OUT of `tracks` so they cannot pad anybody's album counts or searches.
+   *
+   * They still have to be resolvable here. The curator builds this listener's
+   * own pulls into its lists now, and every id it sends is looked up in the map
+   * below - so without them a list of brand new downloads resolved to nothing,
+   * fell under the four-track floor, and the shelf vanished rather than showing
+   * the very thing it had just been taught to build.
+   */
+  forYou: Track[] = [],
+) {
   // Every feed seeds from the last launch's answer, so the shelves paint at
   // full size on the first frame and the refresh below swaps content in place
   // - the page must never assemble itself in front of the listener twice.
@@ -83,12 +97,12 @@ export function useHomeFeed(tracks: Track[], session: ServerSession | null) {
   // has not synced yet simply drop out.
   const byId = useMemo(() => {
     const map = new Map<number, Track>();
-    for (const t of tracks) {
+    for (const t of [...tracks, ...forYou]) {
       const id = trackIdFromPath(t.path);
       if (id !== null) map.set(id, t);
     }
     return map;
-  }, [tracks]);
+  }, [tracks, forYou]);
 
   const resolve = useCallback(
     (ids: number[] | undefined): Track[] =>
