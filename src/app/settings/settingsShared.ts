@@ -203,6 +203,13 @@ export const SETTINGS_INDEX: SettingEntry[] = [
     keywords: 'ai music date dates deck audition top up refresh cards more',
   },
   {
+    id: 'ai-taste',
+    pane: 'local-ai',
+    label: 'Your listening moods',
+    description: 'What the machine reads off your last three weeks - the moods, their tempo and energy, and the stations built on them.',
+    keywords: 'ai mood moods taste profile clusters stations listening recent vibe',
+  },
+  {
     id: 'ai-do-curate',
     pane: 'local-ai',
     label: 'Full curation pass',
@@ -263,6 +270,17 @@ export function settingsMatching(query: string): SettingEntry[] {
  * simply is not found, and the pane opening at its top is the honest answer.
  */
 export function revealSetting(id: string): void {
+  /*
+   * Said out loud BEFORE the scroll timer, for panes made of sub-pages.
+   *
+   * The query below is a raw DOM lookup, and a row living on a pane's
+   * non-default page simply is not in the DOM 400ms after the pane opens - the
+   * search hit lands at the top with no flash and no error, which reads as
+   * search being flaky. A pane with pages listens for this, switches to the
+   * page that owns the id, and the ordinary timer then finds the row where it
+   * always would have. Panes without pages hear nothing and lose nothing.
+   */
+  window.dispatchEvent(new CustomEvent('afm-reveal-setting', { detail: { id } }));
   window.setTimeout(() => {
     const el = document.querySelector<HTMLElement>(`[data-setting="${id}"]`);
     if (!el) return;

@@ -3,6 +3,7 @@ import {
   Pill,
   Button,
   Input,
+  SegmentedBar,
   Select,
   Spinner,
   Switch,
@@ -26,7 +27,7 @@ import {
   Sparkles,
   Zap,
 } from '@glacier/icons';
-import { IconTile, PaneSection, SettingRow, SettingsCallout, SettingsEmpty } from './kit/settingsKit.tsx';
+import { IconTile, PaneSection, SettingRow, SettingsCallout, SettingsEmpty, SubNav } from './kit/settingsKit.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { fetchAiActivity, fetchAiReport, probeAi, runAi, setAiSettings } from '../api/ai.ts';
 import type { AiHealth, AiReport, AiRunWhat, AiSettingsPatch } from '../api/ai.ts';
@@ -216,6 +217,28 @@ export function LocalAiPane() {
    * broken.
    */
   const [typing, setTyping] = useState<Record<string, boolean>>({});
+  /*
+   * The pane is four pages behind one toggle. SubNav, not SegmentedControl,
+   * because the kit's own rule says so: SegmentedControl is a value input,
+   * and switching between chunks of a pane is navigation.
+   */
+  const [chunk, setChunk] = useState<'ask' | 'taste' | 'model' | 'activity'>('ask');
+
+  /*
+   * Settings search can land on a row that lives on a non-default page.
+   * revealSetting announces the id before its scroll timer; switching here
+   * puts the row in the DOM in time for the timer's querySelector to find it.
+   */
+  useEffect(() => {
+    const onReveal = (e: Event) => {
+      const id = (e as CustomEvent<{ id: string }>).detail?.id ?? '';
+      if (id.startsWith('ai-do-')) setChunk('ask');
+      else if (id === 'ai-taste') setChunk('taste');
+      else if (id.startsWith('ai-')) setChunk('model');
+    };
+    window.addEventListener('afm-reveal-setting', onReveal);
+    return () => window.removeEventListener('afm-reveal-setting', onReveal);
+  }, []);
   /**
    * The feed, one page per entry, oldest page last.
    *
@@ -400,7 +423,7 @@ export function LocalAiPane() {
     );
   }
 
-  const { settings, functions, totals, curator } = report;
+  const { settings, functions, totals } = report;
   /*
    * The URL is a URL, not a model. Only the four model fields become pickers,
    * and only when the endpoint actually enumerated something.
@@ -411,6 +434,18 @@ export function LocalAiPane() {
 
   return (
     <div className="prefsBody localAiPane">
+      <SubNav
+        value={chunk}
+        onValueChange={(id) => setChunk(id as typeof chunk)}
+        options={[
+          { id: 'ask', label: 'Ask' },
+          { id: 'taste', label: 'Taste' },
+          { id: 'model', label: 'Model' },
+          { id: 'activity', label: 'Activity' },
+        ]}
+      />
+
+      {chunk === 'ask' && (
       <PaneSection
         title="Ask for something"
         description="Each of these already runs on its own schedule. This is the door to doing it now."
@@ -462,7 +497,10 @@ export function LocalAiPane() {
           </Text>
         )}
       </PaneSection>
+      )}
 
+      {chunk === 'model' && (
+      <>
       <PaneSection
         title="Endpoint"
         description="Usually Ollama, on this machine or your network. Nothing here leaves it."
@@ -716,35 +754,14 @@ export function LocalAiPane() {
           </Text>
         )}
       </PaneSection>
+      </>
+      )}
 
-      <PaneSection
-        title="The curator"
-        description="The loop that listens to the library. It stands down while anybody is playing."
-        footer={
-          <Button
-            size="sm"
-            variant="soft"
-            disabled={running || !configured || report.running != null}
-            onClick={() => void start('curate', 'Full pass')}
-          >
-            {running ? <Spinner size="sm" /> : <><Play size={14} /> Run a pass now</>}
-          </Button>
-        }
-      >
-        <SettingRow id="ai-curator-phase" label="Doing" value={curator?.phase || 'idle'} />
-        <SettingRow
-          id="ai-curator-last"
-          label="Last full pass"
-          value={curator?.lastCurated ? ago(Math.floor(curator.lastCurated / 1000)) : 'never'}
-        />
-        <SettingRow
-          id="ai-curator-halves"
-          label="Halves in play"
-          hint="Embeddings drive the recommendations; chat writes the words. A server can do the first without ever doing the second."
-          value={[curator?.embeddings ? 'embeddings' : null, curator?.chat ? 'chat' : null].filter(Boolean).join(' + ') || 'neither'}
-        />
-      </PaneSection>
+      {chunk === 'taste' && (
+        <TastePage report={report} />
+      )}
 
+      {chunk === 'activity' && (
       <PaneSection
         title="Recent activity"
         description="What the model has been doing, newest first."
@@ -794,11 +811,120 @@ export function LocalAiPane() {
           </ol>
         )}
       </PaneSection>
+      )}
     </div>
+  );
+}
+
+/**
+ * The Taste page: the machine's reading of the last three weeks, shown back.
+ *
+ * Everything here is measured - shares of listening weight, median tempo, mean
+ * energy, the controlled mood words, the actual songs each mood is made of.
+ * The one model-authored part is the names, and the page says where they came
+ * from by showing the tags underneath. This replaces the old "The curator"
+ * rows (phase, last pass, halves), which told an owner what the LOOP was doing
+ * but nothing about what it had learned.
+ */
+function TastePage({ report }: { report: AiReport }) {
+  const mood = report.mood ?? null;
+  const curator = report.curator;
+
+  // UTC quarter-days shifted into this device's clock, coarsely - the buckets
+  // are six hours wide, so the shift rounds to the nearest bucket.
+  const bucketNames = ['nights', 'mornings', 'afternoons', 'evenings'];
+  const shift = Math.round(-new Date().getTimezoneOffset() / 60 / 6);
+  const whenLabel = (hours: [number, number, number, number]) => {
+    let best = 0;
+    for (let i = 1; i < 4; i++) if (hours[i]! > hours[best]!) best = i;
+    const local = (((best + shift) % 4) + 4) % 4;
+    return bucketNames[local];
+  };
+
+  const TONES = ['accent', 'success', 'warning', 'danger'] as const;
+
+  return (
+    <PaneSection
+      title="Your listening, read back"
+      description="The moods the machine hears in your last three weeks, and what it builds on them."
+    >
+      <div data-setting="ai-taste">
+        {!mood ? (
+          <Text tone="muted" size="sm">
+            Not enough recent listening to read a mood yet — a few days of ordinary playing is all
+            it takes. The stations and the sharper picks switch on by themselves once there is
+            something to read.
+          </Text>
+        ) : (
+          <>
+            <SegmentedBar
+              size="md"
+              rounded
+              aria-label="Share of recent listening by mood"
+              data={mood.clusters.map((c, i) => ({
+                value: Math.max(0.01, c.share),
+                tone: TONES[i % TONES.length],
+                label: c.name,
+              }))}
+            />
+            <div className="aiMoods">
+              {mood.clusters.map((c, i) => (
+                <div key={c.name + i} className="aiMood">
+                  <div className="aiMood__head">
+                    <Text weight="medium">{c.name}</Text>
+                    <Text tone="muted" size="xs">
+                      {Math.round(c.share * 100)}%
+                    </Text>
+                  </div>
+                  {c.blurb && (
+                    <Text tone="muted" size="sm">
+                      {c.blurb}
+                    </Text>
+                  )}
+                  <Text tone="muted" size="xs">
+                    {[
+                      c.bpm != null ? `${Math.round(c.bpm)} bpm` : null,
+                      c.energy != null ? `energy ${c.energy.toFixed(2)}` : null,
+                      `mostly ${whenLabel(c.hours)}`,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </Text>
+                  <div className="aiMood__tags">
+                    {c.tags.map((t) => (
+                      <Pill key={t} size="sm" variant="soft" tone="neutral">
+                        {t}
+                      </Pill>
+                    ))}
+                  </div>
+                  {c.exemplars.length > 0 && (
+                    <Text tone="muted" size="xs">
+                      e.g. {c.exemplars.join(' · ')}
+                    </Text>
+                  )}
+                </div>
+              ))}
+            </div>
+            <Text tone="muted" size="xs">
+              Read from {mood.evidence.toLocaleString()} listens. Each mood becomes a station on
+              your Library page — your heavy rotation in that mood, deeper cuts beside it, and new
+              music tucked in between. What the moods reach for also steers what the collector goes
+              and finds.
+            </Text>
+          </>
+        )}
+        {curator && (
+          <Text tone="muted" size="xs">
+            The loop is {curator.phase || 'idle'}
+            {curator.lastCurated ? ` · last full pass ${ago(Math.floor(curator.lastCurated / 1000))}` : ''}.
+          </Text>
+        )}
+      </div>
+    </PaneSection>
   );
 }
 
 /** The rail row's second line, for SettingsModal. */
 export function localAiSummary(): string {
-  return 'Model, health and what it has been doing';
+  return 'Ask for things, your moods, the model, and what it has been doing';
 }
