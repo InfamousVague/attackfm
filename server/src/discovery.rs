@@ -282,11 +282,20 @@ struct CachedNewMusic {
 /// New-music playlists refresh once a day.
 const NM_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 
+/*
+ * Through `ai::setting`, NOT a raw env read.
+ *
+ * `setting` resolves the owner's choice in Settings first and the environment
+ * only after. Reading the variable directly means this feature silently ignores
+ * the pane that exists to configure it: the model row is changed, the pickers
+ * confirm it, and this one carries on asking for whatever the unit file said -
+ * with no error anywhere, because a model name is only ever wrong later.
+ */
 fn nm_ai_url() -> Option<String> {
-    std::env::var("AFM_AI_URL").ok().filter(|s| !s.trim().is_empty())
+    crate::ai::setting("url", "AFM_AI_URL")
 }
 fn nm_ai_model() -> Option<String> {
-    std::env::var("AFM_AI_MODEL").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+    crate::ai::setting("chatModel", "AFM_AI_MODEL")
 }
 
 impl DiscoveryState {

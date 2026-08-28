@@ -72,12 +72,35 @@ impl HomeState {
     }
 }
 
+/*
+ * Through `ai::setting`, NOT a raw env read.
+ *
+ * `setting` resolves the owner's choice in Settings first and the environment
+ * only after. Reading the variable directly means this feature silently ignores
+ * the pane that exists to configure it: the model row is changed, the pickers
+ * confirm it, and this one carries on asking for whatever the unit file said -
+ * with no error anywhere, because a model name is only ever wrong later.
+ */
+
+/// Both halves, or nothing.
+///
+/// A model name is only ever wrong LATER - the request goes out, the endpoint
+/// refuses a model it does not have, and the feature reports as an AI that is
+/// not working. So "can this run" means a URL AND a model, the same rule
+/// `AiClient::new` applies, and the caller falls back to its heuristic exactly
+/// as it does when nothing is configured at all.
 fn ai_url() -> Option<String> {
-    std::env::var("AFM_AI_URL").ok().filter(|s| !s.trim().is_empty())
+    let url = crate::ai::setting("url", "AFM_AI_URL")?;
+    if ai_model().trim().is_empty() {
+        return None;
+    }
+    Some(url)
 }
 
 fn ai_model() -> String {
-    std::env::var("AFM_AI_MODEL").ok().filter(|s| !s.trim().is_empty()).unwrap_or_else(|| "llama3.2".to_string())
+    // No literal fallback: a name nobody pulled is a timeout every cycle, and
+    // "llama3.2" was a guess about a box this code has never seen.
+    crate::ai::setting("chatModel", "AFM_AI_MODEL").unwrap_or_default()
 }
 
 // --- plays -------------------------------------------------------------------

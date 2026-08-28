@@ -102,30 +102,43 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+/*
+ * Through `ai::setting`, NOT a raw env read.
+ *
+ * `setting` resolves the owner's choice in Settings first and the environment
+ * only after. Reading the variable directly means this feature silently ignores
+ * the pane that exists to configure it: the model row is changed, the pickers
+ * confirm it, and this one carries on asking for whatever the unit file said -
+ * with no error anywhere, because a model name is only ever wrong later.
+ */
+
+/// Both halves, or nothing.
+///
+/// A model name is only ever wrong LATER - the request goes out, the endpoint
+/// refuses a model it does not have, and the feature reports as an AI that is
+/// not working. So "can this run" means a URL AND a model, the same rule
+/// `AiClient::new` applies, and the caller falls back to its heuristic exactly
+/// as it does when nothing is configured at all.
 fn ai_url() -> Option<String> {
-    std::env::var("AFM_AI_URL")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
+    let url = crate::ai::setting("url", "AFM_AI_URL")?;
+    if dj_model().trim().is_empty() {
+        return None;
+    }
+    Some(url)
 }
 
 /// The DJ's model. Separate from the offline curator's on purpose: the DJ answers
 /// a listener who is waiting, so it wants a small fast model, while curation runs
 /// in the background and can afford a big one.
 fn dj_model() -> String {
-    std::env::var("AFM_DJ_MODEL")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        // Then whatever model this box was actually set up with, and only then a
-        // literal. home-install.sh writes AFM_AI_MODEL and never AFM_DJ_MODEL, so
-        // the old default asked for a model nobody had pulled - and because the
-        // feed's `ai` flag is just "AFM_AI_URL is set", that failure was
-        // indistinguishable from having no AI at all.
-        .or_else(|| {
-            std::env::var("AFM_AI_MODEL")
-                .ok()
-                .filter(|s| !s.trim().is_empty())
-        })
-        .unwrap_or_else(|| "qwen2.5:7b".to_string())
+    crate::ai::setting("djModel", "AFM_DJ_MODEL")
+        // Then whatever model this box was actually set up with. home-install.sh
+        // writes AFM_AI_MODEL and never AFM_DJ_MODEL, so a literal default asked
+        // for a model nobody had pulled - and because the feed's `ai` flag is
+        // just "a URL is set", that failure was indistinguishable from having no
+        // AI at all. Empty is honest; a guess is not.
+        .or_else(|| crate::ai::setting("chatModel", "AFM_AI_MODEL"))
+        .unwrap_or_default()
 }
 
 fn embed_model() -> String {
