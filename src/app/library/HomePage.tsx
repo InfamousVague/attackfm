@@ -1,5 +1,6 @@
 import { ContextMenu, MenuItem } from '@glacier/react';
 import { ListEnd, ListStart, Play, Shuffle } from '@glacier/icons';
+import { shuffled } from '../ux/shuffle.ts';
 import { useQueueControls } from '../player/queueControls.tsx';
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { Button, Pill, SearchField, Text } from '@glacier/react';
@@ -289,14 +290,10 @@ export function HomePage({
               {...mixHold}
               aria-label={`${mix.title} actions`}
               className="mixCardMenuTarget"
+              /* The ADD verbs live in the held menu - by request, they are
+                  the secondary option; the primary verbs sit on the face. */
               content={
                 <>
-                  <MenuItem
-                    icon={<Play size={15} />}
-                    onSelect={() => mix.tracks[0] && onPlay(mix.tracks[0], mix.tracks)}
-                  >
-                    Play
-                  </MenuItem>
                   <MenuItem
                     icon={<ListStart size={15} />}
                     onSelect={() => [...mix.tracks].reverse().forEach((t) => playNext(t))}
@@ -319,6 +316,55 @@ export function HomePage({
               >
                 <span className="mixCardCoverWrap">
                   <MixCover tracks={mix.tracks} art={mixArt(mix.title, { id: mix.id, curated: true })} />
+                  {/* Play and shuffle ON the face - a station is for turning
+                      on, and making its first verb "open a page" buried that.
+                      Spans wearing button roles, because the card is already
+                      a button and HTML does not allow one inside another -
+                      the same shape as the mix card's tune chip. */}
+                  {mix.tracks.length > 0 && (
+                    <span className="stationCard__go">
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        className="stationCard__play"
+                        aria-label={`Play ${mix.title}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onPlay(mix.tracks[0]!, mix.tracks);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onPlay(mix.tracks[0]!, mix.tracks);
+                          }
+                        }}
+                      >
+                        <Play size={15} />
+                      </span>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        className="stationCard__shuffle"
+                        aria-label={`Shuffle ${mix.title}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const order = shuffled(mix.tracks);
+                          if (order.length > 0) onPlay(order[0]!, order);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const order = shuffled(mix.tracks);
+                            if (order.length > 0) onPlay(order[0]!, order);
+                          }
+                        }}
+                      >
+                        <Shuffle size={15} />
+                      </span>
+                    </span>
+                  )}
                 </span>
                 <span className="mixCardTitle">{mix.title}</span>
                 <span className="mixCardBlurb">{mix.blurb}</span>
