@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.94
+
+- Your download server now says when it is not taking on new music for you, and why, instead of leaving the curator's requests unanswered in silence
+- A download server that has not been told where your library is says so, rather than showing nothing at all
+
 ## 0.4.93
 
 - Local AI can be asked to do things now: find new music, rebuild your mixes, top up Music Date, or run a full pass

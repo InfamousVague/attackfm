@@ -241,22 +241,39 @@ pub fn spawn(state: Arc<AppState>) {
 /// puts its files in the outbox like any other, they go up, and the hub matches
 /// them to the pull when they land.
 async fn take_a_want(state: &Arc<AppState>, hub: &Hub) -> bool {
-    // Nothing to download with, or already busy: leave the want for the next
-    // wave. Claiming is destructive - it takes the row off the hub's offer -
-    // so it must not happen unless this box can act on it now.
+    // Nothing to download with: leave the want. Claiming is destructive - it
+    // takes the row off the hub's offer - so it must not happen unless this box
+    // can act on it now.
     if crate::imports::find_spotiflac().is_none() {
+        note_claim("no downloader on this box");
         return false;
     }
+    /*
+     * Busy means DOWNLOADING, not "has a queued card".
+     *
+     * This read `queued || downloading` and that was a trap with no way out: a
+     * job that is queued and never starts - one left behind by a restart, or
+     * waiting on a slot that never frees - blocked every future claim for the
+     * life of the process. The hub would go on offering into a silence that
+     * nothing in the logs explained. A queued card means the scheduler will get
+     * to it; one more want behind it costs nothing.
+     */
     {
         let jobs = state.imports.jobs.lock().await;
-        if jobs
-            .iter()
-            .any(|j| j.state == "queued" || j.state == "downloading")
-        {
+        if let Some(busy) = jobs.iter().find(|j| j.state == "downloading") {
+            note_claim(&format!("busy downloading {}", busy.title));
+            return false;
+        }
+        // Still polite about depth: a queue this box has not worked through is
+        // not a queue that wants lengthening.
+        let waiting = jobs.iter().filter(|j| j.state == "queued").count();
+        if waiting >= 3 {
+            note_claim(&format!("{waiting} downloads already waiting here"));
             return false;
         }
     }
     let Some(owner) = state.db.first_admin_id() else {
+        note_claim("no admin account on this box to file downloads under");
         return false;
     };
 
@@ -265,11 +282,30 @@ async fn take_a_want(state: &Arc<AppState>, hub: &Hub) -> bool {
         .bearer_auth(&hub.token)
         .send()
         .await;
-    let Ok(reply) = reply else { return false };
+    let reply = match reply {
+        Ok(r) => r,
+        Err(e) => {
+            note_claim(&format!("could not reach {}: {e}", host_of(&hub.url)));
+            return false;
+        }
+    };
     if !reply.status().is_success() {
+        note_claim(&format!(
+            "{} answered {} - {}",
+            host_of(&hub.url),
+            reply.status(),
+            if reply.status() == StatusCode::UNAUTHORIZED {
+                "the sync credential is not valid there any more"
+            } else if reply.status() == StatusCode::NOT_FOUND {
+                "that hub is too old to hand out work"
+            } else {
+                "refused"
+            },
+        ));
         return false;
     }
     let Ok(body) = reply.json::<serde_json::Value>().await else {
+        note_claim("the hub's answer could not be read");
         return false;
     };
     let pull = &body["pull"];
@@ -278,8 +314,10 @@ async fn take_a_want(state: &Arc<AppState>, hub: &Hub) -> bool {
         pull["title"].as_str(),
         pull["artist"].as_str(),
     ) else {
+        note_claim("nothing wanted right now");
         return false;
     };
+    note_claim("");
 
     let pull_id = pull["id"].as_i64().unwrap_or(0);
 
@@ -323,6 +361,36 @@ async fn take_a_want(state: &Arc<AppState>, hub: &Hub) -> bool {
             false
         }
     }
+}
+
+/// Why this box last declined to take work from the hub.
+///
+/// The downloading half of a delegated pull happens HERE, and when it silently
+/// does not happen there is nothing on the hub to explain it - the offers just
+/// sit there. This is the missing sentence, and it is reported through the sync
+/// status so it can be read from the app rather than off a log on a machine
+/// nobody can ssh into. Empty means the last attempt worked.
+static CLAIM_NOTE: std::sync::OnceLock<std::sync::Mutex<String>> = std::sync::OnceLock::new();
+
+fn note_claim(reason: &str) {
+    let slot = CLAIM_NOTE.get_or_init(|| std::sync::Mutex::new(String::new()));
+    if let Ok(mut held) = slot.lock() {
+        // Said once per change, not once per wave: this runs every minute.
+        if *held != reason {
+            if !reason.is_empty() {
+                eprintln!("[peersync] not taking work: {reason}");
+            }
+            *held = reason.to_string();
+        }
+    }
+}
+
+fn claim_note() -> String {
+    CLAIM_NOTE
+        .get_or_init(|| std::sync::Mutex::new(String::new()))
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_default()
 }
 
 /// The pull a claimed job is working for, remembered across a restart.
@@ -848,6 +916,12 @@ pub async fn status(
             "done": counts.done,
             "skipped": counts.skipped,
             "failed": counts.failed,
+        },
+        // Whether this box is taking downloads on the hub's behalf, and why not
+        // when it is not.
+        "claiming": {
+            "canDownload": crate::imports::find_spotiflac().is_some(),
+            "why": claim_note(),
         },
         "stall": state.peersync.snapshot().map(|(reason, since)| json!({
             "reason": reason,
