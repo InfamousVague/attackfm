@@ -122,39 +122,41 @@ async function readTint(url: string): Promise<ArtTint | null> {
 }
 
 /**
- * The pastel band, spelled out as a dark-theme accent ramp. Only the HUE
+ * The tint band, spelled out as a dark-theme accent ramp. Only the HUE
  * varies per album; every lightness and saturation is pinned, which is what
- * keeps the promise: pastel and not too dark, whatever the record. Steps
- * follow the kit's dark-scale shape (1 darkest wash, 9 the solid, 12 near
- * white), with 9 lifted into pastel; `contrast` - the glyph ON the solid -
- * goes dark, because the solid is light.
+ * keeps the promise: light and never murky, whatever the record. First cut
+ * was a true pastel (58% sat, 76% light) and read as washed out on the
+ * sheet, so the band now sits brighter-and-fuller - vivid, but still well
+ * clear of dark. Steps follow the kit's dark-scale shape (1 darkest wash,
+ * 9 the solid, 12 near white); `contrast` - the glyph ON the solid - goes
+ * dark, because the solid stays light.
  */
 function ramp(hue: number): ArtTint {
   const h = hue.toFixed(0);
   const steps: Array<[number, number, number]> = [
-    [1, 30, 10],
-    [2, 28, 12],
-    [3, 30, 16],
-    [4, 32, 19],
-    [5, 34, 22],
-    [6, 36, 26],
-    [7, 40, 33],
-    [8, 45, 42],
-    [9, 58, 76],
-    [10, 60, 80],
-    [11, 68, 80],
-    [12, 70, 92],
+    [1, 40, 10],
+    [2, 38, 12],
+    [3, 40, 16],
+    [4, 42, 20],
+    [5, 45, 24],
+    [6, 48, 28],
+    [7, 55, 36],
+    [8, 62, 46],
+    [9, 78, 64],
+    [10, 80, 68],
+    [11, 85, 72],
+    [12, 75, 90],
   ];
   const vars: ArtTint = {};
   for (const [n, sat, light] of steps) {
     vars[`--glacier-accent-${n}`] = `hsl(${h} ${sat}% ${light}%)`;
   }
-  vars['--glacier-accent-solid'] = `hsl(${h} 58% 76%)`;
-  vars['--glacier-accent-text'] = `hsl(${h} 68% 80%)`;
-  vars['--glacier-accent-contrast'] = `hsl(${h} 30% 13%)`;
-  vars['--glacier-on-accent'] = `hsl(${h} 30% 13%)`;
-  vars['--glacier-accent-soft'] = `hsl(${h} 58% 76% / 0.16)`;
-  vars['--glacier-accent-border'] = `hsl(${h} 45% 55% / 0.5)`;
+  vars['--glacier-accent-solid'] = `hsl(${h} 78% 64%)`;
+  vars['--glacier-accent-text'] = `hsl(${h} 85% 72%)`;
+  vars['--glacier-accent-contrast'] = `hsl(${h} 35% 12%)`;
+  vars['--glacier-on-accent'] = `hsl(${h} 35% 12%)`;
+  vars['--glacier-accent-soft'] = `hsl(${h} 78% 64% / 0.2)`;
+  vars['--glacier-accent-border'] = `hsl(${h} 60% 55% / 0.55)`;
   return vars;
 }
 
