@@ -171,11 +171,43 @@ export const SETTINGS_INDEX: SettingEntry[] = [
     keywords: 'verbose notifications background stems ai downloads started chatty detail',
   },
   {
-    id: 'ai-endpoint',
+    // 'ai-url', not 'ai-endpoint': the anchor is built from the field key
+    // ('url'), and revealSetting fails SILENTLY on a miss - the pane simply
+    // opens at the top and nothing flashes, which reads as search being flaky
+    // rather than as a typo here.
+    id: 'ai-url',
     pane: 'local-ai',
     label: 'Model endpoint',
     description: 'Where the server sends its AI requests - an Ollama or any OpenAI-compatible origin.',
     keywords: 'ai endpoint url ollama model local llm server',
+  },
+  {
+    id: 'ai-do-discover',
+    pane: 'local-ai',
+    label: 'Find me new music',
+    description: 'Ask the server to go looking for artists around what you have been playing.',
+    keywords: 'ai discover find new music harvest recommendations suggestions look',
+  },
+  {
+    id: 'ai-do-mix',
+    pane: 'local-ai',
+    label: 'Make me a new mix',
+    description: 'Rebuild the mixes on your home screen from your recent listening.',
+    keywords: 'ai mix mixes rebuild home shuffle playlist make new',
+  },
+  {
+    id: 'ai-do-dates',
+    pane: 'local-ai',
+    label: 'Top up Music Date',
+    description: 'Look for something you do not own and ask for it, so the deck has more to show.',
+    keywords: 'ai music date dates deck audition top up refresh cards more',
+  },
+  {
+    id: 'ai-do-curate',
+    pane: 'local-ai',
+    label: 'Full curation pass',
+    description: 'Read the library, rebuild the lists and look for more, all in one go.',
+    keywords: 'ai curate pass full run now curator enrich refresh everything',
   },
   {
     id: 'stem-prefetch',

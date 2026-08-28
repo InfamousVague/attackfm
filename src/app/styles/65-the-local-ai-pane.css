@@ -104,6 +104,81 @@
   color: var(--glacier-warning-text, var(--glacier-text-muted));
 }
 
+/* ---- asking for something ------------------------------------------------- */
+
+/*
+ * Two columns on a phone, which is what makes these read as a set of choices
+ * rather than a list of links. auto-fit rather than a fixed count so a wide
+ * split pane lays all four out in a row without a media query.
+ */
+.aiActions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: var(--glacier-space-2);
+}
+
+.aiAction {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-3);
+  text-align: start;
+  border: 1px solid var(--glacier-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-surface);
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.aiAction:hover:not(:disabled),
+.aiAction:focus-visible {
+  border-color: var(--glacier-accent-border);
+  background: var(--glacier-surface-raised, var(--glacier-surface));
+}
+
+.aiAction:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.aiAction__label {
+  font-weight: var(--glacier-font-weight-medium, 500);
+}
+
+.aiAction__patience {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  line-height: 1.4;
+}
+
+/* The card that replaces the grid while a pass is in flight. */
+.aiRun {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3);
+  border: 1px solid var(--glacier-accent-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-accent-soft);
+}
+
+.aiRun__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.aiRun__clock {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-1);
+  flex: none;
+}
+
 /* ---- function statistics -------------------------------------------------- */
 
 .localAi__fnStat {

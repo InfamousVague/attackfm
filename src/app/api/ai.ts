@@ -79,10 +79,21 @@ export interface AiFunction {
   lastOk: boolean | null;
 }
 
+/** The one pass this server is running right now, if any. */
+export interface AiRunning {
+  what: AiRunWhat;
+  label: string;
+  /** Where it has got to, in the reader's words. Rewritten as it moves. */
+  step: string;
+  startedAt: number;
+}
+
 export interface AiReport {
   settings: AiSettings;
   health: AiHealth;
   functions: AiFunction[];
+  /** Null when the box is idle. Present while a pass is in flight. */
+  running: AiRunning | null;
   totals: {
     calls: number;
     failures: number;
@@ -147,7 +158,7 @@ export function probeAi(session: ServerSession): Promise<AiHealth> {
   return request<AiHealth>(session.url, '/api/ai/probe', { method: 'POST', token: session.token, timeoutMs: 20_000 });
 }
 
-export type AiRunWhat = 'curate';
+export type AiRunWhat = 'curate' | 'discover' | 'mix' | 'dates';
 
 /** Manual triggers for things the loops would otherwise wait to do. */
 export function runAi(session: ServerSession, what: AiRunWhat): Promise<{ ok: boolean }> {
