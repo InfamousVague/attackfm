@@ -602,7 +602,9 @@ pub async fn run(
                 let stations = match &profile {
                     Some(prof) => {
                         crate::ai::task_step("building a station for each mood");
-                        crate::programmer::rebuild_now(&st, user, prof)
+                        let n = crate::programmer::rebuild_now(&st, user, prof);
+                        crate::stations::invalidate(&st, user).await;
+                        n
                     }
                     None => 0,
                 };

@@ -213,9 +213,23 @@ pub fn affinity(profile: &MoodProfile, vec: Option<&[f32]>, bpm: Option<f64>) ->
 
 // --- building ---------------------------------------------------------------
 
-/// The stored profile, if fresh enough to use.
+/// How long a stored profile may keep answering after rebuilds stop
+/// producing one. A returning listener's first week back is still theirs;
+/// January's moods steering August is not. The pane's copy says "your last
+/// three weeks", and past this line that would be a lie.
+const EXPIRY_MS: i64 = 45 * 86_400_000;
+
+/// The stored profile, if recent enough to still be true.
+///
+/// `is_stale` decides when to REBUILD (daily); this decides when to stop
+/// BELIEVING. They are different questions: a quiet fortnight should not
+/// blank the Taste page, but rebuild() declining for a month and a half means
+/// the listening this profile describes is gone.
 pub fn load(state: &AppState, user: i64) -> Option<MoodProfile> {
-    let (_, json) = state.db.mood_profile(user)?;
+    let (built_at, json) = state.db.mood_profile(user)?;
+    if crate::db::now_ms() - built_at > EXPIRY_MS {
+        return None;
+    }
     serde_json::from_str(&json).ok()
 }
 

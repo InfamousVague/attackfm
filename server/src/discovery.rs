@@ -41,7 +41,7 @@ use std::time::Duration;
 const LISTEN_BATCH: i64 = 4;
 /// Stop harvesting once this many candidates are waiting - the pool should be
 /// deep enough to choose from, not unbounded.
-const POOL_TARGET: i64 = 180;
+pub(crate) const POOL_TARGET: i64 = 180;
 /// How often to go looking for new candidates.
 const HARVEST_EVERY_MS: i64 = 6 * 60 * 60 * 1000;
 /// Artists of yours to expand from, and how far each expands.

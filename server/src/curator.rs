@@ -1561,6 +1561,9 @@ async fn discovery_cycle(state: &Arc<AppState>) -> bool {
         }
         if crate::programmer::cycle(state, user).await {
             note_cycle(state, "stations", "Rebuilt your stations", "One per mood, new music tucked in");
+            // The DJ shelf derives from the same profile; dropping its cache
+            // here is what keeps one mood from wearing two names for days.
+            crate::stations::invalidate(state, user).await;
             worked = true;
         }
     }

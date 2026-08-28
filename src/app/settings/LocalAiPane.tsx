@@ -28,6 +28,7 @@ import {
   Zap,
 } from '@glacier/icons';
 import { IconTile, PaneSection, SettingRow, SettingsCallout, SettingsEmpty, SubNav } from './kit/settingsKit.tsx';
+import { takePendingReveal } from './settingsShared.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { fetchAiActivity, fetchAiReport, probeAi, runAi, setAiSettings } from '../api/ai.ts';
 import type { AiHealth, AiReport, AiRunWhat, AiSettingsPatch } from '../api/ai.ts';
@@ -230,12 +231,17 @@ export function LocalAiPane() {
    * puts the row in the DOM in time for the timer's querySelector to find it.
    */
   useEffect(() => {
-    const onReveal = (e: Event) => {
-      const id = (e as CustomEvent<{ id: string }>).detail?.id ?? '';
+    const route = (id: string) => {
       if (id.startsWith('ai-do-')) setChunk('ask');
       else if (id === 'ai-taste') setChunk('taste');
       else if (id.startsWith('ai-')) setChunk('model');
     };
+    // The search click that opens this pane fires its event BEFORE the pane
+    // exists - React commits the mount after the handler - so the missed one
+    // is picked up here; the listener covers searches made while it is open.
+    const pending = takePendingReveal();
+    if (pending) route(pending);
+    const onReveal = (e: Event) => route((e as CustomEvent<{ id: string }>).detail?.id ?? '');
     window.addEventListener('afm-reveal-setting', onReveal);
     return () => window.removeEventListener('afm-reveal-setting', onReveal);
   }, []);
@@ -849,7 +855,14 @@ function TastePage({ report }: { report: AiReport }) {
       description="The moods the machine hears in your last three weeks, and what it builds on them."
     >
       <div data-setting="ai-taste">
-        {!mood ? (
+        {report.mood === undefined ? (
+          // The field itself is absent: a hub from before moods existed. Saying
+          // "play more" would be a lie with a wrong fix attached.
+          <Text tone="muted" size="sm">
+            This server does not read moods yet — it needs the current build. The app updates over
+            the air and the server does not.
+          </Text>
+        ) : !mood ? (
           <Text tone="muted" size="sm">
             Not enough recent listening to read a mood yet — a few days of ordinary playing is all
             it takes. The stations and the sharper picks switch on by themselves once there is

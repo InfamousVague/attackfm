@@ -5362,6 +5362,12 @@ impl Db {
             "DELETE FROM discoveries WHERE user_id = ?1 AND ext_id = ?2",
             params![user_id, ext_id],
         );
+        // The lane tag goes with it: a fossil lane row would both leak and
+        // block the candidate from ever being fanned to this listener again.
+        let _ = self.lock().execute(
+            "DELETE FROM discovery_lanes WHERE user_id = ?1 AND ext_id = ?2",
+            params![user_id, ext_id],
+        );
     }
 
     /// How many candidates are waiting, and how many have been listened to.
@@ -5382,6 +5388,18 @@ impl Db {
             params![user_id, ext_id, lane, rank, now_ms()],
         )?;
         Ok(())
+    }
+
+    /// Every ext_id currently in one listener's pool, measured or not.
+    pub fn discovery_ext_ids(&self, user_id: i64) -> std::collections::HashSet<String> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare("SELECT ext_id FROM discoveries WHERE user_id = ?1")
+        else {
+            return Default::default();
+        };
+        stmt.query_map(params![user_id], |r| r.get::<_, String>(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
     }
 
     /// Every lane tag for one listener's pool, ext_id -> (lane, rank).
