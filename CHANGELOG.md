@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.110
+
+- The album colour on the Now Playing screen is bolder now - vivid instead of pastel, still light
+
 ## 0.4.109
 
 - The Now Playing screen dresses itself in the album: the play button, the controls and the seek bar take the cover's own colour, kept pastel and light
