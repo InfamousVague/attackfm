@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.106
+
+- Play and Shuffle live inside a station or mix's own page now, at the top where a playlist has them; the card face is clean again and Add keeps a copy
+
 ## 0.4.105
 
 - Two more stations on the Library shelf, built around the artists you play most: their records as the spine, the library that lives near them, and new music where it leans their way
