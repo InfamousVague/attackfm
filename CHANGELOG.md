@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.103
+
+- Station cards wear play and shuffle on their face now; adding to the queue moved into the held menu
+
 ## 0.4.102
 
 - Your stations have their own shelf on the Library page now, instead of hiding among the mixes
