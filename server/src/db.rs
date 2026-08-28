@@ -694,6 +694,34 @@ CREATE TABLE IF NOT EXISTS discoveries (
 );
 CREATE INDEX IF NOT EXISTS discoveries_score ON discoveries(user_id, score DESC);
 
+-- Which research lane a pool candidate came in through. A sidecar rather than
+-- a column on discoveries, because open() lands new TABLES on a deployed
+-- database and never new columns. Lanes: 'taste' (artists near your plays),
+-- 'scene' (the small-artist engine), 'trending' (the charts), 'fresh' (new
+-- releases people are suddenly playing). Absent rows read as 'taste', which is
+-- what everything harvested before lanes existed was.
+CREATE TABLE IF NOT EXISTS discovery_lanes (
+  user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  ext_id   TEXT NOT NULL,
+  lane     TEXT NOT NULL,
+  -- The lane's own standing for this candidate: chart position or fresh-release
+  -- listen count, normalised 0-1. Popularity in the lane's terms, kept apart
+  -- from the taste score.
+  rank     REAL NOT NULL DEFAULT 0,
+  found_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, ext_id)
+);
+
+-- One listener's mood profile: what they have ACTUALLY been playing lately,
+-- clustered. Rebuilt daily by the programmer; read whole by scoring, the
+-- station builder and the settings pane. A JSON blob like transcripts, for the
+-- same reason - one writer, few readers, never queried by parts.
+CREATE TABLE IF NOT EXISTS mood_profiles (
+  user_id  INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  built_at INTEGER NOT NULL,
+  profile  TEXT NOT NULL
+);
+
 -- The playlists the curator built for one listener, rebuilt in place on its
 -- own schedule. Slug identifies the recipe ("tempo-lane"), so a rebuild
 -- replaces the last one rather than piling up a new list every cycle.
@@ -4953,6 +4981,16 @@ impl Db {
     }
 
     /// Writes one curated list, replacing whatever that recipe built last time.
+    /// Remove one built list - a station whose mood no longer exists must not
+    /// linger with last month's name on it.
+    pub fn delete_curated(&self, user_id: i64, slug: &str) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "DELETE FROM curated WHERE user_id = ?1 AND slug = ?2",
+            params![user_id, slug],
+        )?;
+        Ok(())
+    }
+
     pub fn put_curated(
         &self,
         user_id: i64,
@@ -5327,6 +5365,128 @@ impl Db {
     }
 
     /// How many candidates are waiting, and how many have been listened to.
+    /// Tag a pool candidate with the lane it came in through. Idempotent per
+    /// (user, candidate); a candidate found by two lanes keeps the FIRST - the
+    /// lane is provenance, not a ranking, and "the charts also have it" does
+    /// not change where it was found.
+    pub fn tag_discovery_lane(
+        &self,
+        user_id: i64,
+        ext_id: &str,
+        lane: &str,
+        rank: f64,
+    ) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT OR IGNORE INTO discovery_lanes (user_id, ext_id, lane, rank, found_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![user_id, ext_id, lane, rank, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// Every lane tag for one listener's pool, ext_id -> (lane, rank).
+    pub fn discovery_lanes(&self, user_id: i64) -> std::collections::HashMap<String, (String, f64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) =
+            conn.prepare("SELECT ext_id, lane, rank FROM discovery_lanes WHERE user_id = ?1")
+        else {
+            return Default::default();
+        };
+        stmt.query_map(params![user_id], |r| {
+            Ok((r.get::<_, String>(0)?, (r.get::<_, String>(1)?, r.get::<_, f64>(2)?)))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    /// The listener's own unadopted auditions - the collector's fetches still
+    /// waiting on a listen. These are the "new music" a blended station may
+    /// honestly include: on disk, playable, and adopted by exactly the
+    /// completed listen a station invites.
+    pub fn audition_ids(&self, user_id: i64) -> Vec<i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT id FROM tracks
+             WHERE deleted = 0 AND curator_user_id = ?1 AND COALESCE(curator_promoted, 0) = 0",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id], |r| r.get(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// The controlled mood words for a set of tracks, from the enrichment
+    /// projection. They live in the ai_vibes COLUMN - save_layered_profile
+    /// writes canonical.moods there - which is exactly the sort of fact that
+    /// should be knowable from one place; this is that place.
+    pub fn mood_words_for(&self, ids: &[i64]) -> std::collections::HashMap<i64, Vec<String>> {
+        let mut out = std::collections::HashMap::new();
+        if ids.is_empty() {
+            return out;
+        }
+        let conn = self.lock();
+        let marks = vec!["?"; ids.len()].join(",");
+        let sql = format!(
+            "SELECT track_id, COALESCE(ai_vibes, '') FROM track_features WHERE track_id IN ({marks})"
+        );
+        let Ok(mut stmt) = conn.prepare(&sql) else { return out };
+        let rows = stmt.query_map(rusqlite::params_from_iter(ids.iter()), |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+        });
+        if let Ok(rows) = rows {
+            for row in rows.flatten() {
+                let words: Vec<String> = row
+                    .1
+                    .split(',')
+                    .map(|w| w.trim().to_lowercase())
+                    .filter(|w| !w.is_empty())
+                    .collect();
+                if !words.is_empty() {
+                    out.insert(row.0, words);
+                }
+            }
+        }
+        out
+    }
+
+    /// (artist, title) for a handful of tracks, in the order asked.
+    pub fn titles_for(&self, ids: &[i64]) -> Vec<(String, String)> {
+        let conn = self.lock();
+        let mut out = Vec::new();
+        for id in ids {
+            if let Ok(row) = conn.query_row(
+                "SELECT artist, title FROM tracks WHERE id = ?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            ) {
+                out.push(row);
+            }
+        }
+        out
+    }
+
+    /// The stored mood profile, if one has been built: (built_at, json).
+    pub fn mood_profile(&self, user_id: i64) -> Option<(i64, String)> {
+        self.lock()
+            .query_row(
+                "SELECT built_at, profile FROM mood_profiles WHERE user_id = ?1",
+                params![user_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .ok()
+    }
+
+    pub fn save_mood_profile(&self, user_id: i64, profile: &str) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO mood_profiles (user_id, built_at, profile) VALUES (?1, ?2, ?3)
+             ON CONFLICT(user_id) DO UPDATE SET built_at = excluded.built_at,
+               profile = excluded.profile",
+            params![user_id, now_ms(), profile],
+        )?;
+        Ok(())
+    }
+
     pub fn discovery_counts(&self, user_id: i64) -> (i64, i64) {
         let conn = self.lock();
         let one = |sql: &str| -> i64 {

@@ -96,19 +96,7 @@ impl StationState {
 /// not working. So "can this run" means a URL AND a model, the same rule
 /// `AiClient::new` applies, and the caller falls back to its heuristic exactly
 /// as it does when nothing is configured at all.
-fn ai_url() -> Option<String> {
-    let url = crate::ai::setting("url", "AFM_AI_URL")?;
-    if ai_model().trim().is_empty() {
-        return None;
-    }
-    Some(url)
-}
 
-fn ai_model() -> String {
-    crate::ai::setting("djModel", "AFM_DJ_MODEL")
-        .or_else(|| crate::ai::setting("chatModel", "AFM_AI_MODEL"))
-        .unwrap_or_default()
-}
 
 /// `GET /api/dj/stations` - what the DJ suggests you tune to.
 pub async fn stations(
@@ -149,28 +137,32 @@ pub async fn stations(
     };
 
     if needs_refresh {
-        if let Some(url) = ai_url() {
-            let state2 = Arc::clone(&state);
-            tokio::spawn(async move {
-                let fresh = ai_stations(&state2, user, &url).await;
-                let mut cache = state2.stations.per_user.lock().await;
-                if let Some(entry) = cache.get_mut(&user) {
-                    if let Some(list) = fresh {
-                        if !list.is_empty() {
-                            entry.stations = list;
-                        }
-                    }
-                    entry.built_at = std::time::Instant::now();
-                    entry.refreshing = false;
-                }
-            });
-        } else {
-            let mut cache = state.stations.per_user.lock().await;
+        /*
+         * From the mood profile now, not from a fresh model call.
+         *
+         * ai_stations was a temperature-0.9 chat request with a 120 second
+         * timeout whose entire output was names and vibe phrases - on a box
+         * that generates five tokens a second, a hundred seconds of model time
+         * to invent words for listening the mood engine has already measured
+         * and named. The profile carries better words (its names came from
+         * the model once, at build time) and the truth behind them; deriving
+         * the seed phrases from it costs nothing and cannot time out. The
+         * heuristics remain for a listener with no profile yet.
+         */
+        let state2 = Arc::clone(&state);
+        tokio::spawn(async move {
+            let fresh = mood_stations(&state2, user);
+            let mut cache = state2.stations.per_user.lock().await;
             if let Some(entry) = cache.get_mut(&user) {
-                entry.refreshing = false;
+                if let Some(list) = fresh {
+                    if !list.is_empty() {
+                        entry.stations = list;
+                    }
+                }
                 entry.built_at = std::time::Instant::now();
+                entry.refreshing = false;
             }
-        }
+        });
     }
 
     Ok(Json(json!({ "stations": ready })))
@@ -243,125 +235,46 @@ fn heuristic_stations(state: &Arc<AppState>, user: i64) -> Vec<Station> {
 ///
 /// It writes words and a vibe phrase - never a track list. The DJ chooses the
 /// music from the library it can see, so the worst a bad reply can do here is
-/// name a station badly.
-async fn ai_stations(state: &Arc<AppState>, user: i64, url: &str) -> Option<Vec<Station>> {
-    let since = now_ms() - WINDOW_30D_MS;
-    let top_artists = state.db.top_artists(user, since, 10);
-    if top_artists.is_empty() {
+/// One DJ station per mood cluster, from the stored profile.
+///
+/// The seed stays a free-text vibe phrase - that is the client contract, and
+/// /api/dj embeds whatever it is handed - but the words now come from the
+/// measured clusters: their tags, their tempo, their hour of the day. `name`
+/// carries the profile's model-written mood name.
+fn mood_stations(state: &Arc<AppState>, user: i64) -> Option<Vec<Station>> {
+    let profile = crate::mood::load(state, user)?;
+    if profile.clusters.is_empty() {
         return None;
     }
-    let genres = state.db.top_genres(user, since, 6);
-    let recent: Vec<String> = state
-        .db
-        .recent_plays(user, 20)
-        .into_iter()
-        .filter_map(|id| state.db.track(id))
-        .map(|t| format!("{} — {}", t.artist, t.title))
-        .collect();
-
-    // The rules are explicit because the first version of this prompt was not,
-    // and the model answered with KEXP Seattle, BNN Boston and H2 Radio
-    // Houston - real broadcast stations, which is what "the kind of name a
-    // station would have" means to a model unless you say otherwise. It also
-    // handed back the artist list as the vibe phrase, which steers the DJ
-    // nowhere it was not already going.
-    let prompt = format!(
-        "You are the private DJ for ONE listener's personal music collection. \
-         This is not broadcast radio.\n\n\
-         Their most-played artists this month: {}.\n\
-         Genres they live in: {}.\n\
-         Recently played: {}.\n\n\
-         Suggest {WANT} STATIONS for them. A station is not a playlist: it never ends, \
-         so name a LANE the music can keep walking down.\n\n\
-         RULES, all mandatory:\n\
-         - NEVER use the name of a real radio station, call letters (KEXP, BBC, WFMU), \
-         a city, or a frequency. These are not broadcast stations. A name that could \
-         appear on a real radio dial is WRONG.\n\
-         - Names are 2-4 evocative words describing the FEELING or the lane, like \
-         \"Bedroom Static\", \"The Slow Hours\", \"Fuzz and Sunlight\".\n\
-         - Blurb: one plain warm line. No exclamation marks.\n\
-         - \"seed\" describes the SOUND to steer by - instruments, texture, energy, \
-         tempo, era. It must NOT be a list of artist names. Good: \"hazy lo-fi soul, \
-         soft falsetto, slow tempo, warm tape\". Bad: \"{}\".\n\
-         - Make the {WANT} genuinely different from each other: not all slow, not all \
-         quiet. Some of this listener's music is loud.\n\n\
-         Answer with STRICT JSON only: \
-         [{{\"name\":\"...\",\"blurb\":\"...\",\"seed\":\"...\"}}]",
-        top_artists
-            .iter()
-            .map(|(a, n)| format!("{a} ({n} plays)"))
-            .collect::<Vec<_>>()
-            .join(", "),
-        genres
-            .iter()
-            .map(|(g, _)| g.as_str())
-            .collect::<Vec<_>>()
-            .join(", "),
-        recent.join("; "),
-        // The bad example is built from THEIR artists, so the instruction
-        // names the exact mistake it is trying to prevent.
-        top_artists.iter().take(3).map(|(a, _)| a.as_str()).collect::<Vec<_>>().join(", "),
-    );
-
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(120))
-        .build()
-        .ok()?;
-    let reply = client
-        .post(format!("{}/v1/chat/completions", url.trim_end_matches('/')))
-        .json(&json!({
-            "model": ai_model(),
-            "messages": [{ "role": "user", "content": prompt }],
-            "temperature": 0.9,
-        }))
-        .send()
-        .await
-        .ok()?;
-    let body: Value = reply.json().await.ok()?;
-    let content = body.pointer("/choices/0/message/content")?.as_str()?;
-
-    // Models decorate JSON with prose and fences; carve the array out, bounds
-    // checked - a truncated reply can put the last ']' before the first '[',
-    // and an unguarded slice would panic inside this spawned task and leave
-    // the refreshing latch stuck forever.
-    let start = content.find('[')?;
-    let end = content.rfind(']')?;
-    if end <= start {
-        return None;
-    }
-    let parsed: Vec<Value> = serde_json::from_str(content.get(start..=end)?).ok()?;
-
     let mut out = Vec::new();
-    for (i, s) in parsed.into_iter().take(WANT).enumerate() {
-        let name = s.get("name").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-        let blurb = s.get("blurb").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-        let seed = s.get("seed").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-        // A station with no name or nothing to steer by is not a station.
-        if name.is_empty() || seed.is_empty() {
-            continue;
-        }
-        // Defence in depth against the failure the prompt describes: if the
-        // model regresses to naming real stations, those are dropped and the
-        // listener keeps the heuristics rather than being offered a dial full
-        // of somebody else's radio.
-        if reads_as_broadcast(&name) {
-            continue;
-        }
-        // A seed that just repeats the artists steers the DJ nowhere it was
-        // not already going - the whole point of a vibe phrase is to describe
-        // a SOUND.
-        let lower_seed = seed.to_lowercase();
-        if top_artists
-            .iter()
-            .any(|(a, _)| a.len() > 3 && lower_seed.contains(&a.to_lowercase()))
-        {
-            continue;
-        }
+    for (i, c) in profile.clusters.iter().take(WANT).enumerate() {
+        let pace = match c.bpm {
+            Some(b) if b < 95.0 => "slow and unhurried",
+            Some(b) if b < 125.0 => "mid-tempo",
+            Some(_) => "quick and driving",
+            None => "any pace",
+        };
+        let feel = match c.energy {
+            Some(e) if e < 0.35 => "soft-edged",
+            Some(e) if e < 0.6 => "steady",
+            Some(_) => "loud and alive",
+            None => "",
+        };
+        let mut seed = format!("{} — {}, {}", c.tags.join(", "), pace, feel);
+        seed.truncate(160);
+        // The mood names are model-written (once, at profile build). The old
+        // guard against a model inventing "KEXP Seattle" stays enforced here -
+        // a name that reads as broadcast falls back to the cluster's own tags.
+        let name = if reads_as_broadcast(&c.name) {
+            super_plain(&c.tags)
+        } else {
+            c.name.clone()
+        };
         out.push(Station {
-            id: format!("ai-{i}"),
-            name: name.chars().take(48).collect(),
-            blurb: blurb.chars().take(120).collect(),
-            seed: seed.chars().take(160).collect(),
+            id: format!("mood-{}", i + 1),
+            name,
+            blurb: c.blurb.clone(),
+            seed,
             flavor: "ai".into(),
         });
     }
@@ -369,6 +282,15 @@ async fn ai_stations(state: &Arc<AppState>, user: i64, url: &str) -> Option<Vec<
 }
 
 /// Whether a name reads as a real broadcast station rather than a lane.
+/// The tags, title-cased, when the model's name cannot be used.
+fn super_plain(tags: &[String]) -> String {
+    let mut s = tags.first().cloned().unwrap_or_else(|| "Your mood".into());
+    if let Some(c) = s.get_mut(0..1) {
+        c.make_ascii_uppercase();
+    }
+    s
+}
+
 fn reads_as_broadcast(name: &str) -> bool {
     let lower = name.to_lowercase();
     // Call letters: four capitals starting K or W is the American pattern the
