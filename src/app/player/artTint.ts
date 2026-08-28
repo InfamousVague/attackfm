@@ -128,8 +128,9 @@ async function readTint(url: string): Promise<ArtTint | null> {
  * was a true pastel (58% sat, 76% light) and read as washed out on the
  * sheet, so the band now sits brighter-and-fuller - vivid, but still well
  * clear of dark. Steps follow the kit's dark-scale shape (1 darkest wash,
- * 9 the solid, 12 near white); `contrast` - the glyph ON the solid - goes
- * dark, because the solid stays light.
+ * 9 the solid, 12 near white); `contrast` - the glyph ON the solid - is a
+ * near-white whisper of the same hue, by request: light glyphs on the vivid
+ * circle, the way the rest of the sheet's ink runs light.
  */
 function ramp(hue: number): ArtTint {
   const h = hue.toFixed(0);
@@ -153,8 +154,8 @@ function ramp(hue: number): ArtTint {
   }
   vars['--glacier-accent-solid'] = `hsl(${h} 78% 64%)`;
   vars['--glacier-accent-text'] = `hsl(${h} 85% 72%)`;
-  vars['--glacier-accent-contrast'] = `hsl(${h} 35% 12%)`;
-  vars['--glacier-on-accent'] = `hsl(${h} 35% 12%)`;
+  vars['--glacier-accent-contrast'] = `hsl(${h} 45% 97%)`;
+  vars['--glacier-on-accent'] = `hsl(${h} 45% 97%)`;
   vars['--glacier-accent-soft'] = `hsl(${h} 78% 64% / 0.2)`;
   vars['--glacier-accent-border'] = `hsl(${h} 60% 55% / 0.55)`;
   return vars;
