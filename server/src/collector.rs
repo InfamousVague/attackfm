@@ -116,6 +116,10 @@ const UNANSWERED_MS: i64 = 24 * 60 * 60 * 1000;
 /// week is not a queue, it is a backlog nobody asked for. At the cap the
 /// collector simply stops raising new ones until the peer catches up.
 const OUTSTANDING_OFFERS: usize = 20;
+/// How many wants one cycle may raise when this box is only offering them.
+/// Bounded so a first run against a deep pool does not put the whole cap up in
+/// one go and leave the peer nothing to pace itself against.
+const OFFERS_PER_CYCLE: usize = 5;
 
 /// Walks pulls whose import is still out and settles the finished ones:
 /// a done job stamps its tracks as auditions, a failed or vanished one is
@@ -228,6 +232,7 @@ async fn pull_cycle(state: &Arc<AppState>) {
     }
 
     let since = now_ms() - WINDOW_30D_MS;
+    let mut raised = 0usize;
     for user in state.db.listeners_since(since) {
         let (enabled, exploration) = state.db.collector_state(user);
         if !enabled {
@@ -248,9 +253,26 @@ async fn pull_cycle(state: &Arc<AppState>) {
         let Some(candidate) = pick else { continue };
 
         if buy(state, user, &candidate).await {
-            // One job at a time across all listeners: the next cycle serves
-            // the next person. Fairness by rotation, not by parallelism.
-            return;
+            /*
+             * One at a time across all listeners - unless this box is only
+             * OFFERING, in which case one per listener.
+             *
+             * The rotation exists because a buy occupies the download queue,
+             * and one listener should not hold it while everyone else waits.
+             * When the downloading happens on a peer that rule is measuring
+             * something this box no longer does: an offer costs a row, the
+             * peer takes them one at a time at its own pace, and the twenty
+             * outstanding cap is the real backstop. Rotating per listener
+             * keeps the fairness and drops the throttle - with five listeners
+             * that is five wants a cycle instead of one.
+             */
+            if crate::imports::imports_mode() != crate::imports::ImportsMode::CollectorOnly {
+                return;
+            }
+            raised += 1;
+            if raised >= OFFERS_PER_CYCLE {
+                return;
+            }
         }
     }
 }
