@@ -15,6 +15,14 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.101
+
+- The curator reads the mood of your last three weeks — real clusters of your own listening, each with its tempo, energy, and the songs it is made of — and shows them on the Local AI pane's new Taste page
+- Radio stations, one per mood, on your Library page beside the daily mixes: your heavy rotation in that mood, deeper cuts, and new music tucked in every few songs
+- It researches what is popping off — the global chart, and brand-new releases people are suddenly playing — filtered through your own taste, leading the New music shelf as "Popping off right now" and "Fresh this week"
+- Local AI settings split into four pages: Ask, Taste, Model, Activity
+- Fixed: recency in taste had never worked — a listen from six months ago counted exactly like last night's
+
 ## 0.4.100
 
 - The curator's playlists can finally contain the music the collector went and downloaded for you. Every list drew only on tracks you already owned, because an unadopted download is flagged "nobody has adopted this yet" and that flag never said WHO it was fetched for, so all of them were refused. Your own downloads now count as yours; another listener's still do not
