@@ -16,13 +16,17 @@
   z-index: 60;
   display: flex;
   flex-direction: column;
-  /* Solid, square, flat. Search opens from a bar ON the page now, so it is
-     the page's own destination rather than a pane floating over it - and a
-     surface you type into wants the same ground everything else reads on,
-     not a translucent one competing with whatever is behind it.
-     Deliberately no backdrop-filter, no shoulders, no hairline, no shadow:
-     every one of those said "card", and this is not a card. */
+  /* A DRAWER now, by request - the square-flat page it briefly was said
+     nothing about the pull-down that dismisses it, and a gesture nothing
+     advertises is a gesture nobody finds. Rounded shoulders and a hairline
+     say "sheet"; the handle below says "pull me". Still solid ground (a
+     surface you type into must not compete with what is behind it), still
+     no backdrop-filter - the blur lives on the layer behind, where it is
+     cheap. */
   background: var(--glacier-bg);
+  border-start-start-radius: var(--glacier-radius-xl, 1.25rem);
+  border-start-end-radius: var(--glacier-radius-xl, 1.25rem);
+  border-block-start: var(--glacier-hairline) solid var(--glacier-border-subtle);
   animation: summonDrop 0.26s var(--glacier-ease-out);
 }
 
@@ -235,4 +239,28 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* The drawer's handle: the pill every sheet wears, as a real button. Tap
+   closes; the drag that has always worked keeps working - this is the sign,
+   not the mechanism. Generous hit area, tiny visible pill. */
+.searchSummon__handle {
+  flex: none;
+  display: grid;
+  place-items: center;
+  padding-block: var(--glacier-space-2);
+  border: none;
+  background: none;
+  cursor: grab;
+}
+
+.searchSummon__handle > span {
+  inline-size: 2.5rem;
+  block-size: 0.3rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-border);
+}
+
+.searchSummon__handle:active {
+  cursor: grabbing;
 }
