@@ -92,6 +92,12 @@ export interface AiReport {
   settings: AiSettings;
   health: AiHealth;
   functions: AiFunction[];
+  /**
+   * The models the endpoint reports having, for the pickers. Empty when it did
+   * not answer inside its two-second leash - the fields fall back to free text,
+   * which is what they were before.
+   */
+  installed: string[];
   /** Null when the box is idle. Present while a pass is in flight. */
   running: AiRunning | null;
   totals: {

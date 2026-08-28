@@ -74,7 +74,15 @@ export function DeveloperPane() {
   const [quota, setQuota] = useState<{ usage: number; quota: number } | null>(null);
   const alive = useRef(true);
 
-  useEffect(() => () => { alive.current = false; }, []);
+  useEffect(() => {
+    // Set on the way in as well as cleared on the way out - see the note in
+    // LocalAiPane. A ref that is only ever cleared stays cleared across
+    // development's double mount, and every guarded setState is then dropped.
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   const readBundle = useCallback(async () => {
     // NOTE: bundle_state is not a passive read on the native side - it settles
