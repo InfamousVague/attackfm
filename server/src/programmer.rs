@@ -132,17 +132,31 @@ fn build_stations(state: &Arc<AppState>, user: i64, profile: &MoodProfile) -> us
             .map(|(s, f)| (*s, *f))
             .collect();
 
-        let fresh_n = fresh.len().min(FRESH_SHARE);
-        let mut ids = take_spread(anchors, ANCHOR_SHARE + (FRESH_SHARE - fresh_n) / 2);
+        /*
+         * Base shares first, THEN see what fresh really has left. A recent
+         * arrival with two plays sits in both the anchors pool and the fresh
+         * pool; counting it toward fresh before the anchors took it left the
+         * fresh budget spent on tracks fresh could no longer contribute, and
+         * the station shipped short. The unused fresh budget goes to depth,
+         * which always has more.
+         */
+        let mut ids = take_spread(anchors, ANCHOR_SHARE);
         let picked: std::collections::HashSet<i64> = ids.iter().copied().collect();
         let depth: Vec<(f32, &TrackFeatures)> =
             depth.into_iter().filter(|(_, f)| !picked.contains(&f.track_id)).collect();
-        ids.extend(take_spread(depth, DEPTH_SHARE + (FRESH_SHARE - fresh_n) - (FRESH_SHARE - fresh_n) / 2));
+        ids.extend(take_spread(depth.clone(), DEPTH_SHARE));
         let picked: std::collections::HashSet<i64> = ids.iter().copied().collect();
         let fresh: Vec<(f32, &TrackFeatures)> =
             fresh.into_iter().filter(|(_, f)| !picked.contains(&f.track_id)).collect();
-        let fresh_ids = take_spread(fresh, fresh_n);
+        let fresh_ids = take_spread(fresh, FRESH_SHARE);
         let fresh_count = fresh_ids.len();
+        if fresh_count < FRESH_SHARE {
+            let more: Vec<(f32, &TrackFeatures)> = depth
+                .into_iter()
+                .filter(|(_, f)| !picked.contains(&f.track_id))
+                .collect();
+            ids.extend(take_spread(more, FRESH_SHARE - fresh_count));
+        }
 
         // The new music is threaded through, not stacked at the end: every
         // fourth-ish slot from the third onward, the way a station actually

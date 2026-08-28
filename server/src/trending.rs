@@ -71,13 +71,16 @@ pub async fn cycle(state: &Arc<AppState>) {
     if now - last < FETCH_EVERY_MS {
         return;
     }
-    let _ = state.db.meta_set(meta_key(), &now.to_string());
 
     let mut found = chart_tracks().await;
     found.extend(fresh_releases().await);
     if found.is_empty() {
+        // The clock is NOT stamped: a network that was down for a minute must
+        // not silence the lane for twelve hours. The next cycle tries again,
+        // and the fetchers' own politeness bounds the retry cost.
         return;
     }
+    let _ = state.db.meta_set(meta_key(), &now.to_string());
 
     let since = now - 30 * 86_400_000;
     for user in state.db.listeners_since(since) {
@@ -88,11 +91,32 @@ pub async fn cycle(state: &Arc<AppState>) {
 /// Give one listener the sweep's findings, minus what they own, have pooled,
 /// or have already judged in Music Date.
 fn fan_to(state: &Arc<AppState>, user: i64, found: &[Found]) {
+    /*
+     * The same pool ceiling the taste walk honours. Without it this lane
+     * filled the pool past POOL_TARGET, and since harvest() refuses to run at
+     * the target and nothing prunes discoveries by age, the taste walk would
+     * have been gated off for good - the trending lane quietly starving the
+     * lane that actually knows the listener.
+     */
+    let (pool, _) = state.db.discovery_counts(user);
+    let mut room = (crate::discovery::POOL_TARGET - pool).max(0) as usize;
+    if room == 0 {
+        return;
+    }
     let owned = crate::discovery::owned_keys(state);
     let lanes = state.db.discovery_lanes(user);
+    // Rows the OTHER lanes already pooled. add_discovery is an upsert whose
+    // conflict arm overwrites seed and popularity - fanning over a taste-walk
+    // find would blank the "because you play X" it was harvested for and
+    // replace its fame number with a chart rank. A candidate two lanes found
+    // stays the first lane's.
+    let pooled = state.db.discovery_ext_ids(user);
     let mut chart_added = 0usize;
     let mut fresh_added = 0usize;
     for f in found {
+        if room == 0 {
+            break;
+        }
         let cap = if f.lane == "trending" { CHART_PER_USER } else { FRESH_PER_USER };
         let count = if f.lane == "trending" { &mut chart_added } else { &mut fresh_added };
         if *count >= cap {
@@ -101,7 +125,7 @@ fn fan_to(state: &Arc<AppState>, user: i64, found: &[Found]) {
         if owned.contains(&crate::discovery::key_of(&f.artist, &f.title)) {
             continue;
         }
-        if lanes.contains_key(&f.ext_id) {
+        if lanes.contains_key(&f.ext_id) || pooled.contains(&f.ext_id) {
             continue;
         }
         /*
@@ -119,6 +143,7 @@ fn fan_to(state: &Arc<AppState>, user: i64, found: &[Found]) {
         {
             let _ = state.db.tag_discovery_lane(user, &f.ext_id, f.lane, f.rank);
             *count += 1;
+            room -= 1;
         }
     }
 }
@@ -220,10 +245,24 @@ async fn resolve_release_track(c: &reqwest::Client, artist: &str, release: &str)
         .ok()?;
     let body = resp.json::<Value>().await.ok()?;
     let rows = body.get("data").and_then(Value::as_array)?;
+    /*
+     * The artist must actually MATCH, folded - no falling back to whatever
+     * Deezer ranked first. The taste walk learned this the hard way: its
+     * artist resolver has a strict mode with no first-hit fallback because a
+     * near-name (a tribute act, a remixer, a same-named nobody) resolves
+     * cleanly and poisons the pool with a wrong record wearing the right
+     * label. A fresh release Deezer cannot answer for by name just stays a
+     * headline instead of a candidate.
+     */
+    let wanted = crate::discovery::artist_key_public(artist);
     let t = rows
         .iter()
-        .find(|t| t.get("preview").and_then(Value::as_str).is_some_and(|p| !p.is_empty()))
-        .or_else(|| rows.first())?;
+        .filter(|t| {
+            t.pointer("/artist/name")
+                .and_then(Value::as_str)
+                .is_some_and(|n| crate::discovery::artist_key_public(n) == wanted)
+        })
+        .find(|t| t.get("preview").and_then(Value::as_str).is_some_and(|p| !p.is_empty()))?;
     let id = t.get("id").and_then(Value::as_u64)?;
     Some(Found {
         ext_id: format!("deezer:track:{id}"),

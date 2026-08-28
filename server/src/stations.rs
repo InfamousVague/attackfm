@@ -174,6 +174,14 @@ pub async fn stations(
 /// history - their decade, their genre, their heaviest artist, the songs they
 /// have never played - and being obvious is the point: they are always right,
 /// always available, and a model that fails leaves the listener with these
+/// Forget one listener's cached DJ stations - called when the mood profile
+/// they were derived from has just been rebuilt, so the two surfaces cannot
+/// spend days wearing different names for the same mood. The next request
+/// re-derives from the fresh profile; the TTL stays as the ordinary clock.
+pub async fn invalidate(state: &Arc<AppState>, user: i64) {
+    state.stations.per_user.lock().await.remove(&user);
+}
+
 /// rather than an empty shelf.
 fn heuristic_stations(state: &Arc<AppState>, user: i64) -> Vec<Station> {
     let since = now_ms() - WINDOW_30D_MS;
@@ -260,8 +268,15 @@ fn mood_stations(state: &Arc<AppState>, user: i64) -> Option<Vec<Station>> {
             Some(_) => "loud and alive",
             None => "",
         };
-        let mut seed = format!("{} — {}, {}", c.tags.join(", "), pace, feel);
-        seed.truncate(160);
+        // By CHARS, never String::truncate - a byte index mid-character
+        // panics, this string always carries a three-byte em dash, and a panic
+        // here dies inside the refresh task that is the only thing that clears
+        // the `refreshing` latch. The code this replaced knew that; the lesson
+        // must not be lost with it.
+        let seed: String = format!("{} — {}, {}", c.tags.join(", "), pace, feel)
+            .chars()
+            .take(160)
+            .collect();
         // The mood names are model-written (once, at profile build). The old
         // guard against a model inventing "KEXP Seattle" stays enforced here -
         // a name that reads as broadcast falls back to the cluster's own tags.
@@ -278,7 +293,29 @@ fn mood_stations(state: &Arc<AppState>, user: i64) -> Option<Vec<Station>> {
             flavor: "ai".into(),
         });
     }
-    (!out.is_empty()).then_some(out)
+    if out.is_empty() {
+        return None;
+    }
+    /*
+     * A young profile has one or two moods, and one station is not a shelf.
+     * The heuristics that served before the profile existed still know things
+     * the profile does not - the heavy artist, the unplayed pile - so they
+     * fill the remaining slots rather than being wholly replaced, skipping any
+     * that duplicate a mood station's name.
+     */
+    if out.len() < WANT {
+        let names: std::collections::HashSet<String> =
+            out.iter().map(|s| s.name.to_lowercase()).collect();
+        for h in heuristic_stations(state, user) {
+            if out.len() >= WANT {
+                break;
+            }
+            if !names.contains(&h.name.to_lowercase()) {
+                out.push(h);
+            }
+        }
+    }
+    Some(out)
 }
 
 /// Whether a name reads as a real broadcast station rather than a lane.

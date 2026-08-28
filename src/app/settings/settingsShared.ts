@@ -269,6 +269,15 @@ export function settingsMatching(query: string): SettingEntry[] {
  * effort by design: a row that is gated off (signed out, wrong platform)
  * simply is not found, and the pane opening at its top is the honest answer.
  */
+let pendingReveal: string | null = null;
+
+/** The reveal a just-mounting pane should honour, taken at most once. */
+export function takePendingReveal(): string | null {
+  const id = pendingReveal;
+  pendingReveal = null;
+  return id;
+}
+
 export function revealSetting(id: string): void {
   /*
    * Said out loud BEFORE the scroll timer, for panes made of sub-pages.
@@ -281,6 +290,15 @@ export function revealSetting(id: string): void {
    * always would have. Panes without pages hear nothing and lose nothing.
    */
   window.dispatchEvent(new CustomEvent('afm-reveal-setting', { detail: { id } }));
+  // And remembered, because the event usually fires into an empty room: the
+  // click that calls this is the same click that MOUNTS the pane, and React
+  // commits the mount after the handler returns - a listener that does not
+  // exist yet hears nothing. A pane with pages asks for this on mount instead;
+  // the event covers the already-open case (searching within the open pane).
+  pendingReveal = id;
+  window.setTimeout(() => {
+    pendingReveal = null;
+  }, 2000);
   window.setTimeout(() => {
     const el = document.querySelector<HTMLElement>(`[data-setting="${id}"]`);
     if (!el) return;
