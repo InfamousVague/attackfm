@@ -1,3 +1,5 @@
+import { useRef } from 'react';
+import { fireFelt } from '../core/haptics.ts';
 import { IconButton, Popover, Slider, volumeGain } from '@glacier/react';
 import { Volume2, VolumeX } from '@glacier/icons';
 import { usePlayback } from './playback.tsx';
@@ -12,6 +14,29 @@ const DETENT_RADIUS = 6;
  * extra drag to pass rather than being easy to skim over. */
 export function snapToUnity(value: number): number {
   return Math.abs(value - VOLUME_UNITY) <= DETENT_RADIUS ? VOLUME_UNITY : value;
+}
+
+/**
+ * The detent, in the hand.
+ *
+ * `snapToUnity` is a real magnetic notch - the thumb clamps to unity and takes
+ * a deliberate extra drag to leave - and it was drawn on screen and felt
+ * nowhere. A fader that catches is a physical claim, and the finger is the
+ * sense that should be told.
+ *
+ * Returns the snapped value and fires on the EDGE only. Inside the band every
+ * event returns unity, so an unguarded fire buzzes continuously while a thumb
+ * rests there: the machine-gun this whole pass is trying to avoid.
+ */
+function useUnityDetent() {
+  const snapped = useRef(false);
+  return (next: number) => {
+    const value = snapToUnity(next);
+    const inside = value === VOLUME_UNITY && next !== VOLUME_UNITY;
+    if (inside && !snapped.current) fireFelt('light');
+    snapped.current = inside;
+    return value;
+  };
 }
 
 // dB below unity comes from the kit's own calibration; above it the boost is a
@@ -49,6 +74,7 @@ interface VolumeControlProps {
  * geometry changes.
  */
 export function VolumeRow({ value, muted, onValueChange, onMutedChange }: VolumeControlProps) {
+  const detent = useUnityDetent();
   // With boost off the fader simply ends at unity: no boost region, no detent
   // line to mark where it would have started.
   const { volumeBoost } = usePlayback();
@@ -77,7 +103,7 @@ export function VolumeRow({ value, muted, onValueChange, onMutedChange }: Volume
           aria-valuetext={readoutFor(shown, muted)}
           onValueChange={(next) => {
             if (muted) onMutedChange(false);
-            onValueChange(snapToUnity(next));
+            onValueChange(detent(next));
           }}
         />
       </div>
@@ -87,6 +113,7 @@ export function VolumeRow({ value, muted, onValueChange, onMutedChange }: Volume
 }
 
 export function VolumeControl({ value, muted, onValueChange, onMutedChange }: VolumeControlProps) {
+  const detent = useUnityDetent();
   const { volumeBoost } = usePlayback();
   const shown = muted ? 0 : value;
   return (
@@ -124,7 +151,7 @@ export function VolumeControl({ value, muted, onValueChange, onMutedChange }: Vo
               // something, so the mute lifts and the level it lands on is the
               // one that plays.
               if (muted) onMutedChange(false);
-              onValueChange(snapToUnity(next));
+              onValueChange(detent(next));
             }}
           />
         </div>

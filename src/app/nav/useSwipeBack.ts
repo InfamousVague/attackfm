@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { fireNativeHaptic } from '../core/haptics.ts';
+import { fireFelt } from '../core/haptics.ts';
 
 /**
  * The phone's back gesture: a drag in from the left edge walks the nav stack
@@ -23,6 +23,9 @@ const EDGE = 24;
  *  all - a few points of slop so a vertical scroll that begins near the edge is
  *  not read as a back. */
 const COMMIT = 72;
+/** How far back the finger must come before the latch lets go again. Chosen by
+ *  feel rather than measured; it only has to be wider than a thumb's tremor. */
+const RELEASE_BACK = 12;
 const SLOP = 12;
 
 export function useSwipeBack(
@@ -103,7 +106,18 @@ export function useSwipeBack(
       // Ours now: stop the page scrolling under the drag.
       e.preventDefault();
       const pulled = move(e.clientX);
-      const past = pulled >= COMMIT;
+      /*
+       * A latch with a band, not a line.
+       *
+       * `pulled >= COMMIT` alone means a thumb held at the threshold crosses it
+       * on the jitter of its own contact patch - and every crossing fired the
+       * motor, so hesitating at the commit point machine-gunned. It engages at
+       * COMMIT and does not release until the finger has come back RELEASE_BACK
+       * px, which is what a physical latch does and what stops one hand tremor
+       * being an event. The fire is floored too, since the band alone would
+       * still allow a fast wobble across the whole width.
+       */
+      const past = committed ? pulled >= COMMIT - RELEASE_BACK : pulled >= COMMIT;
       if (past !== committed) {
         committed = past;
         // Firmer going in than backing out: the latch engages, the release
@@ -111,7 +125,7 @@ export function useSwipeBack(
         // click has a visible referent.
         if (past) el.setAttribute('data-swipe-committed', '');
         else el.removeAttribute('data-swipe-committed');
-        fireNativeHaptic(past ? 'light' : 'selection');
+        fireFelt(past ? 'light' : 'selection', e.timeStamp);
       }
       paint(pulled, false);
     };

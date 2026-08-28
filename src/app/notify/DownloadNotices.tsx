@@ -107,6 +107,10 @@ export function DownloadNotices() {
     // One buzz per tick that landed anything, not one per song: an album
     // finishing is one arrival to a person, however many rows it wrote.
     if (plan.landed > 0) hapticRef.current('success');
+    // And the outcome you would NOT otherwise notice. The asymmetry was the
+    // wrong way round: arrivals announced themselves and failures did not,
+    // when a failure is the one that needs you to do something.
+    if (plan.notices.some((n) => n.kind === 'failed')) hapticRef.current('error');
   }, [jobs]);
 
   return null;

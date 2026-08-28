@@ -1,4 +1,5 @@
-import { Button, Input, Modal, ScrollArea, Text } from '@glacier/react';
+import { Button, Input, Modal, ScrollArea, Text, useToast } from '@glacier/react';
+import { fireNativeHaptic } from '../core/haptics.ts';
 import { Check, ListMusic, Plus, Search } from '@glacier/icons';
 import { useMemo, useState } from 'react';
 import { useLibrary } from '../library/library.tsx';
@@ -17,6 +18,7 @@ import type { Track } from '../core/tauri.ts';
  */
 
 function AddToPlaylistPanel({ list, onDone }: { list: Track[]; onDone: () => void }) {
+  const { toast } = useToast();
   // One song is still the common case; the plural paths only change the words
   // and the row semantics ("in this list" means ALL of them are).
   const track = list[0]!;
@@ -130,12 +132,31 @@ function AddToPlaylistPanel({ list, onDone }: { list: Track[]; onDone: () => voi
                   // pressed state IS "the song is in this list".
                   aria-pressed={has}
                   onClick={() => {
+                    /*
+                     * One tap adds, a second tap on the same row REMOVES - and
+                     * the only thing separating the two outcomes was a check
+                     * mark. It follows the rule toggleFavoriteFelt already set
+                     * for the heart: the motor celebrates the way IN, and the
+                     * way out gets words and a way back instead. Fired once
+                     * per tap, outside the loop, so a multi-select add is one
+                     * event and not one per song.
+                     */
                     if (has) {
                       for (const p of paths) removeTrack(playlist.id, p);
+                      toast({
+                        message: `Removed from “${playlist.name}”`,
+                        action: {
+                          label: 'Undo',
+                          onPress: () => {
+                            for (const p of paths) addTrack(playlist.id, p);
+                          },
+                        },
+                      });
                     } else {
                       for (const p of paths) {
                         if (!playlist.paths.includes(p)) addTrack(playlist.id, p);
                       }
+                      fireNativeHaptic('success');
                     }
                   }}
                 >

@@ -1,30 +1,29 @@
 /* The heart answering the hand: the success triplet in the thumb was firing
    against a static glyph - the app's loudest haptic over its flattest visual.
-   Now the glyph pops (standalone `scale`, so nothing else it wears is
-   disturbed) and a ring blooms off it, on the way IN only - the same rule the
-   haptic itself follows: keeping a song is the celebration, letting one go is
-   not. */
-@keyframes heartPop {
-  0% { scale: 1; }
-  30% { scale: 1.28; }
-  55% { scale: 0.92; }
-  100% { scale: 1; }
-}
+   Now the glyph pops and a ring blooms off it, on the way IN only - the same
+   rule the haptic itself follows: keeping a song is the celebration, letting
+   one go is not.
 
+   The POP moved to Player.tsx (popHeart, WAAPI) when it turned out a keyframe
+   keyed to [aria-pressed='true'] is a state and not an event, and replayed on
+   every open of an already-liked song. The ring stayed: it paints a
+   pseudo-element, which is the one thing WAAPI cannot reach. */
 @keyframes heartRing {
   from { scale: 0.4; opacity: 0.5; }
   to { scale: 1.7; opacity: 0; }
 }
 
-.npScreen__heart[aria-pressed='true'] svg {
-  animation: heartPop 0.36s var(--glacier-ease-out);
-}
+/* The pop itself is fired from Player.tsx now (popHeart, via WAAPI) because it
+   is an EVENT and this was a state: keyed to [aria-pressed='true'], it replayed
+   every time Now Playing opened on an already-liked song. Only the ring is left
+   here, since a pseudo-element is the one thing WAAPI cannot animate - and it
+   waits for the class the fire adds rather than for the state. */
 
 .npScreen__heart {
   position: relative;
 }
 
-.npScreen__heart[aria-pressed='true']::after {
+.npScreen__heart.is-popping::after {
   content: '';
   position: absolute;
   inset: 15%;
@@ -345,3 +344,19 @@
   transform: scale(0.94);
 }
 
+/*
+ * Reduced motion.
+ *
+ * This file carried five animation declarations and no guard at all, which is
+ * the quiet kind of accessibility regression: nothing looks wrong until it is
+ * on somebody who asked for stillness. The imperative fires in Player.tsx test
+ * REDUCED_MOTION_QUERY themselves; these are the declarative half.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .npScreen__heart.is-popping::after,
+  .npScreen,
+  .npCanvas,
+  .npScreen__art {
+    animation: none;
+  }
+}

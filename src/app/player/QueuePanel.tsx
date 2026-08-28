@@ -7,6 +7,7 @@
 //! anything already played has left the line. Reordering resolves through the
 //! kit's SortableList, which carries both drag and full keyboard reordering.
 
+import { fireNativeHaptic } from '../core/haptics.ts';
 import { ArtistLink } from '../ux/ArtistLink.tsx';
 import { djReason } from '../booth/djReasons.ts';
 import { trackIdFromPath } from '../server.ts';
@@ -296,7 +297,16 @@ export function QueuePanel({
           ) : (
             <SortableList
               items={rows}
-              onReorder={reorder}
+              /* The drop, felt. Pick up, carry, drop is the most physically
+                 direct gesture in the app and it answered at none of the three
+                 moments. onReorder fires only on release and only when the
+                 index actually changed, so this is the cheap, honest half:
+                 "it landed". Per-slot ticks during the carry would need a kit
+                 change and a floor, and are not worth that yet. */
+              onReorder={(next) => {
+                fireNativeHaptic('medium');
+                reorder(next);
+              }}
               getLabel={(r) => r.track.title}
               className="queueSortable"
               renderItem={(r) => (

@@ -1,4 +1,5 @@
-import { ContextMenu, MenuItem } from '@glacier/react';
+import { ContextMenu, MenuItem, useToast } from '@glacier/react';
+import { fireNativeHaptic } from '../core/haptics.ts';
 import {
   UserRound,
   ArrowDownToLine,
@@ -57,6 +58,16 @@ export function TrackMenu({
   className?: string;
 }) {
   const { playNext, addToQueue, inJam } = useQueueControls();
+  const { toast } = useToast();
+  /** One queue verb, said once. See the note at the menu items. */
+  const queued = (t: Track, next: boolean) => {
+    if (next) playNext(t);
+    else addToQueue(t);
+    fireNativeHaptic('light');
+    toast({
+      message: `“${t.title}” ${inJam ? 'sent to the jam' : next ? 'playing next' : 'added to the queue'}`,
+    });
+  };
   // The station: a song is the most natural thing to start one from, and the
   // menu is where "do something with this song" already lives.
   const radio = useRadioOptional();
@@ -165,7 +176,14 @@ export function TrackMenu({
         className={className}
         content={
           <>
-            <MenuItem icon={<ListStart size={15} />} onSelect={() => playNext(track)}>
+            {/* Both queue verbs answer now. They were the highest-frequency
+                "you did something and the app said nothing" in the app: the
+                menu closed and the song went into a list you cannot see from
+                where you are standing. The BULK version of the same verb has
+                always toasted ("3 songs added to the queue", songSelection),
+                so one song getting silence while three got a sentence was an
+                oversight rather than a decision. Same wording, singular. */}
+            <MenuItem icon={<ListStart size={15} />} onSelect={() => queued(track, true)}>
               Play next
             </MenuItem>
             {/* The artist's page, from any held song anywhere. Most cards
@@ -178,7 +196,7 @@ export function TrackMenu({
                 Go to artist
               </MenuItem>
             )}
-            <MenuItem icon={<ListEnd size={15} />} onSelect={() => addToQueue(track)}>
+            <MenuItem icon={<ListEnd size={15} />} onSelect={() => queued(track, false)}>
               {inJam ? 'Add to jam queue' : 'Add to queue'}
             </MenuItem>
             {/* One item, not a submenu of every list: the panel it opens can
