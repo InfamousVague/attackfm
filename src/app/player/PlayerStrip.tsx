@@ -1,3 +1,4 @@
+import { fireFelt } from '../core/haptics.ts';
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { ArtistLink } from '../ux/ArtistLink.tsx';
 import { useRef, useState, type Dispatch, type MutableRefObject, type ReactNode, type SetStateAction } from 'react';
@@ -207,13 +208,16 @@ export function PlayerStrip({
   const barValue = barWin
     ? Math.min(barWin.len, Math.max(0, dispPosition - barWin.start))
     : dispPosition;
+  // The same two moments the full sheet's scrubber has - see the note there.
   const barScrub = (to: number) => {
+    if (!scrubWin.current) fireFelt('medium');
     if (chapterWin && !scrubWin.current) scrubWin.current = chapterWin;
     onScrubDisp(to + (scrubWin.current?.start ?? 0));
   };
   const barSeekEnd = (to: number) => {
     const start = scrubWin.current?.start ?? chapterWin?.start ?? 0;
     scrubWin.current = null;
+    fireFelt('light');
     onSeekEndDisp(chapters.length > 0 ? to + start : to);
   };
   // The overflow popover opens on a chooser - Equalizer, Lyrics, Volume -

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSystemBack } from './systemBack.ts';
 import { makeRatchet } from '../ux/ratchet.ts';
+import { fireNativeHaptic } from '../core/haptics.ts';
 
 /**
  * The pull from the top: a refresh, felt on the way down.
@@ -176,6 +177,13 @@ export function useSearchSummon(host: HTMLElement | null, onRefresh?: () => Prom
       void (async () => {
         try {
           await refreshRef.current?.();
+          // The gesture's ending. Its run-up is the best-built in the app -
+          // a full ratchet into `arrive('medium')` - and then the thing you
+          // pulled FOR completed in silence. In the try, not the finally: the
+          // catch below states the policy that a failed refresh is not worth
+          // an interruption, and a success buzz on a failure would say the
+          // opposite.
+          fireNativeHaptic('success');
         } catch {
           // A refresh that fails is not worth an interruption: the library
           // that is already on screen stays, and the next pull tries again.

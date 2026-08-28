@@ -13,9 +13,15 @@ import { isMobile } from './platform.ts';
  * which is also simply BETTER than any web path: real intensity tiers, the
  * selection tick, the success/warning/error triplets.
  *
- * The native impl exists only on a phone build. On desktop the provider gets
- * no impl and stays a visual-bus-only no-op; on the web it keeps the kit's
- * fallbacks (which give Android Chrome its motor).
+ * WHERE THIS ACTUALLY FIRES, which is narrower than it used to say here. The
+ * native impl exists only on a phone build, so macOS, Windows and Linux have
+ * no motor at all. And the PLAIN WEB build has none either: AppProviders mounts
+ * the kit's HapticsProvider with `enabled={false}` - deliberately, because its
+ * delegated tick fires on pointerdown and buzzed all the way down a flicked
+ * shelf - and that same flag gates the kit's own web engine, which nothing
+ * re-enables. This file used to claim the web "keeps the kit's fallbacks (which
+ * give Android Chrome its motor)". It does not. Android gets its motor from the
+ * Tauri build, like iOS; a browser tab gets nothing.
  */
 
 /** In a Tauri build on a phone: the only place the plugin exists. */
@@ -62,9 +68,40 @@ export function fireNativeHaptic(kind: HapticKind = 'light'): void {
     });
 }
 
-/** The impl handed to HapticsProvider, or undefined to keep the kit's web
- *  engine (Android web) / no-op (desktop). */
+/** The impl handed to HapticsProvider, or undefined on the platforms with no
+ *  motor. See the note above: the kit's own web engine is off. */
 export const hapticsImpl = nativeHaptics ? fireNativeHaptic : undefined;
+
+/**
+ * Whether this device has a motor at all.
+ *
+ * Exported because a switch for something that cannot happen is worse than no
+ * switch: the haptics preference SYNCS between devices, so a desktop user
+ * turning off a control that does nothing where they are sitting silences
+ * their phone. Settings asks this before drawing the row.
+ */
+export function hapticsAvailable(): boolean {
+  return nativeHaptics;
+}
+
+/**
+ * The same floor `ratchet.ts` keeps, for the paths that are not ratchets.
+ *
+ * `fireNativeHaptic` has no rate limit of its own, which is right for a
+ * one-shot: a tap should answer immediately, every time. It is wrong for
+ * anything a finger can repeat faster than the engine can speak - a mashed
+ * skip button, a scrub crossing chapter marks pixels apart on a long book, a
+ * thumb resting inside a detent band. The Taptic Engine queues a flood and
+ * then plays it back as mush, so those callers come through here instead.
+ */
+const FLOOR_MS = 28;
+let lastFireAt = 0;
+
+export function fireFelt(kind: HapticKind = 'light', at = performance.now()): void {
+  if (at - lastFireAt < FLOOR_MS) return;
+  lastFireAt = at;
+  fireNativeHaptic(kind);
+}
 
 /**
  * The tier below the kit's seven kinds: UIImpactFeedbackGenerator's `soft`

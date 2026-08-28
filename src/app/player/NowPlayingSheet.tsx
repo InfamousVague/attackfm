@@ -14,7 +14,7 @@ import { setPendingSeek } from './pendingSeek.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { installSheetDismiss } from './playerDismiss.ts';
-import { fireNativeHaptic } from '../core/haptics.ts';
+import { fireFelt, fireNativeHaptic } from '../core/haptics.ts';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { createPortal } from 'react-dom';
 import { ContextMenu, CounterBadge, IconButton, MenuItem, Popover, SeekBar, useBeat, useLiveLevels } from '@glacier/react';
@@ -1096,13 +1096,28 @@ export function NowPlayingSheet({
   const barValue = barWin
     ? Math.min(barWin.len, Math.max(0, position - barWin.start))
     : position;
+  /*
+   * The scrubber's two moments.
+   *
+   * This was the most-dragged control in the app with no haptics at all, while
+   * the disc beside it on the same screen has full detent physics - two ways to
+   * move through one song, one with feel and one without. A seek is a real
+   * discontinuity: it flushes the analyser, clears the scratch tape, aborts the
+   * crossfade. It should not land in silence.
+   *
+   * Only two fires, not one per input event: the music coming loose under the
+   * finger, and the set-down. Weights borrowed from the disc's own grab and
+   * release so the two controls agree about what they mean.
+   */
   const barScrub = (to: number) => {
+    if (!scrubWin.current) fireFelt('medium');
     if (chapterWin && !scrubWin.current) scrubWin.current = chapterWin;
     onScrub(to + (scrubWin.current?.start ?? 0));
   };
   const barSeekEnd = (to: number) => {
     const start = scrubWin.current?.start ?? chapterWin?.start ?? 0;
     scrubWin.current = null;
+    fireFelt('light');
     commitSeek(chapters.length > 0 ? to + start : to);
   };
 

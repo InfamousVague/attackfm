@@ -15,6 +15,19 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.98
+
+- The scrubber answers your thumb now: the music coming loose as you take hold, and the set-down when you let go
+- Back and next tell you what they did — a lighter tick for moving inside a track, a firmer one for leaving it
+- "Play next" and "Add to queue" confirm, instead of the menu closing in silence
+- The volume fader's snap at 100% can be felt, not just seen
+- Music Date's cards tighten under your thumb as they near the point of no return, rather than going quiet until it is decided
+- A download that fails now buzzes, the way one that arrives always has
+- Fixed: the heart replayed its whole celebration every time you opened a song you had already liked
+- Fixed: hesitating at the edge of a swipe-back stuttered the motor
+- Fixed: dragging the search page down to dismiss it did not move
+- The haptics switch is hidden on desktop, where it did nothing locally but silenced your phone
+
 ## 0.4.97
 
 - The chapters and bookmarks popover no longer runs off the top of the screen on a phone — it fits the space it has and scrolls

@@ -68,13 +68,19 @@
 }
 
 
-/* The page being left, softening as the search page arrives over it. Keyed to
-   travel, not the damped slide, so the blur builds across the whole gesture:
-   nothing at rest, full depth around the commit point. */
-:root[data-pulling] /* The open search page leaves the way the Now Playing sheet does: dragged
-   down as a card. The gesture module writes --np-drag on the element and
+/* The open search page leaves the way the Now Playing sheet does: dragged down
+   as a card. The gesture module writes --np-drag on the element and
    data-dragging while a finger is down; short of the mark the transition
-   springs it home. */
+   springs it home.
+
+   A `:root[data-pulling]` used to sit here, ahead of this selector, with a
+   comment between the two - and a comment does not end a selector, it is
+   whitespace. So these two lines parsed as ONE rule,
+   `:root[data-pulling] .searchSummon`, and the page only moved while the other
+   gesture was running: dragging this one down to dismiss it fired its haptics
+   against a page that stayed put. The fragment was itself the remains of a
+   blur rule whose declarations had already been deleted, so it went with its
+   own orphaned comment rather than being given something to do. */
 .searchSummon {
   translate: 0 var(--np-drag, 0px);
   transition: translate 0.24s var(--glacier-ease-out);

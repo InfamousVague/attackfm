@@ -33,6 +33,7 @@ import {
 import { CardFace } from './DateCardFace.tsx';
 import { loadAudioUrl, type Track } from '../core/tauri.ts';
 import { fireNativeHaptic } from '../core/haptics.ts';
+import { makeRatchet } from '../ux/ratchet.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
 
 /** How many verdicts can be walked back. */
@@ -587,6 +588,7 @@ export function DatePage() {
 
   const [drag, setDrag] = useState<{ dx: number; dy: number } | null>(null);
   const origin = useRef<{ x: number; y: number; id: number } | null>(null);
+  const ratchet = useRef(makeRatchet());
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!current) return;
@@ -594,18 +596,33 @@ export function DatePage() {
     // not double as a swipe.
     if (e.target instanceof Element && e.target.closest('.dateCard__wave, button')) return;
     e.currentTarget.setPointerCapture(e.pointerId);
+    ratchet.current.reset();
     origin.current = { x: e.clientX, y: e.clientY, id: e.pointerId };
   };
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const o = origin.current;
     if (!o || o.id !== e.pointerId) return;
-    setDrag({ dx: e.clientX - o.x, dy: e.clientY - o.y });
+    const dx = e.clientX - o.x;
+    /*
+     * The run-up, not just the arrival.
+     *
+     * The most gestural surface in the app had the crudest model: silence for
+     * the whole drag, then one buzz once the verdict was already decided. The
+     * ratchet is the app's own primitive for exactly this - notches that
+     * tighten as the threshold nears, floored so a fast flick cannot mush -
+     * and it is what pull-to-refresh already uses. Now the card tells the
+     * thumb how close it is BEFORE it commits, which is the only moment that
+     * information is worth anything.
+     */
+    ratchet.current.feel(Math.abs(dx), 0, VERDICT_PX, e.timeStamp);
+    setDrag({ dx, dy: e.clientY - o.y });
   };
   const onPointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
     const o = origin.current;
     if (!o || o.id !== e.pointerId || !current) return;
     origin.current = null;
     const dx = e.clientX - o.x;
+    ratchet.current.reset();
     if (dx > VERDICT_PX) verdict(current, 'right');
     else if (dx < -VERDICT_PX) verdict(current, 'left');
     else setDrag(null);

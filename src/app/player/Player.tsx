@@ -23,7 +23,7 @@ import { recordDiag } from '../diag/diagLog.ts';
 import { loadAudioSource, loadAudioUrl, reactivateAudioSession, systemOutputVolume, type Track } from '../core/tauri.ts';
 import { isPendingPath } from './pendingPlay.tsx';
 import { isRemotePath } from '../server.ts';
-import { fireNativeHaptic } from '../core/haptics.ts';
+import { fireFelt, fireNativeHaptic } from '../core/haptics.ts';
 import { loadScrubTape } from './scrubTape.ts';
 import { useConnect } from './playbackSync.tsx';
 import { castLoad, castMediaFor, castPause, castPlay, castSeek, useCastSnapshot } from './cast.ts';
@@ -274,7 +274,10 @@ export function Player({
   const toggleFavoriteFelt = () => {
     if (!track) return;
     const path = track.path;
-    if (!favorite) fireNativeHaptic('success');
+    if (!favorite) {
+      fireNativeHaptic('success');
+      popHeart();
+    }
     toggleFavorite(path);
     if (favorite) {
       toast({
@@ -607,6 +610,32 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         ],
         { duration: 380, easing: 'ease-out' },
       );
+    }
+  };
+
+  /**
+   * The heart's pop and ring, fired at the MOMENT of liking.
+   *
+   * Both used to hang off `.npScreen__heart[aria-pressed='true']` in CSS - a
+   * state, not an event - so they replayed every single time Now Playing opened
+   * on a song that was already liked. A celebration for something you did last
+   * week, every time you glanced at the screen.
+   *
+   * WAAPI for the same reason joltTransport above uses it: re-triggering needs
+   * no class bookkeeping. And the same reduced-motion guard, which that CSS
+   * never had.
+   */
+  const popHeart = () => {
+    if (window.matchMedia?.(REDUCED_MOTION_QUERY).matches) return;
+    for (const el of document.querySelectorAll('.npScreen__heart')) {
+      el.querySelector('svg')?.animate(
+        [{ scale: '1' }, { scale: '1.28' }, { scale: '0.94' }, { scale: '1' }],
+        { duration: 360, easing: 'cubic-bezier(.2,.8,.2,1)' },
+      );
+      // The ring is a pseudo-element in CSS and WAAPI cannot reach one, so it
+      // rides a class the animation itself takes back off.
+      el.classList.add('is-popping');
+      window.setTimeout(() => el.classList.remove('is-popping'), 460);
     }
   };
 
@@ -2602,6 +2631,8 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   const seekChapter = (dir: 1 | -1) => {
     engaged.current = true;
     abortCrossfade();
+    // A chapter IS the book's track, so it speaks with the same weight as one.
+    fireFelt('medium');
     const i = currentChapter();
     if (dir === -1) {
       // Back near a chapter's top means the previous chapter; deeper in means
@@ -2622,6 +2653,19 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     engaged.current = true;
     // A skip is a decision about now; a blend toward some other track is not.
     abortCrossfade();
+    /*
+     * Leaving a track is heavier than moving inside one.
+     *
+     * Back is three actions behind one glyph - a chapter on a book, the top of
+     * this track past three seconds, the previous track under it - and all
+     * three used to answer with the identical `selection` tick the app-wide tap
+     * handler gives a nav tab. The three-second rule is real, invisible, and
+     * the hand could not tell which side of it the press landed. Now it can:
+     * `light` for a move within, `medium` for a departure.
+     *
+     * Floored, because skip is the one control people mash.
+     */
+    fireFelt('medium');
     advance(1, true);
   };
   const skipBack = () => {
@@ -2635,9 +2679,11 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     // Early in a track, back means the previous one; later it means the top
     // of this one - the convention every player shares.
     if (audio && deckTime(audio) > 3) {
+      fireFelt('light');
       rewind();
       return;
     }
+    fireFelt('medium');
     advance(-1, true);
   };
 

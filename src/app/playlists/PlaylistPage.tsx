@@ -26,6 +26,7 @@ import {
   Trash2,
   X,
 } from '@glacier/icons';
+import { fireNativeHaptic } from '../core/haptics.ts';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useRefreshNonce } from '../nav/pageRefresh.tsx';
 import { useLibrary } from '../library/library.tsx';
@@ -522,7 +523,11 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
             className="playlistRows"
             items={rows}
             getLabel={(row) => row.track.title}
-            onReorder={(next) => reorder(playlist.id, next.map((r) => r.id))}
+            /* See QueuePanel: the drop is the moment worth answering. */
+            onReorder={(next) => {
+              fireNativeHaptic('medium');
+              reorder(playlist.id, next.map((r) => r.id));
+            }}
             renderItem={(row) => (
               /* Every song wears the same menu wherever it is drawn: queue it,
                  file it, keep it on this device. A song is the same song in a
@@ -671,6 +676,10 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
             <Button
               variant="solid"
               onClick={() => {
+                // The largest weight mismatch in the app: deleting a list felt
+                // exactly like switching tabs. `warning` is what
+                // UINotificationFeedbackGenerator has for precisely this.
+                fireNativeHaptic('warning');
                 setConfirmDelete(false);
                 remove(playlist.id);
                 onGone();

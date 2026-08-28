@@ -9,7 +9,7 @@ import { THEME_COPY } from './settingsShared.ts';
 import { CardStyleSection } from './CardStylePicker.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { usePlayback } from '../player/playback.tsx';
-import { fireNativeHaptic, setHapticsPref, useHapticsPref } from '../core/haptics.ts';
+import { fireNativeHaptic, hapticsAvailable, setHapticsPref, useHapticsPref } from '../core/haptics.ts';
 import {
   motionGesturesEnabled,
   nowPlayingVideoEnabled,
@@ -209,6 +209,16 @@ export function Appearance() {
       </PaneSection>
 
       <PaneSection title="Feel">
+        {/*
+          * Only where there is a motor.
+          *
+          * This preference SYNCS (prefsSync SYNCED_KEYS), and desktop has no
+          * haptics at all - so an unconditional row let somebody turn off a
+          * switch that did nothing on the machine in front of them and silence
+          * every tick on their phone. Its sibling below has always asked
+          * motionAvailable() the same question.
+          */}
+        {hapticsAvailable() && (
         <SettingRow
           id="haptics"
           label="Haptics"
@@ -226,6 +236,7 @@ export function Appearance() {
             />
           }
         />
+        )}
         {motionAvailable() && (
           <SettingRow
             id="shake-flick"
