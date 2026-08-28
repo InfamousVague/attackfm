@@ -1548,6 +1548,7 @@ async fn discovery_cycle(state: &Arc<AppState>) -> bool {
     let since = now_ms() - WINDOW_30D_MS;
     let mut worked = false;
     for user in state.db.listeners_since(since) {
+        crate::discovery::prune_pool(state, user);
         crate::discovery::harvest(state, user).await;
         crate::discovery::prune_owned(state, user);
         if crate::discovery::listen_cycle(state, user).await {

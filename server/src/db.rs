@@ -5390,6 +5390,24 @@ impl Db {
         Ok(())
     }
 
+    /// The measured pool rows beyond the keep-limit, worst score first - what
+    /// the pruner deletes. Unmeasured rows are never offered up: they are the
+    /// queue the listener already paid harvest calls for, and they leave by
+    /// being measured, not by being crowded out.
+    pub fn discovery_overflow(&self, user_id: i64, keep: i64) -> Vec<String> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT ext_id FROM discoveries
+             WHERE user_id = ?1 AND checked_at > 0
+             ORDER BY score DESC LIMIT -1 OFFSET ?2",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, keep], |r| r.get(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
     /// Every ext_id currently in one listener's pool, measured or not.
     pub fn discovery_ext_ids(&self, user_id: i64) -> std::collections::HashSet<String> {
         let conn = self.lock();

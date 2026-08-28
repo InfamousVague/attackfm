@@ -81,7 +81,9 @@ fn build_stations(state: &Arc<AppState>, user: i64, profile: &MoodProfile) -> us
         state.db.audition_ids(user).into_iter().collect();
     let arrivals: std::collections::HashSet<i64> = state
         .db
-        .recent_track_ids(crate::db::now_ms() - ARRIVAL_WINDOW_MS, 400)
+        // The peer session widened this to scope auditions per caller - passing
+        // the user keeps another listener's unadopted fetches out of "recent".
+        .recent_track_ids(crate::db::now_ms() - ARRIVAL_WINDOW_MS, 400, user)
         .into_iter()
         .collect();
 

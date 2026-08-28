@@ -287,3 +287,13 @@
   flex-wrap: wrap;
   gap: var(--glacier-space-1);
 }
+
+/* The Taste page's own padding: .setk__card has none (its usual SettingRow
+   children bring theirs) and clips at the rounded corners, so bare content
+   needs a lining or the share bar's ends get shaved off. */
+.aiTaste {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-4);
+}

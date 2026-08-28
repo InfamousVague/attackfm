@@ -42,6 +42,20 @@ const LISTEN_BATCH: i64 = 4;
 /// Stop harvesting once this many candidates are waiting - the pool should be
 /// deep enough to choose from, not unbounded.
 pub(crate) const POOL_TARGET: i64 = 180;
+/// How many MEASURED candidates a pool keeps. Above this the worst-scored are
+/// dropped - they are re-derivable, they are by definition the least likely to
+/// ever surface, and a pool that only grows eventually walls out every lane:
+/// this listener's sat at 635 rows, which silenced the trending lane entirely
+/// and had gated the taste walk off for weeks.
+pub(crate) const POOL_KEEP: i64 = 200;
+
+/// Bound the pool. forget_discovery per row rather than one DELETE, so the
+/// lane sidecar goes with each candidate.
+pub fn prune_pool(state: &Arc<AppState>, user: i64) {
+    for ext_id in state.db.discovery_overflow(user, POOL_KEEP) {
+        state.db.forget_discovery(user, &ext_id);
+    }
+}
 /// How often to go looking for new candidates.
 const HARVEST_EVERY_MS: i64 = 6 * 60 * 60 * 1000;
 /// Artists of yours to expand from, and how far each expands.

@@ -42,6 +42,8 @@ const GAP: Duration = Duration::from_millis(700);
 /// scoring then has to dig the taste walk's finds back out of.
 const CHART_PER_USER: usize = 25;
 const FRESH_PER_USER: usize = 15;
+/// The lane's own space above the taste walk's pool target.
+const TREND_RESERVE: i64 = 60;
 
 fn meta_key() -> &'static str {
     "trending.fetched_at"
@@ -98,8 +100,17 @@ fn fan_to(state: &Arc<AppState>, user: i64, found: &[Found]) {
      * have been gated off for good - the trending lane quietly starving the
      * lane that actually knows the listener.
      */
+    /*
+     * The ceiling is the taste walk's target PLUS a reserve, not the target
+     * itself. The first version used the bare target and starved the exact
+     * listener this lane exists for: an established pool sits at or above the
+     * target permanently (harvest stops there, and the pruner keeps it near
+     * POOL_KEEP), so "room below the target" was zero forever. The reserve is
+     * this lane's own space above the walk's line; the pruner bounds the total.
+     */
     let (pool, _) = state.db.discovery_counts(user);
-    let mut room = (crate::discovery::POOL_TARGET - pool).max(0) as usize;
+    let ceiling = crate::discovery::POOL_TARGET + TREND_RESERVE;
+    let mut room = (ceiling - pool).max(0) as usize;
     if room == 0 {
         return;
     }

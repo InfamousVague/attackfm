@@ -99,6 +99,7 @@ export function HomePage({
     fresh,
     mixes,
     curated,
+    stations,
     madeForYou,
     jumpBack,
     topArtists,
@@ -270,6 +271,62 @@ export function HomePage({
         ))}
       </Shelf>
       ))}
+
+      {/*
+        * The stations, as their own shelf. They live in the same curated table
+        * as the mixes above - that is what makes them playable with no new
+        * contract - but a station is a different promise: a mix is your own
+        * music arranged, a station also plays you things you have never
+        * heard. Folded into the shelf above they were invisible, and with the
+        * Booth behind developer mode and Discover gone, this shelf is the one
+        * place a person meets them. Same card, same held verbs.
+        */}
+      {showCurator && !skelCurator && stations.length > 0 && (
+        <Shelf title="Your stations" count={stations.length}>
+          {stations.map((mix) => (
+            <ContextMenu
+              key={mix.id}
+              {...mixHold}
+              aria-label={`${mix.title} actions`}
+              className="mixCardMenuTarget"
+              content={
+                <>
+                  <MenuItem
+                    icon={<Play size={15} />}
+                    onSelect={() => mix.tracks[0] && onPlay(mix.tracks[0], mix.tracks)}
+                  >
+                    Play
+                  </MenuItem>
+                  <MenuItem
+                    icon={<ListStart size={15} />}
+                    onSelect={() => [...mix.tracks].reverse().forEach((t) => playNext(t))}
+                  >
+                    Play next
+                  </MenuItem>
+                  <MenuItem
+                    icon={<ListEnd size={15} />}
+                    onSelect={() => mix.tracks.forEach((t) => addToQueue(t))}
+                  >
+                    Add to queue
+                  </MenuItem>
+                </>
+              }
+            >
+              <button
+                type="button"
+                className="mixCard"
+                onClick={() => openMix(mix.title, mix.tracks, 'This station came up empty.')}
+              >
+                <span className="mixCardCoverWrap">
+                  <MixCover tracks={mix.tracks} art={mixArt(mix.title, { id: mix.id, curated: true })} />
+                </span>
+                <span className="mixCardTitle">{mix.title}</span>
+                <span className="mixCardBlurb">{mix.blurb}</span>
+              </button>
+            </ContextMenu>
+          ))}
+        </Shelf>
+      )}
 
       {/* While the curator is still reading the library, say so plainly with
           the count - a shelf that is thin because the work is half done should

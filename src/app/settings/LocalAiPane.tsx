@@ -224,6 +224,18 @@ export function LocalAiPane() {
    * and switching between chunks of a pane is navigation.
    */
   const [chunk, setChunk] = useState<'ask' | 'taste' | 'model' | 'activity'>('ask');
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  /*
+   * A page switch starts at the top. The pages share one scroller
+   * (.settingsScreen__pane on the phone, the modal's panel on desktop), and a
+   * scroller keeps its offset when its content is swapped - so arriving on a
+   * short page from deep in a long one landed PAST the content, which read as
+   * scrolling being broken rather than as a preserved offset.
+   */
+  useEffect(() => {
+    rootRef.current?.scrollIntoView({ block: 'start' });
+  }, [chunk]);
 
   /*
    * Settings search can land on a row that lives on a non-default page.
@@ -439,7 +451,7 @@ export function LocalAiPane() {
   const shown = pages[page] ?? [];
 
   return (
-    <div className="prefsBody localAiPane">
+    <div className="prefsBody localAiPane" ref={rootRef}>
       <SubNav
         value={chunk}
         onValueChange={(id) => setChunk(id as typeof chunk)}
@@ -854,7 +866,14 @@ function TastePage({ report }: { report: AiReport }) {
       title="Your listening, read back"
       description="The moods the machine hears in your last three weeks, and what it builds on them."
     >
-      <div data-setting="ai-taste">
+      {/*
+        * .aiTaste, because .setk__card carries NO padding of its own - the
+        * rows every other section fills it with bring theirs - and clips at
+        * its rounded corners. Bare content laid straight in sat flush against
+        * the card edge, and the share bar's rounded ends were shaved off by
+        * the corner radius.
+        */}
+      <div className="aiTaste" data-setting="ai-taste">
         {report.mood === undefined ? (
           // The field itself is absent: a hub from before moods existed. Saying
           // "play more" would be a lie with a wrong fix attached.
