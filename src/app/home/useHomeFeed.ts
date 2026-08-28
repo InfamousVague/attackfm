@@ -124,7 +124,7 @@ export function useHomeFeed(
   // separate from the home feed's mixes: those are built when the page asks,
   // these are built by a process that has been reading this listener's history
   // and the library's tempos and lyrics in the background since boot.
-  const curated: ResolvedMix[] = (curator?.lists ?? [])
+  const allCurated: ResolvedMix[] = (curator?.lists ?? [])
     .map((l) => ({
       id: `curated-${l.slug}`,
       title: l.name,
@@ -133,6 +133,20 @@ export function useHomeFeed(
       tracks: resolve(l.trackIds),
     }))
     .filter((l) => l.tracks.length >= 4);
+
+  /*
+   * Stations are their own shelf, not more cards in the mix pile.
+   *
+   * The programmer writes them into the same curated table as everything else
+   * (that is what makes them playable with no new contract), but a station is
+   * a different PROMISE from a mix: a mix is your own music arranged, a
+   * station is a place that also plays you things you have never heard. Mixed
+   * into "Made from your library" they were invisible - and the Booth page
+   * that once showed station-shaped things is behind developer mode, so the
+   * Library shelf is the only place a person actually meets them.
+   */
+  const stations = allCurated.filter((l) => l.id.startsWith('curated-station-'));
+  const curated = allCurated.filter((l) => !l.id.startsWith('curated-station-'));
 
   // One shelf, not two. "From your curator" and "Made for you" were two rails
   // of identical cards that differed only in WHICH PROCESS built them - a
@@ -196,6 +210,7 @@ export function useHomeFeed(
     fresh,
     mixes,
     curated,
+    stations,
     madeForYou,
     jumpBack,
     topArtists,
