@@ -24,6 +24,8 @@ import { loadAudioSource, loadAudioUrl, reactivateAudioSession, systemOutputVolu
 import { isPendingPath } from './pendingPlay.tsx';
 import { isRemotePath } from '../server.ts';
 import { fireFelt, fireNativeHaptic } from '../core/haptics.ts';
+import { noteMediaSilent, serverSeemsDown } from '../api/reachability.ts';
+import { isHeld } from '../downloads/offline.ts';
 import { loadScrubTape } from './scrubTape.ts';
 import { useConnect } from './playbackSync.tsx';
 import { castLoad, castMediaFor, castPause, castPlay, castSeek, useCastSnapshot } from './cast.ts';
@@ -570,6 +572,9 @@ export function Player({
   };
   /** Reloads spent on THIS track, reset whenever the listener moves. */
   const resumeCount = useRef(0);
+  /** Offline auto-skips since the last successful start - the bound that stops
+   *  an all-uncached queue spinning laps in airplane mode. */
+  const offlineSkips = useRef(0);
   /** Bumped per reload so a re-resolved URL is never byte-identical: an
    *  unchanged src is a no-op through React, and the stalled connection's
    *  partial may itself be what is poisoned. */
@@ -663,10 +668,31 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
     const current = liveRef.current.track;
     if (!audio || !current || remoteOnlyRef.current) return;
     if (resumeCount.current >= MAX_RELOADS_PER_TRACK) {
-      // Out of attempts: stop claiming to play - and say so in the hand.
-      // (Foreground only: iOS parks the Taptic Engine for backgrounded
-      // apps, so a pocketed stop stays silent. The lock screen's frozen
-      // play state is that case's messenger.)
+      /*
+       * Out of attempts. If the server is gone and something FURTHER DOWN the
+       * queue is on this device, go to it instead of stopping: one uncached
+       * song must not wedge a queue full of cached ones in airplane mode.
+       * Bounded by the queue's own length so an all-uncached queue stops after
+       * one lap instead of spinning; the counter resets whenever a track
+       * actually starts.
+       */
+      if (serverSeemsDown() && offlineSkips.current < liveRef.current.queue.length) {
+        const upcoming = liveRef.current.queue;
+        const at = upcoming.findIndex((t) => t.path === current.path);
+        const next = upcoming.slice(at + 1).find((t) => isHeld(t.path));
+        if (next && liveRef.current.onTrackChange) {
+          offlineSkips.current += 1;
+          resumeCount.current = 0;
+          // The same door a normal skip goes through - the load effect does
+          // the rest, and its local-first resolution is the whole point.
+          liveRef.current.onTrackChange(next);
+          return;
+        }
+      }
+      // Stop claiming to play - and say so in the hand. (Foreground only:
+      // iOS parks the Taptic Engine for backgrounded apps, so a pocketed
+      // stop stays silent. The lock screen's frozen play state is that
+      // case's messenger.)
       fireNativeHaptic('warning');
       joltTransport();
       pendingPlay.current = false;
@@ -1483,6 +1509,13 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         // stops for good once the ladder runs out.
         const renewable =
           networkish || (remote && code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED);
+        // A dead stream is the server not answering, and the player is often
+        // the FIRST thing to touch the network after connectivity goes. Count
+        // it, so the down-flag - the thing that unlocks the vault for tracks
+        // the effects rack would otherwise route to the server - learns from
+        // the very failure the listener is watching instead of waiting for
+        // unrelated JSON calls to time out.
+        if (networkish && remote) noteMediaSilent();
         if (renewable && remote && resumeCount.current < MAX_RELOADS_PER_TRACK) {
           // Re-mint the stream token before the retry resolves its URL. Cheap
           // insurance: it is latched to once a minute inside the provider, and
@@ -1516,6 +1549,8 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
         noteStall();
       };
       const onPlaying = () => {
+        // Sound is actually coming out: the offline skip budget refills.
+        offlineSkips.current = 0;
         if (!isActive()) return;
         noteFlowing();
       };

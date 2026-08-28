@@ -41,15 +41,30 @@ export function onOfflineChange(fn: () => void): () => void {
 }
 
 
-/** Read the folder once at boot; every later answer comes from the map. */
+/**
+ * Read the folder at boot; every later answer comes from the map.
+ *
+ * The latch closes on SUCCESS, not on the attempt. It used to close before
+ * the call and swallow the failure (tauriCall answers null for every invoke
+ * error, by design), which meant one IPC hiccup at boot left the map empty
+ * for the whole run - fifteen gigabytes of cached music on disk and the app
+ * unable to see any of it, no log, no retry, nothing plays. Exactly the
+ * airplane-mode shape. Three attempts with widening gaps cover a plugin that
+ * was not ready in the first second of boot.
+ */
 export async function hydrateOffline(): Promise<void> {
   if (hydrated) return;
-  hydrated = true;
-  const list = await tauriCall<OfflineEntry[]>('offline_list');
-  if (list) {
-    held = new Map(list.map((e) => [e.key, e.path]));
-    announce();
+  for (const delay of [0, 1500, 5000]) {
+    if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+    const list = await tauriCall<OfflineEntry[]>('offline_list');
+    if (list) {
+      hydrated = true;
+      held = new Map(list.map((e) => [e.key, e.path]));
+      announce();
+      return;
+    }
   }
+  // Give up for now, but not forever: a later explicit call may land.
 }
 
 /** Everything held, for the Settings pane. */
