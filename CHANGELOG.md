@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.108
+
+- Search leads the nav bar now, first seat on the left
+- The search drawer wears the nav bar's glass instead of solid black - the page behind washes through
+
 ## 0.4.107
 
 - Search has its seat back in the bar, beside Library
