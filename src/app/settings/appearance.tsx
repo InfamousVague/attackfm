@@ -9,6 +9,12 @@ export interface Appearance {
   accent: string;
   density: DensityMode;
   /**
+   * Whether the Now Playing screen (and the rooms it opens) re-dress the
+   * accent in the current album's own colour. On is the shipped behaviour;
+   * off keeps the chosen accent everywhere, always.
+   */
+  dynamicAccent: boolean;
+  /**
    * How large the whole interface draws, as a multiple of normal. Applied to
    * the root font size, which is the one knob that moves everything at once:
    * the app is built in rem throughout - the spacing scale, the radii, the type
@@ -67,6 +73,7 @@ const DEFAULT_APPEARANCE: Appearance = {
   theme: 'dark',
   accent: DEFAULT_ACCENT,
   density: 'comfortable',
+  dynamicAccent: true,
   scale: 1,
 };
 
@@ -89,6 +96,8 @@ function readStored(): Appearance {
       theme: isThemePreference(parsed.theme) ? parsed.theme : DEFAULT_APPEARANCE.theme,
       accent: typeof parsed.accent === 'string' ? parsed.accent : DEFAULT_APPEARANCE.accent,
       density: (parsed.density as DensityMode) ?? DEFAULT_APPEARANCE.density,
+      dynamicAccent:
+        typeof parsed.dynamicAccent === 'boolean' ? parsed.dynamicAccent : DEFAULT_APPEARANCE.dynamicAccent,
       // Clamped on the way in as well as the way out: a value edited by hand
       // in storage should not be able to render the app unusable.
       scale: clampScale(parsed.scale),

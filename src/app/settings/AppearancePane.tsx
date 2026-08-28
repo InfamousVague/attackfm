@@ -32,7 +32,7 @@ import { PaneSection, SettingRow } from './kit/settingsKit.tsx';
  * more. Both exceptions are sanctioned in the kit's look rules.
  */
 export function Appearance() {
-  const { theme, accent, density, scale, update } = useAppearance();
+  const { theme, accent, density, dynamicAccent, scale, update } = useAppearance();
   // Only for the preview's count line, so the sample card says something true.
   const { tracks } = useLibrary();
   // Now Playing's dress and the app's feel, moved in from Playback: the lyric
@@ -119,6 +119,18 @@ export function Appearance() {
             ))}
           </div>
         </div>
+        <SettingRow
+          id="dynamic-accent"
+          label="Album colour while playing"
+          hint="On the Now Playing screen the accent takes the album cover's own colour - buttons, seek bar, and the sound rooms opened from it. Off keeps your accent everywhere."
+          control={
+            <Switch
+              aria-label="Album colour while playing"
+              checked={dynamicAccent}
+              onCheckedChange={(on: boolean) => update({ dynamicAccent: on })}
+            />
+          }
+        />
       </PaneSection>
 
       <PaneSection title="Card style">

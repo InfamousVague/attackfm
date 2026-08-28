@@ -87,6 +87,13 @@ export const SETTINGS_INDEX: SettingEntry[] = [
     keywords: 'friends social share week streak top artist stats registry',
   },
   {
+    id: 'dynamic-accent',
+    pane: 'appearance',
+    label: 'Album colour while playing',
+    description: "Now Playing and its sound rooms take the album cover's colour.",
+    keywords: 'accent colour color album cover dynamic tint theme now playing adaptive',
+  },
+  {
     id: 'now-playing-video',
     pane: 'appearance',
     label: 'Video clips on Now Playing',

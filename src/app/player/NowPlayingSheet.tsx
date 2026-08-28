@@ -17,6 +17,7 @@ import { installSheetDismiss } from './playerDismiss.ts';
 import { fireFelt, fireNativeHaptic } from '../core/haptics.ts';
 import type { CSSProperties, Dispatch, ReactNode, SetStateAction } from 'react';
 import { artTint, type ArtTint } from './artTint.ts';
+import { useAppearance } from '../settings/appearance.tsx';
 import { createPortal } from 'react-dom';
 import { ContextMenu, CounterBadge, IconButton, MenuItem, Popover, SeekBar, useBeat, useLiveLevels } from '@glacier/react';
 import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
@@ -1214,8 +1215,9 @@ export function NowPlayingSheet({
      outranks any stylesheet, including that one. Null - greyscale art, art
      that will not decode, no art - means the kit accent stands. */
   const [tint, setTint] = useState<ArtTint | null>(null);
+  const { dynamicAccent } = useAppearance();
   useEffect(() => {
-    if (!artwork) {
+    if (!artwork || !dynamicAccent) {
       setTint(null);
       return undefined;
     }
@@ -1226,7 +1228,7 @@ export function NowPlayingSheet({
     return () => {
       live = false;
     };
-  }, [artwork]);
+  }, [artwork, dynamicAccent]);
 
   /* While the sheet is actually SHOWING, the same ramp goes to :root - by
      request, so the rooms launched off the sheet that PORTAL out of its
@@ -1234,15 +1236,29 @@ export function NowPlayingSheet({
      song's colour too. The inline copy on the sheet root above still
      matters: portalled panels that pin their own data-theme are handled by
      the inherit rule in 07-the-dock-contract-c.css, and the sheet's own
-     data-theme scope is handled by its inline style. Cleanup removes only
-     the keys we set, so the kit accent returns the moment the sheet goes. */
+     data-theme scope is handled by its inline style.
+
+     Cleanup RESTORES, never just removes: the appearance system writes a
+     brand accent's whole ramp inline on this same element (a brand accent
+     has no [data-accent] rule), so a bare removeProperty here stripped the
+     listener's chosen orange along with the song's - and the app sat in
+     kit blue until something rewrote the ramp. That was the "home screen
+     is always blue" bug. Each key's prior inline value is snapshotted
+     before the tint lands and put back when it lifts. */
   useEffect(() => {
     if (!tint || !(npOpen || npDocked)) return undefined;
     const root = document.documentElement;
-    for (const [k, v] of Object.entries(tint)) root.style.setProperty(k, v);
+    const prior = new Map<string, string>();
+    for (const [k, v] of Object.entries(tint)) {
+      prior.set(k, root.style.getPropertyValue(k));
+      root.style.setProperty(k, v);
+    }
     root.setAttribute('data-song-tint', '');
     return () => {
-      for (const k of Object.keys(tint)) root.style.removeProperty(k);
+      for (const [k, was] of prior) {
+        if (was) root.style.setProperty(k, was);
+        else root.style.removeProperty(k);
+      }
       root.removeAttribute('data-song-tint');
     };
   }, [tint, npOpen, npDocked]);
