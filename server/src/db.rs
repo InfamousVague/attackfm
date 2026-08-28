@@ -5394,16 +5394,23 @@ impl Db {
     /// the pruner deletes. Unmeasured rows are never offered up: they are the
     /// queue the listener already paid harvest calls for, and they leave by
     /// being measured, not by being crowded out.
-    pub fn discovery_overflow(&self, user_id: i64, keep: i64) -> Vec<String> {
+    /// Only rows past `settled_before` are ever offered up. A NEW candidate
+    /// competing on score against the settled top of a deep pool loses by
+    /// construction - the incumbents are the best of everything ever
+    /// harvested - so without this the trending lane's finds were measured
+    /// and then evicted within two cycles, before any shelf or buyer had
+    /// seen them. Age is the fair judge: a week on the shelf, then score
+    /// decides.
+    pub fn discovery_overflow(&self, user_id: i64, keep: i64, settled_before: i64) -> Vec<String> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
             "SELECT ext_id FROM discoveries
-             WHERE user_id = ?1 AND checked_at > 0
+             WHERE user_id = ?1 AND checked_at > 0 AND found_at < ?3
              ORDER BY score DESC LIMIT -1 OFFSET ?2",
         ) else {
             return Vec::new();
         };
-        stmt.query_map(params![user_id, keep], |r| r.get(0))
+        stmt.query_map(params![user_id, keep, settled_before], |r| r.get(0))
             .map(|rows| rows.filter_map(Result::ok).collect())
             .unwrap_or_default()
     }
