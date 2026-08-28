@@ -180,3 +180,59 @@
   align-items: center;
   justify-content: center;
 }
+
+/* ---- the on-demand station row ------------------------------------------- */
+
+.searchStation {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  margin-block-end: var(--glacier-space-3);
+}
+
+.searchStation__go {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-3);
+  border: 1px solid var(--glacier-accent-border);
+  border-radius: var(--glacier-radius-lg);
+  background: var(--glacier-accent-soft);
+  color: inherit;
+  cursor: pointer;
+  text-align: start;
+}
+
+.searchStation__go:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.searchStation__icon {
+  flex: none;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-accent-contrast);
+}
+
+.searchStation__text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.searchStation__title {
+  font-weight: var(--glacier-font-weight-medium, 500);
+}
+
+.searchStation__sub {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

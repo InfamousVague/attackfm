@@ -3,7 +3,12 @@ import { setPendingSeek } from '../player/pendingSeek.ts';
 import { formatClock } from '../ux/format.ts';
 import { TrackMenu } from '../library/TrackMenu.tsx';
 import { AlbumMenu } from '../albumArtist/AlbumMenu.tsx';
-import { SearchField, SegmentedControl, Text } from '@glacier/react';
+import { SearchField, SegmentedControl, Spinner, Text, useToast } from '@glacier/react';
+import { Radio } from '@glacier/icons';
+import { fetchDj } from '../api/dj.ts';
+import { fireNativeHaptic } from '../core/haptics.ts';
+import { trackIdFromPath } from '../api/library.ts';
+import type { ServerSession } from '../api/http.ts';
 import {
   BookAudio,
   BookOpenText,
@@ -907,6 +912,14 @@ export function SearchPage({
         </Text>
       )}
 
+      {/* An on-demand station off whatever was typed: the DJ's endless-set
+          endpoint has embedded free text and ranked the library against it
+          since the Booth was built - it just never had a door anyone could
+          reach once the Booth went behind developer mode. This is the door. */}
+      {searching && !claimed && server && tracks.length > 0 && (
+        <StationFromQuery query={parsed.raw} session={server} tracks={tracks} onPlay={onPlay} />
+      )}
+
       <div id="searchResults" role={searching ? 'listbox' : undefined} aria-label="Results">
         {!searching && (
           <>
@@ -1099,6 +1112,83 @@ export function SearchPage({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * One row: "Start a station" for the words in the box.
+ *
+ * Rides GET /api/dj?seed= - the seed is embedded server-side and steers the
+ * ranking, so "rainy morning jazz" works as well as an artist's name. The set
+ * comes back as track ids; they resolve against the library and the whole
+ * flattened run becomes the queue, exactly the way the Booth's launcher does
+ * it. Silence on failure would look like a dead button, so failure says so.
+ */
+function StationFromQuery({
+  query,
+  session,
+  tracks,
+  onPlay,
+}: {
+  query: string;
+  session: ServerSession;
+  tracks: Track[];
+  onPlay: (track: Track, queue: Track[]) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const { toast } = useToast();
+  if (query.trim().length < 2) return null;
+
+  const start = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      const reply = await fetchDj(session, query.trim());
+      const byId = new Map<number, Track>();
+      for (const t of tracks) {
+        const id = trackIdFromPath(t.path);
+        if (id != null) byId.set(id, t);
+      }
+      const queue: Track[] = [];
+      for (const block of reply.blocks) {
+        for (const id of block.trackIds) {
+          const t = byId.get(id);
+          if (t) queue.push(t);
+        }
+      }
+      const opener = queue[0];
+      if (!opener) {
+        setNote('Nothing in your library answers to that yet.');
+        return;
+      }
+      fireNativeHaptic('light');
+      toast({ message: `Station on: ${query.trim()}` });
+      onPlay(opener, queue);
+    } catch {
+      setNote('The station could not start — the server did not answer.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="searchStation">
+      <button type="button" className="searchStation__go" disabled={busy} onClick={() => void start()}>
+        <span className="searchStation__icon" aria-hidden>
+          {busy ? <Spinner size="sm" aria-label="" /> : <Radio size={16} />}
+        </span>
+        <span className="searchStation__text">
+          <span className="searchStation__title">Start a station</span>
+          <span className="searchStation__sub">Your library, tuned to “{query.trim()}”</span>
+        </span>
+      </button>
+      {note && (
+        <Text tone="muted" size="xs">
+          {note}
+        </Text>
+      )}
     </div>
   );
 }

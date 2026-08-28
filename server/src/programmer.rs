@@ -198,6 +198,136 @@ fn build_stations(state: &Arc<AppState>, user: i64, profile: &MoodProfile) -> us
     for i in profile.clusters.len().min(3)..3 {
         let _ = state.db.delete_curated(user, &format!("station-mood-{}", i + 1));
     }
+
+    /*
+     * And two stations built around the ARTISTS this listener actually plays -
+     * the other thing "radio" means. A mood station answers "more of how I
+     * feel"; an artist station answers "more like them": a spine of the
+     * artist's own records, the library around them by embedding similarity,
+     * and the fresh pool where it leans their way. The seed artist is exempt
+     * from the per-artist cap inside their own station, obviously - the cap
+     * exists to stop one artist swallowing a MIX.
+     */
+    let top = state.db.top_artists(user, crate::db::now_ms() - PLAYS_WINDOW_MS, 4);
+    let mut artist_built = 0usize;
+    for (name, _) in top.iter() {
+        if artist_built >= 2 {
+            break;
+        }
+        let slug = format!("station-artist-{}", artist_built + 1);
+        let theirs: Vec<&TrackFeatures> = all
+            .iter()
+            .filter(|f| !f.quarantined && f.artist.eq_ignore_ascii_case(name))
+            .collect();
+        if theirs.len() < 4 {
+            continue;
+        }
+        // The artist's own centre: the mean of their tracks' vectors.
+        let dims = theirs
+            .iter()
+            .filter_map(|f| f.lyric_vec.as_ref().or(f.sonic_vec.as_ref()).map(|v| v.len()))
+            .next()
+            .unwrap_or(0);
+        if dims == 0 {
+            continue;
+        }
+        let mut centre = vec![0f32; dims];
+        let mut n = 0usize;
+        for f in &theirs {
+            if let Some(v) = f.lyric_vec.as_deref().or(f.sonic_vec.as_deref()) {
+                if v.len() == dims {
+                    for (c, x) in centre.iter_mut().zip(v) {
+                        *c += x;
+                    }
+                    n += 1;
+                }
+            }
+        }
+        if n == 0 {
+            continue;
+        }
+        for c in centre.iter_mut() {
+            *c /= n as f32;
+        }
+
+        // The spine: their records, most-played first, up to a dozen.
+        let mut spine: Vec<(i64, i64)> = theirs
+            .iter()
+            .map(|f| (plays.get(&f.track_id).copied().unwrap_or(0), f.track_id))
+            .map(|(p, id)| (id, p))
+            .collect();
+        spine.sort_by(|a, b| b.1.cmp(&a.1));
+        let mut ids: Vec<i64> = spine.into_iter().take(12).map(|(id, _)| id).collect();
+
+        // The neighbourhood: everyone else, by closeness to the centre.
+        let picked: std::collections::HashSet<i64> = ids.iter().copied().collect();
+        let near: Vec<(f32, &TrackFeatures)> = all
+            .iter()
+            .filter(|f| {
+                !f.quarantined
+                    && !picked.contains(&f.track_id)
+                    && !f.artist.eq_ignore_ascii_case(name)
+            })
+            .filter_map(|f| {
+                let v = f.lyric_vec.as_deref().or(f.sonic_vec.as_deref())?;
+                if v.len() != dims {
+                    return None;
+                }
+                Some((cos(&centre, v), f))
+            })
+            .collect();
+        ids.extend(take_spread(near, 12));
+
+        // The fresh slice, where it leans this artist's way.
+        let picked: std::collections::HashSet<i64> = ids.iter().copied().collect();
+        let fresh: Vec<(f32, &TrackFeatures)> = all
+            .iter()
+            .filter(|f| {
+                !picked.contains(&f.track_id)
+                    && (auditions.contains(&f.track_id)
+                        || (!f.quarantined && arrivals.contains(&f.track_id)))
+            })
+            .filter_map(|f| {
+                let v = f.lyric_vec.as_deref().or(f.sonic_vec.as_deref())?;
+                if v.len() != dims {
+                    return None;
+                }
+                Some((cos(&centre, v), f))
+            })
+            .collect();
+        let fresh_ids = take_spread(fresh, 6);
+        let fresh_count = fresh_ids.len();
+
+        let mut list = Vec::with_capacity(LIST_LEN);
+        let mut fi = fresh_ids.into_iter();
+        for (i, id) in ids.into_iter().enumerate() {
+            list.push(id);
+            if i >= 2 && (i - 2) % 4 == 0 {
+                if let Some(f) = fi.next() {
+                    list.push(f);
+                }
+            }
+        }
+        list.extend(fi);
+        list.truncate(LIST_LEN);
+        if list.len() < 8 {
+            continue;
+        }
+
+        let blurb = if fresh_count > 0 {
+            format!(
+                "Their records, the library around them, and {fresh_count} you have never heard."
+            )
+        } else {
+            "Their records, and the library that lives near them.".to_string()
+        };
+        let _ = state.db.put_curated(user, &slug, &format!("{name} Radio"), &blurb, &list);
+        artist_built += 1;
+        built += 1;
+    }
+    for i in artist_built..2 {
+        let _ = state.db.delete_curated(user, &format!("station-artist-{}", i + 1));
+    }
     built
 }
 
