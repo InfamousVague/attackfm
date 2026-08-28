@@ -52,7 +52,9 @@ pub(crate) const POOL_KEEP: i64 = 200;
 /// Bound the pool. forget_discovery per row rather than one DELETE, so the
 /// lane sidecar goes with each candidate.
 pub fn prune_pool(state: &Arc<AppState>, user: i64) {
-    for ext_id in state.db.discovery_overflow(user, POOL_KEEP) {
+    // A week's grace before a row may be pruned - see discovery_overflow.
+    let settled = now_ms() - 7 * 86_400_000;
+    for ext_id in state.db.discovery_overflow(user, POOL_KEEP, settled) {
         state.db.forget_discovery(user, &ext_id);
     }
 }
