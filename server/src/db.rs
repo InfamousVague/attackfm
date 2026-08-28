@@ -7028,6 +7028,34 @@ impl Db {
         (n("wanted"), n("done"), n("failed"), n("evicted"))
     }
 
+    /// Every separated part the index believes in: track, and where it says the
+    /// file is. For checking that claim against the disk.
+    pub fn all_stem_paths(&self) -> Vec<(i64, String)> {
+        let conn = self.lock();
+        let mut stmt = match conn.prepare("SELECT track_id, rel_path FROM track_stems") {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Let a song be separated again after its parts turned out to be gone.
+    ///
+    /// `stem_prefetch` is deliberately the one table eviction does not touch,
+    /// so a song thrown out under budget pressure is not fetched again forever.
+    /// A song whose files VANISHED is a different fact: nothing chose to drop
+    /// it, the index simply stopped being true. Clearing the memory is what
+    /// lets the prefetcher pick it up again.
+    pub fn rearm_stem_prefetch(&self, track_id: i64) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "DELETE FROM stem_prefetch WHERE track_id = ?1",
+            params![track_id],
+        )?;
+        Ok(())
+    }
+
     pub fn forget_stems(&self, track_id: i64) -> rusqlite::Result<()> {
         let conn = self.lock();
         conn.execute("DELETE FROM track_stems WHERE track_id = ?1", params![track_id])?;

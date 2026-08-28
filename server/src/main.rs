@@ -531,7 +531,10 @@ async fn main() {
     features::spawn(state.clone());
     // Real loudness per track, for playback normalisation - see loudness.rs.
     loudness::spawn(state.clone());
-    // Stems, for the Pads sampler - see stems.rs.
+    // Stems, for the Pads sampler - see stems.rs. The index is checked against
+    // the disk first: it can outlive the files it names, and it does so
+    // silently - the faders draw, and the song plays unchanged.
+    stems::reconcile(&state);
     stems::spawn(state.clone());
     // Keeps liked songs and playlist tracks separated ahead of being asked, so
     // nobody waits on demucs for a song they were always going to open. It only

@@ -219,6 +219,104 @@ fn stem_root(state: &AppState) -> PathBuf {
 
 // --- the worker --------------------------------------------------------------
 
+/// Check the stem index against the disk, at boot.
+///
+/// The index can outlive the files. Moving a server carries the database and
+/// the music and can perfectly well leave the stems cache behind - and the
+/// cache is the one thing that is pure derived data, so nobody thinks to bring
+/// it. What is left is an index insisting on 965 separated songs with twelve
+/// files on disk, and the failure is SILENT in the worst way: `/api/stems/<id>`
+/// reports six parts, the console draws six working faders, and the stream
+/// finds no files, falls through to an ordinary transcode and plays the song
+/// unchanged. Pulling a vocal to nothing does nothing at all.
+///
+/// (Doubly so across that particular move: the old box wrote `.opus` parts and
+/// this one writes `.flac`, so even a copied cache would have missed.)
+///
+/// So: every path the index claims is checked once, and the ones that are not
+/// there are forgotten - which makes the status honest, and lets the song be
+/// separated again by whoever asks next.
+pub fn reconcile(state: &Arc<AppState>) {
+    let root = stem_root(state);
+    let mut gone: std::collections::HashSet<i64> = std::collections::HashSet::new();
+    for (track_id, rel) in state.db.all_stem_paths() {
+        if !root.join(&rel).is_file() {
+            gone.insert(track_id);
+        }
+    }
+    if gone.is_empty() {
+        return;
+    }
+    for track_id in &gone {
+        let _ = state.db.forget_stems(*track_id);
+        let _ = state.db.rearm_stem_prefetch(*track_id);
+    }
+    eprintln!(
+        "[stems] {} songs were indexed as separated but their parts are gone - forgotten, so they can be made again",
+        gone.len(),
+    );
+}
+
+#[cfg(test)]
+mod reconcile_tests {
+    /// A stem row whose file is gone must stop being believed - and the song
+    /// must become eligible again.
+    ///
+    /// This is the shape of the bug it exists for: the index survived a server
+    /// move and the cache did not, so `/api/stems/<id>` reported six parts, the
+    /// console drew six working faders, and the stream - finding no files -
+    /// played the song unchanged. Nothing errored anywhere.
+    #[test]
+    fn a_stem_row_without_its_file_is_forgotten() {
+        let dir = std::env::temp_dir().join(format!("afm-stems-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = crate::db::Db::open(&dir.join("t.sqlite")).unwrap();
+        let user = db.create_user("stem-test", "x", true).unwrap();
+        assert!(user > 0);
+
+        let mut track = crate::db::ScannedTrack::default();
+        track.rel_path = "A/B/song.flac".to_string();
+        track.title = "Song".to_string();
+        track.artist = "A".to_string();
+        db.upsert_track(&track, 1).unwrap();
+        assert!(db.all_stem_paths().is_empty(), "setup: no stems indexed");
+
+        let track_id = db
+            .track_id_by_path("A/B/song.flac")
+            .expect("the scanned track has an id");
+
+        // Two parts indexed: one whose file exists, one whose file never will.
+        let root = dir.join("stems");
+        std::fs::create_dir_all(root.join(track_id.to_string())).unwrap();
+        std::fs::write(root.join(format!("{track_id}/vocals.flac")), b"x").unwrap();
+        db.save_stem(track_id, "vocals", super::MODEL, &format!("{track_id}/vocals.flac"), 1)
+            .unwrap();
+        db.save_stem(track_id, "drums", super::MODEL, &format!("{track_id}/drums.opus"), 1)
+            .unwrap();
+        assert_eq!(db.all_stem_paths().len(), 2, "setup: both rows indexed");
+
+        // The reconcile predicate, applied the way reconcile() applies it.
+        let missing: Vec<i64> = db
+            .all_stem_paths()
+            .into_iter()
+            .filter(|(_, rel)| !root.join(rel).is_file())
+            .map(|(t, _)| t)
+            .collect();
+        assert_eq!(missing, vec![track_id], "the .opus row is the one that is gone");
+
+        for t in missing {
+            db.forget_stems(t).unwrap();
+            db.rearm_stem_prefetch(t).unwrap();
+        }
+        assert!(
+            db.all_stem_paths().is_empty(),
+            "a song missing ANY part is forgotten whole - a half-separated song \
+             is not something the mixer can use",
+        );
+    }
+}
+
 /// Starts the separator. Runs until the process ends.
 pub fn spawn(state: Arc<AppState>) {
     tokio::spawn(async move {
