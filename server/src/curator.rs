@@ -1541,14 +1541,21 @@ async fn name_lists(
 
 /// One pass over the discovery pool for every recent listener.
 async fn discovery_cycle(state: &Arc<AppState>) -> bool {
-    // The charts first: one server-wide fetch on its own twice-a-day clock,
-    // fanned to every listener's pool, so the taste walk below never runs on
-    // a pool the trending lane has not had its chance to feed.
-    crate::trending::cycle(state).await;
     let since = now_ms() - WINDOW_30D_MS;
-    let mut worked = false;
+    // Prune EVERY pool before the trending sweep, not per-user further down.
+    // The sweep fans against each pool's headroom, and it learned this the
+    // hard way: run first, it found the primary listener's pool at 635 rows,
+    // fanned them nothing, and then watched the pruner make room it would not
+    // use for another twelve hours.
     for user in state.db.listeners_since(since) {
         crate::discovery::prune_pool(state, user);
+    }
+    // The charts: one server-wide fetch on its own twice-a-day clock, fanned
+    // to every listener's pool, so the taste walk below never runs on a pool
+    // the trending lane has not had its chance to feed.
+    crate::trending::cycle(state).await;
+    let mut worked = false;
+    for user in state.db.listeners_since(since) {
         crate::discovery::harvest(state, user).await;
         crate::discovery::prune_owned(state, user);
         if crate::discovery::listen_cycle(state, user).await {
