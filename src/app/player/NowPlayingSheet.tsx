@@ -1228,6 +1228,25 @@ export function NowPlayingSheet({
     };
   }, [artwork]);
 
+  /* While the sheet is actually SHOWING, the same ramp goes to :root - by
+     request, so the rooms launched off the sheet that PORTAL out of its
+     subtree (the sound console, stems, the queue, every popover) wear the
+     song's colour too. The inline copy on the sheet root above still
+     matters: portalled panels that pin their own data-theme are handled by
+     the inherit rule in 07-the-dock-contract-c.css, and the sheet's own
+     data-theme scope is handled by its inline style. Cleanup removes only
+     the keys we set, so the kit accent returns the moment the sheet goes. */
+  useEffect(() => {
+    if (!tint || !(npOpen || npDocked)) return undefined;
+    const root = document.documentElement;
+    for (const [k, v] of Object.entries(tint)) root.style.setProperty(k, v);
+    root.setAttribute('data-song-tint', '');
+    return () => {
+      for (const k of Object.keys(tint)) root.style.removeProperty(k);
+      root.removeAttribute('data-song-tint');
+    };
+  }, [tint, npOpen, npDocked]);
+
   const [readyCanvas, setReadyCanvas] = useState<string | null>(null);
   const canvasReady = readyCanvas !== null && readyCanvas === npCanvas;
   const setCanvasReady = (on: boolean) => setReadyCanvas(on ? npCanvas : null);

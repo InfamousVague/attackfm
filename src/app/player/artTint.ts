@@ -40,11 +40,12 @@ const cache = new Map<string, ArtTint | null>();
 const BUCKETS = 12;
 
 /**
- * Below this share of a fully-saturated frame, the art has no opinion about
- * hue and we decline to invent one. Tuned low: even moody covers usually
- * carry a corner of colour, and the fallback is the kit accent, not grey.
+ * Below this vote mass, the art has no opinion about hue and we decline to
+ * invent one. Votes are saturation-cubed, so this is roughly "a couple of
+ * dozen genuinely vivid pixels somewhere in a 40x40 read" - even moody
+ * covers usually carry that, and the fallback is the kit accent, not grey.
  */
-const MIN_VOTE = 2.5;
+const MIN_VOTE = 1.5;
 
 async function readTint(url: string): Promise<ArtTint | null> {
   const blob = await (await fetch(url)).blob();
@@ -62,10 +63,17 @@ async function readTint(url: string): Promise<ArtTint | null> {
   bitmap.close();
   const { data } = ctx.getImageData(0, 0, side, side);
 
-  /* One pass of hue voting. A pixel's vote is its saturation damped by how
-     far it sits from mid-lightness: full colour in the mids speaks loudest,
-     while near-black and near-white pixels - whose hue channel is mostly
-     quantisation noise - barely whisper. */
+  /* One pass of hue voting. A pixel's vote is its saturation CUBED, damped
+     by how far it sits from mid-lightness. Cubed is the whole answer to a
+     real failure: with a linear weight the vote measures POPULATION, and a
+     cover that is mostly skin tone and tan backdrop reads as peach even
+     when the one thing your eye goes to is a saturated purple jacket - the
+     muted acres outvote the vivid patch. Cubing collapses the muted mass
+     (0.3 sat -> 0.027) while barely denting the vivid (0.9 -> 0.73), so
+     the question the vote answers becomes "what is the most COLOURFUL
+     thing here", which is the colour a person would name for the cover.
+     Near-black and near-white pixels - whose hue channel is mostly
+     quantisation noise - still barely whisper. */
   const votes = new Float32Array(BUCKETS);
   const sinSum = new Float32Array(BUCKETS);
   const cosSum = new Float32Array(BUCKETS);
@@ -83,7 +91,7 @@ async function readTint(url: string): Promise<ArtTint | null> {
     if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
     else if (max === g) h = ((b - r) / d + 2) / 6;
     else h = ((r - g) / d + 4) / 6;
-    const w = sat * (1 - Math.abs(l - 0.5) * 1.6);
+    const w = sat * sat * sat * (1 - Math.abs(l - 0.5) * 1.6);
     if (w <= 0) continue;
     const bucket = Math.min(BUCKETS - 1, Math.floor(h * BUCKETS));
     votes[bucket] = (votes[bucket] ?? 0) + w;
