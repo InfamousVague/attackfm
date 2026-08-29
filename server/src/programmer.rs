@@ -377,12 +377,23 @@ fn build_stations(state: &Arc<AppState>, user: i64, profile: &MoodProfile) -> us
         }
         ids.extend(take_spread(close, 12));
 
-        // The fresh slice, where it leans this artist's way.
+        // The fresh slice, where it leans this artist's way. The per-artist
+        // cap is enforced ACROSS the whole list here, not per slice: the
+        // neighbourhood's take_spread caps an artist at two, but the fresh
+        // slice ran its own count and a listener met four Mac Millers on a
+        // Wet Leg station - two seated by each half.
         let picked: std::collections::HashSet<i64> = ids.iter().copied().collect();
+        let mut seated: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for f in all.iter().filter(|f| picked.contains(&f.track_id)) {
+            if !f.artist.eq_ignore_ascii_case(name) {
+                *seated.entry(f.artist.to_lowercase()).or_insert(0) += 1;
+            }
+        }
         let fresh: Vec<(f32, &TrackFeatures)> = all
             .iter()
             .filter(|f| {
                 !picked.contains(&f.track_id)
+                    && seated.get(&f.artist.to_lowercase()).copied().unwrap_or(0) < PER_ARTIST_CAP
                     && (auditions.contains(&f.track_id)
                         || (!f.quarantined && arrivals.contains(&f.track_id)))
             })
