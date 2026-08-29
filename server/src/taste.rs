@@ -786,6 +786,7 @@ mod tests {
 
     fn feat(id: i64, bpm: f64, genre: &str, vec: Option<Vec<f32>>) -> TrackFeatures {
         TrackFeatures {
+            kind: "music".into(),
             track_id: id,
             bpm: Some(bpm),
             curator_user_id: None,

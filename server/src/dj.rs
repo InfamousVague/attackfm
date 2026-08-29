@@ -1427,6 +1427,7 @@ mod ranking_tests {
 
     fn feature(bpm: f64, energy: f64, brightness: f64, dynamic: f64, rhythm: f64) -> TrackFeatures {
         TrackFeatures {
+            kind: "music".into(),
             track_id: 1,
             bpm: Some(bpm),
             curator_user_id: None,
