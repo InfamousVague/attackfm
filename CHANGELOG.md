@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.134
+
+- The ripples around the record are the DJ's again: they rise when the DJ talks and rest during the music. The song-driven waves from 0.4.133 turned out to be too much
+
 ## 0.4.133
 
 - The waves around the spinning record now belong to the song: when the singer sings, ripples spread from the disc, and the halo breathes with the voice. The DJ still gets the same waves when it talks
