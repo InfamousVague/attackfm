@@ -113,7 +113,29 @@
   pointer-events: none;
 }
 
-.npSpeakWaves > span {
+/* The halo: a ring hugging the record's edge whose size and glow follow the
+   voice's LOUDNESS frame by frame (--dj-level, written by the level meter in
+   djVoice.ts) - the travelling rings say "she is talking", this says what
+   she is saying has weight. Present only while the waves are up; at level 0
+   it is invisible, so silence needs no cleanup. */
+.npSpeakWaves__halo {
+  position: absolute;
+  inline-size: min(80vw, 60vh);
+  block-size: min(80vw, 60vh);
+  border: 5px solid var(--glacier-accent-solid);
+  border-radius: 50%;
+  opacity: 0;
+  transition:
+    opacity 70ms linear,
+    transform 70ms linear;
+}
+
+.npScreen__art[data-dj-waves] .npSpeakWaves__halo {
+  opacity: calc(var(--dj-level, 0) * 0.9);
+  transform: scale(calc(1 + var(--dj-level, 0) * 0.07));
+}
+
+.npSpeakWaves > span:not(.npSpeakWaves__halo) {
   position: absolute;
   /* AT the record's edge, not inside it: the rings paint UNDER the disc
      (they emanate from behind it), so any part of their journey spent
@@ -127,13 +149,13 @@
   opacity: 0;
 }
 
-.npScreen__art[data-dj-waves='on'] .npSpeakWaves > span {
+.npScreen__art[data-dj-waves='on'] .npSpeakWaves > span:not(.npSpeakWaves__halo) {
   animation:
     npSpeakGrow 1.9s ease-out infinite,
     npSpeakWobble 3.1s linear infinite;
 }
 
-.npScreen__art[data-dj-waves='on'] .npSpeakWaves > span:nth-child(2) {
+.npScreen__art[data-dj-waves='on'] .npSpeakWaves > span:nth-child(3) {
   animation-delay: 0.62s, 0s;
 }
 
@@ -144,11 +166,11 @@
 /* The exit: when the voice ends, every ring makes one last run PAST the
    edge of the screen - staggered so they leave as a set, forwards-filled
    so nothing snaps back before the phase ends. */
-.npScreen__art[data-dj-waves='leaving'] .npSpeakWaves > span {
+.npScreen__art[data-dj-waves='leaving'] .npSpeakWaves > span:not(.npSpeakWaves__halo) {
   animation: npSpeakOff 0.7s ease-in forwards;
 }
 
-.npScreen__art[data-dj-waves='leaving'] .npSpeakWaves > span:nth-child(2) {
+.npScreen__art[data-dj-waves='leaving'] .npSpeakWaves > span:nth-child(3) {
   animation-delay: 0.07s;
 }
 

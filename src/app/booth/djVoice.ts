@@ -71,11 +71,55 @@ export function useDjTalking(): boolean {
   return on;
 }
 
+/**
+ * The voice's live loudness, published while a clip plays - the Now Playing
+ * art breathes with it ('afm-dj-level', 0..1). A WebAudio analyser taps the
+ * element; the interval is a timer rather than requestAnimationFrame so the
+ * meter keeps publishing when the app is backgrounded or the pane hidden.
+ * Metering is decoration: any failure (no AudioContext, an interrupted one)
+ * silently leaves the waves on their own clock.
+ */
+function meter(el: HTMLAudioElement): () => void {
+  try {
+    const Ctx = window.AudioContext ?? (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctx) return () => {};
+    const ctx = new Ctx();
+    const src = ctx.createMediaElementSource(el);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 256;
+    src.connect(analyser);
+    analyser.connect(ctx.destination);
+    const buf = new Uint8Array(analyser.frequencyBinCount);
+    if (ctx.state !== 'running') void ctx.resume().catch(() => {});
+    const tick = window.setInterval(() => {
+      analyser.getByteTimeDomainData(buf);
+      let sum = 0;
+      for (const v of buf) {
+        const d = (v - 128) / 128;
+        sum += d * d;
+      }
+      const level = Math.min(1, Math.sqrt(sum / buf.length) * 3.2);
+      window.dispatchEvent(new CustomEvent('afm-dj-level', { detail: { level } }));
+    }, 33);
+    return () => {
+      window.clearInterval(tick);
+      window.dispatchEvent(new CustomEvent('afm-dj-level', { detail: { level: 0 } }));
+      void ctx.close().catch(() => {});
+    };
+  } catch {
+    return () => {};
+  }
+}
+
 function playOne(url: string): Promise<void> {
   return new Promise((resolve) => {
     const el = new Audio(url);
     el.volume = 1;
-    const done = () => resolve();
+    const stopMeter = meter(el);
+    const done = () => {
+      stopMeter();
+      resolve();
+    };
     el.addEventListener('ended', done, { once: true });
     el.addEventListener('error', done, { once: true });
     void el.play().catch(done);
