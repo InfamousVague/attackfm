@@ -82,9 +82,9 @@ export const SETTINGS_INDEX: SettingEntry[] = [
   {
     id: 'share-week',
     pane: 'privacy',
-    label: 'Share my week with friends',
-    description: 'Minutes listened, your top artist and your streak, visible to friends you accept.',
-    keywords: 'friends social share week streak top artist stats registry',
+    label: 'Share my listening with friends',
+    description: 'Friends on your server can open your full profile; friends elsewhere see your week.',
+    keywords: 'friends social share week streak top artist stats registry profile liked songs privacy',
   },
   {
     id: 'dynamic-accent',

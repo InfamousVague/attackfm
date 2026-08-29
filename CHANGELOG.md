@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.115
+
+- Friends have whole profiles now: tap a friend to see their stats page - minutes, streaks, top artists and songs, their listening chart - and, when you share a server, every song they've hearted, playable right there
+- Sharing grew to match: friends on your server can open your full profile; friends elsewhere still see just your week. One switch covers both, and off closes the whole door
+
 ## 0.4.114
 
 - The album's colour is the app's colour now: while a song is up, the accent follows it everywhere - home, library, settings, all of it - not just on Now Playing

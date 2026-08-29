@@ -77,7 +77,7 @@ export function FriendAvatar({
 }
 
 /** "now", "4h ago" - the coarse read a friend row wants, never a timestamp. */
-function seenAgo(stamp: number): string | null {
+export function seenAgo(stamp: number): string | null {
   if (!stamp) return null;
   // The registry stamps in seconds; anything suspiciously small is treated as
   // such rather than reading as fifty-six years ago.
@@ -192,12 +192,15 @@ export function FriendsSection({
   token,
   me,
   onVisit,
+  onOpen,
 }: {
   token: string;
   me: string;
   /** Offered on a friend's card when they answer from a server that is not
    *  the one this device is listening from. */
   onVisit?: VisitServer;
+  /** A tap anywhere on the card that is not a control: their profile. */
+  onOpen?: (friend: RegistryFriend) => void;
 }) {
   const { session: server } = useServerSession();
   const [feed, setFeed] = useState<FriendsFeed | null>(null);
@@ -205,7 +208,6 @@ export function FriendsSection({
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-  const [statsFor, setStatsFor] = useState<RegistryFriend | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -394,7 +396,24 @@ export function FriendsSection({
               void artTick;
               const backdrop = cachedArtistImage(f.weekTopArtist ?? '');
               return (
-                <div key={f.id} className="friendRow" data-online={online || undefined}>
+                <div
+                  key={f.id}
+                  className="friendRow"
+                  data-online={online || undefined}
+                  data-door={onOpen ? '' : undefined}
+                  /* The card's dead space is the door to their profile; the
+                     controls on it (visit, remove, the artist link) are their
+                     own buttons and must not also ride the tap up. */
+                  onClick={
+                    onOpen
+                      ? (event) => {
+                          const el = event.target as HTMLElement;
+                          if (el.closest('button, a')) return;
+                          onOpen(f);
+                        }
+                      : undefined
+                  }
+                >
                   {backdrop && (
                     <img
                       className="friendRow__backdrop"
@@ -453,18 +472,20 @@ export function FriendsSection({
                         Visit their server
                       </Button>
                     )}
-                    {/* Their numbers, from what the registry already holds -
-                        no extra request, and nothing they have not chosen to
-                        announce. */}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label={`Stats for ${f.handle}`}
-                      onClick={() => setStatsFor(f)}
-                    >
-                      <ChartNoAxesColumn size={15} />
-                      Stats
-                    </Button>
+                    {/* The profile: the stats modal's grown-up replacement.
+                        A whole page - their stats, and on a shared server
+                        their liked songs too. */}
+                    {onOpen && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        aria-label={`Profile for ${f.handle}`}
+                        onClick={() => onOpen(f)}
+                      >
+                        <ChartNoAxesColumn size={15} />
+                        Profile
+                      </Button>
+                    )}
                   </div>
                   <IconButton
                     variant="ghost"
@@ -495,15 +516,6 @@ export function FriendsSection({
         )}
       </section>
 
-      <Modal
-        open={statsFor !== null}
-        onClose={() => setStatsFor(null)}
-        title={statsFor ? `@${statsFor.handle}` : ''}
-        size="sm"
-      >
-        {statsFor && <FriendStats friend={statsFor} />}
-      </Modal>
-
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add a friend" size="sm">
         <div className="friendsModal">
           <Text size="sm" tone="muted">
@@ -531,7 +543,7 @@ export function FriendsSection({
  * rides every announce and is always there. Nothing here asks their server
  * anything - a friend's box is not this device's to query.
  */
-function FriendStats({ friend }: { friend: RegistryFriend }) {
+export function FriendStats({ friend }: { friend: RegistryFriend }) {
   const sharing = typeof friend.weekMinutes === 'number';
   return (
     <div className="friendStats">

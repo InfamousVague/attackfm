@@ -1,0 +1,78 @@
+/* --- the friend profile ---------------------------------------------------
+ *
+ * One person, the whole page - the grown-up replacement for the stats modal.
+ * Nearly everything on it wears the stats page's own clothes (statsSection,
+ * statsTiles, statsArtChips, statsRows - StatsPage.css); this file dresses
+ * only what is new: the head that names the person, the heart-marked rank on
+ * liked rows, and the closed-door face.
+ */
+
+.friendProfile__head {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding-block: var(--glacier-space-2);
+}
+
+.friendProfile__back {
+  border: none;
+  background: var(--glacier-bg-subtle);
+  color: var(--glacier-text);
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex: none;
+}
+
+.friendProfile__who {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.friendProfile__handle {
+  margin: 0;
+  font-size: var(--glacier-font-size-xl);
+  line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friendProfile__sub {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+.friendProfile__count {
+  margin: 0 0 var(--glacier-space-2);
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+}
+
+/* Hearts are not a ranking: the rank slot on a liked row wears the heart
+   instead of a number, so recency does not read as a podium. */
+.friendProfile__heartRank {
+  color: var(--glacier-accent-text);
+  display: grid;
+  place-items: center;
+}
+
+.friendProfile__closed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  padding-block: var(--glacier-space-8);
+  color: var(--glacier-text-muted);
+}
+
+/* The card is a door now - say so on pointers that can hover. */
+.friendRow[data-door] {
+  cursor: pointer;
+}

@@ -85,11 +85,11 @@ export function Privacy() {
       <PaneSection title="Other people">
         <SettingRow
           id="share-week"
-          label="Share my week with friends"
-          hint="Minutes listened, your top artist and your streak, sent to your AttackFM account every six hours where friends you have accepted can see them. No track list, no times. The same switch as the one on Friends."
+          label="Share my listening with friends"
+          hint="Friends on your server can open your full profile - your stats page and your liked songs. Friends elsewhere see only your week: minutes, top artist and streak, refreshed every six hours. Off closes both doors. The same switch as the one on Friends."
           control={
             <Switch
-              aria-label="Share my week with friends"
+              aria-label="Share my listening with friends"
               checked={sharingWeek}
               onCheckedChange={(on: boolean) => setSharing(on)}
             />

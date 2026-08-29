@@ -4,7 +4,10 @@ import { useRegistry } from '../servers/registrySession.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { enterServer } from '../server.ts';
 import { AccountSetup, FriendsSection } from './RegistryFriends.tsx';
+import { FriendProfilePage } from './FriendProfilePage.tsx';
 import { useSharing, setSharing } from './listeningShare.tsx';
+import type { RegistryFriend } from '../servers/registry.ts';
+import type { Track } from '../core/tauri.ts';
 
 /**
  * The people, on their own page.
@@ -33,10 +36,17 @@ function hostOf(url: string): string {
   }
 }
 
-export function FriendsPage() {
+export function FriendsPage({
+  onPlay,
+  onOpenArtist,
+}: {
+  onPlay: (track: Track, queue: Track[]) => void;
+  onOpenArtist: (artist: string) => void;
+}) {
   const { session: registry, account, apply } = useRegistry();
   const { applySession } = useServerSession();
   const [note, setNote] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
+  const [profileFor, setProfileFor] = useState<RegistryFriend | null>(null);
   const sharing = useSharing();
 
   const visit = useCallback(
@@ -71,6 +81,20 @@ export function FriendsPage() {
     );
   }
 
+  if (profileFor) {
+    return (
+      <FriendProfilePage
+        friend={profileFor}
+        onBack={() => setProfileFor(null)}
+        onPlay={onPlay}
+        onOpenArtist={onOpenArtist}
+        onVisit={(f) => {
+          if (f.serverUrl) void visit(f.serverUrl);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="homePage friendsPage">
       <header className="friendsPage__head">
@@ -91,6 +115,7 @@ export function FriendsPage() {
       <FriendsSection
         token={registry.token}
         me={account.handle}
+        onOpen={setProfileFor}
         onVisit={(friend) => {
           if (friend.serverUrl) void visit(friend.serverUrl);
         }}
@@ -102,11 +127,11 @@ export function FriendsPage() {
       <footer className="friendsPage__foot">
         <Text size="xs" tone="subtle">
           {sharing
-            ? 'Your friends see your minutes, top artist and streak for the week. No track list, no history.'
-            : 'You are not sharing your week, so your card is blank on their side.'}
+            ? 'Friends on this server can open your full profile - your stats and your liked songs. Friends elsewhere see your minutes, top artist and streak for the week, nothing more.'
+            : 'You are not sharing your listening, so your card is blank and your profile is a closed door.'}
         </Text>
         <button type="button" className="friendsPage__shareToggle" onClick={() => setSharing(!sharing)}>
-          {sharing ? 'Stop sharing my week' : 'Share my week'}
+          {sharing ? 'Stop sharing my listening' : 'Share my listening'}
         </button>
       </footer>
     </div>
