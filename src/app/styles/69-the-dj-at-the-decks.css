@@ -115,9 +115,14 @@
 
 .npSpeakWaves > span {
   position: absolute;
-  inline-size: min(62vw, 46vh);
-  block-size: min(62vw, 46vh);
-  border: 3px solid var(--glacier-accent-solid);
+  /* AT the record's edge, not inside it: the rings paint UNDER the disc
+     (they emanate from behind it), so any part of their journey spent
+     smaller than the platter is invisible. The disc runs ~75vw on a phone;
+     starting here and growing outward keeps the whole ripple in view -
+     the first cut started at 62vw and the waves lived and died backstage. */
+  inline-size: min(78vw, 58vh);
+  block-size: min(78vw, 58vh);
+  border: 4px solid var(--glacier-accent-solid);
   border-radius: 47% 53% 51% 49% / 52% 48% 53% 47%;
   opacity: 0;
 }
@@ -154,14 +159,14 @@
 @keyframes npSpeakGrow {
   0% {
     opacity: 0;
-    transform: scale(0.86) rotate(0deg);
+    transform: scale(0.96) rotate(0deg);
   }
   18% {
-    opacity: 0.7;
+    opacity: 0.8;
   }
   100% {
     opacity: 0;
-    transform: scale(1.42) rotate(24deg);
+    transform: scale(1.55) rotate(24deg);
   }
 }
 
@@ -181,12 +186,12 @@
 
 @keyframes npSpeakOff {
   0% {
-    opacity: 0.55;
-    transform: scale(1);
+    opacity: 0.65;
+    transform: scale(1.05);
   }
   100% {
     opacity: 0;
-    transform: scale(3.1) rotate(18deg);
+    transform: scale(2.6) rotate(18deg);
   }
 }
 

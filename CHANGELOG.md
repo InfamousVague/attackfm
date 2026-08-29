@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.130
+
+- The DJ's waves are actually visible now: they start at the record's edge and ripple outward, instead of living out their whole lives hidden behind the disc
+
 ## 0.4.129
 
 - The DJ's voice is properly audible now - every clip is lifted to broadcast loudness when it is made
