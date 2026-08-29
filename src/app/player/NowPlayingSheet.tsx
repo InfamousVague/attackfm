@@ -24,6 +24,7 @@ import { Airplay, AudioLines, Bookmark, BookmarkCheck, BookOpenText, Check, Chev
 import { isMobile } from '../core/platform.ts';
 import { PluginSlot } from '../../plugins/runtime.tsx';
 import { SoundConsole } from './SoundConsole.tsx';
+import { NpDjButton } from './NpDjButton.tsx';
 import { MarqueeText } from './MarqueeText.tsx';
 import { SpinningDisc } from './SpinningDisc.tsx';
 import { QueuePanel } from './QueuePanel.tsx';
@@ -1746,6 +1747,10 @@ export function NowPlayingSheet({
         </IconButton>
         {/* Whatever wants to act on the song playing right now. */}
         <PluginSlot id="now-playing-actions" />
+        {/* The DJ's seat - a live set with the voice, started right here. A
+            book's screen stands it down: a DJ set over an audiobook is not a
+            thing anyone means to start. */}
+        {track?.kind !== 'book' && <NpDjButton />}
         {/* Who else is hearing this. Renders nothing outside a jam, so the row
             is unchanged for anyone listening alone. */}
         <JamBadge />

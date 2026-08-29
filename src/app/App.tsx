@@ -23,6 +23,7 @@ import { DjChatProvider } from './booth/djChat.tsx';
 import { DatePage } from './date/DatePage.tsx';
 import { DjPage } from './booth/DjPage.tsx';
 import { ListeningShareBridge } from './profile/listeningShare.tsx';
+import { DjSetBridge } from './booth/DjSetBridge.tsx';
 import {
   PendingPlayProvider,
   PendingPlayWatcher,
@@ -772,6 +773,7 @@ export function App() {
             {/* Pushes the weekly listening glance to the registry while the
                 stats page's share switch is on. Headless; opt-in. */}
             <ListeningShareBridge />
+            <DjSetBridge />
             {/* Teaches playFrom to route a pick to whichever device holds audio.
                 Lives here, inside the Connect provider, because only a child of
                 it can read the shared session. */}
