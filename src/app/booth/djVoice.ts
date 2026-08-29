@@ -111,17 +111,26 @@ function meter(el: HTMLAudioElement): () => void {
   }
 }
 
+/** The clip on the air right now, so a superseding speaker can cut it off
+ *  mid-word instead of talking over its tail. */
+let onAir: HTMLAudioElement | null = null;
+
 function playOne(url: string): Promise<void> {
   return new Promise((resolve) => {
     const el = new Audio(url);
     el.volume = 1;
     const stopMeter = meter(el);
     const done = () => {
+      if (onAir === el) onAir = null;
       stopMeter();
       resolve();
     };
     el.addEventListener('ended', done, { once: true });
     el.addEventListener('error', done, { once: true });
+    // Nothing else ever pauses these elements, so a pause IS the cut-off -
+    // and a natural end fires 'ended', never 'pause'.
+    el.addEventListener('pause', done, { once: true });
+    onAir = el;
     void el.play().catch(done);
   });
 }
@@ -136,10 +145,19 @@ let speaking = 0;
 export async function speakBeats(session: ServerSession, ids: string[]): Promise<void> {
   if (!djVoiceEnabled() || ids.length === 0) return;
   const mine = ++speaking;
+  // Whoever was mid-sentence stops NOW - with lore on every track, letting
+  // the old clip run to its natural end means two DJs talking at once.
+  onAir?.pause();
   const urls = (await Promise.all(ids.map((id) => clipUrl(session, id)))).filter(
     (u): u is string => u !== null,
   );
-  if (mine !== speaking || urls.length === 0) return;
+  if (mine !== speaking) return;
+  if (urls.length === 0) {
+    // This call owns the floor but has nothing to say: lower the lights the
+    // superseded speaker was told not to touch, or the duck stays stuck.
+    duck(false);
+    return;
+  }
   duck(true);
   try {
     for (const [i, url] of urls.entries()) {

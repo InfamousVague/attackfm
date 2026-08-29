@@ -9,6 +9,9 @@ export interface DjBlock {
   /** Cached voice clips for this block, in speaking order - the library
    *  line, then the artist drop. Absent when the server has no voice. */
   voice?: string[];
+  /** One short true thing per song, keyed by track id: the line, and the
+   *  clip that says it. Only songs the model actually recognised appear. */
+  lore?: Record<string, { say: string; voice?: string[] }>;
 }
 
 export interface DjSet {

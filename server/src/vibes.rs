@@ -94,7 +94,7 @@ pub async fn rebuild(state: &Arc<AppState>, user: i64, key: &str) {
         return;
     }
     let built = if key == "charts" {
-        Ok(build_charts_reply(state, user).await)
+        Ok(build_charts_reply(state, user, true).await)
     } else {
         crate::dj::build_reply(state, user, seed, 15, true).await
     };
@@ -117,7 +117,10 @@ pub async fn rebuild(state: &Arc<AppState>, user: i64, key: &str) {
 /// collector's pre-downloaded chart auditions right beside them (the one
 /// place the quarantine does get to play, because "hear what is charting"
 /// is precisely what those files were fetched for). Chart order, capped.
-pub async fn build_charts_reply(state: &Arc<AppState>, user: i64) -> Value {
+/// `curate` is the banked path: it owns background time, so it WAITS for the
+/// lore pass before freezing the body. The live door only reads - the bank
+/// rebuild the handler spawns is where charts lore gets written.
+pub async fn build_charts_reply(state: &Arc<AppState>, user: i64, curate: bool) -> Value {
     let chart = crate::trending::chart_pairs().await;
     let seed = seed_for_key("charts").unwrap_or_default();
     if chart.is_empty() {
@@ -138,6 +141,11 @@ pub async fn build_charts_reply(state: &Arc<AppState>, user: i64) -> Value {
     let mut per_artist: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     for (artist, title) in &chart {
         if let Some((id, real_artist)) = by_key.get(&crate::discovery::key_of(artist, title)) {
+            // Two chart spellings of one song fold to one key and hand back
+            // the same row - it must not take two seats (or two lore lines).
+            if ids.contains(id) {
+                continue;
+            }
             let cap = per_artist.entry(real_artist.to_lowercase()).or_insert(0);
             if *cap >= 2 {
                 continue;
@@ -150,6 +158,16 @@ pub async fn build_charts_reply(state: &Arc<AppState>, user: i64) -> Value {
             }
         }
     }
+    // Chart hits are exactly the songs the model DOES know. The banked
+    // build waits for the gaps to fill before the body freezes; the live
+    // door serves what is on file and leaves the writing to the rebuild
+    // already spawned behind it.
+    if curate {
+        crate::lore::ensure(state, &ids).await;
+    }
+    let lore = crate::lore::known(state, &ids);
+    let mut lore_jobs: Vec<crate::voice::Beat> = Vec::new();
+
     let mut blocks: Vec<Value> = Vec::new();
     let chunk_count = ids.chunks(3).count();
     for (i, chunk) in ids.chunks(3).enumerate() {
@@ -171,6 +189,10 @@ pub async fn build_charts_reply(state: &Arc<AppState>, user: i64) -> Value {
             crate::voice::mint_behind(state, beats);
         }
         blocks.push(block);
+    }
+    crate::lore::attach(&mut blocks, &lore, &mut lore_jobs);
+    if !lore_jobs.is_empty() {
+        crate::voice::mint_behind(state, lore_jobs);
     }
     serde_json::json!({ "ai": false, "vibe": seed, "blocks": blocks })
 }

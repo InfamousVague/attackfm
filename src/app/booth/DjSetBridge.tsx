@@ -81,16 +81,19 @@ export function DjSetBridge() {
       return;
     }
     armed.current = true;
-    const beats = run.voiceAt.get(path);
-    const spoken = Boolean(beats && session && djVoiceEnabled());
+    // The run's beats where a run opens, then the song's own bit of lore -
+    // by request, every track gets a short true thing, never a paragraph.
+    const lore = run.loreAt.get(path);
+    const beats = [...(run.voiceAt.get(path) ?? []), ...(lore?.voice ?? [])];
+    const spoken = Boolean(beats.length > 0 && session && djVoiceEnabled());
     if (spoken) {
-      void speakBeats(session!, beats!);
+      void speakBeats(session!, beats);
     } else {
       // The card only shows when nothing will be HEARD - by request, a
       // talking DJ talks, and the screen answers with waves off the disc
       // instead of a caption. Text remains the whole story for a hub with
       // no voice, or a listener who switched it off.
-      const line = run.lineAt.get(path);
+      const line = [run.lineAt.get(path), lore?.line].filter(Boolean).join(' ');
       if (line) setToast(line);
     }
   }, [playing, run, session]);

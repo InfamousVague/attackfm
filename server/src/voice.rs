@@ -252,6 +252,13 @@ pub struct Beat {
     pub text: String,
 }
 
+/// One beat from arbitrary text - the lore lines ride the same cache and
+/// mint machinery as the library. The text is unique per song, so unlike the
+/// shared library lines each costs the provider once ever, then serves free.
+pub fn beat(text: &str) -> Beat {
+    Beat { id: clip_key(text), text: text.to_string() }
+}
+
 /// The seat's library line for this artist - also the DJ's WRITTEN line when
 /// the patter model is absent or over budget, so the toast shows the same
 /// words the voice speaks. Pure, and independent of enabled(): a hub with no

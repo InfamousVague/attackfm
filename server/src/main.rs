@@ -69,6 +69,7 @@ mod listens;
 mod pair;
 mod peersync;
 mod profile;
+mod lore;
 mod vibes;
 mod voice;
 mod playlist_covers;

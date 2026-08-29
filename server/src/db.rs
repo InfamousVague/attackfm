@@ -726,6 +726,16 @@ CREATE TABLE IF NOT EXISTS dj_sets (
   PRIMARY KEY (user_id, vibe)
 );
 
+-- One short spoken-style fact per SONG, model-written, shared by every
+-- listener (lore belongs to the record, not the person). An empty body is a
+-- negative cache: the model was asked and did not know - kept so sets do not
+-- re-ask every press, retried once it has aged out (the model may improve).
+CREATE TABLE IF NOT EXISTS song_lore (
+  track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+  body     TEXT NOT NULL,
+  built_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS mood_profiles (
   user_id  INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   built_at INTEGER NOT NULL,
@@ -5598,6 +5608,37 @@ impl Db {
         conn.execute(
             "UPDATE dj_sets SET consumed_at = ?3 WHERE user_id = ?1 AND vibe = ?2",
             params![user, vibe, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// Every stored lore row among `ids`: (track_id, body, built_at).
+    /// Empty bodies ride along so the caller can tell "asked, unknown" from
+    /// "never asked".
+    pub fn lore_rows(&self, ids: &[i64]) -> Vec<(i64, String, i64)> {
+        let conn = self.lock();
+        let mut out = Vec::new();
+        for id in ids {
+            if let Ok(row) = conn.query_row(
+                "SELECT track_id, body, built_at FROM song_lore WHERE track_id = ?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            ) {
+                out.push(row);
+            }
+        }
+        out
+    }
+
+    pub fn lore_put(&self, track_id: i64, body: &str) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        // A real line is permanent: an empty verdict arriving late (a racing
+        // pass, a moodier model) must never blank lore a listener already has.
+        conn.execute(
+            "INSERT INTO song_lore (track_id, body, built_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(track_id) DO UPDATE SET body = ?2, built_at = ?3
+             WHERE NOT (?2 = '' AND song_lore.body != '')",
+            params![track_id, body, now_ms()],
         )?;
         Ok(())
     }

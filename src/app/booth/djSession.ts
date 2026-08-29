@@ -22,6 +22,8 @@ export interface DjRun {
   lineAt: Map<string, string>;
   /** The spoken beats for each run's first track (djVoice.ts clip ids). */
   voiceAt: Map<string, string[]>;
+  /** A bit of lore for any track that has one: the line, and its clip. */
+  loreAt: Map<string, { line: string; voice: string[] }>;
 }
 
 let current: DjRun | null = null;
@@ -64,6 +66,7 @@ export async function startDjRun(
   const paths = new Set<string>();
   const lineAt = new Map<string, string>();
   const voiceAt = new Map<string, string[]>();
+  const loreAt = new Map<string, { line: string; voice: string[] }>();
   for (const block of reply.blocks) {
     let first = true;
     for (const id of block.trackIds) {
@@ -73,9 +76,11 @@ export async function startDjRun(
       paths.add(t.path);
       if (first && block.say.trim()) lineAt.set(t.path, block.say.trim());
       if (first && block.voice && block.voice.length > 0) voiceAt.set(t.path, block.voice);
+      const lore = block.lore?.[String(id)];
+      if (lore?.say.trim()) loreAt.set(t.path, { line: lore.say.trim(), voice: lore.voice ?? [] });
       first = false;
     }
   }
-  publishDjRun(queue.length > 0 ? { paths, lineAt, voiceAt } : null);
+  publishDjRun(queue.length > 0 ? { paths, lineAt, voiceAt, loreAt } : null);
   return { queue, ai: reply.ai };
 }
