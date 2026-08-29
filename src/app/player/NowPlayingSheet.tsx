@@ -1219,13 +1219,6 @@ export function NowPlayingSheet({
      Null - tint off, greyscale art, no art - means the kit accent stands. */
 
   const djTalking = useDjTalking();
-  /* The SONG's vocals, estimated live: energy in the voice band (roughly
-     250Hz-3.5kHz) standing proud of bass and treble, off the same analyser
-     the spectrum art reads. Not a true stem - separation takes minutes per
-     song server-side - but a singer stepping forward moves this number, and
-     that is what the waves are for. Hysteresis arms the travelling rings
-     only for SUSTAINED singing, so a snare hit does not ripple. */
-  const [singing, setSinging] = useState(false);
   /* The waves' three lives: looping while the DJ speaks, one final EXPAND
      off the screen when the voice ends (by request - a wave that blinks out
      mid-ripple reads as a glitch; one that leaves reads as the room going
@@ -1244,59 +1237,15 @@ export function NowPlayingSheet({
     window.addEventListener('afm-dj-level', onLevel);
     return () => window.removeEventListener('afm-dj-level', onLevel);
   }, []);
-
   useEffect(() => {
-    if (!analyser || !audible) {
-      wavesRef.current?.style.setProperty('--vocal-level', '0');
-      setSinging(false);
-      return undefined;
-    }
-    let smoothed = 0;
-    let arm = 0;
-    const tick = window.setInterval(() => {
-      const bands = analyser.spectrum(24);
-      const avg = (from: number, to: number) => {
-        let sum = 0;
-        for (let i = from; i < to; i += 1) sum += bands[i] ?? 0;
-        return sum / Math.max(1, to - from);
-      };
-      /* Window edges come from the kit's actual spectrum(): fftSize is 512,
-         so 24 power-law bands over 256 bins of ~94Hz. Band 0 starts at 94Hz
-         (deep bass is simply invisible here), band 3 is ~187Hz and band 12
-         ~1.5kHz - the sung core sits in 3..12, presence above. Measured
-         against the fixture's speech clips, not derived on paper. */
-      const bass = avg(0, 3);
-      const voice = avg(3, 12);
-      const treble = avg(12, 20);
-      const total = avg(0, 24);
-      // The voice band standing PROUD of its neighbours, scaled by there
-      // being any music at all - silence and instrumental floors read zero.
-      const emphasis = Math.max(0, voice - 0.5 * bass - 0.15 * treble);
-      const raw = total < 0.02 ? 0 : Math.min(1, emphasis * 3.2) * Math.min(1, total * 5);
-      // Fast attack, slow release: a phrase holds the halo, a hit does not.
-      smoothed =
-        raw > smoothed ? smoothed + (raw - smoothed) * 0.55 : smoothed + (raw - smoothed) * 0.12;
-      wavesRef.current?.style.setProperty('--vocal-level', smoothed.toFixed(3));
-      if (smoothed > 0.22) arm = Math.min(arm + 1, 12);
-      else if (smoothed < 0.1) arm = Math.max(arm - 1, 0);
-      setSinging((was) => (was ? arm > 2 : arm > 5));
-    }, 100);
-    return () => {
-      window.clearInterval(tick);
-      wavesRef.current?.style.setProperty('--vocal-level', '0');
-    };
-  }, [analyser, audible]);
-  useEffect(() => {
-    // Two singers, one set of waves: the DJ's voice, and the song's own
-    // vocals - either keeps the ripples running.
-    if (djTalking || singing) {
+    if (djTalking) {
       setWave('on');
       return undefined;
     }
     setWave((w) => (w === 'on' ? 'leaving' : w));
     const t = window.setTimeout(() => setWave((w) => (w === 'leaving' ? 'off' : w)), 800);
     return () => window.clearTimeout(t);
-  }, [djTalking, singing]);
+  }, [djTalking]);
   const [readyCanvas, setReadyCanvas] = useState<string | null>(null);
   const canvasReady = readyCanvas !== null && readyCanvas === npCanvas;
   const setCanvasReady = (on: boolean) => setReadyCanvas(on ? npCanvas : null);

@@ -143,9 +143,8 @@
 }
 
 .npScreen__art[data-dj-waves] .npSpeakWaves__halo {
-  /* Whoever is singing - the DJ or the record - breathes the halo. */
-  opacity: calc(max(var(--dj-level, 0), var(--vocal-level, 0)) * 0.9);
-  transform: scale(calc(1 + max(var(--dj-level, 0), var(--vocal-level, 0)) * 0.07));
+  opacity: calc(var(--dj-level, 0) * 0.9);
+  transform: scale(calc(1 + var(--dj-level, 0) * 0.07));
 }
 
 .npSpeakWaves > span:not(.npSpeakWaves__halo) {
