@@ -182,6 +182,13 @@ export const SETTINGS_INDEX: SettingEntry[] = [
     // ('url'), and revealSetting fails SILENTLY on a miss - the pane simply
     // opens at the top and nothing flashes, which reads as search being flaky
     // rather than as a typo here.
+    id: 'dj-voice',
+    pane: 'local-ai',
+    label: 'DJ voice',
+    description: 'The DJ speaks its lines between songs, in a real voice.',
+    keywords: 'dj voice speech tts talk spoken elevenlabs kokoro radio announcer',
+  },
+  {
     id: 'ai-url',
     pane: 'local-ai',
     label: 'Model endpoint',

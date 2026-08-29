@@ -436,9 +436,46 @@ pub async fn station(
 
     // The model writes the patter over the already-chosen ids; a failure just
     // means a set with no words, never a set with no music.
-    let blocks = patter(&state, &picks, &seed, &dossiers)
+    let mut blocks = patter(&state, &picks, &seed, &dossiers)
         .await
         .unwrap_or_else(|| vec![json!({ "say": "", "trackIds": picks.clone() })]);
+
+    /*
+     * The voice, as beats: each block gets its seat's cached library line and
+     * the lead artist's name-drop (voice.rs owns the economics - the display
+     * patter above stays the model's, rich and per-set, while the SPOKEN
+     * layer is built entirely from clips that cache forever). Best-effort
+     * and strictly additive: a hub with no provider, or a mint that fails,
+     * just leaves the beat silent and the toast carries the set as before.
+     */
+    if crate::voice::enabled() {
+        let last = blocks.len().saturating_sub(1);
+        for (i, block) in blocks.iter_mut().enumerate() {
+            let lead = block
+                .get("trackIds")
+                .and_then(|v| v.as_array())
+                .and_then(|a| a.first())
+                .and_then(|v| v.as_i64());
+            let Some(lead) = lead else { continue };
+            let artist = state
+                .db
+                .titles_for(&[lead])
+                .first()
+                .map(|(artist, _)| artist.clone())
+                .unwrap_or_default();
+            let seat = if i == 0 {
+                crate::voice::Seat::Opener
+            } else if i == last && last > 0 {
+                crate::voice::Seat::Closer
+            } else {
+                crate::voice::Seat::Turn
+            };
+            let clips = crate::voice::block_clips(&state, seat, &artist).await;
+            if !clips.is_empty() {
+                block["voice"] = json!(clips);
+            }
+        }
+    }
     Ok(Json(
         json!({ "ai": ai_url().is_some(), "vibe": seed, "blocks": blocks }),
     ))

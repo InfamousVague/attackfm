@@ -6,6 +6,9 @@ import { request, type ServerSession } from './http.ts';
 export interface DjBlock {
   say: string;
   trackIds: number[];
+  /** Cached voice clips for this block, in speaking order - the library
+   *  line, then the artist drop. Absent when the server has no voice. */
+  voice?: string[];
 }
 
 export interface DjSet {
