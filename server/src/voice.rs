@@ -78,6 +78,16 @@ fn eleven_key() -> Option<String> {
     crate::ai::setting("elevenLabsKey", "AFM_ELEVENLABS_KEY")
 }
 
+/// The ElevenLabs model the clips are minted with. Multilingual v2 is their
+/// best-sounding one - slower and dearer per character than Flash, but the
+/// minting left the request path long ago and every clip is bought exactly
+/// once, so the wait is a background's problem and the cost stays pennies.
+/// Part of the cache key: raising the model re-speaks the library.
+fn tts_model() -> String {
+    crate::ai::setting("djTtsModel", "AFM_DJ_TTS_MODEL")
+        .unwrap_or_else(|| "eleven_multilingual_v2".to_string())
+}
+
 fn tts_cmd() -> Option<String> {
     crate::ai::setting("ttsCmd", "AFM_TTS_CMD")
 }
@@ -99,6 +109,8 @@ fn clip_key(text: &str) -> String {
     h.update(provider.as_bytes());
     h.update(b"|");
     h.update(voice_id().as_bytes());
+    h.update(b"|");
+    h.update(tts_model().as_bytes());
     h.update(b"|");
     h.update(text.as_bytes());
     h.finalize()[..16].iter().map(|b| format!("{b:02x}")).collect()
@@ -158,7 +170,7 @@ async fn mint(text: &str, dir: &std::path::Path, id: &str, path: &std::path::Pat
             .ok()?
             .post(url)
             .header("xi-api-key", key)
-            .json(&serde_json::json!({ "text": text, "model_id": "eleven_flash_v2_5" }))
+            .json(&serde_json::json!({ "text": text, "model_id": tts_model() }))
             .send()
             .await
             .ok()?;
