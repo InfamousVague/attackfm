@@ -122,18 +122,33 @@
   opacity: 0;
 }
 
-.npScreen__art[data-dj-talking] .npSpeakWaves > span {
+.npScreen__art[data-dj-waves='on'] .npSpeakWaves > span {
   animation:
     npSpeakGrow 1.9s ease-out infinite,
     npSpeakWobble 3.1s linear infinite;
 }
 
-.npScreen__art[data-dj-talking] .npSpeakWaves > span:nth-child(2) {
+.npScreen__art[data-dj-waves='on'] .npSpeakWaves > span:nth-child(2) {
   animation-delay: 0.62s, 0s;
 }
 
-.npScreen__art[data-dj-talking] .npSpeakWaves > span:nth-child(3) {
+.npScreen__art[data-dj-waves='on'] .npSpeakWaves > span:nth-child(3) {
   animation-delay: 1.24s, 0s;
+}
+
+/* The exit: when the voice ends, every ring makes one last run PAST the
+   edge of the screen - staggered so they leave as a set, forwards-filled
+   so nothing snaps back before the phase ends. */
+.npScreen__art[data-dj-waves='leaving'] .npSpeakWaves > span {
+  animation: npSpeakOff 0.7s ease-in forwards;
+}
+
+.npScreen__art[data-dj-waves='leaving'] .npSpeakWaves > span:nth-child(2) {
+  animation-delay: 0.07s;
+}
+
+.npScreen__art[data-dj-waves='leaving'] .npSpeakWaves > span:nth-child(3) {
+  animation-delay: 0.14s;
 }
 
 @keyframes npSpeakGrow {
@@ -164,8 +179,19 @@
   }
 }
 
+@keyframes npSpeakOff {
+  0% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(3.1) rotate(18deg);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .npScreen__art[data-dj-talking] .npSpeakWaves > span {
+  .npScreen__art[data-dj-waves] .npSpeakWaves > span {
     animation: none;
   }
 }

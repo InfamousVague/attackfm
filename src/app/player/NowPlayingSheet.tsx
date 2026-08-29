@@ -1219,6 +1219,20 @@ export function NowPlayingSheet({
      Null - tint off, greyscale art, no art - means the kit accent stands. */
 
   const djTalking = useDjTalking();
+  /* The waves' three lives: looping while the DJ speaks, one final EXPAND
+     off the screen when the voice ends (by request - a wave that blinks out
+     mid-ripple reads as a glitch; one that leaves reads as the room going
+     quiet), then gone. */
+  const [wave, setWave] = useState<'off' | 'on' | 'leaving'>('off');
+  useEffect(() => {
+    if (djTalking) {
+      setWave('on');
+      return undefined;
+    }
+    setWave((w) => (w === 'on' ? 'leaving' : w));
+    const t = window.setTimeout(() => setWave((w) => (w === 'leaving' ? 'off' : w)), 800);
+    return () => window.clearTimeout(t);
+  }, [djTalking]);
   const [readyCanvas, setReadyCanvas] = useState<string | null>(null);
   const canvasReady = readyCanvas !== null && readyCanvas === npCanvas;
   const setCanvasReady = (on: boolean) => setReadyCanvas(on ? npCanvas : null);
@@ -1381,7 +1395,7 @@ export function NowPlayingSheet({
           vanishes when a video shows up is a broken promise. Anyone who
           prefers the clip unobstructed picks Hidden - the third face. */}
       {artView !== 'hidden' && (
-      <div className="npScreen__art" data-dj-talking={djTalking || undefined}>
+      <div className="npScreen__art" data-dj-waves={wave === 'off' ? undefined : wave}>
         {/* The DJ's breath made visible: wobbly rings off the spinning
             record while the voice speaks, in the album's own accent. Purely
             decorative - pointer-events pass straight through to the disc. */}

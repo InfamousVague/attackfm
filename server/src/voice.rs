@@ -107,7 +107,10 @@ fn clip_key(text: &str) -> String {
     let provider = if eleven_key().is_some() { "11l" } else { "cmd" };
     let mut h = Sha256::new();
     h.update(provider.as_bytes());
-    h.update(b"|");
+    // Loudness generation marker: clips minted before the loudnorm pass were
+    // quiet next to R128-levelled music, and the cache would have kept them
+    // quiet forever.
+    h.update(b"|ln14|");
     h.update(voice_id().as_bytes());
     h.update(b"|");
     h.update(tts_model().as_bytes());
@@ -208,9 +211,30 @@ async fn mint(text: &str, dir: &std::path::Path, id: &str, path: &std::path::Pat
     if bytes.is_empty() {
         return None;
     }
-    // Atomic land: never let a half-written clip answer a request.
+    /*
+     * The voice arrives QUIET: providers master speech well below the
+     * broadcast loudness the library's music is levelled to, so even over a
+     * seven-percent duck the DJ was hard to hear. ffmpeg lifts every clip to
+     * spoken-word loudness before it lands; a hub without ffmpeg (there are
+     * none - the effects rack requires it) just keeps the raw take.
+     */
+    let raw = dir.join(format!("{id}.raw"));
     let part = dir.join(format!("{id}.writing"));
-    std::fs::write(&part, &bytes).ok()?;
+    std::fs::write(&raw, &bytes).ok()?;
+    let levelled = tokio::process::Command::new("ffmpeg")
+        .args(["-y", "-loglevel", "error", "-i"])
+        .arg(&raw)
+        .args(["-af", "loudnorm=I=-14:TP=-1.5:LRA=11", "-b:a", "128k", "-f", "mp3"])
+        .arg(&part)
+        .status()
+        .await
+        .map(|st| st.success() && part.is_file())
+        .unwrap_or(false);
+    if !levelled {
+        std::fs::write(&part, &bytes).ok()?;
+    }
+    let _ = std::fs::remove_file(&raw);
+    // Atomic land: never let a half-written clip answer a request.
     std::fs::rename(&part, path).ok()?;
     Some(id.to_string())
 }
