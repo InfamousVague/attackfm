@@ -450,6 +450,7 @@ pub async fn station(
      */
     if crate::voice::enabled() {
         let last = blocks.len().saturating_sub(1);
+        let mut jobs: Vec<crate::voice::Beat> = Vec::new();
         for (i, block) in blocks.iter_mut().enumerate() {
             let lead = block
                 .get("trackIds")
@@ -470,11 +471,15 @@ pub async fn station(
             } else {
                 crate::voice::Seat::Turn
             };
-            let clips = crate::voice::block_clips(&state, seat, &artist).await;
-            if !clips.is_empty() {
-                block["voice"] = json!(clips);
+            let beats = crate::voice::block_beats(seat, &artist);
+            if !beats.is_empty() {
+                block["voice"] = json!(beats.iter().map(|b| b.id.clone()).collect::<Vec<_>>());
+                jobs.extend(beats);
             }
         }
+        // The ids are promises; the speaking happens behind the reply. The
+        // clip endpoint keeps the promise even if this task dies first.
+        crate::voice::mint_behind(&state, jobs);
     }
     Ok(Json(
         json!({ "ai": ai_url().is_some(), "vibe": seed, "blocks": blocks }),

@@ -21,8 +21,9 @@ use axum::extract::{Path as AxumPath, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 /// The connective library. Written without artist names on purpose - the name
@@ -125,6 +126,27 @@ async fn speak(state: &Arc<AppState>, text: &str) -> Option<String> {
     }
     std::fs::create_dir_all(&dir).ok()?;
 
+    // One payer per clip: whoever else is already minting these words, wait
+    // for their file instead of buying it twice.
+    if !claim(&id) {
+        for _ in 0..60 {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            if path.is_file() {
+                return Some(id);
+            }
+        }
+        return None;
+    }
+    let spoken = mint(text, &dir, &id, &path).await;
+    release(&id);
+    if spoken.is_some() {
+        let _ = std::fs::remove_file(sidecar(&dir, &id));
+    }
+    spoken
+}
+
+async fn mint(text: &str, dir: &std::path::Path, id: &str, path: &std::path::Path) -> Option<String> {
+
     let bytes: Vec<u8> = if let Some(key) = eleven_key() {
         let voice = voice_id();
         let url = format!(
@@ -177,14 +199,25 @@ async fn speak(state: &Arc<AppState>, text: &str) -> Option<String> {
     // Atomic land: never let a half-written clip answer a request.
     let part = dir.join(format!("{id}.writing"));
     std::fs::write(&part, &bytes).ok()?;
-    std::fs::rename(&part, &path).ok()?;
-    Some(id)
+    std::fs::rename(&part, path).ok()?;
+    Some(id.to_string())
+}
+
+/// One beat the set will speak: the words, and the cache id they will land
+/// under. The id is a pure function of the text, which is what lets the DJ
+/// endpoint answer IMMEDIATELY - ids attach to the reply, the minting runs
+/// behind it, and the clip endpoint below can even mint on demand for a
+/// listener who asks before the background task gets there. The first cut
+/// minted inside the request, and a first-ever set (a dozen unminted beats
+/// plus the patter model) blew straight past the client's timeout.
+pub struct Beat {
+    pub id: String,
+    pub text: String,
 }
 
 /// The two beats a block speaks: its seat's line, then the artist's name as
-/// its own sentence. Either can be None (a failed mint stays silent); the
-/// order is the speaking order.
-pub async fn block_clips(state: &Arc<AppState>, seat: Seat, artist: &str) -> Vec<String> {
+/// its own sentence. Pure - no network, no disk.
+pub fn block_beats(seat: Seat, artist: &str) -> Vec<Beat> {
     if !enabled() {
         return Vec::new();
     }
@@ -194,21 +227,68 @@ pub async fn block_clips(state: &Arc<AppState>, seat: Seat, artist: &str) -> Vec
         Seat::Closer => CLOSERS,
     };
     let line = pick(pool, artist);
-    let mut out = Vec::new();
-    // A whole-set budget is the caller's business; each beat gets its own
-    // modest one so a stuck provider cannot hold a set hostage.
-    if let Ok(Some(id)) = tokio::time::timeout(Duration::from_secs(12), speak(state, &line)).await {
-        out.push(id);
-    }
+    let mut out = vec![Beat { id: clip_key(&line), text: line }];
     let name = artist.trim();
     if !name.is_empty() {
         let drop = format!("{name}.");
-        if let Ok(Some(id)) = tokio::time::timeout(Duration::from_secs(12), speak(state, &drop)).await
-        {
-            out.push(id);
-        }
+        out.push(Beat { id: clip_key(&drop), text: drop });
     }
     out
+}
+
+/// The words behind each promised id, kept beside the cache: the clip
+/// endpoint reads this to mint on demand when it is asked for a clip the
+/// background task has not landed yet (or never will - a restart mid-mint).
+/// Removed once the mp3 exists.
+fn sidecar(dir: &std::path::Path, id: &str) -> PathBuf {
+    dir.join(format!("{id}.txt"))
+}
+
+/// Note every beat the set has promised, then mint them behind the reply.
+pub fn mint_behind(state: &Arc<AppState>, beats: Vec<Beat>) {
+    if beats.is_empty() {
+        return;
+    }
+    let dir = clip_dir(state);
+    let _ = std::fs::create_dir_all(&dir);
+    for b in &beats {
+        if !dir.join(format!("{}.mp3", b.id)).is_file() {
+            let _ = std::fs::write(sidecar(&dir, &b.id), &b.text);
+        }
+    }
+    let state = state.clone();
+    tokio::spawn(async move {
+        let mut seen = HashSet::new();
+        for b in beats {
+            if seen.insert(b.id.clone()) {
+                let _ = speak(&state, &b.text).await;
+            }
+        }
+    });
+}
+
+/// Mints in flight, so the background task and an eager clip request cannot
+/// both pay the provider for the same words. Claim and release are plain
+/// synchronous calls - a guard held anywhere near an await point makes the
+/// whole future non-Send, and both callers here are spawned.
+fn minting() -> &'static Mutex<HashSet<String>> {
+    static M: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    M.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn claim(id: &str) -> bool {
+    let Ok(mut in_flight) = minting().lock() else { return false };
+    if in_flight.contains(id) {
+        return false;
+    }
+    in_flight.insert(id.to_string());
+    true
+}
+
+fn release(id: &str) {
+    if let Ok(mut in_flight) = minting().lock() {
+        in_flight.remove(id);
+    }
 }
 
 /// `GET /api/voice/{id}` - one cached clip, for the signed-in listener.
@@ -225,7 +305,16 @@ pub async fn serve(
     if id.len() != 32 || !id.chars().all(|c| c.is_ascii_hexdigit()) {
         return (StatusCode::BAD_REQUEST, "no such clip").into_response();
     }
-    let path = clip_dir(&state).join(format!("{id}.mp3"));
+    let dir = clip_dir(&state);
+    let path = dir.join(format!("{id}.mp3"));
+    // Asked before the background mint landed (or after a restart ate it):
+    // the sidecar still knows the words, so say them now. The fetch simply
+    // takes a beat longer, once.
+    if !path.is_file() {
+        if let Ok(text) = std::fs::read_to_string(sidecar(&dir, &id)) {
+            let _ = speak(&state, text.trim()).await;
+        }
+    }
     match std::fs::read(&path) {
         Ok(bytes) => (
             [

@@ -32,7 +32,10 @@ export async function fetchDj(session: ServerSession, seed = '', count?: number)
   const out = await request<Partial<DjSet>>(
     session.url,
     `/api/dj${qs ? `?${qs}` : ''}`,
-    { token: session.token },
+    // The patter model on a CPU-only hub legitimately takes its time - the
+    // other model-backed calls already wait 90s, and this one timing out is
+    // how "request timed out" ended up in the DJ's mouth.
+    { token: session.token, timeoutMs: 120_000 },
   );
   return { ai: out.ai ?? false, vibe: out.vibe ?? seed, blocks: out.blocks ?? [] };
 }
