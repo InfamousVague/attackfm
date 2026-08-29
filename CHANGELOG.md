@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.125
+
+- The DJ panel sits balanced now - buttons fill its width instead of huddling left
+
 ## 0.4.124
 
 - The DJ answers in seconds now: the patter model gets a five-second seat, and past that the set ships with the voice's own lines
