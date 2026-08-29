@@ -640,8 +640,20 @@ async fn patter(
         lines.join("\n"),
     );
 
+    // Live gets a minute; the bank gets whatever the operator granted the
+    // model (the AI pane's own timeout) - benching it again with a hardcoded
+    // sixty seconds was exactly how the first banked sets shipped library
+    // lines instead of judgement.
+    let patience = if curate {
+        crate::ai::setting("timeoutSecs", "AFM_AI_TIMEOUT_SECS")
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(300)
+            .max(60)
+    } else {
+        60
+    };
     let reply: Value = reqwest::Client::builder()
-        .timeout(Duration::from_secs(60))
+        .timeout(Duration::from_secs(patience))
         .build()
         .ok()?
         .post(format!("{}/v1/chat/completions", url.trim_end_matches('/')))
