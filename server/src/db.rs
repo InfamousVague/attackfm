@@ -4853,7 +4853,7 @@ impl Db {
                      f.audio_fingerprint, COALESCE(f.audio_fingerprint_dims,0),
                      COALESCE(f.ai_genres,''), COALESCE(f.ai_sonic_traits,''),
                      COALESCE(p.canonical_profile,''),
-                     t.curator_user_id, t.added_at
+                     t.curator_user_id, t.added_at, COALESCE(t.kind, 'music')
              FROM tracks t LEFT JOIN track_features f ON f.track_id = t.id
              LEFT JOIN song_profile_layers p ON p.track_id = t.id
              WHERE t.deleted = 0",
@@ -4911,6 +4911,7 @@ impl Db {
                 curator_user_id: r.get(25)?,
                 added_at: r.get(26).unwrap_or(0),
                 audio_fingerprint: decode(r.get(20)?, r.get(21)?),
+                kind: r.get(27)?,
             })
         })
         .map(|rows| rows.filter_map(Result::ok).collect())
@@ -8301,6 +8302,8 @@ pub struct CurationTrack {
 #[derive(Default)]
 pub struct TrackFeatures {
     pub track_id: i64,
+    /// 'music' or 'book' - stations and mixes must never deal a chapter.
+    pub kind: String,
     pub bpm: Option<f64>,
     pub lyric_vec: Option<Vec<f32>>,
     pub genre: String,

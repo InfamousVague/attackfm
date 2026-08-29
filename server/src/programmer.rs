@@ -42,22 +42,30 @@ const FRESH_SHARE: usize = 6;
 /// How far back "heavy rotation" and "recent arrival" look.
 const PLAYS_WINDOW_MS: i64 = 30 * 86_400_000;
 
-/// How much of the seed artist's own cohesion a stranger must show to join
-/// their station. The neighbourhood used to be a bare top-N by cosine, and a
-/// top-N ALWAYS fills - in a modest library the twelve "nearest" tracks to a
-/// scrappy indie act included chart pop that is not near at all, just least
-/// far. Judged against the artist's own records instead: if their catalogue
-/// sits at 0.8 to its own centre, a neighbour must clear 0.75 of that.
-const NEIGHBOUR_FLOOR_SHARE: f32 = 0.75;
-/// The absolute floor under the relative one, for artists whose own catalogue
-/// is diffuse - even then, a station must not admit tracks that are simply
-/// the least-distant strangers.
-const NEIGHBOUR_FLOOR_MIN: f32 = 0.35;
+/// How far along the road from "typical library track" to "as close as the
+/// artist's own records" a stranger must travel to join their station.
+///
+/// The first floor here was a share of the artist's own cohesion in absolute
+/// cosine - and it excluded NOBODY, because text-embedding spaces are
+/// anisotropic: everything lives in a narrow cone, the whole library sits at
+/// 0.7+ to any centre, and 75% of 0.85 is a bar the furthest stranger clears
+/// lying down (Katy Perry stayed on Wet Leg Radio to prove it, alongside an
+/// audiobook chapter). What separates neighbours from strangers is not the
+/// cosine's absolute size but where it falls between the POPULATION mean and
+/// the artist's own mean - so that is the scale the floor lives on now.
+const NEIGHBOUR_FLOOR_SHARE: f32 = 0.6;
+/// The starvation fallback relaxes to here on the same scale - still closer
+/// to the artist than the library's average, never just "least far".
+const NEIGHBOUR_RELAX_SHARE: f32 = 0.3;
+/// Below this gap between the artist's own cohesion and the population mean
+/// the centre separates nothing, and picking "nearest" would be picking
+/// noise - the station stays spine-only instead.
+const SEPARATION_MIN: f32 = 0.02;
 
-/// The bar a would-be neighbour must clear, from how tightly the artist's own
-/// records hold together.
-fn similarity_floor(own_sim: f32) -> f32 {
-    (own_sim * NEIGHBOUR_FLOOR_SHARE).max(NEIGHBOUR_FLOOR_MIN)
+/// The bar a would-be neighbour must clear: `share` of the way from the
+/// population's mean closeness to the artist's own.
+fn similarity_floor(pop_mean: f32, own_sim: f32, share: f32) -> f32 {
+    pop_mean + (own_sim - pop_mean) * share
 }
 const ARRIVAL_WINDOW_MS: i64 = 21 * 86_400_000;
 
@@ -89,7 +97,15 @@ pub fn rebuild_now(state: &Arc<AppState>, user: i64, profile: &MoodProfile) -> u
 }
 
 fn build_stations(state: &Arc<AppState>, user: i64, profile: &MoodProfile) -> usize {
-    let all = state.db.all_features();
+    // Books are tracks too, but never radio: an audiobook chapter that
+    // embeds "near" a band is an artifact of the text space, and one turned
+    // up inside an artist station to prove it. Out before anything ranks.
+    let all: Vec<crate::db::TrackFeatures> = state
+        .db
+        .all_features()
+        .into_iter()
+        .filter(|f| f.kind != "book")
+        .collect();
     let plays: HashMap<i64, i64> = state
         .db
         .top_plays(user, crate::db::now_ms() - PLAYS_WINDOW_MS, 500)
@@ -268,27 +284,6 @@ fn build_stations(state: &Arc<AppState>, user: i64, profile: &MoodProfile) -> us
             *c /= n as f32;
         }
 
-        // The artist's own cohesion: how close their records sit to their own
-        // centre, on average. This is the yardstick strangers are measured
-        // against - a fixed cosine threshold would be a guess about one
-        // embedding model, where this recalibrates per artist and per model.
-        let own_sim = {
-            let mut sum = 0f32;
-            let mut cnt = 0usize;
-            for f in &theirs {
-                if let Some(v) = f.lyric_vec.as_deref().or(f.sonic_vec.as_deref()) {
-                    if v.len() == dims {
-                        sum += cos(&centre, v);
-                        cnt += 1;
-                    }
-                }
-            }
-            if cnt == 0 {
-                continue;
-            }
-            sum / cnt as f32
-        };
-        let floor = similarity_floor(own_sim);
 
         // The spine: their records, most-played first, up to a dozen.
         let mut spine: Vec<(i64, i64)> = theirs
@@ -316,18 +311,48 @@ fn build_stations(state: &Arc<AppState>, user: i64, profile: &MoodProfile) -> us
                 Some((cos(&centre, v), f))
             })
             .collect();
+        // The two means the floor lives between: how close the artist's own
+        // records sit to their centre, and how close EVERYTHING ELSE does.
+        // The gap between them is the only real signal in an anisotropic
+        // space - absolute cosines here are all large and all meaningless.
+        let own_sim = {
+            let mut sum = 0f32;
+            let mut cnt = 0usize;
+            for f in &theirs {
+                if let Some(v) = f.lyric_vec.as_deref().or(f.sonic_vec.as_deref()) {
+                    if v.len() == dims {
+                        sum += cos(&centre, v);
+                        cnt += 1;
+                    }
+                }
+            }
+            if cnt == 0 {
+                continue;
+            }
+            sum / cnt as f32
+        };
+        let pop_mean = if near.is_empty() {
+            own_sim
+        } else {
+            near.iter().map(|(c, _)| *c).sum::<f32>() / near.len() as f32
+        };
+
         /*
-         * Floored, then relaxed only against starvation: the strict floor is
-         * what keeps Katy Perry out of Wet Leg Radio, but an artist whose
-         * library holds no true neighbours must not lose their station over
-         * it - so if the spine plus floored neighbours cannot reach a
-         * playable list, the nearest of the rejected are re-admitted down to
-         * the ABSOLUTE floor, never below.
+         * Floored, then relaxed only against starvation. When the artist's
+         * own cohesion does not separate from the population at all, the
+         * centre knows nothing and the station stays spine-only rather than
+         * dressing noise as a neighbourhood.
          */
-        let (mut close, far): (Vec<_>, Vec<_>) = near.into_iter().partition(|(c, _)| *c >= floor);
-        if ids.len() + close.len() < 8 {
-            let mut fallback: Vec<_> =
-                far.into_iter().filter(|(c, _)| *c >= NEIGHBOUR_FLOOR_MIN).collect();
+        let separated = own_sim - pop_mean >= SEPARATION_MIN;
+        let floor = similarity_floor(pop_mean, own_sim, NEIGHBOUR_FLOOR_SHARE);
+        let (mut close, far): (Vec<_>, Vec<_>) = if separated {
+            near.into_iter().partition(|(c, _)| *c >= floor)
+        } else {
+            (Vec::new(), Vec::new())
+        };
+        if separated && ids.len() + close.len() < 8 {
+            let relax = similarity_floor(pop_mean, own_sim, NEIGHBOUR_RELAX_SHARE);
+            let mut fallback: Vec<_> = far.into_iter().filter(|(c, _)| *c >= relax).collect();
             fallback.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
             let need = (8 - ids.len()).saturating_sub(close.len());
             close.extend(fallback.into_iter().take(need));
@@ -354,7 +379,7 @@ fn build_stations(state: &Arc<AppState>, user: i64, profile: &MoodProfile) -> us
             // bonus, not structure, and this is exactly where a chart
             // audition would otherwise slide into a station it does not
             // belong to. Nothing close enough means fewer fresh slots.
-            .filter(|(c, _)| *c >= floor)
+            .filter(|(c, _)| separated && *c >= floor)
             .collect();
         let fresh_ids = take_spread(fresh, 6);
         let fresh_count = fresh_ids.len();
@@ -446,13 +471,15 @@ mod tests {
 
     /// The artist cap holds however good one artist's scores are.
     #[test]
-    fn the_floor_tracks_the_artists_own_cohesion() {
-        // Tight catalogue, high bar: strangers must be nearly as close as
-        // the artist's own records.
-        assert!((similarity_floor(0.8) - 0.6).abs() < 1e-6);
-        // Diffuse catalogue: the bar still never drops below the absolute
-        // minimum - "least far" is not "near".
-        assert!((similarity_floor(0.2) - NEIGHBOUR_FLOOR_MIN).abs() < 1e-6);
+    fn the_floor_lives_between_the_population_and_the_artist() {
+        // Anisotropic reality: population at 0.75, the artist's own records
+        // at 0.87. The bar lands 60% of the way up the gap - 0.822 - which
+        // a typical library track (0.75-0.78) cannot clear.
+        assert!((similarity_floor(0.75, 0.87, NEIGHBOUR_FLOOR_SHARE) - 0.822).abs() < 1e-4);
+        // The starvation relax stays closer to the artist than the average
+        // library track - never just "least far".
+        let relax = similarity_floor(0.75, 0.87, NEIGHBOUR_RELAX_SHARE);
+        assert!(relax > 0.75 && relax < 0.822);
     }
 
     #[test]
