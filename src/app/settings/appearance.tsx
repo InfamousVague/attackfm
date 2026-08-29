@@ -193,6 +193,16 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
     if (scale === 1) root.style.removeProperty('font-size');
     else root.style.setProperty('font-size', `${(scale * 100).toFixed(3)}%`);
 
+    /* Arm the accent tween only after the first write has landed: the
+       registered accent properties (07-the-dock-contract-c.css) transition
+       under [data-accent-tween], and without this two-frame delay every
+       launch would visibly sweep from the kit's blue to the chosen accent.
+       Armed once, it stays - accent changes, theme flips and the song tint
+       all glide from then on. */
+    if (!root.hasAttribute('data-accent-tween')) {
+      window.setTimeout(() => root.setAttribute('data-accent-tween', ''), 150);
+    }
+
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(appearance));
     } catch {

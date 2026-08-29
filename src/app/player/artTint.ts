@@ -142,6 +142,24 @@ async function readTint(url: string): Promise<ArtTint | null> {
  * near-white whisper of the same hue, by request: light glyphs on the vivid
  * circle, the way the rest of the sheet's ink runs light.
  */
+/**
+ * Perceived brightness of the band's solid at this hue, 0..1. The solid's
+ * HSL lightness is pinned at 64%, but 64%-yellow blazes while 64%-blue
+ * broods - luma is what the eye actually gets, so it is what the ink on
+ * the solid must answer to.
+ */
+function solidLuma(hue: number): number {
+  const sat = 0.78;
+  const light = 0.64;
+  const c = (1 - Math.abs(2 * light - 1)) * sat;
+  const hp = hue / 60;
+  const x = c * (1 - Math.abs((hp % 2) - 1));
+  const m = light - c / 2;
+  const [r, g, b] =
+    hp < 1 ? [c, x, 0] : hp < 2 ? [x, c, 0] : hp < 3 ? [0, c, x] : hp < 4 ? [0, x, c] : hp < 5 ? [x, 0, c] : [c, 0, x];
+  return 0.299 * (r + m) + 0.587 * (g + m) + 0.114 * (b + m);
+}
+
 function ramp(hue: number): ArtTint {
   const h = hue.toFixed(0);
   const steps: Array<[number, number, number]> = [
@@ -164,8 +182,14 @@ function ramp(hue: number): ArtTint {
   }
   vars['--glacier-accent-solid'] = `hsl(${h} 78% 64%)`;
   vars['--glacier-accent-text'] = `hsl(${h} 85% 72%)`;
-  vars['--glacier-accent-contrast'] = `hsl(${h} 45% 97%)`;
-  vars['--glacier-on-accent'] = `hsl(${h} 45% 97%)`;
+  /* The ink ON the solid answers the solid's real brightness: light glyphs
+     on the deep hues (the request that made them light), dark ink once the
+     hue itself blazes - yellow, lime, cyan - where near-white ink washes
+     out. The threshold sits just above orange (0.62), which was approved
+     wearing light glyphs. */
+  const ink = solidLuma(hue) > 0.65 ? `hsl(${h} 35% 12%)` : `hsl(${h} 45% 97%)`;
+  vars['--glacier-accent-contrast'] = ink;
+  vars['--glacier-on-accent'] = ink;
   vars['--glacier-accent-soft'] = `hsl(${h} 78% 64% / 0.2)`;
   vars['--glacier-accent-border'] = `hsl(${h} 60% 55% / 0.55)`;
   return vars;
