@@ -334,10 +334,8 @@ pub(crate) fn destination_for(music_root: &Path, temp: &Path, original: &str, ex
 
     // The album artist groups a compilation correctly; the track artist is the
     // fallback so something always names the folder.
-    let artist = tag
-        .get_string(&ItemKey::AlbumArtist)
-        .map(|s| s.to_string())
-        .or_else(|| tag.artist().map(|c| c.to_string()))
+    let artist = crate::scan::joined_values(tag, &ItemKey::AlbumArtist)
+        .or_else(|| crate::scan::joined_values(tag, &ItemKey::TrackArtist))
         .unwrap_or_default();
     let album = tag.album().map(|c| c.to_string()).unwrap_or_default();
     let title = tag.title().map(|c| c.to_string()).unwrap_or_default();

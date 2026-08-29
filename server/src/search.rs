@@ -218,8 +218,7 @@ pub(crate) async fn spotify_search(q: &str) -> Vec<SearchResult> {
     if let Some(items) = v.pointer("/tracks/items").and_then(|x| x.as_array()) {
         for it in items {
             let title = it.get("name").and_then(|x| x.as_str()).unwrap_or_default().to_string();
-            let artist =
-                it.pointer("/artists/0/name").and_then(|x| x.as_str()).unwrap_or_default().to_string();
+            let artist = all_artist_names(it);
             let url = it
                 .pointer("/external_urls/spotify")
                 .and_then(|x| x.as_str())
@@ -258,11 +257,7 @@ pub(crate) async fn spotify_search(q: &str) -> Vec<SearchResult> {
                 importable: importable(&url),
                 kind: "album".into(),
                 title,
-                subtitle: it
-                    .pointer("/artists/0/name")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or_default()
-                    .to_string(),
+                subtitle: all_artist_names(it),
                 cover: it.pointer("/images/0/url").and_then(|x| x.as_str()).map(String::from),
                 url,
                 source: "spotify".into(),
@@ -624,6 +619,21 @@ pub(crate) async fn spotiflac_search(state: &Arc<AppState>, q: &str) -> Vec<Sear
         });
     }
     out
+}
+
+/// Every artist on the credit, joined - Spotify's payload carries them as an
+/// array, and showing only `artists/0` cut collab billings in search results
+/// the same way the scanner was cutting multi-valued tags.
+fn all_artist_names(it: &serde_json::Value) -> String {
+    it.get("artists")
+        .and_then(|a| a.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.get("name").and_then(|n| n.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default()
 }
 
 pub async fn search(

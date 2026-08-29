@@ -216,6 +216,27 @@ fn name_without_extension(rel_path: &str) -> String {
 
 /// Reads one file into a scannable row. Returns None when the file cannot be
 /// parsed at all - one unreadable file must never fail a pass.
+/// Every value of a multi-valued tag key, joined the way the library already
+/// writes joint credits: ", ". lofty's `artist()` accessor returns only the
+/// FIRST item of a tag, and taggers routinely split a credit like
+/// "Joey Valence & Brae" (or a NAME like "Tyler, The Creator") into several
+/// ARTIST values - the accessor then silently loses everyone after the
+/// first, and the library fills with truncated artists. The join separator
+/// matches the single-string credits the library already holds.
+pub(crate) fn joined_values(tag: &lofty::tag::Tag, key: &lofty::tag::ItemKey) -> Option<String> {
+    let joined = tag
+        .get_strings(key)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(", ");
+    if joined.is_empty() {
+        None
+    } else {
+        Some(joined)
+    }
+}
+
 fn read_track(path: &Path, rel_path: &str, art_dir: &Path) -> Option<ScannedTrack> {
     use lofty::file::{AudioFile, TaggedFileExt};
     use lofty::prelude::{Accessor, ItemKey};
@@ -246,9 +267,7 @@ fn read_track(path: &Path, rel_path: &str, art_dir: &Path) -> Option<ScannedTrac
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| name_without_extension(rel_path));
     let artist = tag
-        .and_then(|t| t.artist())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
+        .and_then(|t| joined_values(t, &ItemKey::TrackArtist))
         .unwrap_or_else(|| "Unknown artist".to_string());
     let mut album = tag
         .and_then(|t| t.album())
@@ -284,14 +303,9 @@ fn read_track(path: &Path, rel_path: &str, art_dir: &Path) -> Option<ScannedTrac
     }
     // An album artist is what groups a compilation; falling back to the track
     // artist keeps every album grouped by something.
-    let album_artist = {
-        let tagged_value = text(&ItemKey::AlbumArtist);
-        if tagged_value.is_empty() {
-            artist.clone()
-        } else {
-            tagged_value
-        }
-    };
+    let album_artist = tag
+        .and_then(|t| joined_values(t, &ItemKey::AlbumArtist))
+        .unwrap_or_else(|| artist.clone());
 
     // Cover art: the first picture the tag carries, cached by content hash.
     let art_id = tag
@@ -1004,5 +1018,35 @@ mod missing_art_is_refetched {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The bug this guards: lofty's `artist()` returns only the FIRST item of
+    /// a multi-valued tag, so "Tyler, The Creator" - split by a tagger into
+    /// two ARTIST values - scanned as just "Tyler". The joined reader keeps
+    /// everyone, in the library's own ", " billing.
+    #[test]
+    fn a_multi_valued_artist_tag_keeps_every_name() {
+        use lofty::tag::{ItemKey, ItemValue, Tag, TagItem, TagType};
+        let mut tag = Tag::new(TagType::VorbisComments);
+        tag.push(TagItem::new(ItemKey::TrackArtist, ItemValue::Text("Tyler".into())));
+        tag.push(TagItem::new(ItemKey::TrackArtist, ItemValue::Text("The Creator".into())));
+        assert_eq!(
+            joined_values(&tag, &ItemKey::TrackArtist).as_deref(),
+            Some("Tyler, The Creator")
+        );
+        // A single-valued tag passes through untouched.
+        let mut single = Tag::new(TagType::VorbisComments);
+        single.push(TagItem::new(ItemKey::TrackArtist, ItemValue::Text("Joey Valence & Brae".into())));
+        assert_eq!(
+            joined_values(&single, &ItemKey::TrackArtist).as_deref(),
+            Some("Joey Valence & Brae")
+        );
+        // And absence still reads as absence, so the fallback names apply.
+        assert_eq!(joined_values(&Tag::new(TagType::VorbisComments), &ItemKey::TrackArtist), None);
     }
 }

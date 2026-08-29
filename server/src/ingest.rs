@@ -621,7 +621,7 @@ fn take_inventory(root: &Path) -> Inventory {
         let Ok(tagged) = probed.read() else { continue };
         let Some(tag) = tagged.primary_tag().or_else(|| tagged.first_tag()) else { continue };
         tags.push((
-            tag.artist().map(|c| c.to_string()).unwrap_or_default(),
+            crate::scan::joined_values(tag, &lofty::tag::ItemKey::TrackArtist).unwrap_or_default(),
             tag.album().map(|c| c.to_string()).unwrap_or_default(),
             tag.title().map(|c| c.to_string()).unwrap_or_default(),
         ));
