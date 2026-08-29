@@ -9,9 +9,9 @@ export interface Appearance {
   accent: string;
   density: DensityMode;
   /**
-   * Whether the Now Playing screen (and the rooms it opens) re-dress the
-   * accent in the current album's own colour. On is the shipped behaviour;
-   * off keeps the chosen accent everywhere, always.
+   * Whether the whole app re-dresses the accent in the current album's own
+   * colour for as long as a song is up. On is the shipped behaviour; off
+   * keeps the chosen accent everywhere, always.
    */
   dynamicAccent: boolean;
   /**
@@ -123,6 +123,18 @@ function prefersDark(): boolean {
 export function AppearanceProvider({ children }: { children: ReactNode }) {
   const [appearance, setAppearance] = useState<Appearance>(readStored);
   const [systemDark, setSystemDark] = useState(prefersDark);
+  /* Bumped by the 'afm-apply-accent' event so the write effect re-runs on
+     demand. The song tint (Player) owns the root's accent vars while it
+     stands; when it lifts it fires this event rather than restoring
+     snapshots, so what comes back is whatever the CURRENT choice is - a
+     listener who changed accents mid-song gets the new one, not a stale
+     copy of the old. */
+  const [accentEpoch, setAccentEpoch] = useState(0);
+  useEffect(() => {
+    const reapply = () => setAccentEpoch((n) => n + 1);
+    window.addEventListener('afm-apply-accent', reapply);
+    return () => window.removeEventListener('afm-apply-accent', reapply);
+  }, []);
 
   // A brand accent's ramp is scheme-specific, so track the OS scheme for when
   // the theme is set to system.
@@ -142,25 +154,32 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
     else root.setAttribute('data-theme', preset.mode);
     root.setAttribute('data-theme-preset', preset.id);
 
-    // Clear any brand ramp from a previous choice before applying this one.
-    for (let step = 1; step <= 12; step += 1) root.style.removeProperty(`--glacier-accent-${step}`);
-    root.style.removeProperty('--glacier-accent-contrast');
+    /* While the song tint stands (data-song-tint, written by the Player),
+       the accent vars on the root are the SONG'S, and touching them here
+       would splice the chosen accent into the middle of the album's -
+       so the whole accent write stands down. The tint's lift fires
+       'afm-apply-accent', which lands back here with the attribute gone. */
+    if (!root.hasAttribute('data-song-tint')) {
+      // Clear any brand ramp from a previous choice before applying this one.
+      for (let step = 1; step <= 12; step += 1) root.style.removeProperty(`--glacier-accent-${step}`);
+      root.style.removeProperty('--glacier-accent-contrast');
 
-    const brand = BRAND_ACCENTS[appearance.accent];
-    if (brand) {
-      root.removeAttribute('data-accent');
-      const scheme: Theme = preset.mode === 'system' ? (systemDark ? 'dark' : 'light') : preset.mode;
-      deepenRamp(accentSteps(brand, scheme), brand.deep ?? 0).forEach((value, index) =>
-        root.style.setProperty(`--glacier-accent-${index + 1}`, value),
-      );
-      root.style.setProperty(
-        '--glacier-accent-contrast',
-        brand.contrast === 'white' ? 'oklch(0.995 0 0)' : 'oklch(0.18 0 0)',
-      );
-    } else if (appearance.accent === KIT_DEFAULT_ACCENT) {
-      root.removeAttribute('data-accent');
-    } else {
-      root.setAttribute('data-accent', appearance.accent);
+      const brand = BRAND_ACCENTS[appearance.accent];
+      if (brand) {
+        root.removeAttribute('data-accent');
+        const scheme: Theme = preset.mode === 'system' ? (systemDark ? 'dark' : 'light') : preset.mode;
+        deepenRamp(accentSteps(brand, scheme), brand.deep ?? 0).forEach((value, index) =>
+          root.style.setProperty(`--glacier-accent-${index + 1}`, value),
+        );
+        root.style.setProperty(
+          '--glacier-accent-contrast',
+          brand.contrast === 'white' ? 'oklch(0.995 0 0)' : 'oklch(0.18 0 0)',
+        );
+      } else if (appearance.accent === KIT_DEFAULT_ACCENT) {
+        root.removeAttribute('data-accent');
+      } else {
+        root.setAttribute('data-accent', appearance.accent);
+      }
     }
 
     if (appearance.density === 'comfortable') root.removeAttribute('data-density');
@@ -181,7 +200,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
       // this run. This provider wraps the whole tree, so a throw here would
       // blank the app over a preference that was already on screen.
     }
-  }, [appearance, systemDark]);
+  }, [appearance, systemDark, accentEpoch]);
 
   const value = useMemo<AppearanceContextValue>(
     () => ({ ...appearance, update: (next) => setAppearance((current) => ({ ...current, ...next })) }),

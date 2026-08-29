@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.114
+
+- The album's colour is the app's colour now: while a song is up, the accent follows it everywhere - home, library, settings, all of it - not just on Now Playing
+
 ## 0.4.113
 
 - Fixed: leaving Now Playing no longer strips your chosen accent - the home screen was falling back to blue after the album colour lifted

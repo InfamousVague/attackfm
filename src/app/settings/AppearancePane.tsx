@@ -122,7 +122,7 @@ export function Appearance() {
         <SettingRow
           id="dynamic-accent"
           label="Album colour while playing"
-          hint="On the Now Playing screen the accent takes the album cover's own colour - buttons, seek bar, and the sound rooms opened from it. Off keeps your accent everywhere."
+          hint="While a song plays, the whole app's accent takes the album cover's own colour. Off keeps your chosen accent, always."
           control={
             <Switch
               aria-label="Album colour while playing"

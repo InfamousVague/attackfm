@@ -70,6 +70,8 @@ import { useListenReporting } from './useListenReporting.ts';
 import { useNpChrome } from './useNpChrome.ts';
 import { usePlayerConnect, type PlayerLiveState } from './usePlayerConnect.ts';
 import { NowPlayingSheet, npArtMenuItems } from './NowPlayingSheet.tsx';
+import { useArtTint } from './artTint.ts';
+import { useAppearance } from '../settings/appearance.tsx';
 import { PlayerStrip } from './PlayerStrip.tsx';
 import { clearDeckHandoff, deckHandoff, provideDeckSnapshot } from './deckHandoff.ts';
 
@@ -343,6 +345,28 @@ export function Player({
   const { gains: eqGains } = useEqualizer();
   const eqGainsRef = useRef(eqGains);
   eqGainsRef.current = eqGains;
+
+  /* The album's colour, standing for the LIFE OF THE SONG - by request,
+     the whole app wears it, not just the Now Playing sheet. The ramp goes
+     inline on :root under a data-song-tint flag; AppearanceProvider stands
+     down from the accent vars while the flag is up, and the lift fires
+     'afm-apply-accent' so the provider re-derives the chosen accent from
+     scratch - no snapshots, so an accent changed mid-song comes back as
+     itself. The sheet still gets the same tint as a prop for its own
+     data-theme-scoped subtree. */
+  const { dynamicAccent } = useAppearance();
+  const songTint = useArtTint(artwork, dynamicAccent);
+  useEffect(() => {
+    if (!songTint) return undefined;
+    const root = document.documentElement;
+    for (const [k, v] of Object.entries(songTint)) root.style.setProperty(k, v);
+    root.setAttribute('data-song-tint', '');
+    return () => {
+      for (const k of Object.keys(songTint)) root.style.removeProperty(k);
+      root.removeAttribute('data-song-tint');
+      window.dispatchEvent(new Event('afm-apply-accent'));
+    };
+  }, [songTint]);
 
   // On touch (or squeezed) the trailing rail folds to one overflow button and
   // the freed width goes to the transport, which app.css grows to thumb size
@@ -3511,6 +3535,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
           chooseBookSpeed={chooseBookSpeed}
           track={track}
           artwork={artwork}
+          tint={songTint}
           dispArtwork={dispArtwork}
           activeElsewhere={activeElsewhere}
           dispPlaying={dispPlaying}

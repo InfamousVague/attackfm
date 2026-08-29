@@ -16,8 +16,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useLayoutE
 import { installSheetDismiss } from './playerDismiss.ts';
 import { fireFelt, fireNativeHaptic } from '../core/haptics.ts';
 import type { CSSProperties, Dispatch, ReactNode, SetStateAction } from 'react';
-import { artTint, type ArtTint } from './artTint.ts';
-import { useAppearance } from '../settings/appearance.tsx';
+import type { ArtTint } from './artTint.ts';
 import { createPortal } from 'react-dom';
 import { ContextMenu, CounterBadge, IconButton, MenuItem, Popover, SeekBar, useBeat, useLiveLevels } from '@glacier/react';
 import type { LoudnessMeter, PlayerRepeat } from '@glacier/react';
@@ -565,6 +564,7 @@ export function NowPlayingSheet({
   chooseBookSpeed,
   track,
   artwork,
+  tint,
   dispArtwork,
   activeElsewhere,
   dispPlaying,
@@ -633,6 +633,8 @@ export function NowPlayingSheet({
   chooseBookSpeed: (next: number) => void;
   track: Track | null;
   artwork: string | null;
+  /** The album's accent ramp, owned by the Player (it also holds :root). */
+  tint: ArtTint | null;
   dispArtwork: string | null;
   activeElsewhere: boolean;
   dispPlaying: boolean;
@@ -1206,62 +1208,13 @@ export function NowPlayingSheet({
     [setNpOpen, setNpLyrics, npDocked, onUndock],
   );
 
-  /* The album's pastel, re-grounding the sheet's accent tokens - the play
-     circle, the seek bar, the saved heart and the lit toggles all drink from
-     them, so one override recolours the lot. It lands INLINE on the sheet
-     root deliberately: this element also scopes data-theme="dark", whose
-     token block would otherwise redefine the accent ramp straight back to
-     kit blue (the nested-data-theme trap) - an inline custom property
-     outranks any stylesheet, including that one. Null - greyscale art, art
-     that will not decode, no art - means the kit accent stands. */
-  const [tint, setTint] = useState<ArtTint | null>(null);
-  const { dynamicAccent } = useAppearance();
-  useEffect(() => {
-    if (!artwork || !dynamicAccent) {
-      setTint(null);
-      return undefined;
-    }
-    let live = true;
-    void artTint(artwork).then((t) => {
-      if (live) setTint(t);
-    });
-    return () => {
-      live = false;
-    };
-  }, [artwork, dynamicAccent]);
-
-  /* While the sheet is actually SHOWING, the same ramp goes to :root - by
-     request, so the rooms launched off the sheet that PORTAL out of its
-     subtree (the sound console, stems, the queue, every popover) wear the
-     song's colour too. The inline copy on the sheet root above still
-     matters: portalled panels that pin their own data-theme are handled by
-     the inherit rule in 07-the-dock-contract-c.css, and the sheet's own
-     data-theme scope is handled by its inline style.
-
-     Cleanup RESTORES, never just removes: the appearance system writes a
-     brand accent's whole ramp inline on this same element (a brand accent
-     has no [data-accent] rule), so a bare removeProperty here stripped the
-     listener's chosen orange along with the song's - and the app sat in
-     kit blue until something rewrote the ramp. That was the "home screen
-     is always blue" bug. Each key's prior inline value is snapshotted
-     before the tint lands and put back when it lifts. */
-  useEffect(() => {
-    if (!tint || !(npOpen || npDocked)) return undefined;
-    const root = document.documentElement;
-    const prior = new Map<string, string>();
-    for (const [k, v] of Object.entries(tint)) {
-      prior.set(k, root.style.getPropertyValue(k));
-      root.style.setProperty(k, v);
-    }
-    root.setAttribute('data-song-tint', '');
-    return () => {
-      for (const [k, was] of prior) {
-        if (was) root.style.setProperty(k, was);
-        else root.style.removeProperty(k);
-      }
-      root.removeAttribute('data-song-tint');
-    };
-  }, [tint, npOpen, npDocked]);
+  /* The album's ramp, from the Player - which also stands the same ramp on
+     :root for the whole app while the song lives. The sheet still carries an
+     INLINE copy on its root deliberately: this element scopes
+     data-theme="dark", whose token block would otherwise redefine the accent
+     ramp straight back to kit blue (the nested-data-theme trap), and an
+     inline custom property outranks any stylesheet, including that one.
+     Null - tint off, greyscale art, no art - means the kit accent stands. */
 
   const [readyCanvas, setReadyCanvas] = useState<string | null>(null);
   const canvasReady = readyCanvas !== null && readyCanvas === npCanvas;

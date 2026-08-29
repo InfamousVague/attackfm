@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+
 /**
  * The album's colour, made wearable.
  *
@@ -167,6 +169,27 @@ function ramp(hue: number): ArtTint {
   vars['--glacier-accent-soft'] = `hsl(${h} 78% 64% / 0.2)`;
   vars['--glacier-accent-border'] = `hsl(${h} 60% 55% / 0.55)`;
   return vars;
+}
+
+/** The cover's ramp as React state: recomputed when the art changes, null
+ * while disabled, absent, or unreadable. The Player feeds this the CURRENT
+ * track's art, so the tint lives exactly as long as the song does. */
+export function useArtTint(url: string | null, enabled: boolean): ArtTint | null {
+  const [tint, setTint] = useState<ArtTint | null>(null);
+  useEffect(() => {
+    if (!url || !enabled) {
+      setTint(null);
+      return undefined;
+    }
+    let live = true;
+    void artTint(url).then((t) => {
+      if (live) setTint(t);
+    });
+    return () => {
+      live = false;
+    };
+  }, [url, enabled]);
+  return tint;
 }
 
 /** The cover's pastel, or null for "keep the kit accent". Cached per URL;
