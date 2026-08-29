@@ -124,11 +124,15 @@ const UNANSWERED_MS: i64 = 24 * 60 * 60 * 1000;
 /// is listening - one every cycle, per listener - and a queue that grows all
 /// week is not a queue, it is a backlog nobody asked for. At the cap the
 /// collector simply stops raising new ones until the peer catches up.
-const OUTSTANDING_OFFERS: usize = 20;
+const OUTSTANDING_OFFERS: usize = 40;
 /// How many wants one cycle may raise when this box is only offering them.
 /// Bounded so a first run against a deep pool does not put the whole cap up in
 /// one go and leave the peer nothing to pace itself against.
-const OFFERS_PER_CYCLE: usize = 5;
+/// Twelve, up from five: with the peer able to keep its queue fed (see
+/// peersync's claim gate) the day's ceiling is download time, not offers -
+/// and a listener who judges a whole sitting deserves a shelf that refills
+/// the same afternoon, not three cards a day.
+const OFFERS_PER_CYCLE: usize = 12;
 
 /// Walks pulls whose import is still out and settles the finished ones:
 /// a done job stamps its tracks as auditions, a failed or vanished one is
@@ -242,7 +246,13 @@ async fn pull_cycle(state: &Arc<AppState>) {
 
     let since = now_ms() - WINDOW_30D_MS;
     let mut raised = 0usize;
-    for user in state.db.listeners_since(since) {
+    // Hungriest first: the listener with the emptiest audition shelf gets the
+    // cycle's offers before anyone comfortable. One heavy dater used to see
+    // three cards a day while quieter shelves sat full - the round-robin was
+    // fair to accounts and unfair to appetites.
+    let mut listeners = state.db.listeners_since(since);
+    listeners.sort_by_key(|u| state.db.audition_count(*u));
+    for user in listeners {
         let (enabled, exploration) = state.db.collector_state(user);
         if !enabled {
             continue;

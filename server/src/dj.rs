@@ -403,9 +403,10 @@ pub(crate) async fn build_reply(
         }
         *c += 1;
         picks.push(id);
-        // Offline the model gets twice the pool and the right to drop; live
-        // takes exactly what will play.
-        if picks.len() >= if curate { want * 2 } else { want } {
+        // Offline the model gets a wider pool and the right to drop; live
+        // takes exactly what will play. Wider, not double: thirty dossiers
+        // was a prompt the hub's CPU model could not finish even unhurried.
+        if picks.len() >= if curate { want + 6 } else { want } {
             break;
         }
     }
@@ -661,6 +662,9 @@ async fn patter(
             "model": dj_model(),
             "messages": [{ "role": "user", "content": prompt }],
             "temperature": 0.9,
+            // The reply is a JSON skeleton, not prose - bounding it keeps a
+            // CPU model from wandering past its own patience.
+            "max_tokens": 700,
         }))
         .send()
         .await

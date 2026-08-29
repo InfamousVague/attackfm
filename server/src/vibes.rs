@@ -122,6 +122,11 @@ pub async fn cycle(state: &Arc<AppState>, user: i64) {
         };
         if wants_build {
             rebuild(state, user, key).await;
+            // ONE build per pass: five model runs back to back starved the
+            // enrichment and measurement loops that share the same ollama,
+            // and those feed Music Date. The bank fills over a few passes;
+            // a press still triggers its own immediate rebuild.
+            return;
         }
     }
 }
