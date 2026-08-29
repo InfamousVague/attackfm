@@ -76,7 +76,7 @@ function DjCountdown() {
 
 export function NpDjButton() {
   const { session } = useServerSession();
-  const { tracks } = useLibrary();
+  const { tracks, forYou } = useLibrary();
   const play = usePlayNowOptional();
   const [open, setOpen] = useState(false);
   const [busySeed, setBusySeed] = useState<string | null>(null);
@@ -90,7 +90,7 @@ export function NpDjButton() {
     setBusySeed(seed);
     setNote(null);
     try {
-      const { queue } = await startDjRun(session, tracks, seed);
+      const { queue } = await startDjRun(session, [...tracks, ...forYou], seed);
       const opener = queue[0];
       if (!opener) {
         setNote('The DJ came up empty. Play a few things first.');

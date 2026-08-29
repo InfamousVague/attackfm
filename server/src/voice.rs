@@ -61,6 +61,7 @@ const CLOSERS: &[&str] = &[
 ];
 
 /// Which seat a block sits in, for choosing the pool.
+#[derive(Clone, Copy)]
 pub enum Seat {
     Opener,
     Turn,

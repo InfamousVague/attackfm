@@ -5477,6 +5477,23 @@ impl Db {
     /// completed listen a station invites.
     /// How many unadopted auditions wait on this listener's shelf - the
     /// collector serves the hungriest first.
+    /// Every live track's identity for chart matching: id, artist, title,
+    /// and whose unadopted audition it is (0 = a real library row).
+    pub fn track_identities(&self) -> Vec<(i64, String, String, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT id, artist, title,
+                    CASE WHEN curator_user_id IS NOT NULL AND COALESCE(curator_promoted, 0) = 0
+                         THEN curator_user_id ELSE 0 END
+             FROM tracks WHERE deleted = 0 AND COALESCE(kind, 'music') <> 'book'",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
     pub fn audition_count(&self, user_id: i64) -> i64 {
         let conn = self.lock();
         conn.query_row(

@@ -159,6 +159,12 @@ fn fan_to(state: &Arc<AppState>, user: i64, found: &[Found]) {
     }
 }
 
+/// Today's chart as (artist, title) pairs in chart order - what the Charts
+/// vibe matches the library and the landed auditions against.
+pub(crate) async fn chart_pairs() -> Vec<(String, String)> {
+    chart_tracks().await.into_iter().map(|f| (f.artist, f.title)).collect()
+}
+
 /// Today's global chart, straight from Deezer.
 async fn chart_tracks() -> Vec<Found> {
     let c = crate::discovery::client(15);
