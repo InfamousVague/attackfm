@@ -259,16 +259,21 @@ async fn take_a_want(state: &Arc<AppState>, hub: &Hub) -> bool {
      * to it; one more want behind it costs nothing.
      */
     {
+        /*
+         * A running download no longer blocks the NEXT claim - that gate
+         * serialized the whole day: claim, download for minutes, sit out an
+         * idle poll, claim again, and a heavy dater got three cards a day
+         * from a pipeline capable of dozens an hour. Depth is the honest
+         * limit: keep a couple queued so downloads run back to back, and
+         * stop there so a stall never piles up a backlog.
+         */
         let jobs = state.imports.jobs.lock().await;
-        if let Some(busy) = jobs.iter().find(|j| j.state == "downloading") {
-            note_claim(&format!("busy downloading {}", busy.title));
-            return false;
-        }
-        // Still polite about depth: a queue this box has not worked through is
-        // not a queue that wants lengthening.
-        let waiting = jobs.iter().filter(|j| j.state == "queued").count();
-        if waiting >= 3 {
-            note_claim(&format!("{waiting} downloads already waiting here"));
+        let pending = jobs
+            .iter()
+            .filter(|j| j.state == "queued" || j.state == "downloading")
+            .count();
+        if pending >= 3 {
+            note_claim(&format!("{pending} downloads already in hand here"));
             return false;
         }
     }

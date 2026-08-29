@@ -5475,6 +5475,19 @@ impl Db {
     /// waiting on a listen. These are the "new music" a blended station may
     /// honestly include: on disk, playable, and adopted by exactly the
     /// completed listen a station invites.
+    /// How many unadopted auditions wait on this listener's shelf - the
+    /// collector serves the hungriest first.
+    pub fn audition_count(&self, user_id: i64) -> i64 {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT COUNT(*) FROM tracks
+             WHERE deleted = 0 AND curator_user_id = ?1 AND COALESCE(curator_promoted, 0) = 0",
+            params![user_id],
+            |r| r.get(0),
+        )
+        .unwrap_or(0)
+    }
+
     pub fn audition_ids(&self, user_id: i64) -> Vec<i64> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(

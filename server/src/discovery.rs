@@ -38,7 +38,12 @@ use std::time::Duration;
 
 /// Candidates listened to per cycle. Each one costs a lyrics fetch, an
 /// embedding and a preview download, so this stays small.
-const LISTEN_BATCH: i64 = 4;
+/// Twelve, up from four: measurement was the pipeline's narrowest neck - the
+/// pool held 562 candidates and only 34 were measured, so the collector had
+/// almost nothing it was allowed to buy. The expensive half (the lyric embed)
+/// is the CHEAP ollama op; the preview fetch dominates and twelve is still
+/// polite to the preview hosts.
+const LISTEN_BATCH: i64 = 12;
 /// Stop harvesting once this many candidates are waiting - the pool should be
 /// deep enough to choose from, not unbounded.
 pub(crate) const POOL_TARGET: i64 = 180;

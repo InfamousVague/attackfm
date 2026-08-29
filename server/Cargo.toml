@@ -7,7 +7,7 @@ resolver = "2"
 
 [package]
 name = "attackfm-server"
-version = "0.1.61"
+version = "0.1.62"
 edition = "2021"
 
 [dependencies]
