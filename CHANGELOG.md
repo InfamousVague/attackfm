@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.116
+
+- Bright album colours - yellows, limes, cyans - now put dark ink on the primary buttons instead of white-on-bright
+- The primary colour glides between songs now, everywhere at once, instead of snapping
+
 ## 0.4.115
 
 - Friends have whole profiles now: tap a friend to see their stats page - minutes, streaks, top artists and songs, their listening chart - and, when you share a server, every song they've hearted, playable right there

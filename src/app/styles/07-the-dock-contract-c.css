@@ -63,6 +63,144 @@
   color: var(--glacier-accent-solid);
 }
 
+
+/* --- the accent tweens ----------------------------------------------------
+ *
+ * The primary colour moves - kit accent to album, album to album, album back
+ * to the chosen accent - and by request it GLIDES between them instead of
+ * snapping. Custom properties only animate once registered with a type, so
+ * the whole accent ramp is declared as <color> here; the transition itself
+ * is gated on [data-accent-tween], which the appearance provider arms two
+ * frames after its first write - otherwise every launch would sweep from
+ * the kit's built-in blue to the chosen accent before the app settles.
+ *
+ * initial-value is transparent for the kit's own tokens (they are always
+ * defined at :root, so it never paints) - but on-accent is the app's OWN
+ * token, consumed as var(--glacier-on-accent, #fff): registering it would
+ * make it ALWAYS defined and kill that fallback, so it is registered with
+ * the fallback AS its initial value instead.
+ */
+@property --glacier-accent-1 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --glacier-accent-2 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --glacier-accent-3 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --glacier-accent-4 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --glacier-accent-5 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --glacier-accent-6 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --glacier-accent-7 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --glacier-accent-8 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --glacier-accent-9 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --glacier-accent-10 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --glacier-accent-11 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --glacier-accent-12 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --glacier-accent-solid {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --glacier-accent-text {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --glacier-accent-contrast {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --glacier-accent-soft {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --glacier-accent-border {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --glacier-on-accent {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #fff;
+}
+
+:root[data-accent-tween],
+:root[data-accent-tween] .npScreen {
+  transition:
+    --glacier-accent-1 700ms ease,
+    --glacier-accent-2 700ms ease,
+    --glacier-accent-3 700ms ease,
+    --glacier-accent-4 700ms ease,
+    --glacier-accent-5 700ms ease,
+    --glacier-accent-6 700ms ease,
+    --glacier-accent-7 700ms ease,
+    --glacier-accent-8 700ms ease,
+    --glacier-accent-9 700ms ease,
+    --glacier-accent-10 700ms ease,
+    --glacier-accent-11 700ms ease,
+    --glacier-accent-12 700ms ease,
+    --glacier-accent-solid 700ms ease,
+    --glacier-accent-text 700ms ease,
+    --glacier-accent-contrast 700ms ease,
+    --glacier-accent-soft 700ms ease,
+    --glacier-accent-border 700ms ease,
+    --glacier-on-accent 700ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-accent-tween],
+  :root[data-accent-tween] .npScreen {
+    transition: none;
+  }
+}
+
 /* While the song tint stands at :root (data-song-tint rides along with the
    inline ramp NowPlayingSheet writes there), any element that scopes its own
    theme would silently revert to kit blue: the token layer re-declares the
