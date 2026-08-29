@@ -67,6 +67,16 @@ const SEPARATION_MIN: f32 = 0.02;
 fn similarity_floor(pop_mean: f32, own_sim: f32, share: f32) -> f32 {
     pop_mean + (own_sim - pop_mean) * share
 }
+
+/// The vector an artist station judges a track by: the audio fingerprint when
+/// the station runs on sound, the prose embeddings when it must fall back.
+fn station_vec(f: &TrackFeatures, by_sound: bool) -> Option<&[f32]> {
+    if by_sound {
+        f.audio_fingerprint.as_deref()
+    } else {
+        f.lyric_vec.as_deref().or(f.sonic_vec.as_deref())
+    }
+}
 const ARRIVAL_WINDOW_MS: i64 = 21 * 86_400_000;
 
 fn built_key(user: i64) -> String {
@@ -256,19 +266,27 @@ fn build_stations(state: &Arc<AppState>, user: i64, profile: &MoodProfile) -> us
         if theirs.len() < 4 {
             continue;
         }
+        /*
+         * The space the station is judged in. An artist station is a claim
+         * about SOUND, and the text vectors cannot carry it: lyric_vec and
+         * sonic_vec both embed PROSE (themes, genre words), and in that space
+         * Katy Perry and Wet Leg - cheeky female-fronted pop, on paper - sit
+         * side by side while sounding nothing alike. The audio fingerprint
+         * (features.rs) is derived from the recording itself, so when the
+         * artist's catalogue carries enough of them the whole station -
+         * centre, neighbours, fresh - is judged there, and the text space
+         * remains only the fallback for unanalyzed corners of the library.
+         */
+        let by_sound = theirs.iter().filter(|f| f.audio_fingerprint.is_some()).count() >= 3;
         // The artist's own centre: the mean of their tracks' vectors.
-        let dims = theirs
-            .iter()
-            .filter_map(|f| f.lyric_vec.as_ref().or(f.sonic_vec.as_ref()).map(|v| v.len()))
-            .next()
-            .unwrap_or(0);
+        let dims = theirs.iter().filter_map(|f| station_vec(f, by_sound).map(|v| v.len())).next().unwrap_or(0);
         if dims == 0 {
             continue;
         }
         let mut centre = vec![0f32; dims];
         let mut n = 0usize;
         for f in &theirs {
-            if let Some(v) = f.lyric_vec.as_deref().or(f.sonic_vec.as_deref()) {
+            if let Some(v) = station_vec(f, by_sound) {
                 if v.len() == dims {
                     for (c, x) in centre.iter_mut().zip(v) {
                         *c += x;
@@ -304,7 +322,7 @@ fn build_stations(state: &Arc<AppState>, user: i64, profile: &MoodProfile) -> us
                     && !f.artist.eq_ignore_ascii_case(name)
             })
             .filter_map(|f| {
-                let v = f.lyric_vec.as_deref().or(f.sonic_vec.as_deref())?;
+                let v = station_vec(f, by_sound)?;
                 if v.len() != dims {
                     return None;
                 }
@@ -319,7 +337,7 @@ fn build_stations(state: &Arc<AppState>, user: i64, profile: &MoodProfile) -> us
             let mut sum = 0f32;
             let mut cnt = 0usize;
             for f in &theirs {
-                if let Some(v) = f.lyric_vec.as_deref().or(f.sonic_vec.as_deref()) {
+                if let Some(v) = station_vec(f, by_sound) {
                     if v.len() == dims {
                         sum += cos(&centre, v);
                         cnt += 1;
@@ -369,7 +387,7 @@ fn build_stations(state: &Arc<AppState>, user: i64, profile: &MoodProfile) -> us
                         || (!f.quarantined && arrivals.contains(&f.track_id)))
             })
             .filter_map(|f| {
-                let v = f.lyric_vec.as_deref().or(f.sonic_vec.as_deref())?;
+                let v = station_vec(f, by_sound)?;
                 if v.len() != dims {
                     return None;
                 }
