@@ -215,18 +215,26 @@ pub struct Beat {
     pub text: String,
 }
 
+/// The seat's library line for this artist - also the DJ's WRITTEN line when
+/// the patter model is absent or over budget, so the toast shows the same
+/// words the voice speaks. Pure, and independent of enabled(): a hub with no
+/// voice still deserves lines.
+pub fn line_for(seat: Seat, artist: &str) -> String {
+    let pool = match seat {
+        Seat::Opener => OPENERS,
+        Seat::Turn => TURNS,
+        Seat::Closer => CLOSERS,
+    };
+    pick(pool, artist)
+}
+
 /// The two beats a block speaks: its seat's line, then the artist's name as
 /// its own sentence. Pure - no network, no disk.
 pub fn block_beats(seat: Seat, artist: &str) -> Vec<Beat> {
     if !enabled() {
         return Vec::new();
     }
-    let pool = match seat {
-        Seat::Opener => OPENERS,
-        Seat::Turn => TURNS,
-        Seat::Closer => CLOSERS,
-    };
-    let line = pick(pool, artist);
+    let line = line_for(seat, artist);
     let mut out = vec![Beat { id: clip_key(&line), text: line }];
     let name = artist.trim();
     if !name.is_empty() {

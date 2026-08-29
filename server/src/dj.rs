@@ -30,6 +30,44 @@ const PER_ARTIST_CAP: usize = 2;
 /// How many recent plays define "lately" and get held back from the set.
 const RECENT_WINDOW: i64 = 80;
 
+/// How long the patter model may hold the reply. Past this the set ships
+/// with library lines; the voice never needed the model at all.
+const PATTER_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Runs cut by hand when the model is absent or over budget: the same shape
+/// the patter aims for, minus the prose. Seats mirror the voice layer's own
+/// choice (opener, turns, a closer once there is more than one run).
+fn fallback_blocks(state: &Arc<AppState>, picks: &[i64]) -> Vec<Value> {
+    let chunks: Vec<&[i64]> = picks.chunks(3).collect();
+    let last = chunks.len().saturating_sub(1);
+    chunks
+        .iter()
+        .enumerate()
+        .map(|(i, chunk)| {
+            let artist = state
+                .db
+                .titles_for(&[chunk[0]])
+                .first()
+                .map(|(artist, _)| artist.clone())
+                .unwrap_or_default();
+            let seat = if i == 0 {
+                crate::voice::Seat::Opener
+            } else if i == last && last > 0 {
+                crate::voice::Seat::Closer
+            } else {
+                crate::voice::Seat::Turn
+            };
+            let line = crate::voice::line_for(seat, &artist);
+            let say = if artist.trim().is_empty() {
+                line
+            } else {
+                format!("{line} {artist}.")
+            };
+            json!({ "say": say, "trackIds": chunk })
+        })
+        .collect()
+}
+
 const TRAIT_CACHE_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 /// Trait extraction is optional polish around an already enriched track. Keep
 /// its deadline comfortably below the Booth's 90-second request deadline so a
@@ -436,9 +474,20 @@ pub async fn station(
 
     // The model writes the patter over the already-chosen ids; a failure just
     // means a set with no words, never a set with no music.
-    let mut blocks = patter(&state, &picks, &seed, &dossiers)
-        .await
-        .unwrap_or_else(|| vec![json!({ "say": "", "trackIds": picks.clone() })]);
+    /*
+     * The model writes better patter, but a DJ that answers in half a minute
+     * is not a DJ - by request the whole reply lands in single-digit
+     * seconds, so the model gets a five-second seat at the desk and the show
+     * goes on without it. The fallback is not the old wordless single block:
+     * the runs are cut by hand (three tracks, led by their artist) and each
+     * say line is the voice's own library line plus the name - the toast
+     * shows exactly the words the voice speaks.
+     */
+    let mut blocks =
+        match tokio::time::timeout(PATTER_BUDGET, patter(&state, &picks, &seed, &dossiers)).await {
+            Ok(Some(blocks)) => blocks,
+            _ => fallback_blocks(&state, &picks),
+        };
 
     /*
      * The voice, as beats: each block gets its seat's cached library line and

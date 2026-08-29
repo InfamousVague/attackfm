@@ -18,3 +18,76 @@
   grid-template-columns: 1fr 1fr;
   gap: var(--glacier-space-2);
 }
+
+/* The cueing face: a record spinning while the set is cut. The rim is a
+   conic fill driven by --cue (0..1) - the countdown made shape - and the
+   label swaps between the falling number and a patient ellipsis. All of it
+   drinks the accent tokens, so a set cued from an album-tinted screen
+   counts down in that album's colour. */
+
+.npDjCue {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glacier-space-3);
+  padding: var(--glacier-space-4) var(--glacier-space-2);
+}
+
+.npDjCue__disc {
+  position: relative;
+  inline-size: 5.5rem;
+  block-size: 5.5rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 50%, var(--glacier-bg-subtle) 0 58%, transparent 59%),
+    conic-gradient(
+      var(--glacier-accent-solid) calc(var(--cue, 0) * 360deg),
+      var(--glacier-border-subtle) 0
+    );
+  animation: npDjSpin 2.4s linear infinite;
+}
+
+/* The label must not spin with the platter - counter-rotate it. */
+.npDjCue__disc > .npDjCue__num {
+  animation: npDjSpin 2.4s linear infinite reverse;
+}
+
+.npDjCue__hole {
+  position: absolute;
+  inline-size: 0.8rem;
+  block-size: 0.8rem;
+  border-radius: 50%;
+  background: var(--glacier-bg);
+  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+}
+
+.npDjCue__num {
+  font-size: var(--glacier-font-size-xl);
+  font-weight: var(--glacier-font-weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--glacier-accent-text);
+  /* Lifted off the spindle hole. */
+  position: relative;
+}
+
+.npDjCue__line {
+  font-size: var(--glacier-font-size-sm);
+  color: var(--glacier-text-muted);
+  text-align: center;
+}
+
+@keyframes npDjSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .npDjCue__disc,
+  .npDjCue__disc > .npDjCue__num {
+    animation: none;
+  }
+}
+
