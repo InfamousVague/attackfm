@@ -486,6 +486,24 @@ export async function loadAudioSource(
   const url = await loadLocalAudioUrl(path);
   // A file on this device is an ordinary seekable source, whatever was asked.
   if (url) return { url, offset: 0, seekable: true };
+  /*
+   * Then the queue buffer: bytes already pulled down for a song we expected to
+   * be wanted soon. Below the vault because a kept file is the better answer
+   * when both have it - the vault's copy is permanent and this one is about to
+   * roll out of the window - and above the wire because not needing the network
+   * is the entire point.
+   *
+   * A whole file in hand seeks itself, so `from` is honoured by the ordinary
+   * currentTime path rather than by asking the server to start partway in.
+   */
+  if (queueBufferResolver) {
+    try {
+      const buffered = await queueBufferResolver(path);
+      if (buffered) return { url: buffered, offset: 0, seekable: true };
+    } catch {
+      // A buffer that cannot answer is not a reason to fail the load.
+    }
+  }
   const remote = resolveRemoteAudioSource(path, from);
   if (remote) return remote;
   return null;
@@ -689,6 +707,20 @@ let offlineResolver: RemoteResolver | null = null;
 
 export function setOfflineAudioResolver(resolver: RemoteResolver | null): void {
   offlineResolver = resolver;
+}
+
+/**
+ * The rolling queue buffer (player/queueBuffer.ts), which answers with a blob
+ * URL for a song it has already pulled down, or null for one it has not.
+ *
+ * Async where the vault's resolver is synchronous, because this one reads bytes
+ * off disk to mint the URL rather than pointing at a file the OS will open.
+ */
+type BufferResolver = (path: string) => Promise<string | null>;
+let queueBufferResolver: BufferResolver | null = null;
+
+export function setQueueBufferResolver(resolver: BufferResolver | null): void {
+  queueBufferResolver = resolver;
 }
 
 export function setRemoteAudioResolver(resolver: SeekingResolver | null): void {

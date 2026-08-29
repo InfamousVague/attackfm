@@ -21,6 +21,7 @@ import { useEffects } from './effects.ts';
 import { useFxChain, chainRate } from './fxChain.ts';
 import { recordDiag } from '../diag/diagLog.ts';
 import { loadAudioSource, loadAudioUrl, reactivateAudioSession, systemOutputVolume, type Track } from '../core/tauri.ts';
+import { warmQueue } from './queueBuffer.ts';
 import { isPendingPath } from './pendingPlay.tsx';
 import { isRemotePath } from '../server.ts';
 import { fireFelt, fireNativeHaptic } from '../core/haptics.ts';
@@ -2372,6 +2373,56 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       }
     })();
   };
+
+  /*
+   * THE ROLLING BUFFER - the other half of not stalling.
+   *
+   * `prefetchTick` above warms one track twelve seconds from the end, which
+   * covers a song ending and nothing else. It cannot help a run of skips (each
+   * lands on a cold track) and it cannot help a tunnel (the warm deck holds one
+   * song and the queue behind it is still on the server). This pulls the next
+   * few down whole, well before anybody asks for them - see queueBuffer.ts.
+   *
+   * Settled rather than immediate: hammering skip is precisely when the queue
+   * position changes six times in two seconds, and starting a whole-file
+   * download for each of those would fight the very stream the listener is
+   * trying to reach. The wait is long enough that only the track you STOP on
+   * gets a window built around it.
+   */
+  /*
+   * Keyed on what the queue IS, not on the array holding it. The prop defaults
+   * to a fresh `[]` and comes down through two components, so an identity dep
+   * risks re-running every render - and a settling timer that is cleared every
+   * render never fires at all, which would leave this whole feature quietly
+   * doing nothing. Ends and length are enough to notice a real change.
+   */
+  const queueSig = `${queue.length}:${queue[0]?.path ?? ''}:${queue[queue.length - 1]?.path ?? ''}`;
+  useEffect(() => {
+    if (!track || queue.length < 2) return;
+    // Casting: the bytes are wanted by whatever is playing them, not here.
+    if (remoteOnlyRef.current) return;
+    /*
+     * ONLY when the order is knowable.
+     *
+     * Shuffle draws at random from the whole queue in BOTH directions - see
+     * pickNext - so the track after this one is not the next one along, and
+     * neither is the one before. Warming neighbours would then be buying
+     * lottery tickets with somebody's mobile data: ten whole songs fetched for
+     * a one-in-the-length-of-the-queue chance each, on a client that has no
+     * wi-fi-only switch to hide behind (see autoCache.ts, which says so
+     * plainly rather than pretending otherwise).
+     *
+     * Same condition pickNext itself uses, so the two can never disagree about
+     * what comes next - a book ignores shuffle, and so does this.
+     */
+    if (shuffle && track.kind !== 'book') return;
+    const path = track.path;
+    const timer = window.setTimeout(() => {
+      void warmQueue(queue, path, loadAudioUrl);
+    }, 2500);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [track?.path, queueSig, shuffle]);
 
   /*
    * The CHAPTER half of the sleep timer.

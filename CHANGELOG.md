@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.121
+
+- The next ten songs in the queue are now pulled down whole while you listen, so skipping through a list lands instantly instead of buffering each time, and a minute in a lift or a tunnel no longer stops the music. They are the same bytes playback would have streamed anyway, fetched early rather than extra
+- Songs held this way are dropped as soon as they fall out of the window, so the buffer stays a buffer. It stands aside for a server-rendered effect, which only the hub can produce — unless the hub has gone quiet, when unfiltered beats silence
+- Buffering waits for a knowable order: with shuffle on, the next track is drawn at random in both directions, so there is nothing to fetch ahead and no data is spent guessing
+
 ## 0.4.120
 
 - The DJ has a voice: it speaks a short line and the artist's name at the top of each run, ducked under the music - when the server has a voice configured (an ElevenLabs key, or the local model from install-voice.sh)
