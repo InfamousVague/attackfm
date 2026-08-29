@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.124
+
+- The DJ answers in seconds now: the patter model gets a five-second seat, and past that the set ships with the voice's own lines
+- While it cues, a little record spins down the seconds - with the DJ's busywork narrated under it
+
 ## 0.4.123
 
 - Fixed: the DJ no longer says "request timed out" - minting its voice moved out of the request's way, and the DJ is given the patience the model deserves

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Button, IconButton, Popover, Spinner, Text } from '@glacier/react';
 import { Disc3, Sparkles } from '@glacier/icons';
 import { useServerSession } from '../servers/serverSession.tsx';
@@ -17,6 +17,47 @@ import { fireNativeHaptic } from '../core/haptics.ts';
  * (djSession) the Booth publishes: the bridge toasts the lines and speaks
  * the beats no matter which door opened the set.
  */
+/** What the DJ is up to while you wait - cycled under the countdown disc. */
+const CUE_LINES = [
+  'Reading the room…',
+  'Digging the crates…',
+  'Matching the mood…',
+  'Lining up the opener…',
+  'Dropping the needle…',
+];
+
+/** The wait budget the countdown paces itself to - the server holds the
+ *  patter model to five seconds, so the whole reply lands inside this. */
+const CUE_SECONDS = 8;
+
+/**
+ * The cueing face: a spinning record that fills its rim as the seconds run
+ * down, a big number in the label, and the DJ's busywork narrated line by
+ * line. If the set lands early the panel simply closes mid-count; if the
+ * count runs dry first, the number gives way to an ellipsis and the disc
+ * keeps spinning - a promise, not a stopwatch.
+ */
+function DjCountdown() {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const started = Date.now();
+    const tick = window.setInterval(() => setElapsed((Date.now() - started) / 1000), 100);
+    return () => window.clearInterval(tick);
+  }, []);
+  const left = Math.max(0, CUE_SECONDS - elapsed);
+  const frac = Math.min(1, elapsed / CUE_SECONDS);
+  const line = CUE_LINES[Math.min(CUE_LINES.length - 1, Math.floor(elapsed / 1.7))]!;
+  return (
+    <div className="npDjCue" role="status" aria-live="polite">
+      <span className="npDjCue__disc" style={{ '--cue': String(frac) } as CSSProperties}>
+        <span className="npDjCue__hole" aria-hidden />
+        <span className="npDjCue__num">{left > 0.05 ? Math.ceil(left) : '…'}</span>
+      </span>
+      <span className="npDjCue__line">{line}</span>
+    </div>
+  );
+}
+
 export function NpDjButton() {
   const { session } = useServerSession();
   const { tracks } = useLibrary();
@@ -66,6 +107,10 @@ export function NpDjButton() {
       }
     >
       <div className="npDj">
+        {busy ? (
+          <DjCountdown />
+        ) : (
+          <>
         <Button
           type="button"
           variant="gradient"
@@ -95,6 +140,8 @@ export function NpDjButton() {
           <Text size="xs" tone="muted">
             {note}
           </Text>
+        )}
+          </>
         )}
       </div>
     </Popover>
