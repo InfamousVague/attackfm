@@ -666,7 +666,75 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       // rides a class the animation itself takes back off.
       el.classList.add('is-popping');
       window.setTimeout(() => el.classList.remove('is-popping'), 460);
+      rippleHeart(el);
     }
+  };
+
+  /**
+   * The giant echo of the like: the heart's own outline, lifted off the icon
+   * and swelling across the screen as it fades - the ripple to the pop's
+   * splash. The glyph is CLONED from the button so the shape can never drift
+   * from the icon the hand actually pressed; width/height are what animates
+   * (not transform) so `non-scaling-stroke` keeps the outline hairline-thin
+   * at any size instead of fattening with the scale.
+   */
+  const rippleHeart = (button: Element) => {
+    const icon = button.querySelector('svg');
+    if (!icon) return;
+    const seat = icon.getBoundingClientRect();
+    // Only a heart the hand can SEE earns the echo: the other layout's copy
+    // is either unsized or laid out beyond the viewport, and a ripple from
+    // an offscreen seat is at best waste, at worst half a heart sliding in
+    // from nowhere.
+    const cx = seat.left + seat.width / 2;
+    const cy = seat.top + seat.height / 2;
+    if (
+      seat.width === 0 ||
+      seat.height === 0 ||
+      cx < 0 ||
+      cy < 0 ||
+      cx > window.innerWidth ||
+      cy > window.innerHeight
+    ) {
+      return;
+    }
+    const ghost = icon.cloneNode(true) as SVGSVGElement;
+    ghost.setAttribute('fill', 'none');
+    ghost.setAttribute('aria-hidden', 'true');
+    for (const line of ghost.querySelectorAll('path, circle, polyline, line')) {
+      line.setAttribute('vector-effect', 'non-scaling-stroke');
+    }
+    const holder = document.createElement('div');
+    holder.className = 'heartRipple';
+    holder.style.left = `${seat.left + seat.width / 2}px`;
+    holder.style.top = `${seat.top + seat.height / 2}px`;
+    holder.appendChild(ghost);
+    document.body.appendChild(holder);
+    const grand = Math.min(window.innerWidth, window.innerHeight) * 1.05;
+    // Size and fade run as two animations with two clocks: the swell gets the
+    // sharp decelerating ease, but that same ease on opacity killed the heart
+    // a third of the way out - the fade stays gentler so the outline is still
+    // there to be seen at full spread.
+    const swell = ghost.animate(
+      [
+        { width: `${seat.width}px`, height: `${seat.height}px` },
+        { width: `${grand}px`, height: `${grand}px` },
+      ],
+      { duration: 900, easing: 'cubic-bezier(.16,.7,.25,1)' },
+    );
+    holder.animate(
+      [
+        { opacity: 0 },
+        { opacity: 0.9, offset: 0.12 },
+        { opacity: 0.45, offset: 0.6 },
+        { opacity: 0 },
+      ],
+      { duration: 900, easing: 'linear' },
+    );
+    swell.addEventListener('finish', () => holder.remove());
+    // If the animation dies with the document mid-flight, the node must not
+    // linger as an invisible fixed layer.
+    window.setTimeout(() => holder.remove(), 1300);
   };
 
   /** Forget an episode. Called wherever the listener's intent changes, so a

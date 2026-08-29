@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.136
+
+- Liking a song now sends a giant heart rippling out from the heart button - the outline swells across the screen in the album's own colour and fades as it goes. Unliking stays quiet, as it should
+
 ## 0.4.135
 
 - The DJ knows its records now: each song in a set arrives with a short bit of real background - the album it came from, the story behind it, what it's known for - spoken between tracks, or shown as a card when the voice is off. Songs the DJ doesn't truly know just play; it never makes things up
