@@ -44,14 +44,15 @@ export function Appearance() {
   const hapticsOn = useHapticsPref();
   const [motion, setMotion] = useState(motionGesturesEnabled);
 
-  // The neutral themes wear the brand accent, so their preview cards should too
-  // rather than the kit's blue. Paint the brand pink over the accent swatches of
-  // system/light/dark, per scheme.
-  const brandRamp = { light: accentSteps(BRAND_ACCENTS.attack!, 'light'), dark: accentSteps(BRAND_ACCENTS.attack!, 'dark') };
-  const brandPreview = (palette: (typeof THEME_PRESETS)[number]['palette'], scheme: 'light' | 'dark') => ({
+  // The neutral themes' preview cards wear the LIVE accent - not a hardcoded
+  // brand pink, which lied twice: it ignored a chosen kit accent, and it sat
+  // still while the album colour repainted everything around it. As vars the
+  // previews track whatever the primary colour is right now (song tint
+  // included) and ride the same tween the rest of the app does.
+  const livePreview = (palette: (typeof THEME_PRESETS)[number]['palette']) => ({
     ...palette,
-    accent: brandRamp[scheme][8]!,
-    accentSoft: brandRamp[scheme][2]!,
+    accent: 'var(--glacier-accent-solid)',
+    accentSoft: 'var(--glacier-accent-soft)',
   });
   const NEUTRAL = ['system', 'light', 'dark'];
   // The three the app actually offers: Automatic leading, then the two hands
@@ -75,10 +76,10 @@ export function Appearance() {
               const neutral = NEUTRAL.includes(preset.id);
               return {
                 value: preset.id,
-                palette: neutral ? brandPreview(preset.palette, preset.id === 'dark' ? 'dark' : 'light') : preset.palette,
+                palette: neutral ? livePreview(preset.palette) : preset.palette,
                 alternatePalette:
                   preset.id === 'system' && preset.alternatePalette
-                    ? brandPreview(preset.alternatePalette, 'dark')
+                    ? livePreview(preset.alternatePalette)
                     : preset.alternatePalette,
                 ...THEME_COPY[preset.id],
               };

@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.117
+
+- The theme preview cards in Appearance follow the live accent now - album colour included - instead of staying brand pink
+
 ## 0.4.116
 
 - Bright album colours - yellows, limes, cyans - now put dark ink on the primary buttons instead of white-on-bright
