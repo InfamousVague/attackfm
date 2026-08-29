@@ -522,6 +522,16 @@
   min-inline-size: 0;
 }
 
+/* The sheet dress: the panel centred at a readable measure inside the
+   bottom drawer, with the safe-area honoured where the list runs out. The
+   drawer's own body is the ONE scroller - the panel declares no height and
+   no overflow of its own. */
+.addPlaylistSheet .addPlaylist {
+  inline-size: min(560px, 100%);
+  margin-inline: auto;
+  padding-block-end: max(12px, env(safe-area-inset-bottom));
+}
+
 .addPlaylist__song {
   display: block;
   overflow: hidden;
@@ -584,10 +594,6 @@
   border-radius: var(--glacier-radius-md);
   background: var(--glacier-accent-soft);
   color: var(--glacier-accent-text);
-}
-
-.addPlaylist__scroll {
-  max-block-size: 16rem;
 }
 
 .addPlaylist__list {
