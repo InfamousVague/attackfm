@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.119
+
+- The seek bar's playhead stands taller now - the waveform no longer breaks past it on loud passages
+
 ## 0.4.118
 
 - Add to playlist rises as a card from the bottom now, like search - and the list actually scrolls
