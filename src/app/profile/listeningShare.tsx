@@ -72,6 +72,18 @@ export function ListeningShareBridge() {
   const { session: server } = useServerSession();
   const sharing = useSharing();
 
+  /* The same switch also arms the hub-side profile door (housemates seeing
+     your full stats and likes). Mirrored, not merged: the registry glance
+     and the hub profile are two audiences of one choice, and the mirror
+     keeps a server that predates the profile feature harmless (404 is
+     swallowed like any other miss). */
+  useEffect(() => {
+    if (!server) return;
+    void import('../api/profile.ts')
+      .then((m) => m.setProfileSharing(server, sharing))
+      .catch(() => {});
+  }, [sharing, server]);
+
   useEffect(() => {
     if (!sharing || !registry || !server) return;
     let live = true;

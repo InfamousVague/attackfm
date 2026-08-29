@@ -234,7 +234,7 @@ export function AppMain({
         // The people, their own page now - the grid of artist-backed cards
         // wants the whole screen. 'friends' was already the tab's old alias
         // for Profile, and pointing it here is the honest reading of the name.
-        <FriendsPage />
+        <FriendsPage onPlay={onPlay} onOpenArtist={onOpenArtist} />
       ) : tab === 'profile' ? (
         // Profile: the "about you" home. Its room - This week (the stats) -
         // is a takeover WITHIN the tab, a back bar returning to the profile.

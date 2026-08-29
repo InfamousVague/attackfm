@@ -175,31 +175,41 @@ pub async fn summary(
     Query(q): Query<SummaryQuery>,
 ) -> ApiResult {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
-
-    let now = now_ms();
     let range = q.range.as_deref().unwrap_or("week");
+    let tz_min = q.tz_min.unwrap_or(0);
+    let payload = summary_payload(&state, caller.id, range, tz_min)
+        .ok_or((StatusCode::BAD_REQUEST, "range must be week, month, year or all".into()))?;
+    Ok(Json(payload))
+}
+
+/// The whole summary, buildable for ANY member - the caller-scoped handler
+/// above and the friend-profile door (profile.rs) both serve exactly this,
+/// so a friend's stats page and your own are the same shape by construction.
+/// None means the range string was not one of the four.
+pub fn summary_payload(
+    state: &Arc<AppState>,
+    user: i64,
+    range: &str,
+    tz_min: i64,
+) -> Option<serde_json::Value> {
+    let now = now_ms();
     let since = match range {
         "week" => now - 7 * DAY_MS,
         "month" => now - 30 * DAY_MS,
         "year" => now - 365 * DAY_MS,
         "all" => 0,
-        _ => {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                "range must be week, month, year or all".into(),
-            ))
-        }
+        _ => return None,
     };
     // Clamped to the offsets that exist on Earth; the sign convention makes
     // UTC+14 arrive as -840.
-    let tz_min = q.tz_min.unwrap_or(0).clamp(-14 * 60, 14 * 60);
+    let tz_min = tz_min.clamp(-14 * 60, 14 * 60);
     let today = (now - tz_min * 60_000).div_euclid(DAY_MS);
 
-    let totals = state.db.listen_totals(caller.id, since);
+    let totals = state.db.listen_totals(user, since);
 
     let top_artists: Vec<_> = state
         .db
-        .top_listen_artists(caller.id, since, 10)
+        .top_listen_artists(user, since, 10)
         .into_iter()
         .map(|(artist, plays, ms, cover)| {
             json!({ "artist": artist, "plays": plays, "minutes": minutes(ms), "coverTrackId": cover })
@@ -208,7 +218,7 @@ pub async fn summary(
 
     let top_tracks: Vec<_> = state
         .db
-        .top_listen_tracks(caller.id, since, 10)
+        .top_listen_tracks(user, since, 10)
         .into_iter()
         .map(|(id, title, artist, plays, ms)| {
             json!({ "trackId": id, "title": title, "artist": artist, "plays": plays, "minutes": minutes(ms) })
@@ -217,7 +227,7 @@ pub async fn summary(
 
     let top_albums: Vec<_> = state
         .db
-        .top_listen_albums(caller.id, since, 10)
+        .top_listen_albums(user, since, 10)
         .into_iter()
         .map(|(album, artist, plays, ms)| {
             json!({ "album": album, "artist": artist, "plays": plays, "minutes": minutes(ms) })
@@ -228,7 +238,7 @@ pub async fn summary(
     // each half counts whole, merging spellings that differ only by case and
     // keeping the first spelling seen as the display name.
     let mut genres: HashMap<String, (String, i64)> = HashMap::new();
-    for (tag, ms) in state.db.listen_genre_ms(caller.id, since) {
+    for (tag, ms) in state.db.listen_genre_ms(user, since) {
         for part in tag.split(',') {
             let name = part.trim();
             if name.is_empty() {
@@ -250,7 +260,7 @@ pub async fn summary(
 
     let clock: Vec<i64> = state
         .db
-        .listen_clock(caller.id, since, tz_min)
+        .listen_clock(user, since, tz_min)
         .iter()
         .map(|ms| minutes(*ms))
         .collect();
@@ -258,7 +268,7 @@ pub async fn summary(
     // A dense day series, zero-filled, oldest first - a chart wants every
     // day on the axis, not just the ones with listening on them. "all"
     // begins where the history does, capped at a year of bars.
-    let day_ms = state.db.listen_day_ms(caller.id, since, tz_min);
+    let day_ms = state.db.listen_day_ms(user, since, tz_min);
     let start_day = if since > 0 {
         (since - tz_min * 60_000).div_euclid(DAY_MS)
     } else {
@@ -279,7 +289,7 @@ pub async fn summary(
     // clock running minutes ahead can file a listen under tomorrow, and that
     // must not cost the whole streak.
     let streak_days = {
-        let days = state.db.completed_listen_days(caller.id, tz_min);
+        let days = state.db.completed_listen_days(user, tz_min);
         let mut streak = 0i64;
         let mut expect = if days.contains(&today) { today } else { today - 1 };
         for &d in &days {
@@ -302,7 +312,7 @@ pub async fn summary(
     };
 
     // Under ten measured tracks the average is an anecdote, not a sound.
-    let (measured, energy, brightness, bpm) = state.db.listen_sound(caller.id, since);
+    let (measured, energy, brightness, bpm) = state.db.listen_sound(user, since);
     let sound = if measured >= 10 {
         json!({
             "bpm": bpm.map(|b| (b * 10.0).round() / 10.0),
@@ -313,7 +323,7 @@ pub async fn summary(
         serde_json::Value::Null
     };
 
-    Ok(Json(json!({
+    Some(json!({
         "range": range,
         "since": since,
         "minutes": minutes(totals.ms),
@@ -329,7 +339,7 @@ pub async fn summary(
         "streakDays": streak_days,
         "skipRate": rate(totals.skipped),
         "completionRate": rate(totals.completed),
-        "firstListens": state.db.first_listen_count(caller.id, since),
+        "firstListens": state.db.first_listen_count(user, since),
         "sound": sound,
-    })))
+    }))
 }

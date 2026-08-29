@@ -1889,6 +1889,24 @@ impl Db {
         Ok(changed > 0)
     }
 
+    /// The local seat behind a registry handle, for the profile door:
+    /// (user_id, username, handle as stored, joined_at). Case-insensitive,
+    /// matching the registry's own collation on handles.
+    pub fn member_by_handle(&self, handle: &str) -> Option<(i64, String, String, i64)> {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT m.user_id, u.username, m.handle, m.joined_at
+               FROM registry_members m JOIN users u ON u.id = m.user_id
+              WHERE m.handle = ?1 COLLATE NOCASE
+              ORDER BY m.joined_at ASC LIMIT 1",
+            params![handle],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .optional()
+        .ok()
+        .flatten()
+    }
+
     pub fn user_by_name(&self, username: &str) -> Option<User> {
         self.lock()
             .query_row(
