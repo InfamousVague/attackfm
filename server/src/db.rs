@@ -716,6 +716,16 @@ CREATE TABLE IF NOT EXISTS discovery_lanes (
 -- clustered. Rebuilt daily by the programmer; read whole by scoring, the
 -- station builder and the settings pane. A JSON blob like transcripts, for the
 -- same reason - one writer, few readers, never queried by parts.
+CREATE TABLE IF NOT EXISTS dj_sets (
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  vibe        TEXT NOT NULL,
+  -- The finished reply, exactly as /api/dj would say it: {ai, vibe, blocks}.
+  body        TEXT NOT NULL,
+  built_at    INTEGER NOT NULL,
+  consumed_at INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, vibe)
+);
+
 CREATE TABLE IF NOT EXISTS mood_profiles (
   user_id  INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   built_at INTEGER NOT NULL,
@@ -5529,6 +5539,39 @@ impl Db {
     }
 
     /// The stored mood profile, if one has been built: (built_at, json).
+    /// The banked DJ set for one vibe: (body, built_at, consumed_at).
+    pub fn dj_set_get(&self, user: i64, vibe: &str) -> Option<(String, i64, i64)> {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT body, built_at, consumed_at FROM dj_sets WHERE user_id = ?1 AND vibe = ?2",
+            params![user, vibe],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()
+        .ok()
+        .flatten()
+    }
+
+    pub fn dj_set_put(&self, user: i64, vibe: &str, body: &str) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "INSERT INTO dj_sets (user_id, vibe, body, built_at, consumed_at)
+             VALUES (?1, ?2, ?3, ?4, 0)
+             ON CONFLICT(user_id, vibe) DO UPDATE SET body = ?3, built_at = ?4, consumed_at = 0",
+            params![user, vibe, body, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    pub fn dj_set_consume(&self, user: i64, vibe: &str) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "UPDATE dj_sets SET consumed_at = ?3 WHERE user_id = ?1 AND vibe = ?2",
+            params![user, vibe, now_ms()],
+        )?;
+        Ok(())
+    }
+
     pub fn mood_profile(&self, user_id: i64) -> Option<(i64, String)> {
         self.lock()
             .query_row(

@@ -234,15 +234,56 @@ pub async fn station(
     let want = q.count.unwrap_or(15).clamp(6, 30);
     let seed = q.seed.trim().to_string();
 
+    /*
+     * The banked sets first. Live building under a five-second patter budget
+     * produced honest picks but no JUDGEMENT - the model never had time to
+     * curate, and a taste-scored ranking with jitter reads as glorified
+     * shuffle. So each known vibe keeps a set built OFFLINE, where the model
+     * gets minutes: it chooses from a wider pool, sequences, and speaks.
+     * Serving one consumes it and banks a replacement behind the reply. A
+     * custom count opts out - that caller asked for something bespoke.
+     */
+    if q.count.is_none() {
+        if let Some(body) = crate::vibes::take(&state, caller.id, &seed) {
+            return Ok(Json(body));
+        }
+    }
+
+    let reply = build_reply(&state, caller.id, &seed, want, false).await?;
+    // A vibe served live means none was banked; bank the next one now.
+    if crate::vibes::key_for_seed(&seed).is_some() {
+        let st = state.clone();
+        let user = caller.id;
+        let seed = seed.clone();
+        tokio::spawn(async move {
+            crate::vibes::rebuild_for_seed(&st, user, &seed).await;
+        });
+    }
+    Ok(Json(reply))
+}
+
+/// The whole set, built: picks scored against taste, runs cut, lines written,
+/// voice promised. `curate` is the offline mode - twice the candidates, no
+/// jitter, and the model unhurried and allowed to DROP what does not fit;
+/// live keeps the tight budget and ships whatever is ready.
+pub(crate) async fn build_reply(
+    state: &Arc<AppState>,
+    user: i64,
+    seed: &str,
+    want: usize,
+    curate: bool,
+) -> Result<Value, (StatusCode, String)> {
+    let seed = seed.to_string();
+
     // Taste: the same profile the curator scores against, from recent plays.
     let feats = state.db.all_features();
     let by_id: HashMap<i64, &TrackFeatures> = feats.iter().map(|f| (f.track_id, f)).collect();
     // Verdicts when the ledger has them, play starts when it does not.
-    let weighted = state.db.weighted_recent_listens(caller.id, RECENT_WINDOW);
+    let weighted = state.db.weighted_recent_listens(user, RECENT_WINDOW);
     let taste = if weighted.len() >= 8 {
         crate::curator::taste_from_weighted(&weighted, &by_id)
     } else {
-        let recent = state.db.recent_plays(caller.id, RECENT_WINDOW);
+        let recent = state.db.recent_plays(user, RECENT_WINDOW);
         taste_from(&recent, &by_id)
     };
 
@@ -273,7 +314,7 @@ pub async fn station(
     let listened: Vec<(i64, f32)> = if weighted.len() >= 8 {
         weighted.clone()
     } else {
-        state.db.recent_plays(caller.id, RECENT_WINDOW).into_iter().map(|id| (id, 1.0)).collect()
+        state.db.recent_plays(user, RECENT_WINDOW).into_iter().map(|id| (id, 1.0)).collect()
     };
     let listened_feats: Vec<&TrackFeatures> = listened
         .iter()
@@ -288,7 +329,7 @@ pub async fn station(
         .iter()
         .flat_map(|f| f.listenbrainz_similar.iter().map(String::as_str))
         .collect();
-    let liked: HashSet<i64> = state.db.favorites(caller.id).into_iter().collect();
+    let liked: HashSet<i64> = state.db.favorites(user).into_iter().collect();
     let sonic_target: Option<&[f32]> = seed_vec.as_deref().or(taste_sonic.as_deref());
 
     let half = |c: f32| (c + 1.0) / 2.0;
@@ -335,7 +376,13 @@ pub async fn station(
                     + STATION_W_HISTORY * history
                     + STATION_W_LIKE * like
                     + STATION_W_COLLAB * collab;
-                let jitter = rng.gen_range(-QUEUE_SCORE_JITTER..=QUEUE_SCORE_JITTER);
+                // Curation wants the honest ranking; the live path keeps a
+                // shake of jitter so back-to-back presses do not repeat.
+                let jitter = if curate {
+                    0.0
+                } else {
+                    rng.gen_range(-QUEUE_SCORE_JITTER..=QUEUE_SCORE_JITTER)
+                };
                 (relevance + jitter, f.track_id)
             })
             .collect()
@@ -356,12 +403,14 @@ pub async fn station(
         }
         *c += 1;
         picks.push(id);
-        if picks.len() >= want {
+        // Offline the model gets twice the pool and the right to drop; live
+        // takes exactly what will play.
+        if picks.len() >= if curate { want * 2 } else { want } {
             break;
         }
     }
     if picks.is_empty() {
-        return Ok(Json(json!({ "ai": false, "vibe": seed, "blocks": [] })));
+        return Ok(json!({ "ai": false, "vibe": seed, "blocks": [] }));
     }
 
     /*
@@ -384,12 +433,12 @@ pub async fn station(
     let explore_n: usize = if want >= 12 { 2 } else { 1 };
     let explore_picks: Vec<i64> = {
         use rand_distr::Distribution;
-        let played = state.db.played_artist_keys(caller.id);
+        let played = state.db.played_artist_keys(user);
         let taken: HashSet<String> =
             picks.iter().filter_map(|id| artist_of.get(id).cloned()).collect();
         let stats: HashMap<String, (i64, i64)> = state
             .db
-            .explore_artist_stats(caller.id)
+            .explore_artist_stats(user)
             .into_iter()
             .map(|(a, offers, adopted)| (a, (offers, adopted)))
             .collect();
@@ -438,7 +487,7 @@ pub async fn station(
         .enumerate()
         .map(|(i, id)| (*id, if explore_set.contains(id) { "explore" } else { "rank" }, i as i64))
         .collect();
-    state.db.record_dj_impressions(caller.id, &offered);
+    state.db.record_dj_impressions(user, &offered);
 
     /*
      * The dossiers: what the patter is ALLOWED to say about each pick.
@@ -450,7 +499,7 @@ pub async fn station(
      * never to add to them: grounded dossiers are the difference between a
      * sommelier and a confident liar.
      */
-    let hearted = state.db.hearted_artist_keys(caller.id);
+    let hearted = state.db.hearted_artist_keys(user);
     let dossiers: HashMap<i64, String> = picks
         .iter()
         .map(|id| {
@@ -483,11 +532,19 @@ pub async fn station(
      * say line is the voice's own library line plus the name - the toast
      * shows exactly the words the voice speaks.
      */
-    let mut blocks =
-        match tokio::time::timeout(PATTER_BUDGET, patter(&state, &picks, &seed, &dossiers)).await {
+    let mut blocks = if curate {
+        // Unhurried: the whole point of banking is that the model may think.
+        patter(state, &picks, &seed, &dossiers, true)
+            .await
+            .unwrap_or_else(|| fallback_blocks(state, &picks[..picks.len().min(want)]))
+    } else {
+        match tokio::time::timeout(PATTER_BUDGET, patter(state, &picks, &seed, &dossiers, false))
+            .await
+        {
             Ok(Some(blocks)) => blocks,
-            _ => fallback_blocks(&state, &picks),
-        };
+            _ => fallback_blocks(state, &picks),
+        }
+    };
 
     /*
      * The voice, as beats: each block gets its seat's cached library line and
@@ -530,9 +587,7 @@ pub async fn station(
         // clip endpoint keeps the promise even if this task dies first.
         crate::voice::mint_behind(&state, jobs);
     }
-    Ok(Json(
-        json!({ "ai": ai_url().is_some(), "vibe": seed, "blocks": blocks }),
-    ))
+    Ok(json!({ "ai": ai_url().is_some(), "vibe": seed, "blocks": blocks }))
 }
 
 /// Ask the DJ model to break the chosen set into a few runs and open each with a
@@ -543,6 +598,7 @@ async fn patter(
     picks: &[i64],
     seed: &str,
     dossiers: &HashMap<i64, String>,
+    curate: bool,
 ) -> Option<Vec<Value>> {
     let url = ai_url()?;
     let mut lines = Vec::new();
@@ -563,12 +619,24 @@ async fn patter(
     } else {
         format!("\"{seed}\"")
     };
+    /*
+     * Two jobs, one voice. Live, the model NARRATES a set already chosen -
+     * cover everything, keep the order. Banked (curate), it gets the room to
+     * be a DJ: twice the candidates, told to choose the ones that belong
+     * together and sequence them - dropping the rest is the point, because
+     * judgement is exactly what the listener said the live sets lacked.
+     */
+    let brief = if curate {
+        "These are CANDIDATES, ranked by this listener's taste. CHOOSE about fifteen that belong together for this brief and SEQUENCE them into a set with a shape - an opener, a build, a close. DROP the rest; a smaller set that flows beats a complete one that does not. Split your chosen set into 3-5 consecutive runs."
+    } else {
+        "Split the set into 3-4 consecutive runs. Cover every track, in order, across the runs."
+    };
     let prompt = format!(
         "You are a warm late-night radio DJ introducing a continuous set pulled from ONE listener's OWN library, steered toward {vibe}.\n\
-         The set, in play order, one per line as id|artist — title, some lines carrying known facts after a further |:\n{}\n\n\
-         Split the set into 3-4 consecutive runs. For each run write ONE short spoken DJ line to open it: first person, natural, 1-2 sentences, no exclamation marks, no emojis, name at most one artist. Cover every track, in order, across the runs.\n\
+         The songs, one per line as id|artist — title, some lines carrying known facts after a further |:\n{}\n\n\
+         {brief} For each run write ONE short spoken DJ line to open it: first person, natural, 1-2 sentences, no exclamation marks, no emojis, name at most one artist.\n\
          When you say anything ABOUT a song or artist, use only that line's listed facts or its artist and title text. Lines without facts are introduced by name and feel alone. Never invent history, biography, genres or claims of any kind.\n\
-         Answer with STRICT JSON and nothing else: [{{\"say\":\"...\",\"ids\":[1,2,3]}}] using ONLY the ids above, keeping their order.",
+         Answer with STRICT JSON and nothing else: [{{\"say\":\"...\",\"ids\":[1,2,3]}}] using ONLY the ids above.",
         lines.join("\n"),
     );
 
@@ -624,13 +692,14 @@ async fn patter(
         blocks.push(json!({ "say": say, "trackIds": ids }));
     }
 
-    // Whatever the model left out still gets played, tacked onto the last run so
-    // nothing the selector chose is silently dropped.
-    let leftover: Vec<i64> = picks
-        .iter()
-        .copied()
-        .filter(|id| !used.contains(id))
-        .collect();
+    // Live, whatever the model left out still gets played - the selector
+    // chose it and narration must not silently cut it. Banked, dropping IS
+    // the curation, so leftovers stay on the shelf.
+    let leftover: Vec<i64> = if curate {
+        Vec::new()
+    } else {
+        picks.iter().copied().filter(|id| !used.contains(id)).collect()
+    };
     if !leftover.is_empty() {
         match blocks
             .last_mut()

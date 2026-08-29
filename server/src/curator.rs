@@ -1574,6 +1574,10 @@ async fn discovery_cycle(state: &Arc<AppState>) -> bool {
             crate::stations::invalidate(state, user).await;
             worked = true;
         }
+        // The banked DJ sets: every vibe pressed-and-consumed (or gone
+        // stale) is rebuilt here, where the model can take its time to
+        // curate instead of narrating under a five-second budget.
+        crate::vibes::cycle(state, user).await;
     }
     worked
 }
