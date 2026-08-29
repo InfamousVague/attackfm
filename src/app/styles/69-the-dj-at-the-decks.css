@@ -1,0 +1,20 @@
+/* --- the DJ at the decks --------------------------------------------------
+ *
+ * The Now Playing action row's DJ seat: the panel a tap opens, wearing the
+ * Booth's vocabulary at popover scale. The set it starts is app-level state
+ * (djSession); nothing here owns playback.
+ */
+
+.npDj {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-3);
+  inline-size: min(20rem, 78vw);
+  padding: var(--glacier-space-2);
+}
+
+.npDj__chips {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--glacier-space-2);
+}

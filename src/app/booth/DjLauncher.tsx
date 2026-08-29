@@ -14,58 +14,21 @@
 //! Draws on the server library and the listener's play history, so it only
 //! offers itself when signed into a server with something to play.
 
-import { Button, IconButton, Spinner } from '@glacier/react';
-import { Flame, Lightbulb, MoonStar, Play, Sparkles, Waves, X } from '@glacier/icons';
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { createPortal } from 'react-dom';
+import { Button, Spinner } from '@glacier/react';
+import { Flame, Lightbulb, MoonStar, Play, Sparkles, Waves } from '@glacier/icons';
+import { useState, type CSSProperties } from 'react';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useLibrary } from '../library/library.tsx';
-import { useNowPlayingMotion } from '../player/nowPlayingMotion.tsx';
-import { fetchDj, trackIdFromPath } from '../server.ts';
-import { speakBeats } from './djVoice.ts';
+import { startDjRun } from './djSession.ts';
+import { DjToast } from './DjSetBridge.tsx';
 import { LibChipMosaic, LibChipStat } from '../library/LibChipFace.tsx';
 import type { Track } from '../core/tauri.ts';
 import djMascot from '../../assets/dj-mascot.webp';
 
-/** How long a line hangs around uninvited. Long enough to read twice; the X
- *  is for everyone who read it once. */
-const TOAST_MS = 12_000;
-
-/**
- * One line from the booth, floating: the mascot saying it, an X to wave it
- * off, gone by itself after a while. Portalled to the body so no header row
- * gets to squeeze it - being readable is the entire reason it exists.
- */
-function DjToast({ line, onDismiss }: { line: string; onDismiss: () => void }) {
-  useEffect(() => {
-    const t = window.setTimeout(onDismiss, TOAST_MS);
-    return () => window.clearTimeout(t);
-  }, [line, onDismiss]);
-  return createPortal(
-    <div className="djToast" role="status" aria-live="polite">
-      <img className="djToast__face" src={djMascot} alt="" aria-hidden />
-      <p className="djToast__line">{line}</p>
-      <IconButton type="button" variant="ghost" size="sm" className="djToast__close" aria-label="Dismiss" onClick={onDismiss}>
-        <X size={14} />
-      </IconButton>
-    </div>,
-    document.body,
-  );
-}
-
-/** A running set: which paths belong to it, and the line each run opens with,
- *  keyed by the path of the run's first track. */
-interface DjSet {
-  paths: Set<string>;
-  lineAt: Map<string, string>;
-  /** The spoken beats for a run's first track - the DJ's voice (djVoice.ts). */
-  voiceAt: Map<string, string[]>;
-}
-
 /** The Booth's steering row: each chip is a whole brief, one tap from sound.
  *  The seeds mirror the server's own mood-mix recipes, so the chip and the
  *  curated shelf speak the same dialect. */
-const MOODS: { label: string; seed: string; Icon: typeof Waves }[] = [
+export const MOODS: { label: string; seed: string; Icon: typeof Waves }[] = [
   { label: 'Chill', seed: 'something chill and unhurried', Icon: Waves },
   { label: 'Energy', seed: 'high energy, turn it up', Icon: Flame },
   { label: 'Late night', seed: 'late night, low lights', Icon: MoonStar },
@@ -83,33 +46,13 @@ export function DjLauncher({
 }) {
   const { session } = useServerSession();
   const { tracks } = useLibrary();
-  const { track: playing } = useNowPlayingMotion();
   // Which brief is in flight: '' is the seedless hero press, null is idle.
   const [busySeed, setBusySeed] = useState<string | null>(null);
   const [aiSet, setAiSet] = useState(false);
+  // Errors only: the set's own lines toast from DjSetBridge, app-wide, so
+  // they keep arriving after this page (and this component) are gone.
   const [toast, setToast] = useState<string | null>(null);
-  const [set, setSet] = useState<DjSet | null>(null);
   const busy = busySeed !== null;
-
-  // Lines fire on ENTERING a run, not on every render inside one - and a set
-  // is abandoned the moment playback wanders somewhere the DJ did not choose.
-  const lastPath = useRef<string | null>(null);
-  useEffect(() => {
-    if (!set || !playing) return;
-    const path = playing.path;
-    if (path === lastPath.current) return;
-    lastPath.current = path;
-    if (!set.paths.has(path)) {
-      // The listener changed the music: the set is over, no more talking.
-      setSet(null);
-      return;
-    }
-    const line = set.lineAt.get(path);
-    if (line) setToast(line);
-    // The voice speaks where the toast shows: on entering a run.
-    const beats = set.voiceAt.get(path);
-    if (beats && session) void speakBeats(session, beats);
-  }, [playing, set, session]);
 
   // The DJ reads a server library and a listening history; without either there
   // is nothing for it to spin.
@@ -119,46 +62,15 @@ export function DjLauncher({
     setBusySeed(seed);
     setToast(null);
     try {
-      const reply = await fetchDj(session, seed);
-      setAiSet(reply.ai);
-      // The set comes back as track ids; resolve them against the library and
-      // flatten every run into one queue, in the order the DJ chose.
-      const byId = new Map<number, Track>();
-      for (const t of tracks) {
-        const id = trackIdFromPath(t.path);
-        if (id != null) byId.set(id, t);
-      }
-      const queue: Track[] = [];
-      const paths = new Set<string>();
-      const lineAt = new Map<string, string>();
-      const voiceAt = new Map<string, string[]>();
-      for (const block of reply.blocks) {
-        let first = true;
-        for (const id of block.trackIds) {
-          const t = byId.get(id);
-          if (!t) continue;
-          queue.push(t);
-          paths.add(t.path);
-          if (first && block.say.trim()) lineAt.set(t.path, block.say.trim());
-          if (first && block.voice && block.voice.length > 0) voiceAt.set(t.path, block.voice);
-          first = false;
-        }
-      }
+      const { queue, ai } = await startDjRun(session, tracks, seed);
+      setAiSet(ai);
       const opener = queue[0];
       if (!opener) {
         setToast('The DJ came up empty. Play a few things first so it learns your taste.');
         return;
       }
-      // The first line shows immediately rather than waiting for the motion
-      // publish to loop back - the set should speak as it starts.
-      lastPath.current = opener.path;
-      setSet({ paths, lineAt, voiceAt });
-      const firstLine = lineAt.get(opener.path) ?? reply.blocks.find((b) => b.say.trim())?.say ?? null;
-      if (firstLine) setToast(firstLine);
-      // The opener's beats fire by hand, like its toast - lastPath is
-      // already this track, so the effect above will not.
-      const firstBeats = voiceAt.get(opener.path);
-      if (firstBeats) void speakBeats(session, firstBeats);
+      // The run is already published; the bridge toasts the opener's line and
+      // speaks its beats the moment this lands as the playing track.
       onPlay(opener, queue);
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'The DJ could not start.');

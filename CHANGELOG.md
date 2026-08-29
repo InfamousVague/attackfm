@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.122
+
+- A DJ seat on the Now Playing screen: start a live set right there - from your taste, or steered by a mood - and hear the voice open it
+- The DJ's lines and voice now follow you anywhere in the app for the whole set, instead of going quiet when you left the Booth
+
 ## 0.4.121
 
 - The next ten songs in the queue are now pulled down whole while you listen, so skipping through a list lands instantly instead of buffering each time, and a minute in a lift or a tunnel no longer stops the music. They are the same bytes playback would have streamed anyway, fetched early rather than extra

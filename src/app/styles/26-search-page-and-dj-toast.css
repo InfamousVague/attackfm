@@ -74,7 +74,9 @@
    it; below the modals (z 50), above everything that scrolls. */
 .djToast {
   position: fixed;
-  z-index: 40;
+  /* Above the Now Playing sheet (50): with the DJ startable from that very
+     screen, its lines must land on it, not under it. */
+  z-index: 65;
   inset-block-start: calc(var(--app-safe-top, env(safe-area-inset-top, 0px)) + 3.25rem);
   inset-inline: 0;
   margin-inline: auto;
