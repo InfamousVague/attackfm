@@ -1,4 +1,4 @@
-import { Button, Input, Modal, ScrollArea, Text, useToast } from '@glacier/react';
+import { Button, Drawer, Input, Text, useToast } from '@glacier/react';
 import { fireNativeHaptic } from '../core/haptics.ts';
 import { Check, ListMusic, Plus, Search } from '@glacier/icons';
 import { useMemo, useState } from 'react';
@@ -13,8 +13,9 @@ import type { Track } from '../core/tauri.ts';
  * ones you have - each row saying plainly whether the song is already in it.
  *
  * The panel is the component; the shell around it is the caller's choice.
- * Today that shell is a dialog (AddToPlaylistDialog), for callers with
- * nothing to anchor a popover to - a context menu, a long-press.
+ * Today that shell is a bottom sheet (AddToPlaylistDialog) - by request,
+ * the card treatment the search drawer wears, in place of the floating
+ * modal whose inner scroll region kept eating the drag on touch.
  */
 
 function AddToPlaylistPanel({ list, onDone }: { list: Track[]; onDone: () => void }) {
@@ -106,8 +107,11 @@ function AddToPlaylistPanel({ list, onDone }: { list: Track[]; onDone: () => voi
         </form>
       )}
 
-      <ScrollArea className="addPlaylist__scroll">
-        <div className="addPlaylist__list">
+      {/* One scroller, the sheet's own: the old nested ScrollArea inside a
+          modal capped itself at 16rem and swallowed touch drags (the
+          cross-axis-contain trap) - the list now runs free and the Drawer
+          body scrolls it. */}
+      <div className="addPlaylist__list">
           {filtered.length === 0 ? (
             <Text tone="muted" size="sm" className="addPlaylist__empty">
               {playlists.length === 0 ? 'No playlists yet.' : 'No playlist by that name.'}
@@ -180,16 +184,15 @@ function AddToPlaylistPanel({ list, onDone }: { list: Track[]; onDone: () => voi
               );
             })
           )}
-        </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }
 
 /**
- * The same panel as a dialog, for the callers with nothing to anchor to - a
- * context menu item, a long-press. Rendered only while open so the panel's
- * draft state starts fresh each time it is asked for.
+ * The same panel as a bottom sheet, for the callers with nothing to anchor
+ * to - a context menu item, a long-press. Rendered only while open so the
+ * panel's draft state starts fresh each time it is asked for.
  */
 export function AddToPlaylistDialog({
   track,
@@ -206,8 +209,15 @@ export function AddToPlaylistDialog({
   const list = tracks && tracks.length > 0 ? tracks : track ? [track] : [];
   if (list.length === 0) return null;
   return (
-    <Modal open={open} onClose={onClose} title="Add to playlist" size="sm">
+    <Drawer
+      open={open}
+      onClose={onClose}
+      side="bottom"
+      size="lg"
+      title="Add to playlist"
+      className="addPlaylistSheet"
+    >
       <AddToPlaylistPanel list={list} onDone={onClose} />
-    </Modal>
+    </Drawer>
   );
 }
