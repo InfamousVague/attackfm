@@ -28,6 +28,7 @@ import {
   Zap,
 } from '@glacier/icons';
 import { IconTile, PaneSection, SettingRow, SettingsCallout, SettingsEmpty, SubNav } from './kit/settingsKit.tsx';
+import { djVoiceEnabled, setDjVoice } from '../booth/djVoice.ts';
 import { takePendingReveal } from './settingsShared.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { fetchAiActivity, fetchAiReport, probeAi, runAi, setAiSettings } from '../api/ai.ts';
@@ -201,6 +202,7 @@ function duration(seconds: number): string {
 export function LocalAiPane() {
   const { session } = useServerSession();
   const { toast } = useToast();
+  const [voiceOn, setVoiceOn] = useState(djVoiceEnabled);
   const [report, setReport] = useState<AiReport | null>(null);
   const [health, setHealth] = useState<AiHealth | null>(null);
   const [missing, setMissing] = useState(false);
@@ -665,6 +667,21 @@ export function LocalAiPane() {
               checked={settings.chatEnabled}
               aria-label="Chat"
               onCheckedChange={(v) => void save({ chatEnabled: v }, 'chatEnabled')}
+            />
+          }
+        />
+        <SettingRow
+          id="dj-voice"
+          label="DJ voice"
+          hint="The DJ speaks its lines between songs - short cached clips from the server, ducked under the music. Needs a voice on the server (an ElevenLabs key, or the local model from install-voice.sh). This switch is per device."
+          control={
+            <Switch
+              checked={voiceOn}
+              aria-label="DJ voice"
+              onCheckedChange={(v) => {
+                setDjVoice(v);
+                setVoiceOn(v);
+              }}
             />
           }
         />

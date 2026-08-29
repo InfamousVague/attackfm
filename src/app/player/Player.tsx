@@ -949,16 +949,33 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   // What the fader says playback should weigh right now, muting included.
   // Below unity it is calibrated in decibels; above it (100-150) a straight
   // amplitude boost the gain node can apply directly.
+  const applyVolumeRef = useRef<(() => void) | null>(null);
   const currentAmplitude = () =>
-    mutedRef.current
+    (mutedRef.current
       ? 0
       : volumeRef.current <= VOLUME_UNITY
         ? volumeAmplitude(volumeRef.current)
-        : volumeRef.current / VOLUME_UNITY;
+        : volumeRef.current / VOLUME_UNITY) * duckRef.current;
+
+  /* The DJ's voice ducks the music under itself (djVoice.ts fires
+     'afm-duck'); the duck is a plain multiplier folded into the same
+     amplitude every other hand already goes through, so it composes with
+     the fader, loudness gain and the crossfade instead of fighting them. */
+  const duckRef = useRef(1);
+  useEffect(() => {
+    const onDuck = (e: Event) => {
+      duckRef.current = (e as CustomEvent).detail?.on ? 0.25 : 1;
+      applyVolumeRef.current?.();
+    };
+    window.addEventListener('afm-duck', onDuck);
+    return () => window.removeEventListener('afm-duck', onDuck);
+  }, []);
 
   const applyVolume = (vol = volumeRef.current, isMuted = mutedRef.current) => {
     const audio = activeAudio();
-    const amplitude = isMuted ? 0 : vol <= VOLUME_UNITY ? volumeAmplitude(vol) : vol / VOLUME_UNITY;
+    const amplitude =
+      (isMuted ? 0 : vol <= VOLUME_UNITY ? volumeAmplitude(vol) : vol / VOLUME_UNITY) *
+      duckRef.current;
     if (analyserRef.current) {
       analyserRef.current.setVolume(amplitude);
       // Both decks run full into the graph; their share of the mix is the
@@ -971,6 +988,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       audio.volume = Math.min(1, amplitude);
     }
   };
+  applyVolumeRef.current = applyVolume;
 
   const ensureMeter = () => {
     // iOS routes through the audio graph like every other platform, so the

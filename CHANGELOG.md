@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.120
+
+- The DJ has a voice: it speaks a short line and the artist's name at the top of each run, ducked under the music - when the server has a voice configured (an ElevenLabs key, or the local model from install-voice.sh)
+- A switch under Settings > AI: "DJ voice", per device
+
 ## 0.4.119
 
 - The seek bar's playhead stands taller now - the waveform no longer breaks past it on loud passages

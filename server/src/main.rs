@@ -69,6 +69,7 @@ mod listens;
 mod pair;
 mod peersync;
 mod profile;
+mod voice;
 mod playlist_covers;
 mod push;
 mod radio;
@@ -691,6 +692,7 @@ async fn main() {
         .route("/api/friends/{user_id}", delete(friends::remove))
         .route("/api/profile/sharing", get(profile::get_sharing).put(profile::set_sharing))
         .route("/api/profile/{who}", get(profile::profile))
+        .route("/api/voice/{id}", get(voice::serve))
         .route("/api/jams", get(jams::list).post(jams::create))
         .route("/api/jams/{id}/join", post(jams::join))
         .route("/api/jams/{id}/leave", post(jams::leave))

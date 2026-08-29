@@ -22,6 +22,7 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { useLibrary } from '../library/library.tsx';
 import { useNowPlayingMotion } from '../player/nowPlayingMotion.tsx';
 import { fetchDj, trackIdFromPath } from '../server.ts';
+import { speakBeats } from './djVoice.ts';
 import { LibChipMosaic, LibChipStat } from '../library/LibChipFace.tsx';
 import type { Track } from '../core/tauri.ts';
 import djMascot from '../../assets/dj-mascot.webp';
@@ -57,6 +58,8 @@ function DjToast({ line, onDismiss }: { line: string; onDismiss: () => void }) {
 interface DjSet {
   paths: Set<string>;
   lineAt: Map<string, string>;
+  /** The spoken beats for a run's first track - the DJ's voice (djVoice.ts). */
+  voiceAt: Map<string, string[]>;
 }
 
 /** The Booth's steering row: each chip is a whole brief, one tap from sound.
@@ -103,7 +106,10 @@ export function DjLauncher({
     }
     const line = set.lineAt.get(path);
     if (line) setToast(line);
-  }, [playing, set]);
+    // The voice speaks where the toast shows: on entering a run.
+    const beats = set.voiceAt.get(path);
+    if (beats && session) void speakBeats(session, beats);
+  }, [playing, set, session]);
 
   // The DJ reads a server library and a listening history; without either there
   // is nothing for it to spin.
@@ -125,6 +131,7 @@ export function DjLauncher({
       const queue: Track[] = [];
       const paths = new Set<string>();
       const lineAt = new Map<string, string>();
+      const voiceAt = new Map<string, string[]>();
       for (const block of reply.blocks) {
         let first = true;
         for (const id of block.trackIds) {
@@ -133,6 +140,7 @@ export function DjLauncher({
           queue.push(t);
           paths.add(t.path);
           if (first && block.say.trim()) lineAt.set(t.path, block.say.trim());
+          if (first && block.voice && block.voice.length > 0) voiceAt.set(t.path, block.voice);
           first = false;
         }
       }
@@ -144,9 +152,13 @@ export function DjLauncher({
       // The first line shows immediately rather than waiting for the motion
       // publish to loop back - the set should speak as it starts.
       lastPath.current = opener.path;
-      setSet({ paths, lineAt });
+      setSet({ paths, lineAt, voiceAt });
       const firstLine = lineAt.get(opener.path) ?? reply.blocks.find((b) => b.say.trim())?.say ?? null;
       if (firstLine) setToast(firstLine);
+      // The opener's beats fire by hand, like its toast - lastPath is
+      // already this track, so the effect above will not.
+      const firstBeats = voiceAt.get(opener.path);
+      if (firstBeats) void speakBeats(session, firstBeats);
       onPlay(opener, queue);
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'The DJ could not start.');
