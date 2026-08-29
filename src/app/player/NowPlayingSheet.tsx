@@ -25,6 +25,7 @@ import { isMobile } from '../core/platform.ts';
 import { PluginSlot } from '../../plugins/runtime.tsx';
 import { SoundConsole } from './SoundConsole.tsx';
 import { NpDjButton } from './NpDjButton.tsx';
+import { useDjTalking } from '../booth/djVoice.ts';
 import { MarqueeText } from './MarqueeText.tsx';
 import { SpinningDisc } from './SpinningDisc.tsx';
 import { QueuePanel } from './QueuePanel.tsx';
@@ -1217,6 +1218,7 @@ export function NowPlayingSheet({
      inline custom property outranks any stylesheet, including that one.
      Null - tint off, greyscale art, no art - means the kit accent stands. */
 
+  const djTalking = useDjTalking();
   const [readyCanvas, setReadyCanvas] = useState<string | null>(null);
   const canvasReady = readyCanvas !== null && readyCanvas === npCanvas;
   const setCanvasReady = (on: boolean) => setReadyCanvas(on ? npCanvas : null);
@@ -1379,7 +1381,15 @@ export function NowPlayingSheet({
           vanishes when a video shows up is a broken promise. Anyone who
           prefers the clip unobstructed picks Hidden - the third face. */}
       {artView !== 'hidden' && (
-      <div className="npScreen__art">
+      <div className="npScreen__art" data-dj-talking={djTalking || undefined}>
+        {/* The DJ's breath made visible: wobbly rings off the spinning
+            record while the voice speaks, in the album's own accent. Purely
+            decorative - pointer-events pass straight through to the disc. */}
+        <span className="npSpeakWaves" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </span>
         {/* The hero art follows the same artView the mini-strip does, so the
             choice is one setting in two places. A press (long-press on
             touch) opens the chooser. */}

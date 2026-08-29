@@ -5,7 +5,7 @@ import { X } from '@glacier/icons';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useNowPlayingMotion } from '../player/nowPlayingMotion.tsx';
 import { currentDjRun, publishDjRun, subscribeDjRun, type DjRun } from './djSession.ts';
-import { speakBeats } from './djVoice.ts';
+import { djVoiceEnabled, speakBeats } from './djVoice.ts';
 import djMascot from '../../assets/dj-mascot.webp';
 
 /** How long a line hangs around uninvited. Long enough to read twice; the X
@@ -81,10 +81,18 @@ export function DjSetBridge() {
       return;
     }
     armed.current = true;
-    const line = run.lineAt.get(path);
-    if (line) setToast(line);
     const beats = run.voiceAt.get(path);
-    if (beats && session) void speakBeats(session, beats);
+    const spoken = Boolean(beats && session && djVoiceEnabled());
+    if (spoken) {
+      void speakBeats(session!, beats!);
+    } else {
+      // The card only shows when nothing will be HEARD - by request, a
+      // talking DJ talks, and the screen answers with waves off the disc
+      // instead of a caption. Text remains the whole story for a hub with
+      // no voice, or a listener who switched it off.
+      const line = run.lineAt.get(path);
+      if (line) setToast(line);
+    }
   }, [playing, run, session]);
 
   if (!toast) return null;

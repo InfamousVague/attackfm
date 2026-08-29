@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { ServerSession } from '../api/http.ts';
 
 /**
@@ -47,8 +48,27 @@ function clipUrl(session: ServerSession, id: string): Promise<string | null> {
   return p;
 }
 
+let talking = false;
+
 function duck(on: boolean): void {
+  // The duck and the talking signal travel together but stay two events:
+  // one is a mixing instruction the Player folds into its fader, the other
+  // is a fact about the DJ that any surface may dress itself by.
+  talking = on;
   window.dispatchEvent(new CustomEvent('afm-duck', { detail: { on } }));
+  window.dispatchEvent(new CustomEvent('afm-dj-talking', { detail: { on } }));
+}
+
+/** Whether the DJ's voice is speaking right now, as React state - the Now
+ *  Playing art wears its speech waves off this. */
+export function useDjTalking(): boolean {
+  const [on, setOn] = useState(() => talking);
+  useEffect(() => {
+    const listen = (e: Event) => setOn(Boolean((e as CustomEvent).detail?.on));
+    window.addEventListener('afm-dj-talking', listen);
+    return () => window.removeEventListener('afm-dj-talking', listen);
+  }, []);
+  return on;
 }
 
 function playOne(url: string): Promise<void> {

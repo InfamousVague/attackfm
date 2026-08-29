@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.126
+
+- When the DJ talks, the record answers: wobbly waves ripple off the spinning disc in the album's colour, and the caption card stays out of the way - text only appears when there is no voice to hear
+
 ## 0.4.125
 
 - The DJ panel sits balanced now - buttons fill its width instead of huddling left
