@@ -1224,6 +1224,19 @@ export function NowPlayingSheet({
      mid-ripple reads as a glitch; one that leaves reads as the room going
      quiet), then gone. */
   const [wave, setWave] = useState<'off' | 'on' | 'leaving'>('off');
+  /* The voice's live loudness, written straight onto the waves as a CSS var
+     - per-frame data has no business re-rendering React. The halo hugs the
+     record's edge and swells with each word, which is what ties the ripple
+     to the SPEECH rather than to a clock. */
+  const wavesRef = useRef<HTMLSpanElement | null>(null);
+  useEffect(() => {
+    const onLevel = (e: Event) => {
+      const level = Number((e as CustomEvent).detail?.level ?? 0);
+      wavesRef.current?.style.setProperty('--dj-level', String(Math.max(0, Math.min(1, level))));
+    };
+    window.addEventListener('afm-dj-level', onLevel);
+    return () => window.removeEventListener('afm-dj-level', onLevel);
+  }, []);
   useEffect(() => {
     if (djTalking) {
       setWave('on');
@@ -1399,7 +1412,8 @@ export function NowPlayingSheet({
         {/* The DJ's breath made visible: wobbly rings off the spinning
             record while the voice speaks, in the album's own accent. Purely
             decorative - pointer-events pass straight through to the disc. */}
-        <span className="npSpeakWaves" aria-hidden="true">
+        <span className="npSpeakWaves" aria-hidden="true" ref={wavesRef}>
+          <span className="npSpeakWaves__halo" />
           <span />
           <span />
           <span />
