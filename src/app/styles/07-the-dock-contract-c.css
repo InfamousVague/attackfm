@@ -34,6 +34,21 @@
   animation: heartRing 0.45s var(--glacier-ease-out);
 }
 
+/* The like's giant echo (Player.tsx rippleHeart): a cloned heart outline
+   swelling out from the icon's own seat. Fixed and centred by translate so
+   the animated width/height grow around the point that was pressed; above
+   the sheet (50), below the DJ's toast (65). The accent is the song's own
+   while a tint stands, which is exactly right for a like. */
+.heartRipple {
+  position: fixed;
+  translate: -50% -50%;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 60;
+  color: var(--glacier-accent-solid);
+}
+
 .npScreen__scrub {
   flex: none;
   display: flex;
