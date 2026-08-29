@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.128
+
+- The music drops right out of the way while the DJ talks - a breath under the voice instead of a bed you have to hear through, eased down and back like a fader hand
+
 ## 0.4.127
 
 - The DJ's voice steps up to the studio-grade model - the library re-speaks itself at the higher quality, a beat slower to mint and cached forever like before

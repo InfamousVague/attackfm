@@ -965,8 +965,15 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   const duckRef = useRef(1);
   useEffect(() => {
     const onDuck = (e: Event) => {
-      duckRef.current = (e as CustomEvent).detail?.on ? 0.25 : 1;
-      applyVolumeRef.current?.();
+      // WAY down, by request - a breath of music under the voice, not a
+      // bed you have to talk over. Eased through the gain graph when there
+      // is one, so the floor drops like a fader hand rather than a cut.
+      duckRef.current = (e as CustomEvent).detail?.on ? 0.07 : 1;
+      if (analyserRef.current) {
+        analyserRef.current.rampVolume(currentAmplitude(), 0.18);
+      } else {
+        applyVolumeRef.current?.();
+      }
     };
     window.addEventListener('afm-duck', onDuck);
     return () => window.removeEventListener('afm-duck', onDuck);
