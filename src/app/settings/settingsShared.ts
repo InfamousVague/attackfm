@@ -90,7 +90,7 @@ export const SETTINGS_INDEX: SettingEntry[] = [
     id: 'dynamic-accent',
     pane: 'appearance',
     label: 'Album colour while playing',
-    description: "Now Playing and its sound rooms take the album cover's colour.",
+    description: "The whole app takes the album cover's colour while music plays.",
     keywords: 'accent colour color album cover dynamic tint theme now playing adaptive',
   },
   {
