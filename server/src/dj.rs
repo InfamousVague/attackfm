@@ -157,7 +157,7 @@ fn now_ms() -> i64 {
 /// not working. So "can this run" means a URL AND a model, the same rule
 /// `AiClient::new` applies, and the caller falls back to its heuristic exactly
 /// as it does when nothing is configured at all.
-fn ai_url() -> Option<String> {
+pub(crate) fn ai_url() -> Option<String> {
     let url = crate::ai::setting("url", "AFM_AI_URL")?;
     if dj_model().trim().is_empty() {
         return None;
@@ -168,7 +168,7 @@ fn ai_url() -> Option<String> {
 /// The DJ's model. Separate from the offline curator's on purpose: the DJ answers
 /// a listener who is waiting, so it wants a small fast model, while curation runs
 /// in the background and can afford a big one.
-fn dj_model() -> String {
+pub(crate) fn dj_model() -> String {
     crate::ai::setting("djModel", "AFM_DJ_MODEL")
         // Then whatever model this box was actually set up with. home-install.sh
         // writes AFM_AI_MODEL and never AFM_DJ_MODEL, so a literal default asked
@@ -252,7 +252,7 @@ pub async fn station(
         // (nothing charting is on this box yet) falls through to taste so
         // the press always plays something.
         if crate::vibes::key_for_seed(&seed) == Some("charts") {
-            let body = crate::vibes::build_charts_reply(&state, caller.id).await;
+            let body = crate::vibes::build_charts_reply(&state, caller.id, false).await;
             let has = body
                 .get("blocks")
                 .and_then(|b| b.as_array())
@@ -575,6 +575,28 @@ pub(crate) async fn build_reply(
      * and strictly additive: a hub with no provider, or a mint that fails,
      * just leaves the beat silent and the toast carries the set as before.
      */
+    /*
+     * The lore, by request: one short true thing about each song coming up.
+     * Banked builds are background time, so they wait for the model to fill
+     * the library's gaps; a live press only READS what is already on file -
+     * the bank rebuild the handler spawns behind every vibe press is the one
+     * that generates, so the next press speaks. (Generating behind the live
+     * reply too was tried and cut: that background task raced the bank build
+     * for the same model and the bank froze loreless sets.)
+     */
+    if curate {
+        crate::lore::ensure(state, &picks).await;
+    }
+    let lore = crate::lore::known(state, &picks);
+    let mut lore_jobs: Vec<crate::voice::Beat> = Vec::new();
+    crate::lore::attach(&mut blocks, &lore, &mut lore_jobs);
+    // Minted on attach's own say-so, not a second enabled() read: the blocks
+    // now carry these clip ids, so the sidecars MUST land - a toggle between
+    // two reads once banked promises nothing could keep.
+    if !lore_jobs.is_empty() {
+        crate::voice::mint_behind(state, lore_jobs);
+    }
+
     if crate::voice::enabled() {
         let last = blocks.len().saturating_sub(1);
         let mut jobs: Vec<crate::voice::Beat> = Vec::new();
@@ -606,7 +628,7 @@ pub(crate) async fn build_reply(
         }
         // The ids are promises; the speaking happens behind the reply. The
         // clip endpoint keeps the promise even if this task dies first.
-        crate::voice::mint_behind(&state, jobs);
+        crate::voice::mint_behind(state, jobs);
     }
     Ok(json!({ "ai": ai_url().is_some(), "vibe": seed, "blocks": blocks }))
 }
