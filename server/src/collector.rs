@@ -45,6 +45,15 @@ const DEFAULT_CAP_BYTES: i64 = 250_000_000_000;
 const CANDIDATES: i64 = 24;
 /// How long a pull may sit queued before its job is presumed dead.
 const STALE_PULL_MS: i64 = 24 * 60 * 60 * 1000;
+
+/// Every Nth seat at the date belongs to today's chart: the trending lane
+/// already lands the global chart in the pool, but taste-ranked buying meant
+/// a hit far from your taste never survived the threshold - so the deck was
+/// all echo and no radio. One seat in three is the radio's, by request.
+const CHART_EVERY: usize = 3;
+/// The cadence counts buys inside this window, so a listener who takes a
+/// month off starts a fresh rotation instead of inheriting a stale remainder.
+const CHART_WINDOW_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 /// How much adoption history a tuning step needs before it moves the dial.
 const TUNE_MIN_SAMPLES: i64 = 5;
 
@@ -244,15 +253,50 @@ async fn pull_cycle(state: &Arc<AppState>) {
         crate::discovery::rescore(state, user);
         let pulled = state.db.pulled_ext_ids(user, now_ms() - FAILED_RETRY_AFTER_MS);
         let bar = threshold(exploration);
-        let pick = state
-            .db
-            .top_discoveries(user, CANDIDATES)
-            .into_iter()
-            .filter(|d| !pulled.contains(&d.ext_id) && !d.url.trim().is_empty())
-            .find(|d| d.score as f64 >= bar && measured(d));
+        let lanes = state.db.discovery_lanes(user);
+        /*
+         * The chart's seat. Every CHART_EVERY-th buy is offered to the
+         * trending lane first, ranked by chart position rather than taste
+         * score, and EXEMPT from the exploration threshold - the chart earns
+         * its seat by being the chart, which is precisely the music a taste
+         * model cannot vouch for. Measurement is still required (a date card
+         * needs its sound), and when the lane has nothing measured and
+         * unpulled the seat falls back to the ordinary taste pick rather
+         * than going empty.
+         */
+        let chart_turn = {
+            let recent = state.db.pulled_ext_ids(user, now_ms() - CHART_WINDOW_MS).len();
+            recent % CHART_EVERY == CHART_EVERY - 1
+        };
+        let chart_pick = if chart_turn {
+            let mut charted: Vec<_> = state
+                .db
+                .top_discoveries(user, 400)
+                .into_iter()
+                .filter(|d| lanes.get(&d.ext_id).is_some_and(|(lane, _)| lane == "trending"))
+                .filter(|d| !pulled.contains(&d.ext_id) && !d.url.trim().is_empty() && measured(d))
+                .collect();
+            charted.sort_by(|a, b| {
+                b.popularity.partial_cmp(&a.popularity).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            charted.into_iter().next()
+        } else {
+            None
+        };
+        let pick = chart_pick.or_else(|| {
+            state
+                .db
+                .top_discoveries(user, CANDIDATES)
+                .into_iter()
+                .filter(|d| !pulled.contains(&d.ext_id) && !d.url.trim().is_empty())
+                .find(|d| d.score as f64 >= bar && measured(d))
+        });
         let Some(candidate) = pick else { continue };
+        let charted = lanes
+            .get(&candidate.ext_id)
+            .is_some_and(|(lane, _)| lane == "trending");
 
-        if buy(state, user, &candidate).await {
+        if buy(state, user, &candidate, charted).await {
             /*
              * One at a time across all listeners - unless this box is only
              * OFFERING, in which case one per listener.
@@ -304,7 +348,7 @@ pub(crate) async fn top_up(state: &Arc<AppState>, user: i64) -> i64 {
 
 /// Resolve a candidate to a link the importer takes and raise the job.
 /// True when a job went up (whatever becomes of it).
-async fn buy(state: &Arc<AppState>, user: i64, d: &DiscoveryRow) -> bool {
+async fn buy(state: &Arc<AppState>, user: i64, d: &DiscoveryRow, charted: bool) -> bool {
     // Discovery candidates carry Deezer links, which the importer refuses as
     // primary input - the same dead end the artist page had, solved the same
     // way: find the Spotify twin by name and hand over that.
@@ -336,7 +380,7 @@ async fn buy(state: &Arc<AppState>, user: i64, d: &DiscoveryRow) -> bool {
         return false;
     };
 
-    let reason = reason_for(d).await;
+    let reason = reason_for(d, charted).await;
     // Named for the queue: the machine that pulled it, and who it is for.
     let via = state
         .db
@@ -402,8 +446,11 @@ async fn buy(state: &Arc<AppState>, user: i64, d: &DiscoveryRow) -> bool {
 /// Why the curator chose it: the model's one line when a chat model is
 /// configured, the seed artist's plain sentence when not. Failure is the
 /// plain sentence too - a missing reason should never cost a pull.
-async fn reason_for(d: &DiscoveryRow) -> String {
-    let plain = if d.seed.trim().is_empty() {
+async fn reason_for(d: &DiscoveryRow, charted: bool) -> String {
+    let plain = if charted {
+        // The honest story for a chart pick - it hangs off nobody's taste.
+        "Topping the charts right now.".to_string()
+    } else if d.seed.trim().is_empty() {
         String::new()
     } else {
         format!("Because you play {}.", d.seed.trim())
@@ -414,11 +461,17 @@ async fn reason_for(d: &DiscoveryRow) -> String {
     };
     let prompt = format!(
         "One warm sentence (max 14 words, no exclamation marks) telling a listener why \
-         \"{}\" by {} was downloaded for them, given they play a lot of {}. \
+         \"{}\" by {} was downloaded for them, given {}. \
          Answer with the sentence only.",
         d.title,
         d.artist,
-        if d.seed.trim().is_empty() { "similar music" } else { d.seed.trim() },
+        if charted {
+            "it is high on today's global charts".to_string()
+        } else if d.seed.trim().is_empty() {
+            "they play similar music".to_string()
+        } else {
+            format!("they play a lot of {}", d.seed.trim())
+        },
     );
     let reply = reqwest::Client::builder()
         .timeout(Duration::from_secs(45))
