@@ -390,7 +390,7 @@ fn read_identity(path: &Path) -> Option<(String, String, String, Option<i64>)> {
     let tag = tagged.primary_tag().or_else(|| tagged.first_tag())?;
     Some((
         tag.title().map(|c| c.to_string()).unwrap_or_default(),
-        tag.artist().map(|c| c.to_string()).unwrap_or_default(),
+        crate::scan::joined_values(tag, &lofty::tag::ItemKey::TrackArtist).unwrap_or_default(),
         tag.album().map(|c| c.to_string()).unwrap_or_default(),
         duration_ms,
     ))

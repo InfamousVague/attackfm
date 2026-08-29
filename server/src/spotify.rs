@@ -55,6 +55,22 @@ pub struct SpotifyLogins {
     pending: tokio::sync::Mutex<HashMap<String, PendingLogin>>,
 }
 
+/// Every artist on the credit, joined with the library's own ", " - showing
+/// only `artists[0]` cut collab billings on mirrored playlists.
+fn joined_names(artists: Option<&serde_json::Value>) -> Option<String> {
+    let list = artists?.as_array()?;
+    let joined = list
+        .iter()
+        .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if joined.is_empty() {
+        None
+    } else {
+        Some(joined)
+    }
+}
+
 fn now_secs() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -287,21 +303,9 @@ fn item_from_track(track: &serde_json::Value, added_at: i64, position: i64) -> d
             .unwrap_or_default()
             .to_uppercase(),
         title: str_at(track.get("name")),
-        artist: str_at(
-            track
-                .get("artists")
-                .and_then(|a| a.as_array())
-                .and_then(|a| a.first())
-                .and_then(|a| a.get("name")),
-        ),
+        artist: joined_names(track.get("artists")).unwrap_or_default(),
         album: str_at(album.and_then(|a| a.get("name"))),
-        album_artist: str_at(
-            album
-                .and_then(|a| a.get("artists"))
-                .and_then(|a| a.as_array())
-                .and_then(|a| a.first())
-                .and_then(|a| a.get("name")),
-        ),
+        album_artist: joined_names(album.and_then(|a| a.get("artists"))).unwrap_or_default(),
         duration_ms: track.get("duration_ms").and_then(|v| v.as_i64()),
         added_at,
         track_id: None,
@@ -466,13 +470,8 @@ async fn hydrate_isrcs(
                         .unwrap_or_default()
                         .to_string(),
                     album
-                        .and_then(|a| a.get("artists"))
-                        .and_then(|a| a.as_array())
-                        .and_then(|a| a.first())
-                        .and_then(|a| a.get("name"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
+                        .and_then(|a| joined_names(a.get("artists")))
+                        .unwrap_or_default(),
                 ),
             );
         }
@@ -838,8 +837,7 @@ pub async fn library(State(state): State<Arc<AppState>>, headers: HeaderMap) -> 
                 "id": id,
                 "synced": synced.contains_key(&format!("album:{id}")),
                 "name": album.get("name").and_then(|v| v.as_str()).unwrap_or("Untitled"),
-                "artist": album.get("artists").and_then(|v| v.as_array()).and_then(|a| a.first())
-                    .and_then(|a| a.get("name")).and_then(|v| v.as_str()).unwrap_or("Unknown artist"),
+                "artist": joined_names(album.get("artists")).unwrap_or_else(|| "Unknown artist".into()),
                 "url": format!("https://open.spotify.com/album/{id}"),
                 "tracks": album.get("total_tracks").and_then(|v| v.as_u64()).unwrap_or(0),
                 "image": thumb(album),
