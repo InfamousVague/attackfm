@@ -47,10 +47,26 @@ function DjCountdown() {
   const left = Math.max(0, CUE_SECONDS - elapsed);
   const frac = Math.min(1, elapsed / CUE_SECONDS);
   const line = CUE_LINES[Math.min(CUE_LINES.length - 1, Math.floor(elapsed / 1.7))]!;
+  /* An explicit SVG progress ring rather than a conic paint: the conic read
+     as a faint rim on a real phone, and a countdown whose progress cannot be
+     seen is just a number. dashoffset walks the circumference down as the
+     seconds do. */
+  const R = 42;
+  const C = 2 * Math.PI * R;
   return (
     <div className="npDjCue" role="status" aria-live="polite">
-      <span className="npDjCue__disc" style={{ '--cue': String(frac) } as CSSProperties}>
-        <span className="npDjCue__hole" aria-hidden />
+      <span className="npDjCue__disc">
+        <svg className="npDjCue__ring" viewBox="0 0 100 100" aria-hidden>
+          <circle className="npDjCue__rail" cx="50" cy="50" r={R} />
+          <circle
+            className="npDjCue__fill"
+            cx="50"
+            cy="50"
+            r={R}
+            transform="rotate(-90 50 50)"
+            style={{ strokeDasharray: C, strokeDashoffset: C * (1 - frac) } as CSSProperties}
+          />
+        </svg>
         <span className="npDjCue__num">{left > 0.05 ? Math.ceil(left) : '…'}</span>
       </span>
       <span className="npDjCue__line">{line}</span>

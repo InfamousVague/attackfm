@@ -45,30 +45,33 @@
   position: relative;
   inline-size: 5.5rem;
   block-size: 5.5rem;
-  border-radius: 50%;
   display: grid;
   place-items: center;
-  background:
-    radial-gradient(circle at 50% 50%, var(--glacier-bg-subtle) 0 58%, transparent 59%),
-    conic-gradient(
-      var(--glacier-accent-solid) calc(var(--cue, 0) * 360deg),
-      var(--glacier-border-subtle) 0
-    );
-  animation: npDjSpin 2.4s linear infinite;
 }
 
-/* The label must not spin with the platter - counter-rotate it. */
-.npDjCue__disc > .npDjCue__num {
-  animation: npDjSpin 2.4s linear infinite reverse;
-}
-
-.npDjCue__hole {
+/* The ring is the countdown made shape: a quiet rail, and a fill whose
+   dashoffset the component walks down with the seconds. The stroke is
+   thick enough to read across a phone held at arm's length - the conic
+   rim this replaces was not. */
+.npDjCue__ring {
   position: absolute;
-  inline-size: 0.8rem;
-  block-size: 0.8rem;
-  border-radius: 50%;
-  background: var(--glacier-bg);
-  border: var(--glacier-hairline) solid var(--glacier-border-subtle);
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.npDjCue__rail {
+  fill: none;
+  stroke: var(--glacier-border-subtle);
+  stroke-width: 7;
+}
+
+.npDjCue__fill {
+  fill: none;
+  stroke: var(--glacier-accent-solid);
+  stroke-width: 7;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.12s linear;
 }
 
 .npDjCue__num {
@@ -76,7 +79,6 @@
   font-weight: var(--glacier-font-weight-bold);
   font-variant-numeric: tabular-nums;
   color: var(--glacier-accent-text);
-  /* Lifted off the spindle hole. */
   position: relative;
 }
 
@@ -86,18 +88,7 @@
   text-align: center;
 }
 
-@keyframes npDjSpin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 
-@media (prefers-reduced-motion: reduce) {
-  .npDjCue__disc,
-  .npDjCue__disc > .npDjCue__num {
-    animation: none;
-  }
-}
 
 
 /* --- the DJ's breath ------------------------------------------------------
