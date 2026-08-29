@@ -247,6 +247,26 @@ pub async fn station(
         if let Some(body) = crate::vibes::take(&state, caller.id, &seed) {
             return Ok(Json(body));
         }
+        // Charts unbanked builds LIVE - it is one catalogue fetch and some
+        // matching, seconds not minutes - and banks the next behind. Empty
+        // (nothing charting is on this box yet) falls through to taste so
+        // the press always plays something.
+        if crate::vibes::key_for_seed(&seed) == Some("charts") {
+            let body = crate::vibes::build_charts_reply(&state, caller.id).await;
+            let has = body
+                .get("blocks")
+                .and_then(|b| b.as_array())
+                .map(|a| !a.is_empty())
+                .unwrap_or(false);
+            if has {
+                let st = state.clone();
+                let user = caller.id;
+                tokio::spawn(async move {
+                    crate::vibes::rebuild(&st, user, "charts").await;
+                });
+                return Ok(Json(body));
+            }
+        }
     }
 
     let reply = build_reply(&state, caller.id, &seed, want, false).await?;

@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.132
+
+- A Charts chip joins the DJ's moods: what everyone is playing right now, from songs already on your box - the hits you own and the ones the collector quietly pre-downloaded
+- The DJ panel folds down small while it cues
+
 ## 0.4.131
 
 - The waves follow the voice itself now: a halo at the record's edge swells and glows with every word she says, frame by frame, alongside the travelling ripples

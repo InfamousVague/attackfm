@@ -23,6 +23,10 @@ const VIBES: &[(&str, &str)] = &[
     ("energy", "high energy, turn it up"),
     ("latenight", "late night, low lights"),
     ("focus", "steady focus, no distractions"),
+    // The charts, by request: what everyone is playing, from what is ALREADY
+    // on this box - the songs you own that are charting, and the chart hits
+    // the collector has quietly pre-downloaded as auditions.
+    ("charts", "the charts right now"),
 ];
 
 /// A banked set older than this is served (still better than waiting) but
@@ -89,7 +93,11 @@ pub async fn rebuild(state: &Arc<AppState>, user: i64, key: &str) {
     if !claim(user, key) {
         return;
     }
-    let built = crate::dj::build_reply(state, user, seed, 15, true).await;
+    let built = if key == "charts" {
+        Ok(build_charts_reply(state, user).await)
+    } else {
+        crate::dj::build_reply(state, user, seed, 15, true).await
+    };
     if let Ok(body) = built {
         let has_blocks = body
             .get("blocks")
@@ -101,6 +109,70 @@ pub async fn rebuild(state: &Arc<AppState>, user: i64, key: &str) {
         }
     }
     release(user, key);
+}
+
+/// The Charts set: today's chart matched against what this box already has.
+/// No model, no taste maths - the chart itself is the curation, and the set
+/// is exactly the hits that are HERE: library rows first-class, and the
+/// collector's pre-downloaded chart auditions right beside them (the one
+/// place the quarantine does get to play, because "hear what is charting"
+/// is precisely what those files were fetched for). Chart order, capped.
+pub async fn build_charts_reply(state: &Arc<AppState>, user: i64) -> Value {
+    let chart = crate::trending::chart_pairs().await;
+    let seed = seed_for_key("charts").unwrap_or_default();
+    if chart.is_empty() {
+        return serde_json::json!({ "ai": false, "vibe": seed, "blocks": [] });
+    }
+    let mut by_key: std::collections::HashMap<String, (i64, String)> =
+        std::collections::HashMap::new();
+    for (id, artist, title, audition_owner) in state.db.track_identities() {
+        // A row is playable for THIS listener when it is real library, or
+        // their own audition. Someone else's audition stays theirs.
+        if audition_owner != 0 && audition_owner != user {
+            continue;
+        }
+        by_key.entry(crate::discovery::key_of(&artist, &title)).or_insert((id, artist));
+    }
+    let mut ids: Vec<i64> = Vec::new();
+    let mut artists: Vec<String> = Vec::new();
+    let mut per_artist: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for (artist, title) in &chart {
+        if let Some((id, real_artist)) = by_key.get(&crate::discovery::key_of(artist, title)) {
+            let cap = per_artist.entry(real_artist.to_lowercase()).or_insert(0);
+            if *cap >= 2 {
+                continue;
+            }
+            *cap += 1;
+            ids.push(*id);
+            artists.push(real_artist.clone());
+            if ids.len() >= 18 {
+                break;
+            }
+        }
+    }
+    let mut blocks: Vec<Value> = Vec::new();
+    let chunk_count = ids.chunks(3).count();
+    for (i, chunk) in ids.chunks(3).enumerate() {
+        let lead = artists.get(i * 3).cloned().unwrap_or_default();
+        let seat = if i == 0 {
+            crate::voice::Seat::Opener
+        } else if i + 1 == chunk_count && chunk_count > 1 {
+            crate::voice::Seat::Closer
+        } else {
+            crate::voice::Seat::Turn
+        };
+        let line = crate::voice::line_for(seat, &lead);
+        let say = if lead.trim().is_empty() { line.clone() } else { format!("{line} {lead}.") };
+        let mut block = serde_json::json!({ "say": say, "trackIds": chunk });
+        let beats = crate::voice::block_beats(seat, &lead);
+        if !beats.is_empty() {
+            block["voice"] =
+                serde_json::json!(beats.iter().map(|b| b.id.clone()).collect::<Vec<_>>());
+            crate::voice::mint_behind(state, beats);
+        }
+        blocks.push(block);
+    }
+    serde_json::json!({ "ai": false, "vibe": seed, "blocks": blocks })
 }
 
 /// The seed-addressed door the live handler banks through.

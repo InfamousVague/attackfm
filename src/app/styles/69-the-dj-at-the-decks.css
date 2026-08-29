@@ -14,6 +14,18 @@
   padding: var(--glacier-space-3);
 }
 
+/* While the set is cueing the panel carries one small disc and a line - it
+   does not need the chips' full spread. :has() lets the PANEL notice what
+   it holds, since its class is fixed at the trigger. */
+.npDjPanel:has(.npDjCue) {
+  /* Explicit, and important: the kit's panel carries its own width voice
+     and the cueing state must win it. */
+  inline-size: 15rem !important;
+  width: 15rem !important;
+  min-inline-size: 0 !important;
+  min-width: 0 !important;
+}
+
 .npDj {
   display: flex;
   flex-direction: column;
@@ -37,14 +49,14 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--glacier-space-3);
-  padding: var(--glacier-space-4) var(--glacier-space-2);
+  gap: var(--glacier-space-2);
+  padding: var(--glacier-space-2);
 }
 
 .npDjCue__disc {
   position: relative;
-  inline-size: 5.5rem;
-  block-size: 5.5rem;
+  inline-size: 4.25rem;
+  block-size: 4.25rem;
   display: grid;
   place-items: center;
 }

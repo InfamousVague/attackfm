@@ -15,7 +15,7 @@
 //! offers itself when signed into a server with something to play.
 
 import { Button, Spinner } from '@glacier/react';
-import { Flame, Lightbulb, MoonStar, Play, Sparkles, Waves } from '@glacier/icons';
+import { Flame, Lightbulb, MoonStar, Play, Sparkles, TrendingUp, Waves } from '@glacier/icons';
 import { useState, type CSSProperties } from 'react';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { useLibrary } from '../library/library.tsx';
@@ -33,6 +33,10 @@ export const MOODS: { label: string; seed: string; Icon: typeof Waves }[] = [
   { label: 'Energy', seed: 'high energy, turn it up', Icon: Flame },
   { label: 'Late night', seed: 'late night, low lights', Icon: MoonStar },
   { label: 'Focus', seed: 'steady focus, no distractions', Icon: Lightbulb },
+  // The charts: what everyone is playing, from what is already on the box -
+  // owned hits plus the collector's pre-downloaded chart auditions. The seed
+  // string is the server's vibe contract (vibes.rs), verbatim.
+  { label: 'Charts', seed: 'the charts right now', Icon: TrendingUp },
 ];
 
 export function DjLauncher({
@@ -45,7 +49,7 @@ export function DjLauncher({
   variant?: 'chip' | 'hero';
 }) {
   const { session } = useServerSession();
-  const { tracks } = useLibrary();
+  const { tracks, forYou } = useLibrary();
   // Which brief is in flight: '' is the seedless hero press, null is idle.
   const [busySeed, setBusySeed] = useState<string | null>(null);
   const [aiSet, setAiSet] = useState(false);
@@ -62,7 +66,9 @@ export function DjLauncher({
     setBusySeed(seed);
     setToast(null);
     try {
-      const { queue, ai } = await startDjRun(session, tracks, seed);
+      // Auditions ride along: a Charts set may deal the collector's
+      // pre-downloaded hits, which live outside `tracks` on purpose.
+      const { queue, ai } = await startDjRun(session, [...tracks, ...forYou], seed);
       setAiSet(ai);
       const opener = queue[0];
       if (!opener) {
