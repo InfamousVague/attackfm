@@ -99,3 +99,82 @@
   }
 }
 
+
+/* --- the DJ's breath ------------------------------------------------------
+ *
+ * While the voice speaks, rings ripple out from the record - the screen's
+ * answer to "who is talking", now that the caption stands down when the
+ * words are HEARD. Wobbly on purpose: each ring is a slightly-uneven blob
+ * (mismatched corner radii) turning as it grows, so the wave reads as
+ * breath, not radar. Painted in the accent, which on this screen is the
+ * album's own colour.
+ */
+
+.npScreen__art {
+  position: relative;
+}
+
+.npSpeakWaves {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.npSpeakWaves > span {
+  position: absolute;
+  inline-size: min(62vw, 46vh);
+  block-size: min(62vw, 46vh);
+  border: 3px solid var(--glacier-accent-solid);
+  border-radius: 47% 53% 51% 49% / 52% 48% 53% 47%;
+  opacity: 0;
+}
+
+.npScreen__art[data-dj-talking] .npSpeakWaves > span {
+  animation:
+    npSpeakGrow 1.9s ease-out infinite,
+    npSpeakWobble 3.1s linear infinite;
+}
+
+.npScreen__art[data-dj-talking] .npSpeakWaves > span:nth-child(2) {
+  animation-delay: 0.62s, 0s;
+}
+
+.npScreen__art[data-dj-talking] .npSpeakWaves > span:nth-child(3) {
+  animation-delay: 1.24s, 0s;
+}
+
+@keyframes npSpeakGrow {
+  0% {
+    opacity: 0;
+    transform: scale(0.86) rotate(0deg);
+  }
+  18% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.42) rotate(24deg);
+  }
+}
+
+/* The wobble: the blob's radii breathe out of phase with the growth. */
+@keyframes npSpeakWobble {
+  0%,
+  100% {
+    border-radius: 47% 53% 51% 49% / 52% 48% 53% 47%;
+  }
+  33% {
+    border-radius: 52% 48% 46% 54% / 49% 55% 45% 51%;
+  }
+  66% {
+    border-radius: 49% 51% 55% 45% / 46% 50% 54% 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .npScreen__art[data-dj-talking] .npSpeakWaves > span {
+    animation: none;
+  }
+}
