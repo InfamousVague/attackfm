@@ -69,6 +69,7 @@ mod listens;
 mod pair;
 mod peersync;
 mod profile;
+mod chartlists;
 mod lore;
 mod vibes;
 mod voice;

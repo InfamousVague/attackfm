@@ -136,6 +136,9 @@ pub fn spawn(state: Arc<AppState>) {
             // every sign that any of it has ever worked.
             crate::ai::flush_last_runs(&state.db);
             pull_cycle(&state).await;
+            // The standing chart playlists ride the same loop; their own
+            // daily clock makes this a cheap no-op almost every pass.
+            crate::chartlists::cycle(&state).await;
             tune_cycle(&state);
             // The small-artist sources fill the same pool the Deezer harvest
             // does; their own clocks make this a no-op most cycles.
