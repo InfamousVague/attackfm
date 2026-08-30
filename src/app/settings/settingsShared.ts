@@ -189,6 +189,13 @@ export const SETTINGS_INDEX: SettingEntry[] = [
     keywords: 'dj voice speech tts talk spoken elevenlabs kokoro radio announcer',
   },
   {
+    id: 'date-voice',
+    pane: 'local-ai',
+    label: 'Music Date briefing',
+    description: 'The DJ introduces your next three dates on the way in.',
+    keywords: 'date briefing voice dj music date spoken tour introduce suggestions',
+  },
+  {
     id: 'ai-url',
     pane: 'local-ai',
     label: 'Model endpoint',

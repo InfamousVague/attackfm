@@ -33,6 +33,9 @@ import {
 import { CardFace } from './DateCardFace.tsx';
 import { loadAudioUrl, type Track } from '../core/tauri.ts';
 import { fireNativeHaptic } from '../core/haptics.ts';
+import { speakBeats } from '../booth/djVoice.ts';
+import { dateVoiceEnabled } from './dateVoice.ts';
+import { fetchDateBriefing } from '../api/curator.ts';
 import { makeRatchet } from '../ux/ratchet.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
 
@@ -198,6 +201,42 @@ export function DatePage() {
 
   const current = deck[0] ?? null;
   const upcoming = deck[1] ?? null;
+
+  /*
+   * The DJ's word on the way in: one spoken line for each of the next three
+   * cards - what they are, and why the collector chose them - through the
+   * same mouth, duck and supersede the set beats ride. Once per visit, on
+   * its own switch (Settings > AI > Music Date briefing); the deck
+   * advancing does not restart the tour guide.
+   */
+  const briefed = useRef(false);
+  useEffect(() => {
+    if (briefed.current || !session || deck.length === 0) return;
+    if (!dateVoiceEnabled()) return;
+    briefed.current = true;
+    const ids = deck
+      .slice(0, 3)
+      .map((t) => trackIdFromPath(t.path))
+      .filter((n): n is number => n != null);
+    void fetchDateBriefing(session, ids).then((songs) => {
+      const clips = songs.flatMap((song) => song.voice);
+      if (clips.length > 0) void speakBeats(session, clips);
+    });
+  }, [session, deck]);
+
+  // The snippets answer the duck like the player's decks do: the briefing
+  // (or a DJ line from anywhere) lowers the date's own graph, then lifts it.
+  useEffect(() => {
+    const onDuck = (e: Event) => {
+      const on = Boolean((e as CustomEvent).detail?.on);
+      meterRef.current?.rampVolume(on ? 0.07 : 1, 0.18);
+    };
+    window.addEventListener('afm-duck', onDuck);
+    return () => {
+      window.removeEventListener('afm-duck', onDuck);
+      meterRef.current?.rampVolume(1, 0.05);
+    };
+  }, []);
 
   // The card mid-fling, pinned OUT of the deck so the animation owns it while
   // the introductions continue underneath.

@@ -141,9 +141,11 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
    the duck lifts exactly once, by whichever call is still current. */
 let speaking = 0;
 
-/** Speak a block's beats in order, ducking the music underneath. */
+/** Speak a block's beats in order, ducking the music underneath. The caller
+ *  owns the preference gate: the set bridge checks the DJ switch, the date
+ *  briefing its own - one mouth, two consents. */
 export async function speakBeats(session: ServerSession, ids: string[]): Promise<void> {
-  if (!djVoiceEnabled() || ids.length === 0) return;
+  if (ids.length === 0) return;
   const mine = ++speaking;
   // Whoever was mid-sentence stops NOW - with lore on every track, letting
   // the old clip run to its natural end means two DJs talking at once.

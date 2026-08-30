@@ -5008,6 +5008,27 @@ impl Db {
     // --- the curator's playlists ---------------------------------------------
 
     /// Everyone who has listened since `since_ms` - who the curator builds for.
+    /// Every account whose waiting date deck is thinner than `floor` -
+    /// including accounts that have never played a note. The cold-start set:
+    /// a promise like "forty suggestions when she opens the app" has to hold
+    /// for someone the plays table has never heard of.
+    pub fn cold_shelf_users(&self, floor: i64) -> Vec<i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT u.id FROM users u
+             LEFT JOIN (SELECT curator_user_id AS uid, COUNT(*) AS n FROM tracks
+                        WHERE deleted = 0 AND curator_user_id IS NOT NULL
+                          AND COALESCE(curator_promoted, 0) = 0
+                        GROUP BY curator_user_id) a ON a.uid = u.id
+             WHERE COALESCE(a.n, 0) < ?1",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![floor], |r| r.get(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
     pub fn listeners_since(&self, since_ms: i64) -> Vec<i64> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare("SELECT DISTINCT user_id FROM plays WHERE played_at >= ?1")
@@ -5502,6 +5523,39 @@ impl Db {
         stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
             .map(|rows| rows.filter_map(Result::ok).collect())
             .unwrap_or_default()
+    }
+
+    /// Whether this track is currently one of this listener's waiting
+    /// auditions - the date deck's own membership rule.
+    pub fn audition_of(&self, track_id: i64, user_id: i64) -> bool {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT 1 FROM tracks
+             WHERE id = ?1 AND deleted = 0 AND curator_user_id = ?2
+               AND COALESCE(curator_promoted, 0) = 0",
+            params![track_id, user_id],
+            |_| Ok(()),
+        )
+        .is_ok()
+    }
+
+    /// Why the collector chose the song a landed audition came from - the
+    /// pull's own reason line, newest first when a track somehow has two.
+    pub fn pull_reason_for_track(&self, user_id: i64, track_id: i64) -> Option<String> {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT p.reason FROM curator_pull_tracks pt
+             JOIN curator_pulls p ON p.id = pt.pull_id
+             WHERE pt.track_id = ?2 AND p.user_id = ?1
+             ORDER BY p.created_at DESC LIMIT 1",
+            params![user_id, track_id],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()
+        .ok()
+        .flatten()
+        .map(|r| r.trim().to_string())
+        .filter(|r| !r.is_empty())
     }
 
     pub fn audition_count(&self, user_id: i64) -> i64 {

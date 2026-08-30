@@ -29,6 +29,7 @@ import {
 } from '@glacier/icons';
 import { IconTile, PaneSection, SettingRow, SettingsCallout, SettingsEmpty, SubNav } from './kit/settingsKit.tsx';
 import { djVoiceEnabled, setDjVoice } from '../booth/djVoice.ts';
+import { dateVoiceEnabled, setDateVoice } from '../date/dateVoice.ts';
 import { takePendingReveal } from './settingsShared.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { fetchAiActivity, fetchAiReport, probeAi, runAi, setAiSettings } from '../api/ai.ts';
@@ -203,6 +204,7 @@ export function LocalAiPane() {
   const { session } = useServerSession();
   const { toast } = useToast();
   const [voiceOn, setVoiceOn] = useState(djVoiceEnabled);
+  const [dateVoiceOn, setDateVoiceOn] = useState(dateVoiceEnabled);
   const [report, setReport] = useState<AiReport | null>(null);
   const [health, setHealth] = useState<AiHealth | null>(null);
   const [missing, setMissing] = useState(false);
@@ -681,6 +683,21 @@ export function LocalAiPane() {
               onCheckedChange={(v) => {
                 setDjVoice(v);
                 setVoiceOn(v);
+              }}
+            />
+          }
+        />
+        <SettingRow
+          id="date-voice"
+          label="Music Date briefing"
+          hint="Walking into Music Date, the DJ tells you about your next three dates - what they are and why the collector picked them. Same voice and ducking as the DJ's sets; this switch is per device."
+          control={
+            <Switch
+              checked={dateVoiceOn}
+              aria-label="Music Date briefing"
+              onCheckedChange={(v) => {
+                setDateVoice(v);
+                setDateVoiceOn(v);
               }}
             />
           }

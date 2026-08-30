@@ -102,6 +102,31 @@ export async function fetchDiscoveries(
   });
 }
 
+/** One spoken line about an upcoming date card: the words, and the cached
+ *  clips that say them (empty when the server has no voice). */
+export interface DateBriefingSong {
+  trackId: number;
+  say: string;
+  voice: string[];
+}
+
+/**
+ * The DJ's word on the next few cards, in deck order - the client names the
+ * ids because the deck's order and filters live here, not on the server.
+ */
+export async function fetchDateBriefing(
+  session: ServerSession,
+  ids: number[],
+): Promise<DateBriefingSong[]> {
+  if (ids.length === 0) return [];
+  const out = await request<{ songs?: DateBriefingSong[] }>(
+    session.url,
+    `/api/date/briefing?ids=${ids.slice(0, 3).join(',')}`,
+    { token: session.token },
+  );
+  return out.songs ?? [];
+}
+
 /**
  * The deck ran out: tell the server what the verdicts were so it can go and get
  * more shaped by them, instead of waiting out its own six-hourly sweep.
