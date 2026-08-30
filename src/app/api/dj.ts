@@ -43,6 +43,32 @@ export async function fetchDj(session: ServerSession, seed = '', count?: number)
   return { ai: out.ai ?? false, vibe: out.vibe ?? seed, blocks: out.blocks ?? [] };
 }
 
+/** What the DJ is pulling down because you asked for it out loud. */
+export interface DjHeard {
+  /** The transcript - what whisper made of the clip. */
+  heard: string;
+  /** Outside recordings the collector is now fetching in the background. */
+  fetching: { title: string; artist: string }[];
+}
+
+/**
+ * A spoken brief: the clip goes up, the words come back. The caller then feeds
+ * `heard` into fetchDj as an ordinary seed - the set is played through the
+ * same door as every other brief, and this call's own job is the transcript
+ * plus setting the collector on whatever the brief named that the library
+ * does not hold.
+ */
+export async function djHear(session: ServerSession, clip: Blob): Promise<DjHeard> {
+  const out = await request<Partial<DjHeard>>(session.url, '/api/dj/hear', {
+    method: 'POST',
+    body: clip,
+    headers: { 'content-type': 'application/octet-stream' },
+    // Whisper on a CPU hub takes its time; same allowance the set itself gets.
+    timeoutMs: 120_000,
+  });
+  return { heard: out.heard ?? '', fetching: out.fetching ?? [] };
+}
+
 export type DjTraitCategory =
   | 'sonic' | 'energy' | 'genre_style' | 'vocals' | 'era' | 'mood'
   | 'production' | 'lyrical_theme' | 'instrumentation' | 'scene_culture';

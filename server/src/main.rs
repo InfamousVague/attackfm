@@ -52,6 +52,7 @@ mod mood;
 mod programmer;
 mod trending;
 mod dj;
+mod dj_voice;
 mod enrichment;
 mod features;
 mod loudness;
@@ -743,6 +744,7 @@ async fn main() {
         .route("/api/peersync/retry", post(peersync::retry))
         .route("/api/curator/pulls/settings", post(collector::settings))
         .route("/api/dj", get(dj::station))
+        .route("/api/dj/hear", post(dj_voice::hear))
         .route("/api/dj/stations", get(stations::stations))
         .route("/api/dj/analyze", post(dj::analyze_seed))
         .route("/api/dj/note", post(dj::set_note))

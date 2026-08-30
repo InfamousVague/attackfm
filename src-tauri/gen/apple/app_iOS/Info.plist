@@ -34,6 +34,8 @@
 		<string>_attackfm-jam._tcp</string>
 		<string>_attackfm-jam._udp</string>
 	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>AttackFM uses the microphone only when you press the DJ’s talk button, to hear what music you ask for.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>AttackFM uses the camera only to scan QR codes: signing in from another device you own, and adding a friend from their code.</string>
 	<key>NSLocalNetworkUsageDescription</key>

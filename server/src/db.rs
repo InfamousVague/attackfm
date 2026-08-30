@@ -6654,6 +6654,27 @@ impl Db {
 
     /// Forget every recorded miss, so the sweep asks about all of them again.
     /// The kept clips are untouched - only the noes are worth re-asking.
+    /// Whether a live track already answers to this name - the check that keeps
+    /// a spoken brief from downloading a song the library already holds. Loose
+    /// on case, strict on words: the same normalisation the client's search
+    /// would forgive is not applied here, because a false "yes" silently eats a
+    /// wanted download while a false "no" merely costs one duplicate the
+    /// importer's own dedupe then catches.
+    pub fn has_title_artist(&self, title: &str, artist: &str) -> bool {
+        self.lock()
+            .query_row(
+                "SELECT 1 FROM tracks
+                 WHERE deleted = 0 AND title = ?1 COLLATE NOCASE AND artist = ?2 COLLATE NOCASE
+                 LIMIT 1",
+                params![title, artist],
+                |_| Ok(()),
+            )
+            .optional()
+            .ok()
+            .flatten()
+            .is_some()
+    }
+
     pub fn forget_canvas_misses(&self) -> rusqlite::Result<usize> {
         self.lock().execute("DELETE FROM canvas_misses", [])
     }
