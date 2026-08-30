@@ -85,17 +85,17 @@ export function hapticsAvailable(): boolean {
 }
 
 /**
- * A heartbeat under the thumb: THREE full lub-DUBs - the like's signature,
+ * A heartbeat under the thumb: two full lub-DUBs - the like's signature,
  * replacing the generic success triplet. Every cycle is heavy-then-light at
- * full strength (a fading echo read as two beats and a flutter; the ask was
- * three DISTINCT beats), with the dub ~140ms behind its lub and the next
+ * full strength (a fading echo read as a beat and a flutter; distinct beats
+ * were the ask, and three of them ran long), with the dub ~140ms behind its lub and the next
  * beat ~500ms on - a resting pulse, quick enough not to outstay the ripple.
  * Each pulse goes through fireNativeHaptic, so the haptics pref and bridge
  * gates apply as ever. The tempo constants are exported because the like's
  * VISUALS keep time to this pulse: popHeart pumps the icon and launches a
  * heart ring on every lub - one clock, so thumb and screen cannot drift.
  */
-export const HEARTBEATS = 3;
+export const HEARTBEATS = 2;
 export const HEARTBEAT_EVERY_MS = 500;
 export const HEARTBEAT_DUB_MS = 140;
 
