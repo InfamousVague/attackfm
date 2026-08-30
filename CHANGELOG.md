@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.153
+
+- The Louder-when-driving row is laid out like the pane's other choices now — control under the label at full width, and a one-line hint that answers for the strength you picked instead of reciting the whole manual beside a crushed column of words
+
 ## 0.4.152
 
 - Louder when driving: the volume rises with your speed to cover road noise, the way a car stereo's speed-compensated volume does — nothing under 20 km/h, the full lift by motorway pace, in three strengths up to +9 dB. It rides the same gain stage as volume levelling, so the fader still means what it says and the rise glides instead of stepping. Off by default; switching it on asks for location once, GPS is watched only while it is on, and a tunnel holds the boost rather than dropping it at the loudest stretch of the road. On phones the location permission itself arrives with the next app build

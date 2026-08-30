@@ -255,16 +255,27 @@ export function PlaybackSettings() {
             />
           }
         />
-        {/* Speed Compensated Volume, the phone way. The hint says the two
-            things worth knowing before switching it on: it will ask for
-            location, and how far each strength reaches. */}
+        {/* Speed Compensated Volume, the phone way. Stacked like the pane's
+            other segmented rows - a four-option control beside a label column
+            crushed the hint into a one-word-wide tower - and the hint answers
+            for the CURRENT choice, the way Volume levelling's does, instead of
+            reciting the whole manual at once. */}
         <SettingRow
           label="Louder when driving"
-          hint="Raises the music with your speed to cover road noise, like a car stereo does — nothing under 20 km/h, the full lift by motorway pace. Uses GPS while on (it will ask once), gentle +3 dB, standard +6, strong +9. Strong can clip already-loud masters."
+          layout="stacked"
+          hint={
+            pb.driveBoost === 'off'
+              ? 'Raises the volume with your speed to cover road noise, like a car stereo does. Switching on uses GPS and asks once.'
+              : pb.driveBoost === 'gentle'
+                ? 'Up to +3 dB by motorway pace, nothing under 20 km/h — a light hand.'
+                : pb.driveBoost === 'standard'
+                  ? 'Up to +6 dB by motorway pace, nothing under 20 km/h.'
+                  : 'Up to +9 dB by motorway pace — enough to clip already-loud songs.'
+          }
           control={
             <SegmentedControl
               aria-label="Louder when driving"
-              size="sm"
+              fullWidth
               value={pb.driveBoost}
               options={[
                 { value: 'off', label: 'Off' },
