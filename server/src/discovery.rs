@@ -616,7 +616,13 @@ pub async fn listen_cycle(state: &Arc<AppState>, user: i64) -> bool {
     if waiting.is_empty() {
         return false;
     }
-    let Some((taste, all)) = crate::curator::user_taste_for(state, user) else { return false };
+    // A cold shelf has no taste to read, but its chart candidates still
+    // need their measurements - a date card needs its sound. The house
+    // prior scores everything neutral, which for a chart pick is the truth.
+    let (taste, all) = match crate::curator::user_taste_for(state, user) {
+        Some(pair) => pair,
+        None => (crate::taste::UserTaste::cold(user), state.db.all_features()),
+    };
     let by_id: std::collections::HashMap<i64, &crate::db::TrackFeatures> =
         all.iter().map(|f| (f.track_id, f)).collect();
     let lanes = state.db.discovery_lanes(user);
@@ -708,7 +714,11 @@ pub fn rescore(state: &Arc<AppState>, user: i64) {
     if pool.is_empty() {
         return;
     }
-    let Some((taste, all)) = crate::curator::user_taste_for(state, user) else { return };
+    let (taste, all) = match crate::curator::user_taste_for(state, user) {
+        Some(pair) => pair,
+        // The cold shelf again: neutral scores are honest scores here.
+        None => (crate::taste::UserTaste::cold(user), state.db.all_features()),
+    };
     let by_id: std::collections::HashMap<i64, &crate::db::TrackFeatures> =
         all.iter().map(|f| (f.track_id, f)).collect();
     let lanes = state.db.discovery_lanes(user);
