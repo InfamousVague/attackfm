@@ -2,6 +2,7 @@ import { SegmentedControl, Switch, Text } from '@glacier/react';
 import { StemProgress, usePrefetchStatus } from '../servers/BackgroundWork.tsx';
 import { useEffect, useState } from 'react';
 import { sleepsAtAnEnd, usePlayback, type SleepTimer } from '../player/playback.tsx';
+import type { DriveBoost } from '../player/driveBoost.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
 import {
   loudnessCoverage,
@@ -251,6 +252,27 @@ export function PlaybackSettings() {
               aria-label="Volume boost range"
               checked={pb.volumeBoost}
               onCheckedChange={(on) => pb.update({ volumeBoost: on })}
+            />
+          }
+        />
+        {/* Speed Compensated Volume, the phone way. The hint says the two
+            things worth knowing before switching it on: it will ask for
+            location, and how far each strength reaches. */}
+        <SettingRow
+          label="Louder when driving"
+          hint="Raises the music with your speed to cover road noise, like a car stereo does — nothing under 20 km/h, the full lift by motorway pace. Uses GPS while on (it will ask once), gentle +3 dB, standard +6, strong +9. Strong can clip already-loud masters."
+          control={
+            <SegmentedControl
+              aria-label="Louder when driving"
+              size="sm"
+              value={pb.driveBoost}
+              options={[
+                { value: 'off', label: 'Off' },
+                { value: 'gentle', label: 'Gentle' },
+                { value: 'standard', label: 'Standard' },
+                { value: 'strong', label: 'Strong' },
+              ]}
+              onValueChange={(v) => pb.update({ driveBoost: v as DriveBoost })}
             />
           }
         />

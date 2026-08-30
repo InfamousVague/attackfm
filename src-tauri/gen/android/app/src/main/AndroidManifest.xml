@@ -15,6 +15,11 @@
          asks per-site on top of this, so the install-time grant alone records
          nothing. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Speed only, for the louder-when-driving volume rise. The WebChromeClient
+         already fields the WebView's geolocation prompt; these are the manifest
+         halves its runtime request needs to exist. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
