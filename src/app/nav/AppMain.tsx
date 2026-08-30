@@ -146,9 +146,27 @@ export function AppMain({
         ? `album:${detail.artist}:${detail.album}`
         : detail.kind === 'playlist'
           ? `playlist:${detail.id}`
-          : detail.kind === 'artist'
-            ? `artist:${detail.artist}`
-            : null
+          : detail.kind === 'mix'
+            ? /*
+               * A MIX too, and for the third time the same reason: this list
+               * predates the destination. A mix used to open in a MODAL - it
+               * has no id because it is computed rather than stored - so when
+               * it became a page it inherited MixPage's cover-wall header and
+               * every rule that dresses it, and none of the wiring that fades
+               * the bar above it. Nothing publishes --app-top-scroll, so the
+               * bar stays flat black from the first pixel and the rows cut off
+               * at a hard edge, which reads as "playlists lost the fade" -
+               * a playlist still has it; the thing that looks identical to one
+               * never did.
+               *
+               * Keyed on title and length rather than an id, being what a mix
+               * has: enough to re-arm the listener when you open a different
+               * one, which is all the key is for.
+               */
+              `mix:${detail.title}:${detail.tracks.length}`
+            : detail.kind === 'artist'
+              ? `artist:${detail.artist}`
+              : null
     : activePage
       ? `page:${activePage.key}`
       : tab === 'home' || tab === 'library'
