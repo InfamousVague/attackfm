@@ -85,6 +85,20 @@ export function hapticsAvailable(): boolean {
 }
 
 /**
+ * A heartbeat under the thumb: lub-DUB, then a softer echo - the like's
+ * signature, replacing the generic success triplet. Timings are a resting
+ * heart's (systole ~140ms behind, next beat ~600ms on), which is why it
+ * reads as a PULSE rather than two buzzes. Each pulse goes through
+ * fireNativeHaptic, so the haptics pref and bridge gates apply as ever.
+ */
+export function heartbeatHaptic(): void {
+  fireNativeHaptic('heavy');
+  window.setTimeout(() => fireNativeHaptic('light'), 140);
+  window.setTimeout(() => fireNativeHaptic('medium'), 620);
+  window.setTimeout(() => fireNativeHaptic('light'), 760);
+}
+
+/**
  * The same floor `ratchet.ts` keeps, for the paths that are not ratchets.
  *
  * `fireNativeHaptic` has no rate limit of its own, which is right for a

@@ -47,6 +47,9 @@
   pointer-events: none;
   z-index: 60;
   color: var(--glacier-accent-solid);
+  /* The train's trailing hearts wait for their delay unseen: with no
+     animation applying yet, this is what shows. */
+  opacity: 0;
 }
 
 .npScreen__scrub {
