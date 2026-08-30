@@ -1579,6 +1579,8 @@ async fn discovery_cycle(state: &Arc<AppState>) -> bool {
         // curate instead of narrating under a five-second budget.
         crate::vibes::cycle(state, user).await;
     }
+    // The new-music shelf, kept warm: at most one grouping rebuild per pass.
+    crate::discovery::new_music_warm_one(state).await;
     /*
      * The cold shelves: accounts with no recent listening whose date decks
      * sit under the floor. They get the DISCOVERY half only - dedupe and

@@ -734,6 +734,15 @@ CREATE TABLE IF NOT EXISTS dj_sets (
 -- download is still in flight. Keyed by the folded artist+title identity the
 -- discovery layer already uses; the collector's sweep turns each row into a
 -- real favourite the moment a matching track lands, however it lands.
+-- The AI-grouped "new music" shelf, durable: the in-memory copy died with
+-- every restart, and on a box that redeploys often the shelf read as
+-- permanently empty. One row per user, the served JSON verbatim.
+CREATE TABLE IF NOT EXISTS new_music_cache (
+  user_id  INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  body     TEXT NOT NULL,
+  built_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS pending_likes (
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   k          TEXT NOT NULL,
@@ -5536,6 +5545,53 @@ impl Db {
         stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
             .map(|rows| rows.filter_map(Result::ok).collect())
             .unwrap_or_default()
+    }
+
+    pub fn new_music_get(&self, user_id: i64) -> Option<(String, i64)> {
+        self.lock()
+            .query_row(
+                "SELECT body, built_at FROM new_music_cache WHERE user_id = ?1",
+                params![user_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .ok()
+            .flatten()
+    }
+
+    pub fn new_music_put(&self, user_id: i64, body: &str) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO new_music_cache (user_id, body, built_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(user_id) DO UPDATE SET body = ?2, built_at = ?3",
+            params![user_id, body, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// The New Music Mix's two inventories, newest first: this listener's own
+    /// unadopted auditions, and the library's plain arrivals since `since`.
+    pub fn new_mix_candidates(&self, user_id: i64, since: i64) -> (Vec<i64>, Vec<i64>) {
+        let conn = self.lock();
+        let read = |sql: &str, ps: &[&dyn rusqlite::ToSql]| -> Vec<i64> {
+            let Ok(mut stmt) = conn.prepare(sql) else { return Vec::new() };
+            stmt.query_map(ps, |r| r.get(0))
+                .map(|rows| rows.filter_map(Result::ok).collect())
+                .unwrap_or_default()
+        };
+        let auditions = read(
+            "SELECT id FROM tracks WHERE deleted = 0 AND kind = 'music'
+               AND curator_user_id = ?1 AND COALESCE(curator_promoted, 0) = 0
+             ORDER BY added_at DESC",
+            &[&user_id],
+        );
+        let arrivals = read(
+            "SELECT id FROM tracks WHERE deleted = 0 AND kind = 'music'
+               AND added_at > ?1
+               AND (curator_user_id IS NULL OR COALESCE(curator_promoted, 0) = 1)
+             ORDER BY added_at DESC",
+            &[&since],
+        );
+        (auditions, arrivals)
     }
 
     /// Every pending like on the box: (user_id, k, created_at). The sweep's
