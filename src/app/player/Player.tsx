@@ -24,7 +24,7 @@ import { loadAudioSource, loadAudioUrl, reactivateAudioSession, systemOutputVolu
 import { warmQueue } from './queueBuffer.ts';
 import { isPendingPath } from './pendingPlay.tsx';
 import { isRemotePath } from '../server.ts';
-import { fireFelt, fireNativeHaptic } from '../core/haptics.ts';
+import { fireFelt, fireNativeHaptic, heartbeatHaptic } from '../core/haptics.ts';
 import { noteMediaSilent, serverSeemsDown } from '../api/reachability.ts';
 import { isHeld } from '../downloads/offline.ts';
 import { loadScrubTape } from './scrubTape.ts';
@@ -280,7 +280,7 @@ export function Player({
     if (!track) return;
     const path = track.path;
     if (!favorite) {
-      fireNativeHaptic('success');
+      heartbeatHaptic();
       popHeart();
     }
     toggleFavorite(path);
@@ -704,49 +704,58 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
      * the ghost sat icon-sized and just faded - "a small ripple" where a
      * burst was promised. `scale` is the exact keyframe pattern the pop
      * above already runs on the same devices. The stroke is pre-thinned in
-     * viewBox units so the heart is a hairline at full spread instead of a
-     * 30px slab.
+     * viewBox units so each heart is a hairline at full spread, and fill is
+     * struck from the root AND every child - rings only, nothing solid.
+     *
+     * THREE hearts, not one: a ripple is a train. Each rides the same pair
+     * of animations, staggered a beat apart; the holder's own style keeps it
+     * invisible until its delay comes up.
      */
     const grand = Math.min(window.innerWidth, window.innerHeight) * 1.2;
-    const ghost = icon.cloneNode(true) as SVGSVGElement;
-    ghost.setAttribute('fill', 'none');
-    ghost.setAttribute('aria-hidden', 'true');
-    ghost.setAttribute('width', `${grand}`);
-    ghost.setAttribute('height', `${grand}`);
     const units = icon.viewBox?.baseVal?.width || 24;
-    ghost.setAttribute('stroke-width', `${(2.5 * units) / grand}`);
-    // The root's hairline must be the only stroke voice in the clone.
-    for (const line of ghost.querySelectorAll('*')) {
-      line.removeAttribute('stroke-width');
-      line.removeAttribute('vector-effect');
+    for (let i = 0; i < 3; i += 1) {
+      const ghost = icon.cloneNode(true) as SVGSVGElement;
+      ghost.setAttribute('fill', 'none');
+      ghost.setAttribute('aria-hidden', 'true');
+      ghost.setAttribute('width', `${grand}`);
+      ghost.setAttribute('height', `${grand}`);
+      ghost.setAttribute('stroke-width', `${(2.5 * units) / grand}`);
+      // The root's hairline outline must be the only voice in the clone.
+      for (const line of ghost.querySelectorAll('*')) {
+        line.setAttribute('fill', 'none');
+        line.removeAttribute('stroke-width');
+        line.removeAttribute('vector-effect');
+      }
+      const holder = document.createElement('div');
+      holder.className = 'heartRipple';
+      holder.style.left = `${cx}px`;
+      holder.style.top = `${cy}px`;
+      holder.appendChild(ghost);
+      document.body.appendChild(holder);
+      const delay = i * 170;
+      // Size and fade on two clocks: the swell gets the sharp decelerating
+      // ease, but that same ease on opacity killed the heart a third of the
+      // way out - the fade stays gentler so the outline is still there to
+      // be seen at full spread. Trailing hearts run a touch quieter.
+      const swell = holder.animate(
+        [{ scale: `${seat.width / grand}` }, { scale: '1' }],
+        { duration: 950, delay, easing: 'cubic-bezier(.16,.7,.25,1)' },
+      );
+      const loud = 0.95 - i * 0.22;
+      holder.animate(
+        [
+          { opacity: 0 },
+          { opacity: loud, offset: 0.12 },
+          { opacity: loud * 0.55, offset: 0.6 },
+          { opacity: 0 },
+        ],
+        { duration: 950, delay, easing: 'linear' },
+      );
+      swell.addEventListener('finish', () => holder.remove());
+      // If the animation dies with the document mid-flight, the node must
+      // not linger as an invisible fixed layer.
+      window.setTimeout(() => holder.remove(), 1800);
     }
-    const holder = document.createElement('div');
-    holder.className = 'heartRipple';
-    holder.style.left = `${cx}px`;
-    holder.style.top = `${cy}px`;
-    holder.appendChild(ghost);
-    document.body.appendChild(holder);
-    // Size and fade run as two animations with two clocks: the swell gets the
-    // sharp decelerating ease, but that same ease on opacity killed the heart
-    // a third of the way out - the fade stays gentler so the outline is still
-    // there to be seen at full spread.
-    const swell = holder.animate(
-      [{ scale: `${seat.width / grand}` }, { scale: '1' }],
-      { duration: 950, easing: 'cubic-bezier(.16,.7,.25,1)' },
-    );
-    holder.animate(
-      [
-        { opacity: 0 },
-        { opacity: 0.95, offset: 0.12 },
-        { opacity: 0.5, offset: 0.6 },
-        { opacity: 0 },
-      ],
-      { duration: 950, easing: 'linear' },
-    );
-    swell.addEventListener('finish', () => holder.remove());
-    // If the animation dies with the document mid-flight, the node must not
-    // linger as an invisible fixed layer.
-    window.setTimeout(() => holder.remove(), 1400);
   };
 
   /** Forget an episode. Called wherever the listener's intent changes, so a
