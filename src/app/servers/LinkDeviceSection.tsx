@@ -1,5 +1,5 @@
 import { Banner, Button, Field, Text } from '@glacier/react';
-import { RefreshCw, Smartphone } from '@glacier/icons';
+import { Check, Copy, RefreshCw, Smartphone } from '@glacier/icons';
 import { useCallback, useEffect, useState } from 'react';
 import { pairStart } from '../server.ts';
 import { pairPayload } from './pairing.ts';
@@ -21,6 +21,7 @@ export function LinkDeviceSection() {
   const [left, setLeft] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const mint = useCallback(async () => {
     if (!session) return;
@@ -36,6 +37,7 @@ export function LinkDeviceSection() {
       });
       setCode(code);
       setQr(dataUrl);
+      setCopied(false);
       setLeft(expiresIn);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create a code');
@@ -86,6 +88,27 @@ export function LinkDeviceSection() {
             {code && (
               <div className="linkDevice__code" aria-label="Pairing code">
                 {code.length === 6 ? code.replace(/(.{3})(.{3})/, '$1 $2') : code}
+              </div>
+            )}
+            {/* The code travels as text more often than as a picture - pasted
+                into a chat with yourself, read to somebody across the room.
+                Copied WITHOUT the display gap, since the claim field wants the
+                six characters, not the typography. */}
+            {code && !expired && (
+              <div className="prefsActions">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(code).then(() => {
+                      setCopied(true);
+                      window.setTimeout(() => setCopied(false), 2000);
+                    }).catch(() => {});
+                  }}
+                >
+                  {copied ? <Check size={14} /> : <Copy size={14} />}
+                  {copied ? 'Copied' : 'Copy code'}
+                </Button>
               </div>
             )}
             {error && <Banner tone="danger">{error}</Banner>}
