@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.146
+
+- A New Music Mix playlist now lives beside the charts, in a Made for you folder: songs new to you that are already on the server - what the collector found for you, plus the newest arrivals you haven't played. Refreshed daily
+- The "New music for you" shelf stopped losing its memory: it survives server restarts and builds itself ahead of your visit instead of behind it
+- Songs downloaded on this device wear a little green check beside their title, wherever songs are listed
+
 ## 0.4.145
 
 - Songs on Discover now carry a heart: one tap likes it AND starts the download, and it walks straight into Liked songs - an "on the way" band shows what's still on the wire, and each becomes a real liked song the moment it lands

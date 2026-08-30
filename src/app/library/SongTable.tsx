@@ -4,7 +4,8 @@ import {
   type DataGridRow,
   type DataGridSort,
 } from '@glacier/react';
-import { Clock } from '@glacier/icons';
+import { CircleCheck, Clock } from '@glacier/icons';
+import { useOnDevice } from '../downloads/useOnDevice.ts';
 import { useMemo, useState, type ReactNode } from 'react';
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { SelectionBar, SongSelectionContext } from './songSelection.tsx';
@@ -185,6 +186,7 @@ export function SongTable({
 
   // The grid's rows carry the path as their id; the panel wants the track. One
   // index resolves the one back to the other.
+  const onDevice = useOnDevice();
   const byPath = useMemo(() => new Map(tracks.map((t) => [t.path, t] as const)), [tracks]);
 
   // A narrow COLUMN has room for the song and its length, and nothing else.
@@ -259,7 +261,14 @@ export function SongTable({
                   <div className="songTitleCell">
                     <SongArt artwork={row.artwork as string | null} />
                     <div className="songTitleText">
-                      <span className="songTitle">{row.title as string}</span>
+                      <span className="songTitle">
+                        <span className="songTitle__name">{row.title as string}</span>
+                        {/* Spotify's little green promise: this exact file is
+                            on THIS device, playable in a tunnel. */}
+                        {onDevice.has(row.id as string) && (
+                          <CircleCheck size={13} className="songLocal" aria-label="Downloaded" />
+                        )}
+                      </span>
                       {onOpenArtist ? (
                         <button
                           type="button"

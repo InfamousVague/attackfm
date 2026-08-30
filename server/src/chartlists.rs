@@ -101,15 +101,57 @@ pub async fn cycle(state: &Arc<AppState>) {
             }
         }
         for user in &users {
-            refresh_for(state, *user, slug, title, &ids);
+            refresh_for(state, *user, slug, title, "Charts", CHART_BLURB, &ids);
         }
         tokio::time::sleep(GAP).await;
     }
+
+    /*
+     * The made-for-you door on the playlists page, by request: charts are
+     * here, so the NEW music belongs here too. One daily mix per listener of
+     * music that is new TO THEM and already playable - their unadopted
+     * auditions (what the collector found for them), then the library's
+     * arrivals of the last three weeks they have not played. Deterministic:
+     * no model call, so it can never be starved into absence.
+     */
+    let heard_since = crate::db::now_ms() - 21 * 86_400_000;
+    for user in &users {
+        let (auditions, arrivals) = state.db.new_mix_candidates(*user, heard_since);
+        let heard: HashSet<i64> = state
+            .db
+            .recent_plays(*user, 400)
+            .into_iter()
+            .collect();
+        let mut ids: Vec<i64> = Vec::new();
+        let mut seen: HashSet<i64> = HashSet::new();
+        for id in auditions.into_iter().chain(arrivals) {
+            if !heard.contains(&id) && seen.insert(id) {
+                ids.push(id);
+            }
+            if ids.len() >= 30 {
+                break;
+            }
+        }
+        refresh_for(state, *user, "new-music-mix", "New Music Mix", "Made for you", MIX_BLURB, &ids);
+    }
 }
+
+const CHART_BLURB: &str =
+    "Refreshed daily from the charts - the songs already on this server.";
+const MIX_BLURB: &str =
+    "New to you, refreshed daily: what the collector found for you, and the library's newest arrivals you haven't played.";
 
 /// One listener's copy of one list: update in place, create once, and never
 /// resurrect what they deleted.
-fn refresh_for(state: &Arc<AppState>, user: i64, slug: &str, title: &str, ids: &[i64]) {
+fn refresh_for(
+    state: &Arc<AppState>,
+    user: i64,
+    slug: &str,
+    title: &str,
+    folder: &str,
+    blurb: &str,
+    ids: &[i64],
+) {
     let seeded_key = format!("chartlists.seeded.{user}");
     let mut seeded: Vec<String> = state
         .db
@@ -120,7 +162,7 @@ fn refresh_for(state: &Arc<AppState>, user: i64, slug: &str, title: &str, ids: &
         .db
         .playlists(user)
         .into_iter()
-        .find(|p| p.folder == "Charts" && p.name == title);
+        .find(|p| p.folder == folder && p.name == title);
     match existing {
         Some(p) => {
             // Order changes daily; rewriting an identical list is a no-op
@@ -138,12 +180,7 @@ fn refresh_for(state: &Arc<AppState>, user: i64, slug: &str, title: &str, ids: &
                 return;
             }
             if let Ok(pid) = state.db.create_playlist(user, title) {
-                let _ = state.db.set_playlist_meta(
-                    pid,
-                    Some("Refreshed daily from the charts - the songs already on this server."),
-                    Some("Charts"),
-                    None,
-                );
+                let _ = state.db.set_playlist_meta(pid, Some(blurb), Some(folder), None);
                 let _ = state.db.set_playlist_tracks(pid, ids);
                 seeded.push(slug.to_string());
                 let _ = state

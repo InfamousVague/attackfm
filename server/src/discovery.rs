@@ -296,12 +296,14 @@ pub struct DiscoveryState {
 
 struct CachedNewMusic {
     playlists: Vec<serde_json::Value>,
-    built_at: std::time::Instant,
+    /// Wall-clock ms, not an Instant: the durable copy in `new_music_cache`
+    /// has to seed this across restarts, and an Instant cannot time-travel.
+    built_at: i64,
     refreshing: bool,
 }
 
 /// New-music playlists refresh once a day.
-const NM_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+const NM_TTL_MS: i64 = 24 * 60 * 60 * 1000;
 
 /*
  * Through `ai::setting`, NOT a raw env read.
@@ -794,8 +796,19 @@ async fn new_music_lists(state: &Arc<AppState>, user: i64) -> Vec<serde_json::Va
         return Vec::new();
     }
     let mut cache = state.discovery.new_music.lock().await;
+    // A restart used to empty this shelf for everyone: the cache was memory
+    // alone, and a box that redeploys often served [] all day. The durable
+    // copy seeds it back.
+    if !cache.contains_key(&user) {
+        if let Some((body, at)) = state.db.new_music_get(user) {
+            if let Ok(pls) = serde_json::from_str::<Vec<serde_json::Value>>(&body) {
+                cache.insert(user, CachedNewMusic { playlists: pls, built_at: at, refreshing: false });
+            }
+        }
+    }
+    let now = crate::db::now_ms();
     let entry = cache.get(&user);
-    let fresh = entry.map(|e| e.built_at.elapsed() < NM_TTL && !e.playlists.is_empty()).unwrap_or(false);
+    let fresh = entry.map(|e| now - e.built_at < NM_TTL_MS && !e.playlists.is_empty()).unwrap_or(false);
     if fresh {
         return entry.map(|e| e.playlists.clone()).unwrap_or_default();
     }
@@ -808,7 +821,7 @@ async fn new_music_lists(state: &Arc<AppState>, user: i64) -> Vec<serde_json::Va
             .and_modify(|e| e.refreshing = true)
             .or_insert(CachedNewMusic {
                 playlists: Vec::new(),
-                built_at: std::time::Instant::now(),
+                built_at: crate::db::now_ms(),
                 refreshing: true,
             });
         let bg = Arc::clone(state);
@@ -852,15 +865,20 @@ async fn new_music_lists(state: &Arc<AppState>, user: i64) -> Vec<serde_json::Va
                             body,
                         );
                     }
+                    if let Ok(body) = serde_json::to_string(&pls) {
+                        let _ = bg.db.new_music_put(user, &body);
+                    }
                     cache.insert(
                         user,
-                        CachedNewMusic { playlists: pls, built_at: std::time::Instant::now(), refreshing: false },
+                        CachedNewMusic { playlists: pls, built_at: crate::db::now_ms(), refreshing: false },
                     );
                 }
                 _ => {
+                    // Failure backs off in MEMORY only - a restart retries,
+                    // and the durable copy keeps serving yesterday's answer.
                     if let Some(e) = cache.get_mut(&user) {
                         e.refreshing = false;
-                        e.built_at = std::time::Instant::now();
+                        e.built_at = crate::db::now_ms();
                     }
                 }
             }
@@ -878,6 +896,36 @@ fn nm_item(d: &crate::db::DiscoveryRow) -> serde_json::Value {
         "url": d.url, "preview": d.preview, "seed": d.seed, "bpm": d.bpm,
         "lyricsRead": d.lyric_vec.is_some(), "score": d.score,
     })
+}
+
+/// One proactive rebuild per curator pass: the shelf is READY when the
+/// listener arrives instead of assembling behind their first visit - and
+/// only one, because the grouping chat is minutes of the shared model's
+/// time and five at once is how Music Date starved before.
+pub async fn new_music_warm_one(state: &Arc<AppState>) {
+    if nm_ai_url().is_none() {
+        return;
+    }
+    let since = crate::db::now_ms() - 30 * 86_400_000;
+    for user in state.db.listeners_since(since) {
+        let now = crate::db::now_ms();
+        let stale = {
+            let cache = state.discovery.new_music.lock().await;
+            match cache.get(&user) {
+                Some(e) => !e.refreshing && (now - e.built_at > NM_TTL_MS || e.playlists.is_empty()),
+                None => state
+                    .db
+                    .new_music_get(user)
+                    .map(|(_, at)| now - at > NM_TTL_MS)
+                    .unwrap_or(true),
+            }
+        };
+        if stale {
+            // Serving discards the value; the point is the rebuild it kicks.
+            let _ = new_music_lists(state, user).await;
+            return;
+        }
+    }
 }
 
 async fn build_new_music(state: &Arc<AppState>, user: i64) -> Option<Vec<serde_json::Value>> {
@@ -941,7 +989,7 @@ async fn build_new_music(state: &Arc<AppState>, user: i64) -> Option<Vec<serde_j
     // the model was being cut off mid-array and the whole build discarded.
     let reply: serde_json::Value = client(600)
         .post(format!("{}/v1/chat/completions", url.trim_end_matches('/')))
-        .json(&json!({ "model": model, "messages": [{ "role": "user", "content": prompt }], "temperature": 0.8 }))
+        .json(&json!({ "model": model, "messages": [{ "role": "user", "content": prompt }], "temperature": 0.8, "max_tokens": 900 }))
         .send()
         .await
         .ok()?

@@ -371,3 +371,24 @@
   background: var(--glacier-hover);
 }
 
+
+/* The downloaded badge: a green check beside any song whose file is on this
+   device (pinned or auto-cached alike). The title keeps its ellipsis by
+   moving it onto an inner name span; the check never gets trimmed away. */
+.songTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.songTitle__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.songLocal {
+  flex: none;
+  color: var(--glacier-success-solid);
+}
