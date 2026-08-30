@@ -91,14 +91,20 @@ export function hapticsAvailable(): boolean {
  * three DISTINCT beats), with the dub ~140ms behind its lub and the next
  * beat ~500ms on - a resting pulse, quick enough not to outstay the ripple.
  * Each pulse goes through fireNativeHaptic, so the haptics pref and bridge
- * gates apply as ever.
+ * gates apply as ever. The tempo constants are exported because the like's
+ * VISUALS keep time to this pulse: popHeart pumps the icon and launches a
+ * heart ring on every lub - one clock, so thumb and screen cannot drift.
  */
+export const HEARTBEATS = 3;
+export const HEARTBEAT_EVERY_MS = 500;
+export const HEARTBEAT_DUB_MS = 140;
+
 export function heartbeatHaptic(): void {
-  for (let beat = 0; beat < 3; beat += 1) {
-    const at = beat * 500;
+  for (let beat = 0; beat < HEARTBEATS; beat += 1) {
+    const at = beat * HEARTBEAT_EVERY_MS;
     if (at === 0) fireNativeHaptic('heavy');
     else window.setTimeout(() => fireNativeHaptic('heavy'), at);
-    window.setTimeout(() => fireNativeHaptic('light'), at + 140);
+    window.setTimeout(() => fireNativeHaptic('light'), at + HEARTBEAT_DUB_MS);
   }
 }
 
