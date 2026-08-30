@@ -164,15 +164,15 @@
 .npScreen__art[data-dj-waves='on'] .npSpeakWaves > span:not(.npSpeakWaves__halo) {
   animation:
     npSpeakGrow 1.9s ease-out infinite,
-    npSpeakWobble 3.1s linear infinite;
+    npSpeakWobble 2s linear infinite;
 }
 
 .npScreen__art[data-dj-waves='on'] .npSpeakWaves > span:nth-child(3) {
-  animation-delay: 0.62s, 0s;
+  animation-delay: 0.62s, 0.4s;
 }
 
-.npScreen__art[data-dj-waves='on'] .npSpeakWaves > span:nth-child(3) {
-  animation-delay: 1.24s, 0s;
+.npScreen__art[data-dj-waves='on'] .npSpeakWaves > span:nth-child(4) {
+  animation-delay: 1.24s, 0.8s;
 }
 
 /* The exit: when the voice ends, every ring makes one last run PAST the
@@ -186,7 +186,7 @@
   animation-delay: 0.07s;
 }
 
-.npScreen__art[data-dj-waves='leaving'] .npSpeakWaves > span:nth-child(3) {
+.npScreen__art[data-dj-waves='leaving'] .npSpeakWaves > span:nth-child(4) {
   animation-delay: 0.14s;
 }
 
@@ -204,17 +204,24 @@
   }
 }
 
-/* The wobble: the blob's radii breathe out of phase with the growth. */
+/* The wobble: the blob's radii breathe out of phase with the growth.
+   The extremes are wide on purpose - the first cut moved each radius only a
+   few points off a circle, which reads as a disc that is not quite still
+   rather than a voice-shaped ripple. Four beats, not three, so the churn is
+   irregular and never settles into a smooth pulse the eye stops seeing. */
 @keyframes npSpeakWobble {
   0%,
   100% {
-    border-radius: 47% 53% 51% 49% / 52% 48% 53% 47%;
+    border-radius: 42% 58% 56% 44% / 58% 42% 56% 44%;
   }
-  33% {
-    border-radius: 52% 48% 46% 54% / 49% 55% 45% 51%;
+  25% {
+    border-radius: 60% 40% 42% 58% / 44% 62% 38% 56%;
   }
-  66% {
-    border-radius: 49% 51% 55% 45% / 46% 50% 54% 50%;
+  50% {
+    border-radius: 44% 56% 62% 38% / 60% 40% 44% 56%;
+  }
+  75% {
+    border-radius: 58% 42% 40% 60% / 42% 58% 60% 40%;
   }
 }
 
