@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.140
+
+- The like's screen and thumb now share one heartbeat: the heart icon pumps and a ring bursts out on every beat of the haptic pulse, in perfect time
+
 ## 0.4.139
 
 - The like's heartbeat now beats three full times - dum-dum, dum-dum, dum-dum - every beat at full strength

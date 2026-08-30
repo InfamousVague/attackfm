@@ -24,7 +24,7 @@ import { loadAudioSource, loadAudioUrl, reactivateAudioSession, systemOutputVolu
 import { warmQueue } from './queueBuffer.ts';
 import { isPendingPath } from './pendingPlay.tsx';
 import { isRemotePath } from '../server.ts';
-import { fireFelt, fireNativeHaptic, heartbeatHaptic } from '../core/haptics.ts';
+import { fireFelt, fireNativeHaptic, heartbeatHaptic, HEARTBEATS, HEARTBEAT_EVERY_MS } from '../core/haptics.ts';
 import { noteMediaSilent, serverSeemsDown } from '../api/reachability.ts';
 import { isHeld } from '../downloads/offline.ts';
 import { loadScrubTape } from './scrubTape.ts';
@@ -658,10 +658,14 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
   const popHeart = () => {
     if (window.matchMedia?.(REDUCED_MOTION_QUERY).matches) return;
     for (const el of document.querySelectorAll('.npScreen__heart')) {
-      el.querySelector('svg')?.animate(
-        [{ scale: '1' }, { scale: '1.28' }, { scale: '0.94' }, { scale: '1' }],
-        { duration: 360, easing: 'cubic-bezier(.2,.8,.2,1)' },
-      );
+      // The glyph pumps on every beat of the haptic pulse, not just the
+      // first - the animation and the thumb share the heartbeat's clock.
+      for (let beat = 0; beat < HEARTBEATS; beat += 1) {
+        el.querySelector('svg')?.animate(
+          [{ scale: '1' }, { scale: '1.28' }, { scale: '0.94' }, { scale: '1' }],
+          { duration: 360, delay: beat * HEARTBEAT_EVERY_MS, easing: 'cubic-bezier(.2,.8,.2,1)' },
+        );
+      }
       // The ring is a pseudo-element in CSS and WAAPI cannot reach one, so it
       // rides a class the animation itself takes back off.
       el.classList.add('is-popping');
@@ -713,7 +717,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
      */
     const grand = Math.min(window.innerWidth, window.innerHeight) * 1.2;
     const units = icon.viewBox?.baseVal?.width || 24;
-    for (let i = 0; i < 3; i += 1) {
+    for (let i = 0; i < HEARTBEATS; i += 1) {
       const ghost = icon.cloneNode(true) as SVGSVGElement;
       ghost.setAttribute('fill', 'none');
       ghost.setAttribute('aria-hidden', 'true');
@@ -732,7 +736,9 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       holder.style.top = `${cy}px`;
       holder.appendChild(ghost);
       document.body.appendChild(holder);
-      const delay = i * 170;
+      // Each ring launches ON a lub of the haptic heartbeat - same clock,
+      // same spacing, so what the screen shows is what the thumb feels.
+      const delay = i * HEARTBEAT_EVERY_MS;
       // Size and fade on two clocks: the swell gets the sharp decelerating
       // ease, but that same ease on opacity killed the heart a third of the
       // way out - the fade stays gentler so the outline is still there to
@@ -754,7 +760,7 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
       swell.addEventListener('finish', () => holder.remove());
       // If the animation dies with the document mid-flight, the node must
       // not linger as an invisible fixed layer.
-      window.setTimeout(() => holder.remove(), 1800);
+      window.setTimeout(() => holder.remove(), HEARTBEATS * HEARTBEAT_EVERY_MS + 1400);
     }
   };
 
