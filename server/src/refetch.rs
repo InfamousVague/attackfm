@@ -228,8 +228,15 @@ async fn plan(
     // metadata client first, which is the downloader's view of the catalogue
     // and needs no credentials, and only falls back to the web token. A box
     // without Spotify credentials gets nothing from the raw search.
-    let mut found = search::spotify_catalog(state, &query).await;
-    found.extend(search::deezer_search(&query).await);
+    // Both catalogues at once. These were awaited one after the other, and
+    // nothing downloads until the shortlist exists - so every hunt began by
+    // paying for two round trips end to end before the first byte of audio was
+    // even asked for. They share nothing; there was never a reason to queue them.
+    let (mut found, deezer) = tokio::join!(
+        search::spotify_catalog(state, &query),
+        search::deezer_search(&query)
+    );
+    found.extend(deezer);
 
     // Tracks only. NOT filtered by `importable` - that flag means "SpotiFLAC
     // takes this URL as primary input", and Deezer URLs do not qualify, but
@@ -431,6 +438,32 @@ pub async fn start(
             StatusCode::SERVICE_UNAVAILABLE,
             "SpotiFLAC is not installed on this server, so there is nothing to re-fetch with.",
         ));
+    }
+
+    /*
+     * ALREADY HUNTING FOR THIS TRACK? Hand back the hunt in progress.
+     *
+     * Every open of the modal used to mint a fresh job and start five provider
+     * downloads from nothing, because the previous one was scrapped the moment
+     * the modal closed. A hunt can take minutes - the per-candidate timeout is
+     * five of them - so anybody who closed the box to go and do something else
+     * threw away all of the work and then paid for it again from the top. That
+     * is the whole reason alternates "never load": they were being cancelled,
+     * not failing.
+     *
+     * Keyed by track AND owner: the staged files are one admin's pending edit
+     * to a shared library, and two people should not silently be steering the
+     * same one.
+     */
+    if let Some(live) = state
+        .refetch
+        .jobs
+        .lock()
+        .await
+        .values()
+        .find(|j| j.track_id == track_id && j.owner == caller.id && j.state != "failed")
+    {
+        return Ok(Json(live.clone()));
     }
 
     let id = now_id();

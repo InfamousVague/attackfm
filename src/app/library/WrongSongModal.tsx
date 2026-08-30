@@ -116,12 +116,30 @@ export function WrongSongModal({
     setPlaying(null);
   }, [open]);
 
-  /** Leaving without choosing: the staged files go, the library is untouched. */
+  /**
+   * Leaving without choosing. The library is untouched either way; what differs
+   * is whether the HUNT survives.
+   *
+   * It used to be scrapped unconditionally, which meant closing the box killed
+   * five provider downloads mid-flight - and since a candidate can take up to
+   * the five-minute per-track timeout to arrive, closing it is exactly what
+   * anybody does while waiting. Reopening then started the whole thing again
+   * from nothing. That is why alternates "never loaded": they were being
+   * cancelled and restarted, not failing.
+   *
+   * So a hunt still working is left to work. The server hands the same job back
+   * on the next open (see refetch::start), so walking away and coming back is
+   * now the intended way to use this rather than the way to lose everything.
+   * A hunt that has SETTLED is scrapped as before - nothing more is coming, and
+   * the staged files are only worth their disk while somebody might choose one.
+   */
   const close = useCallback(() => {
     audioRef.current?.pause();
     setPlaying(null);
     const live = jobRef.current;
-    if (session && live) void scrapRefetch(session, live.id).catch(() => {});
+    if (session && live && live.state !== 'hunting') {
+      void scrapRefetch(session, live.id).catch(() => {});
+    }
     setJob(null);
     onClose();
   }, [session, onClose]);
@@ -208,11 +226,17 @@ export function WrongSongModal({
         </div>
       )}
 
-      {hunting && !job?.candidates.length && (
+      {/* Said while it is still working, because the answer to "this is taking
+          a while" is now genuinely "then go and do something else" - and
+          nobody will try that unless they are told it is safe. Closing used to
+          throw the whole hunt away. */}
+      {hunting && (
         <div className="wrongSong__hunting">
           <Spinner size="sm" />
           <Text size="sm" tone="muted">
-            Looking for other recordings…
+            {job?.candidates.length
+              ? 'Still fetching the rest — you can close this and come back to it.'
+              : 'Looking for other recordings… this can take a few minutes, and it keeps going if you close this.'}
           </Text>
         </div>
       )}
