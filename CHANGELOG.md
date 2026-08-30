@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.142
+
+- The like's heartbeat settles at two beats - dum-dum, dum-dum - rings, pumps and thumps all together
+
 ## 0.4.141
 
 - Each heartbeat of the like now draws BOTH thumps: a bold heart ring on the strong beat and a faint one chasing it on the soft beat - six rings, in exact time with what your thumb feels
