@@ -1,3 +1,4 @@
+import { DRIVE_BOOSTS, type DriveBoost } from './driveBoost.ts';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 const STORAGE_KEY = 'attackfm-playback';
@@ -68,6 +69,12 @@ export interface PlaybackSettings {
   pauseStyle: PauseStyle;
   /** How the hero spells the song's words behind the header. */
   lyricWay: LyricWay;
+  /**
+   * Speed-compensated volume: the boost cars apply against road noise, from
+   * the phone's own GPS. Off by default because on is a location permission,
+   * and that is a question to be asked, never presumed.
+   */
+  driveBoost: DriveBoost;
 }
 
 interface PlaybackContextValue extends PlaybackSettings {
@@ -99,6 +106,7 @@ const DEFAULTS: PlaybackSettings = {
   saveHistory: true,
   pauseStyle: 'turntable',
   lyricWay: 'stack',
+  driveBoost: 'off',
 };
 
 const PAUSE_STYLES: readonly PauseStyle[] = ['turntable', 'fade', 'instant'];
@@ -136,6 +144,9 @@ function readStored(): PlaybackSettings {
       pauseStyle: PAUSE_STYLES.includes(parsed.pauseStyle as PauseStyle)
         ? (parsed.pauseStyle as PauseStyle)
         : DEFAULTS.pauseStyle,
+      driveBoost: DRIVE_BOOSTS.includes(parsed.driveBoost as DriveBoost)
+        ? (parsed.driveBoost as DriveBoost)
+        : DEFAULTS.driveBoost,
       lyricWay: LYRIC_WAYS.includes(parsed.lyricWay as LyricWay)
         ? (parsed.lyricWay as LyricWay)
         : DEFAULTS.lyricWay,

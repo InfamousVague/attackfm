@@ -34,6 +34,11 @@
 		<string>_attackfm-jam._tcp</string>
 		<string>_attackfm-jam._udp</string>
 	</array>
+	<!-- Location exists for one number: your speed, for the "louder when
+	     driving" volume rise. Watched only while that setting is on, never
+	     stored, never sent anywhere - the maths happens on the phone. -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>AttackFM uses your speed only to raise the volume against road noise when “Louder when driving” is on.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>AttackFM uses the microphone only when you press the DJ’s talk button, to hear what music you ask for.</string>
 	<key>NSCameraUsageDescription</key>

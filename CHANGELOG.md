@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.152
+
+- Louder when driving: the volume rises with your speed to cover road noise, the way a car stereo's speed-compensated volume does — nothing under 20 km/h, the full lift by motorway pace, in three strengths up to +9 dB. It rides the same gain stage as volume levelling, so the fader still means what it says and the rise glides instead of stepping. Off by default; switching it on asks for location once, GPS is watched only while it is on, and a tunnel holds the boost rather than dropping it at the loudest stretch of the road. On phones the location permission itself arrives with the next app build
+
 ## 0.4.151
 
 - The Link-a-device card grows a Copy code button, for handing the code to a chat or a terminal instead of reading it off the QR. It copies the bare six characters, flips to "Copied" for a moment, and resets when a new code is minted

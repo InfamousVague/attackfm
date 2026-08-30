@@ -13,6 +13,7 @@ import { useLibrary } from '../library/library.tsx';
 import { useEqualizer } from './equalizer.tsx';
 import { chapterNumbers, chapterTitleWords, frontMatterTitle } from './chapterNumber.ts';
 import { gainFor, useLoudnessMode, useLoudnessTable } from './loudness.ts';
+import { setDriveBoostStrength, useDriveBoost } from './driveBoost.ts';
 import { sleepsAtAnEnd, usePlayback } from './playback.tsx';
 import { useNowPlayingMotion } from './nowPlayingMotion.tsx';
 import { VOLUME_UNITY } from './VolumeControl.tsx';
@@ -1474,7 +1475,17 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
    */
   useLoudnessTable(playSession);
   const loudnessMode = useLoudnessMode();
-  const trackGain = gainFor(track ?? null, libraryTracks);
+  /*
+   * Drive boost rides the SAME stage as levelling, summed in dB - the fader
+   * still means what it says, and the stage's own glide keeps a rising road
+   * speed from ever sounding like a step. The module watches GPS only while
+   * the setting is on; the effect below is what turns the watch on and off.
+   */
+  useEffect(() => {
+    setDriveBoostStrength(playbackRef.current.driveBoost);
+  }, [playback.driveBoost]);
+  const driveDb = useDriveBoost();
+  const trackGain = gainFor(track ?? null, libraryTracks) + driveDb;
   const trackGainRef = useRef(trackGain);
   trackGainRef.current = trackGain;
   useEffect(() => {
