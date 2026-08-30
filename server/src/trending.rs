@@ -32,18 +32,25 @@ use std::time::Duration;
 /// The chart moves daily; asking more often than twice a day is noise.
 const FETCH_EVERY_MS: i64 = 12 * 60 * 60 * 1000;
 /// How much of the chart to consider. Deep enough to survive heavy dedupe on
-/// a listener who already owns the hits.
-const CHART_TAKE: usize = 80;
+/// a listener who already owns the hits. 100 is Deezer's page limit.
+const CHART_TAKE: usize = 100;
 /// Fresh releases considered per sweep, after sorting by listen count.
 const FRESH_TAKE: usize = 40;
 /// Politeness between resolve calls, same as the taste walk's.
 const GAP: Duration = Duration::from_millis(700);
 /// Per-listener ceilings per sweep, so one sweep cannot flood a pool the
 /// scoring then has to dig the taste walk's finds back out of.
-const CHART_PER_USER: usize = 25;
+const CHART_PER_USER: usize = 50;
 const FRESH_PER_USER: usize = 15;
-/// The lane's own space above the taste walk's pool target.
-const TREND_RESERVE: i64 = 60;
+/// How many of THIS lane's rows a listener's pool keeps stocked. The old
+/// ceiling was pool-TOTAL (target + reserve), and a heavy dater's pool sits
+/// far above the target permanently - so the chart lane was silently barred
+/// from adding anything and their trending shelf ran down to scraps while
+/// "more top hits" was the standing request. The lane now counts its own
+/// rows: bounded exactly as before, but never starved by the rest of the
+/// pool's politics.
+const TREND_KEEP: usize = 50;
+const FRESH_KEEP: usize = 20;
 
 fn meta_key() -> &'static str {
     "trending.fetched_at"
@@ -108,14 +115,14 @@ fn fan_to(state: &Arc<AppState>, user: i64, found: &[Found]) {
      * POOL_KEEP), so "room below the target" was zero forever. The reserve is
      * this lane's own space above the walk's line; the pruner bounds the total.
      */
-    let (pool, _) = state.db.discovery_counts(user);
-    let ceiling = crate::discovery::POOL_TARGET + TREND_RESERVE;
-    let mut room = (ceiling - pool).max(0) as usize;
-    if room == 0 {
-        return;
-    }
     let owned = crate::discovery::owned_keys(state);
     let lanes = state.db.discovery_lanes(user);
+    let stocked = |name: &str| lanes.values().filter(|(lane, _)| lane == name).count();
+    let mut chart_room = TREND_KEEP.saturating_sub(stocked("trending"));
+    let mut fresh_room = FRESH_KEEP.saturating_sub(stocked("fresh"));
+    if chart_room == 0 && fresh_room == 0 {
+        return;
+    }
     // Rows the OTHER lanes already pooled. add_discovery is an upsert whose
     // conflict arm overwrites seed and popularity - fanning over a taste-walk
     // find would blank the "because you play X" it was harvested for and
@@ -125,12 +132,16 @@ fn fan_to(state: &Arc<AppState>, user: i64, found: &[Found]) {
     let mut chart_added = 0usize;
     let mut fresh_added = 0usize;
     for f in found {
-        if room == 0 {
+        if chart_room == 0 && fresh_room == 0 {
             break;
         }
         let cap = if f.lane == "trending" { CHART_PER_USER } else { FRESH_PER_USER };
-        let count = if f.lane == "trending" { &mut chart_added } else { &mut fresh_added };
-        if *count >= cap {
+        let (count, room) = if f.lane == "trending" {
+            (&mut chart_added, &mut chart_room)
+        } else {
+            (&mut fresh_added, &mut fresh_room)
+        };
+        if *count >= cap || *room == 0 {
             continue;
         }
         if owned.contains(&crate::discovery::key_of(&f.artist, &f.title)) {
@@ -154,7 +165,7 @@ fn fan_to(state: &Arc<AppState>, user: i64, found: &[Found]) {
         {
             let _ = state.db.tag_discovery_lane(user, &f.ext_id, f.lane, f.rank);
             *count += 1;
-            room -= 1;
+            *room -= 1;
         }
     }
 }
