@@ -664,6 +664,8 @@ async fn main() {
         .route("/api/stats", get(api::stats))
         .route("/api/stats/summary", get(listens::summary))
         .route("/api/favorites", get(api::favorites))
+        .route("/api/likes/pending", get(api::pending_likes).post(api::add_pending_like))
+        .route("/api/likes/pending/remove", post(api::remove_pending_like))
         .route("/api/favorites/{id}", put(api::set_favorite))
         .route(
             "/api/playlists",

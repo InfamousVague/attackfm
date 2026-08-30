@@ -37,6 +37,7 @@ export * from './api/dj.ts';
 export * from './api/friends.ts';
 export * from './api/jams.ts';
 export * from './api/curator.ts';
+export * from './api/likes.ts';
 export * from './api/push.ts';
 export * from './api/mirror.ts';
 export * from './api/catalog.ts';

@@ -494,6 +494,92 @@ pub struct FavoriteBody {
     pub favorite: bool,
 }
 
+/// The one matching rule a pending like lives by: the folded identity, and
+/// only rows the caller may actually hold - library, or their own audition.
+fn liked_track_for(state: &Arc<AppState>, user: i64, k: &str) -> Option<i64> {
+    for (id, artist, title, audition_owner) in state.db.track_identities() {
+        if audition_owner != 0 && audition_owner != user {
+            continue;
+        }
+        if crate::discovery::key_of(&artist, &title) == k {
+            return Some(id);
+        }
+    }
+    None
+}
+
+#[derive(serde::Deserialize)]
+pub struct PendingLikeBody {
+    pub artist: String,
+    pub title: String,
+}
+
+/// `POST /api/likes/pending` - a heart promised on Discover: favourite it now
+/// if the song is already here, remember the promise otherwise. The
+/// collector's sweep keeps it the moment a matching track lands.
+pub async fn add_pending_like(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<PendingLikeBody>,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let artist = body.artist.trim();
+    let title = body.title.trim();
+    if artist.is_empty() || title.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "name the song".into()));
+    }
+    let k = crate::discovery::key_of(artist, title);
+    if let Some(id) = liked_track_for(&state, caller.id, &k) {
+        state
+            .db
+            .set_favorite(caller.id, id, true)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        state.db.promote_curator_track(id);
+        return Ok(Json(json!({ "landed": true, "trackId": id, "k": k })));
+    }
+    state
+        .db
+        .pending_like_put(caller.id, &k, title, artist)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(json!({ "landed": false, "k": k })))
+}
+
+/// `GET /api/likes/pending` - the hearts still waiting on their downloads.
+pub async fn pending_likes(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let rows: Vec<serde_json::Value> = state
+        .db
+        .pending_likes_for(caller.id)
+        .into_iter()
+        .map(|(k, title, artist, created_at)| {
+            json!({ "k": k, "title": title, "artist": artist, "createdAt": created_at })
+        })
+        .collect();
+    Ok(Json(json!({ "pending": rows })))
+}
+
+#[derive(serde::Deserialize)]
+pub struct RemovePendingLikeBody {
+    pub k: String,
+}
+
+/// `POST /api/likes/pending/remove` - the heart withdrawn before it landed.
+pub async fn remove_pending_like(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<RemovePendingLikeBody>,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    state
+        .db
+        .pending_like_remove(caller.id, &body.k)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(json!({ "ok": true })))
+}
+
 pub async fn set_favorite(
     State(state): State<Arc<AppState>>,
     Path(track_id): Path<i64>,

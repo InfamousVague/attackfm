@@ -7,7 +7,8 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { SongTable } from './SongTable.tsx';
 import { setHeaderActions } from '../nav/headerActions.ts';
 import { EmptyArt, HeroArt, type HeroArtName } from '../ux/EmptyArt.tsx';
-import { fetchHome, trackIdFromPath } from '../server.ts';
+import { fetchHome, trackIdFromPath, fetchPendingLikes, removePendingLike, type PendingLike } from '../server.ts';
+import { X } from '@glacier/icons';
 import type { Track } from '../core/tauri.ts';
 import { formatTotal } from '../ux/format.ts';
 import { shuffled } from '../ux/shuffle.ts';
@@ -150,6 +151,30 @@ export function SongPage({
    * the whole point of asking "what turned up lately".
    */
   const recent = useMemo(() => allNewest.slice(0, RECENT_LIMIT), [allNewest]);
+
+  /*
+   * Hearts still on the wire: songs liked from Discover whose downloads have
+   * not landed yet. They belong on THIS page from the moment of the like -
+   * that is the whole promise - so they stand above the table as a small
+   * "on the way" band and dissolve as the real rows arrive (the library
+   * refreshing is the re-fetch trigger; the server sweep does the landing).
+   */
+  const [pendingLikes, setPendingLikes] = useState<PendingLike[]>([]);
+  useEffect(() => {
+    if (view !== 'liked' || !session) {
+      setPendingLikes([]);
+      return;
+    }
+    let live = true;
+    void fetchPendingLikes(session)
+      .then((rows) => {
+        if (live) setPendingLikes(rows);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [view, session, refreshNonce, tracks.length]);
   const listTracks =
     view === 'liked'
       ? favoriteTracks
@@ -354,6 +379,34 @@ export function SongPage({
                 No song here matches “{filter.trim()}”.
               </Text>
             ) : (
+              <>
+            {view === 'liked' && pendingLikes.length > 0 && (
+              <div className="likedPending" role="status">
+                <p className="likedPending__head">
+                  On the way - liked, still downloading
+                </p>
+                {pendingLikes.map((p) => (
+                  <div key={p.k} className="likedPending__row">
+                    <span className="artistAlbumSpin" aria-hidden />
+                    <span className="likedPending__text">
+                      <span className="likedPending__song">{p.title}</span>
+                      <span className="likedPending__artist">{p.artist}</span>
+                    </span>
+                    <button
+                      type="button"
+                      className="likedPending__drop"
+                      aria-label={`Stop waiting for ${p.title}`}
+                      onClick={() => {
+                        if (session) void removePendingLike(session, p.k);
+                        setPendingLikes((cur) => cur.filter((x) => x.k !== p.k));
+                      }}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             <SongTable
               flow
               loading={loading}
@@ -362,6 +415,7 @@ export function SongPage({
               onOpenArtist={onOpenArtist}
               plays={view === 'onrepeat' && playsById.size > 0 ? playsById : undefined}
             />
+              </>
             )}
           </div>
         </section>

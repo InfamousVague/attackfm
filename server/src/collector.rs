@@ -136,6 +136,7 @@ pub fn spawn(state: Arc<AppState>) {
             // every sign that any of it has ever worked.
             crate::ai::flush_last_runs(&state.db);
             pull_cycle(&state).await;
+            settle_pending_likes(&state);
             // The standing chart playlists ride the same loop; their own
             // daily clock makes this a cheap no-op almost every pass.
             crate::chartlists::cycle(&state).await;
@@ -242,6 +243,37 @@ async fn settle_delegated(state: &Arc<AppState>) {
          */
         if now_ms() - created_at > UNANSWERED_MS {
             let _ = state.db.forget_pull(pull_id);
+        }
+    }
+}
+
+/// How long a promised heart waits for its song before the promise lapses.
+const PENDING_LIKE_TTL_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+
+/// Keep the hearts promised on Discover: any pending like whose song has
+/// landed - by import, by delegation, by hand - becomes a real favourite.
+/// Matching by folded identity is SAFE here in the way it never was for
+/// delegated pulls: the worst wrong match is a heart on a same-named song,
+/// not an annexed file.
+fn settle_pending_likes(state: &Arc<AppState>) {
+    let rows = state.db.pending_likes_all();
+    if rows.is_empty() {
+        return;
+    }
+    let identities = state.db.track_identities();
+    let now = now_ms();
+    for (user, k, created_at) in rows {
+        if now - created_at > PENDING_LIKE_TTL_MS {
+            let _ = state.db.pending_like_remove(user, &k);
+            continue;
+        }
+        let hit = identities.iter().find(|(_, artist, title, owner)| {
+            (*owner == 0 || *owner == user) && crate::discovery::key_of(artist, title) == k
+        });
+        if let Some((id, _, _, _)) = hit {
+            let _ = state.db.set_favorite(user, *id, true);
+            state.db.promote_curator_track(*id);
+            let _ = state.db.pending_like_remove(user, &k);
         }
     }
 }

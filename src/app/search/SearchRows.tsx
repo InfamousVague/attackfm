@@ -1,5 +1,5 @@
 import { ArtistLink } from '../ux/ArtistLink.tsx';
-import { BookAudio, Check, ChevronRight, Disc3, ListEnd, ListMusic, ListStart, Music, Play, Plus, Tag, User, Users, X } from '@glacier/icons';
+import { BookAudio, Check, ChevronRight, Disc3, Heart, ListEnd, ListMusic, ListStart, Music, Play, Plus, Tag, User, Users, X } from '@glacier/icons';
 import type { ReactNode } from 'react';
 import { AlbumMenu } from '../albumArtist/AlbumMenu.tsx';
 import { TrackMenu } from '../library/TrackMenu.tsx';
@@ -18,6 +18,8 @@ export interface RowCtx {
   cursor: number;
   setCursor: (n: number) => void;
   open: (item: Item) => void;
+  /** Like a catalogue song and pull it down, without touching now-playing. */
+  like: (item: Item) => void;
   queue: QueueControls;
   adding: AddingState;
   acquire: AcquireValue;
@@ -31,7 +33,7 @@ export interface RowCtx {
  *  replace every row's element type - which would drop the open context menu
  *  and reset each row on every letter. */
 export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
-  const { position, cursor, setCursor, open, queue, adding, acquire, onPlay, onOpenArtist, query, tracks } = ctx;
+  const { position, cursor, setCursor, open, like, queue, adding, acquire, onPlay, onOpenArtist, query, tracks } = ctx;
   const n = position.get(item.id);
   const active = n !== undefined && n === cursor;
   const seat = {
@@ -261,12 +263,12 @@ export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
           </div>
         );
       }
-      return (
-        <button key={item.id} type="button" {...seat} onClick={() => open(item)}>
+      const row = (
+        <button key={isArtist ? item.id : undefined} type="button" {...seat} onClick={() => open(item)}>
           {inside}
           {isArtist ? (
             <ChevronRight size={16} className="searchRow__end" />
-          ) : have || state === 'added' ? (
+          ) : have || state === 'added' || state === 'liked' ? (
             <Check size={16} className="searchRow__end" data-ok />
           ) : state === 'finding' ? (
             <span className="searchAdd" data-busy>
@@ -283,6 +285,31 @@ export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
           )}
         </button>
       );
+      // A song you can pull down is a song you can LIKE before it lands: the
+      // heart queues the same download and promises the favourite, so it
+      // walks straight into Liked while it is still on the wire. Always
+      // visible - this verb exists for a thumb, not a hovering pointer.
+      if (!isArtist && item.result.kind === 'track' && can && !have) {
+        const liked = state === 'liked';
+        return (
+          <div key={item.id} className="searchRowSeat searchRowSeat--slim">
+            {row}
+            <span className="searchRow__verbs" data-always>
+              <button
+                type="button"
+                className="searchVerb searchVerb--heart"
+                title="Like and download"
+                aria-label={`Like ${item.result.title} and download it`}
+                aria-pressed={liked}
+                onClick={() => like(item)}
+              >
+                <Heart size={15} fill={liked ? 'currentColor' : 'none'} />
+              </button>
+            </span>
+          </div>
+        );
+      }
+      return row;
     }
 
     default: {
