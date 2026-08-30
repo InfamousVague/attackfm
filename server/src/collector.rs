@@ -41,16 +41,26 @@ const FAILED_RETRY_AFTER_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 const WINDOW_30D_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 /// The default budget for unadopted auditions.
 const DEFAULT_CAP_BYTES: i64 = 250_000_000_000;
-/// Candidates considered per listener per cycle.
-const CANDIDATES: i64 = 24;
+/// How deep the buying pass looks for someone's next offer. This was 24 and
+/// starved the exact listener the collector serves best: after weeks of
+/// dating, a heavy dater's top twenty-four BY SCORE are all already pulled,
+/// so every pass found nothing and their shelf sat still while five hundred
+/// measured candidates waited just below the window. The bar still guards
+/// quality; depth just means "the best UNPULLED ones".
+const CANDIDATES: i64 = 400;
+/// Offers one listener may be raised in one pass. One-per-pass at a
+/// five-minute cycle capped the hungriest shelf at twelve an hour before a
+/// single claim was even counted; three keeps the pace a peer can feel.
+const PER_LISTENER_PER_CYCLE: usize = 3;
 /// How long a pull may sit queued before its job is presumed dead.
 const STALE_PULL_MS: i64 = 24 * 60 * 60 * 1000;
 
 /// Every Nth seat at the date belongs to today's chart: the trending lane
 /// already lands the global chart in the pool, but taste-ranked buying meant
 /// a hit far from your taste never survived the threshold - so the deck was
-/// all echo and no radio. One seat in three is the radio's, by request.
-const CHART_EVERY: usize = 3;
+/// all echo and no radio. One seat in three was the radio's, by request;
+/// one in TWO since "add in more top hits" (2026-08-30).
+const CHART_EVERY: usize = 2;
 /// The cadence counts buys inside this window, so a listener who takes a
 /// month off starts a fresh rotation instead of inheriting a stale remainder.
 const CHART_WINDOW_MS: i64 = 7 * 24 * 60 * 60 * 1000;
@@ -274,55 +284,72 @@ async fn pull_cycle(state: &Arc<AppState>) {
          * unpulled the seat falls back to the ordinary taste pick rather
          * than going empty.
          */
-        let chart_turn = {
-            let recent = state.db.pulled_ext_ids(user, now_ms() - CHART_WINDOW_MS).len();
-            recent % CHART_EVERY == CHART_EVERY - 1
-        };
-        let chart_pick = if chart_turn {
-            let mut charted: Vec<_> = state
-                .db
-                .top_discoveries(user, 400)
-                .into_iter()
-                .filter(|d| lanes.get(&d.ext_id).is_some_and(|(lane, _)| lane == "trending"))
-                .filter(|d| !pulled.contains(&d.ext_id) && !d.url.trim().is_empty() && measured(d))
-                .collect();
-            charted.sort_by(|a, b| {
-                b.popularity.partial_cmp(&a.popularity).unwrap_or(std::cmp::Ordering::Equal)
+        // Buys already made this pass, so the alternating chart seat keeps
+        // counting straight while the pass raises several.
+        let mut mine = 0usize;
+        let mut recent = state.db.pulled_ext_ids(user, now_ms() - CHART_WINDOW_MS).len();
+        let mut taken: std::collections::HashSet<String> = std::collections::HashSet::new();
+        while mine < PER_LISTENER_PER_CYCLE {
+            let chart_turn = recent % CHART_EVERY == CHART_EVERY - 1;
+            let chart_pick = if chart_turn {
+                let mut charted: Vec<_> = state
+                    .db
+                    .top_discoveries(user, CANDIDATES)
+                    .into_iter()
+                    .filter(|d| lanes.get(&d.ext_id).is_some_and(|(lane, _)| lane == "trending"))
+                    .filter(|d| {
+                        !pulled.contains(&d.ext_id)
+                            && !taken.contains(&d.ext_id)
+                            && !d.url.trim().is_empty()
+                            && measured(d)
+                    })
+                    .collect();
+                charted.sort_by(|a, b| {
+                    b.popularity.partial_cmp(&a.popularity).unwrap_or(std::cmp::Ordering::Equal)
+                });
+                charted.into_iter().next()
+            } else {
+                None
+            };
+            let pick = chart_pick.or_else(|| {
+                state
+                    .db
+                    .top_discoveries(user, CANDIDATES)
+                    .into_iter()
+                    .filter(|d| {
+                        !pulled.contains(&d.ext_id)
+                            && !taken.contains(&d.ext_id)
+                            && !d.url.trim().is_empty()
+                    })
+                    .find(|d| d.score as f64 >= bar && measured(d))
             });
-            charted.into_iter().next()
-        } else {
-            None
-        };
-        let pick = chart_pick.or_else(|| {
-            state
-                .db
-                .top_discoveries(user, CANDIDATES)
-                .into_iter()
-                .filter(|d| !pulled.contains(&d.ext_id) && !d.url.trim().is_empty())
-                .find(|d| d.score as f64 >= bar && measured(d))
-        });
-        let Some(candidate) = pick else { continue };
-        let charted = lanes
-            .get(&candidate.ext_id)
-            .is_some_and(|(lane, _)| lane == "trending");
+            let Some(candidate) = pick else { break };
+            let charted = lanes
+                .get(&candidate.ext_id)
+                .is_some_and(|(lane, _)| lane == "trending");
 
-        if buy(state, user, &candidate, charted).await {
+            if !buy(state, user, &candidate, charted).await {
+                break;
+            }
             /*
              * One at a time across all listeners - unless this box is only
-             * OFFERING, in which case one per listener.
+             * OFFERING, in which case a few per listener.
              *
              * The rotation exists because a buy occupies the download queue,
              * and one listener should not hold it while everyone else waits.
              * When the downloading happens on a peer that rule is measuring
              * something this box no longer does: an offer costs a row, the
-             * peer takes them one at a time at its own pace, and the twenty
-             * outstanding cap is the real backstop. Rotating per listener
-             * keeps the fairness and drops the throttle - with five listeners
-             * that is five wants a cycle instead of one.
+             * peer takes them at its own pace, and the outstanding cap is
+             * the real backstop. Hungriest-first order plus a small
+             * per-listener allowance keeps the fairness and drops the
+             * throttle that held the hungriest shelf to one want a cycle.
              */
             if crate::imports::imports_mode() != crate::imports::ImportsMode::CollectorOnly {
                 return;
             }
+            taken.insert(candidate.ext_id.clone());
+            mine += 1;
+            recent += 1;
             raised += 1;
             if raised >= OFFERS_PER_CYCLE {
                 return;
