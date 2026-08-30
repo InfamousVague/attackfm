@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.137
+
+- The giant heart now actually bursts on iPhone: liking a song sends the full-size outline sweeping across the screen. The last update's version quietly stayed button-sized on iOS
+
 ## 0.4.136
 
 - Liking a song now sends a giant heart rippling out from the heart button - the outline swells across the screen in the album's own colour and fades as it goes. Unliking stays quiet, as it should
