@@ -85,17 +85,21 @@ export function hapticsAvailable(): boolean {
 }
 
 /**
- * A heartbeat under the thumb: lub-DUB, then a softer echo - the like's
- * signature, replacing the generic success triplet. Timings are a resting
- * heart's (systole ~140ms behind, next beat ~600ms on), which is why it
- * reads as a PULSE rather than two buzzes. Each pulse goes through
- * fireNativeHaptic, so the haptics pref and bridge gates apply as ever.
+ * A heartbeat under the thumb: THREE full lub-DUBs - the like's signature,
+ * replacing the generic success triplet. Every cycle is heavy-then-light at
+ * full strength (a fading echo read as two beats and a flutter; the ask was
+ * three DISTINCT beats), with the dub ~140ms behind its lub and the next
+ * beat ~500ms on - a resting pulse, quick enough not to outstay the ripple.
+ * Each pulse goes through fireNativeHaptic, so the haptics pref and bridge
+ * gates apply as ever.
  */
 export function heartbeatHaptic(): void {
-  fireNativeHaptic('heavy');
-  window.setTimeout(() => fireNativeHaptic('light'), 140);
-  window.setTimeout(() => fireNativeHaptic('medium'), 620);
-  window.setTimeout(() => fireNativeHaptic('light'), 760);
+  for (let beat = 0; beat < 3; beat += 1) {
+    const at = beat * 500;
+    if (at === 0) fireNativeHaptic('heavy');
+    else window.setTimeout(() => fireNativeHaptic('heavy'), at);
+    window.setTimeout(() => fireNativeHaptic('light'), at + 140);
+  }
 }
 
 /**
