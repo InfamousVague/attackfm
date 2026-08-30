@@ -122,7 +122,7 @@ pub async fn canvas(
 
     // A hit gets kept: fetched once, then owned. Failure to store is not
     // failure to play - the Spotify URL still works for this listen.
-    if let (Some(url), Some(id)) = (remote.as_deref(), q.track_id) {
+    if let (Answer::Found(url), Some(id)) = (&remote, q.track_id) {
         if let Some(dest) = sidecar_for(&state, id) {
             if store_canvas(url, &dest).await {
                 let _ = state.db.clear_canvas_miss(id);
@@ -132,16 +132,30 @@ pub async fn canvas(
         }
     }
 
-    // Spotify answered "no such clip". Written DOWN this time, not just held
-    // in memory: a miss that only lived until the next restart meant the whole
-    // canvas-less half of a library was looked up again on every boot.
-    if remote.is_none() {
+    // Spotify answered "no such clip". Written DOWN, not just held in memory: a
+    // miss that only lived until the next restart meant the whole canvas-less
+    // half of a library was looked up again on every boot.
+    //
+    // ONLY on Absent. An Unknown - a rate limit, a dead cookie, a timeout - is
+    // not a fact about this track, and recording it as one hid the clip for
+    // thirty days over a bad minute.
+    let unknown = matches!(remote, Answer::Unknown);
+    if matches!(remote, Answer::Absent) {
         if let Some(id) = q.track_id {
             let _ = state.db.mark_canvas_miss(id);
         }
     }
-    let answer = remote.or_else(|| stock_or_nothing(q.track_id, title, artist));
-    state.canvas.put(key, answer.clone());
+    let found = match remote {
+        Answer::Found(url) => Some(url),
+        _ => None,
+    };
+    let answer = found.or_else(|| stock_or_nothing(q.track_id, title, artist));
+    // An Unknown is not held in memory either. The map is there to stop a
+    // canvas-less song being looked up on every open; caching a shrug instead
+    // means one failed minute silently lasts until the next restart.
+    if !unknown {
+        state.canvas.put(key, answer.clone());
+    }
     Ok(Json(json!({ "url": answer })))
 }
 
@@ -209,6 +223,29 @@ async fn sweep_inner(state: &Arc<AppState>) {
         // is a server whose owner has not linked Spotify.
         return;
     }
+    /*
+     * ONE-TIME AMNESTY.
+     *
+     * Every miss on disk before this build was recorded by logic that could not
+     * tell "Spotify says this track has no Canvas" from "we never got to ask" -
+     * a 429, a dead cookie, a twelve-second timeout over a cold secret fetch.
+     * They are not data about the library, they are a log of bad minutes, and
+     * each one stands for thirty days.
+     *
+     * So they are forgotten once, and the sweep re-asks with a pipeline that
+     * now knows the difference. Genuine noes cost one lookup each to relearn
+     * and are then written down properly; the false ones - however many there
+     * were - come back as clips. Marked in `meta` so it happens on this upgrade
+     * and never again.
+     */
+    if state.db.meta_get("canvas.miss_amnesty").is_none() {
+        let forgotten = state.db.forget_canvas_misses().unwrap_or(0);
+        let _ = state.db.meta_set("canvas.miss_amnesty", "1");
+        if forgotten > 0 {
+            println!("[canvas] forgot {forgotten} recorded misses so they can be re-asked");
+        }
+    }
+
     let wanted = state.db.tracks_wanting_canvas(SWEEP_BATCH, MISS_RETRY_MS);
     if wanted.is_empty() {
         return;
@@ -227,7 +264,7 @@ async fn sweep_inner(state: &Arc<AppState>) {
         }
         asked += 1;
         match fetch_canvas(&sp_dc, &title, &artist, state).await {
-            Some(url) => {
+            Answer::Found(url) => {
                 if let Some(dest) = sidecar_for(state, id) {
                     if store_canvas(&url, &dest).await {
                         let _ = state.db.clear_canvas_miss(id);
@@ -235,9 +272,21 @@ async fn sweep_inner(state: &Arc<AppState>) {
                     }
                 }
             }
-            None => {
+            Answer::Absent => {
                 let _ = state.db.mark_canvas_miss(id);
             }
+            /*
+             * Learned nothing, so record nothing and try this one again later.
+             *
+             * This is the case that mattered most here. The sweep asks Spotify
+             * a few hundred times an hour on one cookie, which is exactly the
+             * traffic that earns a 429 - and every 429 used to be filed as
+             * "this song has no Canvas" for thirty days. A rate limit could
+             * therefore erase a month of clips across whatever the sweep
+             * happened to be walking at the time, and the faster it swept the
+             * more it erased.
+             */
+            Answer::Unknown => {}
         }
         tokio::time::sleep(SWEEP_GAP).await;
     }
@@ -373,12 +422,25 @@ pub async fn media(
 
 /// Runs the Python one-shot, feeding the request (cookie included) on stdin.
 /// Any failure is a quiet `None` - a missing clip must never break playback.
-async fn fetch_canvas(
-    sp_dc: &str,
-    title: &str,
-    artist: &str,
-    state: &AppState,
-) -> Option<String> {
+/// What Spotify actually said, which is not the same question as "did we get a
+/// URL".
+///
+/// Everything used to collapse into `None`: a track with no clip, a 429 from a
+/// search endpoint the sweep asks a few hundred times an hour, an expired
+/// cookie, a twelve-second timeout over a cold secret extraction, a missing
+/// python3. The caller then wrote every one of them down as `canvas_miss`,
+/// which suppresses that track for THIRTY DAYS - so one bad minute cost a month
+/// of clips, and the library quietly ratcheted towards having none.
+#[derive(Debug)]
+pub enum Answer {
+    Found(String),
+    /// Spotify answered, and this recording has no Canvas. Worth remembering.
+    Absent,
+    /// We never got an answer. Nothing was learned, so nothing is recorded.
+    Unknown,
+}
+
+async fn fetch_canvas(sp_dc: &str, title: &str, artist: &str, state: &AppState) -> Answer {
     // The client secret is optional and only ever used for the track search.
     // Without it the lookup falls back to the web-player token, which is what
     // shipped before - so an unconfigured server is no worse off.
@@ -393,33 +455,70 @@ async fn fetch_canvas(
     .to_string();
     let py = std::env::var("AFM_CANVAS_PYTHON").unwrap_or_else(|_| "python3".to_string());
 
-    let mut child = tokio::process::Command::new(py)
+    let Ok(mut child) = tokio::process::Command::new(py)
         .arg("-c")
         .arg(CANVAS_PY)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .spawn()
-        .ok()?;
+    else {
+        // No python3 on this box: every track would otherwise be recorded as
+        // having no Canvas, one per play, for a month each.
+        return Answer::Unknown;
+    };
 
     use tokio::io::AsyncWriteExt;
     if let Some(mut stdin) = child.stdin.take() {
         let _ = stdin.write_all(req.as_bytes()).await;
         let _ = stdin.shutdown().await;
     }
-    let out = tokio::time::timeout(std::time::Duration::from_secs(12), child.wait_with_output())
-        .await
-        .ok()?
-        .ok()?;
+    /*
+     * Twenty seconds, up from twelve.
+     *
+     * The pipeline inside is four sequential Spotify round trips, and the first
+     * one after the six-hour secret cache expires downloads a whole web-player
+     * bundle to re-read the TOTP secret. Twelve seconds did not reliably cover
+     * that, so the first ask after every expiry tended to time out - and a
+     * timeout was written down as "this song has no Canvas" for a month. The
+     * clip is not urgent (the cover is already on screen and the sweep fetches
+     * ahead of the ask), so waiting is far cheaper than mislearning.
+     */
+    let Ok(Ok(out)) = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        child.wait_with_output(),
+    )
+    .await
+    else {
+        return Answer::Unknown;
+    };
     if !out.status.success() {
-        return None;
+        return Answer::Unknown;
     }
-    let parsed: Value = serde_json::from_slice(&out.stdout).ok()?;
-    parsed
+    read_answer(&out.stdout)
+}
+
+/// The one decision this whole change turns on, kept separate so it can be
+/// tested without a Spotify account: which of the three answers a line of the
+/// script's output actually is.
+fn read_answer(stdout: &[u8]) -> Answer {
+    let Ok(parsed) = serde_json::from_slice::<Value>(stdout) else {
+        return Answer::Unknown;
+    };
+    // Said plainly by the script: a reason means it never got to ask. Note that
+    // a JSON null is NOT a reason - `as_str` declines it - which is what keeps
+    // a genuine "no clip for this track" recordable.
+    if parsed.get("error").and_then(|e| e.as_str()).is_some() {
+        return Answer::Unknown;
+    }
+    match parsed
         .get("url")
         .and_then(|u| u.as_str())
         .filter(|u| u.starts_with("http"))
-        .map(|u| u.to_string())
+    {
+        Some(u) => Answer::Found(u.to_string()),
+        None => Answer::Absent,
+    }
 }
 
 /// stdlib-only Python: extract secret -> mint logged-in token -> match track ->
@@ -432,8 +531,11 @@ UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like 
 CACHE = os.path.join(tempfile.gettempdir(), "afm_spotify_canvas.json")
 CANVAS_HASH = "575138ab27cd5c1b3e54da54d0a7cc8d85485402de26340c2145f0f6bb5e7a9f"
 
-def out(url):
-    print(json.dumps({"url": url})); sys.exit(0)
+def out(url, error=None):
+    # `error` is the difference between "Spotify says this track has no Canvas"
+    # and "we never got to ask". The caller writes the first one down for a
+    # month; the second must not be recorded at all.
+    print(json.dumps({"url": url, "error": error})); sys.exit(0)
 
 def http(url, headers=None, data=None):
     r = urllib.request.Request(url, data=data, headers=headers or {"User-Agent": UA})
@@ -547,18 +649,25 @@ def api_token(client_id, client_secret):
     return tok
 
 def find_track(tok, title, artist):
+    # Returns (track_id, error). A 429 - which this endpoint hands out readily,
+    # and the sweep asks it a few hundred times an hour - used to be swallowed
+    # and returned as "no such track", which the caller then recorded as "this
+    # song has no Canvas" for thirty days.
     q = urllib.parse.quote('track:"%s" artist:"%s"' % (title, artist))
     url = "https://api.spotify.com/v1/search?q=%s&type=track&limit=5" % q
     try:
         d = json.load(http(url, headers={"User-Agent": UA, "Authorization": "Bearer " + tok}))
-    except Exception:
-        return None
+    except urllib.error.HTTPError as e:
+        return None, "search http %d" % e.code
+    except Exception as e:
+        return None, "search %s" % type(e).__name__
     items = (d.get("tracks") or {}).get("items") or []
     tl, al = title.lower(), artist.lower()
     for it in items:
         if it.get("name", "").lower() == tl and any(a.get("name", "").lower() == al for a in it.get("artists", [])):
-            return it.get("id")
-    return items[0].get("id") if items else None
+            return it.get("id"), None
+    # No items is a real answer: the catalogue does not have this recording.
+    return (items[0].get("id") if items else None), None
 
 def get_canvas(tok, track_id):
     v = urllib.parse.quote(json.dumps({"trackUri": "spotify:track:" + track_id}))
@@ -566,35 +675,93 @@ def get_canvas(tok, track_id):
     url = "https://api-partner.spotify.com/pathfinder/v1/query?operationName=canvas&variables=%s&extensions=%s" % (v, ext)
     try:
         d = json.load(http(url, headers={"User-Agent": UA, "Authorization": "Bearer " + tok, "App-Platform": "WebPlayer", "Accept": "application/json"}))
-    except Exception:
-        return None
+    except urllib.error.HTTPError as e:
+        return None, "canvas http %d" % e.code
+    except Exception as e:
+        return None, "canvas %s" % type(e).__name__
+    # A rejected persisted query answers 200 with an errors array, so it would
+    # otherwise read as "this track has no clip" for every track at once.
+    if isinstance(d, dict) and d.get("errors"):
+        return None, "canvas query rejected"
     can = ((d.get("data") or {}).get("trackUnion") or {}).get("canvas") or {}
     for k in ("url", "uri"):
         u = can.get(k)
         if isinstance(u, str) and u.startswith("http"):
-            return u
-    return None
+            return u, None
+    # Spotify answered, and this track simply has no Canvas. The one answer
+    # actually worth remembering.
+    return None, None
 
 def main():
     try:
         req = json.loads(sys.stdin.read() or "{}")
         sp_dc = req.get("sp_dc"); title = req.get("title"); artist = req.get("artist")
-        if not sp_dc or not title: out(None)
+        if not sp_dc or not title: out(None, "not configured")
         tok = get_token(sp_dc)
-        if not tok: out(None)
+        # No token means the cookie has expired or Spotify changed the mint.
+        # Nothing was learned about this track, so nothing may be written down.
+        if not tok: out(None, "no web token")
         # Look the track up with an ordinary API token when one is configured,
         # falling back to the web token so a server without a client secret
         # behaves exactly as it did before.
         search_tok = api_token(req.get("client_id"), req.get("client_secret")) or tok
-        tid = find_track(search_tok, title, artist)
-        if not tid and search_tok is not tok:
-            tid = find_track(tok, title, artist)
+        tid, err = find_track(search_tok, title, artist)
+        if (not tid) and search_tok is not tok:
+            tid2, err2 = find_track(tok, title, artist)
+            if tid2 or not err2:
+                tid, err = tid2, err2
+        if err: out(None, err)
+        # Searched successfully and the catalogue has nothing: a real answer.
         if not tid: out(None)
         # The canvas query itself MUST use the web-player token; an ordinary
         # OAuth token is 403'd by pathfinder.
-        out(get_canvas(tok, tid))
-    except Exception:
-        out(None)
+        url, err = get_canvas(tok, tid)
+        out(url, err)
+    except Exception as e:
+        # An unexpected crash teaches nothing about the track either.
+        out(None, "crashed: %s" % type(e).__name__)
 
 main()
 "#;
+
+#[cfg(test)]
+mod answers {
+    use super::*;
+
+    /// The distinction the thirty-day miss depends on. Before this, all four of
+    /// these read as "this song has no Canvas".
+    #[test]
+    fn only_a_real_no_is_recorded_as_one() {
+        assert!(matches!(
+            read_answer(br#"{"url": "https://canvaz.scdn.co/x.mp4", "error": null}"#),
+            Answer::Found(_)
+        ));
+        // Spotify answered, and there is no clip: worth writing down.
+        assert!(matches!(
+            read_answer(br#"{"url": null, "error": null}"#),
+            Answer::Absent
+        ));
+        // The pipeline never got an answer. Nothing to write down.
+        for excuse in [
+            &br#"{"url": null, "error": "search http 429"}"#[..],
+            &br#"{"url": null, "error": "no web token"}"#[..],
+            &br#"{"url": null, "error": "canvas query rejected"}"#[..],
+            &br#"{"url": null, "error": "crashed: URLError"}"#[..],
+        ] {
+            assert!(
+                matches!(read_answer(excuse), Answer::Unknown),
+                "a failure must never be filed as a fact: {}",
+                String::from_utf8_lossy(excuse)
+            );
+        }
+        // Garbage on stdout teaches nothing either.
+        assert!(matches!(read_answer(b"not json"), Answer::Unknown));
+    }
+
+    /// A miss stands for a month, so the old shape hid a clip for thirty days
+    /// every time Spotify was merely busy.
+    #[test]
+    fn a_miss_is_a_month() {
+        assert_eq!(MISS_RETRY_MS, 30 * 24 * 60 * 60 * 1000);
+    }
+}
