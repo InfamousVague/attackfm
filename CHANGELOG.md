@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.147
+
+- Buttons no longer stay lit after you tap them. A touch has no way to end a hover, so the phone applied one and then had nothing with which to take it away, and the paint sat there until you tapped somewhere else. Every hover style in the app and the kit — 190 of them, one of which was guarded — now applies only where there is a pointer to hover with. Keyboard focus rings are untouched
+- Mixes get the top bar that fades in as you scroll, the one playlists have. A mix used to open in a panel rather than as a page, so when it became a page it inherited a playlist's whole look and none of the wiring behind the bar above it
+
 ## 0.4.146
 
 - A New Music Mix playlist now lives beside the charts, in a Made for you folder: songs new to you that are already on the server - what the collector found for you, plus the newest arrivals you haven't played. Refreshed daily
