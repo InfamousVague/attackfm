@@ -365,3 +365,63 @@ img.artPop:not([data-loading]) {
   }
 }
 
+
+/* The date's intro: the deck holds while the DJ says its piece, behind a
+   full blur - the read-along's dress on the date's door. The overlay IS the
+   pause; nothing under it plays until it lifts. Lines wait dim and light up
+   as their clip is spoken, the same one-line-lit grammar npBookWords uses. */
+.dateIntro {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--glacier-space-4);
+  padding: var(--glacier-space-4);
+  padding-bottom: calc(var(--glacier-space-4) + env(safe-area-inset-bottom, 0px));
+  background: color-mix(in oklab, var(--glacier-bg) 62%, transparent);
+  -webkit-backdrop-filter: blur(26px) saturate(1.15);
+  backdrop-filter: blur(26px) saturate(1.15);
+}
+
+.dateIntro__eyebrow {
+  font-size: var(--glacier-font-size-xs);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--glacier-accent-text);
+}
+
+.dateIntro__lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-4);
+  max-inline-size: 34rem;
+}
+
+.dateIntro__line {
+  font-size: clamp(1.05rem, 2.6vw + 0.8rem, 1.45rem);
+  line-height: 1.45;
+  font-weight: 600;
+  text-align: center;
+  text-wrap: balance;
+  color: var(--glacier-text-muted);
+  opacity: 0.55;
+  transition: opacity 0.5s ease, color 0.5s ease;
+}
+
+.dateIntro__line.is-live {
+  color: var(--glacier-text);
+  opacity: 1;
+}
+
+.dateIntro__skip {
+  margin-top: var(--glacier-space-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dateIntro__line {
+    transition: none;
+  }
+}

@@ -33,9 +33,10 @@ import {
 import { CardFace } from './DateCardFace.tsx';
 import { loadAudioUrl, type Track } from '../core/tauri.ts';
 import { fireNativeHaptic } from '../core/haptics.ts';
-import { speakBeats } from '../booth/djVoice.ts';
+import { createPortal } from 'react-dom';
+import { hushBeats, speakBeats } from '../booth/djVoice.ts';
 import { dateVoiceEnabled } from './dateVoice.ts';
-import { fetchDateBriefing } from '../api/curator.ts';
+import { fetchDateBriefing, type DateBriefingSong } from '../api/curator.ts';
 import { makeRatchet } from '../ux/ratchet.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
 
@@ -203,13 +204,43 @@ export function DatePage() {
   const upcoming = deck[1] ?? null;
 
   /*
-   * The DJ's word on the way in: one spoken line for each of the next three
-   * cards - what they are, and why the collector chose them - through the
-   * same mouth, duck and supersede the set beats ride. Once per visit, on
-   * its own switch (Settings > AI > Music Date briefing); the deck
-   * advancing does not restart the tour guide.
+   * The intro: walking in, the deck HOLDS - no snippet plays - while a full
+   * blur overlay (the read-along's dress) shows the DJ's word on the next
+   * three cards, each line lighting as its clip is spoken. Skip intro, or
+   * the last word, lifts the overlay and the first card starts. Once per
+   * visit, on its own switch (Settings > AI > Music Date briefing).
    */
+  type Intro = { phase: 'loading' } | { phase: 'talking'; songs: DateBriefingSong[]; live: number };
+  const [intro, setIntro] = useState<Intro | null>(() =>
+    dateVoiceEnabled() ? { phase: 'loading' } : null,
+  );
   const briefed = useRef(false);
+  const introRef = useRef<Intro | null>(intro);
+  useEffect(() => {
+    introRef.current = intro;
+  }, [intro]);
+  // A door that cannot open must not hold the room: an empty deck never
+  // fetches, and a hub that answers slowly answers a page that moved on.
+  useEffect(() => {
+    if (intro?.phase !== 'loading') return;
+    const t = window.setTimeout(() => {
+      setIntro((cur) => (cur && cur.phase === 'loading' ? null : cur));
+    }, 6000);
+    return () => window.clearTimeout(t);
+  }, [intro]);
+  // Unmount-only: the page leaving mid-sentence must not leave the voice
+  // talking to the library, and the async intro below must stop moving state.
+  const aliveForIntro = useRef(true);
+  useEffect(() => {
+    // Re-armed in the body, not only initialised: StrictMode's dev
+    // double-mount runs the cleanup once against the surviving instance,
+    // and a ref poisoned false made the intro refuse to open forever.
+    aliveForIntro.current = true;
+    return () => {
+      aliveForIntro.current = false;
+      hushBeats();
+    };
+  }, []);
   useEffect(() => {
     if (briefed.current || !session || deck.length === 0) return;
     if (!dateVoiceEnabled()) return;
@@ -218,24 +249,44 @@ export function DatePage() {
       .slice(0, 3)
       .map((t) => trackIdFromPath(t.path))
       .filter((n): n is number => n != null);
-    void fetchDateBriefing(session, ids).then((songs) => {
-      const clips = songs.flatMap((song) => song.voice);
-      if (clips.length > 0) void speakBeats(session, clips);
-    });
+    void (async () => {
+      const songs = await fetchDateBriefing(session, ids).catch(() => [] as DateBriefingSong[]);
+      if (!aliveForIntro.current) return;
+      // Skipped, or timed out, while the hub was thinking: the room moved on.
+      if (introRef.current?.phase !== 'loading') return;
+      if (songs.length === 0) {
+        setIntro(null);
+        return;
+      }
+      setIntro({ phase: 'talking', songs, live: 0 });
+      const clips = songs.flatMap((song, seat) => song.voice.map((id) => ({ id, seat })));
+      if (clips.length > 0) {
+        await speakBeats(
+          session,
+          clips.map((c) => c.id),
+          (index) => {
+            if (!aliveForIntro.current) return;
+            const seat = clips[index]?.seat;
+            if (seat === undefined) return;
+            setIntro((cur) => (cur && cur.phase === 'talking' ? { ...cur, live: seat } : cur));
+          },
+        );
+      } else {
+        // A hub with no voice still owes her the synopsis: pace the lines
+        // by reading time instead of by clip.
+        for (let seat = 0; seat < songs.length; seat += 1) {
+          if (!aliveForIntro.current) return;
+          setIntro((cur) => (cur && cur.phase === 'talking' ? { ...cur, live: seat } : cur));
+          await new Promise((r) => setTimeout(r, 3500));
+        }
+      }
+      if (aliveForIntro.current) setIntro(null);
+    })();
   }, [session, deck]);
 
-  // The snippets answer the duck like the player's decks do: the briefing
-  // (or a DJ line from anywhere) lowers the date's own graph, then lifts it.
-  useEffect(() => {
-    const onDuck = (e: Event) => {
-      const on = Boolean((e as CustomEvent).detail?.on);
-      meterRef.current?.rampVolume(on ? 0.07 : 1, 0.18);
-    };
-    window.addEventListener('afm-duck', onDuck);
-    return () => {
-      window.removeEventListener('afm-duck', onDuck);
-      meterRef.current?.rampVolume(1, 0.05);
-    };
+  const skipIntro = useCallback(() => {
+    hushBeats();
+    setIntro(null);
   }, []);
 
   // The card mid-fling, pinned OUT of the deck so the animation owns it while
@@ -388,8 +439,11 @@ export function DatePage() {
   // own next song inside the gesture; this only acts when the active element
   // is not already on the right one.
   useEffect(() => {
+    // The intro holds the decks: nothing plays under the briefing, and the
+    // overlay lifting is itself the cue that starts the first card.
+    if (intro !== null) return;
     if ((activeRef.current?.path ?? null) !== (current?.path ?? null)) speak(current);
-  }, [current, speak]);
+  }, [current, speak, intro]);
 
   /*
    * The stalled-introduction watchdog.
@@ -713,6 +767,30 @@ export function DatePage() {
 
   return (
     <div className="homePage datePage">
+      {intro !== null &&
+        createPortal(
+          <div className="dateIntro" role="dialog" aria-label="Your date briefing">
+            <p className="dateIntro__eyebrow">Tonight&rsquo;s dates</p>
+            <div className="dateIntro__lines">
+              {intro.phase === 'loading' ? (
+                <p className="dateIntro__line is-live">Reading the matchbook&hellip;</p>
+              ) : (
+                intro.songs.map((song, seat) => (
+                  <p
+                    key={song.trackId}
+                    className={`dateIntro__line${seat === intro.live ? ' is-live' : ''}`}
+                  >
+                    {song.say}
+                  </p>
+                ))
+              )}
+            </div>
+            <Button variant="ghost" className="dateIntro__skip" onClick={skipIntro}>
+              Skip intro
+            </Button>
+          </div>,
+          document.body,
+        )}
       {current || outgoing ? (
         <>
           {/* How many are still waiting, and how this sitting is going. The

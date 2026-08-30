@@ -141,20 +141,35 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
    the duck lifts exactly once, by whichever call is still current. */
 let speaking = 0;
 
+/** Stop whatever the mouth is saying, mid-word, and lift the duck - for a
+ *  Skip button, or a surface unmounting under its own narration. */
+export function hushBeats(): void {
+  speaking += 1;
+  onAir?.pause();
+  duck(false);
+}
+
 /** Speak a block's beats in order, ducking the music underneath. The caller
  *  owns the preference gate: the set bridge checks the DJ switch, the date
- *  briefing its own - one mouth, two consents. */
-export async function speakBeats(session: ServerSession, ids: string[]): Promise<void> {
+ *  briefing its own - one mouth, two consents. `onBeat` hears each clip's
+ *  ORIGINAL index as it starts, failed fetches skipped - a read-along can
+ *  light the line being spoken. */
+export async function speakBeats(
+  session: ServerSession,
+  ids: string[],
+  onBeat?: (index: number) => void,
+): Promise<void> {
   if (ids.length === 0) return;
   const mine = ++speaking;
   // Whoever was mid-sentence stops NOW - with lore on every track, letting
   // the old clip run to its natural end means two DJs talking at once.
   onAir?.pause();
-  const urls = (await Promise.all(ids.map((id) => clipUrl(session, id)))).filter(
-    (u): u is string => u !== null,
-  );
+  const fetched = await Promise.all(ids.map((id) => clipUrl(session, id)));
+  const takes = fetched
+    .map((url, index) => ({ url, index }))
+    .filter((t): t is { url: string; index: number } => t.url !== null);
   if (mine !== speaking) return;
-  if (urls.length === 0) {
+  if (takes.length === 0) {
     // This call owns the floor but has nothing to say: lower the lights the
     // superseded speaker was told not to touch, or the duck stays stuck.
     duck(false);
@@ -162,11 +177,12 @@ export async function speakBeats(session: ServerSession, ids: string[]): Promise
   }
   duck(true);
   try {
-    for (const [i, url] of urls.entries()) {
+    for (const [n, take] of takes.entries()) {
       if (mine !== speaking) return;
-      if (i > 0) await sleep(240);
+      if (n > 0) await sleep(240);
       if (mine !== speaking) return;
-      await playOne(url);
+      onBeat?.(take.index);
+      await playOne(take.url);
     }
   } finally {
     // The superseding call has its own duck(true) in flight; only the call
