@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { searchCatalog, type SearchResult, type ServerSession } from '../server.ts';
+import { addPendingLike, searchCatalog, type SearchResult, type ServerSession } from '../server.ts';
 import type { OwnedIndex } from '../library/owned.ts';
 import { IMPORTER_PLUGIN_ID, type AcquireValue } from '../../plugins/runtime.tsx';
 import type { DownloadsContextValue } from '../../plugins/importsBridge.ts';
@@ -8,8 +8,9 @@ import { importable, resolveImportable } from './resolveImport.ts';
 import type { AcquireTarget } from '../../plugins/types.ts';
 import { isAbout } from './searchModel.tsx';
 
-/** What a tapped catalogue row is doing. */
-export type AddingState = Record<string, 'finding' | 'added' | 'missing'>;
+/** What a tapped catalogue row is doing. 'liked' is 'added' wearing a
+ *  heart: the download is queued AND the like is promised. */
+export type AddingState = Record<string, 'finding' | 'added' | 'liked' | 'missing'>;
 
 /**
  * The remote half of the search page: the debounced catalogue fetch, the
@@ -40,7 +41,7 @@ export function useCatalogSearch({
   catalog: SearchResult[] | null;
   outside: SearchResult[];
   adding: AddingState;
-  acquireResult: (r: SearchResult) => Promise<void>;
+  acquireResult: (r: SearchResult, opts?: { like?: boolean }) => Promise<void>;
 } {
   // null while the catalogue fetch for a query is in flight, [] when it came
   // back empty.
@@ -104,8 +105,12 @@ export function useCatalogSearch({
    * Either way the link goes down the importer's own queue when it is running:
    * a tap on Add should start a download, not open a chooser.
    */
-  const acquireResult = async (r: SearchResult) => {
-    if (adding[r.id]) return;
+  const acquireResult = async (r: SearchResult, opts?: { like?: boolean }) => {
+    if (adding[r.id] && adding[r.id] !== 'added') return;
+    // A like on a row already added upgrades it; anything else re-tapped is done.
+    if (adding[r.id] === 'added' && !opts?.like) return;
+    const like = Boolean(opts?.like);
+    const done = like ? 'liked' : 'added';
     const kind = r.kind === 'album' ? 'album' : 'track';
     const hand = async (title: string, url: string) => {
       const target: AcquireTarget = { kind, title, artist: r.subtitle, url };
@@ -118,22 +123,37 @@ export function useCatalogSearch({
           // A single tapped track opens Now Playing on it, downloading, and
           // plays when it lands; an album is a set, so it just queues. The
           // placeholder wears the ROW's own art/name, even if the download URL
-          // came from a resolved twin.
-          if (kind === 'track') {
+          // came from a resolved twin. A LIKE is different: hearting a song is
+          // not asking to hear it this second, so now-playing stays where it is.
+          if (kind === 'track' && !like) {
             playPending?.(
               placeholderTrack({ jobId: job.id, title: r.title, artist: r.subtitle, artwork: r.cover }),
               job.id,
             );
           }
         } catch {
-          // Enqueue refused; the row's 'added' state is the only feedback.
+          // Enqueue refused; the row's state is the only feedback.
         }
       } else acquire.acquire(target);
+      /*
+       * The promise half of the heart: written down on the server AFTER the
+       * download is queued, keyed by the RESOLVED name (closest to the tags
+       * the landed file will carry - the folded identity forgives the rest).
+       * The sweep on the hub turns it into a real favourite when the song
+       * arrives, so Liked fills in even if this device goes in a pocket.
+       */
+      if (like && server) {
+        try {
+          await addPendingLike(server, r.subtitle, title);
+        } catch {
+          // The download still runs; the heart just was not written down.
+        }
+      }
     };
 
     if (importable(r)) {
       await hand(r.title, r.url);
-      setAdding((prev) => ({ ...prev, [r.id]: 'added' }));
+      setAdding((prev) => ({ ...prev, [r.id]: done }));
       return;
     }
     if (!server) return;
@@ -158,7 +178,7 @@ export function useCatalogSearch({
       return;
     }
     await hand(found.title, found.url);
-    setAdding((prev) => ({ ...prev, [r.id]: 'added' }));
+    setAdding((prev) => ({ ...prev, [r.id]: done }));
   };
 
   return { catalog, outside, adding, acquireResult };

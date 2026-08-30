@@ -422,6 +422,16 @@ export function SearchPage({
     [acquire, onOpenArtist, onOpenPlaylist, onPlay, songQueue, touch],
   );
 
+  /** The heart on a catalogue row: same pull as Add, plus the promised
+   *  favourite - and no now-playing hijack, because a like is not a listen. */
+  const like = useCallback(
+    (item: Item) => {
+      if (item.t !== 'catalog') return;
+      void acquireResult(item.result, { like: true });
+    },
+    [acquireResult],
+  );
+
   /* ----------------------------------------------------------- sections --- */
 
   /** True while the page is showing everything rather than one promoted kind. */
@@ -762,6 +772,7 @@ export function SearchPage({
     cursor,
     setCursor,
     open,
+    like,
     queue,
     adding,
     acquire,

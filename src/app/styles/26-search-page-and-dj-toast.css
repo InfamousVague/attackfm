@@ -517,3 +517,82 @@ body:has(.npScreen[data-docked]) .djToast {
   color: var(--glacier-text);
 }
 
+
+/* The catalogue heart: like a song that is not here yet. Unlike the song
+   rows' hover verbs this one is ALWAYS shown - it exists for a thumb. */
+.searchRow__verbs[data-always] {
+  opacity: 1;
+}
+
+.searchRowSeat--slim > .searchRow {
+  padding-inline-end: 2.75rem;
+}
+
+.searchVerb--heart[aria-pressed='true'] {
+  color: var(--glacier-accent-solid);
+}
+
+/* Hearts still on the wire, above the Liked table: promised on Discover,
+   kept by the server the moment the download lands. */
+.likedPending {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  margin-block-end: var(--glacier-space-2);
+  padding: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface-sunken);
+}
+
+.likedPending__head {
+  font-size: var(--glacier-font-size-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--glacier-text-muted);
+}
+
+.likedPending__row {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  min-block-size: 2rem;
+}
+
+.likedPending__text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.likedPending__song {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.likedPending__artist {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.likedPending__drop {
+  display: grid;
+  place-items: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border: none;
+  border-radius: var(--glacier-radius-sm);
+  background: none;
+  color: var(--glacier-text-muted);
+  cursor: pointer;
+}
+
+.likedPending__drop:hover {
+  background: var(--glacier-surface-raised);
+  color: var(--glacier-text);
+}

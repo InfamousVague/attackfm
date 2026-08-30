@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.145
+
+- Songs on Discover now carry a heart: one tap likes it AND starts the download, and it walks straight into Liked songs - an "on the way" band shows what's still on the wire, and each becomes a real liked song the moment it lands
+- Liking never hijacks what you're playing; the plain Add still does its now-playing trick
+
 ## 0.4.144
 
 - The date briefing is a proper intro now: walking in, the deck holds while a full-screen blur shows your next three dates, each line lighting up as the DJ speaks it - with a Skip intro button when you'd rather just meet them

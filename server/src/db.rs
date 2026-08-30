@@ -730,6 +730,19 @@ CREATE TABLE IF NOT EXISTS dj_sets (
 -- listener (lore belongs to the record, not the person). An empty body is a
 -- negative cache: the model was asked and did not know - kept so sets do not
 -- re-ask every press, retried once it has aged out (the model may improve).
+-- A like promised before the song exists: hearted on Discover while the
+-- download is still in flight. Keyed by the folded artist+title identity the
+-- discovery layer already uses; the collector's sweep turns each row into a
+-- real favourite the moment a matching track lands, however it lands.
+CREATE TABLE IF NOT EXISTS pending_likes (
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  k          TEXT NOT NULL,
+  title      TEXT NOT NULL,
+  artist     TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, k)
+);
+
 CREATE TABLE IF NOT EXISTS song_lore (
   track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
   body     TEXT NOT NULL,
@@ -5523,6 +5536,60 @@ impl Db {
         stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
             .map(|rows| rows.filter_map(Result::ok).collect())
             .unwrap_or_default()
+    }
+
+    /// Every pending like on the box: (user_id, k, created_at). The sweep's
+    /// read - it wants everyone's at once.
+    pub fn pending_likes_all(&self) -> Vec<(i64, String, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) =
+            conn.prepare("SELECT user_id, k, created_at FROM pending_likes")
+        else {
+            return Vec::new();
+        };
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// One listener's pending likes, newest first: (k, title, artist, created_at).
+    pub fn pending_likes_for(&self, user_id: i64) -> Vec<(String, String, String, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT k, title, artist, created_at FROM pending_likes
+             WHERE user_id = ?1 ORDER BY created_at DESC",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    pub fn pending_like_put(
+        &self,
+        user_id: i64,
+        k: &str,
+        title: &str,
+        artist: &str,
+    ) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO pending_likes (user_id, k, title, artist, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(user_id, k) DO NOTHING",
+            params![user_id, k, title, artist, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    pub fn pending_like_remove(&self, user_id: i64, k: &str) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "DELETE FROM pending_likes WHERE user_id = ?1 AND k = ?2",
+            params![user_id, k],
+        )?;
+        Ok(())
     }
 
     /// Whether this track is currently one of this listener's waiting
