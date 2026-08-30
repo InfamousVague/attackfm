@@ -24,7 +24,7 @@ import { loadAudioSource, loadAudioUrl, reactivateAudioSession, systemOutputVolu
 import { warmQueue } from './queueBuffer.ts';
 import { isPendingPath } from './pendingPlay.tsx';
 import { isRemotePath } from '../server.ts';
-import { fireFelt, fireNativeHaptic, heartbeatHaptic, HEARTBEATS, HEARTBEAT_EVERY_MS } from '../core/haptics.ts';
+import { fireFelt, fireNativeHaptic, heartbeatHaptic, HEARTBEATS, HEARTBEAT_DUB_MS, HEARTBEAT_EVERY_MS } from '../core/haptics.ts';
 import { noteMediaSilent, serverSeemsDown } from '../api/reachability.ts';
 import { isHeld } from '../downloads/offline.ts';
 import { loadScrubTape } from './scrubTape.ts';
@@ -717,50 +717,58 @@ const RETRY_BACKOFF_MS = [400, 1500, 4000];
      */
     const grand = Math.min(window.innerWidth, window.innerHeight) * 1.2;
     const units = icon.viewBox?.baseVal?.width || 24;
-    for (let i = 0; i < HEARTBEATS; i += 1) {
-      const ghost = icon.cloneNode(true) as SVGSVGElement;
-      ghost.setAttribute('fill', 'none');
-      ghost.setAttribute('aria-hidden', 'true');
-      ghost.setAttribute('width', `${grand}`);
-      ghost.setAttribute('height', `${grand}`);
-      ghost.setAttribute('stroke-width', `${(2.5 * units) / grand}`);
-      // The root's hairline outline must be the only voice in the clone.
-      for (const line of ghost.querySelectorAll('*')) {
-        line.setAttribute('fill', 'none');
-        line.removeAttribute('stroke-width');
-        line.removeAttribute('vector-effect');
+    /*
+     * TWO rings per beat, six in all: a bold one on the lub and a faint
+     * chaser on the dub, the same 140ms behind that the thumb feels - the
+     * ripple is the haptic pulse drawn, thump for thump.
+     */
+    const thumps = [
+      { at: 0, loud: 0.95 },
+      { at: HEARTBEAT_DUB_MS, loud: 0.38 },
+    ];
+    for (let beat = 0; beat < HEARTBEATS; beat += 1) {
+      for (const thump of thumps) {
+        const ghost = icon.cloneNode(true) as SVGSVGElement;
+        ghost.setAttribute('fill', 'none');
+        ghost.setAttribute('aria-hidden', 'true');
+        ghost.setAttribute('width', `${grand}`);
+        ghost.setAttribute('height', `${grand}`);
+        ghost.setAttribute('stroke-width', `${(2.5 * units) / grand}`);
+        // The root's hairline outline must be the only voice in the clone.
+        for (const line of ghost.querySelectorAll('*')) {
+          line.setAttribute('fill', 'none');
+          line.removeAttribute('stroke-width');
+          line.removeAttribute('vector-effect');
+        }
+        const holder = document.createElement('div');
+        holder.className = 'heartRipple';
+        holder.style.left = `${cx}px`;
+        holder.style.top = `${cy}px`;
+        holder.appendChild(ghost);
+        document.body.appendChild(holder);
+        const delay = beat * HEARTBEAT_EVERY_MS + thump.at;
+        // Size and fade on two clocks: the swell gets the sharp decelerating
+        // ease, but that same ease on opacity killed the heart a third of
+        // the way out - the fade stays gentler so the outline is still
+        // there to be seen at full spread.
+        const swell = holder.animate(
+          [{ scale: `${seat.width / grand}` }, { scale: '1' }],
+          { duration: 950, delay, easing: 'cubic-bezier(.16,.7,.25,1)' },
+        );
+        holder.animate(
+          [
+            { opacity: 0 },
+            { opacity: thump.loud, offset: 0.12 },
+            { opacity: thump.loud * 0.55, offset: 0.6 },
+            { opacity: 0 },
+          ],
+          { duration: 950, delay, easing: 'linear' },
+        );
+        swell.addEventListener('finish', () => holder.remove());
+        // If the animation dies with the document mid-flight, the node must
+        // not linger as an invisible fixed layer.
+        window.setTimeout(() => holder.remove(), HEARTBEATS * HEARTBEAT_EVERY_MS + 1600);
       }
-      const holder = document.createElement('div');
-      holder.className = 'heartRipple';
-      holder.style.left = `${cx}px`;
-      holder.style.top = `${cy}px`;
-      holder.appendChild(ghost);
-      document.body.appendChild(holder);
-      // Each ring launches ON a lub of the haptic heartbeat - same clock,
-      // same spacing, so what the screen shows is what the thumb feels.
-      const delay = i * HEARTBEAT_EVERY_MS;
-      // Size and fade on two clocks: the swell gets the sharp decelerating
-      // ease, but that same ease on opacity killed the heart a third of the
-      // way out - the fade stays gentler so the outline is still there to
-      // be seen at full spread. Trailing hearts run a touch quieter.
-      const swell = holder.animate(
-        [{ scale: `${seat.width / grand}` }, { scale: '1' }],
-        { duration: 950, delay, easing: 'cubic-bezier(.16,.7,.25,1)' },
-      );
-      const loud = 0.95 - i * 0.22;
-      holder.animate(
-        [
-          { opacity: 0 },
-          { opacity: loud, offset: 0.12 },
-          { opacity: loud * 0.55, offset: 0.6 },
-          { opacity: 0 },
-        ],
-        { duration: 950, delay, easing: 'linear' },
-      );
-      swell.addEventListener('finish', () => holder.remove());
-      // If the animation dies with the document mid-flight, the node must
-      // not linger as an invisible fixed layer.
-      window.setTimeout(() => holder.remove(), HEARTBEATS * HEARTBEAT_EVERY_MS + 1400);
     }
   };
 
