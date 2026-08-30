@@ -67,6 +67,25 @@ const CHART_WINDOW_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 /// How much adoption history a tuning step needs before it moves the dial.
 const TUNE_MIN_SAMPLES: i64 = 5;
 
+/// The date deck every account is entitled to, listening history or not.
+/// Below this floor a user joins the collector's rotation cold.
+const COLD_DECK_FLOOR: i64 = 40;
+
+/// Everyone the collector serves: recent listeners, plus anyone whose date
+/// deck sits under the floor - a brand-new account included. The pool, the
+/// measurement pass and the buying pass all iterate THIS list; iterating
+/// recent listeners alone meant a quiet friend opened Music Date to nothing.
+pub(crate) fn daters(state: &Arc<AppState>) -> Vec<i64> {
+    let since = now_ms() - WINDOW_30D_MS;
+    let mut out = state.db.listeners_since(since);
+    for user in state.db.cold_shelf_users(COLD_DECK_FLOOR) {
+        if !out.contains(&user) {
+            out.push(user);
+        }
+    }
+    out
+}
+
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -254,13 +273,14 @@ async fn pull_cycle(state: &Arc<AppState>) {
         }
     }
 
-    let since = now_ms() - WINDOW_30D_MS;
     let mut raised = 0usize;
+    let mut cold_raised = 0usize;
     // Hungriest first: the listener with the emptiest audition shelf gets the
     // cycle's offers before anyone comfortable. One heavy dater used to see
     // three cards a day while quieter shelves sat full - the round-robin was
-    // fair to accounts and unfair to appetites.
-    let mut listeners = state.db.listeners_since(since);
+    // fair to accounts and unfair to appetites. Cold shelves ride along via
+    // daters(), and their emptiness puts them at the front of this line.
+    let mut listeners = daters(state);
     listeners.sort_by_key(|u| state.db.audition_count(*u));
     for user in listeners {
         let (enabled, exploration) = state.db.collector_state(user);
@@ -289,8 +309,18 @@ async fn pull_cycle(state: &Arc<AppState>) {
         let mut mine = 0usize;
         let mut recent = state.db.pulled_ext_ids(user, now_ms() - CHART_WINDOW_MS).len();
         let mut taken: std::collections::HashSet<String> = std::collections::HashSet::new();
+        // No listening history means no taste to score against - the chart is
+        // the only honest signal, so a cold shelf is stocked chart-first
+        // (the chart seat is already exempt from the taste bar). Cold
+        // shelves share HALF of each pass, never all of it: five empty
+        // accounts out-hunger every real listener by definition, and the
+        // person who asked for faster dates must not fund the promise alone.
+        let cold = state.db.recent_plays(user, 5).is_empty();
+        if cold && cold_raised >= OFFERS_PER_CYCLE / 2 {
+            continue;
+        }
         while mine < PER_LISTENER_PER_CYCLE {
-            let chart_turn = recent % CHART_EVERY == CHART_EVERY - 1;
+            let chart_turn = cold || recent % CHART_EVERY == CHART_EVERY - 1;
             let chart_pick = if chart_turn {
                 let mut charted: Vec<_> = state
                     .db
@@ -351,6 +381,9 @@ async fn pull_cycle(state: &Arc<AppState>) {
             mine += 1;
             recent += 1;
             raised += 1;
+            if cold {
+                cold_raised += 1;
+            }
             if raised >= OFFERS_PER_CYCLE {
                 return;
             }
@@ -733,6 +766,65 @@ pub async fn date_verdict(
 /// liked, minus anyone just passed on. It answers immediately - a harvest walks
 /// a catalogue over tens of seconds and nobody should hold a request open for
 /// it - and the work runs behind.
+/// `GET /api/date/briefing?ids=1,2,3` - the DJ's word on the next few date
+/// cards: one short spoken line per song, its title and the collector's own
+/// reason for choosing it. Text is assembled from facts already on file (the
+/// pull's reason line - the model wrote it at buy time when a model exists),
+/// so this costs no model call; the voice rides the same cached-clip
+/// machinery as the DJ's set beats, minted behind the reply.
+pub async fn date_briefing(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let caller =
+        crate::auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let ids: Vec<i64> = q
+        .get("ids")
+        .map(String::as_str)
+        .unwrap_or("")
+        .split(',')
+        .filter_map(|v| v.trim().parse::<i64>().ok())
+        .take(3)
+        .collect();
+    let mut songs: Vec<serde_json::Value> = Vec::new();
+    let mut jobs: Vec<crate::voice::Beat> = Vec::new();
+    let mut seat = 0usize;
+    for id in ids {
+        // Only the caller's own waiting auditions get spoken about.
+        if !state.db.audition_of(id, caller.id) {
+            continue;
+        }
+        let Some(t) = state.db.track(id) else { continue };
+        let opener = match seat {
+            0 => "First up on your date:",
+            1 => "Then,",
+            _ => "And after that,",
+        };
+        let mut say = format!("{opener} {} by {}.", t.title, t.artist);
+        if let Some(reason) = state.db.pull_reason_for_track(caller.id, id) {
+            let mut reason: String = reason.chars().take(180).collect();
+            if !reason.ends_with(['.', '!', '?']) {
+                reason.push('.');
+            }
+            say.push(' ');
+            say.push_str(&reason);
+        }
+        let mut voice: Vec<String> = Vec::new();
+        if crate::voice::enabled() {
+            let beat = crate::voice::beat(&say);
+            voice.push(beat.id.clone());
+            jobs.push(beat);
+        }
+        songs.push(serde_json::json!({ "trackId": id, "say": say, "voice": voice }));
+        seat += 1;
+    }
+    if !jobs.is_empty() {
+        crate::voice::mint_behind(&state, jobs);
+    }
+    Ok(Json(serde_json::json!({ "songs": songs })))
+}
+
 pub async fn date_done(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,

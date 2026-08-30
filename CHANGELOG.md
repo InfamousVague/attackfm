@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.143
+
+- Walking into Music Date, the DJ now tells you about your next three dates - what they are and why the collector picked them - in its own voice, ducked under the snippets. Turn it off any time in Settings > AI > Music Date briefing
+- Music Date also stocks the shelf for brand-new accounts now: no listening history yet just means the chart leads until your taste shows up
+
 ## 0.4.142
 
 - The like's heartbeat settles at two beats - dum-dum, dum-dum - rings, pumps and thumps all together

@@ -91,8 +91,7 @@ pub async fn cycle(state: &Arc<AppState>) {
     }
     let _ = state.db.meta_set(meta_key(), &now.to_string());
 
-    let since = now - 30 * 86_400_000;
-    for user in state.db.listeners_since(since) {
+    for user in crate::collector::daters(state) {
         fan_to(state, user, &found);
     }
 }

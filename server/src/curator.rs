@@ -1579,6 +1579,24 @@ async fn discovery_cycle(state: &Arc<AppState>) -> bool {
         // curate instead of narrating under a five-second budget.
         crate::vibes::cycle(state, user).await;
     }
+    /*
+     * The cold shelves: accounts with no recent listening whose date decks
+     * sit under the floor. They get the DISCOVERY half only - dedupe and
+     * measurement, so their chart candidates become offerable - and none of
+     * the taste layer (mood, stations, vibe banks), which has nothing to
+     * read and would just occupy the model for an empty room.
+     */
+    let heard: std::collections::HashSet<i64> =
+        state.db.listeners_since(since).into_iter().collect();
+    for user in crate::collector::daters(state) {
+        if heard.contains(&user) {
+            continue;
+        }
+        crate::discovery::prune_owned(state, user);
+        if crate::discovery::listen_cycle(state, user).await {
+            worked = true;
+        }
+    }
     worked
 }
 
