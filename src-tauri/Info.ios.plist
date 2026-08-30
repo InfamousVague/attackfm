@@ -144,6 +144,12 @@
 	<!-- Why the app may open the camera: reading the "link a device" QR shown
 	     by another signed-in device. The camera is never used otherwise, and
 	     the sign-in screen falls back to a typed code where it is unavailable. -->
+	<!-- The microphone exists for one sentence at a time: the Booth's
+	     "tell the DJ" button records a short clip and sends it to your own
+	     server, which turns it into text there. Nothing records unless that
+	     button is held, and the clip goes only to the server you signed into. -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>AttackFM uses the microphone only when you press the DJ’s talk button, to hear what music you ask for.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>AttackFM uses the camera only to scan QR codes: signing in from another device you own, and adding a friend from their code.</string>
 </dict>

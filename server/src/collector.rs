@@ -453,7 +453,7 @@ pub(crate) async fn top_up(state: &Arc<AppState>, user: i64) -> i64 {
 
 /// Resolve a candidate to a link the importer takes and raise the job.
 /// True when a job went up (whatever becomes of it).
-async fn buy(state: &Arc<AppState>, user: i64, d: &DiscoveryRow, charted: bool) -> bool {
+pub(crate) async fn buy(state: &Arc<AppState>, user: i64, d: &DiscoveryRow, charted: bool) -> bool {
     // Discovery candidates carry Deezer links, which the importer refuses as
     // primary input - the same dead end the artist page had, solved the same
     // way: find the Spotify twin by name and hand over that.

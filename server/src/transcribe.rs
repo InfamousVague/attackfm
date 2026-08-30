@@ -47,7 +47,7 @@ fn now_ms() -> i64 {
 /// `whisper-cli` is what the current formula installs; older builds called the
 /// same program `main`, which is too generic a name to go looking for on a
 /// PATH - so it is only accepted from an explicit override.
-fn whisper_bin() -> Option<PathBuf> {
+pub(crate) fn whisper_bin() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("AFM_WHISPER_BIN") {
         let p = PathBuf::from(p);
         if p.is_file() {
@@ -76,7 +76,7 @@ fn whisper_bin() -> Option<PathBuf> {
 /// The model weights. Kept in the DATA directory rather than beside the binary:
 /// it is state the operator chose, it is large, and it should travel with the
 /// rest of the server's data rather than be reinstalled by a package manager.
-fn whisper_model(state: &AppState) -> Option<PathBuf> {
+pub(crate) fn whisper_model(state: &AppState) -> Option<PathBuf> {
     if let Ok(p) = std::env::var("AFM_WHISPER_MODEL") {
         let p = PathBuf::from(p);
         if p.is_file() {

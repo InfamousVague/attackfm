@@ -11,6 +11,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- One sentence at a time: the Booth's talk-to-the-DJ button. The WebView
+         asks per-site on top of this, so the install-time grant alone records
+         nothing. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
