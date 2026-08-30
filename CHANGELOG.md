@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.148
+
+- Hunting for the right recording no longer starts over every time. Closing the box used to cancel five downloads mid-flight and the next open began again from nothing, which is why alternates so often never arrived — they were being cancelled, not failing. A hunt now keeps running while you do something else, and reopening picks up exactly where it got to
+- The two catalogue searches that pick the alternates run at the same time instead of one after the other, so the first download starts a round trip sooner
+- Liked songs — and every song list — gain an on-device column: what is downloaded and will play in a tunnel, sortable so you can bring it all to the top. The little tick beside the title moved into it rather than being shown twice
+
 ## 0.4.147
 
 - Buttons no longer stay lit after you tap them. A touch has no way to end a hover, so the phone applied one and then had nothing with which to take it away, and the paint sat there until you tapped somewhere else. Every hover style in the app and the kit — 190 of them, one of which was guarded — now applies only where there is a pointer to hover with. Keyboard focus rings are untouched

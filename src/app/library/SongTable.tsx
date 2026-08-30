@@ -4,7 +4,7 @@ import {
   type DataGridRow,
   type DataGridSort,
 } from '@glacier/react';
-import { CircleCheck, Clock } from '@glacier/icons';
+import { ArrowDownToLine, CircleCheck, Clock } from '@glacier/icons';
 import { useOnDevice } from '../downloads/useOnDevice.ts';
 import { useMemo, useState, type ReactNode } from 'react';
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
@@ -13,7 +13,7 @@ import { useLibrary } from './library.tsx';
 import { hasLocalLibrary } from '../core/platform.ts';
 import { useDockedSheet, useNarrowViewport } from '../ux/useNarrowViewport.ts';
 import { TrackMenu } from './TrackMenu.tsx';
-import type { Track } from '../core/tauri.ts';
+import { isTauri, type Track } from '../core/tauri.ts';
 import { artSized, trackIdFromPath } from '../server.ts';
 import { useArtLoad } from '../ux/artLoad.ts';
 import placeholderArt from '../../assets/attack-wave.png';
@@ -108,6 +108,31 @@ const COLUMNS: DataGridColumn[] = [
     width: '10rem',
     sortValue: (row) => row.addedAt as number,
     render: (row) => <span className="songMuted">{DATE_FORMAT.format(new Date(row.addedAt as number))}</span>,
+  },
+  {
+    /*
+     * On this device.
+     *
+     * This was a 13px tick tucked beside the song title, which says the same
+     * thing but cannot be SCANNED: you could not run your eye down a list and
+     * see what would survive a tunnel, and you certainly could not sort by it.
+     * As a column it does both, and sorting puts everything you already hold at
+     * the top - which is the question people actually ask of a liked list
+     * before going somewhere without signal.
+     *
+     * Both halves of "on the device" count, pinned and auto-cached alike: to a
+     * listener in a tunnel a file is a file, and which store happens to own it
+     * is the app's business rather than theirs. That is `useOnDevice`.
+     *
+     * The live set is not in scope up here, so render and sortValue are both
+     * replaced below where it is.
+     */
+    key: 'onDevice',
+    header: <ArrowDownToLine size={16} aria-label="On this device" />,
+    align: 'center',
+    width: '3.5rem',
+    sortable: true,
+    render: () => null,
   },
   {
     key: 'duration',
@@ -220,7 +245,13 @@ export function SongTable({
   // most of the row's width and the one part every layout keeps.
   const columns = useMemo<DataGridColumn[]>(
     () =>
-      COLUMNS.filter((col) => !narrow || !NARROW_HIDDEN.has(col.key)).map((col) =>
+      COLUMNS.filter(
+        (col) =>
+          // A browser has no vault, so the column could only ever answer "no"
+          // for every row - a whole column of dashes saying nothing.
+          (col.key !== 'onDevice' || isTauri()) &&
+          (!narrow || !NARROW_HIDDEN.has(col.key)),
+      ).map((col) =>
         // Narrow, the title gives its 50% back and takes what is left instead.
         //
         // That 50% exists to stop a wide table's title being starved by a
@@ -252,6 +283,23 @@ export function SongTable({
                 return <span className="songMuted">{n === undefined ? '' : n.toLocaleString()}</span>;
               },
             }
+          : col.key === 'onDevice'
+          ? {
+              ...col,
+              // Held first when sorted ascending: the useful end of this
+              // question is "what do I already have", not "what am I missing".
+              sortValue: (row) => (onDevice.has(row.id as string) ? 0 : 1),
+              render: (row) =>
+                onDevice.has(row.id as string) ? (
+                  <CircleCheck size={15} className="songLocal" aria-label="On this device" />
+                ) : (
+                  // An em dash rather than an empty cell: a blank reads as "not
+                  // loaded yet" where a dash reads as an answer.
+                  <span className="songMuted" aria-label="Not on this device">
+                    {'\u2014'}
+                  </span>
+                ),
+            }
           : col.key === 'title'
           ? {
               ...col,
@@ -261,13 +309,12 @@ export function SongTable({
                   <div className="songTitleCell">
                     <SongArt artwork={row.artwork as string | null} />
                     <div className="songTitleText">
+                      {/* The on-device mark used to hang here, beside the
+                          name. It has moved out into a column of its own, which
+                          says the same thing and can also be scanned and sorted;
+                          two copies of it on one row was just noise. */}
                       <span className="songTitle">
                         <span className="songTitle__name">{row.title as string}</span>
-                        {/* Spotify's little green promise: this exact file is
-                            on THIS device, playable in a tunnel. */}
-                        {onDevice.has(row.id as string) && (
-                          <CircleCheck size={13} className="songLocal" aria-label="Downloaded" />
-                        )}
                       </span>
                       {onOpenArtist ? (
                         <button
@@ -290,7 +337,10 @@ export function SongTable({
             }
           : col,
       ),
-    [onOpenArtist, narrow, byPath, plays],
+    // onDevice belongs here and was missing: the columns READ it, so without it
+    // a download landing rebuilt nothing and the mark only appeared later, when
+    // some unrelated dependency happened to change.
+    [onOpenArtist, narrow, byPath, plays, onDevice],
   );
 
   // Memoized on the library, not rebuilt per render: the grid memoizes its
