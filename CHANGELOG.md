@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.150
+
+- The DJ's voice waves wobble with real definition now. Each ring visibly churns into an irregular blob as it travels instead of drifting as a barely-dented circle, and a stagger bug that left two of the three rings sharing one timing — so the wobble looked doubled rather than layered — is fixed
+
 ## 0.4.149
 
 - The DJ can hear you. The last chip in the Booth's row is a microphone: tap it, say what you want, tap again — a set steered by your words starts within seconds, and whatever you asked for that the library does not hold starts downloading in the background through the collector, landing as auditions over the next minutes. Speech becomes text on your own server, with the same whisper install read-along uses; nothing is recorded until you press the button, and the clip goes nowhere but your hub. Needs the hub updated, and a fresh app build on phones for the microphone permission
