@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.151
+
+- The Link-a-device card grows a Copy code button, for handing the code to a chat or a terminal instead of reading it off the QR. It copies the bare six characters, flips to "Copied" for a moment, and resets when a new code is minted
+
 ## 0.4.150
 
 - The DJ's voice waves wobble with real definition now. Each ring visibly churns into an irregular blob as it travels instead of drifting as a barely-dented circle, and a stagger bug that left two of the three rings sharing one timing — so the wobble looked doubled rather than layered — is fixed
