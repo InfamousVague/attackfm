@@ -1,0 +1,201 @@
+//! The standing chart playlists: Top Worldwide, Top USA, and friends -
+//! prepared ahead of time and refreshed daily, by request.
+//!
+//! Sources are the editorial charts Deezer maintains in the open (the ids are
+//! verified stable, owned by the "Deezer Charts" account), plus Spotify's
+//! famous chart playlists ATTEMPTED through any connected account - Spotify
+//! has been walling its editorial lists off from API apps, so a fetch that
+//! fails just means that playlist sits this refresh out, silently.
+//!
+//! Each list materialises per listener as an ordinary playlist in a "Charts"
+//! folder, holding the chart's songs that are actually ON this box (library
+//! rows only - never someone's private audition), in chart order. Created
+//! once per listener per list and UPDATED in place forever after; a listener
+//! who deletes one has answered, and it is never rebuilt for them - the
+//! seeded ledger in meta is what remembers.
+
+use crate::AppState;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::time::Duration;
+
+/// Refresh cadence. Twenty hours, same rhythm the vibe bank keeps: "daily"
+/// without a fixed hour, so a restart never doubles a day's work.
+const REFRESH_MS: i64 = 20 * 60 * 60 * 1000;
+/// Politeness between catalogue calls, same as the taste walk's.
+const GAP: Duration = Duration::from_millis(700);
+/// A list materialises once it can offer at least this many songs - an
+/// empty "Top UK" teaches nothing except that the box is not British yet.
+const MIN_MATCHES: usize = 5;
+
+enum Source {
+    /// A Deezer playlist id - the editorial charts account's lists.
+    Deezer(u64),
+    /// A Spotify playlist id, fetched through any connected account.
+    Spotify(&'static str),
+}
+
+/// slug (the ledger key), display name, where it comes from.
+fn sources() -> Vec<(&'static str, &'static str, Source)> {
+    vec![
+        ("top-worldwide", "Top Worldwide", Source::Deezer(3155776842)),
+        ("top-usa", "Top USA", Source::Deezer(1313621735)),
+        ("top-uk", "Top UK", Source::Deezer(1111142221)),
+        ("top-canada", "Top Canada", Source::Deezer(1652248171)),
+        ("top-australia", "Top Australia", Source::Deezer(1313616925)),
+        ("sp-top-global", "Top 50 Global", Source::Spotify("37i9dQZEVXbMDoHDwVN2tF")),
+        ("sp-top-usa", "Top 50 USA", Source::Spotify("37i9dQZEVXbLRQDuF5jeBp")),
+        ("sp-viral-global", "Viral 50 Global", Source::Spotify("37i9dQZEVXbLiRSasKsNU9")),
+        ("sp-todays-top-hits", "Today's Top Hits", Source::Spotify("37i9dQZF1DXcBWIGoYBM5M")),
+    ]
+}
+
+fn clock_key() -> &'static str {
+    "chartlists.fetched_at"
+}
+
+/// The daily pass. Rides the collector's loop; the clock inside makes it a
+/// cheap no-op between refreshes.
+pub async fn cycle(state: &Arc<AppState>) {
+    let now = crate::db::now_ms();
+    let last = state
+        .db
+        .meta_get(clock_key())
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(0);
+    if now - last < REFRESH_MS {
+        return;
+    }
+    // Stamped up front: a half-failed refresh retries tomorrow, not in five
+    // minutes forever - each source already degrades to "skip this time".
+    let _ = state.db.meta_set(clock_key(), &now.to_string());
+
+    // The box's own songs, by folded identity. Library rows only: an
+    // audition is one listener's private maybe, and these playlists are for
+    // everyone.
+    let mut by_key: HashMap<String, i64> = HashMap::new();
+    for (id, artist, title, audition_owner) in state.db.track_identities() {
+        if audition_owner != 0 {
+            continue;
+        }
+        by_key.entry(crate::discovery::key_of(&artist, &title)).or_insert(id);
+    }
+
+    let users: Vec<i64> = state.db.list_users().into_iter().map(|(id, _, _)| id).collect();
+    for (slug, title, source) in sources() {
+        let pairs = match source {
+            Source::Deezer(id) => deezer_pairs(id).await,
+            Source::Spotify(id) => spotify_pairs(state, id).await,
+        };
+        if pairs.is_empty() {
+            continue;
+        }
+        // Chart order, one seat per song even when a chart repeats itself.
+        let mut ids: Vec<i64> = Vec::new();
+        let mut seen: HashSet<i64> = HashSet::new();
+        for (artist, song) in &pairs {
+            if let Some(id) = by_key.get(&crate::discovery::key_of(artist, song)) {
+                if seen.insert(*id) {
+                    ids.push(*id);
+                }
+            }
+        }
+        for user in &users {
+            refresh_for(state, *user, slug, title, &ids);
+        }
+        tokio::time::sleep(GAP).await;
+    }
+}
+
+/// One listener's copy of one list: update in place, create once, and never
+/// resurrect what they deleted.
+fn refresh_for(state: &Arc<AppState>, user: i64, slug: &str, title: &str, ids: &[i64]) {
+    let seeded_key = format!("chartlists.seeded.{user}");
+    let mut seeded: Vec<String> = state
+        .db
+        .meta_get(&seeded_key)
+        .and_then(|v| serde_json::from_str(&v).ok())
+        .unwrap_or_default();
+    let existing = state
+        .db
+        .playlists(user)
+        .into_iter()
+        .find(|p| p.folder == "Charts" && p.name == title);
+    match existing {
+        Some(p) => {
+            // Order changes daily; rewriting an identical list is a no-op
+            // worth skipping so updated_at stays honest.
+            if p.tracks != ids {
+                let _ = state.db.set_playlist_tracks(p.id, ids);
+            }
+        }
+        None => {
+            if seeded.iter().any(|s| s == slug) {
+                // They deleted it; that answer stands.
+                return;
+            }
+            if ids.len() < MIN_MATCHES {
+                return;
+            }
+            if let Ok(pid) = state.db.create_playlist(user, title) {
+                let _ = state.db.set_playlist_meta(
+                    pid,
+                    Some("Refreshed daily from the charts - the songs already on this server."),
+                    Some("Charts"),
+                    None,
+                );
+                let _ = state.db.set_playlist_tracks(pid, ids);
+                seeded.push(slug.to_string());
+                let _ = state
+                    .db
+                    .meta_set(&seeded_key, &serde_json::to_string(&seeded).unwrap_or_default());
+            }
+        }
+    }
+}
+
+/// A Deezer playlist's songs as (artist, title), paged to the end.
+async fn deezer_pairs(id: u64) -> Vec<(String, String)> {
+    let c = crate::discovery::client(20);
+    let mut url = format!("https://api.deezer.com/playlist/{id}/tracks?limit=100");
+    let mut out = Vec::new();
+    loop {
+        let Ok(resp) = c.get(&url).send().await else { break };
+        let Ok(body) = resp.json::<serde_json::Value>().await else { break };
+        for t in body.get("data").and_then(|v| v.as_array()).unwrap_or(&Vec::new()) {
+            let artist = t.pointer("/artist/name").and_then(|v| v.as_str()).unwrap_or("");
+            let title = t.get("title").and_then(|v| v.as_str()).unwrap_or("");
+            if !artist.is_empty() && !title.is_empty() {
+                out.push((artist.to_string(), title.to_string()));
+            }
+        }
+        match body.get("next").and_then(|v| v.as_str()) {
+            Some(next) if !next.is_empty() && out.len() < 400 => url = next.to_string(),
+            _ => break,
+        }
+    }
+    out
+}
+
+/// A Spotify playlist's songs, through the first account that can ask.
+/// Spotify walls editorial lists off from many API apps - an error here is
+/// expected weather, and the playlist simply sits this refresh out.
+async fn spotify_pairs(state: &Arc<AppState>, id: &str) -> Vec<(String, String)> {
+    let Ok(http) = crate::spotify::http_client() else { return Vec::new() };
+    for (user, _, _) in state.db.list_users() {
+        if state.db.spotify_account(user).map(|a| a.refresh_token.is_empty()).unwrap_or(true) {
+            continue;
+        }
+        match crate::spotify::fetch_items(state, user, &http, "playlist", id).await {
+            Ok(items) => {
+                return items
+                    .into_iter()
+                    .filter(|i| !i.artist.is_empty() && !i.title.is_empty())
+                    .map(|i| (i.artist, i.title))
+                    .collect();
+            }
+            Err(_) => return Vec::new(),
+        }
+    }
+    Vec::new()
+}
