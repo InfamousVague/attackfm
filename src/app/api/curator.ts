@@ -112,17 +112,38 @@ export interface PreviewDateCard {
   seed: string;
 }
 
-/** The best measured candidates, ready to date on their thirty seconds. */
+/** The best measured candidates, ready to date on their thirty seconds -
+ *  and how deep the pool runs past the dealt hand, so every surface can
+ *  promise the same number. */
 export async function fetchDateCandidates(
   session: ServerSession,
   count = 25,
-): Promise<PreviewDateCard[]> {
-  const out = await request<{ candidates?: PreviewDateCard[] }>(
+): Promise<{ cards: PreviewDateCard[]; total: number }> {
+  const out = await request<{ candidates?: PreviewDateCard[]; total?: number }>(
     session.url,
     `/api/date/candidates?count=${count}`,
     { token: session.token },
   );
-  return out.candidates ?? [];
+  return { cards: out.candidates ?? [], total: out.total ?? (out.candidates ?? []).length };
+}
+
+/** A FRESH preview URL for one candidate - the stored one carries an
+ *  expiring signature and may be days dead. Null when the catalogue has
+ *  nothing playable any more. */
+export async function fetchDatePreview(
+  session: ServerSession,
+  extId: string,
+): Promise<string | null> {
+  try {
+    const out = await request<{ preview?: string }>(
+      session.url,
+      `/api/date/preview?extId=${encodeURIComponent(extId)}`,
+      { token: session.token },
+    );
+    return out.preview ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** The swipe on a preview date: a keep buys the song, a pass forgets it. */

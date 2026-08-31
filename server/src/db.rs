@@ -3019,6 +3019,15 @@ impl Db {
         }
     }
 
+    /// A fresher preview URL for a pooled candidate - Deezer's carry expiring
+    /// signatures, so the stored one goes stale within days.
+    pub fn update_discovery_preview(&self, user_id: i64, ext_id: &str, preview: &str) {
+        let _ = self.lock().execute(
+            "UPDATE discoveries SET preview = ?3 WHERE user_id = ?1 AND ext_id = ?2",
+            params![user_id, ext_id, preview],
+        );
+    }
+
     /// Track ids the DJ has dealt this listener since `since` - the variety
     /// ledger. A set that can re-deal yesterday's set is a playlist wearing
     /// a DJ's name.

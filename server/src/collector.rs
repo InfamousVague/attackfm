@@ -869,11 +869,15 @@ pub async fn date_candidates(
         .unwrap_or(25)
         .clamp(1, 40);
     let pulled = state.db.pulled_ext_ids(caller.id, now_ms() - FAILED_RETRY_AFTER_MS);
-    let cards: Vec<serde_json::Value> = state
+    let all: Vec<crate::db::DiscoveryRow> = state
         .db
         .top_discoveries(caller.id, 400)
         .into_iter()
         .filter(|d| !d.preview.trim().is_empty() && !pulled.contains(&d.ext_id) && measured(d))
+        .collect();
+    let total = all.len();
+    let cards: Vec<serde_json::Value> = all
+        .into_iter()
         .take(want)
         .map(|d| {
             json!({
@@ -882,7 +886,45 @@ pub async fn date_candidates(
             })
         })
         .collect();
-    Ok(Json(json!({ "candidates": cards })))
+    Ok(Json(json!({ "candidates": cards, "total": total })))
+}
+
+/// `GET /api/date/preview?extId=` - a FRESH preview URL, resolved live.
+/// Deezer's preview links carry expiring signatures, and the pool's stored
+/// copies are up to weeks old - dealing one to the deck froze the card on a
+/// dead source. The card asks here as it warms, and the store is refreshed
+/// on the way through so the next deal starts fresher.
+pub async fn date_preview(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let caller =
+        crate::auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let ext = q.get("extId").map(String::as_str).unwrap_or("");
+    let Some(id) = ext.strip_prefix("deezer:track:").and_then(|v| v.parse::<u64>().ok()) else {
+        return Err((StatusCode::BAD_REQUEST, "not a catalogue track".into()));
+    };
+    let fresh = match crate::discovery::client(12)
+        .get(format!("https://api.deezer.com/track/{id}"))
+        .send()
+        .await
+    {
+        Ok(resp) => resp
+            .json::<serde_json::Value>()
+            .await
+            .ok()
+            .and_then(|v| v.get("preview").and_then(|p| p.as_str()).map(str::to_string))
+            .filter(|p| !p.trim().is_empty()),
+        Err(_) => None,
+    };
+    match fresh {
+        Some(preview) => {
+            state.db.update_discovery_preview(caller.id, ext, &preview);
+            Ok(Json(json!({ "preview": preview })))
+        }
+        None => Err((StatusCode::NOT_FOUND, "the catalogue has no clip for this one".into())),
+    }
 }
 
 #[derive(serde::Deserialize)]
