@@ -931,6 +931,18 @@ pub async fn date_candidates(
         }));
         seat += 1;
     }
+    // The dealt hand's bands get their shelf entries written behind this
+    // reply, so the briefing that follows has something true to say.
+    {
+        let names: Vec<String> = cards
+            .iter()
+            .filter_map(|c| c.get("artist").and_then(|a| a.as_str()).map(str::to_string))
+            .collect();
+        let st = state.clone();
+        tokio::spawn(async move {
+            crate::lore::ensure_artists(&st, &names).await;
+        });
+    }
     Ok(Json(json!({ "candidates": cards, "total": total })))
 }
 
@@ -1025,28 +1037,81 @@ pub async fn date_briefing(
         .filter_map(|v| v.trim().parse::<i64>().ok())
         .take(3)
         .collect();
-    let mut songs: Vec<serde_json::Value> = Vec::new();
-    let mut jobs: Vec<crate::voice::Beat> = Vec::new();
-    let mut seat = 0usize;
+    let ext_ids: Vec<String> = q
+        .get("extIds")
+        .map(String::as_str)
+        .unwrap_or("")
+        .split(',')
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_string)
+        .take(3)
+        .collect();
+
+    // What the cards are, in the deck's own order: landed auditions first,
+    // preview candidates after - (title, artist, the tailored why).
+    let mut cards: Vec<(String, String, String)> = Vec::new();
     for id in ids {
-        // Only the caller's own waiting auditions get spoken about.
         if !state.db.audition_of(id, caller.id) {
             continue;
         }
         let Some(t) = state.db.track(id) else { continue };
+        let why = state.db.pull_reason_for_track(caller.id, id).unwrap_or_default();
+        cards.push((t.title, t.artist, why));
+    }
+    let lanes = state.db.discovery_lanes(caller.id);
+    for ext in &ext_ids {
+        let Some(d) = state.db.discovery_get(caller.id, ext) else { continue };
+        let why = match lanes.get(&d.ext_id).map(|(lane, _)| lane.as_str()) {
+            Some("trending") => "It's on the charts right now.".to_string(),
+            Some("fresh") => "It's a brand-new release.".to_string(),
+            _ if !d.seed.trim().is_empty() => format!("It came up because you play {}.", d.seed),
+            _ => String::new(),
+        };
+        cards.push((d.title, d.artist, why));
+    }
+    cards.truncate(3);
+
+    /*
+     * "Tell me about the BAND, not just why it's here": the artist shelf
+     * leads when it knows the act - who they are, where from, what they're
+     * known for - and the tailored why becomes the garnish. The shelf fills
+     * behind this very request, so a band unknown at first ask is usually
+     * spoken for by the next visit.
+     */
+    let artists: Vec<String> = cards.iter().map(|(_, a, _)| a.clone()).collect();
+    let band = crate::lore::known_artists(&state, &artists);
+    {
+        let st = state.clone();
+        let names = artists.clone();
+        tokio::spawn(async move {
+            crate::lore::ensure_artists(&st, &names).await;
+        });
+    }
+
+    let mut songs: Vec<serde_json::Value> = Vec::new();
+    let mut jobs: Vec<crate::voice::Beat> = Vec::new();
+    for (seat, (title, artist, why)) in cards.into_iter().enumerate() {
         let opener = match seat {
             0 => "First up on your date:",
             1 => "Then,",
             _ => "And after that,",
         };
-        let mut say = format!("{opener} {} by {}.", t.title, t.artist);
-        if let Some(reason) = state.db.pull_reason_for_track(caller.id, id) {
-            let mut reason: String = reason.chars().take(180).collect();
-            if !reason.ends_with(['.', '!', '?']) {
-                reason.push('.');
+        let mut say = format!("{opener} {title} by {artist}.");
+        if let Some(about) = band.get(&crate::discovery::artist_key_public(&artist)) {
+            say.push(' ');
+            say.push_str(about);
+            if !about.ends_with(['.', '!', '?']) {
+                say.push('.');
+            }
+        }
+        if !why.is_empty() && say.chars().count() + why.chars().count() < 260 {
+            let mut why: String = why.chars().take(180).collect();
+            if !why.ends_with(['.', '!', '?']) {
+                why.push('.');
             }
             say.push(' ');
-            say.push_str(&reason);
+            say.push_str(&why);
         }
         let mut voice: Vec<String> = Vec::new();
         if crate::voice::enabled() {
@@ -1054,8 +1119,7 @@ pub async fn date_briefing(
             voice.push(beat.id.clone());
             jobs.push(beat);
         }
-        songs.push(serde_json::json!({ "trackId": id, "say": say, "voice": voice }));
-        seat += 1;
+        songs.push(serde_json::json!({ "say": say, "voice": voice }));
     }
     if !jobs.is_empty() {
         crate::voice::mint_behind(&state, jobs);

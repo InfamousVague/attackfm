@@ -317,12 +317,22 @@ export function DatePage() {
     if (briefed.current || !session || deck.length === 0) return;
     if (!dateVoiceEnabled()) return;
     briefed.current = true;
-    const ids = deck
-      .slice(0, 3)
-      .map((t) => trackIdFromPath(t.path))
-      .filter((n): n is number => n != null);
+    // Both card kinds get their introduction - a preview date is still a
+    // date, and its band deserves the same word.
+    const ids: number[] = [];
+    const extIds: string[] = [];
+    for (const t of deck.slice(0, 3)) {
+      if (t.path.startsWith(PREVIEW_SCHEME)) {
+        extIds.push(t.path.slice(PREVIEW_SCHEME.length));
+      } else {
+        const id = trackIdFromPath(t.path);
+        if (id != null) ids.push(id);
+      }
+    }
     void (async () => {
-      const songs = await fetchDateBriefing(session, ids).catch(() => [] as DateBriefingSong[]);
+      const songs = await fetchDateBriefing(session, ids, extIds).catch(
+        () => [] as DateBriefingSong[],
+      );
       if (!aliveForIntro.current) return;
       // Skipped, or timed out, while the hub was thinking: the room moved on.
       if (introRef.current?.phase !== 'loading') return;
@@ -890,7 +900,7 @@ export function DatePage() {
               ) : (
                 intro.songs.map((song, seat) => (
                   <p
-                    key={song.trackId}
+                    key={seat}
                     className={`dateIntro__line${seat === intro.live ? ' is-live' : ''}`}
                   >
                     {song.say}
