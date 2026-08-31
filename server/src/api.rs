@@ -485,9 +485,12 @@ pub async fn stats(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Ap
 // --- favourites -----------------------------------------------------------
 
 /// `GET /api/tracks?ids=1,2,3` - the light metadata a REMOTE needs to draw a
-/// track it will never stream: title, artist, art, length. Built for the watch,
+/// track it will never stream: title, artist, art, length. For any thin client
 /// whose whole library view is "resolve these two dozen ids", and for whom the
-/// full /api/library payload is megabytes of lyrics it cannot use.
+/// full /api/library payload is megabytes of lyrics it cannot use. (Built for
+/// a Wear OS remote that was since retired in favour of the phone's own
+/// MediaSession controls; the endpoint stays - it is published hub API and the
+/// right door for the next remote.)
 pub async fn tracks_meta(
     State(state): State<Arc<AppState>>,
     Query(q): Query<std::collections::HashMap<String, String>>,
