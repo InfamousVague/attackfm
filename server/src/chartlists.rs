@@ -31,6 +31,11 @@ const MIN_MATCHES: usize = 5;
 enum Source {
     /// A Deezer playlist id - the editorial charts account's lists.
     Deezer(u64),
+    /// A Deezer editorial GENRE chart (api.deezer.com/chart/{genre}/tracks).
+    /// This is what answers "the charts are all the same list with a
+    /// different flag on it": a genre chart is a different WORLD, not a
+    /// different country's ranking of the same twenty songs.
+    DeezerChart(u64),
     /// A Spotify playlist id, fetched through any connected account.
     Spotify(&'static str),
 }
@@ -43,6 +48,15 @@ fn sources() -> Vec<(&'static str, &'static str, Source)> {
         ("top-uk", "Top UK", Source::Deezer(1111142221)),
         ("top-canada", "Top Canada", Source::Deezer(1652248171)),
         ("top-australia", "Top Australia", Source::Deezer(1313616925)),
+        // The genre seats. Ids are Deezer's own editorial genre ids, read off
+        // api.deezer.com/genre; "indie" is Deezer's Alternative chart, the
+        // nearest thing the catalogue has to that word.
+        ("top-pop", "Top Pop", Source::DeezerChart(132)),
+        ("top-indie", "Top Indie & Alt", Source::DeezerChart(85)),
+        ("top-rnb", "Top R&B", Source::DeezerChart(165)),
+        ("top-hiphop", "Top Hip-Hop", Source::DeezerChart(116)),
+        ("top-rock", "Top Rock", Source::DeezerChart(152)),
+        ("top-dance", "Top Dance", Source::DeezerChart(113)),
         ("sp-top-global", "Top 50 Global", Source::Spotify("37i9dQZEVXbMDoHDwVN2tF")),
         ("sp-top-usa", "Top 50 USA", Source::Spotify("37i9dQZEVXbLRQDuF5jeBp")),
         ("sp-viral-global", "Viral 50 Global", Source::Spotify("37i9dQZEVXbLiRSasKsNU9")),
@@ -85,6 +99,7 @@ pub async fn cycle(state: &Arc<AppState>) {
     for (slug, title, source) in sources() {
         let pairs = match source {
             Source::Deezer(id) => deezer_pairs(id).await,
+            Source::DeezerChart(genre) => deezer_chart_pairs(genre).await,
             Source::Spotify(id) => spotify_pairs(state, id).await,
         };
         if pairs.is_empty() {
@@ -191,10 +206,20 @@ fn refresh_for(
     }
 }
 
+/// A Deezer genre chart's songs as (artist, title). Same wire shape as a
+/// playlist's tracks, different door.
+async fn deezer_chart_pairs(genre: u64) -> Vec<(String, String)> {
+    deezer_paged(format!("https://api.deezer.com/chart/{genre}/tracks?limit=100")).await
+}
+
 /// A Deezer playlist's songs as (artist, title), paged to the end.
 async fn deezer_pairs(id: u64) -> Vec<(String, String)> {
+    deezer_paged(format!("https://api.deezer.com/playlist/{id}/tracks?limit=100")).await
+}
+
+async fn deezer_paged(start: String) -> Vec<(String, String)> {
     let c = crate::discovery::client(20);
-    let mut url = format!("https://api.deezer.com/playlist/{id}/tracks?limit=100");
+    let mut url = start;
     let mut out = Vec::new();
     loop {
         let Ok(resp) = c.get(&url).send().await else { break };

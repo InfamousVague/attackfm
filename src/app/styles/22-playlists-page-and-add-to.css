@@ -596,24 +596,30 @@
   color: var(--glacier-accent-text);
 }
 
+/*
+ * A GRID OF FACES, not a column of rows - by request. The playlists page
+ * already taught these lists to be square covers with names underneath;
+ * filing a song into one now looks like choosing from that same shelf
+ * rather than reading a menu.
+ */
 .addPlaylist__list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+  gap: var(--glacier-space-3) var(--glacier-space-2);
+  padding-block: var(--glacier-space-2);
 }
 
 .addPlaylist__empty {
+  grid-column: 1 / -1;
   padding: var(--glacier-space-3) var(--glacier-space-2);
 }
 
 .addPlaylistRow {
+  position: relative;
   display: flex;
-  align-items: center;
-  gap: var(--glacier-space-3);
-  inline-size: 100%;
-  /* Flush rows: the list reads as rows of covers, not inset buttons - the
-     tap target keeps its height from the art, and block padding alone
-     separates neighbours. */
-  padding: var(--glacier-space-1) 0;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  padding: 0;
   background: none;
   border: none;
   border-radius: var(--glacier-radius-md);
@@ -623,24 +629,30 @@
   cursor: pointer;
 }
 
-.addPlaylistRow:hover,
-.addPlaylistRow:focus-visible {
-  background: var(--glacier-hover);
+/* The face is the hover target; a whole-card wash on a grid reads as a
+   glitchy checkerboard, so only the art answers the pointer. */
+.addPlaylistRow:hover .addPlaylistRow__icon,
+.addPlaylistRow:focus-visible .addPlaylistRow__icon {
+  filter: brightness(1.12);
 }
 
+.addPlaylistRow:focus-visible {
+  outline: 2px solid var(--glacier-accent-solid);
+  outline-offset: 2px;
+}
+
+/* The playlist's face: the full card width, square. */
 .addPlaylistRow__icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  inline-size: 2rem;
-  block-size: 2rem;
-  flex: none;
-  border-radius: var(--glacier-radius-md);
+  inline-size: 100%;
+  aspect-ratio: 1;
+  border-radius: var(--glacier-radius-lg);
   background: var(--glacier-surface-raised, var(--glacier-hover));
+  transition: filter var(--glacier-duration-fast, 120ms) ease;
 }
 
-/* The row wearing the playlist's own four-cover face: the tile squircle
-   scaled to row size, its radius reined in to match. */
 .addPlaylistRow__icon--art {
   background: none;
   overflow: hidden;
@@ -649,21 +661,19 @@
 .addPlaylistRow__icon--art .tileSquircle {
   inline-size: 100%;
   block-size: 100%;
-  border-radius: var(--glacier-radius-md);
+  border-radius: var(--glacier-radius-lg);
   color: var(--glacier-text-muted);
 }
 
-/* A list the song is already in wears the accent on its glyph and its tick -
-   the row stays a toggle, so pressing it again takes the song back out. */
+/* Already in the list: the face wears an accent ring, and the tick rides its
+   corner. The card stays a toggle - press again to take the song back out. */
 .addPlaylistRow[data-in] .addPlaylistRow__icon {
-  background: var(--glacier-accent-soft);
-  color: var(--glacier-accent-text);
+  box-shadow: 0 0 0 2px var(--glacier-accent-solid);
 }
 
 .addPlaylistRow__body {
   display: flex;
   flex-direction: column;
-  flex: 1;
   min-inline-size: 0;
 }
 
@@ -671,6 +681,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: var(--glacier-font-size-sm);
 }
 
 .addPlaylistRow__meta {
@@ -679,9 +690,17 @@
 }
 
 .addPlaylistRow__check {
-  flex: none;
+  position: absolute;
+  inset-block-start: var(--glacier-space-1);
+  inset-inline-end: var(--glacier-space-1);
   display: inline-flex;
-  color: var(--glacier-accent-solid);
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  border-radius: var(--glacier-radius-full);
+  background: var(--glacier-accent-solid);
+  color: var(--glacier-accent-contrast, #fff);
 }
 
 /* Deleting a list asks first; the two answers sit apart from the explanation. */
