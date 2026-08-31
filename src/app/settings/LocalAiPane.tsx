@@ -200,6 +200,16 @@ function duration(seconds: number): string {
  * above the controls. It lives here now, where the next person to change this
  * file will find it, and the pane says the short half.
  */
+/** The five on offer - all verified against the account's own voice list.
+ *  Ids are ElevenLabs premade/professional voices; the label is the pitch. */
+const DJ_VOICES = [
+  { id: 'tnSpp4vdxKPjI9w0GnoV', label: 'Hope - upbeat and clear' },
+  { id: 'oW8bn5YtBB89X2nJ0DT9', label: 'Verity - chatty British storyteller' },
+  { id: 'nPczCjzI2devNBz1zQrb', label: 'Brian - deep late-night radio' },
+  { id: 'onwK4e9ZLuTAKqWW03F9', label: 'Daniel - steady British broadcaster' },
+  { id: 'cgSgspJ2msm6clMCkdW9', label: 'Jessica - playful and bright' },
+];
+
 export function LocalAiPane() {
   const { session } = useServerSession();
   const { toast } = useToast();
@@ -684,6 +694,20 @@ export function LocalAiPane() {
                 setDjVoice(v);
                 setVoiceOn(v);
               }}
+            />
+          }
+        />
+        <SettingRow
+          id="dj-voice-character"
+          label="DJ voice character"
+          hint="Who the DJ sounds like - five of ElevenLabs' most loved voices. Switching re-speaks its lines gradually in the new voice; everything already spoken in an old one stays cached, so switching back is free."
+          control={
+            <Select
+              fullWidth
+              value={settings.djVoiceId ?? 'tnSpp4vdxKPjI9w0GnoV'}
+              aria-label="DJ voice character"
+              options={DJ_VOICES.map((v) => ({ value: v.id, label: v.label }))}
+              onValueChange={(v) => void save({ djVoiceId: v }, 'djVoiceId')}
             />
           }
         />

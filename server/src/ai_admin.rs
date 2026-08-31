@@ -86,6 +86,10 @@ fn settings_json() -> Value {
         ("embedModel", "AFM_AI_EMBED_MODEL", Some("nomic-embed-text")),
         ("fastModel", "AFM_FAST_ENRICH_MODEL", Some("qwen3.5:9b")),
         ("refinementModel", "AFM_REFINEMENT_MODEL", Some("gemma4:12b")),
+        ("djModel", "AFM_DJ_MODEL", None),
+        // The DJ's mouth. Default matches voice.rs's own (George); the pane
+        // offers the popular five, verified against the account's list.
+        ("djVoiceId", "AFM_DJ_VOICE_ID", Some("JBFqnCBsd6RMkjVDRZzb")),
     ];
     let mut out = serde_json::Map::new();
     /*
@@ -391,6 +395,10 @@ pub struct SettingsPatch {
     #[serde(default, deserialize_with = "explicit")]
     refinement_model: Option<Option<String>>,
     #[serde(default, deserialize_with = "explicit")]
+    dj_model: Option<Option<String>>,
+    #[serde(default, deserialize_with = "explicit")]
+    dj_voice_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "explicit")]
     timeout_secs: Option<Option<i64>>,
     #[serde(default, deserialize_with = "explicit")]
     chat_enabled: Option<Option<bool>>,
@@ -451,6 +459,12 @@ pub async fn save_settings(
     }
     if let Some(v) = patch.refinement_model {
         apply("refinementModel", v);
+    }
+    if let Some(v) = patch.dj_model {
+        apply("djModel", v);
+    }
+    if let Some(v) = patch.dj_voice_id {
+        apply("djVoiceId", v);
     }
     if let Some(v) = patch.timeout_secs {
         apply("timeoutSecs", v.map(|n| n.clamp(10, 900).to_string()));
