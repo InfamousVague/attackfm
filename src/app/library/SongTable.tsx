@@ -6,6 +6,7 @@ import {
 } from '@glacier/react';
 import { ArrowDownToLine, CircleCheck, Clock } from '@glacier/icons';
 import { useOnDevice } from '../downloads/useOnDevice.ts';
+import { identityKey, useJustLanded } from '../downloads/incoming.tsx';
 import { useMemo, useState, type ReactNode } from 'react';
 import { useHoldToMenu } from '../ux/holdToMenu.ts';
 import { SelectionBar, SongSelectionContext } from './songSelection.tsx';
@@ -212,6 +213,7 @@ export function SongTable({
   // The grid's rows carry the path as their id; the panel wants the track. One
   // index resolves the one back to the other.
   const onDevice = useOnDevice();
+  const justLanded = useJustLanded();
   const byPath = useMemo(() => new Map(tracks.map((t) => [t.path, t] as const)), [tracks]);
 
   // A narrow COLUMN has room for the song and its length, and nothing else.
@@ -309,7 +311,12 @@ export function SongTable({
               width: narrow ? undefined : col.width,
               render: (row) => (
                 <SongTitleMenu track={byPath.get(row.id as string) ?? null}>
-                  <div className="songTitleCell">
+                  <div
+                    className="songTitleCell"
+                    data-arriving={
+                      justLanded.has(identityKey(row.artist as string, row.title as string)) || undefined
+                    }
+                  >
                     <SongArt artwork={row.artwork as string | null} />
                     <div className="songTitleText">
                       {/* The on-device mark used to hang here, beside the
@@ -343,7 +350,7 @@ export function SongTable({
     // onDevice belongs here and was missing: the columns READ it, so without it
     // a download landing rebuilt nothing and the mark only appeared later, when
     // some unrelated dependency happened to change.
-    [onOpenArtist, narrow, byPath, plays, onDevice],
+    [onOpenArtist, narrow, byPath, plays, onDevice, justLanded],
   );
 
   // Memoized on the library, not rebuilt per render: the grid memoizes its

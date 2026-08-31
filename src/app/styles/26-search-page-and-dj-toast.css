@@ -715,3 +715,33 @@ body:has(.npScreen[data-docked]) .djToast {
   background: var(--glacier-surface-raised);
   color: var(--glacier-text);
 }
+
+/* The ghost's exit: as the real row animates in below, the arrived ghost
+   collapses and fades up out of the band - one motion, not a pop. */
+@keyframes incomingLeave {
+  from {
+    opacity: 1;
+    transform: none;
+    max-block-size: 3rem;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+    max-block-size: 0;
+    margin: 0;
+    padding-block: 0;
+  }
+}
+
+.incomingRow[data-leaving] {
+  overflow: hidden;
+  pointer-events: none;
+  animation: incomingLeave 0.55s var(--glacier-ease-out, ease-out) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .incomingRow[data-leaving] {
+    animation: none;
+    opacity: 0;
+  }
+}

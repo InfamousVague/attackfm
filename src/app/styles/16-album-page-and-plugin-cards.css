@@ -392,3 +392,42 @@
   flex: none;
   color: var(--glacier-success-solid);
 }
+
+/* A song that just finished downloading arrives, it does not pop: the title
+   cell rises and fades in with a brief accent wash, so the eye catches the
+   hand-off from the ghost above. Once (the arriving flag clears after the
+   animation), and never for reduced motion. */
+@keyframes songArriveIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.songTitleCell[data-arriving] {
+  animation: songArriveIn 0.5s var(--glacier-ease-out, ease-out);
+}
+
+.songTitleCell[data-arriving] .songTitle__name {
+  animation: songArriveGlow 1s ease-out;
+}
+
+@keyframes songArriveGlow {
+  0% {
+    color: var(--glacier-accent-solid);
+  }
+  100% {
+    color: inherit;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .songTitleCell[data-arriving],
+  .songTitleCell[data-arriving] .songTitle__name {
+    animation: none;
+  }
+}
