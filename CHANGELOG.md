@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.171
+
+- Love or add a song and it appears in its list straight away, then eases into place when it's ready: the placeholder glides out of the way as the real track slides in with a soft glow, instead of popping into existence.
+
 ## 0.4.170
 
 - The Popular songs on an artist page now carry a heart, not just the +: tap it to love a song and pull it down in one go (it lands in Liked when it arrives), or the + to just add it. Songs you already own toggle the heart and gain an add-to-playlist button too
