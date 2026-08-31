@@ -752,6 +752,16 @@ CREATE TABLE IF NOT EXISTS pending_likes (
   PRIMARY KEY (user_id, k)
 );
 
+-- One short true thing about an ARTIST, model-written and shared - the date
+-- briefing's "tell me about the band". Same contract as song_lore: empty
+-- body = asked-and-unknown (negative cache), keyed by the folded artist name.
+CREATE TABLE IF NOT EXISTS artist_lore (
+  k        TEXT PRIMARY KEY,
+  artist   TEXT NOT NULL,
+  body     TEXT NOT NULL,
+  built_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS song_lore (
   track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
   body     TEXT NOT NULL,
@@ -5845,6 +5855,31 @@ impl Db {
             }
         }
         out
+    }
+
+    pub fn artist_lore_rows(&self, keys: &[String]) -> Vec<(String, String, i64)> {
+        let conn = self.lock();
+        let mut out = Vec::new();
+        for k in keys {
+            if let Ok(row) = conn.query_row(
+                "SELECT k, body, built_at FROM artist_lore WHERE k = ?1",
+                params![k],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            ) {
+                out.push(row);
+            }
+        }
+        out
+    }
+
+    pub fn artist_lore_put(&self, k: &str, artist: &str, body: &str) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO artist_lore (k, artist, body, built_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(k) DO UPDATE SET body = ?3, built_at = ?4
+             WHERE NOT (?3 = '' AND artist_lore.body != '')",
+            params![k, artist, body, now_ms()],
+        )?;
+        Ok(())
     }
 
     pub fn lore_put(&self, track_id: i64, body: &str) -> rusqlite::Result<()> {

@@ -219,6 +219,116 @@ fn trim_lore(line: &str) -> String {
     line.to_string()
 }
 
+/// The artists' shelf: same economics, same honesty, different subject -
+/// "tell me about the band" wants who they ARE, not which song of yours
+/// they orbit. Shared across listeners (a band is a band), negative-cached
+/// when the model does not truly know one.
+pub fn known_artists(state: &AppState, artists: &[String]) -> HashMap<String, String> {
+    let keys: Vec<String> =
+        artists.iter().map(|a| crate::discovery::artist_key_public(a)).collect();
+    state
+        .db
+        .artist_lore_rows(&keys)
+        .into_iter()
+        .filter(|(_, body, _)| !body.is_empty())
+        .map(|(k, body, _)| (k, body))
+        .collect()
+}
+
+/// Fill the artist shelf's gaps, model permitting. Background only; shares
+/// the song lore's lock, cooldown and honesty gate.
+pub async fn ensure_artists(state: &std::sync::Arc<AppState>, artists: &[String]) {
+    let Some(url) = crate::dj::ai_url() else { return };
+    let now = crate::db::now_ms();
+    if now - last_failure().load(Ordering::Relaxed) < FAILURE_COOLDOWN_MS {
+        return;
+    }
+    // Names deduped by folded key; the gap list recomputed under the lock.
+    let mut seen = std::collections::HashSet::new();
+    let wanted_names: Vec<String> = artists
+        .iter()
+        .filter(|a| !a.trim().is_empty())
+        .filter(|a| seen.insert(crate::discovery::artist_key_public(a)))
+        .cloned()
+        .collect();
+    if wanted_names.is_empty() {
+        return;
+    }
+    let _held = lock().lock().await;
+    let have: HashMap<String, (String, i64)> = state
+        .db
+        .artist_lore_rows(
+            &wanted_names.iter().map(|a| crate::discovery::artist_key_public(a)).collect::<Vec<_>>(),
+        )
+        .into_iter()
+        .map(|(k, body, at)| (k, (body, at)))
+        .collect();
+    let now = crate::db::now_ms();
+    let todo: Vec<String> = wanted_names
+        .into_iter()
+        .filter(|a| match have.get(&crate::discovery::artist_key_public(a)) {
+            None => true,
+            Some((body, at)) => body.is_empty() && now - at > RETRY_EMPTY_MS,
+        })
+        .collect();
+    for chunk in todo.chunks(BATCH) {
+        let lines: Vec<String> =
+            chunk.iter().enumerate().map(|(i, a)| format!("{}|{}", i + 1, a)).collect();
+        match batch_artist_lore(&url, &lines).await {
+            Some(replies) => {
+                for (i, artist) in chunk.iter().enumerate() {
+                    if let Some(line) = replies.get(&((i + 1) as i64)) {
+                        let k = crate::discovery::artist_key_public(artist);
+                        let _ = state.db.artist_lore_put(&k, artist, &trim_lore(line));
+                    }
+                }
+            }
+            None => {
+                last_failure().store(crate::db::now_ms(), Ordering::Relaxed);
+                break;
+            }
+        }
+    }
+}
+
+/// One model call over a handful of band names.
+async fn batch_artist_lore(url: &str, lines: &[String]) -> Option<HashMap<i64, String>> {
+    let prompt = format!(
+        "You are a radio DJ's researcher. For each ARTIST below (N|name), write ONE short factual \
+         sentence a DJ could say on air about who they are: where they're from, the sound they're \
+         known for, a landmark moment. At most 22 words, plain and warm, no exclamation marks. \
+         HONESTY RULE: if you do not confidently recognise that exact artist, the value MUST be an \
+         empty string. Never guess, never invent, never riff on the name itself.\n\n\
+         {}\n\n\
+         Answer with STRICT JSON and nothing else: an object mapping each N to its sentence or \"\",\
+         for example {{\"1\":\"...\",\"2\":\"\"}}.",
+        lines.join("\n"),
+    );
+    let patience = crate::ai::setting("timeoutSecs", "AFM_AI_TIMEOUT_SECS")
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(300)
+        .max(60);
+    let reply: Value = reqwest::Client::builder()
+        .timeout(Duration::from_secs(patience))
+        .build()
+        .ok()?
+        .post(format!("{}/v1/chat/completions", url.trim_end_matches('/')))
+        .json(&json!({
+            "model": crate::dj::dj_model(),
+            "messages": [{ "role": "user", "content": prompt }],
+            "temperature": 0.4,
+            "max_tokens": 400,
+        }))
+        .send()
+        .await
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+    let content = reply.pointer("/choices/0/message/content")?.as_str()?;
+    parse_lore_reply(content)
+}
+
 /// Attach lore to finished blocks: each block gains `lore` - a map from track
 /// id to its line and (when the hub can speak) the clip that says it. The
 /// beats land in `jobs` for the caller's one mint_behind call.

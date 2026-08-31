@@ -165,23 +165,28 @@ export async function dateCandidateVerdict(
 /** One spoken line about an upcoming date card: the words, and the cached
  *  clips that say them (empty when the server has no voice). */
 export interface DateBriefingSong {
-  trackId: number;
   say: string;
   voice: string[];
 }
 
 /**
  * The DJ's word on the next few cards, in deck order - the client names the
- * ids because the deck's order and filters live here, not on the server.
+ * cards because the deck's order and filters live here, not on the server.
+ * Landed auditions travel as track ids, preview candidates as ext ids; the
+ * server speaks about the band either way.
  */
 export async function fetchDateBriefing(
   session: ServerSession,
   ids: number[],
+  extIds: string[] = [],
 ): Promise<DateBriefingSong[]> {
-  if (ids.length === 0) return [];
+  if (ids.length === 0 && extIds.length === 0) return [];
+  const params = new URLSearchParams();
+  if (ids.length > 0) params.set('ids', ids.slice(0, 3).join(','));
+  if (extIds.length > 0) params.set('extIds', extIds.slice(0, 3).join(','));
   const out = await request<{ songs?: DateBriefingSong[] }>(
     session.url,
-    `/api/date/briefing?ids=${ids.slice(0, 3).join(',')}`,
+    `/api/date/briefing?${params.toString()}`,
     { token: session.token },
   );
   return out.songs ?? [];

@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.163
+
+- The date briefing talks about the BAND now: who they are, where they're from, what they're known for - real background, with the "because you play X" as a footnote instead of the whole story. Preview dates get introduced too, not just downloaded ones. Bands the AI doesn't truly know are simply introduced by name - it never invents
+
 ## 0.4.162
 
 - Music Date now deals a real mix: every five cards bring three matched to your taste, one straight off the charts, and one brand-new release - each card's subtitle says which ("Charting right now", "Fresh out"). The new-releases shelf itself came back to life: its old source had gone silent, so fresh picks now come from the catalogue's own editors
