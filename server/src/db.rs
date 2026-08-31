@@ -5423,6 +5423,21 @@ impl Db {
     }
 
     /// The best of what this listener does not own, scored highest first.
+    /// One pooled candidate by its catalogue id, for a verdict on a preview.
+    pub fn discovery_get(&self, user_id: i64, ext_id: &str) -> Option<DiscoveryRow> {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT ext_id, title, artist, cover, url, preview, seed, popularity, bpm,
+                    lyric_vec, vec_dims, score
+             FROM discoveries WHERE user_id = ?1 AND ext_id = ?2",
+            params![user_id, ext_id],
+            discovery_from_row,
+        )
+        .optional()
+        .ok()
+        .flatten()
+    }
+
     pub fn top_discoveries(&self, user_id: i64, limit: i64) -> Vec<DiscoveryRow> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(

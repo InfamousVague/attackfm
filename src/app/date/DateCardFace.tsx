@@ -61,6 +61,13 @@ export function CardFace({ track, live = false }: { track: Track; live?: boolean
 
   return (
     <>
+      {/* A pool candidate wears its honesty: this is the catalogue's thirty
+          seconds, and the full song arrives only if it is kept. */}
+      {track.path.startsWith('preview:') && (
+        <span className="dateCard__preview" aria-label="Preview - thirty seconds">
+          Preview
+        </span>
+      )}
       {canvas ? (
         // Muted and inline: the sound on this page is the snippet the card
         // plays, and a clip that fought it would be two songs at once.
