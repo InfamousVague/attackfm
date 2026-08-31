@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -20,6 +21,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.wear.compose.foundation.lazy.AutoCenteringParams
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.ScalingLazyListState
 import androidx.wear.compose.foundation.lazy.items
@@ -237,9 +239,19 @@ private fun Remote(store: Store, listState: ScalingLazyListState, onSignOut: () 
 
     val now = state?.trackId?.let { meta[it] }
 
-    ScalingLazyColumn(state = listState, modifier = Modifier.fillMaxSize().background(Glacier.bg)) {
-        // The face: the track's own art as a disc, or the music mark waiting.
-        item { TrackDisc(store, state?.trackId, size = 64.dp) }
+    ScalingLazyColumn(
+        state = listState,
+        // The transport is item 3 (disc, title, artist precede it when a track
+        // is on) and the list opens RESTING on it: play dead-centre on the
+        // round face, the disc and name above, the volume and Liked below -
+        // by request, after the first cut opened with the disc centred and
+        // the play button half under the bezel.
+        autoCentering = AutoCenteringParams(itemIndex = if (now != null) 3 else 2),
+        modifier = Modifier.fillMaxSize().background(Glacier.bg),
+    ) {
+        // The face: the track's own art as a SPINNING disc while the seat
+        // plays - the record turning is the watch's word for "music is on".
+        item { TrackDisc(store, state?.trackId, size = 64.dp, spinning = state?.playing == true) }
         item {
             Text(
                 when {
@@ -364,7 +376,12 @@ private val artCache = HashMap<Long, ImageBitmap?>()
  * while (or if ever) the bytes arrive. One fetch per track per process.
  */
 @Composable
-private fun TrackDisc(store: Store, trackId: Long?, size: androidx.compose.ui.unit.Dp) {
+private fun TrackDisc(
+    store: Store,
+    trackId: Long?,
+    size: androidx.compose.ui.unit.Dp,
+    spinning: Boolean = false,
+) {
     var art by remember(trackId) { mutableStateOf(artCache[trackId]) }
     LaunchedEffect(trackId) {
         if (trackId == null || artCache.containsKey(trackId)) return@LaunchedEffect
@@ -381,9 +398,30 @@ private fun TrackDisc(store: Store, trackId: Long?, size: androidx.compose.ui.un
         artCache[trackId] = got
         art = got
     }
+    /*
+     * The turntable, by hand: while the seat plays, the angle advances a
+     * frame at a time; on pause it HOLDS where it stopped, the way a platter
+     * does, instead of snapping back to twelve o'clock. ~7s per revolution -
+     * the phone's own unhurried record, not a fidget spinner.
+     */
+    var angle by remember { mutableStateOf(0f) }
+    LaunchedEffect(spinning) {
+        if (!spinning) return@LaunchedEffect
+        var last = 0L
+        while (true) {
+            androidx.compose.runtime.withFrameNanos { now ->
+                if (last != 0L) angle = (angle + (now - last) / 1_000_000_000f * (360f / 7f)) % 360f
+                last = now
+            }
+        }
+    }
     Box(
         contentAlignment = Alignment.Center,
-        modifier = Modifier.size(size).clip(CircleShape).background(Glacier.surface),
+        modifier = Modifier
+            .size(size)
+            .graphicsLayer { rotationZ = angle }
+            .clip(CircleShape)
+            .background(Glacier.surface),
     ) {
         val a = art
         if (a != null) {
@@ -394,6 +432,22 @@ private fun TrackDisc(store: Store, trackId: Long?, size: androidx.compose.ui.un
                 contentDescription = null,
                 tint = Glacier.textMuted,
                 modifier = Modifier.size(size / 2),
+            )
+        }
+        // The spindle hole that makes a cover a RECORD - only on the big disc,
+        // where there is room for the conceit; a chip thumbnail stays a photo.
+        if (size >= 48.dp) {
+            Box(
+                modifier = Modifier
+                    .size(size / 5)
+                    .clip(CircleShape)
+                    .background(Glacier.bg),
+            )
+            Box(
+                modifier = Modifier
+                    .size(size / 12)
+                    .clip(CircleShape)
+                    .background(Glacier.surface),
             )
         }
     }
