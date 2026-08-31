@@ -23,6 +23,8 @@ export interface AiSettings {
   fastModel: string | null;
   refinementModel: string | null;
   djModel: string | null;
+  /** The ElevenLabs voice the DJ speaks with; null = the server's default. */
+  djVoiceId: string | null;
   timeoutSecs: number;
   chatEnabled: boolean;
   embeddingsEnabled: boolean;
@@ -45,6 +47,7 @@ export type AiSettingsPatch = Partial<{
   fastModel: string | null;
   refinementModel: string | null;
   djModel: string | null;
+  djVoiceId: string | null;
   timeoutSecs: number | null;
   chatEnabled: boolean | null;
   embeddingsEnabled: boolean | null;

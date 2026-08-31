@@ -189,6 +189,13 @@ export const SETTINGS_INDEX: SettingEntry[] = [
     keywords: 'dj voice speech tts talk spoken elevenlabs kokoro radio announcer',
   },
   {
+    id: 'dj-voice-character',
+    pane: 'local-ai',
+    label: 'DJ voice character',
+    description: "Pick who the DJ sounds like - five of ElevenLabs' best voices.",
+    keywords: 'dj voice character elevenlabs hope verity brian daniel jessica accent',
+  },
+  {
     id: 'date-voice',
     pane: 'local-ai',
     label: 'Music Date briefing',
