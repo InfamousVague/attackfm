@@ -54,6 +54,12 @@ export interface Notice {
   art: string | null;
   /** Where a press lands, or null for a line of news with nowhere to go. */
   door: 'downloads' | 'friends' | null;
+  /**
+   * The one song this news is about, when it is about one - a single-track
+   * landing. It rides into the OS notification's extra payload, so tapping
+   * the tray entry can START the song rather than merely open the app.
+   */
+  song?: { title: string; artist: string };
   read: boolean;
 }
 
@@ -106,6 +112,9 @@ function load(): Notice[] {
         body: typeof e.body === 'string' ? e.body : '',
         art: typeof e.art === 'string' ? e.art : null,
         door: e.door === 'downloads' || e.door === 'friends' ? e.door : null,
+        ...(e.song && typeof e.song.title === 'string'
+          ? { song: { title: e.song.title, artist: String(e.song.artist ?? '') } }
+          : {}),
         read: e.read === true,
       }));
   } catch {
@@ -197,6 +206,7 @@ export function noteNotice(n: NewNotice): void {
     body: clamp(n.body),
     art: n.art,
     door: n.door,
+    ...(n.song ? { song: n.song } : {}),
     read: false,
   };
 
