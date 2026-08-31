@@ -63,6 +63,7 @@ mod friends;
 mod home;
 mod hot;
 mod imports;
+mod intents;
 mod listenbrainz;
 mod jams;
 mod library_search;
@@ -76,6 +77,7 @@ mod vibes;
 mod voice;
 mod playlist_covers;
 mod push;
+mod recommendation;
 mod radio;
 mod recents;
 mod refetch;
@@ -89,6 +91,8 @@ mod stream;
 mod tempo;
 mod tools;
 mod upload;
+#[cfg(test)]
+mod personalization_baseline_tests;
 
 use axum::http::{header, HeaderValue, Method, StatusCode};
 use axum::routing::{delete, get, post, put};
@@ -530,6 +534,7 @@ async fn main() {
     // Readings transcribed before the shape existed, caught up in the
     // background and then never again.
     bookshape::spawn_backfill(state.clone());
+    recommendation::spawn_profile_backfill(state.clone());
     curator::spawn(state.clone());
     // The buying arm rides beside the curator: same taste, real money - er,
     // real disk. See collector.rs for the honesty rules.
@@ -756,6 +761,11 @@ async fn main() {
         .route(
             "/api/debug/song-profiles/{id}",
             get(enrichment::debug_profile),
+        )
+        .route("/api/profile/taste", get(recommendation::profile))
+        .route(
+            "/api/debug/recommendations",
+            get(recommendation::diagnostics),
         )
         .route("/api/queue/enhance", post(curator::enhance_queue))
         .route(

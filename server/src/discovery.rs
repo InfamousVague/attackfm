@@ -28,7 +28,6 @@
 //! there. Acting on one is the app's existing import path; dismissing one
 //! forgets it.
 
-use crate::curator::{taste_for};
 use crate::AppState;
 use serde::Serialize;
 use serde_json::json;
@@ -71,6 +70,16 @@ const RELATED_PER_SEED: usize = 8;
 const TRACKS_PER_ARTIST: usize = 6;
 /// Politeness between catalogue calls.
 const GAP: Duration = Duration::from_millis(700);
+/// A dismissed TRACK hard-blocks re-harvest for this long (Stage 7).
+const TRACK_REJECT_HARD_MS: i64 = 90 * 24 * 60 * 60 * 1000;
+/// A dismissed ARTIST hard-blocks for this long...
+const ARTIST_REJECT_HARD_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+/// ...and stays out of the SEED seat for this much longer again: rejection
+/// softens with age instead of either vanishing overnight or banning forever.
+const ARTIST_REJECT_SOFT_MS: i64 = 2 * ARTIST_REJECT_HARD_MS;
+/// The weakest score the discovery feed will show. Lower than any collector
+/// threshold on purpose: suggesting costs nothing, buying does (Stage 9).
+pub(crate) const FEED_FLOOR: f64 = 0.45;
 
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
@@ -250,29 +259,62 @@ mod key_tests {
     }
 }
 
-/// The library's own most-represented artists, as harvest seeds.
+/// One harvest seed and the retrieval lane that produced it (Stage 7
+/// provenance: every candidate carries this lane forever).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct SeedSpec {
+    pub(crate) name: String,
+    pub(crate) plays: i64,
+    pub(crate) lane: &'static str,
+}
+
+/// Who discovery expands from for one listener.
 ///
-/// The fallback for a listener with no recent plays: whoever you have the most
-/// OF is the best available guess at who you like, and it needs no history at
-/// all. Shaped like `top_artists` (name, count, most first) so the caller
-/// cannot tell which source it got.
-fn library_seed_artists(state: &Arc<AppState>, limit: i64) -> Vec<(String, i64)> {
-    let mut counts: std::collections::HashMap<String, (String, i64)> =
-        std::collections::HashMap::new();
-    for (artist, _title) in state.db.owned_names() {
-        let name = artist.trim();
-        if name.is_empty() {
-            continue;
+/// Seeds come ONLY from this listener's own behavior: recent top artists
+/// first, then long-term top artists, and - for someone with no play history
+/// at all - the artists behind their favorites, then their playlists. A
+/// listener with none of those gets an empty answer: the neutral cold-start
+/// state. Server inventory is NEVER a seed; whose files happen to be on the
+/// disk is not a statement of this listener's taste (the old
+/// library-size fallback this replaced conflated the two). Artists inside
+/// their rejection soft window are kept out of the seed seat.
+pub(crate) fn harvest_seeds(db: &crate::db::Db, user: i64, now: i64) -> Vec<SeedSpec> {
+    let since = now - 30 * 24 * 60 * 60 * 1000;
+    let soft_rejected = db.rejected_keys_since(user, "artist", now - ARTIST_REJECT_SOFT_MS);
+    let mut seeds: Vec<SeedSpec> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    let push = |name: String, plays: i64, lane: &'static str,
+                    seeds: &mut Vec<SeedSpec>, seen: &mut HashSet<String>| {
+        let key = artist_key(&name);
+        if key.is_empty() || soft_rejected.contains(&key) || !seen.insert(key) {
+            return;
         }
-        let entry = counts
-            .entry(name.to_ascii_lowercase())
-            .or_insert_with(|| (name.to_string(), 0));
-        entry.1 += 1;
+        seeds.push(SeedSpec { name, plays, lane });
+    };
+    for (name, plays) in db.top_artists(user, since, SEED_ARTISTS) {
+        push(name, plays, "recent-artist", &mut seeds, &mut seen);
     }
-    let mut out: Vec<(String, i64)> = counts.into_values().collect();
-    out.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-    out.truncate(limit.max(0) as usize);
-    out
+    for (name, plays) in db.top_artists(user, 0, SEED_ARTISTS) {
+        push(name, plays, "long-term-artist", &mut seeds, &mut seen);
+    }
+    if seeds.is_empty() {
+        let favorites = db.favorites(user);
+        for (name, plays) in db.artists_for(&favorites) {
+            push(name, plays, "favorites", &mut seeds, &mut seen);
+        }
+        if seeds.is_empty() {
+            for (name, plays) in db.playlist_artist_counts(user, SEED_ARTISTS) {
+                push(name, plays, "playlist", &mut seeds, &mut seen);
+            }
+        }
+    }
+    seeds.truncate(SEED_ARTISTS.max(0) as usize);
+    seeds
+}
+
+/// The folded track key rejection memory is keyed on (Stage 7).
+pub(crate) fn candidate_track_key(artist: &str, title: &str) -> String {
+    key_of(artist, title)
 }
 
 /// The whole library as comparison keys - what a candidate is tested against.
@@ -347,6 +389,10 @@ pub async fn harvest_seeded(state: &Arc<AppState>, user: i64, seeds: Vec<(String
     // The clock still gets stamped: an on-demand run counts as the sweep for
     // this window, so the two cannot both go out to Deezer at once.
     state.discovery.last_harvest.lock().await.insert(user, now_ms());
+    let seeds = seeds
+        .into_iter()
+        .map(|(name, plays)| SeedSpec { name, plays, lane: "date-verdict" })
+        .collect();
     harvest_from(state, user, seeds).await;
 }
 
@@ -364,18 +410,12 @@ pub async fn harvest(state: &Arc<AppState>, user: i64) {
         return;
     }
 
-    let since = now_ms() - 30 * 24 * 60 * 60 * 1000;
-    let mut seeds = state.db.top_artists(user, since, SEED_ARTISTS);
+    let seeds = harvest_seeds(&state.db, user, now_ms());
     if seeds.is_empty() {
-        // No recent plays - but a library IS a statement of taste, and the most
-        // common artists in it are the honest stand-in for a heavy rotation
-        // nobody has built yet. Without this a full library with a quiet month
-        // harvested nothing at all, so Discover stayed empty for exactly the
-        // listener who had the most to go on.
-        seeds = library_seed_artists(state, SEED_ARTISTS);
-        if seeds.is_empty() {
-            return;
-        }
+        // The honest cold start: nothing about this listener is known yet, so
+        // nothing is harvested in their name. Onboarding picks, favorites, or
+        // an imported playlist are what open the door.
+        return;
     }
     harvest_from(state, user, seeds).await;
 }
@@ -383,11 +423,13 @@ pub async fn harvest(state: &Arc<AppState>, user: i64) {
 /// The walk itself: seeds -> their neighbours -> candidates you do not own.
 /// Shared by the background sweep and the on-demand run so the two can never
 /// drift into harvesting differently.
-async fn harvest_from(state: &Arc<AppState>, user: i64, seeds: Vec<(String, i64)>) {
+async fn harvest_from(state: &Arc<AppState>, user: i64, seeds: Vec<SeedSpec>) {
     let owned = owned_keys(state);
     let c = client(15);
 
-    for (seed_name, _) in seeds {
+    for seed in seeds {
+        let seed_name = seed.name;
+        let lane = seed.lane;
         // Your artist, in the catalogue's terms.
         let Some(seed_id) = deezer_artist_id(&c, &seed_name, true).await else { continue };
         tokio::time::sleep(GAP).await;
@@ -406,6 +448,9 @@ async fn harvest_from(state: &Arc<AppState>, user: i64, seeds: Vec<(String, i64)
                 if owned.contains(&key_of(&t.artist, &t.title)) {
                     continue;
                 }
+                if is_rejected(&state.db, user, &t.artist, &t.title) {
+                    continue;
+                }
                 let _ = state.db.add_discovery(
                     user,
                     &t.ext_id,
@@ -416,6 +461,7 @@ async fn harvest_from(state: &Arc<AppState>, user: i64, seeds: Vec<(String, i64)
                     &t.preview,
                     &seed_name,
                     t.popularity,
+                    lane,
                 );
             }
             tokio::time::sleep(GAP).await;
@@ -435,6 +481,7 @@ pub async fn ingest_artist_by_name(
     artist: &str,
     seed_name: &str,
     take: usize,
+    lane: &'static str,
 ) -> usize {
     let Some(id) = deezer_artist_id(c, artist, true).await else { return 0 };
     tokio::time::sleep(GAP).await;
@@ -446,11 +493,14 @@ pub async fn ingest_artist_by_name(
         if owned.contains(&key_of(&t.artist, &t.title)) {
             continue;
         }
+        if is_rejected(&state.db, user, &t.artist, &t.title) {
+            continue;
+        }
         if state
             .db
             .add_discovery(
                 user, &t.ext_id, &t.title, &t.artist, &t.cover, &t.url, &t.preview, seed_name,
-                t.popularity,
+                t.popularity, lane,
             )
             .is_ok()
         {
@@ -458,6 +508,15 @@ pub async fn ingest_artist_by_name(
         }
     }
     added
+}
+
+/// Whether durable rejection memory (Stage 7) currently blocks this
+/// candidate: a dismissed track inside its hard window, or a dismissed artist
+/// inside theirs.
+pub(crate) fn is_rejected(db: &crate::db::Db, user: i64, artist: &str, title: &str) -> bool {
+    let now = now_ms();
+    db.rejection_active(user, "artist", &artist_key(artist), now, ARTIST_REJECT_HARD_MS)
+        || db.rejection_active(user, "track", &candidate_track_key(artist, title), now, TRACK_REJECT_HARD_MS)
 }
 
 struct CandidateTrack {
@@ -778,6 +837,24 @@ pub struct DiscoveryOut {
     /// here honestly rather than implying more than was measured.
     pub lyrics_read: bool,
     pub score: f64,
+    pub retrieval_lane: String,
+    pub familiarity_class: String,
+    pub bridge: String,
+}
+
+pub(crate) fn discovery_class(score: f64, seed: &str, lane: &str) -> Option<&'static str> {
+    if seed.trim().is_empty() || lane.trim().is_empty() {
+        return None;
+    }
+    if score >= 0.62 {
+        Some("adjacent")
+    } else if score >= 0.52 {
+        Some("exploratory")
+    } else if score >= FEED_FLOOR {
+        Some("wildcard")
+    } else {
+        None
+    }
 }
 
 /// `GET /api/new-music` - AI-grouped playlists of music this listener does NOT
@@ -895,6 +972,8 @@ fn nm_item(d: &crate::db::DiscoveryRow) -> serde_json::Value {
         "id": d.ext_id, "title": d.title, "artist": d.artist, "cover": d.cover,
         "url": d.url, "preview": d.preview, "seed": d.seed, "bpm": d.bpm,
         "lyricsRead": d.lyric_vec.is_some(), "score": d.score,
+        "retrievalLane": d.lane,
+        "familiarityClass": discovery_class(d.score, &d.seed, &d.lane),
     })
 }
 
@@ -1043,11 +1122,19 @@ pub async fn feed(
     // downloaded a minute ago must not come back as a suggestion on the very
     // next poll. The pool is small and this is a poll every few minutes.
     prune_owned(&state, caller.id);
-    let items: Vec<DiscoveryOut> = state
-        .db
-        .top_discoveries(caller.id, 40)
-        .into_iter()
-        .map(|d| DiscoveryOut {
+    let mut items = Vec::new();
+    for d in state.db.top_discoveries(caller.id, 80) {
+        let Some(class) = discovery_class(d.score, &d.seed, &d.lane) else { continue };
+        state.db.record_recommendation_exposure(
+            caller.id,
+            "discovery",
+            &d.ext_id,
+            None,
+            &d.artist,
+            class,
+        );
+        let bridge = format!("Because you play {}", d.seed);
+        items.push(DiscoveryOut {
             id: d.ext_id,
             title: d.title,
             artist: d.artist,
@@ -1058,8 +1145,14 @@ pub async fn feed(
             bpm: d.bpm,
             lyrics_read: d.lyric_vec.is_some(),
             score: d.score,
-        })
-        .collect();
+            retrieval_lane: d.lane,
+            familiarity_class: class.into(),
+            bridge,
+        });
+        if items.len() >= 40 {
+            break;
+        }
+    }
     let (pool, listened) = state.db.discovery_counts(caller.id);
     Ok(Json(json!({
         "items": items,
@@ -1069,8 +1162,8 @@ pub async fn feed(
         // model actually waits for. Both come from the gate itself, so the copy
         // ("2 of 4 songs") can never drift from the rule it describes.
         "taste": {
-            "heard": crate::curator::taste_heard(&state, caller.id),
-            "needed": crate::curator::TASTE_MIN_TRACKS,
+            "heard": crate::recommendation::heard_count(&state, caller.id),
+            "needed": crate::recommendation::TASTE_MIN_TRACKS,
         },
     })))
 }
@@ -1078,16 +1171,40 @@ pub async fn feed(
 #[derive(serde::Deserialize)]
 pub struct DismissQuery {
     pub id: String,
+    /// "track" (default) or "artist" - how wide the "not for me" reaches.
+    pub scope: Option<String>,
 }
 
-/// `POST /api/discoveries/dismiss?id=` - not for me. Forgotten rather than
-/// hidden, so the harvest is free to find something better in its place.
+/// `POST /api/discoveries/dismiss?id=&scope=` - not for me.
+///
+/// Durable (Stage 7): the candidate row is forgotten AND the rejection is
+/// remembered, so the next harvest does not bring the same music straight
+/// back. A track rejection hard-blocks that recording for 90 days; an artist
+/// rejection blocks the artist for 30 days and keeps them out of the seed
+/// seat for 30 more. Rejection softens with age rather than banning forever.
 pub async fn dismiss(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     Query(q): Query<DismissQuery>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let row = state
+        .db
+        .all_discoveries(caller.id)
+        .into_iter()
+        .chain(state.db.discoveries_needing_work(caller.id, 1000))
+        .find(|d| d.ext_id == q.id);
+    if q.scope.as_deref() == Some("artist") {
+        let artist = row.as_ref().map(|d| d.artist.clone()).unwrap_or_default();
+        let key = artist_key(&artist);
+        if !key.is_empty() {
+            state.db.reject_discovery(caller.id, "artist", &key);
+        }
+    } else if let Some(d) = &row {
+        state
+            .db
+            .reject_discovery(caller.id, "track", &candidate_track_key(&d.artist, &d.title));
+    }
     state.db.forget_discovery(caller.id, &q.id);
     Ok(Json(json!({ "ok": true })))
 }

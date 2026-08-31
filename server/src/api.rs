@@ -594,6 +594,10 @@ pub async fn set_favorite(
     // Adoption: a heart on a collector download is deliberate approval - it
     // skips the audition entirely and joins the library at once.
     if body.favorite {
+        state
+            .db
+            .adopt_recommendation_exposures(caller.id, track_id);
+        state.db.settle_pull_adoption(track_id, caller.id);
         state.db.promote_curator_track(track_id);
     }
     Ok(Json(json!({ "ok": true })))

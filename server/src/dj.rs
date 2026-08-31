@@ -11,7 +11,8 @@
 
 use crate::ai::AiClient;
 use crate::auth;
-use crate::curator::{cosine, score, taste_from};
+use crate::curator::cosine;
+use crate::recommendation::{from_tracks as taste_from, from_weighted as taste_from_weighted, score};
 use crate::db::TrackFeatures;
 use crate::AppState;
 use axum::extract::{Query, State};
@@ -278,9 +279,13 @@ pub(crate) async fn build_reply(
     let feats = state.db.all_features();
     let by_id: HashMap<i64, &TrackFeatures> = feats.iter().map(|f| (f.track_id, f)).collect();
     // Verdicts when the ledger has them, play starts when it does not.
-    let weighted = state.db.weighted_recent_listens(user, RECENT_WINDOW);
+    let weighted = state.db.weighted_listens_since(
+        user,
+        crate::db::now_ms() - 30 * 24 * 60 * 60 * 1000,
+        RECENT_WINDOW,
+    );
     let taste = if weighted.len() >= 8 {
-        crate::curator::taste_from_weighted(&weighted, &by_id)
+        taste_from_weighted(&weighted, &by_id)
     } else {
         let recent = state.db.recent_plays(user, RECENT_WINDOW);
         taste_from(&recent, &by_id)
@@ -483,6 +488,9 @@ pub(crate) async fn build_reply(
             if key.is_empty() || played.contains(&key) || taken.contains(&key) {
                 continue;
             }
+            if crate::recommendation::classify(f, &taste, 0.0).is_none() {
+                continue;
+            }
             let sc = score(f, &taste);
             let e = best.entry(key).or_insert((sc, f.track_id));
             if sc > e.0 {
@@ -519,9 +527,25 @@ pub(crate) async fn build_reply(
     let offered: Vec<(i64, &str, i64)> = picks
         .iter()
         .enumerate()
-        .map(|(i, id)| (*id, if explore_set.contains(id) { "explore" } else { "rank" }, i as i64))
+        .filter_map(|(i, id)| {
+            let feature = by_id.get(id)?;
+            let class = crate::recommendation::classify(feature, &taste, 0.0)?;
+            Some((*id, class.as_str(), i as i64))
+        })
         .collect();
     state.db.record_dj_impressions(user, &offered);
+    for (id, class, _) in &offered {
+        if let Some(feature) = by_id.get(id) {
+            state.db.record_recommendation_exposure(
+                user,
+                "ai-dj",
+                &id.to_string(),
+                Some(*id),
+                &feature.artist,
+                class,
+            );
+        }
+    }
 
     /*
      * The dossiers: what the patter is ALLOWED to say about each pick.
@@ -1679,6 +1703,8 @@ mod ranking_tests {
             ai_genres: Vec::new(),
             ai_specific_tags: Vec::new(),
             ai_sonic_traits: Vec::new(),
+            enrichment_confidence: 0.0,
+            enrichment_sources: Vec::new(),
             artist: "test".into(),
             energy: Some(energy),
             brightness: Some(brightness),

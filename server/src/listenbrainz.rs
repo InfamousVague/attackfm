@@ -254,7 +254,7 @@ pub async fn harvest_similar(state: &Arc<AppState>, user: i64) {
         // Highest similarity first - small AND close beats small and random.
         small.sort_by_key(|(_, _, score)| -*score);
         for (_, name, _) in small.into_iter().take(SIMS_PER_SEED) {
-            discovery::ingest_artist_by_name(state, user, &c, name, &seed_name, TRACKS_PER_NEW_ARTIST)
+            discovery::ingest_artist_by_name(state, user, &c, name, &seed_name, TRACKS_PER_NEW_ARTIST, "listenbrainz")
                 .await;
         }
     }
@@ -318,7 +318,7 @@ pub async fn scene_walk(state: &Arc<AppState>, user: i64) {
         if owned_artists.contains(&discovery::artist_key_public(&name)) {
             continue;
         }
-        discovery::ingest_artist_by_name(state, user, &c, &name, &artist, TRACKS_PER_NEW_ARTIST)
+        discovery::ingest_artist_by_name(state, user, &c, &name, &artist, TRACKS_PER_NEW_ARTIST, "scene-walk")
             .await;
     }
 }

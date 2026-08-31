@@ -796,6 +796,8 @@ mod tests {
             ai_genres: Vec::new(),
             ai_specific_tags: Vec::new(),
             ai_sonic_traits: Vec::new(),
+            enrichment_confidence: 0.0,
+            enrichment_sources: Vec::new(),
             artist: format!("artist{id}"),
             energy: Some(0.5),
             brightness: None,
