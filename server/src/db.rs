@@ -3019,6 +3019,22 @@ impl Db {
         }
     }
 
+    /// Track ids the DJ has dealt this listener since `since` - the variety
+    /// ledger. A set that can re-deal yesterday's set is a playlist wearing
+    /// a DJ's name.
+    pub fn dj_dealt_since(&self, user_id: i64, since: i64) -> Vec<i64> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT DISTINCT track_id FROM dj_impressions
+             WHERE user_id = ?1 AND created_at > ?2",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, since], |r| r.get(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
     /// Per-artist exploration ledger: how often the DJ has offered this
     /// artist, and how often an offer was adopted - a completed listen or a
     /// heart AFTER the impression. The Thompson sampler's two counters.

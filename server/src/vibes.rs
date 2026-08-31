@@ -1,5 +1,11 @@
 //! The banked sets: one finished DJ set per vibe, built where time is free.
 //!
+//! PARKED (2026-08-31): take()/rebuild()/cycle() no longer have callers on
+//! the serving path - by explicit request the DJ builds every set live,
+//! because banked sets (deliberately jitter-free) dealt the same songs on
+//! every press. build_charts_reply remains LIVE and used. Do not delete;
+//! see attackfm-parked-not-dead.
+//!
 //! Live, the DJ answers in seconds, which bought speed by benching the
 //! model - a taste-scored ranking with jitter and no judgement, which a
 //! listener correctly reads as glorified shuffle. The judgement happens HERE
@@ -164,6 +170,13 @@ pub async fn build_charts_reply(state: &Arc<AppState>, user: i64, curate: bool) 
     // already spawned behind it.
     if curate {
         crate::lore::ensure(state, &ids).await;
+    } else {
+        // The live chart door commissions its own lore now that no bank does.
+        let st = state.clone();
+        let ids = ids.clone();
+        tokio::spawn(async move {
+            crate::lore::ensure(&st, &ids).await;
+        });
     }
     let lore = crate::lore::known(state, &ids);
     let mut lore_jobs: Vec<crate::voice::Beat> = Vec::new();

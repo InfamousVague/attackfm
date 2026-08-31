@@ -235,50 +235,29 @@ pub async fn station(
     let seed = q.seed.trim().to_string();
 
     /*
-     * The banked sets first. Live building under a five-second patter budget
-     * produced honest picks but no JUDGEMENT - the model never had time to
-     * curate, and a taste-scored ranking with jitter reads as glorified
-     * shuffle. So each known vibe keeps a set built OFFLINE, where the model
-     * gets minutes: it chooses from a wider pool, sequences, and speaks.
-     * Serving one consumes it and banks a replacement behind the reply. A
-     * custom count opts out - that caller asked for something bespoke.
+     * Every press builds LIVE, by explicit request (2026-08-31): the banked
+     * sets bought the model judgement but killed the variety - a curated
+     * build is deliberately jitter-free over the same taste scores, so
+     * yesterday's set and today's dealt nearly the same songs, and a press
+     * served a copy made hours ago. Real-time selection with a dealt-lately
+     * exclusion and a weighted draw (build_reply below) is what makes two
+     * presses two different sets. The vibes module is parked, not deleted -
+     * see its header - and charts stays a live door because the chart
+     * itself is one catalogue fetch.
      */
-    if q.count.is_none() {
-        if let Some(body) = crate::vibes::take(&state, caller.id, &seed) {
+    if q.count.is_none() && crate::vibes::key_for_seed(&seed) == Some("charts") {
+        let body = crate::vibes::build_charts_reply(&state, caller.id, false).await;
+        let has = body
+            .get("blocks")
+            .and_then(|b| b.as_array())
+            .map(|a| !a.is_empty())
+            .unwrap_or(false);
+        if has {
             return Ok(Json(body));
-        }
-        // Charts unbanked builds LIVE - it is one catalogue fetch and some
-        // matching, seconds not minutes - and banks the next behind. Empty
-        // (nothing charting is on this box yet) falls through to taste so
-        // the press always plays something.
-        if crate::vibes::key_for_seed(&seed) == Some("charts") {
-            let body = crate::vibes::build_charts_reply(&state, caller.id, false).await;
-            let has = body
-                .get("blocks")
-                .and_then(|b| b.as_array())
-                .map(|a| !a.is_empty())
-                .unwrap_or(false);
-            if has {
-                let st = state.clone();
-                let user = caller.id;
-                tokio::spawn(async move {
-                    crate::vibes::rebuild(&st, user, "charts").await;
-                });
-                return Ok(Json(body));
-            }
         }
     }
 
     let reply = build_reply(&state, caller.id, &seed, want, false).await?;
-    // A vibe served live means none was banked; bank the next one now.
-    if crate::vibes::key_for_seed(&seed).is_some() {
-        let st = state.clone();
-        let user = caller.id;
-        let seed = seed.clone();
-        tokio::spawn(async move {
-            crate::vibes::rebuild_for_seed(&st, user, &seed).await;
-        });
-    }
     Ok(Json(reply))
 }
 
@@ -316,9 +295,18 @@ pub(crate) async fn build_reply(
         seed_vec = embed(&seed).await;
     }
 
-    // Score the whole library, hold back the very-recently-played so the DJ does
-    // not replay the last hour, and cap per artist.
-    let held: HashSet<i64> = taste.heard.clone();
+    // Score the whole library, hold back the very-recently-played so the DJ
+    // does not replay the last hour, and cap per artist. The DEALT ledger
+    // joins the hold: anything a set offered in the last three days sits out,
+    // so consecutive presses cannot deal the same hand - unless the library
+    // is small enough that the exclusion would empty the table, in which
+    // case variety honestly costs repeats and the hold is released.
+    let mut held: HashSet<i64> = taste.heard.clone();
+    let dealt = state.db.dj_dealt_since(user, crate::db::now_ms() - 72 * 60 * 60 * 1000);
+    let library_size = feats.iter().filter(|f| !f.quarantined).count();
+    if library_size > dealt.len() + want * 2 {
+        held.extend(dealt);
+    }
 
     /*
      * The taste profile, in every vector the library actually has.
@@ -408,6 +396,31 @@ pub(crate) async fn build_reply(
             .collect()
     };
     ranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    /*
+     * The draw, not the top: a deterministic head of this ranking is the
+     * same set every press ("not randomizing", by report). The picks are a
+     * weighted sample over a WIDE head instead - closer to the top is still
+     * likelier, but every press shuffles the deal - which, with the dealt
+     * ledger above, is what "generate it fresh" actually means.
+     */
+    let ranked: Vec<(f32, i64)> = {
+        use rand_distr::Distribution;
+        let head = ranked.into_iter().take(want * 6).collect::<Vec<_>>();
+        let mut rng = rand::thread_rng();
+        let mut drawn: Vec<(f64, (f32, i64))> = head
+            .into_iter()
+            .enumerate()
+            .map(|(i, row)| {
+                // Rank-weighted lottery: seat 1 is ~6x likelier than seat 90.
+                let weight = 1.0 / (1.0 + i as f64 / 15.0);
+                let p: f64 = rand_distr::Uniform::new(0.0f64, 1.0).sample(&mut rng);
+                (p.powf(1.0 / weight), row)
+            })
+            .collect();
+        drawn.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        drawn.into_iter().map(|(_, row)| row).collect()
+    };
 
     let artist_of: HashMap<i64, String> = feats
         .iter()
@@ -586,6 +599,17 @@ pub(crate) async fn build_reply(
      */
     if curate {
         crate::lore::ensure(state, &picks).await;
+    } else {
+        // With the banks retired (the old generators), the live reply is
+        // where lore gets commissioned: served now from what is on file,
+        // written behind for next time. Safe today in the way it was not
+        // under banking - ensure's wait-lock has no inline bank pass to
+        // starve, and its own cooldowns bound the model time.
+        let st = state.clone();
+        let ids = picks.clone();
+        tokio::spawn(async move {
+            crate::lore::ensure(&st, &ids).await;
+        });
     }
     let lore = crate::lore::known(state, &picks);
     let mut lore_jobs: Vec<crate::voice::Beat> = Vec::new();
