@@ -159,7 +159,18 @@ fn fan_to(state: &Arc<AppState>, user: i64, found: &[Found]) {
          */
         if state
             .db
-            .add_discovery(user, &f.ext_id, &f.title, &f.artist, &f.cover, &f.url, &f.preview, "", f.rank)
+            .add_discovery(
+                user,
+                &f.ext_id,
+                &f.title,
+                &f.artist,
+                &f.cover,
+                &f.url,
+                &f.preview,
+                "",
+                f.rank,
+                f.lane,
+            )
             .is_ok()
         {
             let _ = state.db.tag_discovery_lane(user, &f.ext_id, f.lane, f.rank);
@@ -277,4 +288,3 @@ async fn fresh_releases() -> Vec<Found> {
     }
     out
 }
-

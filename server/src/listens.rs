@@ -124,6 +124,8 @@ pub(crate) fn ingest(db: &Db, user_id: i64, events: &[IncomingListen]) -> usize 
             // did the listening, since wanted is wanted. The rev bump inside
             // carries the change to every synced client.
             if e.completed {
+                db.adopt_recommendation_exposures(user_id, e.track_id);
+                db.settle_pull_adoption(e.track_id, user_id);
                 db.promote_curator_track(e.track_id);
             }
         }

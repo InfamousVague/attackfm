@@ -245,15 +245,6 @@ const LIST_LEN: usize = 30;
 /// At most this many by one artist in a list, so a favourite cannot fill it.
 const PER_ARTIST_CAP: usize = 2;
 
-/// "shoegaze" -> "Shoegaze", for list names built from folded tags.
-fn title_case(word: &str) -> String {
-    let mut chars = word.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-        None => String::new(),
-    }
-}
-
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -824,119 +815,9 @@ pub(crate) fn cosine(a: &[f32], b: &[f32]) -> f32 {
     dot / (na.sqrt() * nb.sqrt())
 }
 
-/// What a listener has been into lately, in the three terms the curator scores
-/// against.
-pub(crate) struct Taste {
-    /// The centre of lyrical gravity: the mean of what they play.
-    pub(crate) centroid: Option<Vec<f32>>,
-    /// The tempo they gravitate to (median of what has one).
-    pub(crate) tempo: Option<f64>,
-    /// Genres by share of recent plays.
-    pub(crate) genres: HashMap<String, f32>,
-    /// Everything they have played lately - excluded from recommendations, so
-    /// a "discover" list is not a mirror.
-    pub(crate) heard: HashSet<i64>,
-}
-
-pub(crate) fn taste_from(plays: &[i64], feats: &HashMap<i64, &TrackFeatures>) -> Taste {
-    let weighted: Vec<(i64, f32)> = plays.iter().map(|id| (*id, 1.0)).collect();
-    taste_from_weighted(&weighted, feats)
-}
-
-/// Taste built from VERDICTS: every contribution scaled by what actually
-/// happened to the track. Weight 1.0 is the old behaviour (a play is a play);
-/// a skip's 0.15 means ten abandonments finally stop outvoting one completion.
-/// `heard` keeps every id regardless of weight - a skipped song is still a
-/// song the listener met, and a discover list must not offer it straight back.
-pub(crate) fn taste_from_weighted(
-    plays: &[(i64, f32)],
-    feats: &HashMap<i64, &TrackFeatures>,
-) -> Taste {
-    let mut sum: Vec<f32> = Vec::new();
-    let mut wsum = 0.0f32;
-    let mut tempos: Vec<(f64, f32)> = Vec::new();
-    let mut genres: HashMap<String, f32> = HashMap::new();
-
-    for (id, w) in plays {
-        let w = w.max(0.0);
-        if w <= 0.0 {
-            continue;
-        }
-        let Some(f) = feats.get(id) else { continue };
-        if let Some(v) = &f.lyric_vec {
-            if sum.is_empty() {
-                sum = vec![0.0; v.len()];
-            }
-            if sum.len() == v.len() {
-                for (s, x) in sum.iter_mut().zip(v) {
-                    *s += *x * w;
-                }
-                wsum += w;
-            }
-        }
-        if let Some(b) = f.bpm {
-            tempos.push((b, w));
-        }
-        if !f.genre.trim().is_empty() {
-            *genres.entry(f.genre.to_lowercase()).or_insert(0.0) += w;
-        }
-    }
-
-    let centroid = (wsum > 0.0).then(|| sum.iter().map(|x| x / wsum).collect::<Vec<f32>>());
-    // Weighted median: the bpm where half the listened WEIGHT sits below.
-    tempos.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-    let half: f32 = tempos.iter().map(|(_, w)| w).sum::<f32>() / 2.0;
-    let tempo = (!tempos.is_empty()).then(|| {
-        let mut acc = 0.0f32;
-        for (b, w) in &tempos {
-            acc += w;
-            if acc >= half {
-                return *b;
-            }
-        }
-        tempos[tempos.len() - 1].0
-    });
-    let total: f32 = genres.values().sum();
-    if total > 0.0 {
-        for v in genres.values_mut() {
-            *v /= total;
-        }
-    }
-
-    Taste {
-        centroid,
-        tempo,
-        genres,
-        heard: plays.iter().map(|(id, _)| *id).collect(),
-    }
-}
-
-/// How well one track answers a taste, in [0, 1]. Each term degrades to a
-/// neutral 0.5 when the data behind it is missing, so a library with no
-/// tempos still ranks sensibly on words and genre alone.
-pub(crate) fn score(f: &TrackFeatures, taste: &Taste) -> f32 {
-    let lyric = match (&taste.centroid, &f.lyric_vec) {
-        (Some(c), Some(v)) => (cosine(c, v) + 1.0) / 2.0,
-        _ => 0.5,
-    };
-    let tempo = match (taste.tempo, f.bpm) {
-        // Twenty BPM out is a different feel; the falloff says so gently.
-        (Some(t), Some(b)) => (-((t - b).abs() as f32) / 25.0).exp(),
-        _ => 0.5,
-    };
-    let genre = if taste.genres.is_empty() {
-        0.5
-    } else {
-        let g = f.genre.to_lowercase();
-        // A share of 0.3 is a strong signal, so scale to reach 1 near there.
-        taste
-            .genres
-            .get(&g)
-            .map(|s| (s * 3.0).min(1.0))
-            .unwrap_or(0.15)
-    };
-    0.45 * lyric + 0.3 * tempo + 0.25 * genre
-}
+#[cfg(test)]
+pub(crate) use crate::recommendation::TasteContext as Taste;
+pub(crate) use crate::recommendation::{from_tracks as taste_from, from_weighted as taste_from_weighted, score};
 
 /// Picks the best `n`, never more than `PER_ARTIST_CAP` from one artist.
 fn take_spread(mut ranked: Vec<(f32, &TrackFeatures)>, n: usize) -> Vec<i64> {
@@ -958,44 +839,29 @@ fn take_spread(mut ranked: Vec<(f32, &TrackFeatures)>, n: usize) -> Vec<i64> {
     out
 }
 
-/// How many distinct tracks a listener must have played inside the window
-/// before their taste has an answer. Named because the CLIENT shows it: the
-/// Discover page counts up to this ("2 of 4 songs") rather than inventing a
-/// threshold of its own, so the ask can never drift from the gate.
-pub const TASTE_MIN_TRACKS: usize = 4;
-
-/// How many distinct tracks this listener has played inside the window - the
-/// numerator of that ask, and the thing taste_for gates on.
-pub(crate) fn taste_heard(state: &Arc<AppState>, user: i64) -> usize {
-    let since = now_ms() - WINDOW_30D_MS;
-    state.db.top_plays(user, since, 60).len()
-}
-
-/// This listener's taste, built from their heavy rotation. None until they
-/// have played enough for the question to have an answer.
-pub(crate) fn taste_for(state: &Arc<AppState>, user: i64) -> Option<Taste> {
-    // Verdicts first: the listen ledger knows what was finished, abandoned
-    // and hearted. Play starts are the fallback for a listener whose ledger
-    // is still shallow - old behaviour, not a new failure mode.
-    let weighted = state.db.weighted_recent_listens(user, 60);
-    if weighted.len() >= TASTE_MIN_TRACKS {
-        let all = state.db.all_features();
-        let by_id: HashMap<i64, &TrackFeatures> = all.iter().map(|f| (f.track_id, f)).collect();
-        return Some(taste_from_weighted(&weighted, &by_id));
-    }
-    let since = now_ms() - WINDOW_30D_MS;
-    let top: Vec<i64> = state
-        .db
-        .top_plays(user, since, 60)
+fn take_allocated(
+    ranked: Vec<(f32, &TrackFeatures)>,
+    n: usize,
+    taste: &crate::recommendation::TasteContext,
+    targets: crate::recommendation::AllocationTargets,
+) -> Vec<i64> {
+    let candidates = ranked
         .into_iter()
-        .map(|(id, _)| id)
+        .filter_map(|(candidate_score, feature)| {
+            crate::recommendation::classify(feature, taste, 0.0).map(|class| {
+                crate::recommendation::AllocationCandidate {
+                    id: feature.track_id,
+                    artist: feature.artist.clone(),
+                    score: candidate_score,
+                    class,
+                }
+            })
+        })
         .collect();
-    if top.len() < TASTE_MIN_TRACKS {
-        return None;
-    }
-    let all = state.db.all_features();
-    let by_id: HashMap<i64, &TrackFeatures> = all.iter().map(|f| (f.track_id, f)).collect();
-    Some(taste_from(&top, &by_id))
+    crate::recommendation::rerank_allocated(candidates, n, targets)
+        .into_iter()
+        .map(|candidate| candidate.id)
+        .collect()
 }
 
 /// The same three-term scoring the library uses, for something that is not a
@@ -1016,7 +882,7 @@ pub(crate) fn user_taste_for(
     let mut verdicts = state.db.taste_verdicts(user, since_ms, 4000);
     if verdicts.len() < 8 {
         let top = state.db.top_plays(user, now_ms() - WINDOW_30D_MS, 60);
-        if top.len() < TASTE_MIN_TRACKS {
+        if top.len() < crate::recommendation::TASTE_MIN_TRACKS {
             return None;
         }
         verdicts = top
@@ -1045,7 +911,7 @@ pub(crate) fn user_taste_for(
 }
 
 pub(crate) fn score_parts(
-    taste: &Taste,
+    taste: &crate::recommendation::TasteContext,
     lyric_vec: Option<&[f32]>,
     bpm: Option<f64>,
     genre: Option<&str>,
@@ -1067,6 +933,28 @@ pub(crate) fn score_parts(
         _ => 0.5,
     };
     0.45 * lyric + 0.3 * tempo + 0.25 * g
+}
+
+fn record_curated_exposures(
+    state: &Arc<AppState>,
+    user: i64,
+    surface: &str,
+    ids: &[i64],
+    taste: &crate::recommendation::TasteContext,
+    by_id: &HashMap<i64, &TrackFeatures>,
+) {
+    for id in ids {
+        let Some(feature) = by_id.get(id) else { continue };
+        let Some(class) = crate::recommendation::classify(feature, taste, 0.0) else { continue };
+        state.db.record_recommendation_exposure(
+            user,
+            surface,
+            &id.to_string(),
+            Some(*id),
+            &feature.artist,
+            class.as_str(),
+        );
+    }
 }
 
 /// Embeds arbitrary text with the configured model - what discovery uses for
@@ -1119,6 +1007,7 @@ async fn curate_cycle(state: &Arc<AppState>) {
     let by_id: HashMap<i64, &TrackFeatures> = all.iter().map(|f| (f.track_id, f)).collect();
 
     for user in listeners {
+/*
         /*
          * Taste comes from VERDICTS now, not from play starts.
          *
@@ -1176,6 +1065,14 @@ async fn curate_cycle(state: &Arc<AppState>) {
          * against its owner's taste and adopting it is their gesture to make.
          */
         let available = |f: &TrackFeatures| !f.quarantined || f.curator_user_id == Some(user);
+*/
+        // The shared profile keeps long-term identity distinct from the 30-day
+        // current-interest window and accounts for completions, partials,
+        // skips, and hearts. Play starts remain only the shallow-ledger fallback.
+        let Some(taste) = crate::recommendation::for_db(&state.db, user, now_ms()) else {
+            continue;
+        };
+        let available = |f: &TrackFeatures| !f.quarantined || f.curator_user_id == Some(user);
 
         // Everything they have NOT been playing lately, scored against them.
         let fresh: Vec<(f32, &TrackFeatures)> = all
@@ -1183,20 +1080,25 @@ async fn curate_cycle(state: &Arc<AppState>) {
             // Not what they have been playing, and nothing that belongs to
             // another listener's unfinished audition - see `available`.
             .filter(|f| !taste.heard.contains(&f.track_id) && available(f))
-            .map(|f| (crate::taste::score(f, &taste), f))
+            .map(|f| (crate::recommendation::score(f, &taste), f))
             .collect();
         if fresh.len() < 8 {
             continue;
         }
 
         // The blend: the best overall answer to this listener.
-        let blend = take_spread(fresh.clone(), LIST_LEN);
+        let blend = take_allocated(
+            fresh.clone(),
+            LIST_LEN,
+            &taste,
+            crate::recommendation::GENERAL_ALLOCATION,
+        );
 
         // The tempo lane: only what sits near their tempo, then ordered as a
         // ramp so the list flows instead of lurching.
         let mut lane: Vec<(f32, &TrackFeatures)> = fresh
             .iter()
-            .filter(|(_, f)| match (taste.tempo_center(), f.bpm) {
+            .filter(|(_, f)| match (taste.tempo, f.bpm) {
                 (Some(t), Some(b)) => (t - b).abs() <= 12.0,
                 _ => false,
             })
@@ -1211,7 +1113,7 @@ async fn curate_cycle(state: &Arc<AppState>) {
         });
 
         // The lyrical echo: nearest to their centre of gravity in words alone.
-        let echo: Vec<(f32, &TrackFeatures)> = match &taste.lyric {
+        let echo: Vec<(f32, &TrackFeatures)> = match &taste.centroid {
             Some(c) => fresh
                 .iter()
                 .filter_map(|(_, f)| f.lyric_vec.as_ref().map(|v| (cosine(c, v), *f)))
@@ -1220,8 +1122,12 @@ async fn curate_cycle(state: &Arc<AppState>) {
         };
         let echo_ids = take_spread(echo, LIST_LEN);
 
-        let tempo_label = taste.tempo_center().map(|t| t.round() as i64);
-        let top_genre = taste.favourite_tags(1).first().map(|(g, _)| g.clone());
+        let tempo_label = taste.tempo.map(|t| t.round() as i64);
+        let top_genre = taste
+            .genres
+            .iter()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(genre, _)| genre.clone());
 
         // Names: the model writes them when there is one, else they say
         // plainly what the maths did. Either way the ids are the maths'.
@@ -1235,6 +1141,7 @@ async fn curate_cycle(state: &Arc<AppState>) {
                 )
             });
             let _ = state.db.put_curated(user, "blend", &n, &b, &blend);
+            record_curated_exposures(state, user, "curator:blend", &blend, &taste, &by_id);
         }
         if lane_ids.len() >= 8 {
             let (n, b) = named.get(1).cloned().unwrap_or_else(|| {
@@ -1286,7 +1193,7 @@ async fn curate_cycle(state: &Arc<AppState>) {
             .enumerate()
             .filter_map(|(pos, id)| {
                 let f = by_id.get(id)?;
-                available(f).then(|| (pos, crate::taste::score(f, &taste), *id))
+                available(f).then(|| (pos, crate::recommendation::score(f, &taste), *id))
             })
             .collect();
         // Best for them first, then keep only as many as the list holds...
@@ -1367,14 +1274,20 @@ async fn curate_cycle(state: &Arc<AppState>) {
             let ranked: Vec<(f32, &TrackFeatures)> = pool
                 .iter()
                 .filter(|f| fits(f))
-                .map(|f| (crate::taste::score(f, &taste), *f))
+                .map(|f| (crate::recommendation::score(f, &taste), *f))
                 .collect();
-            let ids = take_spread(ranked, LIST_LEN);
+            let ids = take_allocated(
+                ranked,
+                LIST_LEN,
+                &taste,
+                crate::recommendation::GENERAL_ALLOCATION,
+            );
             if ids.len() >= 8 {
                 let _ = state.db.put_curated(user, slug, name, blurb, &ids);
             }
         }
 
+/*
         // Daily mixes: one per neighbourhood of what you play. The clusters
         // are the top genre words of your rotation (tags split on commas, so
         // "Shoegaze, Alternative" feeds both camps), each mix drawn from what
@@ -1386,26 +1299,75 @@ async fn curate_cycle(state: &Arc<AppState>) {
         // here was undoing a whole-string genre key that no longer exists.
         let top_camps: Vec<(String, f32)> = taste.favourite_tags(6);
         for (n, (camp, _)) in top_camps.iter().take(3).enumerate() {
+*/
+        // Behavior-driven intents (Stage 6): the standing shelf above keeps its
+        // evergreen recipes, and these lists are what the listener's own
+        // behavior currently supports - dominant long-term affinities plus
+        // recent-interest deltas, each citing its evidence. The model may name
+        // them; it cannot invent one. Two intents selecting nearly the same
+        // lane collapse into one.
+        let recent_ctx = (!taste.recent_weights.is_empty())
+            .then(|| taste_from_weighted(&taste.recent_weights, &by_id));
+        let long_ctx = taste_from_weighted(&taste.long_term_weights, &by_id);
+        let prior: HashMap<String, (String, String)> = state
+            .db
+            .curated_intents(user)
+            .into_iter()
+            .map(|(key, name, blurb, _)| (key, (name, blurb)))
+            .collect();
+        let mut built: Vec<(crate::intents::PlaylistIntent, Vec<i64>)> = Vec::new();
+        for intent in crate::intents::generate(recent_ctx.as_ref(), &long_ctx) {
             let ranked: Vec<(f32, &TrackFeatures)> = fresh
                 .iter()
-                .filter(|(_, f)| f.genre.to_lowercase().contains(camp.as_str()))
+                .filter(|(_, f)| crate::intents::matches(&intent, f))
                 .cloned()
                 .collect();
-            let ids = take_spread(ranked, LIST_LEN);
+            let targets = match intent.kind {
+                crate::intents::IntentKind::LongTerm => crate::recommendation::GENERAL_ALLOCATION,
+                crate::intents::IntentKind::RecentShift => crate::recommendation::DISCOVERY_ALLOCATION,
+            };
+            let ids = take_allocated(ranked, LIST_LEN, &taste, targets);
             if ids.len() >= 8 {
-                let title = title_case(camp);
-                let _ = state.db.put_curated(
-                    user,
-                    &format!("mix-{}", n + 1),
-                    &format!("{title} mix"),
-                    &format!("A daily mix from your {title} neighbourhood."),
-                    &ids,
-                );
+                let kept: Vec<Vec<i64>> = built.iter().map(|(_, ids)| ids.clone()).collect();
+                if crate::intents::is_duplicate_lane(&kept, &ids) {
+                    continue;
+                }
+                built.push((intent, ids));
             }
+        }
+        let intent_names = name_intents(state, &built).await;
+        for (i, (intent, ids)) in built.iter().enumerate() {
+            // Name stability: a persisted name for the same intent key wins over
+            // a fresh model suggestion, so the shelf does not rename itself daily.
+            let (name, blurb) = prior
+                .get(&intent.key)
+                .cloned()
+                .or_else(|| intent_names.get(i).cloned().flatten())
+                .unwrap_or_else(|| {
+                    (
+                        intent.fallback_title.clone(),
+                        intent.evidence.join(" "),
+                    )
+                });
+            let slug = format!(
+                "intent-{}",
+                intent
+                    .key
+                    .chars()
+                    .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
+                    .collect::<String>()
+            );
+            let _ = state.db.put_curated(user, &slug, &name, &blurb, ids);
+            record_curated_exposures(state, user, &format!("curator:{slug}"), ids, &taste, &by_id);
+            let evidence = serde_json::json!(intent.evidence);
+            state
+                .db
+                .put_curated_intent(user, &intent.key, &name, &blurb, &evidence);
         }
 
         // The decade station: where your rotation lives in time, heard tracks
         // welcome - a station is a place, not a surprise.
+/*
         // `heard` minus `rejected`: where their rotation lives in time should
         // not be decided by the songs they skipped out of.
         let mut years: Vec<i64> = taste
@@ -1413,6 +1375,11 @@ async fn curate_cycle(state: &Arc<AppState>) {
             .iter()
             .filter(|id| !taste.rejected.contains(id))
             .filter_map(|id| by_id.get(id))
+*/
+        let mut years: Vec<i64> = taste
+            .long_term_weights
+            .iter()
+            .filter_map(|(id, _)| by_id.get(id))
             .filter_map(|f| f.year)
             .collect();
         years.sort_unstable();
@@ -1421,7 +1388,7 @@ async fn curate_cycle(state: &Arc<AppState>) {
             let ranked: Vec<(f32, &TrackFeatures)> = pool
                 .iter()
                 .filter(|f| f.year.is_some_and(|y| (d0..d0 + 10).contains(&y)))
-                .map(|f| (crate::taste::score(f, &taste), *f))
+                .map(|f| (crate::recommendation::score(f, &taste), *f))
                 .collect();
             let ids = take_spread(ranked, LIST_LEN);
             if ids.len() >= 8 {
@@ -1537,6 +1504,69 @@ async fn name_lists(
         })
         .filter(|(t, _)| !t.is_empty())
         .collect()
+}
+
+/// Asks the model to name the supported intents, one (title, blurb) each, in
+/// order. Returns one slot per intent; anything beyond the supported set is
+/// dropped by `intents::apply_names`, and every caller falls back to the
+/// intent's plain evidence-backed title.
+async fn name_intents(
+    state: &Arc<AppState>,
+    built: &[(crate::intents::PlaylistIntent, Vec<i64>)],
+) -> Vec<Option<(String, String)>> {
+    let empty = || vec![None; built.len()];
+    let (Some(url), Some(model)) = (ai_url(), ai_chat_model()) else {
+        return empty();
+    };
+    let mut lines = Vec::new();
+    for (i, (intent, ids)) in built.iter().enumerate() {
+        let sample: String = state
+            .db
+            .tracks_for_curation(&ids.iter().copied().take(6).collect::<Vec<_>>())
+            .iter()
+            .map(|t| format!("{} — {}", t.artist, t.title))
+            .collect::<Vec<_>>()
+            .join("; ");
+        lines.push(format!(
+            "Playlist {} ({}): evidence: {}. Sample tracks: {}",
+            i + 1,
+            intent.kind.as_str(),
+            intent.evidence.join(" "),
+            sample
+        ));
+    }
+    let prompt = format!(
+        "You name playlists for one listener's own music collection. Each playlist below already exists because of the cited listening evidence - your job is ONLY to name and describe it. Titles 2-4 words, evocative but not silly, faithful to the evidence. Blurbs one short sentence, warm and plain, no exclamation marks.\n{}\n\
+         Answer with STRICT JSON and nothing else: [{{\"title\":\"...\",\"blurb\":\"...\"}}, ...] with exactly one object per playlist, in the same order.",
+        lines.join("\n"),
+    );
+    let parsed = async {
+        let reply = client(120)
+            .post(format!("{}/v1/chat/completions", url.trim_end_matches('/')))
+            .json(&json!({
+                "model": model,
+                "messages": [{ "role": "user", "content": prompt }],
+                "temperature": 0.7,
+            }))
+            .send()
+            .await
+            .ok()?;
+        let body = reply.json::<serde_json::Value>().await.ok()?;
+        let content = body.pointer("/choices/0/message/content")?.as_str()?;
+        let (start, end) = (content.find('[')?, content.rfind(']')?);
+        if end <= start {
+            return None;
+        }
+        serde_json::from_str::<Vec<serde_json::Value>>(content.get(start..=end)?).ok()
+    }
+    .await;
+    match parsed {
+        Some(parsed) => crate::intents::apply_names(
+            &built.iter().map(|(i, _)| i.clone()).collect::<Vec<_>>(),
+            parsed,
+        ),
+        None => empty(),
+    }
 }
 
 /// One pass over the discovery pool for every recent listener.
@@ -1804,5 +1834,29 @@ mod verdict_taste {
         assert_eq!(taste.tempo, Some(80.0), "weight decides the median, not row count");
         // Both ids stay heard - a skipped song is still one the listener met.
         assert!(taste.heard.contains(&1) && taste.heard.contains(&2));
+    }
+
+    #[test]
+    fn current_basic_taste_snapshot_is_deterministic() {
+        let a = TrackFeatures { track_id: 1, bpm: Some(100.0), genre: "Metal".into(), lyric_vec: Some(vec![1.0,0.0]), ..Default::default() };
+        let b = TrackFeatures { track_id: 2, bpm: Some(140.0), genre: "Industrial".into(), lyric_vec: Some(vec![0.0,1.0]), ..Default::default() };
+        let feats = [(1,&a),(2,&b)].into_iter().collect();
+        let t = taste_from(&[1,2],&feats);
+        assert_eq!(t.centroid,Some(vec![0.5,0.5]));
+        assert_eq!(t.tempo,Some(100.0)); // current weighted-median tie behaviour
+        assert_eq!(t.genres,HashMap::from([("metal".into(),0.5),("industrial".into(),0.5)]));
+        assert_eq!(t.heard,HashSet::from([1,2]));
+    }
+
+    #[test]
+    fn current_three_component_score_snapshot_is_deterministic() {
+        let t = Taste { centroid:Some(vec![1.0,0.0]), tempo:Some(120.0), genres:HashMap::from([("metal".into(),1.0)]), heard:HashSet::new(), ..Default::default() };
+        let exact = TrackFeatures { genre:"metal".into(), bpm:Some(120.0), lyric_vec:Some(vec![1.0,0.0]), ..Default::default() };
+        let unrelated = TrackFeatures { genre:"k-pop".into(), bpm:Some(170.0), lyric_vec:Some(vec![0.0,1.0]), ..Default::default() };
+        // Preserve the Stage 0 legacy three-component snapshot separately;
+        // Stage 4 intentionally routes production `score()` through the richer
+        // inspectable scorer.
+        assert!((crate::recommendation::score_parts(&t, exact.lyric_vec.as_deref(), exact.bpm, Some(&exact.genre))-1.0).abs()<1e-6);
+        assert!((crate::recommendation::score_parts(&t, unrelated.lyric_vec.as_deref(), unrelated.bpm, Some(&unrelated.genre))-0.3031006).abs()<1e-5, "legacy score weights changed; update the documented baseline intentionally");
     }
 }

@@ -66,6 +66,13 @@ const CHART_EVERY: usize = 2;
 const CHART_WINDOW_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 /// How much adoption history a tuning step needs before it moves the dial.
 const TUNE_MIN_SAMPLES: i64 = 5;
+/// Personal pacing: Collector may start at most this many acquisitions for one
+/// listener inside a rolling week, regardless of available global disk.
+const USER_PULLS_PER_7D: i64 = 4;
+const USER_PACING_WINDOW_MS: i64 = 7 * 24 * 60 * 60 * 1000;
+/// A second per-user guard: one listener cannot occupy more than 25 GB of the
+/// shared audition ledger while their pulls remain unadopted.
+const USER_AUDITION_CAP_BYTES: i64 = 25_000_000_000;
 
 /// The date deck every account is entitled to, listening history or not.
 /// Below this floor a user joins the collector's rotation cold.
@@ -121,6 +128,33 @@ fn threshold(exploration: f64) -> f64 {
 /// is still fine (that costs nothing); BUYING it is not.
 fn measured(d: &DiscoveryRow) -> bool {
     d.bpm.is_some() || d.lyric_vec.is_some()
+}
+
+fn metadata_confidence(d: &DiscoveryRow) -> f64 {
+    match (d.bpm.is_some(), d.lyric_vec.is_some()) {
+        (true, true) => 1.0,
+        (true, false) | (false, true) => 0.65,
+        (false, false) => 0.0,
+    }
+}
+
+fn eligible(d: &DiscoveryRow, exploration: f64) -> bool {
+    d.score >= threshold(exploration)
+        && measured(d)
+        && metadata_confidence(d) >= 0.65
+        && !d.lane.trim().is_empty()
+}
+
+fn pacing_allows(pulls_in_window: i64, audition_bytes: i64) -> bool {
+    pulls_in_window < USER_PULLS_PER_7D && audition_bytes < USER_AUDITION_CAP_BYTES
+}
+
+fn tuned_exploration(current: f64, adopted: i64, settled: i64) -> f64 {
+    if settled <= 0 {
+        return current;
+    }
+    let rate = adopted as f64 / settled as f64;
+    (current + (rate - 0.35) * 0.2).clamp(0.15, 0.85)
 }
 
 /// Starts the collector. Runs until the process ends.
@@ -322,6 +356,12 @@ async fn pull_cycle(state: &Arc<AppState>) {
         if !enabled {
             continue;
         }
+        if !pacing_allows(
+            state.db.pulls_since(user, now_ms() - USER_PACING_WINDOW_MS),
+            state.db.collector_user_ledger_bytes(user),
+        ) {
+            continue;
+        }
         // Taste moved since these candidates were scored; re-rank the pool
         // against who the listener is NOW before choosing from it. This is
         // the caller rescore() spent months waiting for.
@@ -386,7 +426,7 @@ async fn pull_cycle(state: &Arc<AppState>) {
                             && !taken.contains(&d.ext_id)
                             && !d.url.trim().is_empty()
                     })
-                    .find(|d| d.score as f64 >= bar && measured(d))
+                    .find(|d| d.score as f64 >= bar && eligible(d, exploration))
             });
             let Some(candidate) = pick else { break };
             let charted = lanes
@@ -515,6 +555,7 @@ pub(crate) async fn buy(state: &Arc<AppState>, user: i64, d: &DiscoveryRow, char
             bpm: None,
             lyric_vec: None,
             score: d.score,
+            lane: d.lane.clone(),
         };
         let user2 = user;
         tokio::spawn(async move {
@@ -649,17 +690,19 @@ fn tune_cycle(state: &Arc<AppState>) {
     let since = now_ms() - WINDOW_30D_MS;
     for user in state.db.listeners_since(since) {
         let (_, exploration) = state.db.collector_state(user);
+        state.db.classify_audition_outcomes(user, now_ms());
         if !state.db.collector_tune_due(user, now_ms() - 24 * 60 * 60 * 1000) {
             continue;
         }
-        let (adopted, landed) = state.db.pull_adoption(user, now_ms() - 24 * 60 * 60 * 1000);
+        let (adopted, landed) = state
+            .db
+            .pull_adoption_initiator(user, now_ms() - 24 * 60 * 60 * 1000);
         if landed < TUNE_MIN_SAMPLES {
             continue;
         }
-        let rate = adopted as f64 / landed as f64;
-        // A third adopted holds the dial still; better pushes out, worse
-        // pulls in. Small steps - taste moves slowly and so should this.
-        let next = (exploration + (rate - 0.35) * 0.2).clamp(0.15, 0.85);
+        // A third adopted holds the dial still; better pushes out, worse pulls
+        // in. Small steps - taste moves slowly and so should this.
+        let next = tuned_exploration(exploration, adopted, landed);
         let _ = state.db.set_collector_exploration(user, next);
     }
 }
@@ -889,7 +932,7 @@ pub async fn date_candidates(
     let lane_of = |d: &crate::db::DiscoveryRow| {
         lanes.get(&d.ext_id).map(|(lane, _)| lane.as_str()).unwrap_or("taste").to_string()
     };
-    let mut by_pop = |name: &str| -> std::collections::VecDeque<&crate::db::DiscoveryRow> {
+    let by_pop = |name: &str| -> std::collections::VecDeque<&crate::db::DiscoveryRow> {
         let mut rows: Vec<&crate::db::DiscoveryRow> =
             all.iter().filter(|d| lane_of(d) == name).collect();
         rows.sort_by(|a, b| {
@@ -1165,6 +1208,11 @@ pub async fn date_done(
     let mut seeds: Vec<(String, i64)> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let liked = state.db.favorites(caller.id);
+    for track_id in &body.passed {
+        state
+            .db
+            .settle_pull_outcome(*track_id, caller.id, "dismissed");
+    }
     for (name, n) in state.db.artists_for(&body.kept).into_iter().chain(state.db.artists_for(&liked)) {
         let key = crate::discovery::fold(&name);
         if key.is_empty() || avoid.contains(&key) || !seen.insert(key) {
@@ -1293,8 +1341,6 @@ pub async fn settings(
 
 #[cfg(test)]
 mod delegation_tests {
-    use super::*;
-
     /// A database of its own per test. Sharing one path across tests in the
     /// same process is two connections to one file and cargo runs them at the
     /// same time: the second gets "database is locked", not a real failure.
@@ -1425,5 +1471,53 @@ mod delegation_tests {
             !db.pulled_ext_ids(db.first_admin_id().unwrap(), 0).contains("a"),
             "and nothing is left blocking the candidate",
         );
+    }
+}
+
+#[cfg(test)]
+mod stage9_tests {
+    use super::*;
+
+    fn candidate(score: f64, bpm: Option<f64>, lyrics: bool, lane: &str) -> DiscoveryRow {
+        DiscoveryRow {
+            ext_id: "fixture".into(),
+            title: "Candidate".into(),
+            artist: "Adjacent Artist".into(),
+            cover: String::new(),
+            url: "https://fixture.invalid".into(),
+            preview: String::new(),
+            seed: "Known Artist".into(),
+            popularity: 0.2,
+            bpm,
+            lyric_vec: lyrics.then(|| vec![1.0, 0.0]),
+            score,
+            lane: lane.into(),
+        }
+    }
+
+    #[test]
+    fn discovery_can_be_free_to_show_but_too_weak_to_download() {
+        let free = candidate(crate::discovery::FEED_FLOOR + 0.03, Some(120.0), true, "recent-artist");
+        assert!(free.score >= crate::discovery::FEED_FLOOR);
+        assert!(!eligible(&free, 1.0));
+        assert!(threshold(1.0) > crate::discovery::FEED_FLOOR);
+    }
+
+    #[test]
+    fn collector_requires_measured_confident_provenance() {
+        let strong = candidate(0.9, Some(120.0), false, "listenbrainz-similar");
+        assert!(eligible(&strong, 0.5));
+        assert!(!eligible(&candidate(0.9, None, false, "listenbrainz-similar"), 0.5));
+        assert!(!eligible(&candidate(0.9, Some(120.0), true, ""), 0.5));
+    }
+
+    #[test]
+    fn per_user_pacing_and_outcomes_move_reach_gradually() {
+        assert!(pacing_allows(USER_PULLS_PER_7D - 1, USER_AUDITION_CAP_BYTES - 1));
+        assert!(!pacing_allows(USER_PULLS_PER_7D, 0));
+        assert!(!pacing_allows(0, USER_AUDITION_CAP_BYTES));
+        assert!(tuned_exploration(0.5, 5, 5) > 0.5);
+        assert!(tuned_exploration(0.5, 0, 5) < 0.5);
+        assert!(tuned_exploration(0.5, 2, 5) > 0.5);
     }
 }

@@ -128,6 +128,7 @@ pub async fn hear(
                     // Above the collector's own candidates on the queue: the
                     // listener literally asked for this one out loud.
                     score: 10.0,
+                    lane: "voice-request".into(),
                 };
                 let _ = crate::collector::buy(&st, user, &d, false).await;
             }

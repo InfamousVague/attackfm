@@ -32,7 +32,7 @@ use rand::Rng;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::curator::{score, taste_for, Taste};
+use crate::recommendation::{for_user as taste_for, score, TasteContext as Taste};
 use crate::{auth, AppState};
 
 #[derive(Deserialize)]
@@ -130,6 +130,7 @@ pub async fn radio(
         tempo: None,
         genres: HashMap::new(),
         heard: HashSet::new(),
+        ..Default::default()
     });
 
     // The seed lends its own feel to the centre. Blending rather than

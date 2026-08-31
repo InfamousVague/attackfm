@@ -38,6 +38,15 @@ pub struct Db {
     conn: Mutex<Connection>,
 }
 
+#[cfg(test)]
+impl Db {
+    /// Narrow test-only escape hatch for deterministic fixtures. Keeping it behind cfg(test)
+    /// prevents fixture SQL from becoming an application API.
+    pub(crate) fn test_connection<T>(&self, f: impl FnOnce(&Connection) -> rusqlite::Result<T>) -> rusqlite::Result<T> {
+        f(&self.lock())
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SpecificTagCandidate {
     pub canonical_tag: String,
@@ -689,6 +698,9 @@ CREATE TABLE IF NOT EXISTS discoveries (
   vec_dims   INTEGER NOT NULL DEFAULT 0,
   score      REAL NOT NULL DEFAULT 0,
   checked_at INTEGER NOT NULL DEFAULT 0,
+  -- Which retrieval lane produced this candidate (Stage 7): recent-artist,
+  -- long-term-artist, favorites, playlist, listenbrainz, scene, ...
+  lane       TEXT NOT NULL DEFAULT '',
   found_at   INTEGER NOT NULL,
   PRIMARY KEY (user_id, ext_id)
 );
@@ -1163,6 +1175,14 @@ CREATE TABLE IF NOT EXISTS curator_pulls (
   -- queued | landed | promoted | failed
   state      TEXT NOT NULL DEFAULT 'queued',
   bytes      INTEGER NOT NULL DEFAULT 0,
+  -- Stage 9 ownership accounting: who adopted the audition, and how the pull
+  -- ended for the INITIATING listener specifically. outcome is one of ''
+  -- (unsettled), adopted-initiator, adopted-other, skipped, dismissed, untouched,
+  -- deleted. Tuning reads the initiator's outcomes, never a stranger's
+  -- promotion.
+  outcome    TEXT NOT NULL DEFAULT '',
+  outcome_at INTEGER NOT NULL DEFAULT 0,
+  adopted_by INTEGER,
   created_at INTEGER NOT NULL,
   UNIQUE (user_id, ext_id)
 );
@@ -1502,6 +1522,70 @@ CREATE TABLE IF NOT EXISTS peer_sync_queue (
   updated_at  INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS peer_sync_due ON peer_sync_queue(state, next_try_at);
+
+-- Persisted playlist-intent identity (intents.rs, personalization Stage 6).
+-- An intent exists only because long-term or recent behavior supports it;
+-- keeping its key -> name mapping here is what makes a regenerated shelf feel
+-- stable rather than renamed every day.
+CREATE TABLE IF NOT EXISTS curator_intents (
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  intent_key TEXT NOT NULL,
+  name       TEXT NOT NULL,
+  blurb      TEXT NOT NULL DEFAULT '',
+  -- JSON array of the human-readable evidence lines that justified the intent.
+  evidence   TEXT NOT NULL DEFAULT '[]',
+  built_at   INTEGER NOT NULL,
+  PRIMARY KEY (user_id, intent_key)
+);
+
+-- Durable discovery rejection memory (personalization Stage 7). Dismissing a
+-- candidate used to delete the row, which let the next harvest bring it
+-- straight back. scope is 'track' (folded artist|title key) or 'artist'
+-- (folded artist); rejected_at drives the softening windows.
+CREATE TABLE IF NOT EXISTS discovery_rejections (
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  scope       TEXT NOT NULL,
+  key         TEXT NOT NULL,
+  rejected_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, scope, key)
+);
+
+-- The materialized, versioned taste profile (personalization Stage 8). Raw
+-- behavioral events remain the source of truth; this is the inspectable
+-- snapshot every recommendation surface reads, rebuilt lazily when dirty,
+-- stale, or from an older algorithm version.
+CREATE TABLE IF NOT EXISTS user_taste_profiles (
+  user_id           INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  version           INTEGER NOT NULL,
+  generated_at      INTEGER NOT NULL,
+  dirty             INTEGER NOT NULL DEFAULT 1,
+  confidence        REAL NOT NULL DEFAULT 0,
+  -- JSON arrays of [track_id, weight] pairs, the profile's reloadable inputs.
+  recent_weights    TEXT NOT NULL DEFAULT '[]',
+  long_term_weights TEXT NOT NULL DEFAULT '[]',
+  -- Human-readable inspection summary: genre/artist/tag shares, tempos,
+  -- coverage. Recomputed on every rebuild.
+  summary           TEXT NOT NULL DEFAULT '{}'
+);
+
+-- Exposure/adoption ledger by exploration class (personalization Stage 10).
+-- One row per candidate/surface/day prevents polling a feed from pretending
+-- the same recommendation was dozens of independent exposures.
+CREATE TABLE IF NOT EXISTS recommendation_exposures (
+  user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  surface          TEXT NOT NULL,
+  candidate_key    TEXT NOT NULL,
+  track_id         INTEGER REFERENCES tracks(id) ON DELETE SET NULL,
+  artist           TEXT NOT NULL DEFAULT '',
+  class             TEXT NOT NULL,
+  exposure_bucket  INTEGER NOT NULL,
+  exposed_at        INTEGER NOT NULL,
+  adopted_at        INTEGER NOT NULL DEFAULT 0,
+  outcome           TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (user_id, surface, candidate_key, class, exposure_bucket)
+);
+CREATE INDEX IF NOT EXISTS recommendation_exposure_stats
+  ON recommendation_exposures(user_id, class, exposed_at, adopted_at);
 "#;
 
 pub(crate) fn now_ms() -> i64 {
@@ -1731,6 +1815,37 @@ impl Db {
                 conn.execute(&format!("ALTER TABLE playlists ADD COLUMN {decl}"), [])?;
             }
         }
+
+        // Personalization Stage 7: which retrieval lane produced a discovery
+        // candidate. Fresh databases carry the column from SCHEMA; existing
+        // ones gain it here, reading as an unknown-but-harmless empty lane.
+        let have: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('discoveries')")?
+            .query_map([], |r| r.get(0))?
+            .filter_map(Result::ok)
+            .collect();
+        if !have.iter().any(|c| c == "lane") {
+            conn.execute(
+                "ALTER TABLE discoveries ADD COLUMN lane TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+        }
+        // Personalization Stage 9: per-pull ownership accounting, so the
+        // initiating listener's adoption is never confused with a stranger's.
+        let have: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('curator_pulls')")?
+            .query_map([], |r| r.get(0))?
+            .filter_map(Result::ok)
+            .collect();
+        for (name, decl) in [
+            ("outcome", "outcome TEXT NOT NULL DEFAULT ''"),
+            ("outcome_at", "outcome_at INTEGER NOT NULL DEFAULT 0"),
+            ("adopted_by", "adopted_by INTEGER"),
+        ] {
+            if !have.iter().any(|c| c == name) {
+                conn.execute(&format!("ALTER TABLE curator_pulls ADD COLUMN {decl}"), [])?;
+            }
+        }
         Ok(())
     }
 
@@ -1832,7 +1947,8 @@ impl Db {
     }
 
     pub fn meta_set(&self, key: &str, value: &str) -> rusqlite::Result<()> {
-        self.lock().execute(
+        let conn = self.lock();
+        conn.execute(
             "INSERT INTO meta (k, v) VALUES (?1, ?2)
              ON CONFLICT(k) DO UPDATE SET v = excluded.v",
             params![key, value],
@@ -2661,6 +2777,10 @@ impl Db {
                 params![user_id, track_id],
             )?;
         }
+        let _ = conn.execute(
+            "UPDATE user_taste_profiles SET dirty = 1 WHERE user_id = ?1",
+            params![user_id],
+        )?;
         Ok(())
     }
 
@@ -2861,6 +2981,11 @@ impl Db {
             "UPDATE playlists SET updated_at = ?2 WHERE id = ?1",
             params![playlist_id, now_ms()],
         )?;
+        tx.execute(
+            "UPDATE user_taste_profiles SET dirty = 1
+             WHERE user_id = (SELECT user_id FROM playlists WHERE id = ?1)",
+            params![playlist_id],
+        )?;
         tx.commit()
     }
 
@@ -2887,8 +3012,21 @@ impl Db {
     }
 
     pub fn delete_playlist(&self, playlist_id: i64) -> rusqlite::Result<()> {
-        self.lock()
-            .execute("DELETE FROM playlists WHERE id = ?1", params![playlist_id])?;
+        let conn = self.lock();
+        let owner = conn
+            .query_row(
+                "SELECT user_id FROM playlists WHERE id = ?1",
+                params![playlist_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?;
+        conn.execute("DELETE FROM playlists WHERE id = ?1", params![playlist_id])?;
+        if let Some(owner) = owner {
+            let _ = conn.execute(
+                "UPDATE user_taste_profiles SET dirty = 1 WHERE user_id = ?1",
+                params![owner],
+            );
+        }
         Ok(())
     }
 
@@ -2898,9 +3036,15 @@ impl Db {
 
     /// Appends one qualifying play.
     pub fn record_play(&self, user_id: i64, track_id: i64) -> rusqlite::Result<()> {
-        self.lock().execute(
+        let conn = self.lock();
+        conn.execute(
             "INSERT INTO plays (user_id, track_id, played_at) VALUES (?1, ?2, ?3)",
             params![user_id, track_id, now_ms()],
+        )?;
+        // A meaningful event: this listener's materialized profile is stale.
+        let _ = conn.execute(
+            "UPDATE user_taste_profiles SET dirty = 1 WHERE user_id = ?1",
+            params![user_id],
         )?;
         Ok(())
     }
@@ -3081,33 +3225,49 @@ impl Db {
             .unwrap_or_default()
     }
 
-    /// Recent listening as VERDICTS, not starts: each track weighted by what
-    /// actually happened to it. A completion counts whole, an abandoned sit
-    /// counts a sliver, a heart adds on top - so a song someone bails out of
-    /// ten times finally stops shaping their taste like a loved one. Weights
-    /// per track cap at 3.0: taste is breadth, not one song on repeat.
-    pub fn weighted_recent_listens(&self, user_id: i64, limit: i64) -> Vec<(i64, f32)> {
+    /// Verdict-aware listening inside an explicit time window. Completions are
+    /// positive, neutral partial listens count gently, and early skips subtract
+    /// from affinity. The 0.05 floor is intentional: a rejected track remains
+    /// recoverable rather than becoming a permanent ban. A heart contributes
+    /// even without a listen event, while the 3.0 cap preserves profile breadth.
+    pub fn weighted_listens_since(
+        &self,
+        user_id: i64,
+        since_ms: i64,
+        limit: i64,
+    ) -> Vec<(i64, f32)> {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
-            "SELECT le.track_id,
-                    MIN(3.0, SUM(CASE WHEN le.completed = 1 THEN 1.0
-                                      WHEN le.skipped = 1 THEN 0.15
-                                      ELSE 0.5 END)
-                             + CASE WHEN EXISTS(SELECT 1 FROM favorites f
-                                                WHERE f.user_id = le.user_id
-                                                  AND f.track_id = le.track_id)
-                                    THEN 0.5 ELSE 0.0 END)
-             FROM listen_events le
-             JOIN tracks t ON t.id = le.track_id AND t.deleted = 0
-                          AND COALESCE(t.kind, 'music') <> 'book'
-             WHERE le.user_id = ?1
-             GROUP BY le.track_id
-             ORDER BY MAX(le.started_at) DESC
-             LIMIT ?2",
+            "WITH evidence AS (
+                 SELECT le.track_id,
+                        SUM(CASE WHEN le.completed = 1 THEN 1.0 ELSE 0.0 END) AS completions,
+                        SUM(CASE WHEN le.completed = 0 AND le.skipped = 0 THEN 0.35 ELSE 0.0 END) AS partials,
+                        SUM(CASE WHEN le.skipped = 1 THEN 0.35 ELSE 0.0 END) AS skips,
+                        MAX(le.started_at) AS latest
+                   FROM listen_events le
+                  WHERE le.user_id = ?1 AND le.started_at >= ?2
+                  GROUP BY le.track_id
+             ), candidates AS (
+                 SELECT track_id FROM evidence
+                 UNION
+                 SELECT f.track_id FROM favorites f WHERE f.user_id = ?1
+             )
+             SELECT c.track_id,
+                    MIN(3.0, MAX(0.05,
+                        COALESCE(e.completions, 0.0) + COALESCE(e.partials, 0.0)
+                        - COALESCE(e.skips, 0.0)
+                        + CASE WHEN f.track_id IS NULL THEN 0.0 ELSE 1.5 END)) AS weight
+               FROM candidates c
+               JOIN tracks t ON t.id = c.track_id AND t.deleted = 0
+                            AND COALESCE(t.kind, 'music') <> 'book'
+               LEFT JOIN evidence e ON e.track_id = c.track_id
+               LEFT JOIN favorites f ON f.user_id = ?1 AND f.track_id = c.track_id
+              ORDER BY COALESCE(e.latest, f.added_at) DESC, c.track_id
+              LIMIT ?3",
         ) else {
             return Vec::new();
         };
-        stmt.query_map(params![user_id, limit], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)? as f32)))
+        stmt.query_map(params![user_id, since_ms, limit], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)? as f32)))
             .map(|rows| rows.filter_map(Result::ok).collect())
             .unwrap_or_default()
     }
@@ -3167,6 +3327,13 @@ impl Db {
         })
         .map(|rows| rows.filter_map(Result::ok).collect())
         .unwrap_or_default()
+    }
+
+    /// Long-term identity uses the same honest verdict accounting without a
+    /// recency cutoff. Keeping this query separate makes the two windows
+    /// inspectable and prevents an old event from leaking into "recent" taste.
+    pub fn weighted_long_term_listens(&self, user_id: i64, limit: i64) -> Vec<(i64, f32)> {
+        self.weighted_listens_since(user_id, 0, limit)
     }
 
     pub fn recent_plays(&self, user_id: i64, limit: i64) -> Vec<i64> {
@@ -4930,6 +5097,7 @@ impl Db {
                      f.audio_fingerprint, COALESCE(f.audio_fingerprint_dims,0),
                      COALESCE(f.ai_genres,''), COALESCE(f.ai_sonic_traits,''),
                      COALESCE(p.canonical_profile,''),
+                     COALESCE(f.ai_confidence,0.0), COALESCE(f.ai_sources,''),
                      t.curator_user_id, t.added_at, COALESCE(t.kind, 'music')
              FROM tracks t LEFT JOIN track_features f ON f.track_id = t.id
              LEFT JOIN song_profile_layers p ON p.track_id = t.id
@@ -4968,6 +5136,10 @@ impl Db {
                 ai_specific_tags: canonical.as_ref().map(|p| p.specific_tags.clone()).unwrap_or_default(),
                 ai_sonic_traits: canonical.as_ref().map(|p| p.musical_traits.clone()).filter(|v| !v.is_empty())
                     .unwrap_or(comma_terms(r.get(23)?)),
+                enrichment_confidence: canonical.as_ref()
+                    .map(|p| p.confidence_average())
+                    .unwrap_or(r.get::<_, f64>(25)? as f32),
+                enrichment_sources: comma_terms(r.get(26)?),
                 artist: r.get(5)?,
                 energy: r.get(6)?,
                 brightness: r.get(7)?,
@@ -4985,10 +5157,10 @@ impl Db {
                 lyrical_vec: decode(r.get(15)?, r.get(16)?),
                 community_vec: decode(r.get(17)?, r.get(18)?),
                 quarantined: r.get::<_, i64>(19)? != 0,
-                curator_user_id: r.get(25)?,
-                added_at: r.get(26).unwrap_or(0),
+                curator_user_id: r.get(27)?,
+                added_at: r.get(28).unwrap_or(0),
                 audio_fingerprint: decode(r.get(20)?, r.get(21)?),
-                kind: r.get(27)?,
+                kind: r.get(29)?,
             })
         })
         .map(|rows| rows.filter_map(Result::ok).collect())
@@ -5373,13 +5545,15 @@ impl Db {
         preview: &str,
         seed: &str,
         popularity: f64,
+        lane: &str,
     ) -> rusqlite::Result<()> {
         self.lock().execute(
             "INSERT INTO discoveries
-               (user_id, ext_id, title, artist, cover, url, preview, seed, popularity, found_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+               (user_id, ext_id, title, artist, cover, url, preview, seed, popularity, found_at, lane)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
              ON CONFLICT(user_id, ext_id) DO UPDATE SET
-               popularity = excluded.popularity, seed = excluded.seed",
+               popularity = excluded.popularity, seed = excluded.seed,
+               lane = CASE WHEN discoveries.lane = '' THEN excluded.lane ELSE discoveries.lane END",
             params![
                 user_id,
                 ext_id,
@@ -5390,7 +5564,8 @@ impl Db {
                 preview,
                 seed,
                 popularity,
-                now_ms()
+                now_ms(),
+                lane
             ],
         )?;
         Ok(())
@@ -5401,7 +5576,7 @@ impl Db {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
             "SELECT ext_id, title, artist, cover, url, preview, seed, popularity, bpm,
-                    lyric_vec, vec_dims, score
+                    lyric_vec, vec_dims, score, lane
              FROM discoveries WHERE user_id = ?1 AND checked_at = 0
              ORDER BY popularity DESC LIMIT ?2",
         ) else {
@@ -5440,7 +5615,7 @@ impl Db {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
             "SELECT ext_id, title, artist, cover, url, preview, seed, popularity, bpm,
-                    lyric_vec, vec_dims, score
+                    lyric_vec, vec_dims, score, lane
              FROM discoveries WHERE user_id = ?1 AND checked_at > 0",
         ) else {
             return Vec::new();
@@ -5477,7 +5652,7 @@ impl Db {
         let conn = self.lock();
         let Ok(mut stmt) = conn.prepare(
             "SELECT ext_id, title, artist, cover, url, preview, seed, popularity, bpm,
-                    lyric_vec, vec_dims, score
+                    lyric_vec, vec_dims, score, lane
              FROM discoveries WHERE user_id = ?1 AND checked_at > 0
              ORDER BY score DESC LIMIT ?2",
         ) else {
@@ -6098,7 +6273,8 @@ impl Db {
         skipped: bool,
         context: &str,
     ) -> rusqlite::Result<()> {
-        self.lock().execute(
+        let conn = self.lock();
+        conn.execute(
             "INSERT INTO listen_events (user_id, track_id, title, artist, album, genre,
                                         started_at, ms_listened, duration_ms, completed, skipped, context)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
@@ -6116,6 +6292,10 @@ impl Db {
                 skipped as i64,
                 context
             ],
+        )?;
+        let _ = conn.execute(
+            "UPDATE user_taste_profiles SET dirty = 1 WHERE user_id = ?1",
+            params![user_id],
         )?;
         Ok(())
     }
@@ -8437,6 +8617,475 @@ impl Db {
         .unwrap_or((0, 0))
     }
 
+    // --- personalization: intents, rejection memory, profiles, ownership ------
+
+    /// Persists a playlist intent's identity and evidence (Stage 6). The key
+    /// is deterministic from the supporting behavior, so a rebuild replaces
+    /// rather than piles up.
+    pub fn put_curated_intent(
+        &self,
+        user_id: i64,
+        intent_key: &str,
+        name: &str,
+        blurb: &str,
+        evidence: &serde_json::Value,
+    ) {
+        let _ = self.lock().execute(
+            "INSERT INTO curator_intents (user_id, intent_key, name, blurb, evidence, built_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(user_id, intent_key) DO UPDATE SET
+               name = excluded.name, blurb = excluded.blurb,
+               evidence = excluded.evidence, built_at = excluded.built_at",
+            params![user_id, intent_key, name, blurb, evidence.to_string(), now_ms()],
+        );
+    }
+
+    /// Every intent this listener currently holds: (key, name, blurb, evidence json).
+    pub fn curated_intents(&self, user_id: i64) -> Vec<(String, String, String, String)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT intent_key, name, blurb, evidence FROM curator_intents
+             WHERE user_id = ?1 ORDER BY intent_key",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    /// Remembers a dismissal (Stage 7) so the next harvest does not bring the
+    /// same music straight back. scope: 'track' (folded artist|title key) or
+    /// 'artist' (folded artist name).
+    pub fn reject_discovery(&self, user_id: i64, scope: &str, key: &str) {
+        let _ = self.lock().execute(
+            "INSERT INTO discovery_rejections (user_id, scope, key, rejected_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(user_id, scope, key) DO UPDATE SET rejected_at = excluded.rejected_at",
+            params![user_id, scope, key, now_ms()],
+        );
+    }
+
+    /// Whether a rejection still hard-blocks: inside its hard window it does;
+    /// past it the memory remains (for diagnostics and the soft rules) but the
+    /// music may return.
+    pub fn rejection_active(
+        &self,
+        user_id: i64,
+        scope: &str,
+        key: &str,
+        now: i64,
+        hard_window_ms: i64,
+    ) -> bool {
+        self.lock()
+            .query_row(
+                "SELECT rejected_at FROM discovery_rejections
+                 WHERE user_id = ?1 AND scope = ?2 AND key = ?3",
+                params![user_id, scope, key],
+                |r| r.get::<_, i64>(0),
+            )
+            .map(|at| now - at < hard_window_ms)
+            .unwrap_or(false)
+    }
+
+    /// All rejection keys for one scope whose soft window has not fully run
+    /// out - what seed selection uses to keep a recently dismissed artist out
+    /// of the driver's seat even after its hard block lapses.
+    pub fn rejected_keys_since(
+        &self,
+        user_id: i64,
+        scope: &str,
+        rejected_after_ms: i64,
+    ) -> std::collections::HashSet<String> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT key FROM discovery_rejections
+             WHERE user_id = ?1 AND scope = ?2 AND rejected_at >= ?3",
+        ) else {
+            return Default::default();
+        };
+        stmt.query_map(params![user_id, scope, rejected_after_ms], |r| r.get::<_, String>(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    /// Artists across this listener's own playlists, most-listed first - a
+    /// cold-start seed lane for someone with favorites/playlists but no play
+    /// history (Stage 7).
+    pub fn playlist_artist_counts(&self, user_id: i64, limit: i64) -> Vec<(String, i64)> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT LOWER(TRIM(t.artist)), COUNT(*) n FROM playlist_tracks pt
+             JOIN playlists p ON p.id = pt.playlist_id AND p.user_id = ?1
+             JOIN tracks t ON t.id = pt.track_id AND t.deleted = 0 AND TRIM(t.artist) <> ''
+             GROUP BY LOWER(TRIM(t.artist)) ORDER BY n DESC LIMIT ?2",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map(params![user_id, limit], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    // --- materialized taste profiles (Stage 8) -------------------------------
+
+    /// The stored profile row, if any:
+    /// (version, generated_at, dirty, confidence, recent_weights json,
+    ///  long_term_weights json, summary json).
+    #[allow(clippy::type_complexity)]
+    pub fn taste_profile_row(
+        &self,
+        user_id: i64,
+    ) -> Option<(i64, i64, bool, f64, String, String, String)> {
+        self.lock()
+            .query_row(
+                "SELECT version, generated_at, dirty, confidence, recent_weights,
+                        long_term_weights, summary
+                 FROM user_taste_profiles WHERE user_id = ?1",
+                params![user_id],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get::<_, i64>(2)? != 0,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                        r.get(6)?,
+                    ))
+                },
+            )
+            .optional()
+            .ok()
+            .flatten()
+    }
+
+    /// Writes a freshly built profile, atomically clearing the dirty flag.
+    #[allow(clippy::too_many_arguments)]
+    pub fn store_taste_profile(
+        &self,
+        user_id: i64,
+        version: i64,
+        generated_at: i64,
+        confidence: f64,
+        recent_weights: &str,
+        long_term_weights: &str,
+        summary: &str,
+    ) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "INSERT INTO user_taste_profiles
+               (user_id, version, generated_at, dirty, confidence, recent_weights,
+                long_term_weights, summary)
+             VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7)
+             ON CONFLICT(user_id) DO UPDATE SET
+               version = excluded.version, generated_at = excluded.generated_at,
+               dirty = 0, confidence = excluded.confidence,
+               recent_weights = excluded.recent_weights,
+               long_term_weights = excluded.long_term_weights,
+               summary = excluded.summary",
+            params![
+                user_id,
+                version,
+                generated_at,
+                confidence,
+                recent_weights,
+                long_term_weights,
+                summary
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Marks one listener's profile stale after a meaningful event. Per-user
+    /// on purpose: one person's play must never dirty another's profile.
+    pub fn mark_taste_dirty(&self, user_id: i64) {
+        let _ = self.lock().execute(
+            "UPDATE user_taste_profiles SET dirty = 1 WHERE user_id = ?1",
+            params![user_id],
+        );
+    }
+
+    // --- exploration exposure/adoption (Stage 10) ----------------------------
+
+    pub fn record_recommendation_exposure(
+        &self,
+        user_id: i64,
+        surface: &str,
+        candidate_key: &str,
+        track_id: Option<i64>,
+        artist: &str,
+        class: &str,
+    ) {
+        let at = now_ms();
+        let bucket = at / (24 * 60 * 60 * 1000);
+        let _ = self.lock().execute(
+            "INSERT INTO recommendation_exposures
+               (user_id, surface, candidate_key, track_id, artist, class,
+                exposure_bucket, exposed_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(user_id, surface, candidate_key, class, exposure_bucket)
+             DO UPDATE SET exposed_at = MIN(recommendation_exposures.exposed_at, excluded.exposed_at)",
+            params![
+                user_id,
+                surface,
+                candidate_key,
+                track_id,
+                artist,
+                class,
+                bucket,
+                at
+            ],
+        );
+    }
+
+    /// Completion or favorite adopts every still-open exposure for this local
+    /// track. The class recorded at exposure time remains the learning key.
+    pub fn adopt_recommendation_exposures(&self, user_id: i64, track_id: i64) {
+        let _ = self.lock().execute(
+            "UPDATE recommendation_exposures SET adopted_at = ?1, outcome = 'adopted'
+             WHERE user_id = ?2 AND track_id = ?3 AND adopted_at = 0",
+            params![now_ms(), user_id, track_id],
+        );
+    }
+
+    /// (adopted, settled exposures) older than the supplied cutoff. Unadopted
+    /// old rows count as a gentle failed exploration, never a permanent ban.
+    pub fn recommendation_class_stats(
+        &self,
+        user_id: i64,
+        class: &str,
+        exposed_before: i64,
+    ) -> (i64, i64) {
+        self.lock()
+            .query_row(
+                "SELECT COALESCE(SUM(adopted_at > 0), 0), COUNT(*)
+                 FROM recommendation_exposures
+                 WHERE user_id = ?1 AND class = ?2 AND exposed_at < ?3",
+                params![user_id, class, exposed_before],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap_or((0, 0))
+    }
+
+    pub fn recently_exposed_artists(
+        &self,
+        user_id: i64,
+        class: &str,
+        exposed_after: i64,
+    ) -> std::collections::HashSet<String> {
+        let conn = self.lock();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT LOWER(TRIM(artist)) FROM recommendation_exposures
+             WHERE user_id = ?1 AND class = ?2 AND exposed_at >= ?3 AND TRIM(artist) <> ''",
+        ) else {
+            return Default::default();
+        };
+        stmt.query_map(params![user_id, class, exposed_after], |row| row.get::<_, String>(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+    }
+
+    // --- collector ownership (Stage 9) ----------------------------------------
+
+    /// Records who adopted an audition, on every pull that produced it.
+    /// `acting_user == the initiating user` is the only adoption that counts
+    /// as the collector's recommendation landing; anyone else's promotion is
+    /// real for the library but neutral for the initiating listener's tuning.
+    pub fn settle_pull_adoption(&self, track_id: i64, acting_user: i64) {
+        let conn = self.lock();
+        let initiator: Option<i64> = conn
+            .query_row(
+                "SELECT curator_user_id FROM tracks WHERE id = ?1",
+                params![track_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .ok()
+            .flatten()
+            .flatten();
+        let Some(initiator) = initiator else { return };
+        let outcome = if acting_user == initiator {
+            "adopted-initiator"
+        } else {
+            "adopted-other"
+        };
+        let _ = conn.execute(
+            "UPDATE curator_pulls SET outcome = ?1, outcome_at = ?2, adopted_by = ?3
+             WHERE outcome = '' AND id IN (
+               SELECT pull_id FROM curator_pull_tracks WHERE track_id = ?4
+             )",
+            params![outcome, now_ms(), acting_user, track_id],
+        );
+    }
+
+    /// Records an initiating listener's explicit non-adoption verdict for an
+    /// audition (currently `dismissed`). Tracks that are not Collector pull
+    /// results are harmless no-ops.
+    pub fn settle_pull_outcome(&self, track_id: i64, acting_user: i64, outcome: &str) {
+        if outcome != "dismissed" {
+            return;
+        }
+        let conn = self.lock();
+        let _ = conn.execute(
+            "UPDATE curator_pulls SET outcome = ?1, outcome_at = ?2, adopted_by = ?3
+             WHERE user_id = ?3 AND outcome = '' AND id IN (
+               SELECT pull_id FROM curator_pull_tracks WHERE track_id = ?4
+             )",
+            params![outcome, now_ms(), acting_user, track_id],
+        );
+    }
+
+    /// Settles outcomes the promote path cannot see: abandoned, ignored, and
+    /// deleted auditions. A pull is classifiable once it landed at least a day
+    /// ago; 'untouched' additionally waits a week, so a slow listener is not
+    /// read as a rejecting one.
+    pub fn classify_audition_outcomes(&self, user_id: i64, now: i64) {
+        let conn = self.lock();
+        let pulls: Vec<(i64, i64)> = {
+            let Ok(mut stmt) = conn.prepare(
+                "SELECT id, created_at FROM curator_pulls
+                 WHERE user_id = ?1 AND state = 'landed' AND outcome = ''
+                   AND created_at < ?2",
+            ) else {
+                return;
+            };
+            stmt.query_map(params![user_id, now - 24 * 60 * 60 * 1000], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
+        };
+        for (pull_id, created_at) in pulls {
+            let track_ids: Vec<i64> = {
+                let Ok(mut stmt) = conn.prepare(
+                    "SELECT track_id FROM curator_pull_tracks WHERE pull_id = ?1",
+                ) else {
+                    continue;
+                };
+                stmt.query_map(params![pull_id], |r| r.get(0))
+                    .map(|rows| rows.filter_map(Result::ok).collect())
+                    .unwrap_or_default()
+            };
+            if track_ids.is_empty() {
+                continue;
+            }
+            let holes = track_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let bind = |stmt: &mut rusqlite::Statement| {
+                let mut bound: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(user_id)];
+                for id in &track_ids {
+                    bound.push(Box::new(*id));
+                }
+                let refs: Vec<&dyn rusqlite::ToSql> =
+                    bound.iter().map(|b| b.as_ref()).collect();
+                stmt.query_map(refs.as_slice(), |r| r.get::<_, i64>(0))
+                    .map(|rows| rows.filter_map(Result::ok).collect())
+                    .unwrap_or_default()
+            };
+            // Every track tombstoned: the listener (or a cleanup) threw it away.
+            let live: i64 = {
+                let sql = format!(
+                    "SELECT COUNT(*) FROM tracks WHERE deleted = 0 AND id IN ({holes})"
+                );
+                let Ok(mut stmt) = conn.prepare(&sql) else { continue };
+                let bound: Vec<&dyn rusqlite::ToSql> = track_ids
+                    .iter()
+                    .map(|id| id as &dyn rusqlite::ToSql)
+                    .collect();
+                stmt.query_row(bound.as_slice(), |r| r.get(0)).unwrap_or(0)
+            };
+            let outcome = if live == 0 {
+                Some("deleted")
+            } else {
+                let sql = format!(
+                    "SELECT COUNT(*) FROM listen_events
+                     WHERE user_id = ?1 AND track_id IN ({holes})"
+                );
+                let counts: Vec<i64> = conn
+                    .prepare(&sql)
+                    .map(|mut s| bind(&mut s))
+                    .unwrap_or_default();
+                let events = counts.first().copied().unwrap_or(0);
+                let sql = format!(
+                    "SELECT COUNT(*) FROM listen_events
+                     WHERE user_id = ?1 AND track_id IN ({holes}) AND skipped = 1"
+                );
+                let skips: Vec<i64> = conn
+                    .prepare(&sql)
+                    .map(|mut s| bind(&mut s))
+                    .unwrap_or_default();
+                let skipped = skips.first().copied().unwrap_or(0);
+                let sql = format!(
+                    "SELECT COUNT(*) FROM listen_events
+                     WHERE user_id = ?1 AND track_id IN ({holes}) AND completed = 1"
+                );
+                let completions: Vec<i64> = conn
+                    .prepare(&sql)
+                    .map(|mut s| bind(&mut s))
+                    .unwrap_or_default();
+                let completed = completions.first().copied().unwrap_or(0);
+                if completed > 0 {
+                    Some("adopted-initiator")
+                } else if skipped >= 2 {
+                    Some("skipped")
+                } else if events == 0 && now - created_at > 7 * 24 * 60 * 60 * 1000 {
+                    Some("untouched")
+                } else {
+                    None
+                }
+            };
+            if let Some(outcome) = outcome {
+                let _ = conn.execute(
+                    "UPDATE curator_pulls SET outcome = ?1, outcome_at = ?2
+                     WHERE id = ?3 AND outcome = ''",
+                    params![outcome, now, pull_id],
+                );
+            }
+        }
+    }
+
+    /// The initiating listener's own scoreboard: of the pulls with a settled
+    /// outcome older than `landed_before_ms`, how many did THAT listener
+    /// adopt? A stranger's promotion is landed but not adopted.
+    pub fn pull_adoption_initiator(&self, user_id: i64, landed_before_ms: i64) -> (i64, i64) {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT COALESCE(SUM(outcome = 'adopted-initiator'), 0), COUNT(*) FROM curator_pulls
+             WHERE user_id = ?1 AND created_at < ?2
+               AND outcome IN ('adopted-initiator','adopted-other','skipped','dismissed','untouched','deleted')",
+            params![user_id, landed_before_ms],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap_or((0, 0))
+    }
+
+    /// Pulls this listener started inside the window - the pacing quota meter.
+    pub fn pulls_since(&self, user_id: i64, since_ms: i64) -> i64 {
+        self.lock()
+            .query_row(
+                "SELECT COUNT(*) FROM curator_pulls WHERE user_id = ?1 AND created_at >= ?2",
+                params![user_id, since_ms],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
+    }
+
+    /// Bytes of THIS listener's unadopted auditions - the per-user slice of
+    /// the global budget (Stage 9 quota).
+    pub fn collector_user_ledger_bytes(&self, user_id: i64) -> i64 {
+        self.lock()
+            .query_row(
+                "SELECT COALESCE(SUM(size_bytes), 0) FROM tracks
+                 WHERE deleted = 0 AND curator_user_id = ?1 AND COALESCE(curator_promoted, 0) = 0",
+                params![user_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
+    }
+
     // --- library tools (tools.rs) -------------------------------------------
 
     /// Every live row, full shape - the duplicate finder clusters these in
@@ -8715,6 +9364,11 @@ pub struct TrackFeatures {
     pub ai_genres: Vec<String>,
     pub ai_specific_tags: Vec<String>,
     pub ai_sonic_traits: Vec<String>,
+    /// Deterministic profile confidence. Zero means enriched labels must not
+    /// outrank measured evidence or the raw-tag fallback.
+    pub enrichment_confidence: f32,
+    /// Provenance labels retained so shared scoring can reject unstamped data.
+    pub enrichment_sources: Vec<String>,
     pub artist: String,
     /// The analyser's audio character (features.rs), None until measured.
     pub energy: Option<f64>,
@@ -8806,6 +9460,8 @@ pub struct DiscoveryRow {
     pub bpm: Option<f64>,
     pub lyric_vec: Option<Vec<f32>>,
     pub score: f64,
+    /// Which retrieval lane produced this candidate (Stage 7 provenance).
+    pub lane: String,
 }
 
 fn discovery_from_row(r: &rusqlite::Row) -> rusqlite::Result<DiscoveryRow> {
@@ -8830,6 +9486,7 @@ fn discovery_from_row(r: &rusqlite::Row) -> rusqlite::Result<DiscoveryRow> {
         bpm: r.get(8)?,
         lyric_vec: vec,
         score: r.get(11)?,
+        lane: r.get(12)?,
     })
 }
 
