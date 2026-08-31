@@ -38,6 +38,9 @@ export const MOODS: { label: string; seed: string; Icon: typeof Waves }[] = [
   // owned hits plus the collector's pre-downloaded chart auditions. The seed
   // string is the server's vibe contract (vibes.rs), verbatim.
   { label: 'Charts', seed: 'the charts right now', Icon: TrendingUp },
+  // New music: the dates waiting to meet you and the arrivals you have not
+  // heard, dates leading. Same contract discipline - the seed IS the key.
+  { label: 'New music', seed: 'the new music waiting for me', Icon: Sparkles },
 ];
 
 export function DjLauncher({

@@ -33,6 +33,10 @@ const VIBES: &[(&str, &str)] = &[
     // on this box - the songs you own that are charting, and the chart hits
     // the collector has quietly pre-downloaded as auditions.
     ("charts", "the charts right now"),
+    // New music, by request: the dates waiting to meet you and the library's
+    // own future - what just arrived that you have not heard. No taste maths;
+    // newness IS the curation, exactly as the chart is for charts.
+    ("newmusic", "the new music waiting for me"),
 ];
 
 /// A banked set older than this is served (still better than waiting) but
@@ -101,6 +105,8 @@ pub async fn rebuild(state: &Arc<AppState>, user: i64, key: &str) {
     }
     let built = if key == "charts" {
         Ok(build_charts_reply(state, user, true).await)
+    } else if key == "newmusic" {
+        Ok(build_new_music_reply(state, user, true).await)
     } else {
         crate::dj::build_reply(state, user, seed, 15, true).await
     };
@@ -176,6 +182,101 @@ pub async fn build_charts_reply(state: &Arc<AppState>, user: i64, curate: bool) 
         let ids = ids.clone();
         tokio::spawn(async move {
             crate::lore::ensure(&st, &ids).await;
+        });
+    }
+    let lore = crate::lore::known(state, &ids);
+    let mut lore_jobs: Vec<crate::voice::Beat> = Vec::new();
+
+    let mut blocks: Vec<Value> = Vec::new();
+    let chunk_count = ids.chunks(3).count();
+    for (i, chunk) in ids.chunks(3).enumerate() {
+        let lead = artists.get(i * 3).cloned().unwrap_or_default();
+        let seat = if i == 0 {
+            crate::voice::Seat::Opener
+        } else if i + 1 == chunk_count && chunk_count > 1 {
+            crate::voice::Seat::Closer
+        } else {
+            crate::voice::Seat::Turn
+        };
+        let line = crate::voice::line_for(seat, &lead);
+        let say = if lead.trim().is_empty() { line.clone() } else { format!("{line} {lead}.") };
+        let mut block = serde_json::json!({ "say": say, "trackIds": chunk });
+        let beats = crate::voice::block_beats(seat, &lead);
+        if !beats.is_empty() {
+            block["voice"] =
+                serde_json::json!(beats.iter().map(|b| b.id.clone()).collect::<Vec<_>>());
+            crate::voice::mint_behind(state, beats);
+        }
+        blocks.push(block);
+    }
+    crate::lore::attach(&mut blocks, &lore, &mut lore_jobs);
+    if !lore_jobs.is_empty() {
+        crate::voice::mint_behind(state, lore_jobs);
+    }
+    serde_json::json!({ "ai": false, "vibe": seed, "blocks": blocks })
+}
+
+/// The New Music set: this listener's waiting music dates, and the library's
+/// arrivals they have not met - woven, dates leading.
+///
+/// The same shape and manners as the charts set: no model and no taste
+/// scoring, because for a set whose whole promise is "you have not heard
+/// this", newness is the curation and a taste rank would just bury the
+/// newest under last month's listening. Auditions lead two-to-one - they
+/// were fetched FOR this listener, and playing one through is the adoption
+/// gesture - with plain arrivals woven between so the set still breathes.
+pub async fn build_new_music_reply(state: &Arc<AppState>, user: i64, curate: bool) -> Value {
+    let seed = seed_for_key("newmusic").unwrap_or_default();
+    let since = crate::db::now_ms() - 21 * 24 * 60 * 60 * 1000;
+    let (auditions, arrivals) = state.db.new_mix_candidates(user, since);
+    let heard: HashSet<i64> = state.db.recent_plays(user, 400).into_iter().collect();
+    let fresh_arrivals: Vec<i64> =
+        arrivals.into_iter().filter(|id| !heard.contains(id)).collect();
+
+    // Two dates, then an arrival, repeating - dates lead because they are the
+    // set's namesake, arrivals keep it from being auditions wall to wall.
+    let mut ids: Vec<i64> = Vec::new();
+    let mut dates = auditions.into_iter().filter(|id| !heard.contains(id));
+    let mut future = fresh_arrivals.into_iter();
+    'weave: loop {
+        for _ in 0..2 {
+            match dates.next() {
+                Some(id) => ids.push(id),
+                None => {}
+            }
+        }
+        match future.next() {
+            Some(id) => ids.push(id),
+            None => {
+                // Arrivals dry: run the remaining dates straight.
+                ids.extend(dates.by_ref());
+                break 'weave;
+            }
+        }
+        if ids.len() >= 18 {
+            break;
+        }
+    }
+    ids.truncate(18);
+    ids.dedup();
+
+    if ids.is_empty() {
+        return serde_json::json!({ "ai": false, "vibe": seed, "blocks": [] });
+    }
+
+    // Artists for the voice's name-drops, one lookup per seat.
+    let artists: Vec<String> = ids
+        .iter()
+        .map(|id| state.db.track(*id).map(|t| t.artist).unwrap_or_default())
+        .collect();
+
+    if curate {
+        crate::lore::ensure(state, &ids).await;
+    } else {
+        let st = state.clone();
+        let ids2 = ids.clone();
+        tokio::spawn(async move {
+            crate::lore::ensure(&st, &ids2).await;
         });
     }
     let lore = crate::lore::known(state, &ids);

@@ -245,15 +245,26 @@ pub async fn station(
      * see its header - and charts stays a live door because the chart
      * itself is one catalogue fetch.
      */
-    if q.count.is_none() && crate::vibes::key_for_seed(&seed) == Some("charts") {
-        let body = crate::vibes::build_charts_reply(&state, caller.id, false).await;
-        let has = body
-            .get("blocks")
-            .and_then(|b| b.as_array())
-            .map(|a| !a.is_empty())
-            .unwrap_or(false);
-        if has {
-            return Ok(Json(body));
+    if q.count.is_none() {
+        // The two catalogue doors that stay live: no model, no taste maths,
+        // and cheap enough to build on the press. Either coming up empty falls
+        // through to a taste set rather than serving a shrug.
+        let live = match crate::vibes::key_for_seed(&seed) {
+            Some("charts") => Some(crate::vibes::build_charts_reply(&state, caller.id, false).await),
+            Some("newmusic") => {
+                Some(crate::vibes::build_new_music_reply(&state, caller.id, false).await)
+            }
+            _ => None,
+        };
+        if let Some(body) = live {
+            let has = body
+                .get("blocks")
+                .and_then(|b| b.as_array())
+                .map(|a| !a.is_empty())
+                .unwrap_or(false);
+            if has {
+                return Ok(Json(body));
+            }
         }
     }
 
