@@ -530,6 +530,12 @@ import urllib.request, urllib.parse, urllib.error
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36"
 CACHE = os.path.join(tempfile.gettempdir(), "afm_spotify_canvas.json")
 CANVAS_HASH = "575138ab27cd5c1b3e54da54d0a7cc8d85485402de26340c2145f0f6bb5e7a9f"
+# The web /v1/search API rate-limits this box's IP to a wall of 429s, so the
+# track lookup rides the SAME pathfinder endpoint the canvas query does - not
+# throttled, because it is the web player's own door. searchSuggestions lives
+# in the stable main bundle (unlike searchDesktop, which stopped being served
+# from the CDN); its hash is re-read from the bundle when Spotify rotates it.
+SEARCH_HASH = "23f33ca50a0f4153dafc5cd1b4d1370db01b72130c2994bd0ffd07d5a7fee8f0"
 
 def out(url, error=None):
     # `error` is the difference between "Spotify says this track has no Canvas"
@@ -615,59 +621,84 @@ def get_token(sp_dc):
     save_cache(cache)
     return tok
 
-def api_token(client_id, client_secret):
-    # A plain client-credentials token, for the SEARCH only.
-    #
-    # The web-player token is minted for open.spotify.com's own pathfinder
-    # calls and is refused (429, "API rate limit exceeded") on the public
-    # /v1 endpoints - measured, not guessed: the same search with an ordinary
-    # token answered instantly while the web token was throttled every time.
-    # So the two jobs get the two different tokens they each want.
-    if not client_id or not client_secret:
-        return None
+def fold(x):
+    return "".join(ch.lower() for ch in x if ch.isalnum())
+
+def search_hash():
+    # The searchSuggestions persisted-query hash, re-read from the web player's
+    # main bundle so a Spotify rotation self-heals like the TOTP secret does.
     cache = load_cache()
     now = time.time()
-    if cache.get("api_token") and cache.get("api_token_exp", 0) > now + 60:
-        return cache["api_token"]
-    body = urllib.parse.urlencode({
-        "grant_type": "client_credentials",
-        "client_id": client_id,
-        "client_secret": client_secret,
-    }).encode()
+    if cache.get("search_hash") and cache.get("search_hash_exp", 0) > now:
+        return cache["search_hash"]
+    h = SEARCH_HASH
     try:
-        d = json.load(http("https://accounts.spotify.com/api/token",
-                           headers={"User-Agent": UA,
-                                    "Content-Type": "application/x-www-form-urlencoded"},
-                           data=body))
+        html = http("https://open.spotify.com/").read().decode("utf-8", "ignore")
+        for b in set(re.findall(r"https://[a-z0-9.\-]+/[^\"'\s>]*web-player\.[^\"'\s>]*\.js", html)):
+            js = http(b).read().decode("utf-8", "ignore")
+            m = re.search(r"searchSuggestions[\s\S]{0,80}?([0-9a-f]{64})", js) or \
+                re.search(r"([0-9a-f]{64})[\s\S]{0,80}?searchSuggestions", js)
+            if m:
+                h = m.group(1)
+                break
     except Exception:
-        return None
-    tok = d.get("access_token")
-    if not tok:
-        return None
-    cache.update(api_token=tok, api_token_exp=now + (d.get("expires_in") or 3600) - 60)
+        pass
+    cache.update(search_hash=h, search_hash_exp=now + 6 * 3600)
     save_cache(cache)
-    return tok
+    return h
+
+def collect_tracks(node, out):
+    # Walk the searchSuggestions tree collecting (uri, name, [artist names])
+    # for every track object, wherever Spotify has moved it to this week.
+    if isinstance(node, dict):
+        uri = node.get("uri")
+        if isinstance(uri, str) and uri.startswith("spotify:track:"):
+            name = node.get("name") or ""
+            artists = []
+            a = node.get("artists")
+            if isinstance(a, dict):
+                for it in a.get("items", []) or []:
+                    pr = (it or {}).get("profile") or {}
+                    if pr.get("name"):
+                        artists.append(pr["name"])
+            out.append((uri.split(":")[-1], name, artists))
+        for v in node.values():
+            collect_tracks(v, out)
+    elif isinstance(node, list):
+        for v in node:
+            collect_tracks(v, out)
 
 def find_track(tok, title, artist):
-    # Returns (track_id, error). A 429 - which this endpoint hands out readily,
-    # and the sweep asks it a few hundred times an hour - used to be swallowed
-    # and returned as "no such track", which the caller then recorded as "this
-    # song has no Canvas" for thirty days.
-    q = urllib.parse.quote('track:"%s" artist:"%s"' % (title, artist))
-    url = "https://api.spotify.com/v1/search?q=%s&type=track&limit=5" % q
+    # Returns (track_id, error). Rides pathfinder, not the throttled /v1 API.
+    q = "%s %s" % (title, artist)
+    variables = urllib.parse.quote(json.dumps({"query": q, "limit": 15}))
+    ext = urllib.parse.quote(json.dumps({"persistedQuery": {"version": 1, "sha256Hash": search_hash()}}))
+    url = ("https://api-partner.spotify.com/pathfinder/v1/query"
+           "?operationName=searchSuggestions&variables=%s&extensions=%s" % (variables, ext))
     try:
-        d = json.load(http(url, headers={"User-Agent": UA, "Authorization": "Bearer " + tok}))
+        d = json.load(http(url, headers={"User-Agent": UA, "Authorization": "Bearer " + tok,
+                                          "App-Platform": "WebPlayer", "Accept": "application/json"}))
     except urllib.error.HTTPError as e:
         return None, "search http %d" % e.code
     except Exception as e:
         return None, "search %s" % type(e).__name__
-    items = (d.get("tracks") or {}).get("items") or []
-    tl, al = title.lower(), artist.lower()
-    for it in items:
-        if it.get("name", "").lower() == tl and any(a.get("name", "").lower() == al for a in it.get("artists", [])):
-            return it.get("id"), None
-    # No items is a real answer: the catalogue does not have this recording.
-    return (items[0].get("id") if items else None), None
+    if isinstance(d, dict) and d.get("errors"):
+        return None, "search query rejected"
+    tracks = []
+    collect_tracks(d.get("data") or {}, tracks)
+    if not tracks:
+        # Spotify answered and offered no track - a real "no such recording".
+        return None, None
+    tl, al = fold(title), fold(artist)
+    for tid, name, artists in tracks:
+        if fold(name) == tl and any(fold(a) == al for a in artists):
+            return tid, None
+    # Looser: the title matches and some artist token overlaps.
+    for tid, name, artists in tracks:
+        if fold(name) == tl:
+            return tid, None
+    # Fall back to the top track - search relevance usually has it first.
+    return tracks[0][0], None
 
 def get_canvas(tok, track_id):
     v = urllib.parse.quote(json.dumps({"trackUri": "spotify:track:" + track_id}))
@@ -701,15 +732,10 @@ def main():
         # No token means the cookie has expired or Spotify changed the mint.
         # Nothing was learned about this track, so nothing may be written down.
         if not tok: out(None, "no web token")
-        # Look the track up with an ordinary API token when one is configured,
-        # falling back to the web token so a server without a client secret
-        # behaves exactly as it did before.
-        search_tok = api_token(req.get("client_id"), req.get("client_secret")) or tok
-        tid, err = find_track(search_tok, title, artist)
-        if (not tid) and search_tok is not tok:
-            tid2, err2 = find_track(tok, title, artist)
-            if tid2 or not err2:
-                tid, err = tid2, err2
+        # One token does both jobs now: search and canvas both ride the web
+        # player's pathfinder, which does not rate-limit this box the way the
+        # public /v1 API does.
+        tid, err = find_track(tok, title, artist)
         if err: out(None, err)
         # Searched successfully and the catalogue has nothing: a real answer.
         if not tid: out(None)
