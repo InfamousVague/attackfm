@@ -550,6 +550,32 @@ fn separator_device() -> String {
     }
 }
 
+/// How many parallel workers demucs splits a song across.
+///
+/// Unset, demucs runs ONE worker - which on the hub meant a twelve-core box
+/// separating on a single core while eleven sat idle, and "stemming songs is
+/// slow" was simply that. Each worker processes its own slice of the song, so
+/// on CPU the speedup is close to linear in workers until memory pushes back
+/// (~2GB a worker for the six-stem model).
+///
+/// A third of the cores, floored at two: the box is a music server first, and
+/// a separation that ate every core would trade one slow feature for stutters
+/// in the one that matters. On Metal the whole GPU is already one device -
+/// workers there multiply memory for little gain, so mps keeps one unless the
+/// override insists.
+fn separator_jobs() -> usize {
+    if let Ok(explicit) = std::env::var("AFM_DEMUCS_JOBS") {
+        if let Ok(n) = explicit.trim().parse::<usize>() {
+            return n.clamp(1, 16);
+        }
+    }
+    if separator_device() == "mps" {
+        return 1;
+    }
+    let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+    (cores / 3).clamp(2, 6)
+}
+
 /// The demucs binary, from the venv the installer makes or from PATH.
 fn separator_bin() -> Option<PathBuf> {
     if let Ok(explicit) = std::env::var("AFM_DEMUCS") {
@@ -602,6 +628,8 @@ async fn separate(
         .arg(MODEL)
         .arg("-d")
         .arg(separator_device())
+        .arg("-j")
+        .arg(separator_jobs().to_string())
         .arg("--out")
         .arg(&scratch)
         .arg(&source)

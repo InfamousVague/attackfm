@@ -138,6 +138,21 @@
   cursor: pointer;
 }
 
+/* A curated list wearing the track card's clothes: the face is a SPAN holding
+   the four-cover mosaic, so it sizes itself like the img it stands in for and
+   clips the squircle to the same corner. */
+.forYouListCard__face {
+  display: block;
+  overflow: hidden;
+}
+
+.forYouListCard__face .tileSquircle {
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: var(--glacier-radius-lg);
+  color: var(--glacier-text-muted);
+}
+
 .trackCardArt {
   inline-size: 100%;
   aspect-ratio: 1;

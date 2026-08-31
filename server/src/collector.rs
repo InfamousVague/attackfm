@@ -485,7 +485,45 @@ pub(crate) async fn buy(state: &Arc<AppState>, user: i64, d: &DiscoveryRow, char
         return false;
     };
 
-    let reason = reason_for(d, charted).await;
+    /*
+     * THE REASON NO LONGER STANDS IN THE DOOR.
+     *
+     * reason_for is a chat-model call, and it ran inline before the pull was
+     * even recorded - so on a hub whose model takes a minute a sentence, a
+     * three-offer pass spent three model-minutes before one download was
+     * raised, and the whole cycle budget went on copywriting. That is the
+     * shape behind "music dates arrive slow": the date pool fills at the rate
+     * the model writes captions for it.
+     *
+     * The pull goes up NOW with the plain-sentence reason (already the
+     * fallback for a hub with no model at all); the model's warmer line lands
+     * on the row behind the download, where its latency costs nobody a song.
+     */
+    let reason = plain_reason(d, charted);
+    {
+        let st = Arc::clone(state);
+        // Only the fields the reason mentions travel; the vector stays put.
+        let d2 = DiscoveryRow {
+            ext_id: d.ext_id.clone(),
+            title: d.title.clone(),
+            artist: d.artist.clone(),
+            cover: String::new(),
+            url: String::new(),
+            preview: String::new(),
+            seed: d.seed.clone(),
+            popularity: 0.0,
+            bpm: None,
+            lyric_vec: None,
+            score: d.score,
+        };
+        let user2 = user;
+        tokio::spawn(async move {
+            let warm = reason_for(&d2, charted).await;
+            if !warm.is_empty() && warm != plain_reason(&d2, charted) {
+                let _ = st.db.update_pull_reason(user2, &d2.ext_id, &warm);
+            }
+        });
+    }
     // Named for the queue: the machine that pulled it, and who it is for.
     let via = state
         .db
@@ -551,15 +589,20 @@ pub(crate) async fn buy(state: &Arc<AppState>, user: i64, d: &DiscoveryRow, char
 /// Why the curator chose it: the model's one line when a chat model is
 /// configured, the seed artist's plain sentence when not. Failure is the
 /// plain sentence too - a missing reason should never cost a pull.
-async fn reason_for(d: &DiscoveryRow, charted: bool) -> String {
-    let plain = if charted {
+/// The reason a pull can have RIGHT NOW, with no model in the room.
+fn plain_reason(d: &DiscoveryRow, charted: bool) -> String {
+    if charted {
         // The honest story for a chart pick - it hangs off nobody's taste.
         "Topping the charts right now.".to_string()
     } else if d.seed.trim().is_empty() {
         String::new()
     } else {
         format!("Because you play {}.", d.seed.trim())
-    };
+    }
+}
+
+async fn reason_for(d: &DiscoveryRow, charted: bool) -> String {
+    let plain = plain_reason(d, charted);
     let (Some(url), Some(model)) = (crate::curator::ai_url(), crate::curator::ai_chat_model())
     else {
         return plain;
