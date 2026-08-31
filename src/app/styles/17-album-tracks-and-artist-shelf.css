@@ -196,6 +196,13 @@
 /* Spins while the record is being looked up on Spotify - the search is a
    network round trip, and a button that sat still through it would read as one
    that had not registered the tap. */
+/* A stalled heart's ring holds still - a spinner over a dead download is the
+   lie this whole change removes. */
+.artistAlbumSpin[data-still] {
+  animation: none;
+  opacity: 0.45;
+}
+
 .artistAlbumSpin {
   inline-size: 0.75rem;
   block-size: 0.75rem;

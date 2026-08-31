@@ -382,15 +382,23 @@ export function SongPage({
               <>
             {view === 'liked' && pendingLikes.length > 0 && (
               <div className="likedPending" role="status">
+                {/* "Still downloading" only when a download is genuinely
+                    running - a failed or cleared job used to leave this shelf
+                    claiming motion over an empty queue for thirty days. The
+                    hub now says which it is per row; the server also retries
+                    a dead heart's download once a day on its own. */}
                 <p className="likedPending__head">
-                  On the way - liked, still downloading
+                  On the way - liked
                 </p>
                 {pendingLikes.map((p) => (
-                  <div key={p.k} className="likedPending__row">
-                    <span className="artistAlbumSpin" aria-hidden />
+                  <div key={p.k} className="likedPending__row" data-stalled={p.downloading === false || undefined}>
+                    <span className="artistAlbumSpin" aria-hidden data-still={p.downloading === false || undefined} />
                     <span className="likedPending__text">
                       <span className="likedPending__song">{p.title}</span>
-                      <span className="likedPending__artist">{p.artist}</span>
+                      <span className="likedPending__artist">
+                        {p.artist}
+                        {p.downloading === false ? ' — not downloading, will retry' : ''}
+                      </span>
                     </span>
                     <button
                       type="button"

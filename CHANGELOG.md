@@ -16,6 +16,10 @@ about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
 <<<<<<< HEAD
+## 0.4.166
+
+- A liked song whose download died no longer pretends: the On-the-way shelf says "not downloading, will retry" with a still ring instead of spinning forever over an empty queue, and the hub itself re-asks the catalogue for a dead heart's download once a day until it lands or the heart ages out. Needs the hub updated
+
 ## 0.4.165
 
 - A New music chip joins the DJ's row, in the Booth and on the now-playing sheet alike: a set of the music dates waiting to meet you and the library's arrivals you have not heard, dates leading two to one. No taste scoring on purpose — for a set that promises "you have not heard this", newness is the curation. Needs the hub updated

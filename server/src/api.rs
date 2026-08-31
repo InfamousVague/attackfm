@@ -580,17 +580,45 @@ pub async fn add_pending_like(
 }
 
 /// `GET /api/likes/pending` - the hearts still waiting on their downloads.
+///
+/// Each row now says whether a download is actually RUNNING for it. The shelf
+/// on the Liked page used to caption every pending heart "still downloading",
+/// which was a guess dressed as a fact: a failed or cleared job left the heart
+/// standing for its whole thirty-day life over an empty queue. The claim is
+/// checked against the live queue by the same folded identity the settle pass
+/// matches with, so the client can say "downloading" only where it is true and
+/// "will retry" where it is not.
 pub async fn pending_likes(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> ApiResult {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    // The folded identity of every job still moving. A job's title/subtitle
+    // is what the importer was ASKED for, which is exactly what the pending
+    // like recorded.
+    let live: std::collections::HashSet<String> = {
+        let jobs = state.imports.jobs.lock().await;
+        jobs.iter()
+            .filter(|j| j.state == "queued" || j.state == "downloading")
+            .filter_map(|j| {
+                j.subtitle
+                    .as_deref()
+                    .map(|artist| crate::discovery::key_of(artist, &j.title))
+            })
+            .collect()
+    };
     let rows: Vec<serde_json::Value> = state
         .db
         .pending_likes_for(caller.id)
         .into_iter()
         .map(|(k, title, artist, created_at)| {
-            json!({ "k": k, "title": title, "artist": artist, "createdAt": created_at })
+            json!({
+                "k": k,
+                "title": title,
+                "artist": artist,
+                "createdAt": created_at,
+                "downloading": live.contains(&k),
+            })
         })
         .collect();
     Ok(Json(json!({ "pending": rows })))

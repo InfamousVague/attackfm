@@ -136,7 +136,7 @@ pub fn spawn(state: Arc<AppState>) {
             // every sign that any of it has ever worked.
             crate::ai::flush_last_runs(&state.db);
             pull_cycle(&state).await;
-            settle_pending_likes(&state);
+            settle_pending_likes(&state).await;
             // The standing chart playlists ride the same loop; their own
             // daily clock makes this a cheap no-op almost every pass.
             crate::chartlists::cycle(&state).await;
@@ -255,7 +255,7 @@ const PENDING_LIKE_TTL_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 /// Matching by folded identity is SAFE here in the way it never was for
 /// delegated pulls: the worst wrong match is a heart on a same-named song,
 /// not an annexed file.
-fn settle_pending_likes(state: &Arc<AppState>) {
+async fn settle_pending_likes(state: &Arc<AppState>) {
     let rows = state.db.pending_likes_all();
     if rows.is_empty() {
         return;
@@ -274,8 +274,86 @@ fn settle_pending_likes(state: &Arc<AppState>) {
             let _ = state.db.set_favorite(user, *id, true);
             state.db.promote_curator_track(*id);
             let _ = state.db.pending_like_remove(user, &k);
+            continue;
+        }
+        /*
+         * NOT LANDED, AND NOTHING COMING.
+         *
+         * A pending like's download can die - the job fails, the queue is
+         * cleared, the box restarts mid-pull - and the heart then stood on the
+         * Liked page saying "still downloading" for thirty days over an empty
+         * queue. The person asked for this song ONCE, explicitly; asking the
+         * catalogue again on their behalf is the promise being kept, not
+         * initiative.
+         *
+         * Bounded hard: only when no matching job is queued or running, only
+         * after ten minutes of grace (the ordinary landing path needs no
+         * help), and at most once a day per heart, stamped in meta - a song
+         * the providers genuinely cannot produce costs one failed job a day
+         * for its thirty-day life, then ages out.
+         */
+        retry_pending_like(state, user, &k, created_at, now).await;
+    }
+}
+
+/// One bounded re-ask for a heart whose download died. See the caller's note.
+async fn retry_pending_like(state: &Arc<AppState>, user: i64, k: &str, created_at: i64, now: i64) {
+    const GRACE_MS: i64 = 10 * 60 * 1000;
+    const RETRY_EVERY_MS: i64 = 24 * 60 * 60 * 1000;
+    if now - created_at < GRACE_MS {
+        return;
+    }
+    let (title, artist) = match state
+        .db
+        .pending_likes_for(user)
+        .into_iter()
+        .find(|(key, _, _, _)| key == k)
+    {
+        Some((_, t, a, _)) => (t, a),
+        None => return,
+    };
+    // A live job for this song means the wire is doing its work; stand down.
+    {
+        let jobs = state.imports.jobs.lock().await;
+        let moving = jobs.iter().any(|j| {
+            (j.state == "queued" || j.state == "downloading")
+                && j.subtitle
+                    .as_deref()
+                    .map(|a| crate::discovery::key_of(a, &j.title) == k)
+                    .unwrap_or(false)
+        });
+        if moving {
+            return;
         }
     }
+    let stamp_key = format!("pending_like.retry.{user}.{k}");
+    let stamped = state
+        .db
+        .meta_get(&stamp_key)
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(0);
+    if now - stamped < RETRY_EVERY_MS {
+        return;
+    }
+    let _ = state.db.meta_set(&stamp_key, &now.to_string());
+
+    // The same resolve the collector's own buys use: the catalogue's URL for
+    // this exact song, through whichever provider answers.
+    let query = format!("{artist} {title}");
+    let rows = crate::search::spotify_catalog(state, &query).await;
+    let hit = rows.iter().find(|r| {
+        r.kind == "track" && same_artist(&r.subtitle, &artist) && same_title(&r.title, &title)
+    });
+    let Some(found) = hit else { return };
+    let via = state
+        .db
+        .user_by_id(user)
+        .map(|u| format!("a liked song, retried · for {}", u.username))
+        .unwrap_or_else(|| "a liked song, retried".to_string());
+    let _ = crate::imports::enqueue_internal(
+        state, &found.url, &title, &artist, "track", user, &via,
+    )
+    .await;
 }
 
 /// One buying pass: for each current listener with the collector on, consider

@@ -2,6 +2,10 @@ import { request, type ServerSession } from './http.ts';
 
 /** A heart promised on Discover, still waiting on its download. */
 export interface PendingLike {
+  /** True while a download is genuinely running for this heart. Absent from a
+   *  hub older than the flag, which the shelf reads as "unknown" and keeps the
+   *  old optimistic caption rather than accusing a healthy queue. */
+  downloading?: boolean;
   k: string;
   title: string;
   artist: string;
