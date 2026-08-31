@@ -221,7 +221,14 @@ export function DatePage() {
         path: PREVIEW_SCHEME + c.extId,
         title: c.title,
         artist: c.artist,
-        album: c.seed ? `Because you play ${c.seed}` : 'New to you',
+        album:
+          c.lane === 'trending'
+            ? 'Charting right now'
+            : c.lane === 'fresh'
+              ? 'Fresh out - a brand new release'
+              : c.seed
+                ? `Because you play ${c.seed}`
+                : 'New to you',
         duration: null,
         addedAt: Date.now(),
         artwork: c.cover || null,

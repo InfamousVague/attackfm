@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.162
+
+- Music Date now deals a real mix: every five cards bring three matched to your taste, one straight off the charts, and one brand-new release - each card's subtitle says which ("Charting right now", "Fresh out"). The new-releases shelf itself came back to life: its old source had gone silent, so fresh picks now come from the catalogue's own editors
+
 ## 0.4.161
 
 - Music Date unfroze: preview dates now fetch a FRESH clip as each card comes up (the stored links quietly expire), and a card whose clip is truly gone folds itself away instead of jamming the deck behind a play button
