@@ -40,6 +40,7 @@ import {
   dateCandidateVerdict,
   fetchDateBriefing,
   fetchDateCandidates,
+  fetchDatePreview,
   type DateBriefingSong,
   type PreviewDateCard,
 } from '../api/curator.ts';
@@ -192,6 +193,9 @@ export function DatePage() {
    * library (and Liked) when it lands.
    */
   const [candidates, setCandidates] = useState<PreviewDateCard[]>([]);
+  // How deep the pool runs past the dealt hand - the tally and the library
+  // chip both add it, so the two numbers finally agree.
+  const [poolBeyond, setPoolBeyond] = useState(0);
   const candidateFetchAt = useRef(0);
   useEffect(() => {
     if (!session) return;
@@ -201,7 +205,10 @@ export function DatePage() {
     if (now - candidateFetchAt.current < 20_000) return;
     candidateFetchAt.current = now;
     void fetchDateCandidates(session, 25)
-      .then((cards) => setCandidates(cards))
+      .then(({ cards, total }) => {
+        setCandidates(cards);
+        setPoolBeyond(Math.max(0, total - cards.length));
+      })
       .catch(() => {});
   }, [session, gone, candidates]);
   const previewByPath = useMemo(
@@ -389,10 +396,21 @@ export function DatePage() {
     el.preload = 'auto';
     const slot: Slot = { el, path: track.path, url: '', start: null, playWhenReady: false };
     pool.current.set(track.path, slot);
-    // A preview date's sound is its catalogue clip, streamed straight - the
-    // vault has never heard of it. Same continuation either way.
+    // A preview date's sound is its catalogue clip - asked for FRESH every
+    // time, because the stored URL carries an expiring signature and a
+    // days-old one is a dead card that froze the whole deck. The stored
+    // copy is only the fallback; a card with no playable clip at all folds
+    // itself out of the deck, silently and verdict-free.
     const source = track.path.startsWith(PREVIEW_SCHEME)
-      ? Promise.resolve(previewByPath.get(track.path)?.preview ?? null)
+      ? (session
+          ? fetchDatePreview(session, track.path.slice(PREVIEW_SCHEME.length)).then(
+              (fresh) => fresh ?? previewByPath.get(track.path)?.preview ?? null,
+            )
+          : Promise.resolve(previewByPath.get(track.path)?.preview ?? null)
+        ).then((url) => {
+          if (!url) setGone((prev) => new Set(prev).add(track.path));
+          return url;
+        })
       : loadAudioUrl(track.path);
     void source.then((url) => {
       // Judged (evicted) while the URL resolved: nothing to warm any more.
@@ -430,7 +448,7 @@ export function DatePage() {
       }
     });
     return slot;
-  }, [previewByPath]);
+  }, [previewByPath, session]);
 
   /** Make a song the one speaking. Called inside the gesture, so its play()
    *  carries the tap's autoplay permission. */
@@ -528,6 +546,12 @@ export function DatePage() {
       const slot = activeRef.current;
       if (!slot || slot.path !== path) return;
       if (slot.url && slot.el.readyState >= 1) return;
+      if (path.startsWith(PREVIEW_SCHEME)) {
+        // The catalogue's clip never came: this card cannot be met today.
+        // It folds without a verdict - the pool keeps the candidate.
+        setGone((prev) => new Set(prev).add(path));
+        return;
+      }
       void loadAudioUrl(path).then((url) => {
         const live = activeRef.current;
         if (!url || !live || live.path !== path) return;
@@ -879,7 +903,7 @@ export function DatePage() {
               card itself stays wordless; this is the page around it. */}
           <header className="dateTally">
             <p className="dateTally__count">
-              <span className="dateTally__n">{deck.length}</span> left to meet
+              <span className="dateTally__n">{deck.length + poolBeyond}</span> left to meet
             </p>
             <SegmentedBar
               className="dateTally__bar"

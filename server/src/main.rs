@@ -726,6 +726,7 @@ async fn main() {
         .route("/api/curator/pulls", get(collector::status))
         .route("/api/date/briefing", get(collector::date_briefing))
         .route("/api/date/candidates", get(collector::date_candidates))
+        .route("/api/date/preview", get(collector::date_preview))
         .route("/api/date/candidate-verdict", post(collector::date_candidate_verdict))
         .route("/api/date/done", post(collector::date_done))
         .route("/api/date/verdict", post(collector::date_verdict))

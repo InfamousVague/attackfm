@@ -2,6 +2,8 @@ import { type CSSProperties } from 'react';
 import dateChip from '../../assets/chip-music-date.webp';
 import { Button } from '@glacier/react';
 import { useMyAuditions } from './myAuditions.ts';
+import { useEffect, useState } from 'react';
+import { fetchDateCandidates } from '../api/curator.ts';
 import { LibChipMosaic, LibChipStat } from './LibChipFace.tsx';
 import { musicDateDoorOpen, openMusicDate } from '../nav/musicDateDoor.ts';
 import { useServerSession } from '../servers/serverSession.tsx';
@@ -21,6 +23,21 @@ import { useServerSession } from '../servers/serverSession.tsx';
 export function MusicDateChip() {
   const { session } = useServerSession();
   const { mine } = useMyAuditions();
+  // The pool's preview dates count too, or this chip promises six while the
+  // deck deals hundreds - the mismatch got reported within a day.
+  const [poolCount, setPoolCount] = useState(0);
+  useEffect(() => {
+    if (!session) return;
+    let live = true;
+    void fetchDateCandidates(session, 1)
+      .then(({ total }) => {
+        if (live) setPoolCount(total);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [session]);
 
   // Nothing to open, so nothing to show. Same rule the banner had: a door onto
   // an empty room is worse than no door.
@@ -30,7 +47,7 @@ export function MusicDateChip() {
   // shelf below it showed 220, because one filtered by owner and the other
   // counted every audition the client had ever been sent.
   const covers = mine.map((t) => t.artwork).filter((a): a is string => !!a);
-  const waiting = mine.length;
+  const waiting = mine.length + poolCount;
 
   return (
     <Button

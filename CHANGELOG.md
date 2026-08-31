@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.161
+
+- Music Date unfroze: preview dates now fetch a FRESH clip as each card comes up (the stored links quietly expire), and a card whose clip is truly gone folds itself away instead of jamming the deck behind a play button
+- The Music Date numbers agree now: the library card and the date page both count your downloaded dates AND the preview pool
+
 ## 0.4.160
 
 - Pick who your DJ sounds like: Settings > AI now offers five of ElevenLabs' most loved voices - Hope, Verity, Brian, Daniel and Jessica. Switching re-speaks the DJ's lines gradually in the new voice; old voices stay cached, so switching back is free
