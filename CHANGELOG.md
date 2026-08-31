@@ -15,6 +15,11 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.154
+
+- The charts stop being the same twenty songs under different flags: six genre charts join the country lists — Top Pop, Top Indie & Alt, Top R&B, Top Hip-Hop, Top Rock, Top Dance — drawn from Deezer's own editorial genre charts and matched against what is on the box, like the rest. Needs the hub updated
+- Add to playlist is a grid of the playlists' own square faces now, four across with names underneath, instead of a flat list of rows — filing a song looks like choosing from the shelf it will land on
+
 ## 0.4.153
 
 - The Louder-when-driving row is laid out like the pane's other choices now — control under the label at full width, and a one-line hint that answers for the strength you picked instead of reciting the whole manual beside a crushed column of words
