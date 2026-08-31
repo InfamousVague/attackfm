@@ -36,9 +36,18 @@ import { fireNativeHaptic } from '../core/haptics.ts';
 import { createPortal } from 'react-dom';
 import { hushBeats, speakBeats } from '../booth/djVoice.ts';
 import { dateVoiceEnabled } from './dateVoice.ts';
-import { fetchDateBriefing, type DateBriefingSong } from '../api/curator.ts';
+import {
+  dateCandidateVerdict,
+  fetchDateBriefing,
+  fetchDateCandidates,
+  type DateBriefingSong,
+  type PreviewDateCard,
+} from '../api/curator.ts';
 import { makeRatchet } from '../ux/ratchet.ts';
 import { EmptyArt } from '../ux/EmptyArt.tsx';
+
+/** A preview date's path: not a file, a promise - the ext id rides it. */
+const PREVIEW_SCHEME = 'preview:';
 
 /** How many verdicts can be walked back. */
 const UNDO_DEPTH = 10;
@@ -174,7 +183,51 @@ export function DatePage() {
    * This page used to re-derive all four filters itself. Two copies of one
    * rule is how the chip came to promise 172 songs over an empty deck.
    */
-  const deck = useMemo(() => mine.filter((t) => !gone.has(t.path)), [mine, gone]);
+  /*
+   * Preview dates: the pool's best measured candidates, dealt straight into
+   * the deck on their thirty-second previews. This is what unchained Music
+   * Date from the download queue - the peer that fetches full files can
+   * sleep all afternoon and the deck still runs hundreds deep. A pass costs
+   * nothing anywhere; a keep queues the real download and walks into the
+   * library (and Liked) when it lands.
+   */
+  const [candidates, setCandidates] = useState<PreviewDateCard[]>([]);
+  const candidateFetchAt = useRef(0);
+  useEffect(() => {
+    if (!session) return;
+    const waiting = candidates.filter((c) => !gone.has(PREVIEW_SCHEME + c.extId)).length;
+    if (waiting >= 5) return;
+    const now = Date.now();
+    if (now - candidateFetchAt.current < 20_000) return;
+    candidateFetchAt.current = now;
+    void fetchDateCandidates(session, 25)
+      .then((cards) => setCandidates(cards))
+      .catch(() => {});
+  }, [session, gone, candidates]);
+  const previewByPath = useMemo(
+    () => new Map(candidates.map((c) => [PREVIEW_SCHEME + c.extId, c] as const)),
+    [candidates],
+  );
+  const previewDeck = useMemo<Track[]>(
+    () =>
+      candidates.map((c) => ({
+        path: PREVIEW_SCHEME + c.extId,
+        title: c.title,
+        artist: c.artist,
+        album: c.seed ? `Because you play ${c.seed}` : 'New to you',
+        duration: null,
+        addedAt: Date.now(),
+        artwork: c.cover || null,
+        genre: '',
+        lyrics: '',
+      })),
+    [candidates],
+  );
+
+  const deck = useMemo(
+    () => [...mine, ...previewDeck].filter((t) => !gone.has(t.path)),
+    [mine, previewDeck, gone],
+  );
 
   // The next stretch of cards, kept on the phone. Handed to the device cache
   // as a ranking signal rather than pinned here: that cache already owns the
@@ -193,7 +246,12 @@ export function DatePage() {
 
   useEffect(() => {
     if (!session) return;
-    setDateDeck(deck.slice(0, DATE_CACHE_TARGET).map((t) => t.path));
+    setDateDeck(
+      deck
+        .filter((t) => !t.path.startsWith(PREVIEW_SCHEME))
+        .slice(0, DATE_CACHE_TARGET)
+        .map((t) => t.path),
+    );
     // Debounced: the deck recomputes on every swipe, and a fast run through
     // ten cards should cost one sweep rather than ten.
     const t = window.setTimeout(() => void sweepIfIdle(session), 1500);
@@ -331,7 +389,12 @@ export function DatePage() {
     el.preload = 'auto';
     const slot: Slot = { el, path: track.path, url: '', start: null, playWhenReady: false };
     pool.current.set(track.path, slot);
-    void loadAudioUrl(track.path).then((url) => {
+    // A preview date's sound is its catalogue clip, streamed straight - the
+    // vault has never heard of it. Same continuation either way.
+    const source = track.path.startsWith(PREVIEW_SCHEME)
+      ? Promise.resolve(previewByPath.get(track.path)?.preview ?? null)
+      : loadAudioUrl(track.path);
+    void source.then((url) => {
       // Judged (evicted) while the URL resolved: nothing to warm any more.
       if (pool.current.get(track.path) !== slot) {
         if (url?.startsWith('blob:')) URL.revokeObjectURL(url);
@@ -367,7 +430,7 @@ export function DatePage() {
       }
     });
     return slot;
-  }, []);
+  }, [previewByPath]);
 
   /** Make a song the one speaking. Called inside the gesture, so its play()
    *  carries the tap's autoplay permission. */
@@ -579,7 +642,24 @@ export function DatePage() {
   const verdict = useCallback(
     (track: Track, dir: 'left' | 'right') => {
       let favorited = false;
-      if (dir === 'right') {
+      const isPreview = track.path.startsWith(PREVIEW_SCHEME);
+      if (isPreview) {
+        /*
+         * A preview date's verdict goes through its own door: a keep buys
+         * the real file (and the pending like makes it a favourite the
+         * moment it lands), a pass forgets the candidate. No local
+         * favourite (there is no path to hang one on yet) and no undo -
+         * the pool has already moved.
+         */
+        fireNativeHaptic(dir === 'right' ? 'success' : 'light');
+        setTally((t) =>
+          dir === 'right' ? { ...t, kept: t.kept + 1 } : { ...t, passed: t.passed + 1 },
+        );
+        if (session) {
+          const extId = track.path.slice(PREVIEW_SCHEME.length);
+          void dateCandidateVerdict(session, extId, dir === 'right').catch(() => {});
+        }
+      } else if (dir === 'right') {
         fireNativeHaptic('success');
         // The heart is the adoption - the same verb as everywhere else.
         if (!isFavorite(track.path)) {
@@ -617,7 +697,9 @@ export function DatePage() {
       // card is interactive at once) and the sound (so its play() carries the
       // gesture's autoplay permission). Only the fling animation waits.
       setGone((prev) => new Set(prev).add(track.path));
-      setUndos((prev) => [...prev, { track, dir, favorited }].slice(-UNDO_DEPTH));
+      if (!isPreview) {
+        setUndos((prev) => [...prev, { track, dir, favorited }].slice(-UNDO_DEPTH));
+      }
       setOutgoing({ track, dir });
       window.clearTimeout(flingTimer.current);
       flingTimer.current = window.setTimeout(() => setOutgoing(null), FLING_MS);

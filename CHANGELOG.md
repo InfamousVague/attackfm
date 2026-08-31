@@ -15,59 +15,9 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
-## 0.4.158
-
-- The launch screen's loader moved into the wordmark itself: the wave now sweeps through the ATTACK letters' own negative space — the mark rests dim and lights to full as the band passes — instead of running along a bar beneath it
-
-## 0.4.157
-
-- The on-device tick in the song list grew from a speck to a mark you can actually scan for
-
-## 0.4.156
-
-- Tapping a "New music" notification starts the song. A landing that names one track now carries it into the tray entry, and the tap plays it instead of just opening the app — waiting out the library sync on a cold start rather than shrugging. Album landings still open the app; there is no one song to start
-
-## 0.4.155
-
-- The Library's For-you shelf now leads with the playlists the curator built for you — faces first, opening as the same mix pages they open from Home — with the audition cards behind them
-- Music dates should arrive markedly faster: the model's one-line "why this was downloaded for you" caption was written BEFORE each download was raised, so a slow model spent the whole buying pass on copywriting. Downloads go up immediately with the plain reason and the warmer line lands on the row afterwards. Needs the hub updated
-- Stem separation uses the cores it was given: demucs ran one worker regardless of the machine, and now splits the song across a third of the box's cores (override with AFM_DEMUCS_JOBS). On the hub that is close to a four-times faster separation. Needs the hub updated
-
-## 0.4.154
-
-- The charts stop being the same twenty songs under different flags: six genre charts join the country lists — Top Pop, Top Indie & Alt, Top R&B, Top Hip-Hop, Top Rock, Top Dance — drawn from Deezer's own editorial genre charts and matched against what is on the box, like the rest. Needs the hub updated
-- Add to playlist is a grid of the playlists' own square faces now, four across with names underneath, instead of a flat list of rows — filing a song looks like choosing from the shelf it will land on
-
-## 0.4.153
-
-- The Louder-when-driving row is laid out like the pane's other choices now — control under the label at full width, and a one-line hint that answers for the strength you picked instead of reciting the whole manual beside a crushed column of words
-
-## 0.4.152
-
-- Louder when driving: the volume rises with your speed to cover road noise, the way a car stereo's speed-compensated volume does — nothing under 20 km/h, the full lift by motorway pace, in three strengths up to +9 dB. It rides the same gain stage as volume levelling, so the fader still means what it says and the rise glides instead of stepping. Off by default; switching it on asks for location once, GPS is watched only while it is on, and a tunnel holds the boost rather than dropping it at the loudest stretch of the road. On phones the location permission itself arrives with the next app build
-
-## 0.4.151
-
-- The Link-a-device card grows a Copy code button, for handing the code to a chat or a terminal instead of reading it off the QR. It copies the bare six characters, flips to "Copied" for a moment, and resets when a new code is minted
-
-## 0.4.150
-
-- The DJ's voice waves wobble with real definition now. Each ring visibly churns into an irregular blob as it travels instead of drifting as a barely-dented circle, and a stagger bug that left two of the three rings sharing one timing — so the wobble looked doubled rather than layered — is fixed
-
-## 0.4.149
-
-- The DJ can hear you. The last chip in the Booth's row is a microphone: tap it, say what you want, tap again — a set steered by your words starts within seconds, and whatever you asked for that the library does not hold starts downloading in the background through the collector, landing as auditions over the next minutes. Speech becomes text on your own server, with the same whisper install read-along uses; nothing is recorded until you press the button, and the clip goes nowhere but your hub. Needs the hub updated, and a fresh app build on phones for the microphone permission
-
-## 0.4.148
-
-- Hunting for the right recording no longer starts over every time. Closing the box used to cancel five downloads mid-flight and the next open began again from nothing, which is why alternates so often never arrived — they were being cancelled, not failing. A hunt now keeps running while you do something else, and reopening picks up exactly where it got to
-- The two catalogue searches that pick the alternates run at the same time instead of one after the other, so the first download starts a round trip sooner
-- Liked songs — and every song list — gain an on-device column: what is downloaded and will play in a tunnel, sortable so you can bring it all to the top. The little tick beside the title moved into it rather than being shown twice
-
 ## 0.4.147
 
-- Buttons no longer stay lit after you tap them. A touch has no way to end a hover, so the phone applied one and then had nothing with which to take it away, and the paint sat there until you tapped somewhere else. Every hover style in the app and the kit — 190 of them, one of which was guarded — now applies only where there is a pointer to hover with. Keyboard focus rings are untouched
-- Mixes get the top bar that fades in as you scroll, the one playlists have. A mix used to open in a panel rather than as a page, so when it became a page it inherited a playlist's whole look and none of the wiring behind the bar above it
+- Music Date is unchained from the download queue: the deck now also deals PREVIEW dates - the collector's best finds, judged on their thirty-second clips. A pass costs nothing at all; a keep downloads the real song, which walks into your library and Liked when it lands. Hundreds of dates deep, any hour of the day
 
 ## 0.4.146
 

@@ -102,6 +102,42 @@ export async function fetchDiscoveries(
   });
 }
 
+/** A date dealt from the pool: not on the box yet, judged on its preview. */
+export interface PreviewDateCard {
+  extId: string;
+  title: string;
+  artist: string;
+  cover: string;
+  preview: string;
+  seed: string;
+}
+
+/** The best measured candidates, ready to date on their thirty seconds. */
+export async function fetchDateCandidates(
+  session: ServerSession,
+  count = 25,
+): Promise<PreviewDateCard[]> {
+  const out = await request<{ candidates?: PreviewDateCard[] }>(
+    session.url,
+    `/api/date/candidates?count=${count}`,
+    { token: session.token },
+  );
+  return out.candidates ?? [];
+}
+
+/** The swipe on a preview date: a keep buys the song, a pass forgets it. */
+export async function dateCandidateVerdict(
+  session: ServerSession,
+  extId: string,
+  kept: boolean,
+): Promise<void> {
+  await request(session.url, '/api/date/candidate-verdict', {
+    token: session.token,
+    method: 'POST',
+    body: JSON.stringify({ extId, kept }),
+  });
+}
+
 /** One spoken line about an upcoming date card: the words, and the cached
  *  clips that say them (empty when the server has no voice). */
 export interface DateBriefingSong {

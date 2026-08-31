@@ -850,6 +850,79 @@ pub async fn date_verdict(
 /// pull's reason line - the model wrote it at buy time when a model exists),
 /// so this costs no model call; the voice rides the same cached-clip
 /// machinery as the DJ's set beats, minted behind the reply.
+/// `GET /api/date/candidates?count=` - preview dates: the caller's best
+/// measured, unpulled candidates, each carrying its thirty-second preview.
+/// This is what unchains Music Date from the download queue: the pool holds
+/// hundreds of measured songs while the peer that fetches full files may be
+/// asleep for hours - so the deck deals the PREVIEWS, a pass costs nothing,
+/// and only a keep spends the peer's bandwidth.
+pub async fn date_candidates(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let caller =
+        crate::auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let want = q
+        .get("count")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(25)
+        .clamp(1, 40);
+    let pulled = state.db.pulled_ext_ids(caller.id, now_ms() - FAILED_RETRY_AFTER_MS);
+    let cards: Vec<serde_json::Value> = state
+        .db
+        .top_discoveries(caller.id, 400)
+        .into_iter()
+        .filter(|d| !d.preview.trim().is_empty() && !pulled.contains(&d.ext_id) && measured(d))
+        .take(want)
+        .map(|d| {
+            json!({
+                "extId": d.ext_id, "title": d.title, "artist": d.artist,
+                "cover": d.cover, "preview": d.preview, "seed": d.seed,
+            })
+        })
+        .collect();
+    Ok(Json(json!({ "candidates": cards })))
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CandidateVerdictBody {
+    pub ext_id: String,
+    pub kept: bool,
+}
+
+/// `POST /api/date/candidate-verdict` - the swipe on a preview date. A pass
+/// forgets the candidate (the pool's own dismiss semantics - the harvest may
+/// one day argue its case again). A keep buys it through the same door the
+/// collector uses AND writes a pending like, so the landing sweep both
+/// favourites and adopts it - a kept date has always meant a heart.
+pub async fn date_candidate_verdict(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<CandidateVerdictBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let caller =
+        crate::auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let Some(d) = state.db.discovery_get(caller.id, &body.ext_id) else {
+        // Judged elsewhere, or swept between deal and swipe: the swipe stands.
+        return Ok(Json(json!({ "ok": true, "gone": true })));
+    };
+    if body.kept {
+        let charted = state
+            .db
+            .discovery_lanes(caller.id)
+            .get(&d.ext_id)
+            .is_some_and(|(lane, _)| lane == "trending");
+        let bought = buy(&state, caller.id, &d, charted).await;
+        let k = crate::discovery::key_of(&d.artist, &d.title);
+        let _ = state.db.pending_like_put(caller.id, &k, &d.title, &d.artist);
+        return Ok(Json(json!({ "ok": true, "queued": bought })));
+    }
+    state.db.forget_discovery(caller.id, &body.ext_id);
+    Ok(Json(json!({ "ok": true })))
+}
+
 pub async fn date_briefing(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,

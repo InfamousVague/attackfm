@@ -425,3 +425,22 @@ img.artPop:not([data-loading]) {
     transition: none;
   }
 }
+
+/* The preview date's honesty pill: the card is the catalogue's thirty
+   seconds, not a file on the box. */
+.dateCard__preview {
+  position: absolute;
+  top: var(--glacier-space-2);
+  right: var(--glacier-space-2);
+  z-index: 3;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: var(--glacier-font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--glacier-text);
+  background: color-mix(in oklab, var(--glacier-bg) 55%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
