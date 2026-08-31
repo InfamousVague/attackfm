@@ -1574,10 +1574,10 @@ async fn discovery_cycle(state: &Arc<AppState>) -> bool {
             crate::stations::invalidate(state, user).await;
             worked = true;
         }
-        // The banked DJ sets: every vibe pressed-and-consumed (or gone
-        // stale) is rebuilt here, where the model can take its time to
-        // curate instead of narrating under a five-second budget.
-        crate::vibes::cycle(state, user).await;
+        // The banked DJ sets are RETIRED from serving (2026-08-31, by
+        // explicit request - cached sets dealt the same songs every press),
+        // so nothing banks them any more either. vibes::cycle survives in
+        // its module, parked, should judgement-over-freshness ever win back.
     }
     // The new-music shelf, kept warm: at most one grouping rebuild per pass.
     crate::discovery::new_music_warm_one(state).await;

@@ -9,13 +9,12 @@
 //!
 //! Economics mirror the voice layer's: lore belongs to the SONG, so one row
 //! in `song_lore` (and one minted clip) serves every listener and every set
-//! forever. Generation happens in exactly one place: the BANKED builds, where
-//! time is free - they hold the lore lock, fill the gaps, and attach a
-//! complete map before the body is frozen into dj_sets. Live replies only
-//! read what is on file; the bank rebuild the handler already spawns is what
-//! fills their gaps for next time. (The first cut also generated behind live
-//! replies, and that background task's grip on a skip-style latch turned the
-//! bank's own inline pass into a no-op - sets froze loreless.)
+//! forever. Generation rides BEHIND the live replies (spawned; the wait-lock
+//! and cooldowns bound the model time): served sets speak what is on file
+//! and commission the gaps for next time. History: under the banked-sets era
+//! generation lived inline in the banks instead, because a behind-live spawn
+//! holding the old SKIP-latch starved the banks' own pass - with the banks
+//! retired (2026-08-31) the spawn is the one generator again, now safely.
 
 use crate::AppState;
 use serde_json::{json, Value};
