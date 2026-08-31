@@ -291,7 +291,10 @@ export function SongTable({
               sortValue: (row) => (onDevice.has(row.id as string) ? 0 : 1),
               render: (row) =>
                 onDevice.has(row.id as string) ? (
-                  <CircleCheck size={15} className="songLocal" aria-label="On this device" />
+                  // 20, not the 15 it launched at: in its own 3.5rem column
+                  // the mark is the cell's entire content, and at 15px it
+                  // read as a speck rather than an answer.
+                  <CircleCheck size={20} className="songLocal" aria-label="On this device" />
                 ) : (
                   // An em dash rather than an empty cell: a blank reads as "not
                   // loaded yet" where a dash reads as an answer.
