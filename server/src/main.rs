@@ -664,6 +664,7 @@ async fn main() {
         .route("/api/scan", get(api::scan_status).post(api::scan_now))
         .route("/api/stats", get(api::stats))
         .route("/api/stats/summary", get(listens::summary))
+        .route("/api/tracks", get(api::tracks_meta))
         .route("/api/favorites", get(api::favorites))
         .route("/api/likes/pending", get(api::pending_likes).post(api::add_pending_like))
         .route("/api/likes/pending/remove", post(api::remove_pending_like))

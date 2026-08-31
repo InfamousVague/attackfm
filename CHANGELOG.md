@@ -15,6 +15,7 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+<<<<<<< HEAD
 ## 0.4.163
 
 - The date briefing talks about the BAND now: who they are, where they're from, what they're known for - real background, with the "because you play X" as a footnote instead of the whole story. Preview dates get introduced too, not just downloaded ones. Bands the AI doesn't truly know are simply introduced by name - it never invents
@@ -32,9 +33,14 @@ and where that library came from is not the app's story to tell.
 
 - Pick who your DJ sounds like: Settings > AI now offers five of ElevenLabs' most loved voices - Hope, Verity, Brian, Daniel and Jessica. Switching re-speaks the DJ's lines gradually in the new voice; old voices stay cached, so switching back is free
 
-## 0.4.159
+## 0.4.164
 
 - Music Date is unchained from the download queue: the deck now also deals PREVIEW dates - the collector's best finds, judged on their thirty-second clips. A pass costs nothing at all; a keep downloads the real song, which walks into your library and Liked when it lands. Hundreds of dates deep, any hour of the day
+=======
+## 0.4.159
+
+- AttackFM reaches the wrist: a native Wear OS app, dressed in Glacier's tokens (the kit itself is web and a watch has no web runtime, so the look crossed over rather than the code). Sign in with the same six-digit device-link code every device uses, and the watch becomes a remote for the account's playing seat — live now-playing, transport, volume, and the Liked list a tap can hand the seat as its queue. Ships as its own APK beside the phone app; track names on the watch need the hub updated
+>>>>>>> b00edfa (AttackFM on the wrist)
 
 ## 0.4.158
 

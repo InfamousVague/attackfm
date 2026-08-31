@@ -1,0 +1,4 @@
+include ':app'
+include ':wear'
+
+apply from: 'tauri.settings.gradle'

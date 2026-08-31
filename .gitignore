@@ -32,6 +32,20 @@ src-tauri/gen/apple/Podfile.lock
 # because git refuses to re-include below an excluded DIRECTORY - the
 # negation chain below only works when the exclusion is on contents.)
 src-tauri/gen/android/**
+# The watch module rides the same negation ladder the app does: gen/android
+# ignores everything, and each REAL file earns its way back in. build output
+# and local.properties stay ignored by never being named.
+!src-tauri/gen/android/wear/
+!src-tauri/gen/android/wear/build.gradle.kts
+!src-tauri/gen/android/wear/src/
+!src-tauri/gen/android/wear/src/main/
+!src-tauri/gen/android/wear/src/main/AndroidManifest.xml
+!src-tauri/gen/android/wear/src/main/java/
+!src-tauri/gen/android/wear/src/main/java/com/
+!src-tauri/gen/android/wear/src/main/java/com/mattssoftware/
+!src-tauri/gen/android/wear/src/main/java/com/mattssoftware/attackfm/
+!src-tauri/gen/android/wear/src/main/java/com/mattssoftware/attackfm/wear/
+!src-tauri/gen/android/wear/src/main/java/com/mattssoftware/attackfm/wear/**
 !src-tauri/gen/android/app/
 !src-tauri/gen/android/app/src/
 !src-tauri/gen/android/app/src/main/

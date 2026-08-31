@@ -484,6 +484,41 @@ pub async fn stats(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Ap
 
 // --- favourites -----------------------------------------------------------
 
+/// `GET /api/tracks?ids=1,2,3` - the light metadata a REMOTE needs to draw a
+/// track it will never stream: title, artist, art, length. Built for the watch,
+/// whose whole library view is "resolve these two dozen ids", and for whom the
+/// full /api/library payload is megabytes of lyrics it cannot use.
+pub async fn tracks_meta(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+    headers: HeaderMap,
+) -> ApiResult {
+    let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
+    let _ = caller;
+    let ids: Vec<i64> = q
+        .get("ids")
+        .map(|raw| raw.split(',').filter_map(|p| p.trim().parse().ok()).collect())
+        .unwrap_or_default();
+    // A remote asks for a queue's worth, not a library's. The cap is generous
+    // for that and mean to a scraper.
+    let ids: Vec<i64> = ids.into_iter().take(200).collect();
+    let rows: Vec<serde_json::Value> = ids
+        .iter()
+        .filter_map(|id| state.db.track(*id))
+        .map(|t| {
+            json!({
+                "id": t.id,
+                "title": t.title,
+                "artist": t.artist,
+                "album": t.album,
+                "durationMs": t.duration.map(|d| (d * 1000.0) as i64),
+                "artId": t.art_id,
+            })
+        })
+        .collect();
+    Ok(Json(json!({ "tracks": rows })))
+}
+
 pub async fn favorites(State(state): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult {
     let caller = auth::require_caller(&state.db, &headers).map_err(|s| (s, "sign in first".into()))?;
     Ok(Json(json!({ "tracks": state.db.favorites(caller.id) })))
