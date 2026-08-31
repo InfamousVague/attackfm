@@ -16,6 +16,10 @@ about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
 <<<<<<< HEAD
+## 0.4.164
+
+- A New music chip joins the DJ's row, in the Booth and on the now-playing sheet alike: a set of the music dates waiting to meet you and the library's arrivals you have not heard, dates leading two to one. No taste scoring on purpose — for a set that promises "you have not heard this", newness is the curation. Needs the hub updated
+
 ## 0.4.163
 
 - The date briefing talks about the BAND now: who they are, where they're from, what they're known for - real background, with the "because you play X" as a footnote instead of the whole story. Preview dates get introduced too, not just downloaded ones. Bands the AI doesn't truly know are simply introduced by name - it never invents
