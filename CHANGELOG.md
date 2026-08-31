@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.158
+
+- The launch screen's loader moved into the wordmark itself: the wave now sweeps through the ATTACK letters' own negative space — the mark rests dim and lights to full as the band passes — instead of running along a bar beneath it
+
 ## 0.4.157
 
 - The on-device tick in the song list grew from a speck to a mark you can actually scan for

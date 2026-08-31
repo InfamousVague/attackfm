@@ -127,11 +127,22 @@ export function LaunchUpdate({ children }: { children: ReactNode }) {
   if (phase === 'done') return <>{children}</>;
 
   return (
-    <div className="launchGate" role="status" aria-live="polite">
-      <img className="launchGate__mark" src={wordmark} alt="AttackFM" draggable={false} />
-      <div className="launchGate__bar" aria-hidden>
-        <span className="launchGate__barFill" />
-      </div>
+    <div className="launchGate" role="status" aria-live="polite" aria-label="AttackFM is starting">
+      {/* The wordmark IS the loader: the wave sweeps through the letters'
+          own negative space rather than along a bar beneath them. The PNG is
+          white-on-transparent, so it doubles as the mask that clips the
+          travelling gradient to the letterforms - the mask URL has to come
+          from here because the asset's hashed path only exists in JS. */}
+      <span className="launchGate__markWrap" aria-hidden>
+        <img className="launchGate__mark" src={wordmark} alt="" draggable={false} />
+        <span
+          className="launchGate__wave"
+          style={{
+            WebkitMaskImage: `url(${wordmark})`,
+            maskImage: `url(${wordmark})`,
+          }}
+        />
+      </span>
       <p className="launchGate__say">
         {phase === 'installing' && version ? `Installing ${version}…` : 'Checking for updates…'}
       </p>

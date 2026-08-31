@@ -99,56 +99,76 @@
   color: var(--glacier-text, #eceaf0);
 }
 
-.launchGate__mark {
-  /* Big: on the launch/checking-update screen the wordmark IS the screen, so
-     it leads at size over the whole thing rather than as a small mark above a
-     bar. Capped as a fraction of the viewport so it stays clear of the edges. */
+/* The mark and its wave, one on the other. The wrap is what takes the size;
+   both children fill it, so the mask'd gradient lands letter-for-letter over
+   the image it sweeps through. */
+.launchGate__markWrap {
+  position: relative;
+  display: inline-block;
   inline-size: 22rem;
   max-inline-size: 80%;
+}
+
+.launchGate__mark {
+  display: block;
+  inline-size: 100%;
   user-select: none;
   -webkit-user-drag: none;
+  /* Dimmed so the wave has somewhere to go: the sweep restores full strength
+     as it passes, which is what makes it read as loading rather than décor. */
+  opacity: 0.45;
+}
+
+/*
+ * THE WAVE, inside the letters.
+ *
+ * The wordmark PNG is white-on-transparent, so used as a mask it clips this
+ * element to the letterforms exactly - the travelling gradient exists only in
+ * the logo's own negative space, by request. The gradient is a soft band of
+ * the mark's full colour that crosses the word every 1.6s; between passes the
+ * letters rest at the dimmed base underneath.
+ */
+.launchGate__wave {
+  position: absolute;
+  inset: 0;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    #fff 46%,
+    #fff 54%,
+    transparent 70%
+  );
+  background-size: 250% 100%;
+  background-repeat: no-repeat;
+  animation: launchGateWave 1.6s var(--glacier-ease-in-out, ease-in-out) infinite;
+}
+
+@keyframes launchGateWave {
+  0% { background-position: 125% 0; }
+  100% { background-position: -125% 0; }
 }
 
 /* White-on-transparent wordmark, invisible on a light theme without this.
    Same recipe as .mobileHeader__logo (00-base-a.css). */
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme]) .launchGate__mark {
+  :root:not([data-theme]) .launchGate__markWrap {
     filter: invert(1);
   }
 }
 
-:root[data-theme='light'] .launchGate__mark {
+:root[data-theme='light'] .launchGate__markWrap {
   filter: invert(1);
 }
 
-:root[data-theme='dark'] .launchGate__mark {
+:root[data-theme='dark'] .launchGate__markWrap {
   filter: none;
 }
 
-/* An indeterminate bar rather than a percentage: the check is a request whose
-   length nobody knows, and a progress bar that invents a number is a bar that
-   sticks at 90%. */
-.launchGate__bar {
-  inline-size: min(14rem, 60%);
-  block-size: 3px;
-  border-radius: var(--glacier-radius-full);
-  background: var(--glacier-surface-sunken, #1a1a20);
-  overflow: hidden;
-}
 
-.launchGate__barFill {
-  display: block;
-  inline-size: 40%;
-  block-size: 100%;
-  border-radius: inherit;
-  background: var(--glacier-accent-solid, #e0245e);
-  animation: launchGateSweep 1.1s var(--glacier-ease-in-out, ease-in-out) infinite;
-}
-
-@keyframes launchGateSweep {
-  0% { transform: translateX(-110%); }
-  100% { transform: translateX(310%); }
-}
 
 .launchGate__say {
   margin: 0;
@@ -156,13 +176,16 @@
   color: var(--glacier-text-muted, #98959f);
 }
 
-/* Reduced motion still needs to say "working", so the bar stops sweeping and
-   sits still rather than disappearing - a frozen empty rail reads as stuck. */
+/* Reduced motion still needs to say "working": the wave stops travelling and
+   the letters simply hold at full strength - a dimmed frozen mark reads as
+   stuck. */
 @media (prefers-reduced-motion: reduce) {
-  .launchGate__barFill {
+  .launchGate__wave {
     animation: none;
-    inline-size: 100%;
-    opacity: 0.5;
+    background: none;
+  }
+  .launchGate__mark {
+    opacity: 1;
   }
 }
 
