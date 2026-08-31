@@ -7961,6 +7961,24 @@ impl Db {
 
     /// A peer says this pull produced this file, named as the HUB's own
     /// rel_path. Idempotent: a repeated report is the same row.
+    /// The model's warmer sentence, landing on a pull that already went up with
+    /// the plain one. Keyed the way the upsert is (user, ext_id), and only ever
+    /// improves copy - a row already failed or claimed keeps its reason too,
+    /// because the reason describes WHY it was wanted, which failure does not
+    /// change.
+    pub fn update_pull_reason(
+        &self,
+        user_id: i64,
+        ext_id: &str,
+        reason: &str,
+    ) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "UPDATE curator_pulls SET reason = ?3 WHERE user_id = ?1 AND ext_id = ?2",
+            params![user_id, ext_id, reason],
+        )?;
+        Ok(())
+    }
+
     pub fn record_pull_path(&self, pull_id: i64, rel_path: &str) -> rusqlite::Result<()> {
         // Only against a pull somebody actually took. The route is open to any
         // signed-in caller, like the rest of the peer channel, and a report is

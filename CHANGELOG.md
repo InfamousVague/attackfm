@@ -15,6 +15,12 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.155
+
+- The Library's For-you shelf now leads with the playlists the curator built for you — faces first, opening as the same mix pages they open from Home — with the audition cards behind them
+- Music dates should arrive markedly faster: the model's one-line "why this was downloaded for you" caption was written BEFORE each download was raised, so a slow model spent the whole buying pass on copywriting. Downloads go up immediately with the plain reason and the warmer line lands on the row afterwards. Needs the hub updated
+- Stem separation uses the cores it was given: demucs ran one worker regardless of the machine, and now splits the song across a third of the box's cores (override with AFM_DEMUCS_JOBS). On the hub that is close to a four-times faster separation. Needs the hub updated
+
 ## 0.4.154
 
 - The charts stop being the same twenty songs under different flags: six genre charts join the country lists — Top Pop, Top Indie & Alt, Top R&B, Top Hip-Hop, Top Rock, Top Dance — drawn from Deezer's own editorial genre charts and matched against what is on the box, like the rest. Needs the hub updated
