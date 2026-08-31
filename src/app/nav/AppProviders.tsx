@@ -19,6 +19,7 @@ import { NotificationTapBridge } from '../notify/NotificationTapBridge.tsx';
 import { RadioProvider } from '../player/radio.tsx';
 import { PlaylistsProvider } from '../playlists/playlists.tsx';
 import { LibrarySyncProvider } from '../library/librarySync.tsx';
+import { IncomingProvider } from '../downloads/incoming.tsx';
 import { JamProvider } from '../player/jam.tsx';
 import { MobileAuthGate } from '../servers/MobileAuthGate.tsx';
 import { hapticsImpl } from '../core/haptics.ts';
@@ -113,6 +114,12 @@ export function AppProviders({
                 the lone one, or lets the user choose among several. Inside the
                 plugin providers (a handler reads its own plugin's context) and
                 above the content that carries Add controls. */}
+            {/* Every song on its way onto the box, merged and de-landed in
+                one place, so the library/Liked surfaces can show it arriving
+                without each polling the hub. Inside the plugin providers (it
+                reads the importer bridge) and the library (it drops a ghost
+                the instant the real row lands). */}
+            <IncomingProvider>
             <AcquireProvider>
             {/* Queue editing (Play next / Add to queue) for every track surface
                 below - onto this deck's queue, or, when following a jam, into
@@ -135,6 +142,7 @@ export function AppProviders({
             </PlayNowBridge>
             </QueueControlsBridge>
             </AcquireProvider>
+            </IncomingProvider>
             </NowPlayingMotionProvider>
             </JamProvider>
             </PlaybackSyncProvider>

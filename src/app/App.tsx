@@ -228,6 +228,13 @@ export function App() {
   const backOutOfSettings = useCallback(() => {
     if (!settingsBack()) setSettingsOpen(false);
   }, []);
+  // Downloads is no longer a place you navigate to - the songs show up where
+  // they will live, arriving. This opens the Settings pane that keeps the
+  // full queue and the retry/cancel affordances, for when you want to look.
+  const openDownloads = useCallback(() => {
+    setSettingsPane('downloads');
+    setSettingsOpen(true);
+  }, []);
   useSystemBack(settingsOpen, backOutOfSettings);
   // The app-wide tap tick, bound to the Settings switch. Mounted only while the
   // preference is on, so turning haptics off really does remove the listener
@@ -626,7 +633,7 @@ export function App() {
                         catch. */}
                     <NotifyBell
                       iconSize={16}
-                      onOpenDownloads={() => goTab('downloads')}
+                      onOpenDownloads={openDownloads}
                       onOpenFriends={() => goTab('friends')}
                     />
                     <IconButton
@@ -690,7 +697,7 @@ export function App() {
                       a page scrolled. Last means it never moves. */}
                   <NotifyBell
                     iconSize={18}
-                    onOpenDownloads={() => goTab('downloads')}
+                    onOpenDownloads={openDownloads}
                     onOpenFriends={() => goTab('friends')}
                   />
                 </span>
@@ -707,6 +714,7 @@ export function App() {
                   tab={tab}
                   onTab={goTab}
                   onSettings={() => setSettingsOpen(true)}
+                  onOpenDownloads={openDownloads}
                 />
               )}
               {/* Provides the arm-and-play verb to Discover/Search so a tapped,
@@ -728,7 +736,7 @@ export function App() {
                   onOpenPlaylist={goPlaylist}
                   onOpenSongs={goSongs}
                   onCloseDetail={closeDetail}
-                  onOpenDownloads={() => goTab('downloads')}
+                  onOpenDownloads={openDownloads}
                   onOpenStats={() => goTab('stats')}
                   onOpenFriends={() => goTab('friends')}
                   profileRoom={tab === 'profile' ? profileRoom : null}
@@ -763,6 +771,7 @@ export function App() {
                 tab={tab}
                 onTab={goTab}
                 onSettings={() => setSettingsOpen(true)}
+                  onOpenDownloads={openDownloads}
               />
             )}
             {/* The plugins' door now lives ON the nav: a rail item per page on

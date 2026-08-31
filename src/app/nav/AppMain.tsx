@@ -19,7 +19,6 @@ import { BoothPage } from '../booth/BoothPage.tsx';
 import { FriendsPage } from '../profile/FriendsPage.tsx';
 import { ProfilePage } from '../profile/ProfilePage.tsx';
 import { StatsPage } from '../profile/StatsPage.tsx';
-import { DownloadsPage } from '../downloads/DownloadsPage.tsx';
 
 /** Re-exported so App and useNavStack can name the song-page views without
  *  reaching past this content host. */
@@ -266,8 +265,6 @@ export function AppMain({
         ) : (
           <ProfilePage onOpenFriends={onOpenFriends} onOpenRoom={onProfileRoom} />
         )
-      ) : tab === 'downloads' && hasQueue ? (
-        <DownloadsPage />
       ) : (
         // The default is the Library now, and it carries the personalized mixes
         // (folded in from the old Home) above the shelves of what you own.

@@ -28,12 +28,15 @@ export function PrimaryNav({
   tab,
   onTab,
   onSettings,
+  onOpenDownloads,
 }: {
   variant: 'rail' | 'bar';
   /** The active tab: 'home', 'library', or a plugin page's `${id}:${page}` key. */
   tab: string;
   onTab: (tab: string) => void;
   onSettings: () => void;
+  /** Opens the Downloads settings pane (Downloads is no longer a destination). */
+  onOpenDownloads: () => void;
   /** Opens the full-screen search. Never a tab - it is an overlay over
    *  whatever you were doing, and it gives that page back when it closes. */
 }) {
@@ -301,7 +304,7 @@ export function PrimaryNav({
       {/* The overflow, plus the two that never leave it: the download queue and
           Settings. It is always here, which is why the split above only ever
           plays for the seats beside it. */}
-      <NavMoreMenu overflow={inMenu} tab={tab} onTab={onTab} onSettings={onSettings} />
+      <NavMoreMenu overflow={inMenu} tab={tab} onTab={onTab} onSettings={onSettings} onOpenDownloads={onOpenDownloads} />
     </nav>
   );
 }

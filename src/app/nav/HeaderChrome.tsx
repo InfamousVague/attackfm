@@ -43,8 +43,6 @@ export function HeaderIdent({ tab }: { tab: string }) {
       <span className="mobileHeader__identLayer" data-on={!lentTitle || undefined} aria-hidden={!!lentTitle}>
         {tab === 'library' ? (
           <span className="mobileHeader__title">Library</span>
-        ) : tab === 'downloads' ? (
-          <span className="mobileHeader__title">Downloads</span>
         ) : tab === 'friends' ? (
           <span className="mobileHeader__title">Friends</span>
         ) : tab === 'profile' ? (

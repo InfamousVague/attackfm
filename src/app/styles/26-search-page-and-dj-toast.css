@@ -500,6 +500,27 @@ body:has(.npScreen[data-docked]) .djToast {
   opacity: 1;
 }
 
+/* A touch screen has no hover to reveal the row's verbs, so the love/queue
+   controls would never appear - show them always where a finger is the only
+   pointer. */
+@media (pointer: coarse) {
+  .searchRow__verbs {
+    opacity: 1;
+  }
+}
+
+/* A loved song shows its heart without waiting for hover - you should see
+   what you love at a glance - and the heart wears the accent when filled.
+   Revealing the whole verb cluster on a loved row is fine; the queue verbs
+   riding along are no worse than on hover. */
+.searchRowSeat:has(.searchVerb--heart[aria-pressed='true']) .searchRow__verbs {
+  opacity: 1;
+}
+
+.searchVerb--heart[aria-pressed='true'] {
+  color: var(--glacier-accent-solid);
+}
+
 .searchVerb {
   display: grid;
   place-items: center;
@@ -593,6 +614,104 @@ body:has(.npScreen[data-docked]) .djToast {
 }
 
 .likedPending__drop:hover {
+  background: var(--glacier-surface-raised);
+  color: var(--glacier-text);
+}
+
+/* Songs on their way in, at the head of a list (IncomingRows) - the whole of
+   "invisible downloads" the listener sees. Successor to the old .likedPending
+   band, now shared across the library and Liked. */
+.incomingRows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glacier-space-1);
+  margin-block-end: var(--glacier-space-2);
+  padding: var(--glacier-space-2);
+  border-radius: var(--glacier-radius-md);
+  background: var(--glacier-surface-sunken);
+}
+
+.incomingRows__head {
+  font-size: var(--glacier-font-size-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--glacier-text-muted);
+}
+
+.incomingRow {
+  display: flex;
+  align-items: center;
+  gap: var(--glacier-space-2);
+  min-block-size: 2.25rem;
+}
+
+.incomingRow__mark {
+  flex: none;
+  inline-size: 1.25rem;
+  display: grid;
+  place-items: center;
+  color: var(--glacier-accent-solid);
+}
+
+/* A determinate ring for a job that knows its fraction (multi-track imports);
+   the .artistAlbumSpin indeterminate ring carries everything delegated. */
+.incomingRow__ring {
+  inline-size: 0.9rem;
+  block-size: 0.9rem;
+  border-radius: 50%;
+  background: conic-gradient(currentColor var(--p, 0%), var(--glacier-border) 0);
+  -webkit-mask: radial-gradient(circle 3px at center, transparent 98%, #000 100%);
+  mask: radial-gradient(circle closest-side, transparent 62%, #000 64%);
+}
+
+.incomingRow__art {
+  flex: none;
+  inline-size: 2rem;
+  block-size: 2rem;
+  border-radius: var(--glacier-radius-sm);
+  object-fit: cover;
+}
+
+.incomingRow__art--blank {
+  background: var(--glacier-surface-raised);
+}
+
+.incomingRow__text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.incomingRow__song {
+  font-weight: var(--glacier-font-weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.incomingRow__artist {
+  font-size: var(--glacier-font-size-xs);
+  color: var(--glacier-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.incomingRow__drop {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border: none;
+  border-radius: var(--glacier-radius-sm);
+  background: none;
+  color: var(--glacier-text-muted);
+  cursor: pointer;
+}
+
+.incomingRow__drop:hover {
   background: var(--glacier-surface-raised);
   color: var(--glacier-text);
 }

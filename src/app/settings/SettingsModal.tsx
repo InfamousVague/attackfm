@@ -3,7 +3,7 @@
 // GeneralPane / PlaybackPane / PluginsPane (+ pluginRepos) / MobileSettings,
 // shared bits in settingsShared.ts, useMediaQuery deduped into ux/.
 import { SearchField, TabbedModal } from '@glacier/react';
-import { Bell, Blocks, BookOpen, Bot, CircleUserRound, HardDrive, Info, Library, Palette, Play, Server, Shield, Stethoscope, Terminal } from '@glacier/icons';
+import { Bell, Blocks, BookOpen, Bot, CircleUserRound, Download, HardDrive, Info, Library, Palette, Play, Server, Shield, Stethoscope, Terminal } from '@glacier/icons';
 import { useEffect, useState } from 'react';
 import { APP_VERSION } from '../core/version.ts';
 import { noteSettingsPane, recentPanes, type RecentPane } from './settingsRecency.ts';
@@ -28,6 +28,8 @@ import {
 import { useConnect } from '../player/playbackSync.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { DeviceStorageSettings } from '../downloads/DeviceStorageSettings.tsx';
+import { DownloadsPage } from '../downloads/DownloadsPage.tsx';
+import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import { ServersSettings } from '../servers/ServersSettings.tsx';
 import { knownServers } from '../servers/servers.ts';
 import { heldCount, offlineSpace, onOfflineChange } from '../downloads/offline.ts';
@@ -130,6 +132,12 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
     });
   }, [open, session]);
 
+  // Downloads is no longer a place you navigate to - songs arrive where they
+  // live. This pane keeps the full queue and the retry/cancel affordances for
+  // when something stalls; it appears only while there is an importer.
+  const downloads = useDownloadsOptional();
+  const dlPulling = downloads?.active.length ?? 0;
+  const dlFailed = downloads?.jobs.filter((j) => j.state === 'error').length ?? 0;
   const sections: SettingsSection[] = [
     {
       id: 'appearance',
@@ -218,6 +226,24 @@ export function SettingsModal({ open, onClose, pane }: SettingsModalProps) {
       tint: 'green',
       group: 1,
     },
+    ...(downloads
+      ? [
+          {
+            id: 'downloads',
+            label: 'Downloads',
+            icon: <Download size={16} />,
+            content: <DownloadsPage />,
+            summary:
+              dlPulling > 0
+                ? `${dlPulling} downloading`
+                : dlFailed > 0
+                  ? `${dlFailed} need a retry`
+                  : 'The queue, and anything that stalled',
+            tint: dlFailed > 0 && dlPulling === 0 ? ('orange' as const) : ('blue' as const),
+            group: 1 as const,
+          },
+        ]
+      : []),
     // Devices folded into the Servers pane: seats, mirrors and hosts are one
     // question, answered on one page (and glanced from the header's dot).
     {

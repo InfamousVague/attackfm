@@ -70,6 +70,7 @@ import { TopCard } from './TopCard.tsx';
 import { RecentTile } from './RecentTile.tsx';
 import { useCatalogSearch } from './useCatalogSearch.ts';
 import { renderRow, type RowCtx } from './SearchRows.tsx';
+import { IncomingRows } from '../downloads/IncomingRows.tsx';
 import type { Track } from '../core/tauri.ts';
 
 /**
@@ -134,7 +135,7 @@ export function SearchPage({
    *  bar rather than swapping text as the page arrives. */
   placeholder?: string;
 }) {
-  const { tracks, books } = useLibrary();
+  const { tracks, books, isFavorite, toggleFavorite } = useLibrary();
   const { playlists } = usePlaylists();
   // Results, genre tiles and recents wave in as they meet the view, landing
   // with the same soft ticks the Library's shelves ride - see rippleWave.ts.
@@ -778,6 +779,7 @@ export function SearchPage({
     acquire,
     onPlay,
     onOpenArtist,
+    favorite: { is: isFavorite, toggle: toggleFavorite },
     query,
     tracks,
   };
@@ -932,6 +934,9 @@ export function SearchPage({
       )}
 
       <div id="searchResults" role={searching ? 'listbox' : undefined} aria-label="Results">
+        {/* Already on the wire: a song the query matches that is downloading
+            right now, so it is never added twice. Self-hides otherwise. */}
+        <IncomingRows scope="all" query={query} heading="Already downloading" />
         {!searching && (
           <>
             {recents.items.length > 0 && (

@@ -7,8 +7,9 @@ import { useServerSession } from '../servers/serverSession.tsx';
 import { SongTable } from './SongTable.tsx';
 import { setHeaderActions } from '../nav/headerActions.ts';
 import { EmptyArt, HeroArt, type HeroArtName } from '../ux/EmptyArt.tsx';
-import { fetchHome, trackIdFromPath, fetchPendingLikes, removePendingLike, type PendingLike } from '../server.ts';
-import { X } from '@glacier/icons';
+import { fetchHome, trackIdFromPath } from '../server.ts';
+import { IncomingRows } from '../downloads/IncomingRows.tsx';
+import { useIncomingFor } from '../downloads/incoming.tsx';
 import type { Track } from '../core/tauri.ts';
 import { formatTotal } from '../ux/format.ts';
 import { shuffled } from '../ux/shuffle.ts';
@@ -159,22 +160,8 @@ export function SongPage({
    * "on the way" band and dissolve as the real rows arrive (the library
    * refreshing is the re-fetch trigger; the server sweep does the landing).
    */
-  const [pendingLikes, setPendingLikes] = useState<PendingLike[]>([]);
-  useEffect(() => {
-    if (view !== 'liked' || !session) {
-      setPendingLikes([]);
-      return;
-    }
-    let live = true;
-    void fetchPendingLikes(session)
-      .then((rows) => {
-        if (live) setPendingLikes(rows);
-      })
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [view, session, refreshNonce, tracks.length]);
+  // Songs still downloading are the IncomingProvider's business now; the
+  // band below reads them and drops each as its real row lands.
   const listTracks =
     view === 'liked'
       ? favoriteTracks
@@ -213,6 +200,13 @@ export function SongPage({
   const totalSeconds = shown.reduce((sum, t) => sum + (t.duration ?? 0), 0);
   const loading = view === 'onrepeat' && session !== null && heavyIds === null;
   const empty = listTracks.length === 0 && !loading;
+  // Songs arriving into THIS view: Liked shows the listener's own wants, the
+  // library shows everything on the wire, On repeat (a play-history view) shows
+  // none. The band renders above the list AND replaces the discouraging empty
+  // state when the only thing to say is "these are coming".
+  const incomingScope: 'all' | 'like' | null =
+    view === 'liked' ? 'like' : view === 'onrepeat' ? null : 'all';
+  const hasIncoming = useIncomingFor(incomingScope ?? 'like').length > 0 && incomingScope != null;
 
   /**
    * Whether the hero has scrolled out of the way.
@@ -363,12 +357,14 @@ export function SongPage({
         </div>
       )}
 
-      {empty && !loading ? (
+      {incomingScope && <IncomingRows scope={incomingScope} />}
+
+      {empty && !loading && !hasIncoming ? (
         <div className="playlistEmpty emptyState emptyState--tall">
           <EmptyArt name={meta.art} />
           <Text tone="muted">{meta.empty}</Text>
         </div>
-      ) : (
+      ) : empty && !loading ? null : (
         // The same table the "All" library face draws, so a collection reads
         // identically wherever it is opened. It carries its own bounded height
         // and scroll; the header sits above it.
@@ -380,41 +376,6 @@ export function SongPage({
               </Text>
             ) : (
               <>
-            {view === 'liked' && pendingLikes.length > 0 && (
-              <div className="likedPending" role="status">
-                {/* "Still downloading" only when a download is genuinely
-                    running - a failed or cleared job used to leave this shelf
-                    claiming motion over an empty queue for thirty days. The
-                    hub now says which it is per row; the server also retries
-                    a dead heart's download once a day on its own. */}
-                <p className="likedPending__head">
-                  On the way - liked
-                </p>
-                {pendingLikes.map((p) => (
-                  <div key={p.k} className="likedPending__row" data-stalled={p.downloading === false || undefined}>
-                    <span className="artistAlbumSpin" aria-hidden data-still={p.downloading === false || undefined} />
-                    <span className="likedPending__text">
-                      <span className="likedPending__song">{p.title}</span>
-                      <span className="likedPending__artist">
-                        {p.artist}
-                        {p.downloading === false ? ' — not downloading, will retry' : ''}
-                      </span>
-                    </span>
-                    <button
-                      type="button"
-                      className="likedPending__drop"
-                      aria-label={`Stop waiting for ${p.title}`}
-                      onClick={() => {
-                        if (session) void removePendingLike(session, p.k);
-                        setPendingLikes((cur) => cur.filter((x) => x.k !== p.k));
-                      }}
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
             <SongTable
               flow
               loading={loading}

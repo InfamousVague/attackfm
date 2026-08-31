@@ -25,6 +25,8 @@ export interface RowCtx {
   acquire: AcquireValue;
   onPlay: (track: Track, queue: Track[]) => void;
   onOpenArtist: (artist: string) => void;
+  /** Love a song already in the library, straight from its row. */
+  favorite: { is: (path: string) => boolean; toggle: (path: string) => void };
   query: string;
   tracks: readonly Track[];
 }
@@ -33,7 +35,7 @@ export interface RowCtx {
  *  replace every row's element type - which would drop the open context menu
  *  and reset each row on every letter. */
 export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
-  const { position, cursor, setCursor, open, like, queue, adding, acquire, onPlay, onOpenArtist, query, tracks } = ctx;
+  const { position, cursor, setCursor, open, like, queue, adding, acquire, onPlay, onOpenArtist, favorite, query, tracks } = ctx;
   const n = position.get(item.id);
   const active = n !== undefined && n === cursor;
   const seat = {
@@ -74,6 +76,20 @@ export const renderRow = (item: Item, ctx: RowCtx): ReactNode => {
               </span>
             </button>
             <span className="searchRow__verbs">
+              <button
+                type="button"
+                className="searchVerb searchVerb--heart"
+                title={favorite.is(item.track.path) ? 'Loved' : 'Love this song'}
+                aria-label={
+                  favorite.is(item.track.path)
+                    ? `Remove ${item.track.title} from Liked`
+                    : `Love ${item.track.title}`
+                }
+                aria-pressed={favorite.is(item.track.path)}
+                onClick={() => favorite.toggle(item.track.path)}
+              >
+                <Heart size={15} fill={favorite.is(item.track.path) ? 'currentColor' : 'none'} />
+              </button>
               <button
                 type="button"
                 className="searchVerb"

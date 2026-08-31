@@ -22,6 +22,7 @@ export function NavMoreMenu({
   tab,
   onTab,
   onSettings,
+  onOpenDownloads,
 }: {
   /** Whatever did not fit in the bar, in the bar's own order. The menu does
    *  not choose these and no longer keeps a list of its own: one hand decides
@@ -30,6 +31,7 @@ export function NavMoreMenu({
   tab: string;
   onTab: (tab: string) => void;
   onSettings: () => void;
+  onOpenDownloads: () => void;
 }) {
   const [open, setOpen] = useState(false);
   // The queue's presence, for the Downloads row and the count riding the ⋮.
@@ -56,7 +58,7 @@ export function NavMoreMenu({
   // them; the DJ moved into the Booth's nav seat.
   // The ⋮ lights when what is on screen lives in here - which now depends on
   // the width, since the same destination may be a bar tab on a wider phone.
-  const onMenuDest = overflow.some((d) => d.active) || tab === 'downloads';
+  const onMenuDest = overflow.some((d) => d.active);
 
   const go = (next: string) => {
     setOpen(false);
@@ -176,8 +178,10 @@ export function NavMoreMenu({
             type="button"
             role="menuitem"
             className="appNavBarPlugins__item"
-            data-active={tab === 'downloads' || undefined}
-            onClick={() => go('downloads')}
+            onClick={() => {
+              setOpen(false);
+              onOpenDownloads();
+            }}
           >
             <span className="appNavBarPlugins__itemIcon" aria-hidden>
               <Download size={18} />
