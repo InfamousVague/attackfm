@@ -1,4 +1,7 @@
-import { Check, Music, Play, Plus, X } from '@glacier/icons';
+import { Check, Heart, ListPlus, Music, Play, Plus, X } from '@glacier/icons';
+import { useState } from 'react';
+import { useLibrary } from '../library/library.tsx';
+import { AddToPlaylistDialog } from '../playlists/AddToPlaylist.tsx';
 import { TrackMenu } from '../library/TrackMenu.tsx';
 import { artSized, type CatalogTrack, type ServerSession } from '../server.ts';
 import { useArtLoad } from '../ux/artLoad.ts';
@@ -18,6 +21,10 @@ interface ArtistPopularProps {
   popular: PopularRow[];
   adding: AddingState;
   addSong: (t: CatalogTrack) => Promise<void>;
+  /** Love a catalogue song: download it and promise the like. */
+  loveSong: (t: CatalogTrack) => void;
+  /** Track ids loved this session, for the heart's filled state. */
+  loved: Set<string>;
   /** How many times this listener has played a track of theirs, or null when
    *  the server has no count for it (signed out, older server, never played). */
   playsFor: (path: string) => number | null;
@@ -31,11 +38,16 @@ export function ArtistPopular({
   popular,
   adding,
   addSong,
+  loveSong,
+  loved,
   playsFor,
   theirs,
   session,
   onPlay,
 }: ArtistPopularProps) {
+  const { isFavorite, toggleFavorite } = useLibrary();
+  // The song a visible "add to playlist" tap is filing, for the sheet.
+  const [filing, setFiling] = useState<Track | null>(null);
   if (popular.length === 0) return null;
   return (
     <section className="homeShelf">
@@ -85,6 +97,44 @@ export function ArtistPopular({
                 </span>
               )}
               <span className="catalogTrack__time">{formatClock(t.duration, '--:--')}</span>
+              {/* Love it, wherever it is: an owned song toggles the heart in
+                  the library; a catalogue song is loved AND pulled down, and
+                  lands in Liked when the download arrives (see the incoming
+                  band). The one control on every row the listener asked for. */}
+              {mine ? (
+                <button
+                  type="button"
+                  className="catalogTrack__love"
+                  aria-label={isFavorite(mine.path) ? `Remove ${t.title} from Liked` : `Love ${t.title}`}
+                  aria-pressed={isFavorite(mine.path)}
+                  onClick={() => toggleFavorite(mine.path)}
+                >
+                  <Heart size={15} fill={isFavorite(mine.path) ? 'currentColor' : 'none'} />
+                </button>
+              ) : t.catalogue ? (
+                <button
+                  type="button"
+                  className="catalogTrack__love"
+                  aria-label={loved.has(t.id) ? `${t.title} loved` : `Love ${t.title}`}
+                  aria-pressed={loved.has(t.id)}
+                  disabled={!session}
+                  onClick={() => loveSong(t.catalogue!)}
+                >
+                  <Heart size={15} fill={loved.has(t.id) ? 'currentColor' : 'none'} />
+                </button>
+              ) : null}
+              {/* Add to a playlist - only a song you actually have can be
+                  filed; a catalogue row loves-and-downloads first. */}
+              {mine && (
+                <button
+                  type="button"
+                  className="catalogTrack__love"
+                  aria-label={`Add ${t.title} to a playlist`}
+                  onClick={() => setFiling(mine)}
+                >
+                  <ListPlus size={15} />
+                </button>
+              )}
               {/* Nothing to add for a song you already have, and nothing to
                   add when this row came from your own library in the first
                   place (the catalogue was unreachable). */}
@@ -152,6 +202,7 @@ export function ArtistPopular({
           );
         })}
       </ol>
+      <AddToPlaylistDialog track={filing} open={filing !== null} onClose={() => setFiling(null)} />
     </section>
   );
 }

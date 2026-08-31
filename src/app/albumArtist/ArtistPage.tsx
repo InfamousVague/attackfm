@@ -110,7 +110,7 @@ export function ArtistPage({ artist, onPlay, onOpenArtist,
   const profile = useCatalogProfile(session, artist);
   const gaps = useAlbumGaps(session, artist);
   const hiRes = useHiResCovers(artist, albums);
-  const { adding, addRecord, addSong, addMissing, canAddAlbum, downloads } =
+  const { adding, addRecord, addSong, addMissing, loveSong, loved, canAddAlbum, downloads } =
     useArtistAcquire(artist, session);
 
   // The listener's own playlists that feature this artist, each wearing the
@@ -268,6 +268,8 @@ export function ArtistPage({ artist, onPlay, onOpenArtist,
         popular={popular}
         adding={adding}
         addSong={addSong}
+        loveSong={loveSong}
+        loved={loved}
         playsFor={playsFor}
         theirs={theirs}
         session={session}

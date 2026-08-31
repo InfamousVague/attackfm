@@ -11,6 +11,7 @@ import { IMPORTER_PLUGIN_ID, useAcquire } from '../../plugins/runtime.tsx';
 import { useDownloadsOptional } from '../../plugins/importsBridge.ts';
 import type { AcquireTarget } from '../../plugins/types.ts';
 import { PROBE_URL, importable, resolveImportable } from '../search/resolveImport.ts';
+import { addPendingLike } from '../server.ts';
 import type { AlbumGap, CatalogTrack, ServerSession } from '../server.ts';
 import type { DiscRow } from './artistData.ts';
 
@@ -25,6 +26,11 @@ export function useArtistAcquire(artist: string, session: ServerSession | null) 
   // twin first - which takes a beat and can come back empty, and both of
   // those have to be visible on the row that was tapped.
   const [adding, setAdding] = useState<AddingState>({});
+  // Catalogue rows loved from the artist page: the download runs (addSong)
+  // AND a pending like is written, so the song walks into Liked when it
+  // lands - the same promise a Discover heart makes. Track ids of the loved
+  // rows so the heart reads filled at once.
+  const [loved, setLoved] = useState<Set<string>>(new Set());
 
   /**
    * Pull a record you do not own.
@@ -109,6 +115,17 @@ export function useArtistAcquire(artist: string, session: ServerSession | null) 
   };
 
   /**
+   * Love a catalogue song: pull it down like Add does, and promise the like
+   * so it lands in Liked. No now-playing hijack - a heart is not a listen.
+   */
+  const loveSong = (t: CatalogTrack) => {
+    if (!session) return;
+    setLoved((prev) => new Set(prev).add(t.id));
+    if (!adding[t.id]) void addSong(t);
+    void addPendingLike(session, artist, t.title).catch(() => {});
+  };
+
+  /**
    * Pull one song that is missing from a record you already own part of.
    *
    * The gap rows carry the catalogue's own link, which the importer usually
@@ -170,5 +187,5 @@ export function useArtistAcquire(artist: string, session: ServerSession | null) 
   const canAddAlbum = (title: string) =>
     session !== null && acquire.hasHandlers({ kind: 'album', title, artist, url: PROBE_URL });
 
-  return { adding, addRecord, addSong, addMissing, canAddAlbum, downloads };
+  return { adding, addRecord, addSong, addMissing, loveSong, loved, canAddAlbum, downloads };
 }

@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.170
+
+- The Popular songs on an artist page now carry a heart, not just the +: tap it to love a song and pull it down in one go (it lands in Liked when it arrives), or the + to just add it. Songs you already own toggle the heart and gain an add-to-playlist button too
+
 ## 0.4.169
 
 - Downloads happen where you'll listen now: a song you like or that the collector finds shows up at the top of your library and Liked with a spinner the moment it's on the way, and settles into a normal row when it lands - no download page to visit. Search shows a song already downloading so you never add it twice
