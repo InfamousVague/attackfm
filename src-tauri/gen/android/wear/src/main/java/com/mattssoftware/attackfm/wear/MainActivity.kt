@@ -1,8 +1,10 @@
 package com.mattssoftware.attackfm.wear
 
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -10,59 +12,67 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.ScalingLazyListState
 import androidx.wear.compose.foundation.lazy.items
+import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
+import okhttp3.Request
 
 /**
- * AttackFM on the wrist: a remote for the seat, in Glacier's clothes.
+ * AttackFM on the wrist, second cut: Glacier's clothes, Lucide's icons, Wear's
+ * own manners.
  *
- * Three faces, one activity. Sign in with a pairing code (Settings on any
- * signed-in device mints one - the same no-password door every device walks).
- * Then the seat: what is playing anywhere on the account, with transport that
- * steers whichever device holds it. Swipe up for Liked, where a tap hands the
- * seat's device a new queue.
+ * The first cut proved the wiring and looked like it. This one is the design
+ * pass: the standard Wear scaffold (the time at the top, a position indicator,
+ * a vignette), real vector icons instead of emoji glyphs, the track's own art
+ * as the remote's face, and controls sized for the round screen rather than
+ * poured into it.
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val store = Store(this)
-        setContent {
-            GlacierTheme { Root(store) }
-        }
+        setContent { GlacierTheme { Root(store) } }
     }
 }
 
 @Composable
 private fun Root(store: Store) {
     var signedIn by remember { mutableStateOf(store.token != null) }
-    if (!signedIn) {
-        SignIn(store) { signedIn = true }
-    } else {
-        Remote(store) {
-            store.signOut()
-            signedIn = false
+    val listState = rememberScalingLazyListState()
+    Scaffold(
+        timeText = { TimeText() },
+        vignette = { Vignette(vignettePosition = VignettePosition.TopAndBottom) },
+        positionIndicator = { PositionIndicator(scalingLazyListState = listState) },
+    ) {
+        if (!signedIn) {
+            SignIn(store, listState) { signedIn = true }
+        } else {
+            Remote(store, listState) {
+                store.signOut()
+                signedIn = false
+            }
         }
     }
 }
 
-/**
- * The pairing code - six digits (make_code's alphabet is 0-9) - on a
- * phone-style pad. Rows of three, not five: a round face clips the ends of
- * any wider row, which on the first cut left 5 and 0 literally off the watch.
- */
+// --- sign in -----------------------------------------------------------------
+
+/** Six digits on a phone-style pad; rows of three fit the circle. */
 @Composable
-private fun SignIn(store: Store, onDone: () -> Unit) {
+private fun SignIn(store: Store, listState: ScalingLazyListState, onDone: () -> Unit) {
     var code by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -74,9 +84,7 @@ private fun SignIn(store: Store, onDone: () -> Unit) {
         error = null
         scope.launch {
             try {
-                val (token, streamToken, _) = withContext(Dispatchers.IO) {
-                    Net.claim(store.url, code)
-                }
+                val (token, streamToken, _) = withContext(Dispatchers.IO) { Net.claim(store.url, code) }
                 store.token = token
                 store.streamToken = streamToken
                 onDone()
@@ -90,74 +98,111 @@ private fun SignIn(store: Store, onDone: () -> Unit) {
     }
 
     ScalingLazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize().background(Glacier.bg),
     ) {
+        item {
+            Icon(
+                Lucide.Watch,
+                contentDescription = null,
+                tint = Glacier.accent,
+                modifier = Modifier.size(22.dp),
+            )
+        }
         item {
             Text(
                 "Link this watch",
                 color = Glacier.text,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
             )
         }
         item {
             Text(
-                "Settings → Link a device\non your phone",
+                "Settings → Link a device",
                 color = Glacier.textMuted,
-                fontSize = 11.sp,
+                fontSize = 10.sp,
                 textAlign = TextAlign.Center,
             )
         }
         item {
+            // Six seats, filling as digits land - dots hold what is still owed.
+            val shown = code.padEnd(6, '·').toCharArray().joinToString(" ")
             Text(
-                if (code.isEmpty()) "· · · · · ·" else code.chunked(3).joinToString(" "),
+                shown,
                 color = if (error != null) MaterialTheme.colors.error else Glacier.accent,
-                fontSize = 20.sp,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
+                letterSpacing = 2.sp,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(vertical = 4.dp),
+                modifier = Modifier.padding(vertical = 2.dp),
             )
         }
         error?.let { e ->
-            item { Text(e, color = MaterialTheme.colors.error, fontSize = 10.sp, textAlign = TextAlign.Center) }
-        }
-        val alphabet = "1234567890"
-        items(alphabet.chunked(3)) { row ->
-            Row(horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
-                row.forEach { ch ->
-                    CompactButton(
-                        onClick = { if (code.length < 6) code += ch },
-                        colors = ButtonDefaults.secondaryButtonColors(),
-                        modifier = Modifier.padding(2.dp),
-                    ) { Text(ch.toString(), fontSize = 14.sp) }
-                }
+            item {
+                Text(
+                    e,
+                    color = MaterialTheme.colors.error,
+                    fontSize = 9.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
             }
         }
+        items("123456789".chunked(3)) { row -> PadRow(row) { if (code.length < 6) code += it } }
         item {
-            Row(horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
-                CompactButton(
-                    onClick = { code = code.dropLast(1) },
-                    colors = ButtonDefaults.secondaryButtonColors(),
-                    modifier = Modifier.padding(2.dp),
-                ) { Text("⌫") }
-                CompactButton(
-                    onClick = { submit() },
-                    enabled = !busy && code.length >= 4,
-                    modifier = Modifier.padding(2.dp),
-                ) { Text(if (busy) "…" else "Go") }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally), modifier = Modifier.fillMaxWidth()) {
+                PadKey(icon = Lucide.Delete, label = "Delete") { code = code.dropLast(1) }
+                PadKey(text = "0") { if (code.length < 6) code += "0" }
+                PadKey(icon = Lucide.Check, label = "Sign in", accent = true, enabled = !busy && code.length >= 4) { submit() }
             }
+        }
+        item { Spacer(Modifier.height(18.dp)) }
+    }
+}
+
+@Composable
+private fun PadRow(keys: String, onKey: (Char) -> Unit) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
+    ) {
+        keys.forEach { ch -> PadKey(text = ch.toString()) { onKey(ch) } }
+    }
+}
+
+@Composable
+private fun PadKey(
+    text: String? = null,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    label: String? = null,
+    accent: Boolean = false,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        colors = if (accent) ButtonDefaults.primaryButtonColors() else ButtonDefaults.secondaryButtonColors(),
+        modifier = Modifier.size(38.dp),
+    ) {
+        if (icon != null) {
+            Icon(icon, contentDescription = label, modifier = Modifier.size(15.dp))
+        } else {
+            Text(text ?: "", fontSize = 14.sp, fontWeight = FontWeight.Medium)
         }
     }
 }
 
-/** The seat, live. */
+// --- the remote --------------------------------------------------------------
+
 @Composable
-private fun Remote(store: Store, onSignOut: () -> Unit) {
+private fun Remote(store: Store, listState: ScalingLazyListState, onSignOut: () -> Unit) {
     var state by remember { mutableStateOf<SeatState?>(null) }
     var live by remember { mutableStateOf(false) }
     var meta by remember { mutableStateOf<Map<Long, TrackMeta>>(emptyMap()) }
     var liked by remember { mutableStateOf<List<Long>>(emptyList()) }
-    val scope = rememberCoroutineScope()
 
     val client = remember {
         ConnectClient(
@@ -168,30 +213,33 @@ private fun Remote(store: Store, onSignOut: () -> Unit) {
             onDown = { live = false },
         )
     }
-
     DisposableEffect(Unit) {
         client.open()
         onDispose { client.close() }
     }
 
-    // Names for whatever the seat is on plus the liked list, fetched when the
-    // ids change and never per frame.
     val wantIds = (listOfNotNull(state?.trackId) + liked).distinct()
     LaunchedEffect(wantIds) {
         val missing = wantIds.filter { it !in meta }
         if (missing.isEmpty()) return@LaunchedEffect
         val token = store.token ?: return@LaunchedEffect
-        val got = withContext(Dispatchers.IO) { runCatching { Net.tracks(store.url, token, missing) }.getOrDefault(emptyMap()) }
+        val got = withContext(Dispatchers.IO) {
+            runCatching { Net.tracks(store.url, token, missing) }.getOrDefault(emptyMap())
+        }
         if (got.isNotEmpty()) meta = meta + got
     }
     LaunchedEffect(Unit) {
         val token = store.token ?: return@LaunchedEffect
-        liked = withContext(Dispatchers.IO) { runCatching { Net.favorites(store.url, token) }.getOrDefault(emptyList()) }
+        liked = withContext(Dispatchers.IO) {
+            runCatching { Net.favorites(store.url, token) }.getOrDefault(emptyList())
+        }
     }
 
     val now = state?.trackId?.let { meta[it] }
 
-    ScalingLazyColumn(modifier = Modifier.fillMaxSize().background(Glacier.bg)) {
+    ScalingLazyColumn(state = listState, modifier = Modifier.fillMaxSize().background(Glacier.bg)) {
+        // The face: the track's own art as a disc, or the music mark waiting.
+        item { TrackDisc(store, state?.trackId, size = 64.dp) }
         item {
             Text(
                 when {
@@ -200,82 +248,153 @@ private fun Remote(store: Store, onSignOut: () -> Unit) {
                     else -> now?.title ?: "…"
                 },
                 color = Glacier.text,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 10.dp),
+                modifier = Modifier.padding(horizontal = 22.dp),
             )
         }
         if (now != null) {
-            item { Text(now.artist, color = Glacier.textMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            item {
+                Text(
+                    now.artist,
+                    color = Glacier.textMuted,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 26.dp),
+                )
+            }
         }
         item {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
             ) {
-                CompactButton(onClick = { client.command("prev") }, colors = ButtonDefaults.secondaryButtonColors()) {
-                    Text("⏮")
-                }
+                Button(
+                    onClick = { client.command("prev") },
+                    colors = ButtonDefaults.secondaryButtonColors(),
+                    modifier = Modifier.size(40.dp),
+                ) { Icon(Lucide.SkipBack, "Previous", modifier = Modifier.size(16.dp)) }
                 Button(
                     onClick = { client.command("toggle") },
-                    modifier = Modifier.size(52.dp).clip(CircleShape),
+                    modifier = Modifier.size(54.dp),
                 ) {
-                    Text(if (state?.playing == true) "⏸" else "▶", fontSize = 20.sp)
+                    Icon(
+                        if (state?.playing == true) Lucide.Pause else Lucide.Play,
+                        if (state?.playing == true) "Pause" else "Play",
+                        modifier = Modifier.size(22.dp),
+                    )
                 }
-                CompactButton(onClick = { client.command("next") }, colors = ButtonDefaults.secondaryButtonColors()) {
-                    Text("⏭")
-                }
+                Button(
+                    onClick = { client.command("next") },
+                    colors = ButtonDefaults.secondaryButtonColors(),
+                    modifier = Modifier.size(40.dp),
+                ) { Icon(Lucide.SkipForward, "Next", modifier = Modifier.size(16.dp)) }
             }
         }
         state?.volume?.let { vol ->
             item {
                 InlineSlider(
                     value = vol.toFloat(),
-                    onValueChange = { v ->
-                        client.command("volume") { it.put("volume", v.toDouble()) }
-                    },
+                    onValueChange = { v -> client.command("volume") { it.put("volume", v.toDouble()) } },
                     valueRange = 0f..1f,
                     steps = 9,
-                    decreaseIcon = { Text("−", color = Glacier.textMuted) },
-                    increaseIcon = { Text("+", color = Glacier.textMuted) },
+                    decreaseIcon = { Icon(Lucide.Minus, "Quieter", modifier = Modifier.size(14.dp)) },
+                    increaseIcon = { Icon(Lucide.Plus, "Louder", modifier = Modifier.size(14.dp)) },
+                    modifier = Modifier.padding(horizontal = 8.dp),
                 )
             }
         }
         if (liked.isNotEmpty()) {
             item {
-                Text(
-                    "LIKED",
-                    color = Glacier.textMuted,
-                    fontSize = 10.sp,
-                    modifier = Modifier.padding(top = 10.dp),
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 2.dp),
+                ) {
+                    Icon(Lucide.Heart, null, tint = Glacier.accent, modifier = Modifier.size(11.dp))
+                    Text("Liked", color = Glacier.textMuted, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                }
             }
             items(liked.take(50)) { id ->
                 val t = meta[id]
                 Chip(
                     onClick = {
-                        // Hand the seat the liked list as its queue, from here.
                         client.command("setQueue") { c ->
                             c.put("queue", org.json.JSONArray(liked))
                             c.put("index", liked.indexOf(id))
                         }
                     },
-                    label = { Text(t?.title ?: "…", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    secondaryLabel = t?.let { { Text(it.artist, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
+                    icon = { TrackDisc(store, id, size = 26.dp) },
+                    label = {
+                        Text(t?.title ?: "…", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    },
+                    secondaryLabel = t?.let {
+                        { Text(it.artist, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    },
                     colors = ChipDefaults.secondaryChipColors(),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
         item {
-            CompactButton(
+            CompactChip(
                 onClick = onSignOut,
-                colors = ButtonDefaults.secondaryButtonColors(),
+                icon = { Icon(Lucide.LogOut, null, modifier = Modifier.size(12.dp)) },
+                label = { Text("Sign out", fontSize = 10.sp) },
+                colors = ChipDefaults.secondaryChipColors(),
                 modifier = Modifier.padding(top = 10.dp),
-            ) { Text("Sign out", fontSize = 10.sp) }
+            )
+        }
+        item { Spacer(Modifier.height(20.dp)) }
+    }
+}
+
+// --- art ---------------------------------------------------------------------
+
+/** In-memory covers for the session; a watch list holds a few dozen at most. */
+private val artCache = HashMap<Long, ImageBitmap?>()
+
+/**
+ * A track's cover as a circle, with the Lucide music mark holding the seat
+ * while (or if ever) the bytes arrive. One fetch per track per process.
+ */
+@Composable
+private fun TrackDisc(store: Store, trackId: Long?, size: androidx.compose.ui.unit.Dp) {
+    var art by remember(trackId) { mutableStateOf(artCache[trackId]) }
+    LaunchedEffect(trackId) {
+        if (trackId == null || artCache.containsKey(trackId)) return@LaunchedEffect
+        val streamToken = store.streamToken ?: return@LaunchedEffect
+        val got = withContext(Dispatchers.IO) {
+            runCatching {
+                val req = Request.Builder().url(Net.artUrl(store.url, streamToken, trackId)).build()
+                Net.http.newCall(req).execute().use { r ->
+                    if (!r.isSuccessful) null
+                    else r.body?.bytes()?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
+                }
+            }.getOrNull()
+        }
+        artCache[trackId] = got
+        art = got
+    }
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.size(size).clip(CircleShape).background(Glacier.surface),
+    ) {
+        val a = art
+        if (a != null) {
+            Image(a, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        } else {
+            Icon(
+                Lucide.Music,
+                contentDescription = null,
+                tint = Glacier.textMuted,
+                modifier = Modifier.size(size / 2),
+            )
         }
     }
 }
