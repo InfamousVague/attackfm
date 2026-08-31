@@ -15,7 +15,7 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
-## 0.4.167
+## 0.4.168
 
 - Downloads happen where you'll listen now: a song you like or that the collector finds shows up at the top of your library and Liked with a spinner the moment it's on the way, and settles into a normal row when it lands - no download page to visit. Search shows a song already downloading so you never add it twice
 - The Downloads screen moved into Settings, kept for when something stalls and needs a retry
