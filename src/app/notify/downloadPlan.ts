@@ -42,6 +42,7 @@ export const START_WINDOW_MS = 60_000;
 export interface PlannedNotice {
   id: string;
   kind: 'drops' | 'failed';
+  song?: { title: string; artist: string };
   title: string;
   body: string;
   artUrl: string | null;
@@ -154,6 +155,7 @@ export function planFromQueue(
       // job that filed nothing never is.
       if (!silentLanding(job) && (was !== undefined || age < FRESH_WINDOW_MS)) {
         landed += 1;
+        const one = (job.files?.length ?? 0) <= 1;
         notices.push({
           id: `import:${job.id}`,
           kind: 'drops',
@@ -161,6 +163,11 @@ export function planFromQueue(
           body: landedLine(job),
           artUrl: job.artworkUrl,
           door: 'downloads',
+          // A single song landing is a playable piece of news: carry its
+          // name so a tap on the tray can start it, not just open the app.
+          ...(one && job.title
+            ? { song: { title: job.title, artist: job.subtitle ?? job.items?.[0]?.artist ?? '' } }
+            : {}),
         });
       }
     } else if (job.state === 'error' && (was !== undefined || age < FRESH_WINDOW_MS)) {

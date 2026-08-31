@@ -137,6 +137,9 @@ export function mirrorNoticeToOs(notice: Notice): void {
         // Groups the app's news together in the shade rather than letting a
         // busy import scatter twenty separate entries down it.
         group: 'attackfm',
+        // The song this entry is about, when it is about one - the tap
+        // handler (notifyTap.tsx) reads it back and starts the song.
+        ...(notice.song ? { extra: { songTitle: notice.song.title, songArtist: notice.song.artist } } : {}),
       });
     } catch {
       // The tray refused. The row is in the bell regardless.

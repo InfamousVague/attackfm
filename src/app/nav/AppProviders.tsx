@@ -15,6 +15,7 @@ import {
 } from '../../plugins/runtime.tsx';
 import { QueueControlsBridge } from '../player/queueControls.tsx';
 import { PlayNowBridge } from '../player/playNow.tsx';
+import { NotificationTapBridge } from '../notify/NotificationTapBridge.tsx';
 import { RadioProvider } from '../player/radio.tsx';
 import { PlaylistsProvider } from '../playlists/playlists.tsx';
 import { LibrarySyncProvider } from '../library/librarySync.tsx';
@@ -125,6 +126,10 @@ export function AppProviders({
                 song offers to start a station wherever it is drawn, and a
                 menu outside this provider would silently lack the item. */}
             <RadioProvider queue={queue} onExtend={extendQueue}>
+            {/* Turns a tap on a "New music" tray entry into playback - it
+                needs the play verb and the library, so it lives here inside
+                both. Renders nothing. */}
+            <NotificationTapBridge />
             {children}
             </RadioProvider>
             </PlayNowBridge>
