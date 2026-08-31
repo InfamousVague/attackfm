@@ -15,6 +15,10 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.4.157
+
+- The on-device tick in the song list grew from a speck to a mark you can actually scan for
+
 ## 0.4.156
 
 - Tapping a "New music" notification starts the song. A landing that names one track now carries it into the tray entry, and the tap plays it instead of just opening the app — waiting out the library sync on a cold start rather than shrugging. Album landings still open the app; there is no one song to start
