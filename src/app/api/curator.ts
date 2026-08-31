@@ -110,6 +110,9 @@ export interface PreviewDateCard {
   cover: string;
   preview: string;
   seed: string;
+  /** Which bench dealt it: 'trending' (the charts), 'fresh' (new releases),
+   *  or 'taste' - the card wears the answer as its subtitle. */
+  lane?: string;
 }
 
 /** The best measured candidates, ready to date on their thirty seconds -

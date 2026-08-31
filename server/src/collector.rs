@@ -876,16 +876,61 @@ pub async fn date_candidates(
         .filter(|d| !d.preview.trim().is_empty() && !pulled.contains(&d.ext_id) && measured(d))
         .collect();
     let total = all.len();
-    let cards: Vec<serde_json::Value> = all
-        .into_iter()
-        .take(want)
-        .map(|d| {
-            json!({
-                "extId": d.ext_id, "title": d.title, "artist": d.artist,
-                "cover": d.cover, "preview": d.preview, "seed": d.seed,
-            })
-        })
-        .collect();
+    /*
+     * SEATED, not just ranked: a pure taste ordering sinks exactly the music
+     * a date deck exists to introduce - the chart hit far from your taste,
+     * the release that came out on Friday. The deal runs a five-card
+     * pattern: three from taste, one from the chart (by chart position),
+     * one from the fresh shelf (editorial order), each seat falling back to
+     * the next bench when its own is empty - the same reasoning as the
+     * collector's own chart seat.
+     */
+    let lanes = state.db.discovery_lanes(caller.id);
+    let lane_of = |d: &crate::db::DiscoveryRow| {
+        lanes.get(&d.ext_id).map(|(lane, _)| lane.as_str()).unwrap_or("taste").to_string()
+    };
+    let mut by_pop = |name: &str| -> std::collections::VecDeque<&crate::db::DiscoveryRow> {
+        let mut rows: Vec<&crate::db::DiscoveryRow> =
+            all.iter().filter(|d| lane_of(d) == name).collect();
+        rows.sort_by(|a, b| {
+            b.popularity.partial_cmp(&a.popularity).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        rows.into_iter().collect()
+    };
+    let mut chart = by_pop("trending");
+    let mut fresh = by_pop("fresh");
+    let mut taste: std::collections::VecDeque<&crate::db::DiscoveryRow> =
+        all.iter().filter(|d| lane_of(d) == "taste").collect();
+    let mut used: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    let mut cards: Vec<serde_json::Value> = Vec::new();
+    let mut seat = 0usize;
+    while cards.len() < want {
+        let benches: [&mut std::collections::VecDeque<&crate::db::DiscoveryRow>; 3] = match seat % 5
+        {
+            2 => [&mut chart, &mut fresh, &mut taste],
+            4 => [&mut fresh, &mut chart, &mut taste],
+            _ => [&mut taste, &mut chart, &mut fresh],
+        };
+        let mut pick: Option<&crate::db::DiscoveryRow> = None;
+        for bench in benches {
+            while let Some(d) = bench.pop_front() {
+                if used.insert(&d.ext_id) {
+                    pick = Some(d);
+                    break;
+                }
+            }
+            if pick.is_some() {
+                break;
+            }
+        }
+        let Some(d) = pick else { break };
+        cards.push(json!({
+            "extId": d.ext_id, "title": d.title, "artist": d.artist,
+            "cover": d.cover, "preview": d.preview, "seed": d.seed,
+            "lane": lane_of(d),
+        }));
+        seat += 1;
+    }
     Ok(Json(json!({ "candidates": cards, "total": total })))
 }
 

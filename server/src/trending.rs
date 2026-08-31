@@ -212,97 +212,69 @@ async fn chart_tracks() -> Vec<Found> {
         .collect()
 }
 
-/// Records out in the last two weeks that people are suddenly playing,
-/// resolved to Deezer so they carry a preview and an importable link.
+/// The catalogue's own "new and worth it": Deezer's editorial selection -
+/// the albums their editors are pushing right now - resolved to one playable
+/// track each. This replaced the ListenBrainz fresh-releases feed, which
+/// stopped populating listen counts (verified 2026-08-31: 3,292 releases,
+/// every listen_count zero) and so could never again say "fresh AND moving".
 async fn fresh_releases() -> Vec<Found> {
     let c = crate::discovery::client(25);
     let Ok(resp) = c
-        .get("https://api.listenbrainz.org/1/explore/fresh-releases/")
-        .query(&[("days", "14")])
+        .get("https://api.deezer.com/editorial/0/selection")
+        .query(&[("limit", "25")])
         .send()
         .await
     else {
         return Vec::new();
     };
     let Ok(body) = resp.json::<Value>().await else { return Vec::new() };
-    let Some(rows) = body.pointer("/payload/releases").and_then(Value::as_array) else {
-        return Vec::new();
-    };
-
-    // Sort by listen count ourselves - "fresh AND moving" is the point, and
-    // the endpoint's own order is by date.
-    let mut releases: Vec<(&Value, i64)> = rows
-        .iter()
-        .map(|r| (r, r.get("listen_count").and_then(Value::as_i64).unwrap_or(0)))
-        .filter(|(_, n)| *n > 0)
-        .collect();
-    releases.sort_by(|a, b| b.1.cmp(&a.1));
-    let top: Vec<&Value> = releases.into_iter().take(FRESH_TAKE).map(|(r, _)| r).collect();
-    let max_listens = top
-        .first()
-        .and_then(|r| r.get("listen_count").and_then(Value::as_i64))
-        .unwrap_or(1)
-        .max(1) as f64;
+    let Some(albums) = body.get("data").and_then(Value::as_array) else { return Vec::new() };
+    let total = albums.len().max(1) as f64;
 
     let mut out = Vec::new();
-    for r in top {
-        let Some(artist) = r.get("artist_credit_name").and_then(Value::as_str) else { continue };
-        let Some(release) = r.get("release_name").and_then(Value::as_str) else { continue };
-        let listens = r.get("listen_count").and_then(Value::as_i64).unwrap_or(0) as f64;
+    for (i, album) in albums.iter().enumerate() {
+        let Some(album_id) = album.get("id").and_then(Value::as_u64) else { continue };
+        let cover = album
+            .pointer("/cover_medium")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
         tokio::time::sleep(GAP).await;
-        if let Some(mut f) = resolve_release_track(&c, artist, release).await {
-            f.rank = (listens / max_listens).clamp(0.05, 1.0);
-            f.lane = "fresh";
-            out.push(f);
-        }
+        let Ok(resp) = c
+            .get(format!("https://api.deezer.com/album/{album_id}/tracks"))
+            .query(&[("limit", "3")])
+            .send()
+            .await
+        else {
+            continue;
+        };
+        let Ok(tracks) = resp.json::<Value>().await else { continue };
+        let Some(rows) = tracks.get("data").and_then(Value::as_array) else { continue };
+        let Some(t) = rows
+            .iter()
+            .find(|t| t.get("preview").and_then(Value::as_str).is_some_and(|p| !p.is_empty()))
+        else {
+            continue;
+        };
+        let Some(id) = t.get("id").and_then(Value::as_u64) else { continue };
+        let (Some(title), Some(artist)) = (
+            t.get("title").and_then(Value::as_str),
+            t.pointer("/artist/name").and_then(Value::as_str),
+        ) else {
+            continue;
+        };
+        out.push(Found {
+            ext_id: format!("deezer:track:{id}"),
+            title: title.to_string(),
+            artist: artist.to_string(),
+            cover,
+            url: t.get("link").and_then(Value::as_str).unwrap_or("").to_string(),
+            preview: t.get("preview").and_then(Value::as_str).unwrap_or("").to_string(),
+            // Editorial order IS the rank: the lead pick is 1.0.
+            rank: 1.0 - (i as f64) / total,
+            lane: "fresh",
+        });
     }
     out
 }
 
-/// One playable track off a named release, via Deezer search. The first hit
-/// with a preview wins; a release Deezer does not carry resolves to nothing,
-/// which just means this one stays a headline instead of a candidate.
-async fn resolve_release_track(c: &reqwest::Client, artist: &str, release: &str) -> Option<Found> {
-    let q = format!("artist:\"{artist}\" album:\"{release}\"");
-    let resp = c
-        .get("https://api.deezer.com/search")
-        .query(&[("q", q.as_str()), ("limit", "5")])
-        .send()
-        .await
-        .ok()?;
-    let body = resp.json::<Value>().await.ok()?;
-    let rows = body.get("data").and_then(Value::as_array)?;
-    /*
-     * The artist must actually MATCH, folded - no falling back to whatever
-     * Deezer ranked first. The taste walk learned this the hard way: its
-     * artist resolver has a strict mode with no first-hit fallback because a
-     * near-name (a tribute act, a remixer, a same-named nobody) resolves
-     * cleanly and poisons the pool with a wrong record wearing the right
-     * label. A fresh release Deezer cannot answer for by name just stays a
-     * headline instead of a candidate.
-     */
-    let wanted = crate::discovery::artist_key_public(artist);
-    let t = rows
-        .iter()
-        .filter(|t| {
-            t.pointer("/artist/name")
-                .and_then(Value::as_str)
-                .is_some_and(|n| crate::discovery::artist_key_public(n) == wanted)
-        })
-        .find(|t| t.get("preview").and_then(Value::as_str).is_some_and(|p| !p.is_empty()))?;
-    let id = t.get("id").and_then(Value::as_u64)?;
-    Some(Found {
-        ext_id: format!("deezer:track:{id}"),
-        title: t.get("title").and_then(Value::as_str)?.to_string(),
-        artist: t.pointer("/artist/name").and_then(Value::as_str)?.to_string(),
-        cover: t
-            .pointer("/album/cover_medium")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string(),
-        url: t.get("link").and_then(Value::as_str).unwrap_or("").to_string(),
-        preview: t.get("preview").and_then(Value::as_str).unwrap_or("").to_string(),
-        rank: 0.0,
-        lane: "fresh",
-    })
-}
