@@ -35,7 +35,9 @@ import { PlaylistWantRows } from './PlaylistWantRows.tsx';
 import { useServerSession } from '../servers/serverSession.tsx';
 import { mosaicArts, useArtLoad, useTileArt } from '../ux/artLoad.ts';
 import { fetchPlaylistSuggestions, remotePath } from '../server.ts';
-import { formatClock, formatTotal } from '../ux/format.ts';
+import { formatClock, formatTotal, formatBytes } from '../ux/format.ts';
+import { estimateSetBytes } from '../cache/cacheQuality.ts';
+import { cacheQualityKbps } from '../cache/cacheStore.ts';
 import { shuffled } from '../ux/shuffle.ts';
 import { RowArt } from './RowArt.tsx';
 import { RowMain } from './RowMain.tsx';
@@ -287,6 +289,17 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
     () => listTracks.reduce((sum, t) => sum + (t.duration ?? 0), 0),
     [listTracks],
   );
+  /*
+   * Roughly what keeping this list on the phone would cost, at the download
+   * quality that is set right now - so the decision to keep a playlist offline
+   * is made with its price visible rather than after the fact in the storage
+   * pane. Estimated by the same functions the cache budgets with, and read
+   * from the setting live because halving the quality changes the answer.
+   */
+  const sizeBytes = useMemo(
+    () => estimateSetBytes(listTracks, cacheQualityKbps()),
+    [listTracks],
+  );
   // The suggestions, resolved against the synced library. Shown only where a
   // model is reading lyrics, and only once the list has a character to match.
   const suggestions: Track[] = useMemo(() => {
@@ -381,6 +394,7 @@ export function PlaylistPage({ id, onPlay, onOpenArtist, onGone }: PlaylistPageP
           <Text tone="muted" size="sm">
             {rows.length} {rows.length === 1 ? 'song' : 'songs'}
             {totalSeconds > 0 ? ` · ${formatTotal(totalSeconds)}` : ''}
+            {sizeBytes > 0 ? ` · about ${formatBytes(sizeBytes)}` : ''}
           </Text>
 
           {/* The description, read in place and edited in place. A field that

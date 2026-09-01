@@ -142,3 +142,26 @@ export function qualityLabel(quality: number): string {
   if (quality === 0) return 'Original';
   return `${quality}k`;
 }
+
+/**
+ * What a set of tracks would occupy on this device at the current download
+ * quality - the answer to "how big is this?" for a playlist header, and for
+ * the whole library in the automatic-downloads pane.
+ *
+ * The same two functions the sweep budgets with (`wantedQuality` then
+ * `estimateBytes`), so the number a person reads and the number the cache
+ * plans against cannot drift. It is an ESTIMATE and says so wherever it is
+ * shown: a lossless source transcoded to 128k is arithmetic on its duration,
+ * not a measurement, and a track the index cannot size falls back to an
+ * average song. Held files are not discounted - the question is what keeping
+ * this WOULD cost, which is the one a person asks before deciding.
+ */
+export function estimateSetBytes(
+  tracks: readonly QualitySource[],
+  kbps: number,
+  assumedBytes = 35 * 1024 ** 2,
+): number {
+  let total = 0;
+  for (const t of tracks) total += estimateBytes(t, wantedQuality(t, kbps), assumedBytes);
+  return total;
+}

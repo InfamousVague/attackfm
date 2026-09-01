@@ -3,7 +3,7 @@ import { useLibrary } from '../library/library.tsx';
 import { artCacheCount } from '../cache/artCache.ts';
 import { keptTranscriptCount } from '../player/transcriptStore.ts';
 import { artSized } from '../server.ts';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useServerSession } from '../servers/serverSession.tsx';
 import {
   cacheLimitBytes,
@@ -28,6 +28,8 @@ import { isTauri } from '../core/tauri.ts';
 import { networkKindNow, onNetworkChange, type NetworkKind } from '../core/network.ts';
 import { setWifiOnlyDownloads, wifiOnlyDownloads } from '../settings/behaviourPrefs.ts';
 import { formatBytes } from '../ux/format.ts';
+import { estimateSetBytes } from '../cache/cacheQuality.ts';
+import { loadCachedIndex } from '../api/libraryCache.ts';
 
 /**
  * The Overview chunk: one picture of the space, then the levers.
@@ -219,6 +221,19 @@ export function StorageOverview() {
    * vault about its new home. Idempotent (the command re-points and finds
    * nothing left to move), so re-running on every focus costs a stat.
    */
+  /*
+   * The whole-library estimate, off this device's copy of the library index -
+   * no request, and no number when the index has not synced yet (a fresh
+   * install), because a confident "0 GB" would be a lie about an empty phone
+   * rather than an empty library.
+   */
+  const libraryEstimate = useMemo(() => {
+    if (!session) return null;
+    const tracks = loadCachedIndex(session.url).tracks;
+    if (tracks.length === 0) return null;
+    return { bytes: estimateSetBytes(tracks, kbps), count: tracks.length };
+  }, [session, kbps]);
+
   const [migrated, setMigrated] = useState<number | null>(null);
   useEffect(() => {
     if (!vaultPath) return;
@@ -446,6 +461,22 @@ export function StorageOverview() {
             }))}
           />
         </Field>
+
+        {/* What the WHOLE library would cost at this quality, against the
+            budget above it. The pane could say "15 GB" all day without ever
+            answering the question people actually have - is that enough for
+            everything, or am I choosing what to leave behind? */}
+        {libraryEstimate && (
+          <Text size="xs" tone="subtle">
+            Your whole library is about {formatBytes(libraryEstimate.bytes)} at this quality
+            ({libraryEstimate.count.toLocaleString()} songs).{' '}
+            {limit === 0
+              ? 'Automatic downloads are off.'
+              : libraryEstimate.bytes <= limit
+                ? 'That fits in the budget below — everything can live on this device.'
+                : `The budget below holds roughly ${Math.round((limit / libraryEstimate.bytes) * 100)}% of it; the rest streams from the hub.`}
+          </Text>
+        )}
 
         {/* The slider runs over the curated stops, not raw gigabytes: a linear
             0-100 rail would cram the sizes people actually pick - 2 to 15 GB -

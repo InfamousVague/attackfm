@@ -15,6 +15,13 @@ good. Write it as something a listener should read, and leave out anything
 about how music gets onto the disk in the first place: the app plays a library,
 and where that library came from is not the app's story to tell.
 
+## 0.5.6
+
+- Automatic downloads now say what your whole library would cost at the
+  quality you picked, and whether the budget you set holds all of it.
+- Playlist headers carry a rough size, so you can see what keeping a list on
+  the phone would take before you decide to.
+
 ## 0.5.5
 
 - Now Playing wears a small format pill - FLAC, MP3, ALAC, OGG - under the
