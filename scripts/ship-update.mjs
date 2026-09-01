@@ -62,10 +62,26 @@ function notesFor(v) {
   const lines = md.split('\n');
   const start = lines.findIndex((l) => l.trim().replace(/^#+\s*/, '').startsWith(v));
   if (start < 0) return '';
+  /*
+   * One bullet per note, continuation lines folded in.
+   *
+   * A changelog bullet wraps across physical lines, its continuations
+   * indented under the "- ". Pushing each physical line as its own note is
+   * what put a fresh icon beside every wrapped fragment on the update card -
+   * a four-line bullet read as four one-liners. A line that opens a bullet
+   * ("- ...") starts a new note; anything else is the rest of the one above
+   * it and joins on with a space. The "- " marker stays on: the client
+   * (appUpdate.notesLines) strips it, and keeping it is what tells a
+   * continuation from a new bullet here.
+   */
   const out = [];
   for (const line of lines.slice(start + 1)) {
     if (/^#{1,3}\s/.test(line)) break;
-    if (line.trim()) out.push(line.trim());
+    const t = line.trim();
+    if (!t) continue;
+    if (/^[-*]\s/.test(t)) out.push(t);
+    else if (out.length) out[out.length - 1] += ' ' + t;
+    else out.push(t);
   }
   return out.join('\n');
 }

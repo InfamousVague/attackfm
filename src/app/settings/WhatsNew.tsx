@@ -31,7 +31,15 @@ function parse(md: string): Release[] {
       out.push(current);
       continue;
     }
-    if (current && raw.startsWith('- ')) current.lines.push(raw.slice(2).trim());
+    if (!current) continue;
+    // A bullet wraps across physical lines in the source, its continuations
+    // indented under the "- ". Start a new line on "- ", and fold anything
+    // else onto the one above it - without this the timeline showed only the
+    // first physical line of every multi-line entry.
+    if (raw.startsWith('- ')) current.lines.push(raw.slice(2).trim());
+    else if (raw.trim() && current.lines.length) {
+      current.lines[current.lines.length - 1] += ' ' + raw.trim();
+    }
   }
   return out.filter((r) => r.lines.length > 0);
 }
